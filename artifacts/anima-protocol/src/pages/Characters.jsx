@@ -59,6 +59,7 @@ export default function Characters() {
   const [deletingId, setDeletingId] = useState(null);
   const [photoLoadingId, setPhotoLoadingId] = useState(null);
   const [photoMsg, setPhotoMsg] = useState(null);
+  const [brokenPhotoIds, setBrokenPhotoIds] = useState(() => new Set());
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
@@ -188,6 +189,12 @@ export default function Characters() {
     try {
       const url = await autoAssignCharacterPhoto(char);
       if (url) {
+        setBrokenPhotoIds((prev) => {
+          if (!prev.has(char.id)) return prev;
+          const next = new Set(prev);
+          next.delete(char.id);
+          return next;
+        });
         await loadCharacters();
       } else {
         setPhotoMsg({ id: char.id, text: "No photo found" });
@@ -346,8 +353,17 @@ export default function Characters() {
 
                 {/* Avatar */}
                 <div className="relative">
-                  {char.avatar_url ? (
-                    <img src={char.avatar_url} alt={char.name} className="w-full aspect-square object-cover" />
+                  {char.avatar_url && !brokenPhotoIds.has(char.id) ? (
+                    <img
+                      src={char.avatar_url}
+                      alt={char.name}
+                      className="w-full aspect-square object-cover"
+                      onError={() =>
+                        setBrokenPhotoIds((prev) =>
+                          prev.has(char.id) ? prev : new Set(prev).add(char.id)
+                        )
+                      }
+                    />
                   ) : (
                     <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
                       <span className="font-mono text-primary/30 text-4xl">{char.name[0]}</span>
