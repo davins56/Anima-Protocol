@@ -1031,6 +1031,144 @@ describe("chat messages stored as individual rows", () => {
     ).json as Json[];
     expect(bList).toEqual([]);
   });
+
+  it("counts return per-session message totals without hydrating bodies", async () => {
+    const U = user("msg_counts");
+    await call(U, "POST", "/messages", {
+      session_id: "cnt1",
+      message: { content: "one" },
+    });
+    await call(U, "POST", "/messages", {
+      session_id: "cnt1",
+      message: { content: "two" },
+    });
+    await call(U, "POST", "/messages", {
+      session_id: "cnt2",
+      message: { content: "solo" },
+    });
+
+    const counts = (
+      await call(U, "POST", "/messages/counts", {
+        ids: ["cnt1", "cnt2", "cnt3"],
+      })
+    ).json as Record<string, number>;
+    expect(counts.cnt1).toBe(2);
+    expect(counts.cnt2).toBe(1);
+    // A session with no messages still reports 0 (never undefined).
+    expect(counts.cnt3).toBe(0);
+  });
+
+  it("counts migrate a legacy blob so the total is accurate", async () => {
+    const U = user("msg_counts_migrate");
+    const session = (
+      await call(U, "POST", "/ChatSession", {
+        title: "Legacy count",
+        messages: [{ content: "a" }, { content: "b" }, { content: "c" }],
+      })
+    ).json;
+
+    const counts = (
+      await call(U, "POST", "/messages/counts", { ids: [session.id] })
+    ).json as Record<string, number>;
+    expect(counts[session.id]).toBe(3);
+
+    // Migration happened as a side effect, just like by-sessions.
+    const reread = (await call(U, "GET", `/ChatSession/${session.id}`)).json;
+    expect(reread.messages_migrated).toBe(true);
+  });
+
+  it("counts are isolated per account", async () => {
+    const A = user("msg_counts_iso_a");
+    const B = user("msg_counts_iso_b");
+    await call(A, "POST", "/messages", {
+      session_id: "iso_cnt",
+      message: { content: "A only" },
+    });
+    const counts = (
+      await call(B, "POST", "/messages/counts", { ids: ["iso_cnt"] })
+    ).json as Record<string, number>;
+    expect(counts.iso_cnt).toBe(0);
+  });
+});
+
+describe("list search + filter are pushed into SQL across the whole list", () => {
+  const U = user("search");
+
+  beforeAll(async () => {
+    const rows = [
+      { title: "Dragon Quest", mode: "solo" },
+      { title: "Dragon Lair", mode: "group" },
+      { title: "Quiet Tavern", mode: "solo" },
+      { title: "100% Complete", mode: "solo" },
+      { mode: "group" }, // untitled — must never match a search
+    ];
+    for (const r of rows) {
+      await call(U, "POST", "/ChatSession", { ...r, messages_migrated: true });
+    }
+  });
+
+  it("case-insensitive substring search matches anywhere in the field", async () => {
+    const res = (
+      await call(
+        U,
+        "GET",
+        `/ChatSession?search=${encodeURIComponent(JSON.stringify({ title: "dragon" }))}`,
+      )
+    ).json as Json[];
+    expect(res.map((s) => s.title).sort()).toEqual([
+      "Dragon Lair",
+      "Dragon Quest",
+    ]);
+  });
+
+  it("an untitled record never matches a search term", async () => {
+    const res = (
+      await call(
+        U,
+        "GET",
+        `/ChatSession?search=${encodeURIComponent(JSON.stringify({ title: "a" }))}`,
+      )
+    ).json as Json[];
+    expect(res.every((s) => typeof s.title === "string")).toBe(true);
+  });
+
+  it("LIKE wildcards in the term are matched literally, not as wildcards", async () => {
+    const all = (
+      await call(
+        U,
+        "GET",
+        `/ChatSession?search=${encodeURIComponent(JSON.stringify({ title: "%" }))}`,
+      )
+    ).json as Json[];
+    // "%" only matches the "100% Complete" title, not every titled row.
+    expect(all.map((s) => s.title)).toEqual(["100% Complete"]);
+  });
+
+  it("search combines with a mode filter and a sort across the list", async () => {
+    const res = (
+      await call(
+        U,
+        "GET",
+        `/ChatSession?sort=title&filters=${encodeURIComponent(
+          JSON.stringify({ mode: "solo" }),
+        )}&search=${encodeURIComponent(JSON.stringify({ title: "dragon" }))}`,
+      )
+    ).json as Json[];
+    // Only the solo Dragon story, not the group one.
+    expect(res.map((s) => s.title)).toEqual(["Dragon Quest"]);
+  });
+
+  it("search + sort survive SQL offset paging (matches span pages)", async () => {
+    const q = `search=${encodeURIComponent(JSON.stringify({ title: "dragon" }))}&sort=title`;
+    const page1 = (
+      await call(U, "GET", `/ChatSession?${q}&limit=1&offset=0`)
+    ).json as Json[];
+    const page2 = (
+      await call(U, "GET", `/ChatSession?${q}&limit=1&offset=1`)
+    ).json as Json[];
+    expect(page1.map((s) => s.title)).toEqual(["Dragon Lair"]);
+    expect(page2.map((s) => s.title)).toEqual(["Dragon Quest"]);
+  });
 });
 
 describe("chat history survives export -> restore round trip", () => {

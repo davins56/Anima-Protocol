@@ -56,3 +56,20 @@ in-memory query helper.
   fetched `pageSize + skip` rows and sliced in JS, which got slow deep into
   history. `withinOffset` truncates finite-positive, else 0; OFFSET-without-sort
   mirrors limit-without-sort (paging callers always pass a sort).
+
+- **`search` is a separate param from `filters`** (`?search=` JSON object) doing
+  case-insensitive substring (`ILIKE`) per field, mirroring the old client's
+  `field?.toLowerCase().includes(term)`. **Traps:** an absent/non-string field is
+  NEVER a match (so untitled rows drop out of a title search, like JS optional
+  chaining); LIKE metacharacters `% _ \` in the term MUST be escaped so they
+  match literally (e.g. a literal `%` in a title). search/filters/sort/offset all
+  AND together and push into one SQL query so paging + search span the whole
+  list, not just the loaded page. Used by the paginated Y/n Stories Library.
+
+- **Per-card counts come from `POST /messages/counts`, not list hydration.** It
+  mirrors `/messages/by-sessions` (migrates each session's legacy blob first,
+  then `count(*)` grouped by session_id) and returns `{[id]: number}` with 0 for
+  sessions that have none. **Why:** the library lists `ChatSession` with
+  `withMessages:false` (no blob hydration) but still needs a message count per
+  card; a computed COUNT (vs a denormalized stored counter) avoids sync bugs
+  across append/replace/migrate/import/restore and is always accurate.

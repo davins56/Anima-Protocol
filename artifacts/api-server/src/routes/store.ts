@@ -123,6 +123,16 @@ function filterCondition(key: string, value: unknown): SQL {
   return sql`${userEntities.data} -> ${fieldKey(key)} = ${JSON.stringify(value)}::jsonb`;
 }
 
+// Case-insensitive substring match on a JSON text field, mirroring the client's
+// old in-memory `item[field]?.toLowerCase().includes(term.toLowerCase())`: an
+// absent/non-string value never matches, and the term is matched literally
+// (its LIKE wildcards are escaped) anywhere within the value. Pushed into SQL so
+// search applies across the WHOLE history, not just the page already loaded.
+function searchCondition(field: string, term: string): SQL {
+  const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return sql`(${userEntities.data} ->> ${fieldKey(field)}) ilike ${`%${escaped}%`}`;
+}
+
 function parseSort(sort: string): { field: string; desc: boolean } {
   const desc = sort.startsWith("-");
   return { field: desc ? sort.slice(1) : sort, desc };
@@ -211,6 +221,7 @@ async function listEntities(
   sort: string | undefined,
   limit: number | undefined,
   offset: number | undefined,
+  search: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown>[]> {
   const conditions: SQL[] = [
     eq(userEntities.userId, userId),
@@ -219,6 +230,15 @@ async function listEntities(
   if (filters && typeof filters === "object") {
     for (const [k, v] of Object.entries(filters)) {
       conditions.push(filterCondition(k, v));
+    }
+  }
+  if (search && typeof search === "object") {
+    for (const [k, v] of Object.entries(search)) {
+      // Only non-empty string terms add a constraint; anything else is a no-op
+      // so an empty search box returns the full (paged) list unchanged.
+      if (typeof v === "string" && v !== "") {
+        conditions.push(searchCondition(k, v));
+      }
     }
   }
   const whereClause = and(...conditions) as SQL;
@@ -740,6 +760,48 @@ router.post("/messages/by-sessions", async (req, res) => {
   res.json(bySession);
 });
 
+// POST /messages/counts { ids: [] } — batch message COUNT per session. Backs
+// metadata-only lists (e.g. the Y/n Stories Library cards) that need each
+// session's message total without hydrating the full history. Migrates each
+// session first (same as by-sessions) so a legacy blob session reports an
+// accurate count, then returns { [sessionId]: number } from one grouped query.
+router.post("/messages/counts", async (req, res) => {
+  const userId = getUserId(req);
+  const ids = Array.isArray(req.body?.ids)
+    ? (req.body.ids as unknown[]).map(String)
+    : [];
+  const counts: Record<string, number> = {};
+  for (const id of ids) counts[id] = 0;
+  if (ids.length === 0) {
+    res.json(counts);
+    return;
+  }
+
+  for (const sid of ids) {
+    await db.transaction((tx) => ensureSessionMigrated(tx, userId, sid));
+  }
+
+  const rows = await db
+    .select({
+      sid: sql<string>`(${userEntities.data} ->> 'session_id')`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_MESSAGE),
+        inArray(sql`(${userEntities.data} ->> 'session_id')`, ids),
+      ),
+    )
+    .groupBy(sql`(${userEntities.data} ->> 'session_id')`);
+
+  for (const r of rows) {
+    counts[String(r.sid)] = Number(r.count) || 0;
+  }
+  res.json(counts);
+});
+
 // POST /messages { session_id, message } — append ONE message. The server
 // assigns the next seq atomically (within a transaction) so an append never has
 // to send or rewrite the existing history. This is the hot path.
@@ -917,7 +979,23 @@ router.get("/:entity", async (req, res) => {
       filters = undefined;
     }
   }
-  const items = await listEntities(userId, entity, filters, sort, limit, offset);
+  let search: Record<string, unknown> | undefined;
+  if (typeof req.query.search === "string" && req.query.search) {
+    try {
+      search = JSON.parse(req.query.search);
+    } catch {
+      search = undefined;
+    }
+  }
+  const items = await listEntities(
+    userId,
+    entity,
+    filters,
+    sort,
+    limit,
+    offset,
+    search,
+  );
   res.json(items);
 });
 

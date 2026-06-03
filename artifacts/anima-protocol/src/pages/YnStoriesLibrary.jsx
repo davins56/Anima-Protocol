@@ -1,42 +1,87 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
+import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { useNavigate } from "react-router-dom";
-import { Trash2, Play, Users, Clock, Search, Loader, ArrowLeft } from "lucide-react";
+import {
+  Trash2,
+  Play,
+  Users,
+  Clock,
+  Search,
+  Loader,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+
+const PAGE_SIZE = 30;
 
 export default function YnStoriesLibrary() {
   const confirm = useConfirm();
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState([]);
   const [characters, setCharacters] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterMode, setFilterMode] = useState("all");
   const [deleting, setDeleting] = useState(null);
 
+  // Debounce the search box so a paged query isn't fired on every keystroke.
   useEffect(() => {
-    loadData();
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // Characters are only needed to resolve a session's character names; load the
+  // roster once (it isn't part of the paged story list).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const chars = await base44.entities.Character.list("-created_date", 500);
+        if (!cancelled) setCharacters(chars || []);
+      } catch (err) {
+        console.error("Failed to load characters:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [sessionsData, charsData] = await Promise.all([
-        base44.entities.ChatSession.list("-updated_date", 100),
-        base44.entities.Character.list("-created_date", 500)
-      ]);
-      setSessions(sessionsData || []);
-      setCharacters(charsData || []);
-    } catch (err) {
-      console.error("Failed to load data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Push mode filter + title search into the SQL query so they apply across the
+  // WHOLE history, not just the loaded page. Memoised for a stable identity so
+  // the pagination query key only changes when a filter/search actually changes.
+  const listOpts = useMemo(() => {
+    const opts = { withMessages: false };
+    if (filterMode !== "all") opts.filters = { mode: filterMode };
+    if (debouncedSearch) opts.search = { title: debouncedSearch };
+    return opts;
+  }, [filterMode, debouncedSearch]);
 
+  const {
+    items: sessions,
+    hasMore,
+    currentPage,
+    nextPage,
+    prevPage,
+    isLoading,
+    refetch,
+  } = usePaginatedEntities("ChatSession", PAGE_SIZE, "-updated_date", listOpts);
 
+  // Per-card message totals for the CURRENT page only — a lightweight COUNT, not
+  // a full-history hydration. Keyed by the page's session ids so it refetches
+  // when the page (or filter/search) changes.
+  const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
+  const { data: messageCounts } = useQuery({
+    queryKey: ["ChatMessage", "counts", sessionIds],
+    queryFn: () => base44.messages.counts(sessionIds),
+    enabled: sessionIds.length > 0,
+    staleTime: 60000,
+  });
 
   const handleResume = (sessionId) => {
     navigate(`/chat/${sessionId}`);
@@ -49,11 +94,11 @@ export default function YnStoriesLibrary() {
       confirmLabel: "Delete",
     });
     if (!ok) return;
-    
+
     setDeleting(sessionId);
     try {
       await base44.entities.ChatSession.delete(sessionId);
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      await refetch();
     } catch (err) {
       console.error("Failed to delete session:", err);
       toast.error("Failed to delete session");
@@ -62,11 +107,7 @@ export default function YnStoriesLibrary() {
     }
   };
 
-  const filtered = sessions.filter((session) => {
-    const matchSearch = session.title?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchMode = filterMode === "all" || session.mode === filterMode;
-    return matchSearch && matchMode;
-  });
+  const showPager = hasMore || currentPage > 0;
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6">
@@ -78,7 +119,7 @@ export default function YnStoriesLibrary() {
               // Y/n Stories Library
             </h1>
             <p className="text-[10px] font-mono text-primary/30 tracking-widest">
-              {sessions.length} imported {sessions.length === 1 ? "story" : "stories"}
+              {sessions.length} {sessions.length === 1 ? "story" : "stories"} on page {currentPage + 1}
             </p>
           </div>
           <button
@@ -115,7 +156,7 @@ export default function YnStoriesLibrary() {
         </div>
 
         {/* Loading State */}
-        {loading ? (
+        {isLoading ? (
           <div className="flex items-center justify-center py-16">
             <div className="text-center">
               <Loader className="w-8 h-8 text-primary/40 animate-spin mx-auto mb-3" />
@@ -124,18 +165,20 @@ export default function YnStoriesLibrary() {
               </p>
             </div>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : sessions.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-16 h-16 border-2 border-primary/20 rounded mx-auto mb-4 flex items-center justify-center">
               <Users className="w-8 h-8 text-primary/20" />
             </div>
             <p className="font-mono text-[10px] text-primary/30 tracking-widest uppercase">
-              {searchTerm ? "No stories match your search" : "No imported stories yet"}
+              {debouncedSearch || filterMode !== "all"
+                ? "No stories match your search"
+                : "No imported stories yet"}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((session) => {
+            {sessions.map((session) => {
                const sessionCharacters = [];
                if (session.mode === "solo" && session.character_id) {
                  const char = characters.find(c => c.id === session.character_id);
@@ -146,6 +189,8 @@ export default function YnStoriesLibrary() {
                    if (char) sessionCharacters.push(char);
                  });
                }
+
+               const messageCount = messageCounts ? messageCounts[session.id] ?? 0 : null;
 
                return (
                 <div
@@ -166,7 +211,7 @@ export default function YnStoriesLibrary() {
                         {session.mode === "solo" ? "SOLO" : "GROUP"}
                       </span>
                       <span className="text-primary/40">
-                        {session.messages?.length || 0} messages
+                        {messageCount == null ? "…" : messageCount} messages
                       </span>
                     </div>
                   </div>
@@ -233,6 +278,31 @@ export default function YnStoriesLibrary() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Pager */}
+        {showPager && (
+          <div className="flex items-center justify-center gap-3 mt-8">
+            <button
+              onClick={prevPage}
+              disabled={currentPage === 0}
+              className="flex items-center justify-center gap-1.5 px-4 py-2 font-mono text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-3 h-3" />
+              <span>Prev</span>
+            </button>
+            <span className="font-mono text-[10px] text-primary/40 tracking-widest tabular-nums px-2">
+              Page {currentPage + 1}
+            </span>
+            <button
+              onClick={nextPage}
+              disabled={!hasMore}
+              className="flex items-center justify-center gap-1.5 px-4 py-2 font-mono text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
           </div>
         )}
       </div>

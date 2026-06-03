@@ -11,6 +11,12 @@ export interface ListOptions {
   // Skip this many rows in the DB before returning, for one-page-at-a-time
   // pagination (paired with `limit`). Applied server-side as a real SQL OFFSET.
   offset?: number;
+  // Equality filters pushed into the SQL WHERE alongside a sort string (the
+  // positional first arg can only carry sort OR filters, so this rides via opts).
+  filters?: Record<string, unknown>;
+  // Case-insensitive substring search per field (e.g. { title: "quest" }),
+  // pushed into SQL so it spans the whole history, not just the loaded page.
+  search?: Record<string, string>;
 }
 
 export interface EntityStore {
@@ -49,6 +55,9 @@ export interface Base44Messages {
   replace(sessionId: string, messages: any[]): Promise<any[]>;
   // Batch hydrate: { [sessionId]: message[] }.
   bySessions(ids: string[]): Promise<Record<string, any[]>>;
+  // Batch message COUNT per session: { [sessionId]: number }. Metadata-only —
+  // no full-history hydration. Backs the Stories Library card counts.
+  counts(ids: string[]): Promise<Record<string, number>>;
 }
 
 export interface Base44Auth {

@@ -520,13 +520,16 @@ export async function restoreData(payload, mode = 'merge') {
   return res.json();
 }
 
-function buildQuery({ filters, sort, limit, offset }) {
+function buildQuery({ filters, sort, limit, offset, search }) {
   const params = new URLSearchParams();
   if (typeof sort === 'string' && sort) params.set('sort', sort);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
   if (typeof offset === 'number' && offset > 0) params.set('offset', String(offset));
   if (filters && typeof filters === 'object' && Object.keys(filters).length) {
     params.set('filters', JSON.stringify(filters));
+  }
+  if (search && typeof search === 'object' && Object.keys(search).length) {
+    params.set('search', JSON.stringify(search));
   }
   return params.toString();
 }
@@ -635,6 +638,23 @@ async function messagesBySessions(ids) {
   return res.json();
 }
 
+// Batch message COUNT per session: { [id]: number }. Backs metadata-only lists
+// (e.g. the Stories Library cards) that show each session's message total
+// without hydrating the full history.
+async function messageCountsBySessions(ids) {
+  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  if (list.length === 0) return {};
+  const token = await getToken();
+  if (!token) return {};
+  const res = await storeFetch('/messages/counts', {
+    method: 'POST',
+    body: JSON.stringify({ ids: list }),
+  });
+  if (res.status === 401) return {};
+  if (!res.ok) await throwErr(res);
+  return res.json();
+}
+
 // Attach `.messages` (from rows) to a single session for backward compatibility.
 async function hydrateOne(session) {
   if (!session || !session.id) return session;
@@ -660,13 +680,24 @@ function entityStore(entityName) {
     //   list({ key: value })            → filtered (back-compat)
     async list(sortOrFilters, limit, opts) {
       const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
+      // Equality filters and substring search can ride alongside a sort string
+      // via opts (the SDK's positional first arg can only carry one OR the
+      // other), so the paginated story list can push mode + title across pages.
+      const search = opts && opts.search ? opts.search : undefined;
+      const optFilters = opts && opts.filters ? opts.filters : undefined;
       if (typeof sortOrFilters === 'string') {
-        return queryEntity(entityName, { sort: sortOrFilters, limit, offset });
+        return queryEntity(entityName, {
+          sort: sortOrFilters,
+          limit,
+          offset,
+          filters: optFilters,
+          search,
+        });
       }
       if (sortOrFilters && typeof sortOrFilters === 'object') {
-        return queryEntity(entityName, { filters: sortOrFilters, limit, offset });
+        return queryEntity(entityName, { filters: sortOrFilters, limit, offset, search });
       }
-      return queryEntity(entityName, { limit, offset });
+      return queryEntity(entityName, { limit, offset, filters: optFilters, search });
     },
 
     async get(id) {
@@ -915,6 +946,7 @@ export const base44 = {
     append: (sessionId, message) => appendMessage(sessionId, message),
     replace: (sessionId, messages) => replaceMessages(sessionId, messages),
     bySessions: (ids) => messagesBySessions(ids),
+    counts: (ids) => messageCountsBySessions(ids),
   },
 
   // Mirror the SDK's service-role accessor. There is no privilege separation
