@@ -452,6 +452,169 @@ describe("export + restore round trip (the backup safety net)", () => {
   });
 });
 
+describe("full export -> restore round trip through merge & replace", () => {
+  // The other round-trip tests cover the empty-account path (import / replace).
+  // These exercise the user-driven /restore merge AND replace modes fed the
+  // EXACT payload that /export emits, and assert the destination account ends
+  // up byte-for-byte identical (entities + profile) — catching any shape drift
+  // between what /export writes and what /restore can read back. Each mode is
+  // round-tripped into both an empty and a non-empty destination.
+
+  // /export returns entity arrays in DB order and a fresh `exported_at` every
+  // call, so normalise to compare only the durable payload: sort entity records
+  // by id and drop the timestamp/version envelope.
+  const snapshot = (
+    exp: any,
+  ): { entities: Record<string, Json[]>; profile: Json | null } => {
+    const entities: Record<string, Json[]> = {};
+    for (const [name, recs] of Object.entries(
+      exp.entities as Record<string, Json[]>,
+    )) {
+      entities[name] = [...recs].sort((a, b) =>
+        String(a.id).localeCompare(String(b.id)),
+      );
+    }
+    return { entities, profile: (exp.profile as Json) ?? null };
+  };
+
+  // Build a realistic, multi-type account with nested fields on `who`, then
+  // return its verbatim /export payload (the thing a user downloads as a file).
+  const seedAndExport = async (who: string) => {
+    await call(who, "PUT", "/Character/rt_c1", {
+      id: "rt_c1",
+      name: "Aria",
+      universe: "Origin",
+      stats: { level: 9, tags: ["lead", "mage"] },
+    });
+    await call(who, "PUT", "/Character/rt_c2", {
+      id: "rt_c2",
+      name: "Bryn",
+      universe: "Origin",
+    });
+    await call(who, "PUT", "/Journal/rt_j1", { id: "rt_j1", title: "Entry one" });
+    await call(who, "PUT", "/Quest/rt_q1", { id: "rt_q1", title: "The relic" });
+    await call(who, "PUT", "/profile", {
+      display_name: "Owner",
+      selected_mode: "story",
+      prefs: { theme: "dark", sound: true },
+    });
+    return (await call(who, "GET", "/export")).json;
+  };
+
+  it("merge restores a full export verbatim into an EMPTY account", async () => {
+    const SRC = user("rt_merge_empty_src");
+    const DST = user("rt_merge_empty_dst");
+
+    const exported = await seedAndExport(SRC);
+    const res = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "merge",
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.restored).toBe(true);
+    expect(res.json.mode).toBe("merge");
+    expect(res.json.count).toBe(4);
+
+    // The destination's own export now matches the source's exactly.
+    const dstExport = (await call(DST, "GET", "/export")).json;
+    expect(snapshot(dstExport)).toEqual(snapshot(exported));
+  });
+
+  it("replace restores a full export verbatim into an EMPTY account", async () => {
+    const SRC = user("rt_replace_empty_src");
+    const DST = user("rt_replace_empty_dst");
+
+    const exported = await seedAndExport(SRC);
+    const res = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "replace",
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.mode).toBe("replace");
+    expect(res.json.count).toBe(4);
+
+    const dstExport = (await call(DST, "GET", "/export")).json;
+    expect(snapshot(dstExport)).toEqual(snapshot(exported));
+  });
+
+  it("merge of a full export keeps prior records and overlays the backup profile", async () => {
+    const SRC = user("rt_merge_nonempty_src");
+    const DST = user("rt_merge_nonempty_dst");
+
+    // The destination already has its own data before the restore.
+    await call(DST, "PUT", "/Character/own_1", { id: "own_1", name: "Local Hero" });
+    await call(DST, "PUT", "/Note/own_n1", { id: "own_n1", body: "kept" });
+    await call(DST, "PUT", "/profile", {
+      display_name: "Local Name",
+      onlylocal: "stays",
+    });
+
+    const exported = await seedAndExport(SRC);
+    const res = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "merge",
+    });
+    expect(res.json.mode).toBe("merge");
+    expect(res.json.count).toBe(4);
+
+    // Every backup record is present, byte-for-byte.
+    const chars = (await call(DST, "GET", "/Character")).json as Json[];
+    const charsById = new Map(chars.map((c) => [c.id, c]));
+    expect(charsById.get("rt_c1")).toEqual(
+      snapshot(exported).entities.Character.find((c) => c.id === "rt_c1"),
+    );
+    expect(charsById.get("rt_c2")?.name).toBe("Bryn");
+    // The destination's pre-existing, non-conflicting record survives.
+    expect(charsById.get("own_1")?.name).toBe("Local Hero");
+    const notes = (await call(DST, "GET", "/Note")).json as Json[];
+    expect(notes.map((n) => n.id)).toEqual(["own_n1"]);
+    const journals = (await call(DST, "GET", "/Journal")).json as Json[];
+    expect(journals.map((j) => j.id)).toEqual(["rt_j1"]);
+
+    // Profile: backup values win, destination-only keys are preserved.
+    const profile = (await call(DST, "GET", "/profile")).json as Json;
+    expect(profile.display_name).toBe("Owner");
+    expect(profile.selected_mode).toBe("story");
+    expect(profile.prefs).toEqual({ theme: "dark", sound: true });
+    expect(profile.onlylocal).toBe("stays");
+  });
+
+  it("replace of a full export makes a NON-EMPTY account identical to the source", async () => {
+    const SRC = user("rt_replace_nonempty_src");
+    const DST = user("rt_replace_nonempty_dst");
+
+    // Junk that must be wiped: includes an entity type the backup never mentions.
+    await call(DST, "PUT", "/Character/junk_1", { id: "junk_1", name: "Doomed" });
+    await call(DST, "PUT", "/Quest/junk_q", { id: "junk_q", title: "Doomed Quest" });
+    await call(DST, "PUT", "/Faction/junk_f", { id: "junk_f", name: "Doomed Faction" });
+    await call(DST, "PUT", "/profile", {
+      display_name: "Old",
+      leftover: "must vanish",
+    });
+
+    const exported = await seedAndExport(SRC);
+    const res = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "replace",
+    });
+    expect(res.json.mode).toBe("replace");
+    expect(res.json.count).toBe(4);
+
+    // Whole-account snapshot is byte-for-byte identical to the source: the junk
+    // entity type is gone and the profile carries no leftover keys.
+    const dstExport = (await call(DST, "GET", "/export")).json;
+    expect(snapshot(dstExport)).toEqual(snapshot(exported));
+    const factions = (await call(DST, "GET", "/Faction")).json as Json[];
+    expect(factions).toHaveLength(0);
+    const profile = (await call(DST, "GET", "/profile")).json as Json;
+    expect(profile.leftover).toBeUndefined();
+  });
+});
+
 describe("list query is pushed into SQL with identical semantics", () => {
   // Seed a mixed dataset for one account, then exercise filter/sort/limit and
   // assert the server returns exactly what the old in-memory applyQuery did.
