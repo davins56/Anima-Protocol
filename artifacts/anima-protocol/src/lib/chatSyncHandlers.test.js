@@ -173,6 +173,33 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
 });
 
 describe("syncFromRemote (react to a remote change)", () => {
+  // The sidebar session list is metadata-only and can't corrupt an in-progress
+  // reply, so it must refresh on EVERY remote change — the loading-flag deferral
+  // only holds back the open thread's refetch, never the list. This guards
+  // against a regression that gates loadSessions behind isLoading and makes new
+  // conversations from another device not show up until generation finishes.
+  it.each([
+    ["idle", false],
+    ["a reply is generating", true],
+  ])(
+    "always refreshes the sidebar when %s (deferral never gates the list)",
+    (_label, isLoading) => {
+      const loadSessions = vi.fn();
+      const pendingRemoteSyncRef = { current: false };
+      // runSync is irrelevant to the list guarantee; never let it touch state.
+      const runSync = vi.fn(() => Promise.resolve(true));
+
+      syncFromRemote({
+        isLoading,
+        loadSessions,
+        pendingRemoteSyncRef,
+        runSync,
+      });
+
+      expect(loadSessions).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("refreshes the sidebar and applies immediately when idle", async () => {
     const h = makeHarness([userMsg]);
     const loadSessions = vi.fn();
