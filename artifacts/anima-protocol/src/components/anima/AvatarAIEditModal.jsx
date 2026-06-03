@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Wand2, Loader, Check, RotateCcw, Ban } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { editImage } from "@/api/base44Client";
-import { downscaleDataUrl } from "@/lib/downscaleImage";
+import { applyAvatarEdit, canShowApply } from "@/lib/avatarPhoto";
 
 // gpt-image-1 edits usually land in this window. Used to drive the estimate
 // hint and the progress bar so the wait feels bounded instead of open-ended.
@@ -130,13 +130,17 @@ export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onAppl
   };
 
   const handleApply = async () => {
-    const toApply = result || (allowSaveOriginal ? sourceImage : null);
-    if (!toApply) return;
     setApplying(true);
     setError("");
     try {
-      const small = await downscaleDataUrl(toApply, 512, 0.85);
-      await onApply(small);
+      const applied = await applyAvatarEdit(
+        { result, sourceImage, allowSaveOriginal },
+        { onApply },
+      );
+      if (!applied) {
+        setApplying(false);
+        return;
+      }
       onClose();
     } catch (err) {
       console.error("Failed to apply AI photo:", err);
@@ -266,7 +270,7 @@ export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onAppl
                   {result ? "Regenerate" : "Generate"}
                 </button>
               )}
-              {(result || (allowSaveOriginal && sourceImage)) && (
+              {canShowApply({ result, sourceImage, allowSaveOriginal }) && (
                 <button
                   type="button"
                   onClick={handleApply}
