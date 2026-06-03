@@ -72,3 +72,8 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+VITE_MIXPANEL_TOKEN = "0b53f8dc53496e26bbc41f04bb2faad1"
