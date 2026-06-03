@@ -48,7 +48,7 @@ describe("first sign-in migration", () => {
     );
 
     const bootstrapUserData = await loadBootstrap();
-    await bootstrapUserData("userA");
+    const outcome = await bootstrapUserData("userA");
 
     expect(bulkImport).toHaveBeenCalledTimes(1);
     const payload = bulkImport.mock.calls[0][0];
@@ -57,15 +57,19 @@ describe("first sign-in migration", () => {
     expect(payload.profile).toEqual({ selected_mode: "story" });
     expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
     expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
+    // A confirmed import reports "migrated" so the UI can clear any notice.
+    expect(outcome).toBe("migrated");
   });
 
   it("does not import when there is no local data, but still seeds and marks done", async () => {
     const bootstrapUserData = await loadBootstrap();
-    await bootstrapUserData("userA");
+    const outcome = await bootstrapUserData("userA");
 
     expect(bulkImport).not.toHaveBeenCalled();
     expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
     expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
+    // Nothing to migrate reports "skipped" so the UI shows no notice.
+    expect(outcome).toBe("skipped");
   });
 
   it("shares one run across concurrent bootstrap calls (no double import)", async () => {
@@ -112,11 +116,13 @@ describe("first sign-in migration", () => {
     bulkImport.mockRejectedValueOnce(new Error("network down"));
 
     const bootstrapUserData = await loadBootstrap();
-    await bootstrapUserData("userA");
+    const outcome = await bootstrapUserData("userA");
 
     expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
     // A failed import is NOT marked done, so it will be retried next load.
     expect(localStorage.getItem(MIGRATION_KEY)).toBeNull();
+    // A throwing import reports "failed" so the UI can warn the user.
+    expect(outcome).toBe("failed");
   });
 
   it("does not mark migration done when the import resolves without confirming success", async () => {
@@ -130,12 +136,14 @@ describe("first sign-in migration", () => {
     bulkImport.mockResolvedValueOnce({ imported: false });
 
     const bootstrapUserData = await loadBootstrap();
-    await bootstrapUserData("userA");
+    const outcome = await bootstrapUserData("userA");
 
     expect(bulkImport).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem(MIGRATION_KEY)).toBeNull();
     // Seeding still runs regardless of the migration outcome.
     expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
+    // An unconfirmed import reports "failed" so the UI can warn the user.
+    expect(outcome).toBe("failed");
   });
 
   it("retries the migration on the next sign-in after a failed import", async () => {

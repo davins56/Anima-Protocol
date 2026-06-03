@@ -23,13 +23,21 @@ export function bootstrapUserData(userId) {
   return bootstrapPromise;
 }
 
+// Possible migration outcomes surfaced to the caller so the UI can tell the
+// user when their pre-sync local data hasn't made it up to their account yet.
+//   "migrated" — local data was imported and the server confirmed success
+//   "skipped"  — nothing to migrate, or it was already migrated previously
+//   "failed"   — there was local data but the import did not confirm success
 async function run() {
+  let outcome = "skipped";
   try {
-    await migrateLocalDataOnce();
+    outcome = await migrateLocalDataOnce();
   } catch (err) {
     console.warn("[Anima] Local data migration failed:", err.message);
+    outcome = "failed";
   }
   await seedCharactersIfNeeded();
+  return outcome;
 }
 
 // Migrate the browser's local data to the server exactly once, ever. The flag
@@ -38,7 +46,7 @@ async function run() {
 // different account afterwards. The server additionally refuses to import into
 // an account that already has data.
 async function migrateLocalDataOnce() {
-  if (localStorage.getItem(MIGRATION_KEY)) return;
+  if (localStorage.getItem(MIGRATION_KEY)) return "skipped";
 
   const entities = {};
   let hasData = false;
@@ -89,7 +97,10 @@ async function migrateLocalDataOnce() {
       throw new Error("bulk import did not confirm success");
     }
     console.log(`[Anima] Migrated ${result.count} records to your account.`);
+    localStorage.setItem(MIGRATION_KEY, "1");
+    return "migrated";
   }
 
   localStorage.setItem(MIGRATION_KEY, "1");
+  return "skipped";
 }

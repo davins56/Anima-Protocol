@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as SonnerToaster } from "sonner";
+import { Toaster as SonnerToaster, toast } from "sonner";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import {
@@ -374,7 +374,26 @@ const AuthenticatedApp = () => {
   // resolved user id so it runs per-account and only after the token is ready.
   useEffect(() => {
     if (isAuthenticated && user?.id) {
-      bootstrapUserData(user.id);
+      bootstrapUserData(user.id).then((outcome) => {
+        if (outcome === "failed") {
+          // The one-time import of this browser's pre-sync local data didn't
+          // confirm success. Let the user know their local characters/profile
+          // haven't synced yet (it retries automatically on the next sign-in).
+          toast.error("Your saved data hasn't synced to your account yet.", {
+            id: "anima-migration-sync",
+            description:
+              "We'll keep trying automatically. Refresh or sign in again to retry now.",
+            duration: Infinity,
+            action: {
+              label: "Retry",
+              onClick: () => window.location.reload(),
+            },
+          });
+        } else if (outcome === "migrated") {
+          // A later attempt confirmed success — clear any lingering notice.
+          toast.dismiss("anima-migration-sync");
+        }
+      });
     }
   }, [isAuthenticated, user?.id]);
 
