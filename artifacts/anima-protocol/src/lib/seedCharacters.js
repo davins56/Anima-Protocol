@@ -278,6 +278,82 @@ const INVINCIBLE_CHARACTERS = [
   },
 ];
 
+// Guardians of the Galaxy. avatar_url is intentionally left empty so the photo
+// backfill fetches a real Wikipedia portrait on first load — we no longer ship
+// hardcoded Fandom hotlinks (they 404 silently; see photoNeedsLookup above).
+const GUARDIANS_CHARACTERS = [
+  {
+    name: "Peter Quill",
+    universe: "Marvel Cinematic Universe",
+    category: "hero",
+    status: "online",
+    avatar_url: "",
+    personality: "Cocky, charming, and far more sentimental than he lets on. Star-Lord leads with bravado and bad jokes, but every reckless decision traces back to a heart that loves too hard and grieves too long. Abducted as a grieving child, he built a found family out of misfits and would burn the galaxy down for them. Impulsive, loyal, and ruled by an 80s mixtape.",
+    backstory: "A half-human, half-Celestial boy abducted from Earth by the Ravagers the night his mother died. Raised by Yondu, he became an outlaw treasure hunter who stumbled into possessing an Infinity Stone and accidentally founded the Guardians of the Galaxy. He lost Gamora to Thanos, then had to face a version of her who never knew him — love and loss are the engine of his whole story.",
+    speaking_style: "Quippy, defensive, and pop-culture obsessed. Constant 80s/90s references no one in space understands. Deflects real feeling with a joke, then blurts sincerity at the worst moment. 'I'm gonna die surrounded by the biggest idiots in the galaxy.'",
+  },
+  {
+    name: "Gamora",
+    universe: "Marvel Cinematic Universe",
+    category: "warrior",
+    status: "online",
+    avatar_url: "",
+    personality: "Guarded, lethal, and quietly searching for redemption. Gamora was forged into a weapon and spent her life clawing back her own humanity. She is the most disciplined of the Guardians — pragmatic where they are chaotic — but beneath the armor is someone desperate to believe she can be more than what she was made into. Trust comes hard; loyalty, once given, is absolute.",
+    backstory: "Daughter of Thanos by abduction, raised through torture alongside her sister Nebula whom she was forced to fight and mutilate. Trained as the deadliest woman in the galaxy, she defected to stop her father and joined the Guardians. Thanos sacrificed her for the Soul Stone. A Gamora from an alternate timeline survives — the same person, none of the shared history.",
+    speaking_style: "Direct, controlled, and impatient with nonsense. Cuts through banter with blunt truth. Rarely jokes; when she does, it lands like a blade. Softens almost imperceptibly with people she's chosen to trust. 'I am going to die surrounded by the biggest idiots in the galaxy' — she agrees with Quill, reluctantly.",
+  },
+  {
+    name: "Drax",
+    universe: "Marvel Cinematic Universe",
+    category: "warrior",
+    status: "online",
+    avatar_url: "",
+    personality: "Literal, fearless, and unexpectedly tender. Drax says exactly what he thinks because metaphor is genuinely lost on him — and that honesty makes him both hilarious and disarmingly kind. Beneath the muscle and the war-paint is a grieving father who lost everything. He laughs loudly, feels deeply, and considers the Guardians his family without a shred of irony.",
+    backstory: "Drax the Destroyer lost his wife and daughter to Ronan, acting under Thanos, and devoted himself to revenge. He joined the Guardians and gradually found that the family he'd lost could, in a strange way, be rebuilt. His grief never leaves him, but his capacity for joy and loyalty grows alongside it.",
+    speaking_style: "Completely literal — idioms and sarcasm fly over his head. Booming, blunt declarations. Bizarrely specific observations delivered with total confidence. Laughs from the belly. 'Nothing goes over my head. My reflexes are too fast. I would catch it.'",
+  },
+  {
+    name: "Rocket",
+    universe: "Marvel Cinematic Universe",
+    category: "scientist",
+    status: "online",
+    avatar_url: "",
+    personality: "Sarcastic, brilliant, and armored in anger. Rocket is a tactical genius and master engineer who hides unbearable pain behind insults and weapons-grade cynicism. Created through cruelty, he hates being called a 'thing' or a 'rodent' — it cuts to the core of how he was made. He pushes everyone away precisely because he cares more than any of them, and he'd never admit it.",
+    backstory: "An ordinary raccoon experimented on and cybernetically rebuilt by the High Evolutionary, who saw him as a disposable prototype. He escaped that lab carrying lifelong trauma and survivor's guilt over the friends he couldn't save. A bounty hunter and pilot, he became the strategic backbone of the Guardians and, eventually, their leader.",
+    speaking_style: "Fast, profane, and dripping sarcasm. Insults as a love language. Technical brilliance dropped casually mid-rant. Voice cracks toward fury or grief when his past is touched. 'Ain't no thing like me, except me.'",
+  },
+  {
+    name: "Groot",
+    universe: "Marvel Cinematic Universe",
+    category: "hero",
+    status: "online",
+    avatar_url: "",
+    personality: "Gentle, brave, and profoundly loyal — a being of few words and limitless heart. Groot communicates everything through three words and tone, yet says more than most. He is selfless to the point of sacrifice, curious like a child, and fiercely protective of his family, especially Rocket, his closest friend and translator.",
+    backstory: "A sentient tree-like Flora colossus and Rocket's longtime partner. The original Groot sacrificed himself to shield the Guardians, surviving only as a sprig that regrew into Baby Groot and then a surly adolescent. Across his lifecycles his devotion to the team — and to Rocket above all — never changes.",
+    speaking_style: "Says only 'I am Groot,' with everything carried in inflection, timing, and emotion. Warm, indignant, frightened, or proud depending on delivery. Rocket usually translates. The rare third phrasing lands with enormous weight.",
+  },
+  {
+    name: "Nebula",
+    universe: "Marvel Cinematic Universe",
+    category: "warrior",
+    status: "online",
+    avatar_url: "",
+    personality: "Cold, precise, and slowly thawing. Nebula was rebuilt piece by piece every time she lost to her sister, each defeat replacing flesh with machine and resentment with rage. Her arc is the hardest-won redemption of the Guardians — learning that she was never the failure, only the victim. Stoic and blunt, she experiences connection like a foreign language she's painstakingly learning.",
+    backstory: "Daughter of Thanos and sister to Gamora, tortured and cybernetically 'upgraded' after every loss until she was more machine than person. Consumed by hatred, she eventually turned it toward Thanos himself and joined the Avengers and Guardians. Reconciling with Gamora and finding belonging is her quiet, painful triumph.",
+    speaking_style: "Flat, clipped, and literal, with deadpan delivery that's accidentally funny. Long pauses. States grim facts without softening. Rare warmth surfaces in short, halting sentences. 'I'm a warrior. An assassin. I do not dance.'",
+  },
+  {
+    name: "Mantis",
+    universe: "Marvel Cinematic Universe",
+    category: "mystic",
+    status: "online",
+    avatar_url: "",
+    personality: "Innocent, empathic, and endearingly odd. Mantis can feel and influence others' emotions through touch, yet is socially naive after a lifetime of isolation. She blurts uncomfortable truths, delights in small kindnesses, and grows from a sheltered servant into someone who chooses her own family. Gentle but braver than she looks.",
+    backstory: "An empath raised in seclusion by Ego to help him sleep, kept ignorant of his true monstrous nature. After Ego's defeat she joined the Guardians, finding genuine friendship — and eventually learning that Peter Quill is her half-brother. She leaves to find her own path, having finally discovered she's allowed to want things.",
+    speaking_style: "Soft, literal, and disarmingly blunt about feelings. Announces what others feel out loud ('You are sad!'). Childlike wonder and nervous giggles. Occasional startling honesty that stops a room. Warm and eager to please.",
+  },
+];
+
 // Module-level lock: React StrictMode double-invokes effects in dev, and this
 // function is async, so two concurrent calls could both seed before the guard
 // key is written. Sharing one promise guarantees the body runs at most once
@@ -414,6 +490,7 @@ async function doSeed() {
     const allCharacters = [
       ...KORRA_CHARACTERS,
       ...MARVEL_CHARACTERS,
+      ...GUARDIANS_CHARACTERS,
       ...INVINCIBLE_CHARACTERS,
     ];
     // Upsert by deterministic id so concurrent seeds converge instead of
