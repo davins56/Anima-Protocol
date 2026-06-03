@@ -5,7 +5,7 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 
@@ -64,6 +64,7 @@ export default function MainHome() {
   const navigate = useNavigate();
   const canvasRef = useRef(null);
   const animRef = useRef(null);
+  const photoInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
   const [anima, setAnima] = useState(null);
@@ -73,11 +74,38 @@ export default function MainHome() {
   const [greeting, setGreeting] = useState(GREETINGS[0]);
   const [loading, setLoading] = useState(true);
   const [aiEditOpen, setAiEditOpen] = useState(false);
+  // The image fed into the AI edit modal: either the saved avatar (edit flow)
+  // or a freshly picked photo from disk (pick-then-edit flow).
+  const [editSource, setEditSource] = useState(null);
+  const [editingNewPhoto, setEditingNewPhoto] = useState(false);
 
   const handleApplyAiPhoto = async (dataUrl) => {
     if (!anima?.id) return;
     await base44.entities.Anima.update(anima.id, { avatar_url: dataUrl });
     setAnima((prev) => (prev ? { ...prev, avatar_url: dataUrl } : prev));
+  };
+
+  const openEditExisting = () => {
+    setEditSource(anima?.avatar_url || null);
+    setEditingNewPhoto(false);
+    setAiEditOpen(true);
+  };
+
+  // Pick a photo from disk, then open the AI edit modal pre-loaded with it so
+  // the user can transform and preview before it becomes the avatar. The modal
+  // downscales to a small JPEG on save (whether AI-edited or used as-is).
+  const handlePhotoSelected = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      setEditSource(reader.result);
+      setEditingNewPhoto(true);
+      setAiEditOpen(true);
+    };
+    reader.readAsDataURL(file);
   };
 
   const loadHomeData = useCallback(async () => {
@@ -221,15 +249,34 @@ export default function MainHome() {
             <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
             <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
           </button>
-          {anima?.avatar_url?.startsWith("data:") && (
-            <button
-              type="button"
-              onClick={() => setAiEditOpen(true)}
-              className="flex items-center gap-1.5 mb-3 px-2.5 py-1 border border-cyan-500/25 text-cyan-400/70 hover:text-cyan-300 hover:border-cyan-400/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors"
-            >
-              <Wand2 className="w-3 h-3" />
-              AI Edit
-            </button>
+          {anima?.id && (
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoSelected}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-2.5 py-1 border border-cyan-500/25 text-cyan-400/70 hover:text-cyan-300 hover:border-cyan-400/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors"
+              >
+                <ImagePlus className="w-3 h-3" />
+                Upload Photo
+              </button>
+              {anima?.avatar_url?.startsWith("data:") && (
+                <button
+                  type="button"
+                  onClick={openEditExisting}
+                  className="flex items-center gap-1.5 px-2.5 py-1 border border-cyan-500/25 text-cyan-400/70 hover:text-cyan-300 hover:border-cyan-400/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors"
+                >
+                  <Wand2 className="w-3 h-3" />
+                  AI Edit
+                </button>
+              )}
+            </div>
           )}
           <h1
             className="text-2xl sm:text-3xl tracking-[0.35em] font-bold text-cyan-400 uppercase"
@@ -426,7 +473,8 @@ export default function MainHome() {
 
       <AvatarAIEditModal
         isOpen={aiEditOpen}
-        sourceImage={anima?.avatar_url}
+        sourceImage={editSource}
+        allowSaveOriginal={editingNewPhoto}
         onClose={() => setAiEditOpen(false)}
         onApply={handleApplyAiPhoto}
       />

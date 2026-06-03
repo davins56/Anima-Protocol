@@ -71,7 +71,7 @@ function downscaleDataUrl(src, maxSize, quality) {
   });
 }
 
-export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onApply }) {
+export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onApply, allowSaveOriginal = false }) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -148,11 +148,12 @@ export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onAppl
   };
 
   const handleApply = async () => {
-    if (!result) return;
+    const toApply = result || (allowSaveOriginal ? sourceImage : null);
+    if (!toApply) return;
     setApplying(true);
     setError("");
     try {
-      const small = await downscaleDataUrl(result, 512, 0.85);
+      const small = await downscaleDataUrl(toApply, 512, 0.85);
       await onApply(small);
       onClose();
     } catch (err) {
@@ -283,7 +284,7 @@ export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onAppl
                   {result ? "Regenerate" : "Generate"}
                 </button>
               )}
-              {result && (
+              {(result || (allowSaveOriginal && sourceImage)) && (
                 <button
                   type="button"
                   onClick={handleApply}
@@ -291,7 +292,7 @@ export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onAppl
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-400/20 border border-cyan-400 text-cyan-200 hover:bg-cyan-400/30 font-mono text-[11px] tracking-[0.2em] uppercase transition-all disabled:opacity-40"
                 >
                   {applying ? <Loader className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Apply
+                  {result ? "Apply" : "Use Photo"}
                 </button>
               )}
             </div>
