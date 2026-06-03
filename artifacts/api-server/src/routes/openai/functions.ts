@@ -345,6 +345,67 @@ router.post("/invoke/:fnName", async (req, res) => {
   }
 });
 
+// Maps a raw error from the gpt-image-1 edit call into a stable
+// { status, code, error } shape the client can branch on to show specific
+// guidance (rate limits, content-policy rejections, etc). Pure + exported so
+// it can be unit-tested without hitting OpenAI.
+export function mapImageEditError(err: unknown): {
+  status: number;
+  code: string;
+  error: string;
+} {
+  const e = (err ?? {}) as {
+    status?: number;
+    code?: string;
+    type?: string;
+    message?: string;
+    error?: { code?: string; type?: string; message?: string };
+  };
+  const rawMessage =
+    e.message || e.error?.message || (typeof err === "string" ? err : "") || "Image edit failed.";
+  const rawCode = (e.code || e.error?.code || e.type || e.error?.type || "").toString();
+  const haystack = `${rawCode} ${rawMessage}`.toLowerCase();
+
+  const upstreamStatus =
+    typeof e.status === "number" && e.status >= 400 && e.status < 600 ? e.status : undefined;
+
+  // Content-policy / moderation rejection.
+  if (
+    rawCode === "moderation_blocked" ||
+    rawCode === "content_policy_violation" ||
+    haystack.includes("content policy") ||
+    haystack.includes("safety system") ||
+    haystack.includes("moderation")
+  ) {
+    return {
+      status: 400,
+      code: "content_policy",
+      error: "That request was blocked by the content safety filter.",
+    };
+  }
+
+  // Rate limit / quota.
+  if (
+    upstreamStatus === 429 ||
+    rawCode === "rate_limit_exceeded" ||
+    rawCode === "insufficient_quota" ||
+    haystack.includes("rate limit") ||
+    haystack.includes("quota")
+  ) {
+    return {
+      status: 429,
+      code: "rate_limit",
+      error: "The image service is busy right now.",
+    };
+  }
+
+  return {
+    status: upstreamStatus ?? 500,
+    code: "server_error",
+    error: rawMessage,
+  };
+}
+
 // AI photo edit: takes a base64 image data URL plus a text prompt and returns
 // an AI-transformed version (gpt-image-1 edit). Gated to signed-in users since
 // image generation is a paid call. The result is returned as a PNG data URL.
@@ -398,8 +459,8 @@ router.post("/image-edit", async (req, res) => {
     }
     res.json({ image: `data:image/png;base64,${b64}` });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: msg });
+    const mapped = mapImageEditError(err);
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 

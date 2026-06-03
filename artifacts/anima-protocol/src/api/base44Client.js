@@ -53,16 +53,30 @@ async function storeFetch(path, options = {}) {
 // URL. Used by the home-page "add photo" AI edit feature.
 const API_BASE = `${window.location.origin}/api`;
 
-export async function editImage({ image, prompt }) {
+export async function editImage({ image, prompt, signal }) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/openai/image-edit`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ image, prompt }),
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/openai/image-edit`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ image, prompt }),
+      signal,
+    });
+  } catch (err) {
+    // Re-throw aborts untouched so callers can distinguish a user cancel from a
+    // genuine failure; everything else here is a connectivity problem.
+    if (err?.name === 'AbortError') throw err;
+    const netErr = new Error('Network request failed.');
+    netErr.code = 'network';
+    throw netErr;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+    const e = new Error(err.error || res.statusText);
+    e.status = res.status;
+    e.code = err.code;
+    throw e;
   }
   return res.json();
 }
