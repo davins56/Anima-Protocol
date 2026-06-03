@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, userProfiles } from "@workspace/db";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
@@ -438,6 +438,360 @@ router.put("/profile", async (req, res) => {
     })
     .returning();
   res.json(row.data as Record<string, unknown>);
+});
+
+// --- Chat messages (stored as individual rows) ------------------------------
+// Chat messages used to live as one big JSONB `messages` array on each
+// ChatSession record, so every append/edit rewrote the whole history and reads
+// loaded all of it. They now live as their own rows (entity_name 'ChatMessage')
+// keyed by `session_id` and ordered by a per-session integer `seq`, so an
+// append inserts ONE row, reads can page, and the chat UI is otherwise
+// unchanged. Existing sessions are migrated transparently on first access.
+//
+// These routes are registered before the generic /:entity routes so the literal
+// "messages" segment wins over the entity wildcard.
+const CHAT_MESSAGE = "ChatMessage";
+const CHAT_SESSION = "ChatSession";
+
+// `data -> 'session_id' = "<id>"` — type-faithful jsonb equality, mirroring the
+// generic store's filter so a ChatMessage is scoped to exactly one session.
+function sessionIdEq(sessionId: string): SQL {
+  return sql`${userEntities.data} -> 'session_id' = ${JSON.stringify(sessionId)}::jsonb`;
+}
+
+type Row = typeof userEntities.$inferSelect;
+type MsgData = Record<string, unknown>;
+
+function asObject(m: unknown): MsgData {
+  return m && typeof m === "object" && !Array.isArray(m)
+    ? (m as MsgData)
+    : { content: m == null ? "" : String(m) };
+}
+
+// Lazily split a legacy ChatSession.messages blob into ChatMessage rows the
+// first time a session's messages are touched, then clear the blob and flag the
+// session migrated. Runs inside the caller's transaction so it is atomic, and is
+// idempotent: the `messages_migrated` flag short-circuits subsequent calls, and
+// the existing-rows guard avoids double-inserting if a flag was ever lost.
+async function ensureSessionMigrated(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+  sessionId: string,
+): Promise<void> {
+  // Serialize everything that touches one session's message stream within its
+  // transaction: migration, and (because append/replace call this first) seq
+  // assignment. This makes concurrent appends to the same session strictly
+  // ordered (no duplicate seq) and concurrent first-reads migrate exactly once,
+  // without a unique constraint that would surface as a client-visible failure.
+  // The lock is keyed per (user, session) and auto-releases at transaction end,
+  // and since each transaction locks exactly one pair there is no deadlock risk.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
+  );
+
+  const [session] = await tx
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_SESSION),
+        eq(userEntities.entityId, sessionId),
+      ),
+    )
+    .limit(1);
+  if (!session) return;
+  const data = session.data as MsgData;
+  if (data.messages_migrated) return;
+
+  const blob = Array.isArray(data.messages) ? (data.messages as unknown[]) : [];
+  const now = new Date().toISOString();
+
+  if (blob.length > 0) {
+    const existing = await tx
+      .select({ id: userEntities.id })
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          sessionIdEq(sessionId),
+        ),
+      )
+      .limit(1);
+    if (existing.length === 0) {
+      let i = 0;
+      for (const raw of blob) {
+        const msg = asObject(raw);
+        const id = String(msg.id ?? makeId());
+        await tx.insert(userEntities).values({
+          userId,
+          entityName: CHAT_MESSAGE,
+          entityId: id,
+          data: {
+            ...msg,
+            id,
+            session_id: sessionId,
+            seq: i,
+            created_date: msg.created_date ?? msg.timestamp ?? now,
+            updated_date: now,
+          },
+        });
+        i += 1;
+      }
+    }
+  }
+
+  const { messages: _omit, ...rest } = data;
+  await tx
+    .update(userEntities)
+    .set({
+      data: { ...rest, messages: [], messages_migrated: true },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_SESSION),
+        eq(userEntities.entityId, sessionId),
+      ),
+    );
+}
+
+// Read one session's messages ordered by seq. Paging contract:
+//   (no limit)            -> the whole history, ascending seq
+//   limit=N               -> the most recent N messages, ascending seq
+//   limit=N & before_seq  -> the N messages with seq < before_seq, ascending
+// "most recent N" is fetched desc+limit then reversed so the client always gets
+// chronological order regardless of which page it asked for.
+async function readMessages(
+  userId: string,
+  sessionId: string,
+  limit: number | undefined,
+  beforeSeq: number | undefined,
+): Promise<MsgData[]> {
+  const conds: SQL[] = [
+    eq(userEntities.userId, userId),
+    eq(userEntities.entityName, CHAT_MESSAGE),
+    sessionIdEq(sessionId),
+  ];
+  if (beforeSeq !== undefined) {
+    conds.push(sql`(${userEntities.data} ->> 'seq')::numeric < ${beforeSeq}`);
+  }
+  const cap = withinLimit(limit);
+  if (cap === undefined) {
+    const rows = await db
+      .select()
+      .from(userEntities)
+      .where(and(...conds))
+      .orderBy(sql`(${userEntities.data} ->> 'seq')::numeric asc`);
+    return rows.map((r) => r.data as MsgData);
+  }
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(and(...conds))
+    .orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`)
+    .limit(cap);
+  return rows.map((r) => r.data as MsgData).reverse();
+}
+
+// GET /messages?session_id=&limit=&before_seq= — paged read (migrates on first
+// access). Returned messages are always in ascending seq (chronological) order.
+router.get("/messages", async (req, res) => {
+  const userId = getUserId(req);
+  const sessionId =
+    typeof req.query.session_id === "string" ? req.query.session_id : "";
+  if (!sessionId) {
+    res.status(400).json({ error: "session_id is required" });
+    return;
+  }
+  const limit =
+    typeof req.query.limit === "string" && req.query.limit !== ""
+      ? Number(req.query.limit)
+      : undefined;
+  const beforeSeq =
+    typeof req.query.before_seq === "string" && req.query.before_seq !== ""
+      ? Number(req.query.before_seq)
+      : undefined;
+
+  await db.transaction((tx) => ensureSessionMigrated(tx, userId, sessionId));
+  const messages = await readMessages(userId, sessionId, limit, beforeSeq);
+  res.json(messages);
+});
+
+// POST /messages/by-sessions { ids: [] } — batch hydration for the client's
+// transparent ChatSession.list()/get() message attachment. Migrates each
+// session then returns { [sessionId]: message[] } in one query.
+router.post("/messages/by-sessions", async (req, res) => {
+  const userId = getUserId(req);
+  const ids = Array.isArray(req.body?.ids)
+    ? (req.body.ids as unknown[]).map(String)
+    : [];
+  const bySession: Record<string, MsgData[]> = {};
+  for (const id of ids) bySession[id] = [];
+  if (ids.length === 0) {
+    res.json(bySession);
+    return;
+  }
+
+  for (const sid of ids) {
+    await db.transaction((tx) => ensureSessionMigrated(tx, userId, sid));
+  }
+
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_MESSAGE),
+        inArray(sql`(${userEntities.data} ->> 'session_id')`, ids),
+      ),
+    )
+    .orderBy(sql`(${userEntities.data} ->> 'seq')::numeric asc`);
+
+  for (const r of rows) {
+    const d = r.data as MsgData;
+    const sid = String(d.session_id);
+    if (!bySession[sid]) bySession[sid] = [];
+    bySession[sid].push(d);
+  }
+  res.json(bySession);
+});
+
+// POST /messages { session_id, message } — append ONE message. The server
+// assigns the next seq atomically (within a transaction) so an append never has
+// to send or rewrite the existing history. This is the hot path.
+router.post("/messages", async (req, res) => {
+  const userId = getUserId(req);
+  const body = req.body as { session_id?: string; message?: unknown };
+  const sessionId = body.session_id;
+  if (!sessionId || !body.message) {
+    res.status(400).json({ error: "session_id and message are required" });
+    return;
+  }
+  const created = await db.transaction(async (tx) => {
+    await ensureSessionMigrated(tx, userId, sessionId);
+    const [agg] = await tx
+      .select({
+        maxSeq: sql<string>`coalesce(max((${userEntities.data} ->> 'seq')::numeric), -1)`,
+      })
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          sessionIdEq(sessionId),
+        ),
+      );
+    const seq = Number(agg?.maxSeq ?? -1) + 1;
+    const now = new Date().toISOString();
+    const msg = asObject(body.message);
+    const id = String(msg.id ?? makeId());
+    const data: MsgData = {
+      ...msg,
+      id,
+      session_id: sessionId,
+      seq,
+      created_date: msg.created_date ?? now,
+      updated_date: now,
+    };
+    await tx.insert(userEntities).values({
+      userId,
+      entityName: CHAT_MESSAGE,
+      entityId: id,
+      data,
+    });
+    return data;
+  });
+  res.status(201).json(created);
+});
+
+// POST /messages/replace { session_id, messages } — reconcile a full message
+// array against the stored rows. Backs the client's ChatSession.update({messages})
+// compatibility shim so the existing edit/delete/rewind flows keep working
+// unchanged. It diffs by message id so an edit updates ONE row, a rewind deletes
+// only the trimmed tail, etc. (rather than rewriting every row), and reassigns
+// seq by array position so order always follows the array.
+router.post("/messages/replace", async (req, res) => {
+  const userId = getUserId(req);
+  const body = req.body as { session_id?: string; messages?: unknown };
+  const sessionId = body.session_id;
+  if (!sessionId || !Array.isArray(body.messages)) {
+    res.status(400).json({ error: "session_id and messages[] are required" });
+    return;
+  }
+  const incoming = body.messages as unknown[];
+  const out = await db.transaction(async (tx) => {
+    await ensureSessionMigrated(tx, userId, sessionId);
+    const current: Row[] = await tx
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          sessionIdEq(sessionId),
+        ),
+      );
+    const currentById = new Map<string, Row>();
+    for (const r of current) currentById.set(String((r.data as MsgData).id), r);
+
+    const now = new Date().toISOString();
+    const kept = new Set<string>();
+    const result: MsgData[] = [];
+    let i = 0;
+    for (const raw of incoming) {
+      const msg = asObject(raw);
+      const existingId =
+        msg.id != null && currentById.has(String(msg.id))
+          ? String(msg.id)
+          : null;
+      const id = existingId ?? String(msg.id ?? makeId());
+      const prev = existingId
+        ? (currentById.get(existingId)!.data as MsgData)
+        : null;
+      const data: MsgData = {
+        ...msg,
+        id,
+        session_id: sessionId,
+        seq: i,
+        created_date: prev?.created_date ?? msg.created_date ?? now,
+        updated_date: now,
+      };
+      await tx
+        .insert(userEntities)
+        .values({ userId, entityName: CHAT_MESSAGE, entityId: id, data })
+        .onConflictDoUpdate({
+          target: [
+            userEntities.userId,
+            userEntities.entityName,
+            userEntities.entityId,
+          ],
+          set: { data, updatedAt: new Date() },
+        });
+      kept.add(id);
+      result.push(data);
+      i += 1;
+    }
+    for (const r of current) {
+      const rid = String((r.data as MsgData).id);
+      if (!kept.has(rid)) {
+        await tx
+          .delete(userEntities)
+          .where(
+            and(
+              eq(userEntities.userId, userId),
+              eq(userEntities.entityName, CHAT_MESSAGE),
+              eq(userEntities.entityId, rid),
+            ),
+          );
+      }
+    }
+    return result;
+  });
+  res.json(out);
 });
 
 // --- Bulk create ------------------------------------------------------------

@@ -95,6 +95,17 @@ export const userEntities = pgTable(
       t.entityName,
       sql`(data -> 'character_id')`,
     ),
+    // Chat messages are stored as individual rows (entity_name 'ChatMessage')
+    // keyed by session_id and ordered by a per-session integer `seq`. This
+    // composite index lets the store read one session's messages in seq order
+    // (with a LIMIT for paging) without a sort step, and keeps appends cheap as
+    // a conversation's history grows.
+    userEntitySessionSeqIdx: index("user_entities_session_seq_idx").on(
+      t.userId,
+      t.entityName,
+      sql`(data -> 'session_id')`,
+      sql`((data ->> 'seq')::numeric)`,
+    ),
   }),
 );
 

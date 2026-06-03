@@ -298,8 +298,95 @@ async function queryEntity(entityName, opts) {
   }
 }
 
+// --- Chat messages (stored as individual rows) ------------------------------
+// Chat messages now live as their own rows on the server (see api-server
+// /messages routes), not as one big array on the ChatSession record. These
+// helpers back base44.messages and the ChatSession hydration/shim below so the
+// ~50 places that read `session.messages` and the handful that write it keep
+// working unchanged, while appends stay O(1) and reads can page.
+async function throwErr(res) {
+  const err = await res.json().catch(() => ({ error: res.statusText }));
+  throw new Error(err.error || res.statusText);
+}
+
+// Read a session's messages, ascending (chronological) seq. With no limit this
+// is the whole history; limit/beforeSeq page it (see the server contract).
+async function listMessages(sessionId, { limit, beforeSeq } = {}) {
+  if (!sessionId) return [];
+  const token = await getToken();
+  if (!token) return [];
+  const params = new URLSearchParams();
+  params.set('session_id', sessionId);
+  if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
+  if (typeof beforeSeq === 'number') params.set('before_seq', String(beforeSeq));
+  const res = await storeFetch(`/messages?${params.toString()}`);
+  if (res.status === 401) return [];
+  if (!res.ok) await throwErr(res);
+  return res.json();
+}
+
+// Append ONE message; the server assigns its seq atomically so this never
+// rewrites the existing history. Returns the stored message (with id + seq).
+async function appendMessage(sessionId, message) {
+  const res = await storeFetch('/messages', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId, message: message || {} }),
+  });
+  if (!res.ok) await throwErr(res);
+  bumpVersion('ChatMessage');
+  bumpVersion('ChatSession');
+  return res.json();
+}
+
+// Reconcile a full message array against the stored rows (diff by id). Backs the
+// ChatSession.update({messages}) shim so edit/delete/rewind keep working.
+async function replaceMessages(sessionId, messages) {
+  const res = await storeFetch('/messages/replace', {
+    method: 'POST',
+    body: JSON.stringify({
+      session_id: sessionId,
+      messages: Array.isArray(messages) ? messages : [],
+    }),
+  });
+  if (!res.ok) await throwErr(res);
+  bumpVersion('ChatMessage');
+  bumpVersion('ChatSession');
+  return res.json();
+}
+
+// Batch-fetch messages for many sessions in one request: { [id]: message[] }.
+async function messagesBySessions(ids) {
+  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  if (list.length === 0) return {};
+  const token = await getToken();
+  if (!token) return {};
+  const res = await storeFetch('/messages/by-sessions', {
+    method: 'POST',
+    body: JSON.stringify({ ids: list }),
+  });
+  if (res.status === 401) return {};
+  if (!res.ok) await throwErr(res);
+  return res.json();
+}
+
+// Attach `.messages` (from rows) to a single session for backward compatibility.
+async function hydrateOne(session) {
+  if (!session || !session.id) return session;
+  const messages = await listMessages(session.id);
+  return { ...session, messages };
+}
+
+// Attach `.messages` to many sessions via one batch query.
+async function hydrateMany(sessions) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return sessions;
+  const map = await messagesBySessions(sessions.map((s) => s && s.id));
+  return sessions.map((s) =>
+    s && s.id ? { ...s, messages: map[s.id] || [] } : s,
+  );
+}
+
 function entityStore(entityName) {
-  return {
+  const base = {
     // SDK-style signatures used across the app:
     //   list()                     → all items
     //   list("-updated_date", 50)  → sorted + limited
@@ -385,6 +472,49 @@ function entityStore(entityName) {
       return queryEntity(entityName, { filters, sort, limit });
     },
   };
+
+  // ChatSession messages live as their own rows now, but the rest of the app
+  // still expects each session to carry a `.messages` array (reads) and to write
+  // it back via update({messages}). Wrap the store so:
+  //  - get()/list() transparently HYDRATE `.messages` from the message rows
+  //    (list opts out with { withMessages: false } for metadata-only lists like
+  //    the chat sidebar, avoiding fetching every session's full history);
+  //  - update({messages}) reconciles the array into rows (an edit touches one
+  //    row, a rewind trims the tail) instead of rewriting the whole history.
+  // The high-frequency append path does NOT go through here — callers use
+  // base44.messages.append for an O(1) single-row insert.
+  if (entityName === 'ChatSession') {
+    return {
+      ...base,
+      async list(sortOrFilters, limit, opts) {
+        const sessions = await base.list(sortOrFilters, limit);
+        if (opts && opts.withMessages === false) return sessions;
+        return hydrateMany(sessions);
+      },
+      async filter(filters = {}, sort, limit, opts) {
+        const sessions = await queryEntity(entityName, { filters, sort, limit });
+        if (opts && opts.withMessages === false) return sessions;
+        return hydrateMany(sessions);
+      },
+      async get(id) {
+        return hydrateOne(await base.get(id));
+      },
+      async update(id, data) {
+        if (data && Object.prototype.hasOwnProperty.call(data, 'messages')) {
+          const { messages, ...rest } = data;
+          const savedMessages = await replaceMessages(id, messages);
+          const session =
+            Object.keys(rest).length > 0
+              ? await base.update(id, rest)
+              : await base.get(id);
+          return { ...(session || { id }), messages: savedMessages };
+        }
+        return base.update(id, data);
+      },
+    };
+  }
+
+  return base;
 }
 
 // --- Profile / identity -----------------------------------------------------
@@ -506,6 +636,16 @@ export const base44 = {
   },
 
   entities: entitiesProxy,
+
+  // Chat messages stored as individual rows (see the /messages routes). The
+  // hot append path uses base44.messages.append for an O(1) single-row insert;
+  // reads can page via list({ limit, beforeSeq }).
+  messages: {
+    list: (sessionId, opts) => listMessages(sessionId, opts),
+    append: (sessionId, message) => appendMessage(sessionId, message),
+    replace: (sessionId, messages) => replaceMessages(sessionId, messages),
+    bySessions: (ids) => messagesBySessions(ids),
+  },
 
   // Mirror the SDK's service-role accessor. There is no privilege separation
   // here — server queries are always scoped to the authenticated user — so it

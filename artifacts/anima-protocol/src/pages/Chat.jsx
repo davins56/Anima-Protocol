@@ -463,7 +463,12 @@ export default function Chat() {
   };
 
   const loadSessions = async () => {
-    const data = await base44.entities.ChatSession.list("-updated_date", 50);
+    // Sidebar list only needs metadata (title/last_message/updated_date), so opt
+    // out of message hydration — otherwise this would fetch every session's full
+    // history just to render the list.
+    const data = await base44.entities.ChatSession.list("-updated_date", 50, {
+      withMessages: false,
+    });
     setSessions(data);
   };
 
@@ -492,10 +497,15 @@ export default function Chat() {
   };
 
   const loadSession = async (id) => {
-    const data = await base44.entities.ChatSession.list("-updated_date", 200);
+    // Find the session by metadata only, then load just its messages (paged from
+    // rows) — hydrating all 200 sessions to use one would be wasteful.
+    const data = await base44.entities.ChatSession.list("-updated_date", 200, {
+      withMessages: false,
+    });
     const session = data.find((s) => s.id === id);
     if (session) {
-      setActiveSession(session);
+      const messages = await base44.messages.list(id);
+      setActiveSession({ ...session, messages });
       setMode(session.mode || "solo");
       setCurrentMood("neutral");
       setCharacterMemories([]);
@@ -748,10 +758,12 @@ export default function Chat() {
       timestamp: new Date().toISOString(),
     };
     
-    const updatedMessages = [...(activeSession.messages || []), eventMessage];
-    await base44.entities.ChatSession.update(activeSession.id, { messages: updatedMessages });
-    
-    setActiveSession((prev) => ({ ...prev, messages: updatedMessages }));
+    const stored = await base44.messages.append(activeSession.id, eventMessage);
+
+    setActiveSession((prev) => ({
+      ...prev,
+      messages: [...(prev.messages || []), stored || eventMessage],
+    }));
     setEventSuggestions([]);
     
     // Auto-trigger narrative analysis for next suggestions
@@ -1277,13 +1289,33 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // cleanContent used downstream for background tasks (use first message content as proxy)
       const cleanContent = newAiMessages[0]?.content || strippedResult;
 
-      const finalMessages = [...updatedMessages, ...eventMessages, ...newAiMessages];
+      // Append only the NEW messages this turn (the user message — unless this
+      // was a "continue" — plus any event messages and the AI reply) as their own
+      // rows. This never rewrites the prior history. `updatedMessages` is the
+      // history already on rows plus, for a normal turn, the user message at the
+      // end; everything before that already exists as rows.
+      const priorHistory = isContinue
+        ? updatedMessages
+        : updatedMessages.slice(0, -1);
+      const newMessages = [
+        ...(isContinue ? [] : [userMessage]),
+        ...eventMessages,
+        ...newAiMessages,
+      ];
+      const storedNew = [];
+      for (const m of newMessages) {
+        storedNew.push(await base44.messages.append(activeSession.id, m));
+      }
 
-      await base44.entities.ChatSession.update(activeSession.id, {
-        messages: finalMessages,
-        ...(content ? { last_message: content.slice(0, 60), title: activeSession.title || content.slice(0, 30) } : {}),
-      });
+      // Session metadata only — NEVER the messages array (those are rows now).
+      if (content) {
+        await base44.entities.ChatSession.update(activeSession.id, {
+          last_message: content.slice(0, 60),
+          title: activeSession.title || content.slice(0, 30),
+        });
+      }
 
+      const finalMessages = [...priorHistory, ...storedNew];
       setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
       await loadSessions();
 

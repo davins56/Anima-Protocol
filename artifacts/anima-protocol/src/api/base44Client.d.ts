@@ -4,8 +4,18 @@
 // `any` while the call shapes (list/get/create/update/delete/filter, auth,
 // integrations, functions) are described accurately.
 
+export interface ListOptions {
+  // ChatSession only: skip hydrating each session's `messages` (metadata-only
+  // lists such as the chat sidebar). Defaults to hydrating.
+  withMessages?: boolean;
+}
+
 export interface EntityStore {
-  list(sortOrFilters?: string | Record<string, unknown>, limit?: number): Promise<any[]>;
+  list(
+    sortOrFilters?: string | Record<string, unknown>,
+    limit?: number,
+    opts?: ListOptions,
+  ): Promise<any[]>;
   get(id: string): Promise<any | null>;
   create(data: Record<string, unknown>): Promise<any>;
   update(id: string, data: Record<string, unknown>): Promise<any>;
@@ -15,10 +25,28 @@ export interface EntityStore {
     filters?: Record<string, unknown>,
     sort?: string,
     limit?: number,
+    opts?: ListOptions,
   ): Promise<any[]>;
 }
 
 export type EntitiesProxy = Record<string, EntityStore>;
+
+export interface MessagePageOptions {
+  limit?: number;
+  beforeSeq?: number;
+}
+
+export interface Base44Messages {
+  // Read a session's messages in ascending (chronological) seq order. No
+  // options returns the whole history; limit/beforeSeq page it.
+  list(sessionId: string, opts?: MessagePageOptions): Promise<any[]>;
+  // Append one message; the server assigns its seq. Returns the stored message.
+  append(sessionId: string, message: Record<string, unknown>): Promise<any>;
+  // Reconcile a full message array into rows (diff by id).
+  replace(sessionId: string, messages: any[]): Promise<any[]>;
+  // Batch hydrate: { [sessionId]: message[] }.
+  bySessions(ids: string[]): Promise<Record<string, any[]>>;
+}
 
 export interface Base44Auth {
   isAuthenticated(): Promise<boolean>;
@@ -51,6 +79,7 @@ export type Base44Functions = {
 export interface Base44Client {
   auth: Base44Auth;
   entities: EntitiesProxy;
+  messages: Base44Messages;
   asServiceRole: { entities: EntitiesProxy };
   integrations: Base44Integrations;
   functions: Base44Functions;

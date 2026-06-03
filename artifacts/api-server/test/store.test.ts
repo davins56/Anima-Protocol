@@ -590,3 +590,238 @@ describe("concurrent seeding does not duplicate the starter roster", () => {
     expect(chars).toHaveLength(roster.length);
   });
 });
+
+describe("chat messages stored as individual rows", () => {
+  it("append assigns sequential seq and never rewrites history", async () => {
+    const U = user("msg_append");
+    const sid = "sess_append";
+
+    const a = await call(U, "POST", "/messages", {
+      session_id: sid,
+      message: { role: "user", content: "hello" },
+    });
+    expect(a.status).toBe(201);
+    expect(a.json.seq).toBe(0);
+    expect(a.json.id).toBeTruthy();
+    expect(a.json.session_id).toBe(sid);
+
+    const b = await call(U, "POST", "/messages", {
+      session_id: sid,
+      message: { role: "assistant", content: "hi there" },
+    });
+    expect(b.json.seq).toBe(1);
+    expect(b.json.id).not.toBe(a.json.id);
+
+    const list = (await call(U, "GET", `/messages?session_id=${sid}`))
+      .json as Json[];
+    expect(list.map((m) => m.content)).toEqual(["hello", "hi there"]);
+    expect(list.map((m) => m.seq)).toEqual([0, 1]);
+  });
+
+  it("requires session_id and message", async () => {
+    const U = user("msg_validate");
+    expect((await call(U, "POST", "/messages", { session_id: "s" })).status).toBe(
+      400,
+    );
+    expect((await call(U, "GET", "/messages")).status).toBe(400);
+  });
+
+  it("paging returns the most recent N ascending, before_seq pages back", async () => {
+    const U = user("msg_page");
+    const sid = "sess_page";
+    for (let i = 0; i < 5; i += 1) {
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "user", content: `m${i}` },
+      });
+    }
+
+    const recent = (
+      await call(U, "GET", `/messages?session_id=${sid}&limit=2`)
+    ).json as Json[];
+    expect(recent.map((m) => m.content)).toEqual(["m3", "m4"]);
+
+    const older = (
+      await call(U, "GET", `/messages?session_id=${sid}&limit=2&before_seq=3`)
+    ).json as Json[];
+    expect(older.map((m) => m.content)).toEqual(["m1", "m2"]);
+  });
+
+  it("by-sessions batch hydrates many sessions in one call", async () => {
+    const U = user("msg_batch");
+    await call(U, "POST", "/messages", {
+      session_id: "bs1",
+      message: { content: "one" },
+    });
+    await call(U, "POST", "/messages", {
+      session_id: "bs2",
+      message: { content: "two" },
+    });
+
+    const map = (
+      await call(U, "POST", "/messages/by-sessions", { ids: ["bs1", "bs2", "bs3"] })
+    ).json as Record<string, Json[]>;
+    expect(map.bs1.map((m) => m.content)).toEqual(["one"]);
+    expect(map.bs2.map((m) => m.content)).toEqual(["two"]);
+    // A session with no messages still returns an empty array.
+    expect(map.bs3).toEqual([]);
+  });
+
+  it("replace reconciles by id: edits one row, trims the tail, keeps ids", async () => {
+    const U = user("msg_replace");
+    const sid = "sess_replace";
+    const m0 = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "user", content: "first" },
+      })
+    ).json;
+    const m1 = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "assistant", content: "second" },
+      })
+    ).json;
+
+    // Edit the first message and drop the second (a rewind/delete via the shim).
+    const replaced = (
+      await call(U, "POST", "/messages/replace", {
+        session_id: sid,
+        messages: [{ ...m0, content: "first edited" }],
+      })
+    ).json as Json[];
+    expect(replaced).toHaveLength(1);
+    expect(replaced[0].id).toBe(m0.id);
+    expect(replaced[0].content).toBe("first edited");
+
+    const after = (await call(U, "GET", `/messages?session_id=${sid}`))
+      .json as Json[];
+    expect(after.map((m) => m.content)).toEqual(["first edited"]);
+    expect(after.find((m) => m.id === m1.id)).toBeUndefined();
+  });
+
+  it("append after replace continues the seq from the surviving rows", async () => {
+    const U = user("msg_replace_then_append");
+    const sid = "sess_rta";
+    const m0 = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { content: "a" },
+      })
+    ).json;
+    await call(U, "POST", "/messages", {
+      session_id: sid,
+      message: { content: "b" },
+    });
+    // Trim back to just the first message.
+    await call(U, "POST", "/messages/replace", {
+      session_id: sid,
+      messages: [m0],
+    });
+    const appended = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { content: "c" },
+      })
+    ).json;
+    expect(appended.seq).toBe(1);
+    const list = (await call(U, "GET", `/messages?session_id=${sid}`))
+      .json as Json[];
+    expect(list.map((m) => m.content)).toEqual(["a", "c"]);
+  });
+
+  it("migrates a legacy ChatSession.messages blob into rows on first read", async () => {
+    const U = user("msg_migrate");
+    const session = (
+      await call(U, "POST", "/ChatSession", {
+        title: "Legacy",
+        messages: [
+          { role: "user", content: "legacy 1" },
+          { role: "assistant", content: "legacy 2" },
+        ],
+      })
+    ).json;
+
+    // First read migrates the blob into rows (ascending seq).
+    const list = (
+      await call(U, "GET", `/messages?session_id=${session.id}`)
+    ).json as Json[];
+    expect(list.map((m) => m.content)).toEqual(["legacy 1", "legacy 2"]);
+    expect(list.map((m) => m.seq)).toEqual([0, 1]);
+
+    // The session blob is cleared and flagged so migration is idempotent.
+    const reread = (await call(U, "GET", `/ChatSession/${session.id}`)).json;
+    expect(reread.messages).toEqual([]);
+    expect(reread.messages_migrated).toBe(true);
+
+    // An append lands after the migrated rows.
+    const appended = (
+      await call(U, "POST", "/messages", {
+        session_id: session.id,
+        message: { content: "new" },
+      })
+    ).json;
+    expect(appended.seq).toBe(2);
+  });
+
+  it("concurrent appends to one session get unique, gapless seq", async () => {
+    const U = user("msg_concurrent_append");
+    const sid = "sess_concurrent";
+    const N = 12;
+    await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        call(U, "POST", "/messages", {
+          session_id: sid,
+          message: { content: `c${i}` },
+        }),
+      ),
+    );
+    const list = (await call(U, "GET", `/messages?session_id=${sid}`))
+      .json as Json[];
+    const seqs = list.map((m) => m.seq).sort((a: any, b: any) => a - b);
+    expect(seqs).toEqual(Array.from({ length: N }, (_, i) => i));
+    // No duplicate ids either.
+    expect(new Set(list.map((m) => m.id)).size).toBe(N);
+  });
+
+  it("concurrent first reads migrate a blob exactly once", async () => {
+    const U = user("msg_concurrent_migrate");
+    const session = (
+      await call(U, "POST", "/ChatSession", {
+        title: "Race",
+        messages: [
+          { content: "x" },
+          { content: "y" },
+          { content: "z" },
+        ],
+      })
+    ).json;
+
+    // Hammer the session with parallel reads that each try to migrate.
+    await Promise.all([
+      call(U, "GET", `/messages?session_id=${session.id}`),
+      call(U, "GET", `/messages?session_id=${session.id}`),
+      call(U, "POST", "/messages/by-sessions", { ids: [session.id] }),
+      call(U, "GET", `/messages?session_id=${session.id}`),
+    ]);
+
+    const list = (await call(U, "GET", `/messages?session_id=${session.id}`))
+      .json as Json[];
+    // Exactly the 3 original messages, not duplicated.
+    expect(list.map((m) => m.content)).toEqual(["x", "y", "z"]);
+    expect(list.map((m) => m.seq)).toEqual([0, 1, 2]);
+  });
+
+  it("messages are isolated per account", async () => {
+    const A = user("msg_iso_a");
+    const B = user("msg_iso_b");
+    await call(A, "POST", "/messages", {
+      session_id: "shared_sid",
+      message: { content: "A secret" },
+    });
+    const bList = (
+      await call(B, "GET", `/messages?session_id=shared_sid`)
+    ).json as Json[];
+    expect(bList).toEqual([]);
+  });
+});
