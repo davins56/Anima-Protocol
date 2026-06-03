@@ -31,7 +31,23 @@ case: a remote change is delayed until local editing pauses, never dropped.
 **Account switch:** `syncIdentity` calls `resetSyncBaseline()` when the user id changes, so
 the next poll re-baselines against the new account (no spurious/missed first change).
 
-**Wired pages:** MainHome, Characters, Journals, Wiki. Chat is intentionally NOT wired
-(active streaming surface — a blanket reload would corrupt in-progress generation).
+**Wired pages:** MainHome, Characters, Journals, Wiki, and Chat.
 QuestTrackingDashboard already self-polls every 3s. Non-wired pages still get fresh data on
 remount because the poller clears the cache on remote change.
+
+**Chat is a special case (streaming surface).** It refreshes the sidebar list (metadata-only,
+can't corrupt a reply) unconditionally, but refetches the OPEN thread's messages only when the
+device is idle (`!isLoading`) and the thread has no optimistic `__typing__`/`__thinking__`
+bubble. Rules that keep it correct:
+- A remote change arriving mid-generation is **deferred** (a `pendingRemoteSyncRef` flag), then
+  applied by an `isLoading`-watching effect once generation settles. Self-write suppression in
+  the poller already covers the local send itself; the deferral covers remote changes during the
+  AI-call window where no local write has happened recently.
+- The catch-up must be **retryable**: clear the pending flag ONLY on a successful apply. The
+  apply function returns true (applied / navigated-away) vs false (skipped because a reply is in
+  flight, or fetch error). Clearing the flag before the async apply resolves lets a second send
+  starting mid-catch-up permanently drop the deferred remote change. The settle effect uses a
+  `cancelled` guard so a stale async completion can't clear the flag after a new send re-armed it.
+- The pending-bubble check must read the LATEST committed `activeSession` (via an
+  `activeSessionRef` updated each render) AFTER the await — not the render-closure snapshot — or
+  a reply that started during the fetch is missed and gets clobbered.

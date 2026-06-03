@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow } from "@/lib/chatRewindHandlers";
@@ -563,6 +564,78 @@ export default function Chat() {
     });
     setCharacterEmotions(map);
   };
+
+  // ── Cross-device live sync ───────────────────────────────────────────────
+  // Another device on the same account may add messages or sessions. The store
+  // poller (base44Client) drops caches and fires `anima:store-changed`; we react
+  // here. Chat is a live streaming surface, so we never refetch the open thread
+  // while a reply is being generated — that would wipe the optimistic
+  // thinking/typing bubbles and the in-progress response. We defer such a
+  // refresh until the local device settles.
+  const pendingRemoteSyncRef = useRef(false);
+  // Mirror activeSession in a ref so the async sync can read the latest committed
+  // state (after its await) without depending on a stale render closure.
+  const activeSessionRef = useRef(null);
+  activeSessionRef.current = activeSession;
+
+  // Fetch the open thread's messages from the server and apply them, but never
+  // over an in-flight reply. Returns true if applied (or there was nothing to
+  // apply because the user navigated away), false if it was skipped/failed and
+  // should be retried once the device settles.
+  const syncActiveMessages = useCallback(async () => {
+    if (!sessionId) return true;
+    let messages;
+    try {
+      messages = await base44.messages.list(sessionId);
+    } catch {
+      return false; // transient — caller re-arms a retry
+    }
+    const cur = activeSessionRef.current;
+    if (!cur || cur.id !== sessionId) return true; // navigated away; new session loads fresh
+    // Never clobber a thread whose optimistic thinking/typing bubbles or
+    // streaming reply are in flight — signal a retry instead.
+    const hasPending = (cur.messages || []).some(
+      (m) =>
+        m.character_name === "__typing__" || m.character_name === "__thinking__",
+    );
+    if (hasPending) return false;
+    setActiveSession((prev) =>
+      prev && prev.id === sessionId ? { ...prev, messages } : prev,
+    );
+    return true;
+  }, [sessionId]);
+
+  const syncFromRemote = useCallback(() => {
+    // The sidebar list is metadata-only (no message hydration) and can't
+    // corrupt an in-progress reply, so refresh it unconditionally.
+    loadSessions();
+    if (isLoading) {
+      // Defer the open conversation's refetch until generation settles.
+      pendingRemoteSyncRef.current = true;
+      return;
+    }
+    syncActiveMessages().then((applied) => {
+      if (!applied) pendingRemoteSyncRef.current = true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, syncActiveMessages]);
+
+  useStoreSync(syncFromRemote);
+
+  // When local generation finishes, apply any remote change that arrived while
+  // we were busy (deferred above so it couldn't corrupt the streaming reply).
+  // Only clear the pending flag on a successful apply, so a fresh send starting
+  // mid-catch-up can't make us drop the deferred remote change.
+  useEffect(() => {
+    if (isLoading || !pendingRemoteSyncRef.current) return;
+    let cancelled = false;
+    syncActiveMessages().then((applied) => {
+      if (!cancelled && applied) pendingRemoteSyncRef.current = false;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, syncActiveMessages]);
 
   const handleNewSession = () => setShowModal(true);
 
