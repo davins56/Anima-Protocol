@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
@@ -102,8 +104,19 @@ export default function Chat() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
 
-  const [sessions, setSessions] = useState([]);
+  // Sidebar history is paged one screen at a time via a real SQL OFFSET, so deep
+  // histories never load every preceding row. Metadata-only (no message
+  // hydration) since the list only renders title/last_message.
+  const {
+    items: sessions,
+    hasMore: hasMoreSessions,
+    currentPage: sessionsPage,
+    nextPage: nextSessionsPage,
+    prevPage: prevSessionsPage,
+    goToPage: goToSessionsPage,
+  } = usePaginatedEntities("ChatSession", 50, "-updated_date", { withMessages: false });
   const [activeSession, setActiveSession] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -468,15 +481,13 @@ export default function Chat() {
     }
   };
 
-  const loadSessions = async () => {
-    // Sidebar list only needs metadata (title/last_message/updated_date), so opt
-    // out of message hydration — otherwise this would fetch every session's full
-    // history just to render the list.
-    const data = await base44.entities.ChatSession.list("-updated_date", 50, {
-      withMessages: false,
-    });
-    setSessions(data);
-  };
+  // Refresh the paged sidebar list. The list itself is owned by
+  // usePaginatedEntities (react-query); invalidating its cache refetches the
+  // page the user is currently viewing.
+  const loadSessions = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["ChatSession", "paginated"] }),
+    [queryClient],
+  );
 
   const loadCharacters = async () => {
     const [chars, animas] = await Promise.all([
@@ -503,12 +514,13 @@ export default function Chat() {
   };
 
   const loadSession = async (id) => {
-    // Find the session by metadata only, then load just its messages (paged from
-    // rows) — hydrating all 200 sessions to use one would be wasteful.
-    const data = await base44.entities.ChatSession.list("-updated_date", 200, {
+    // Fetch just this session's metadata by id, then load its messages
+    // separately. Looking it up directly (rather than scanning a capped list)
+    // means sessions on deep sidebar pages still open correctly.
+    const matches = await base44.entities.ChatSession.filter({ id }, undefined, 1, {
       withMessages: false,
     });
-    const session = data.find((s) => s.id === id);
+    const session = matches[0];
     if (session) {
       const messages = await base44.messages.list(id);
       setActiveSession({ ...session, messages });
@@ -530,7 +542,6 @@ export default function Chat() {
         loadInventory(session.character_id);
       }
     }
-    setSessions(data);
   };
 
   const loadRelationships = async (sid) => {
@@ -659,6 +670,9 @@ export default function Chat() {
       });
     }
 
+    // A new session sorts to the top (-updated_date), so jump to the first page
+    // and refresh so the user sees it immediately even if they had paged deep.
+    goToSessionsPage(0);
     await loadSessions();
     navigate(`/chat/${newSession.id}`);
     setShowMobileMenu(false);
@@ -1706,6 +1720,10 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
           onModeChange={setMode}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
+          hasMore={hasMoreSessions}
+          currentPage={sessionsPage}
+          onNextPage={nextSessionsPage}
+          onPrevPage={prevSessionsPage}
         />
       </div>
 
@@ -1754,6 +1772,10 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
               mode={mode}
               onModeChange={setMode}
               onNavigate={() => setShowMobileMenu(false)}
+              hasMore={hasMoreSessions}
+              currentPage={sessionsPage}
+              onNextPage={nextSessionsPage}
+              onPrevPage={prevSessionsPage}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, background: "rgba(0,0,0,0.6)" }} onClick={() => setShowMobileMenu(false)} />

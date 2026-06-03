@@ -5,7 +5,10 @@ import SessionSummary from "../sidebar/SessionSummary";
 
 import SidebarFooterMenu from "./SidebarFooterMenu";
 
-export default function Sidebar({ sessions, activeSessionId, onNewSession, onDeleteSession, mode, onModeChange, onNavigate, collapsed, onToggleCollapse }) {
+export default function Sidebar({ sessions, activeSessionId, onNewSession, onDeleteSession, mode, onModeChange, onNavigate, collapsed, onToggleCollapse, hasMore, currentPage, onNextPage, onPrevPage }) {
+
+  const paged = typeof currentPage === "number";
+  const showPager = paged && (hasMore || currentPage > 0);
 
   const navigate = useNavigate();
 
@@ -128,6 +131,30 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
             )}
           </div>
         ))}
+
+        {showPager && (
+          <div className="flex items-center justify-between gap-2 pt-2 mt-1 border-t border-primary/10">
+            <button
+              onClick={onPrevPage}
+              disabled={currentPage === 0}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 font-mono text-[8px] sm:text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-3 h-3" />
+              <span>Prev</span>
+            </button>
+            <span className="font-mono text-[8px] sm:text-[9px] text-primary/30 tracking-widest tabular-nums">
+              {currentPage + 1}
+            </span>
+            <button
+              onClick={onNextPage}
+              disabled={!hasMore}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 font-mono text-[8px] sm:text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
