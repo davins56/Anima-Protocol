@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, userProfiles } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
@@ -33,64 +33,151 @@ function makeId(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// Apply the SDK-style querying the client relies on: optional equality filters,
-// a sort string ("field" ascending, "-field" descending) and a numeric limit.
-function applyQuery(
-  items: Record<string, unknown>[],
-  filters: Record<string, unknown> | undefined,
-  sort: string | undefined,
-  limit: number | undefined,
-): Record<string, unknown>[] {
-  let result = items;
+// The client relies on SDK-style querying: optional equality filters, a sort
+// string ("field" ascending, "-field" descending) and a numeric limit. These
+// are pushed all the way down into the SQL query (filter -> WHERE, sort ->
+// ORDER BY, limit -> LIMIT) so reads stay fast and memory-light as a user's
+// history grows, instead of loading every row and filtering/sorting in JS.
 
-  if (filters && typeof filters === "object") {
-    const entries = Object.entries(filters);
-    if (entries.length) {
-      result = result.filter((item) =>
-        entries.every(([k, v]) => item[k] === v),
-      );
+// JSONB field names come from the request (filter keys / the sort string). When
+// the name is a plain identifier we inline it as a SQL literal so the planner
+// can match the expression indexes on user_entities (a bind parameter would
+// defeat them). Anything else falls back to a bound parameter — still correct,
+// just not index-accelerated. The strict pattern keeps inlining injection-safe.
+const SAFE_FIELD = /^[A-Za-z0-9_]+$/;
+function fieldKey(field: string): SQL {
+  return SAFE_FIELD.test(field) ? sql.raw(`'${field}'`) : sql`${field}::text`;
+}
+
+// Equality condition for one filter entry. Mirrors the client's JS
+// `item[key] === value` exactly:
+//  - scalars / null: compare the JSON sub-value by type AND value (jsonb `=`),
+//    so `5` never matches `"5"` and a filter of `null` only matches a present
+//    JSON null (an absent key yields SQL NULL, i.e. no match).
+//  - objects/arrays: JS `===` is reference equality, which never matches a
+//    freshly parsed filter value, so this is an impossible condition.
+function filterCondition(key: string, value: unknown): SQL {
+  if (value !== null && typeof value === "object") {
+    return sql`false`;
+  }
+  return sql`${userEntities.data} -> ${fieldKey(key)} = ${JSON.stringify(value)}::jsonb`;
+}
+
+function parseSort(sort: string): { field: string; desc: boolean } {
+  const desc = sort.startsWith("-");
+  return { field: desc ? sort.slice(1) : sort, desc };
+}
+
+// ORDER BY parts for a "field" / "-field" sort string. Mirrors the client's JS
+// comparator for a HOMOGENEOUS column: numeric compare when the JSON value is a
+// number, otherwise a lexical compare ("C" collation = byte order, matching JS
+// string `<`), with null/absent values always sorted last regardless of
+// direction. (Mixed number/non-number columns can't be expressed as a single
+// ORDER BY — see listEntities' fallback.)
+function orderByParts(sort: string): SQL[] {
+  const { field, desc } = parseSort(sort);
+  const key = fieldKey(field);
+  const tail = desc ? "desc nulls last" : "asc nulls last";
+  return [
+    sql`(case when jsonb_typeof(${userEntities.data} -> ${key}) = 'number' then (${userEntities.data} ->> ${key})::numeric end) ${sql.raw(tail)}`,
+    sql`(${userEntities.data} ->> ${key}) collate "C" ${sql.raw(tail)}`,
+  ];
+}
+
+// Exact replica of the client's old in-memory comparator. Used ONLY as a
+// fallback for mixed-type sort columns (see sortFieldIsMixed): that comparator
+// decides numeric-vs-lexical per PAIR (numeric only when both values are
+// numbers), which a single SQL ORDER BY cannot reproduce, so such columns are
+// sorted in JS exactly as before. Null/absent always sort last either way.
+function compareByField(field: string, desc: boolean) {
+  return (a: Record<string, unknown>, b: Record<string, unknown>): number => {
+    const av = a[field];
+    const bv = b[field];
+    if (av === bv) return 0;
+    if (av === undefined || av === null) return 1;
+    if (bv === undefined || bv === null) return -1;
+    let cmp: number;
+    if (typeof av === "number" && typeof bv === "number") {
+      cmp = av - bv;
+    } else {
+      cmp = String(av) < String(bv) ? -1 : 1;
     }
-  }
+    return desc ? -cmp : cmp;
+  };
+}
 
-  if (typeof sort === "string" && sort) {
-    const desc = sort.startsWith("-");
-    const field = desc ? sort.slice(1) : sort;
-    result = [...result].sort((a, b) => {
-      const av = a[field];
-      const bv = b[field];
-      if (av === bv) return 0;
-      if (av === undefined || av === null) return 1;
-      if (bv === undefined || bv === null) return -1;
-      let cmp: number;
-      if (typeof av === "number" && typeof bv === "number") {
-        cmp = av - bv;
-      } else {
-        cmp = String(av) < String(bv) ? -1 : 1;
-      }
-      return desc ? -cmp : cmp;
-    });
+// Single source of truth for the limit guard, shared by the SQL and JS paths so
+// they stay identical: only a finite, non-negative number truncates the result.
+function withinLimit(limit: number | undefined): number | undefined {
+  if (typeof limit === "number" && Number.isFinite(limit) && limit >= 0) {
+    return Math.trunc(limit);
   }
+  return undefined;
+}
 
-  if (typeof limit === "number" && limit >= 0) {
-    result = result.slice(0, limit);
-  }
-
-  return result;
+// Does the sort field hold BOTH a number and a non-number (non-null) JSON value
+// across the matching rows? Only then is the old comparator type-dependent per
+// pair and impossible to push into a single ORDER BY. Runs only when sorting;
+// returns two booleans (no row data) so it stays cheap.
+async function sortFieldIsMixed(
+  whereClause: SQL,
+  field: string,
+): Promise<boolean> {
+  const key = fieldKey(field);
+  const [row] = await db
+    .select({
+      hasNumber: sql<boolean>`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) = 'number')`,
+      hasOther: sql<boolean>`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) in ('string', 'boolean', 'object', 'array'))`,
+    })
+    .from(userEntities)
+    .where(whereClause);
+  return Boolean(row?.hasNumber && row?.hasOther);
 }
 
 async function listEntities(
   userId: string,
   entityName: string,
+  filters: Record<string, unknown> | undefined,
+  sort: string | undefined,
+  limit: number | undefined,
 ): Promise<Record<string, unknown>[]> {
-  const rows = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, entityName),
-      ),
-    );
+  const conditions: SQL[] = [
+    eq(userEntities.userId, userId),
+    eq(userEntities.entityName, entityName),
+  ];
+  if (filters && typeof filters === "object") {
+    for (const [k, v] of Object.entries(filters)) {
+      conditions.push(filterCondition(k, v));
+    }
+  }
+  const whereClause = and(...conditions) as SQL;
+  const cap = withinLimit(limit);
+
+  if (typeof sort === "string" && sort) {
+    const { field, desc } = parseSort(sort);
+    // Mixed-type column: reproduce the old JS comparator exactly. Filters are
+    // still applied in SQL; only ordering + limit happen in memory. This path
+    // is for pathological data only — in practice a field is consistently typed.
+    if (await sortFieldIsMixed(whereClause, field)) {
+      const mixedRows = await db
+        .select()
+        .from(userEntities)
+        .where(whereClause);
+      const data = mixedRows.map((r) => r.data as Record<string, unknown>);
+      data.sort(compareByField(field, desc));
+      return cap === undefined ? data : data.slice(0, cap);
+    }
+  }
+
+  let q = db.select().from(userEntities).where(whereClause).$dynamic();
+  if (typeof sort === "string" && sort) {
+    q = q.orderBy(...orderByParts(sort));
+  }
+  if (cap !== undefined) {
+    q = q.limit(cap);
+  }
+
+  const rows = await q;
   return rows.map((r) => r.data as Record<string, unknown>);
 }
 
@@ -309,8 +396,8 @@ router.get("/:entity", async (req, res) => {
       filters = undefined;
     }
   }
-  const items = await listEntities(userId, entity);
-  res.json(applyQuery(items, filters, sort, limit));
+  const items = await listEntities(userId, entity, filters, sort, limit);
+  res.json(items);
 });
 
 // --- Get one ----------------------------------------------------------------

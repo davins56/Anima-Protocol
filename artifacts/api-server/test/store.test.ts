@@ -221,6 +221,121 @@ describe("one-time migration import gate", () => {
   });
 });
 
+describe("list query is pushed into SQL with identical semantics", () => {
+  // Seed a mixed dataset for one account, then exercise filter/sort/limit and
+  // assert the server returns exactly what the old in-memory applyQuery did.
+  const U = user("query_pushdown");
+
+  beforeAll(async () => {
+    // `rank` is a non-auto field present on only some rows, used to verify that
+    // missing values sort last. (created_date can't test that — the create
+    // route auto-populates it.)
+    const rows: Record<string, unknown>[] = [
+      { id: "n1", session_id: "s1", is_active: true, created_date: "2026-01-01", rank: "b" },
+      { id: "n2", session_id: "s1", is_active: false, created_date: "2026-03-01", rank: "a" },
+      { id: "n3", session_id: "s2", is_active: true, created_date: "2026-02-01", rank: "c" },
+      { id: "n4", session_id: "s2", is_active: true, created_date: "2026-04-01" },
+    ];
+    for (const r of rows) {
+      await call(U, "PUT", `/Note/${r.id}`, r);
+    }
+    // A second entity to exercise numeric sort (e.g. Storypoint "order").
+    for (const p of [
+      { id: "p1", order: 2 },
+      { id: "p10", order: 10 },
+      { id: "p9", order: 9 },
+    ]) {
+      await call(U, "PUT", `/Storypoint/${p.id}`, p);
+    }
+  });
+
+  const ids = (rows: Json[]) => rows.map((r) => r.id);
+
+  it("equality filter on a string field runs in the DB", async () => {
+    const q = encodeURIComponent(JSON.stringify({ session_id: "s1" }));
+    const res = await call(U, "GET", `/Note?filters=${q}`);
+    expect(res.status).toBe(200);
+    expect(new Set(ids(res.json))).toEqual(new Set(["n1", "n2"]));
+  });
+
+  it("equality filter is type-faithful (boolean true, not the string)", async () => {
+    const q = encodeURIComponent(JSON.stringify({ is_active: true }));
+    const res = await call(U, "GET", `/Note?filters=${q}`);
+    expect(new Set(ids(res.json))).toEqual(new Set(["n1", "n3", "n4"]));
+
+    // A string "true" must NOT match a stored boolean true (=== semantics).
+    const qStr = encodeURIComponent(JSON.stringify({ is_active: "true" }));
+    const resStr = await call(U, "GET", `/Note?filters=${qStr}`);
+    expect(resStr.json).toHaveLength(0);
+  });
+
+  it("combines two equality filters (AND)", async () => {
+    const q = encodeURIComponent(
+      JSON.stringify({ session_id: "s2", is_active: true }),
+    );
+    const res = await call(U, "GET", `/Note?filters=${q}`);
+    expect(new Set(ids(res.json))).toEqual(new Set(["n3", "n4"]));
+  });
+
+  it("descending string sort orders lexically", async () => {
+    const res = await call(U, "GET", `/Note?sort=${encodeURIComponent("-created_date")}`);
+    // n4 (Apr) > n2 (Mar) > n3 (Feb) > n1 (Jan).
+    expect(ids(res.json)).toEqual(["n4", "n2", "n3", "n1"]);
+  });
+
+  it("missing values sort last regardless of direction", async () => {
+    // rank is present on n1/n2/n3 only; n4 has none and must come last both ways.
+    const asc = await call(U, "GET", `/Note?sort=rank`);
+    expect(ids(asc.json)).toEqual(["n2", "n1", "n3", "n4"]);
+    const desc = await call(U, "GET", `/Note?sort=${encodeURIComponent("-rank")}`);
+    expect(ids(desc.json)).toEqual(["n3", "n1", "n2", "n4"]);
+  });
+
+  it("mixed number/string column matches the old per-pair comparator", async () => {
+    // A field holding both numbers and strings: the legacy JS comparator used
+    // numeric compare ONLY between two numbers and String() compare otherwise,
+    // which is type-dependent per pair and can't be a single ORDER BY. The
+    // server must fall back to that exact comparator.
+    for (const m of [
+      { id: "m1", val: 2 }, // number
+      { id: "m2", val: "10" }, // string
+      { id: "m3", val: 9 }, // number
+      { id: "m4", val: "3" }, // string
+    ]) {
+      await call(U, "PUT", `/Mixed/${m.id}`, m);
+    }
+    // Legacy comparator asc: "10" < 2 < "3" < 9  (String("2") > "10", 2 < 9
+    // numerically, "2" < "3", "9" > "3" as strings).
+    const asc = await call(U, "GET", `/Mixed?sort=val`);
+    expect(ids(asc.json)).toEqual(["m2", "m1", "m4", "m3"]);
+    const desc = await call(U, "GET", `/Mixed?sort=${encodeURIComponent("-val")}`);
+    expect(ids(desc.json)).toEqual(["m3", "m4", "m1", "m2"]);
+  });
+
+  it("numeric sort compares as numbers, not strings", async () => {
+    const res = await call(U, "GET", `/Storypoint?sort=order`);
+    // Numeric: 2 < 9 < 10 (string sort would give 10 < 2 < 9).
+    expect(ids(res.json)).toEqual(["p1", "p9", "p10"]);
+    const desc = await call(U, "GET", `/Storypoint?sort=${encodeURIComponent("-order")}`);
+    expect(ids(desc.json)).toEqual(["p10", "p9", "p1"]);
+  });
+
+  it("limit is applied in the DB after sort", async () => {
+    const res = await call(U, "GET", `/Note?sort=${encodeURIComponent("-created_date")}&limit=2`);
+    expect(ids(res.json)).toEqual(["n4", "n2"]);
+  });
+
+  it("filter + sort + limit compose", async () => {
+    const q = encodeURIComponent(JSON.stringify({ session_id: "s1" }));
+    const res = await call(
+      U,
+      "GET",
+      `/Note?filters=${q}&sort=${encodeURIComponent("-created_date")}&limit=1`,
+    );
+    expect(ids(res.json)).toEqual(["n2"]);
+  });
+});
+
 describe("concurrent seeding does not duplicate the starter roster", () => {
   it("two sessions seeding the same fresh account converge on one roster", async () => {
     const U = user("seed_concurrent");
