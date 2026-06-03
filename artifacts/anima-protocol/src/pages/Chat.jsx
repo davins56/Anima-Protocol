@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow } from "@/lib/chatRewindHandlers";
+import { editMessageFlow } from "@/lib/chatEditHandlers";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import ChatHeader from "@/components/chat/ChatHeader";
@@ -609,12 +610,8 @@ export default function Chat() {
   const handleDeleteMessage = (idx) =>
     deleteMessageFlow(idx, { activeSession, setActiveSession });
 
-  const handleEditMessage = async (idx, newText) => {
-    if (!activeSession) return;
-    const updated = (activeSession.messages || []).map((m, i) => i === idx ? { ...m, content: newText } : m);
-    await base44.entities.ChatSession.update(activeSession.id, { messages: updated });
-    setActiveSession(prev => ({ ...prev, messages: updated }));
-  };
+  const handleEditMessage = (idx, newText) =>
+    editMessageFlow(idx, newText, { activeSession, setActiveSession });
 
   const handleRegenerateMessage = (idx) =>
     regenerateMessageFlow(idx, {
