@@ -12,6 +12,17 @@ import type { Response } from "express";
 //
 // If the process restarts or the stream drops, clients fall back to their
 // periodic /revision poll, so no change is ever permanently lost.
+//
+// MULTI-INSTANCE CAVEAT: this registry is process-local. If the api-server is
+// ever scaled to more than one instance (or replicas behind a load balancer),
+// a write handled by instance A only fans out to the SSE streams A holds —
+// devices whose stream landed on instance B would NOT get an instant push and
+// would instead wait for their next /revision poll. Correctness is preserved
+// (the poll still catches it), only the "instant" feel is lost cross-instance.
+// To make push work across instances, replace this in-memory Map with a shared
+// pub/sub (e.g. Redis pub/sub or Postgres LISTEN/NOTIFY): notifyUser publishes
+// to a per-user channel, and each instance subscribes and writes to its own
+// local streams. Until then, run the api-server as a single instance.
 
 const clients = new Map<string, Set<Response>>();
 

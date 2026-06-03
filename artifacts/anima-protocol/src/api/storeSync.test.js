@@ -89,3 +89,139 @@ describe('store sync lifecycle', () => {
     expect(revisionFetches).toBeGreaterThan(initial);
   });
 });
+
+// Hardening for hostile networks (strict proxies / CDNs): the live push stream
+// must survive proxy newline normalization (\r\n\r\n blocks), recover from a
+// silently stalled stream via the heartbeat watchdog, and surface a signal that
+// distinguishes "push connected" from "polling fallback".
+describe('store sync push transport hardening', () => {
+  let revisionFetches;
+  let eventsConnects;
+  let currentStream;
+
+  // A controllable mock of a fetch streaming body. read() resolves as chunks
+  // are pushed; abort() (wired to the request signal) unwinds the read loop the
+  // way a real aborted fetch would.
+  const makeStream = (signal) => {
+    const queue = [];
+    let waiting = null;
+    let done = false;
+    const encoder = new TextEncoder();
+    const deliver = () => {
+      if (!waiting) return;
+      if (queue.length) {
+        const r = waiting;
+        waiting = null;
+        r({ value: queue.shift(), done: false });
+      } else if (done) {
+        const r = waiting;
+        waiting = null;
+        r({ value: undefined, done: true });
+      }
+    };
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        done = true;
+        deliver();
+      });
+    }
+    return {
+      push(text) {
+        queue.push(encoder.encode(text));
+        deliver();
+      },
+      getReader() {
+        return {
+          read() {
+            if (queue.length) return Promise.resolve({ value: queue.shift(), done: false });
+            if (done) return Promise.resolve({ value: undefined, done: true });
+            return new Promise((resolve) => {
+              waiting = resolve;
+            });
+          },
+        };
+      },
+    };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    revisionFetches = 0;
+    eventsConnects = 0;
+    currentStream = null;
+    setAuthTokenGetter(() => 'test-token');
+    global.fetch = vi.fn((url, options) => {
+      const u = String(url);
+      if (u.includes('/events')) {
+        eventsConnects += 1;
+        const stream = makeStream(options?.signal);
+        currentStream = stream;
+        return Promise.resolve({ ok: true, status: 200, body: stream });
+      }
+      if (u.includes('/revision')) {
+        revisionFetches += 1;
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ revision: `r${revisionFetches}` }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+  });
+
+  afterEach(() => {
+    stopStoreSync();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it('parses change blocks separated by \\r\\n\\r\\n (proxy newline normalization)', async () => {
+    startStoreSync();
+    await tick();
+    const before = revisionFetches;
+
+    // Deliver a change event using CRLF line endings, as a normalizing proxy
+    // would rewrite it. The block separator is \r\n\r\n, not \n\n.
+    currentStream.push('event: change\r\ndata: 1\r\n\r\n');
+    await tick();
+    // onServerPush debounces the revision recheck.
+    vi.advanceTimersByTime(300);
+    await tick();
+
+    expect(revisionFetches).toBeGreaterThan(before);
+  });
+
+  it('reconnects when the heartbeat watchdog fires on a silent stream', async () => {
+    startStoreSync();
+    await tick();
+    expect(eventsConnects).toBe(1);
+
+    // No bytes at all (a proxy holding the stream open but delivering nothing):
+    // after the watchdog timeout the stream is aborted and a backoff reconnect
+    // is scheduled, producing a second /events connect.
+    vi.advanceTimersByTime(60000); // watchdog fires
+    await tick();
+    vi.advanceTimersByTime(1000); // backoff reconnect delay
+    await tick();
+
+    expect(eventsConnects).toBeGreaterThan(1);
+  });
+
+  it('emits a sync-mode signal for push connected then polling fallback', async () => {
+    const modes = [];
+    const onMode = (e) => modes.push(e.detail.mode);
+    window.addEventListener('anima:sync-mode', onMode);
+
+    startStoreSync();
+    await tick();
+    expect(modes).toContain('push');
+
+    // A heartbeat-less stream drops; the transport must announce the fallback.
+    vi.advanceTimersByTime(60000);
+    await tick();
+
+    expect(modes).toContain('polling');
+    window.removeEventListener('anima:sync-mode', onMode);
+  });
+});

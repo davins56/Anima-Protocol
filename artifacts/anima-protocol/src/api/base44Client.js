@@ -140,11 +140,78 @@ const SSE_PATH = '/events';
 const SSE_RETRY_BASE_MS = 1000;
 const SSE_RETRY_MAX_MS = 30000;
 const SSE_PUSH_DEBOUNCE_MS = 200;
+// The server heartbeats every 25s. If we go this long without ANY bytes (a
+// heartbeat, a change event, or comment) the stream is effectively dead — some
+// proxies hold/buffer a stream open without delivering bytes — so we treat the
+// silence as a drop and force a reconnect. The window allows two missed beats
+// plus slack so a single late heartbeat never trips a needless reconnect.
+const SSE_HEARTBEAT_TIMEOUT_MS = 60000;
+// Emitted (and logged) whenever the live-sync transport flips between the
+// instant server-push path and the slower polling fallback, so this otherwise
+// silent degradation is observable. detail: { mode: 'push' | 'polling' }.
+const SYNC_MODE_EVENT = 'anima:sync-mode';
 let sseController = null;
 let sseConnected = false;
 let sseRetryTimer = null;
 let sseRetryDelay = SSE_RETRY_BASE_MS;
 let pushDebounceTimer = null;
+let sseHeartbeatTimer = null;
+let lastEmittedSyncMode = null;
+
+// Announce the current live-sync transport (push vs polling) once per change.
+// Gated on syncStarted so a clean sign-out teardown doesn't log a misleading
+// "polling fallback". Both a console line and a window event are emitted so the
+// degradation can be seen in the console and reacted to by the UI if desired.
+function emitSyncMode() {
+  if (!syncStarted) return;
+  const mode = sseConnected ? 'push' : 'polling';
+  if (mode === lastEmittedSyncMode) return;
+  lastEmittedSyncMode = mode;
+  try {
+    if (typeof console !== 'undefined') {
+      console.info(
+        mode === 'push'
+          ? '[anima sync] server push connected — instant sync active'
+          : '[anima sync] server push unavailable — using polling fallback',
+      );
+    }
+  } catch {
+    /* ignore logging failures */
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SYNC_MODE_EVENT, { detail: { mode } }));
+  }
+}
+
+// Single setter for the push-connected flag so every transition emits the
+// sync-mode signal exactly once and stays in sync with the poll cadence.
+function setSseConnected(value) {
+  if (sseConnected === value) return;
+  sseConnected = value;
+  emitSyncMode();
+}
+
+// (Re)arm the heartbeat watchdog. Called once the stream opens and again on
+// every chunk received; if it ever fires we abort the stream, which unwinds the
+// read loop into connectSse's finally (reconnect + revert to fast polling).
+function armSseWatchdog(controller) {
+  if (sseHeartbeatTimer) clearTimeout(sseHeartbeatTimer);
+  sseHeartbeatTimer = setTimeout(() => {
+    sseHeartbeatTimer = null;
+    try {
+      controller.abort();
+    } catch {
+      /* ignore */
+    }
+  }, SSE_HEARTBEAT_TIMEOUT_MS);
+}
+
+function clearSseWatchdog() {
+  if (sseHeartbeatTimer) {
+    clearTimeout(sseHeartbeatTimer);
+    sseHeartbeatTimer = null;
+  }
+}
 
 export async function fetchRevision() {
   const token = await getToken();
@@ -311,7 +378,7 @@ async function connectSse() {
     if (!res.ok || !res.body) {
       throw new Error(`SSE connect failed: ${res.status}`);
     }
-    sseConnected = true;
+    setSseConnected(true);
     sseRetryDelay = SSE_RETRY_BASE_MS;
     applyPollCadence();
     // A freshly opened stream may have missed a change between the last poll and
@@ -321,10 +388,20 @@ async function connectSse() {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    // Arm the watchdog immediately: if the proxy accepts the connection but then
+    // delivers no bytes at all, the silence still triggers a reconnect.
+    armSseWatchdog(controller);
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
+      // Any bytes (event, heartbeat, or comment) prove the stream is alive.
+      armSseWatchdog(controller);
       buffer += decoder.decode(value, { stream: true });
+      // Some proxies normalize line endings, so an event block may arrive
+      // separated by `\r\n\r\n` instead of `\n\n`. Collapse CRLF to LF before
+      // splitting so those pushes aren't missed. A `\r` whose paired `\n` lands
+      // in the next chunk simply waits one iteration (no `\r\n` to collapse yet).
+      buffer = buffer.replace(/\r\n/g, '\n');
       let sep;
       while ((sep = buffer.indexOf('\n\n')) !== -1) {
         const block = buffer.slice(0, sep);
@@ -335,8 +412,9 @@ async function connectSse() {
   } catch {
     // aborted (stop/account switch) or network/stream error — handled below.
   } finally {
+    clearSseWatchdog();
     if (sseController === controller) sseController = null;
-    sseConnected = false;
+    setSseConnected(false);
     applyPollCadence();
     scheduleSseReconnect();
   }
@@ -352,6 +430,7 @@ function disconnectSse() {
     pushDebounceTimer = null;
   }
   sseRetryDelay = SSE_RETRY_BASE_MS;
+  clearSseWatchdog();
   if (sseController) {
     try {
       sseController.abort();
@@ -361,6 +440,9 @@ function disconnectSse() {
     sseController = null;
   }
   sseConnected = false;
+  // Reset the announced transport so the next startStoreSync re-announces from
+  // a clean slate (avoids a suppressed first emit after a stop/start cycle).
+  lastEmittedSyncMode = null;
 }
 
 export function startStoreSync() {
