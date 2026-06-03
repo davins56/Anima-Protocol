@@ -41,3 +41,17 @@ Use a random unique custom-character name to avoid cross-run collisions; run ser
 
 **Harmless noise:** `[reqfail] ... net::ERR_ABORTED` on `/api/...` are in-flight requests cancelled by
 navigation/reload, not failures.
+
+**Local→server migration spec (`local-migration.spec.ts`):** ONE shared BrowserContext/page across both
+serial tests so localStorage (legacy `anima_entity_*` + `anima_auth_user`, migration flag
+`anima_server_migration_v1`) survives sign-out→sign-in. Init script seeds local data ONLY while the
+migration flag is unset. Test 1: account A first sign-in → poll flag === "1" → custom char now server-side;
+starter roster absent (seeding skips non-empty accounts). Test 2: account B (same browser) → its own starters
+present, A's custom char absent, flag still "1" (migration never re-runs).
+
+**Render-wait gotcha:** after `page.goto("/characters")`, do NOT count headings immediately — the lazy
+route is still showing the Suspense "Loading..." fallback, so the count is 0 and an `expect.poll` that
+reloads on each tick keeps interrupting before render. Instead navigate once, then
+`await expect(heading).toBeVisible({timeout})` per attempt (retry the whole goto only if it times out).
+The page's self-write suppression means it won't auto-refresh after async migration/seeding, so a FRESH
+navigation (not waiting in place) is what surfaces the newly-written server data.
