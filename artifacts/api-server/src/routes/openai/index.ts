@@ -3,6 +3,7 @@ import { db, conversations, messages } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import OpenAI from "openai";
 import { rateLimit } from "../../lib/rateLimit";
+import { isModelUnavailableError, resolveModel, routeModel } from "../../lib/modelRouter";
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("OPENAI_API_KEY must be set.");
@@ -79,12 +80,37 @@ router.post("/conversations/:id/messages", async (req, res) => {
   let fullResponse = "";
 
   try {
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4o",
-      max_tokens: 8192,
-      messages: chatMessages,
-      stream: true,
-    });
+    // Pick the model based on the textual complexity of the latest message.
+    const routed = routeModel(content);
+    const standard = resolveModel("standard");
+    let usedModel = routed.model;
+    let usedTier = routed.tier;
+
+    let stream;
+    try {
+      stream = await openai.chat.completions.create({
+        model: routed.model,
+        max_tokens: routed.maxTokens,
+        messages: chatMessages,
+        stream: true,
+      });
+    } catch (modelErr) {
+      // Only fall back when the routed model itself is unavailable to this
+      // account; quota / rate-limit / transient errors surface as-is so we don't
+      // burn a second call or hide the real cause.
+      if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
+        usedModel = standard.model;
+        usedTier = standard.tier;
+        stream = await openai.chat.completions.create({
+          model: standard.model,
+          max_tokens: standard.maxTokens,
+          messages: chatMessages,
+          stream: true,
+        });
+      } else {
+        throw modelErr;
+      }
+    }
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
@@ -95,7 +121,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
     }
 
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.write(`data: ${JSON.stringify({ done: true, model: usedModel, tier: usedTier })}\n\n`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
