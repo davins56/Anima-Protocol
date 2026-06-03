@@ -1,20 +1,24 @@
 ---
 name: Anima typecheck scope
-description: What the anima-protocol typecheck covers and why allowJs is intentionally off.
+description: What the anima-protocol typecheck covers (allowJs on, checkJs off) and how to extend it.
 ---
 
 # Anima-protocol typecheck scope
 
 The `typecheck` script (`tsc -p tsconfig.json --noEmit`) and the registered
-`typecheck` validation step only check `.ts`/`.tsx` files. The vast majority of
-the app is `.jsx`/`.js` (pages, hooks, most components) and is **not** type-checked.
+`typecheck` validation step run with **`allowJs: true`** so every `.js`/`.jsx`
+file (pages, hooks, most components) is part of the type-check program, not just
+the `.ts`/`.tsx` files. This catches grammar/structural errors across the whole
+app (e.g. duplicate JSX attributes report as TS17001).
 
-**Why allowJs stays off:** enabling `allowJs` pulls the whole JS codebase into the
-program and immediately surfaces pre-existing grammar-level errors (e.g. duplicate
-JSX attributes report as TS17001 even without `checkJs`), which would balloon the
-fix scope. Keep it off unless you intend to clean up the JS files.
+**checkJs is intentionally off.** Deep type checking of the JS codebase surfaces
+thousands (~6.7k) of pre-existing errors, so full `checkJs` is not flipped on
+globally. Adopt it **incrementally per file** with a top-of-file `// @ts-check`
+(only ~78 of ~505 JS files are currently clean enough to do this for free).
 
 **How to apply:**
+- Want real type checking on a specific JS file? Add `// @ts-check` at the top
+  and fix what it surfaces. Don't enable `checkJs` project-wide.
 - JS modules imported from `.tsx` files cause `TS7016 (no declaration file)`. The
   fix is a colocated `.d.ts` (see `src/api/base44Client.d.ts` typing the
   server-backed base44 client loosely — entity records are `any`, call shapes
