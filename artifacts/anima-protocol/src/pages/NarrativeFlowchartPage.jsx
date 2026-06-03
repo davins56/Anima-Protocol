@@ -1,3 +1,4 @@
+// @ts-check
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import NarrativeFlowchart from "@/components/branching/NarrativeFlowchart";
@@ -11,15 +12,15 @@ export default function NarrativeFlowchartPage() {
   const navigate = useNavigate();
   const sessionId = searchParams.get("session");
   const [activeTab, setActiveTab] = useState("flowchart");
-  const [restoringSnapshot, setRestoringSnapshot] = useState(null);
+  const [restoringSnapshot, setRestoringSnapshot] = useState(/** @type {any} */ (null));
 
-  const handleRestore = async (snapshot) => {
+  const handleRestore = async (/** @type {any} */ snapshot) => {
     setRestoringSnapshot(snapshot);
     // The actual restoration would be handled by the Chat page
     // This just passes the snapshot info
   };
 
-  const handleFork = async (snapshot) => {
+  const handleFork = async (/** @type {any} */ snapshot) => {
     try {
       // Find the source session this snapshot belongs to.
       const sourceSession = await base44.entities.ChatSession.get(

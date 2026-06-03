@@ -1,3 +1,4 @@
+// @ts-check
 import { motion } from "framer-motion";
 
 const EMOTION_HUE = {
@@ -21,6 +22,9 @@ const VULNERABLE = new Set(["sad", "afraid", "conflicted", "desperate"]);
 // A living, ethereal presence: a luminous winged figure that breathes,
 // with a halo that brightens with resonance and wings that curl when the
 // user is vulnerable and spread as the bond deepens. Pure SVG + CSS, no art.
+/**
+ * @param {{ emotion?: keyof typeof EMOTION_HUE, intensity?: number, resonance?: number, speaking?: boolean, name?: string, size?: number, showLabel?: boolean, onExpand?: () => void }} props
+ */
 export default function SerenityAvatar({
   emotion = "calm",
   intensity = 5,

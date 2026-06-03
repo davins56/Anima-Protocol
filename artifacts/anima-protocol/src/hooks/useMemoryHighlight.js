@@ -1,8 +1,11 @@
+// @ts-check
 import { useState, useCallback } from "react";
 
 /**
  * Hook to detect and highlight when the AI references a prior memory or shows continuity.
  * Creates the "the AI remembers me" moment.
+ * @param {any} message
+ * @param {any[]} characterMemories
  */
 export function useMemoryHighlight(message, characterMemories) {
   const [isMemoryReference, setIsMemoryReference] = useState(false);

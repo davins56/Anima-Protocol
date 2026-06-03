@@ -28,6 +28,14 @@ ZERO errors, then revert. Files clean under global checkJs are clean under per-f
   `(/** @type {T} */ name)`. Use `(...args: any[]) => void` for callbacks whose
   call shape is uncertain to avoid cascading errors.
 
+**Adding `@ts-check` can surface NEW errors not in the global-checkJs scan:**
+narrowing a prop's JSDoc type too tightly (e.g. `loreEntry?: {importance, subject}`)
+breaks other property accesses (`.keyword`, `.color_hex`); and a prop typed
+`?: string` becomes `string|undefined`, breaking `.toLowerCase()`/`.substring`.
+Fixes: type grab-bag entity objects as `any` (or `Record<string,any>`), default
+optional string props (`content = ''`), and gate optional callbacks with `?.`.
+Also: a caller passing `null` to a `?: string` prop fails — widen to `string|null`.
+
 **Why:** keeps the typecheck validation green after each batch while actually
 catching logic bugs, instead of a risky global flip.
 **How to apply:** measure → enable clean files → fix single-error hotspots

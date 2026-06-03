@@ -1,3 +1,4 @@
+// @ts-check
 // Auto-search character portraits via the api-server (/api/character-image),
 // which queries the web (Wikipedia) for a representative photo.
 
@@ -9,6 +10,10 @@ const API_BASE = `${window.location.origin}/api`;
 // THROWS on transient failures (network error / non-OK response) so callers
 // can distinguish "no photo exists" from "couldn't reach the service" and
 // avoid permanently giving up after a temporary outage.
+/**
+ * @param {string} name
+ * @param {string} [universe]
+ */
 export async function findCharacterPhoto(name, universe) {
   if (!name) return null;
   const params = new URLSearchParams({ name });

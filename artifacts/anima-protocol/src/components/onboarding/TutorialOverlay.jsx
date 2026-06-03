@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -153,6 +154,9 @@ const STEPS = [
 
 const STORAGE_KEY = "serenity_tutorial_seen_v1";
 
+/**
+ * @param {{ onDone?: () => void }} props
+ */
 export default function TutorialOverlay({ onDone }) {
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);

@@ -1,8 +1,12 @@
+// @ts-check
 import { useState } from "react";
 import { X, Menu } from "lucide-react";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import Sidebar from "./Sidebar";
 
+/**
+ * @param {import('react').ComponentProps<typeof Sidebar>} props
+ */
 export default function ResponsiveSidebar({ ...props }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const { isMobile, isTablet } = useResponsiveLayout();

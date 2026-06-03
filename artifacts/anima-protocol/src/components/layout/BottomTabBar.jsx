@@ -1,3 +1,4 @@
+// @ts-check
 import { useLocation, useNavigate } from "react-router-dom";
 import { MessageSquare, BookOpen, Globe, Grid3x3, Home, X } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -36,6 +37,10 @@ const PINNED_TABS = [
   { path: "/worldmap", label: "Map", Icon: Globe },
 ];
 
+/**
+ * @param {string} tabPath
+ * @param {string} pathname
+ */
 function isTabActive(tabPath, pathname) {
   if (tabPath === "/") return pathname === "/";
   if (tabPath === "/chat") return pathname === "/chat" || pathname.startsWith("/chat/");

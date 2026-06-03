@@ -1,3 +1,4 @@
+// @ts-check
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
@@ -39,6 +40,9 @@ const ANIMA_STATES = {
   },
 };
 
+/**
+ * @param {{ currentState?: keyof typeof ANIMA_STATES, sessionCount?: number }} props
+ */
 export default function AnimaStateDisplay({ currentState = 'Dormant', sessionCount = 0 }) {
   const stateData = ANIMA_STATES[currentState] || ANIMA_STATES.Dormant;
   const nextState = Object.entries(ANIMA_STATES).find(([_, data]) => data.level === stateData.level + 1);

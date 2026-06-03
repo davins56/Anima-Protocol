@@ -1,8 +1,11 @@
+// @ts-check
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 
 /**
  * Hook to detect lore keywords in messages and manage popover state.
+ * @param {string} messageContent
+ * @param {string} sessionId
  */
 export function useLoreDetection(messageContent, sessionId) {
   const [loreContext, setLoreContext] = useState([]);
