@@ -48,10 +48,24 @@ ChatSession (inline `messages` blob); opening `/chat/<id>` afterwards lazy-split
 proving the conversation — not just characters — comes back. Merge keeps the seeded starter (Korra count 1),
 replace wipes it (count 0). One fresh context + own Clerk user per mode; serial.
 
-**Can't run e2e from the agent here:** the Chromium binary download (`playwright install chromium`)
-exceeds the 2-minute bash tool limit even in the foreground, so e2e specs can't be executed in-session;
-they're validated by mirroring the proven patterns and reviewing. e2e is NOT in the standard checks
-(vitest `test` only globs `src/**`; typecheck only covers `src/**`), so adding a spec won't break them.
+**Running e2e from the agent:** once the Chromium binary is already installed, specs DO run in-session
+via `pnpm --filter @workspace/anima-protocol exec playwright test <file>.spec.ts` (a full 3-test spec
+finishes in ~50s, well under the bash limit). Only the initial binary DOWNLOAD blows the 2-min limit. e2e
+is NOT in the standard checks (vitest `test` only globs `src/**`; typecheck only covers `src/**`), so
+adding a spec won't break them — but the e2e .ts IS typechecked by the anima tsconfig, so keep it clean.
+
+**Consent-banner click interception:** the analytics consent dialog is `fixed inset-x-0 bottom-0 z-[100]`,
+so its Accept button shares the bottom strip with the BottomTabBar and a real `.click()` is intercepted
+("subtree intercepts pointer events", times out). Fix: `consentAccept.dispatchEvent("click")` fires the
+React onClick directly regardless of overlap. (The older specs' positional `.click()` is flake-prone here.)
+
+**Failed-sync notice spec (`failed-sync-notice.spec.ts`):** verifies the Task #91 toast "Your saved data
+hasn't synced to your account yet." Force each migration outcome deterministically by intercepting
+`**/api/store/import` (the bulkImport endpoint) and fulfilling `{imported:false}` (→"failed", toast shows),
+`{imported:true,count:1}` (→"migrated", no toast), or seeding NO local data (→"skipped", import never called,
+no toast). Retry action calls `window.location.reload()` — assert via a `window.__preRetry` sentinel that the
+reload wipes. For the negative cases, poll migration flag === "1" as the bootstrap-done gate before asserting
+the toast's absence. One fresh BrowserContext + own Clerk user per test; serial.
 
 **Harmless noise:** `[reqfail] ... net::ERR_ABORTED` on `/api/...` are in-flight requests cancelled by
 navigation/reload, not failures.
