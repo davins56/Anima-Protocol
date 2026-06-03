@@ -5,6 +5,7 @@ import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow } from "@/lib/chatRewindHandlers";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
+import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import ChatHeader from "@/components/chat/ChatHeader";
@@ -786,6 +787,29 @@ export default function Chat() {
     const updatedMessages = isContinue
       ? [...(activeSession.messages || [])]
       : [...(activeSession.messages || []), userMessage];
+
+    // Value moment: a message in a multi-character "crossover" scene (characters
+    // from 2+ universes together). is_crossover lets us segment that core action.
+    const groupIds = activeSession.group_character_ids || [];
+    const characterCount =
+      activeSession.mode === "group"
+        ? groupIds.length
+        : activeSession.character_id
+          ? 1
+          : 0;
+    const distinctUniverses = new Set(
+      characters
+        .filter((c) => groupIds.includes(c.id))
+        .map((c) => c.universe)
+        .filter(Boolean),
+    ).size;
+    track("message_sent", {
+      session_mode: activeSession.mode || "solo",
+      character_count: characterCount,
+      is_crossover: activeSession.mode === "group" && distinctUniverses >= 2,
+      is_continue: isContinue,
+      has_attachment: attachments.length > 0,
+    });
 
     // Show "thinking" indicator first, then transition to typing after a brief pause
     const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };

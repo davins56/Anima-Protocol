@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { track } from "@/lib/analytics";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Check, Zap, Crown, Infinity } from "lucide-react";
 import { motion } from "framer-motion";
@@ -86,6 +87,13 @@ export default function PremiumPlans() {
   };
 
   const handleUpgrade = async (tier) => {
+    // Captures upgrade intent (checkout start), not the completed purchase —
+    // payment confirmation happens server-side after Stripe redirect.
+    track("subscription_upgrade_started", {
+      tier,
+      purchase_type: tier === "eternal" ? "one-time" : "subscription",
+      from_tier: currentTier || "free",
+    });
     if (tier === "eternal") {
       // Redirect to lifetime purchase
       await base44.functions.invoke("createCheckoutSession", {

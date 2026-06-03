@@ -14,6 +14,28 @@ import mixpanel from 'mixpanel-browser';
 const TOKEN = import.meta.env.VITE_MIXPANEL_TOKEN;
 const IS_PROD = import.meta.env.PROD;
 
+// We record the user's explicit accept/decline here rather than reading
+// mixpanel's opt-out state — because opt_out_tracking_by_default makes every new
+// user "opted out" from the start, which is indistinguishable from a real
+// decline. This key is the source of truth for whether to show the banner.
+const CONSENT_KEY = 'anima_analytics_consent'; // 'granted' | 'declined'
+
+function readConsentDecision() {
+  try {
+    return localStorage.getItem(CONSENT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeConsentDecision(value) {
+  try {
+    localStorage.setItem(CONSENT_KEY, value);
+  } catch {
+    /* storage unavailable — banner will simply re-ask next load */
+  }
+}
+
 let initialized = false;
 
 // Guard every public function so feature code can call analytics unconditionally.
@@ -47,33 +69,42 @@ export function initAnalytics() {
   });
 
   initialized = true;
+
+  // Re-apply the user's prior decision. mixpanel persists opt-state itself, but
+  // we re-assert it so our localStorage flag and mixpanel never drift apart.
+  const decision = readConsentDecision();
+  if (decision === 'granted') mixpanel.opt_in_tracking();
+  else if (decision === 'declined') mixpanel.opt_out_tracking();
 }
 
 // --- Consent (EU/UK/CA) -----------------------------------------------------
 
 // True once the user has accepted analytics.
 export function hasConsented() {
-  return ready() && mixpanel.has_opted_in_tracking();
+  return readConsentDecision() === 'granted';
 }
 
 // True once the user has explicitly declined analytics.
 export function hasDeclined() {
-  return ready() && mixpanel.has_opted_out_tracking();
+  return readConsentDecision() === 'declined';
 }
 
-// True when we still need to ask (no decision recorded yet).
+// True when we still need to ask (no explicit decision recorded yet). Driven by
+// our own flag, NOT mixpanel's opt-state (which defaults to opted-out for all).
 export function needsConsentDecision() {
-  return ready() && !hasConsented() && !hasDeclined();
+  return ready() && readConsentDecision() === null;
 }
 
 // Call only after the user explicitly accepts — not on banner dismissal.
 export function grantConsent() {
+  writeConsentDecision('granted');
   if (!ready()) return;
   mixpanel.opt_in_tracking();
 }
 
 // Call when the user declines or withdraws consent. Clears stored user data.
 export function revokeConsent() {
+  writeConsentDecision('declined');
   if (!ready()) return;
   mixpanel.opt_out_tracking();
 }

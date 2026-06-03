@@ -25,6 +25,7 @@ import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
+import ConsentBanner from "@/components/ConsentBanner";
 import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
@@ -1209,6 +1210,7 @@ function App() {
             </ConfirmProvider>
           </AuthProvider>
         </ClerkProviderWithRoutes>
+        <ConsentBanner />
         <Toaster />
         <SonnerToaster
           theme="dark"

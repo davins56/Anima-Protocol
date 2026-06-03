@@ -13,6 +13,14 @@ import {
   startStoreSync,
   stopStoreSync,
 } from '@/api/base44Client';
+import {
+  identifyUser,
+  setProfile,
+  setProfileOnce,
+  registerSuper,
+  resetUser,
+  track,
+} from '@/lib/analytics';
 
 const AuthContext = createContext();
 
@@ -65,13 +73,35 @@ export const AuthProvider = ({ children }) => {
       (async () => {
         try {
           let profile = await base44.auth.me();
-          if (!profile.display_name) {
+          // A profile with no display_name is a brand-new account on its first
+          // load — the only reliable client-side signal we have for sign-up.
+          const isNewAccount = !profile.display_name;
+          if (isNewAccount) {
             const preferred =
               clerkUser.firstName || clerkUser.fullName || clerkUser.username;
             if (preferred) {
               profile = await base44.auth.updateMe({ display_name: preferred });
             }
           }
+
+          // Identity must come before any track() so events attribute correctly.
+          // Use Clerk's stable user id as distinct_id (never the email).
+          identifyUser(clerkUser.id);
+          setProfile({
+            $name: clerkUser.fullName || clerkUser.username || 'Seeker',
+            $email: clerkUser.primaryEmailAddress?.emailAddress || undefined,
+          });
+          setProfileOnce({ first_seen_at: new Date().toISOString() });
+          registerSuper({ platform: 'web' });
+
+          if (isNewAccount) {
+            track('sign_up_completed', {
+              sign_up_method:
+                clerkUser.externalAccounts?.[0]?.provider || 'email',
+              platform: 'web',
+            });
+          }
+
           if (!cancelled) {
             setUser(profile);
             setAuthError(null);
@@ -106,6 +136,9 @@ export const AuthProvider = ({ children }) => {
   // sign-in screen.
   const logout = useCallback(
     async () => {
+      // Clear the Mixpanel identity so the next user on this device starts as a
+      // fresh anonymous session and is never merged with the previous user.
+      resetUser();
       await base44.auth.logout();
       setUser(null);
       setAuthError(null);
