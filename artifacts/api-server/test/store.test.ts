@@ -1033,6 +1033,175 @@ describe("chat messages stored as individual rows", () => {
   });
 });
 
+describe("chat history survives export -> restore round trip", () => {
+  // Chat messages are the one entity family the other round-trip tests skip:
+  // they are stored as individual ChatMessage rows keyed by session_id with a
+  // per-session integer `seq`, and their ChatSession rows carry a
+  // `messages_migrated` flag. /export dumps these rows like any other entity and
+  // /restore re-inserts them as plain rows, so the risk is that restored history
+  // loses ordering, duplicates seq, or breaks the migration flag. These tests
+  // seed real chat history, export it, restore it into another account, then
+  // read it back via GET /messages and assert it returns verbatim.
+
+  // Seed `who` with chat history across two sessions, mirroring production: a
+  // ChatSession row per session (so the messages_migrated flag participates in
+  // the round trip) plus appended messages stored as their own ChatMessage rows.
+  const seedChat = async (who: string) => {
+    await call(who, "PUT", "/ChatSession/cs_1", { id: "cs_1", title: "Session One" });
+    await call(who, "PUT", "/ChatSession/cs_2", { id: "cs_2", title: "Session Two" });
+    await call(who, "POST", "/messages", {
+      session_id: "cs_1",
+      message: { role: "user", content: "s1 m0" },
+    });
+    await call(who, "POST", "/messages", {
+      session_id: "cs_1",
+      message: { role: "assistant", content: "s1 m1" },
+    });
+    await call(who, "POST", "/messages", {
+      session_id: "cs_1",
+      message: { role: "user", content: "s1 m2" },
+    });
+    await call(who, "POST", "/messages", {
+      session_id: "cs_2",
+      message: { role: "user", content: "s2 m0" },
+    });
+    await call(who, "POST", "/messages", {
+      session_id: "cs_2",
+      message: { role: "assistant", content: "s2 m1" },
+    });
+  };
+
+  const readSession = async (who: string, sid: string) =>
+    (await call(who, "GET", `/messages?session_id=${sid}`)).json as Json[];
+
+  it("merge restore into an EMPTY account reproduces chat history verbatim", async () => {
+    const SRC = user("chat_rt_merge_src");
+    const DST = user("chat_rt_merge_dst");
+
+    await seedChat(SRC);
+    const srcS1 = await readSession(SRC, "cs_1");
+    const srcS2 = await readSession(SRC, "cs_2");
+
+    const exported = (await call(SRC, "GET", "/export")).json;
+    // The export carries both the ChatMessage rows and the ChatSession rows.
+    expect((exported.entities as Record<string, Json[]>).ChatMessage).toHaveLength(5);
+    expect((exported.entities as Record<string, Json[]>).ChatSession).toHaveLength(2);
+
+    const res = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "merge",
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.mode).toBe("merge");
+
+    // Each session reads back as the exact same messages, in the same order,
+    // with the same seq and ids — byte-for-byte identical to the source.
+    const dstS1 = await readSession(DST, "cs_1");
+    const dstS2 = await readSession(DST, "cs_2");
+    expect(dstS1).toEqual(srcS1);
+    expect(dstS2).toEqual(srcS2);
+    expect(dstS1.map((m) => m.content)).toEqual(["s1 m0", "s1 m1", "s1 m2"]);
+    expect(dstS1.map((m) => m.seq)).toEqual([0, 1, 2]);
+    expect(dstS2.map((m) => m.seq)).toEqual([0, 1]);
+
+    // No duplicate rows: one id per message across the whole restored history.
+    const allIds = [...dstS1, ...dstS2].map((m) => m.id);
+    expect(new Set(allIds).size).toBe(allIds.length);
+
+    // The migration flag rode along, so reading does not re-migrate anything.
+    const sess = (await call(DST, "GET", "/ChatSession/cs_1")).json as Json;
+    expect(sess.messages_migrated).toBe(true);
+  });
+
+  it("replace restore into a NON-EMPTY account wipes local chat and restores the backup", async () => {
+    const SRC = user("chat_rt_replace_src");
+    const DST = user("chat_rt_replace_dst");
+
+    await seedChat(SRC);
+    const srcS1 = await readSession(SRC, "cs_1");
+    const srcS2 = await readSession(SRC, "cs_2");
+
+    // The destination already has its own chat history, including a session id
+    // (cs_1) that collides with the backup and a session (cs_local) the backup
+    // never mentions. Replace must wipe ALL of it.
+    await call(DST, "PUT", "/ChatSession/cs_1", { id: "cs_1", title: "Local One" });
+    await call(DST, "POST", "/messages", {
+      session_id: "cs_1",
+      message: { content: "local junk 0" },
+    });
+    await call(DST, "POST", "/messages", {
+      session_id: "cs_1",
+      message: { content: "local junk 1" },
+    });
+    await call(DST, "POST", "/messages", {
+      session_id: "cs_local",
+      message: { content: "doomed" },
+    });
+
+    const exported = (await call(SRC, "GET", "/export")).json;
+    const res = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "replace",
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.mode).toBe("replace");
+
+    // The colliding session now holds the backup's messages, not the local junk.
+    const dstS1 = await readSession(DST, "cs_1");
+    const dstS2 = await readSession(DST, "cs_2");
+    expect(dstS1).toEqual(srcS1);
+    expect(dstS2).toEqual(srcS2);
+    expect(dstS1.map((m) => m.content)).toEqual(["s1 m0", "s1 m1", "s1 m2"]);
+    expect(dstS1.map((m) => m.seq)).toEqual([0, 1, 2]);
+
+    // The destination-only session was wiped entirely.
+    const wiped = await readSession(DST, "cs_local");
+    expect(wiped).toEqual([]);
+
+    // No leftover/duplicate rows merged in from the old account.
+    const allIds = [...dstS1, ...dstS2].map((m) => m.id);
+    expect(new Set(allIds).size).toBe(allIds.length);
+    expect(allIds.length).toBe(5);
+  });
+
+  it("appending after a restore continues the seq without gaps or duplicates", async () => {
+    // Proves the restored seq is genuinely intact (not just the data): the
+    // server derives the next seq from max(seq) of the restored rows, so a bad
+    // restore (duplicated/garbled seq) would surface as a colliding append.
+    const SRC = user("chat_rt_append_src");
+    const DST = user("chat_rt_append_dst");
+
+    await seedChat(SRC);
+    const exported = (await call(SRC, "GET", "/export")).json;
+    await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "replace",
+    });
+
+    const appended = (
+      await call(DST, "POST", "/messages", {
+        session_id: "cs_1",
+        message: { role: "user", content: "after restore" },
+      })
+    ).json as Json;
+    expect(appended.seq).toBe(3);
+
+    const dstS1 = await readSession(DST, "cs_1");
+    expect(dstS1.map((m) => m.content)).toEqual([
+      "s1 m0",
+      "s1 m1",
+      "s1 m2",
+      "after restore",
+    ]);
+    expect(dstS1.map((m) => m.seq)).toEqual([0, 1, 2, 3]);
+    const ids = dstS1.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
 // Open the SSE stream and resolve once a real (data) event arrives, or reject
 // on timeout. Returns an abort() so the test can close the connection. The
 // stream is read incrementally so we react to a push without waiting for close.
