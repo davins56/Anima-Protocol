@@ -63,18 +63,30 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
       // Large phone photos (5–15MB) are shrunk to ~1024px JPEG before upload so
       // they don't slow the request or bloat in-memory data URLs; the original
       // file is kept as a fallback if downscaling fails.
+      // The backend has no fetchable copy of the file (uploads aren't persisted
+      // to object storage here), so for images we also send the downscaled photo
+      // inline as a data URL — that's how the backend reads (OCR + describes) it.
       let fileToUpload = file;
+      let imageDataUrl = '';
       if (isImage) {
         try {
           const dataUrl = await readPhotoAsDataUrl(file);
           if (dataUrl) {
-            const small = await downscaleDataUrl(dataUrl, 1024, 0.85);
-            const blob = await (await fetch(small)).blob();
-            const baseName = file.name.replace(/\.[^.]+$/, '');
-            fileToUpload = new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+            let small = '';
+            try {
+              small = await downscaleDataUrl(dataUrl, 1024, 0.85);
+            } catch (downscaleErr) {
+              console.debug('Image downscale failed; using original', downscaleErr);
+            }
+            imageDataUrl = small || dataUrl;
+            if (small) {
+              const blob = await (await fetch(small)).blob();
+              const baseName = file.name.replace(/\.[^.]+$/, '');
+              fileToUpload = new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+            }
           }
-        } catch (downscaleErr) {
-          console.debug('Image downscale failed; using original', downscaleErr);
+        } catch (readErr) {
+          console.debug('Image read failed; using original', readErr);
           fileToUpload = file;
         }
       }
@@ -108,16 +120,22 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         processing_complete: false,
       });
 
-      // Process the context — backend will use ExtractDataFromUploadedFile for PDFs
+      // Process the context in the background. For images the backend reads the
+      // inline data URL (OCR + vision); for text it reads file_content. It
+      // persists the extracted analysis onto the record server-side, so refresh
+      // the list again once it finishes to surface the generated summary.
       base44.functions.invoke('processUserContext', {
         user_context_id: contextRecord.id,
         file_url: fileUrl,
         file_content: fileData,
         is_pdf: isPdf,
         is_image: isImage,
+        image_data_url: imageDataUrl,
         document_type: docType,
         title,
-      }).catch(err => console.warn('Background processing encountered an issue:', err));
+      })
+        .then(() => onUploadComplete?.())
+        .catch(err => console.warn('Background processing encountered an issue:', err));
 
       onUploadComplete?.();
       setFile(null);

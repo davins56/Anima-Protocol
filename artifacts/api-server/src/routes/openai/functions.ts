@@ -1,7 +1,10 @@
 import { Router } from "express";
 import OpenAI, { toFile } from "openai";
 import { getAuth } from "@clerk/express";
+import { db, userEntities } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { rateLimit } from "../../lib/rateLimit";
+import { notifyUser } from "../../lib/storeEvents";
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("OPENAI_API_KEY must be set.");
@@ -59,6 +62,163 @@ function parseTraits(raw: string): { personality: string; backstory: string; spe
   } catch {
     return empty;
   }
+}
+
+// --- User background context (documents + photos) --------------------------
+// A user can upload background documents (novels, journals, character sheets)
+// AND photos (scanned pages, reference images) so the AI companion understands
+// them better. Every upload is distilled into the same compact shape so a photo
+// flows into the context prompt exactly like a text/PDF document does.
+type ContextAnalysis = {
+  extracted_summary: string;
+  key_themes: string[];
+  personal_values: string[];
+  characters_mentioned: string[];
+  extracted_text: string;
+};
+
+function emptyAnalysis(): ContextAnalysis {
+  return {
+    extracted_summary: "",
+    key_themes: [],
+    personal_values: [],
+    characters_mentioned: [],
+    extracted_text: "",
+  };
+}
+
+const CONTEXT_SYSTEM_PROMPT =
+  "You are a document analyst for a personal AI-companion app. The user has " +
+  "uploaded background material so the companion can understand who they are. " +
+  "Extract a compact, faithful representation of it. Return ONLY valid JSON " +
+  "with exactly these fields: " +
+  '{ "extracted_summary": string (2-4 sentence summary), ' +
+  '"key_themes": string[] (up to 8 short theme phrases), ' +
+  '"personal_values": string[] (up to 8 values the writing reveals), ' +
+  '"characters_mentioned": string[] (names or personas referenced), ' +
+  '"extracted_text": string (the readable text content; for an image, a ' +
+  "transcription/OCR of any visible text followed by a literal description of " +
+  "what the image depicts) }. " +
+  "Do not include markdown, code fences, or any text outside the JSON.";
+
+function asStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+    .map((x) => x.trim())
+    .slice(0, 12);
+}
+
+// Tolerant JSON parse of the model's analysis output. Exported so the shape can
+// be unit-tested without hitting OpenAI.
+export function parseContextAnalysis(raw: string): ContextAnalysis {
+  try {
+    const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start === -1 || end === -1) return emptyAnalysis();
+    const obj = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
+    return {
+      extracted_summary:
+        typeof obj.extracted_summary === "string" ? obj.extracted_summary.trim() : "",
+      key_themes: asStringArray(obj.key_themes),
+      personal_values: asStringArray(obj.personal_values),
+      characters_mentioned: asStringArray(obj.characters_mentioned),
+      extracted_text: typeof obj.extracted_text === "string" ? obj.extracted_text.trim() : "",
+    };
+  } catch {
+    return emptyAnalysis();
+  }
+}
+
+async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
+  const raw = await llm(CONTEXT_SYSTEM_PROMPT, text.slice(0, 12000), 1500);
+  return parseContextAnalysis(raw);
+}
+
+// Reads an uploaded photo with a vision model: OCRs any visible text and
+// describes the image, then distills it into the same ContextAnalysis shape.
+async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 1500,
+    messages: [
+      { role: "system", content: CONTEXT_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              "Analyze this uploaded image. Transcribe any visible text (OCR) " +
+              "and describe what the image depicts, then fill in the JSON fields.",
+          },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+  });
+  return parseContextAnalysis(resp.choices[0]?.message?.content ?? "");
+}
+
+// Merge the extracted analysis onto the user's existing UserContext row (the
+// record was created client-side at upload time). Goes straight to the store
+// table since this runs server-side; notifyUser nudges the user's open devices
+// so the new summary shows up without a manual refresh. Returns false if the
+// record can't be found (e.g. deleted before processing finished).
+async function persistContextAnalysis(
+  userId: string,
+  entityId: string,
+  analysis: ContextAnalysis,
+): Promise<boolean> {
+  const where = and(
+    eq(userEntities.userId, userId),
+    eq(userEntities.entityName, "UserContext"),
+    eq(userEntities.entityId, entityId),
+  );
+  const [row] = await db.select().from(userEntities).where(where).limit(1);
+  if (!row) return false;
+  const existing = (row.data as Record<string, unknown>) ?? {};
+  const merged = { ...existing, ...analysis, processing_complete: true };
+  await db.update(userEntities).set({ data: merged, updatedAt: new Date() }).where(where);
+  notifyUser(userId);
+  return true;
+}
+
+// Consolidate a user's active background-context records into one prompt block.
+// Records still processing (no usable content yet) are skipped. Exported so the
+// assembly can be unit-tested without a DB or OpenAI.
+export function buildContextPromptString(records: Record<string, unknown>[]): string {
+  const parts: string[] = [];
+  for (const rec of records) {
+    if (!rec || typeof rec !== "object") continue;
+    const title = typeof rec.title === "string" && rec.title.trim() ? rec.title.trim() : "Untitled";
+    const docType =
+      typeof rec.document_type === "string" && rec.document_type.trim()
+        ? rec.document_type.trim()
+        : "document";
+    const summary = typeof rec.extracted_summary === "string" ? rec.extracted_summary.trim() : "";
+    const themes = asStringArray(rec.key_themes);
+    const values = asStringArray(rec.personal_values);
+    const characters = asStringArray(rec.characters_mentioned);
+    const extracted = typeof rec.extracted_text === "string" ? rec.extracted_text.trim() : "";
+
+    // Nothing usable yet (still processing or empty) — leave it out.
+    if (!summary && themes.length === 0 && values.length === 0 && !extracted) continue;
+
+    const lines: string[] = [`## ${title} (${docType})`];
+    if (summary) lines.push(summary);
+    if (themes.length) lines.push(`Themes: ${themes.join(", ")}`);
+    if (values.length) lines.push(`Values: ${values.join(", ")}`);
+    if (characters.length) lines.push(`Characters: ${characters.join(", ")}`);
+    if (extracted) lines.push(`Excerpt: ${extracted.slice(0, 1200)}`);
+    parts.push(lines.join("\n"));
+  }
+  if (parts.length === 0) return "";
+  return (
+    "The user has shared the following background context about themselves " +
+    `and their world:\n\n${parts.join("\n\n")}`
+  );
 }
 
 router.post("/invoke/:fnName", async (req, res) => {
@@ -325,6 +485,69 @@ router.post("/invoke/:fnName", async (req, res) => {
 
       case "debugApp": {
         result = { status: "ok", message: "Running in Replit environment." };
+        break;
+      }
+
+      case "processUserContext": {
+        // Gate auth BEFORE any paid model call — analyzing an image/text runs
+        // OpenAI, so an unauthenticated caller must never reach it (avoids a
+        // denial-of-wallet hole; persistence is user-scoped anyway).
+        const { userId } = getAuth(req);
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" });
+          return;
+        }
+        const entityId =
+          typeof data.user_context_id === "string" ? data.user_context_id : "";
+        const isImage = Boolean(data.is_image);
+        const fileContent =
+          typeof data.file_content === "string" ? data.file_content : "";
+        const imageDataUrl =
+          typeof data.image_data_url === "string" ? data.image_data_url : "";
+
+        let analysis: ContextAnalysis;
+        if (isImage && imageDataUrl.startsWith("data:")) {
+          analysis = await analyzeImageContext(imageDataUrl);
+        } else if (fileContent.trim()) {
+          analysis = await analyzeTextContext(fileContent);
+        } else {
+          // No usable input here (e.g. a PDF — uploads aren't persisted to
+          // fetchable storage, so the server can't read it — or an empty file).
+          analysis = emptyAnalysis();
+        }
+
+        let persisted = false;
+        if (entityId) {
+          persisted = await persistContextAnalysis(userId, entityId, analysis);
+        }
+        result = { data: { ...analysis, processing_complete: true, persisted } };
+        break;
+      }
+
+      case "buildUserContextPrompt": {
+        const { userId } = getAuth(req);
+        if (!userId) {
+          result = { data: { context_prompt: "", context_count: 0 } };
+          break;
+        }
+        const rows = await db
+          .select()
+          .from(userEntities)
+          .where(
+            and(
+              eq(userEntities.userId, userId),
+              eq(userEntities.entityName, "UserContext"),
+            ),
+          );
+        const active = rows
+          .map((r) => r.data as Record<string, unknown>)
+          .filter((d) => d && d.is_active !== false);
+        result = {
+          data: {
+            context_prompt: buildContextPromptString(active),
+            context_count: active.length,
+          },
+        };
         break;
       }
 
