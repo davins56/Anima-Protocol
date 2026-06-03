@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
@@ -125,40 +126,44 @@ export default function MainHome() {
     }
   };
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const me = await base44.auth.me();
-        setUser(me);
-        setSelectedMode(me?.selected_mode || "serenity");
+  const loadHomeData = useCallback(async () => {
+    try {
+      const me = await base44.auth.me();
+      setUser(me);
+      setSelectedMode(me?.selected_mode || "serenity");
 
-        const [sessionList, animas, checkIns] = await Promise.all([
-          base44.entities.ChatSession.list(),
-          base44.entities.Anima.list(),
-          base44.entities.CheckIn.list(),
-        ]);
+      const [sessionList, animas, checkIns] = await Promise.all([
+        base44.entities.ChatSession.list(),
+        base44.entities.Anima.list(),
+        base44.entities.CheckIn.list(),
+      ]);
 
-        const recent = [...(sessionList || [])]
-          .sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0))
-          .slice(0, 5);
-        setSessions(recent);
+      const recent = [...(sessionList || [])]
+        .sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0))
+        .slice(0, 5);
+      setSessions(recent);
 
-        const userAnima = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;
-        setAnima(userAnima);
+      const userAnima = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;
+      setAnima(userAnima);
 
-        const sortedCheckIns = [...(checkIns || [])].sort(
-          (a, b) => new Date(b.timestamp || b.created_date || 0) - new Date(a.timestamp || a.created_date || 0)
-        );
-        if (sortedCheckIns.length > 0) setLastCheckIn(sortedCheckIns[0]);
-        setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
-      } catch (err) {
-        console.debug("MainHome init in restricted context");
-      } finally {
-        setLoading(false);
-      }
-    };
-    init();
+      const sortedCheckIns = [...(checkIns || [])].sort(
+        (a, b) => new Date(b.timestamp || b.created_date || 0) - new Date(a.timestamp || a.created_date || 0)
+      );
+      if (sortedCheckIns.length > 0) setLastCheckIn(sortedCheckIns[0]);
+    } catch (err) {
+      console.debug("MainHome init in restricted context");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
+    loadHomeData();
+  }, [loadHomeData]);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadHomeData);
 
   // Subtle circuit-board grid background (from the cyber-mythic greeting screen)
   useEffect(() => {

@@ -7,7 +7,12 @@ import React, {
 } from 'react';
 import { useUser, useClerk, useAuth as useClerkAuth } from '@clerk/react';
 import { useNavigate } from 'react-router-dom';
-import { base44, setAuthTokenGetter } from '@/api/base44Client';
+import {
+  base44,
+  setAuthTokenGetter,
+  startStoreSync,
+  stopStoreSync,
+} from '@/api/base44Client';
 
 const AuthContext = createContext();
 
@@ -30,6 +35,20 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     setAuthTokenGetter(() => getToken());
   }, [getToken]);
+
+  // Poll for cross-device changes only while signed in; stop on sign-out so we
+  // never hit the per-user store endpoint without a session.
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (isSignedIn) {
+      startStoreSync();
+    } else {
+      stopStoreSync();
+    }
+    return () => {
+      stopStoreSync();
+    };
+  }, [isLoaded, isSignedIn]);
 
   useEffect(() => {
     if (!isLoaded) return;

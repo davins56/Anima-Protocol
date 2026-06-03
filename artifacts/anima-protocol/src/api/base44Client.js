@@ -82,6 +82,9 @@ function verOf(entityName) {
 
 function bumpVersion(entityName) {
   entityVersion.set(entityName, verOf(entityName) + 1);
+  // Record that this device just wrote, so the cross-device poller can avoid
+  // treating our own change as a remote one (see pollRevision below).
+  lastLocalWriteAt = Date.now();
 }
 
 // Clear all cached state. Called on sign-out / account switch so one account
@@ -90,6 +93,121 @@ export function clearStoreCache() {
   listCache.clear();
   inflight.clear();
   entityVersion.clear();
+}
+
+// --- Cross-device live sync -------------------------------------------------
+// The server exposes a cheap /revision token that shifts whenever any of the
+// account's data changes. We poll it (on an interval while visible, and
+// immediately on focus / tab-visible) and, when it changes due to a write from
+// ANOTHER device, drop our caches and notify React via a window event so open
+// pages can refetch. Local writes are suppressed so a device doesn't reload in
+// response to its own edits.
+const STORE_CHANGED_EVENT = 'anima:store-changed';
+const POLL_INTERVAL_MS = 15000;
+// If a local write happened within this window of a detected revision change,
+// assume the change was ours and don't force open pages to reload.
+const SELF_WRITE_SUPPRESS_MS = POLL_INTERVAL_MS + 5000;
+
+let lastLocalWriteAt = 0;
+let lastSeenRevision = null;
+let pollTimer = null;
+let syncStarted = false;
+
+export async function fetchRevision() {
+  const token = await getToken();
+  if (!token) return null;
+  try {
+    const res = await storeFetch('/revision');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.revision === 'string' ? data.revision : null;
+  } catch {
+    return null;
+  }
+}
+
+function notifyStoreChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(STORE_CHANGED_EVENT));
+  }
+}
+
+function dropCaches() {
+  clearStoreCache();
+  profileCache = null;
+  profileExpiry = 0;
+}
+
+async function pollRevision() {
+  const rev = await fetchRevision();
+  if (rev == null) return;
+  if (lastSeenRevision == null) {
+    // First successful poll just establishes a baseline; nothing to react to.
+    lastSeenRevision = rev;
+    return;
+  }
+  if (rev === lastSeenRevision) return;
+
+  const causedByLocalWrite =
+    Date.now() - lastLocalWriteAt < SELF_WRITE_SUPPRESS_MS;
+  if (causedByLocalWrite) {
+    // The change likely came from THIS device's recent write, so don't force
+    // open pages to reload from their own edits. Drop caches so the next
+    // natural fetch is fresh, but DELIBERATELY do not advance the baseline or
+    // notify: if this revision actually reflects another device's change, the
+    // next poll (once local writes settle past the suppress window) still sees
+    // rev !== lastSeenRevision and emits it. This guarantees a remote change is
+    // never permanently lost — at worst it is delayed until local edits pause.
+    dropCaches();
+    return;
+  }
+
+  lastSeenRevision = rev;
+  dropCaches();
+  notifyStoreChanged();
+}
+
+function handleVisibility() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+    pollRevision();
+  }
+}
+
+// Reset the sync baseline (e.g. on account switch) so the next poll re-baselines
+// against the new account instead of firing a spurious change event.
+function resetSyncBaseline() {
+  lastSeenRevision = null;
+}
+
+export function startStoreSync() {
+  if (syncStarted || typeof window === 'undefined') return;
+  syncStarted = true;
+  resetSyncBaseline();
+  pollRevision();
+  pollTimer = setInterval(() => {
+    if (
+      typeof document === 'undefined' ||
+      document.visibilityState === 'visible'
+    ) {
+      pollRevision();
+    }
+  }, POLL_INTERVAL_MS);
+  window.addEventListener('focus', pollRevision);
+  document.addEventListener('visibilitychange', handleVisibility);
+}
+
+export function stopStoreSync() {
+  if (!syncStarted) return;
+  syncStarted = false;
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('focus', pollRevision);
+    document.removeEventListener('visibilitychange', handleVisibility);
+  }
+  resetSyncBaseline();
 }
 
 // Full account export. Returns every entity record for the signed-in user plus
@@ -341,6 +459,10 @@ export const base44 = {
         clearStoreCache();
         profileCache = null;
         profileExpiry = 0;
+        // Re-baseline cross-device sync so the next poll compares against the
+        // NEW account, never firing a spurious change from the old account's
+        // revision (and never missing the new account's first real change).
+        resetSyncBaseline();
       }
       currentIdentity = { ...(currentIdentity || {}), ...identity };
       return mergedUser(profileCache);

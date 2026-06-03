@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { BookOpen, Map, Shield, Scroll, Search, Trash2, Plus, X, Loader, Network, ArrowLeft } from "lucide-react";
 import RelationshipTimeline from "@/components/lorebook/RelationshipTimeline";
@@ -24,10 +25,6 @@ export default function Wiki() {
   const [savingEntity, setSavingEntity] = useState(false);
   const [showVisualization, setShowVisualization] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     setLoading(true);
     const [l, loc, s] = await Promise.all([
@@ -40,6 +37,13 @@ export default function Wiki() {
     setSessions(s || []);
     setLoading(false);
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadData);
 
   const handleDeleteLore = async (id) => {
     const ok = await confirm({

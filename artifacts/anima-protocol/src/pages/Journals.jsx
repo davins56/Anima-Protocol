@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { BookOpen, Search, Trash2, Calendar, User, ArrowLeft } from "lucide-react";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo } from "@/lib/undoableDelete";
@@ -21,14 +22,6 @@ export default function Journals() {
   const [filterSession, setFilterSession] = useState(sessionId || "all");
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    applyFilters();
-  }, [journals, filterChar, filterSession, search]);
-
   const loadData = async () => {
     setLoading(true);
     const [j, c, s] = await Promise.all([
@@ -41,6 +34,17 @@ export default function Journals() {
     setSessions(s || []);
     setLoading(false);
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadData);
+
+  useEffect(() => {
+    applyFilters();
+  }, [journals, filterChar, filterSession, search]);
 
   const applyFilters = () => {
     let filtered = journals;

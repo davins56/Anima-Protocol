@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, userProfiles } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
@@ -208,6 +208,41 @@ router.get("/export", async (req, res) => {
     entities,
     profile: profileRow ? (profileRow.data as Record<string, unknown>) : null,
   });
+});
+
+// --- Revision (cheap change token for cross-device live sync) ----------------
+// Returns a small token derived from the account's entity row count plus the
+// most recent updatedAt (entities and profile). Any create/update/delete shifts
+// the token, so a client can poll this one endpoint to detect that something
+// changed on another device without refetching every entity. It is intentionally
+// O(1)-ish (a single aggregate query + a profile lookup), unlike /export.
+router.get("/revision", async (req, res) => {
+  const userId = getUserId(req);
+
+  // extract(epoch ...) keeps sub-millisecond (microsecond) precision as text so
+  // two writes in the same millisecond still shift the token. ::text avoids any
+  // driver-dependent Date parsing that could truncate precision.
+  const [agg] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      maxEpoch: sql<string>`coalesce(extract(epoch from max(${userEntities.updatedAt}))::text, '0')`,
+    })
+    .from(userEntities)
+    .where(eq(userEntities.userId, userId));
+
+  const [profile] = await db
+    .select({
+      epoch: sql<string>`coalesce(extract(epoch from ${userProfiles.updatedAt})::text, '0')`,
+    })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  const count = agg?.count ?? 0;
+  const entitiesRev = agg?.maxEpoch ?? "0";
+  const profileRev = profile?.epoch ?? "0";
+
+  res.json({ revision: `${count}:${entitiesRev}:${profileRev}` });
 });
 
 // --- Profile (per-user settings record) -------------------------------------

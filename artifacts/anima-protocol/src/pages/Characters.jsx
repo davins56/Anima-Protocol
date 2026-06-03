@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader } from "lucide-react";
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
@@ -58,14 +59,17 @@ export default function Characters() {
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
-  useEffect(() => {
-    loadCharacters();
-  }, []);
-
   const loadCharacters = async () => {
     const data = await base44.entities.Character.list("-created_date", 100);
     setCharacters(data);
   };
+
+  useEffect(() => {
+    loadCharacters();
+  }, []);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadCharacters);
 
   const handleEdit = (char) => {
     setEditingChar(char);
