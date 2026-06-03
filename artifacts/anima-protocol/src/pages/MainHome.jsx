@@ -300,7 +300,7 @@ export default function MainHome() {
           <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
           <div className="space-y-3 text-[11px] tracking-wider leading-relaxed font-mono">
-            <p className="text-cyan-400/60 italic">{greeting}</p>
+            <p className="text-cyan-400/60 italic pr-24">{greeting}</p>
             <p className="text-cyan-400">
               I am {anima?.name || "Serenity"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
             </p>
