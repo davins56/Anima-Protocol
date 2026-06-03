@@ -280,12 +280,22 @@ export default function MainHome() {
           <p className="text-[9px] tracking-[0.3em] text-cyan-800 mt-2 uppercase">// AI COMPANION SYSTEM</p>
         </motion.div>
 
-        {/* Greeting box */}
-        <motion.div
+        {/* Greeting box — tap to customise the active Anima */}
+        <motion.button
+          type="button"
+          onClick={() =>
+            navigate(
+              anima?.id
+                ? `/customize?tab=animas&character=${anima.id}`
+                : "/customize?tab=animas",
+            )
+          }
+          aria-label={`Customise ${anima?.name || "Serenity"}`}
+          title={`Customise ${anima?.name || "Serenity"}`}
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
-          className="relative border border-cyan-500/20 bg-cyan-950/5 p-5 group"
+          className="relative w-full text-left border border-cyan-500/20 hover:border-cyan-400/50 bg-cyan-950/5 hover:bg-cyan-950/10 p-5 group cursor-pointer transition-colors"
         >
           <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
@@ -298,8 +308,13 @@ export default function MainHome() {
               Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
             </p>
           </div>
-          <MessageSquare className="absolute top-4 right-4 w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
-        </motion.div>
+          <div className="absolute top-4 right-4 flex items-center gap-1.5">
+            <span className="font-mono text-[7px] tracking-widest uppercase text-cyan-900 group-hover:text-cyan-400/70 transition-colors">
+              Customise
+            </span>
+            <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
+          </div>
+        </motion.button>
 
         {/* Primary actions */}
         <div className={`grid grid-cols-1 ${sessions.length > 0 ? "sm:grid-cols-2" : ""} gap-3`}>

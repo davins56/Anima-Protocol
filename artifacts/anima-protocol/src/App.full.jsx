@@ -26,6 +26,7 @@ import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
 import ConsentBanner from "@/components/ConsentBanner";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
@@ -471,6 +472,7 @@ const AuthenticatedApp = () => {
           className="flex-1 min-h-0 flex flex-col"
           style={{ paddingBottom: "var(--tab-bar-height, 0px)" }}
         >
+          <ErrorBoundary resetKey={location.pathname}>
           <Routes location={location}>
             {/* Root: signed-out -> Landing, signed-in -> MainHome */}
             <Route path="/" element={<HomeGate />} />
@@ -1201,6 +1203,7 @@ const AuthenticatedApp = () => {
             />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
+          </ErrorBoundary>
         </motion.div>
       </AnimatePresence>
       {showChrome && <BottomTabBar />}
