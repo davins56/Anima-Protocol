@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -10,6 +11,9 @@ const ARCHETYPES = [
   { name: "Trickster", emoji: "🎭", description: "Playful and clever" },
 ];
 
+/**
+ * @param {{ onComplete: (companion: any) => void, userEmail?: string }} props
+ */
 export default function CreateCompanionModal({ onComplete, userEmail }) {
   const [step, setStep] = useState("welcome"); // welcome, details, loading, done
   const [name, setName] = useState("");
@@ -225,4 +229,6 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
       </motion.div>
     );
   }
+
+  return null;
 }

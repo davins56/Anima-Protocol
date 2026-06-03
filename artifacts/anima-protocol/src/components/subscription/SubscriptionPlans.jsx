@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { motion } from "framer-motion";
@@ -42,7 +43,7 @@ const PLANS = [
 ];
 
 export default function SubscriptionPlans() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(/** @type {any} */ (null));
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
@@ -52,7 +53,7 @@ export default function SubscriptionPlans() {
 
   const handleSubscribe = async () => {
     if (!user) {
-      base44.auth.redirectToLogin(window.location.href);
+      /** @type {any} */ (base44.auth).redirectToLogin(window.location.href);
       return;
     }
 

@@ -1,9 +1,13 @@
+// @ts-check
 import { useState } from "react";
 import { Download, FileText, Loader, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 
+/**
+ * @param {{ isOpen?: boolean, onClose: () => void, session?: any }} props
+ */
 export default function ExportArchiveModal({ isOpen, onClose, session }) {
   const [format, setFormat] = useState("markdown");
   const [includeSummary, setIncludeSummary] = useState(true);

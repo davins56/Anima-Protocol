@@ -1,3 +1,4 @@
+// @ts-check
 import { motion } from "framer-motion";
 
 const emotionConfig = {
@@ -13,6 +14,9 @@ const emotionConfig = {
   desperate: { color: "from-red-600 to-red-500", icon: "😫", label: "Desperate" },
 };
 
+/**
+ * @param {{ emotion?: keyof typeof emotionConfig, intensity?: number, trigger?: string | null, compact?: boolean }} props
+ */
 export default function EmotionIndicator({ emotion, intensity = 50, trigger = null, compact = false }) {
   if (!emotion || !emotionConfig[emotion]) return null;
 

@@ -1,6 +1,10 @@
+// @ts-check
 import { X, Check } from "lucide-react";
 import { motion } from "framer-motion";
 
+/**
+ * @param {{ character?: any, onAccept?: () => void, onReject?: () => void }} props
+ */
 export default function GuestCharacterPrompt({ character, onAccept, onReject }) {
   if (!character) return null;
 

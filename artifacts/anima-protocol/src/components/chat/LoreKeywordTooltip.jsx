@@ -1,6 +1,10 @@
+// @ts-check
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+/**
+ * @param {{ keyword?: string, loreEntry?: any, children?: import('react').ReactNode }} props
+ */
 export default function LoreKeywordTooltip({ keyword, loreEntry, children }) {
   const [showTooltip, setShowTooltip] = useState(false);
 
