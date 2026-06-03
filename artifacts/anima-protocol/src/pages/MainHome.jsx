@@ -4,8 +4,9 @@ import { base44 } from "@/api/base44Client";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Camera, Loader,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Camera, Loader, Wand2,
 } from "lucide-react";
+import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 
 const GREETINGS = [
   "Connection established. The weave hums with your arrival.",
@@ -96,7 +97,14 @@ export default function MainHome() {
   const [loading, setLoading] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [aiEditOpen, setAiEditOpen] = useState(false);
   const photoInputRef = useRef(null);
+
+  const handleApplyAiPhoto = async (dataUrl) => {
+    if (!anima?.id) return;
+    await base44.entities.Anima.update(anima.id, { avatar_url: dataUrl });
+    setAnima((prev) => (prev ? { ...prev, avatar_url: dataUrl } : prev));
+  };
 
   const handlePhotoSelected = async (e) => {
     const file = e.target.files?.[0];
@@ -271,6 +279,16 @@ export default function MainHome() {
             <p className="font-mono text-[9px] tracking-wider text-red-400/80 -mt-2 mb-2" role="alert">
               {photoError}
             </p>
+          )}
+          {anima?.avatar_url?.startsWith("data:") && !uploadingPhoto && (
+            <button
+              type="button"
+              onClick={() => setAiEditOpen(true)}
+              className="flex items-center gap-1.5 mb-3 px-2.5 py-1 border border-cyan-500/25 text-cyan-400/70 hover:text-cyan-300 hover:border-cyan-400/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors"
+            >
+              <Wand2 className="w-3 h-3" />
+              AI Edit
+            </button>
           )}
           <h1
             className="text-2xl sm:text-3xl tracking-[0.35em] font-bold text-cyan-400 uppercase"
@@ -464,6 +482,13 @@ export default function MainHome() {
           Online • V4.3.0
         </div>
       </div>
+
+      <AvatarAIEditModal
+        isOpen={aiEditOpen}
+        sourceImage={anima?.avatar_url}
+        onClose={() => setAiEditOpen(false)}
+        onApply={handleApplyAiPhoto}
+      />
     </div>
   );
 }

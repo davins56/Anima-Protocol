@@ -1,5 +1,6 @@
 import { Router } from "express";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
+import { getAuth } from "@clerk/express";
 import { rateLimit } from "../../lib/rateLimit";
 
 if (!process.env.OPENAI_API_KEY) {
@@ -338,6 +339,64 @@ router.post("/invoke/:fnName", async (req, res) => {
     }
 
     res.json({ result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// AI photo edit: takes a base64 image data URL plus a text prompt and returns
+// an AI-transformed version (gpt-image-1 edit). Gated to signed-in users since
+// image generation is a paid call. The result is returned as a PNG data URL.
+router.post("/image-edit", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { image, prompt } = req.body as { image?: string; prompt?: string };
+
+  if (typeof image !== "string" || !image.startsWith("data:")) {
+    res.status(400).json({ error: "A base64 image data URL is required." });
+    return;
+  }
+  if (typeof prompt !== "string" || !prompt.trim()) {
+    res.status(400).json({ error: "An edit prompt is required." });
+    return;
+  }
+
+  const match = image.match(/^data:(.+?);base64,(.*)$/);
+  if (!match) {
+    res.status(400).json({ error: "Malformed image data." });
+    return;
+  }
+  const mime = match[1];
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length > 20 * 1024 * 1024) {
+    res.status(413).json({ error: "Image is too large." });
+    return;
+  }
+  const ext = mime.includes("png")
+    ? "png"
+    : mime.includes("webp")
+      ? "webp"
+      : "jpg";
+
+  try {
+    const file = await toFile(buffer, `source.${ext}`, { type: mime });
+    const result = await openai.images.edit({
+      model: "gpt-image-1",
+      image: file,
+      prompt: prompt.trim().slice(0, 1000),
+      size: "1024x1024",
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    if (!b64) {
+      res.status(502).json({ error: "No image was returned." });
+      return;
+    }
+    res.json({ image: `data:image/png;base64,${b64}` });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: msg });

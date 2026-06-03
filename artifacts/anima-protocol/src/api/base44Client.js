@@ -48,6 +48,25 @@ async function storeFetch(path, options = {}) {
   return fetch(`${STORE_BASE}${path}`, { ...options, headers });
 }
 
+// AI photo edit. Sends a base64 image data URL + a text prompt to the
+// api-server (gpt-image-1 edit) and returns the transformed image as a data
+// URL. Used by the home-page "add photo" AI edit feature.
+const API_BASE = `${window.location.origin}/api`;
+
+export async function editImage({ image, prompt }) {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_BASE}/openai/image-edit`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ image, prompt }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
 // --- list cache + in-flight de-dupe -----------------------------------------
 // list() is called very frequently across the app. A short TTL cache plus
 // in-flight de-duplication keeps it responsive without going stale: any write
