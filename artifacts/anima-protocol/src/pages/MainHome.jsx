@@ -5,7 +5,7 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Camera, Loader, Wand2,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 
@@ -49,30 +49,6 @@ function timeAgo(dateStr) {
   return `${days}d ago`;
 }
 
-function downscaleImage(file, maxSize, quality) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Failed to load image"));
-      img.onload = () => {
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-        const w = Math.max(1, Math.round(img.width * scale));
-        const h = Math.max(1, Math.round(img.height * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 function SectionHeader({ label, action }) {
   return (
     <div className="flex items-center justify-between mb-3">
@@ -96,34 +72,12 @@ export default function MainHome() {
   const [selectedMode, setSelectedMode] = useState("serenity");
   const [greeting, setGreeting] = useState(GREETINGS[0]);
   const [loading, setLoading] = useState(true);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [photoError, setPhotoError] = useState("");
   const [aiEditOpen, setAiEditOpen] = useState(false);
-  const photoInputRef = useRef(null);
 
   const handleApplyAiPhoto = async (dataUrl) => {
     if (!anima?.id) return;
     await base44.entities.Anima.update(anima.id, { avatar_url: dataUrl });
     setAnima((prev) => (prev ? { ...prev, avatar_url: dataUrl } : prev));
-  };
-
-  const handlePhotoSelected = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !anima?.id) return;
-    setPhotoError("");
-    setUploadingPhoto(true);
-    try {
-      const dataUrl = await downscaleImage(file, 512, 0.85);
-      await base44.entities.Anima.update(anima.id, { avatar_url: dataUrl });
-      setAnima((prev) => (prev ? { ...prev, avatar_url: dataUrl } : prev));
-    } catch (err) {
-      console.error("Failed to set anima photo:", err);
-      const quota = err?.name === "QuotaExceededError" || /quota/i.test(err?.message || "");
-      setPhotoError(quota ? "Image too large to store. Try a smaller photo." : "Couldn't set that photo. Try another image.");
-    } finally {
-      setUploadingPhoto(false);
-    }
   };
 
   const loadHomeData = useCallback(async () => {
@@ -239,11 +193,10 @@ export default function MainHome() {
         >
           <button
             type="button"
-            onClick={() => !uploadingPhoto && anima?.id && photoInputRef.current?.click()}
-            disabled={!anima?.id || uploadingPhoto}
-            aria-label={anima?.id ? "Set your anima's photo" : "Anima"}
-            title={anima?.id ? "Set your anima's photo" : "Anima"}
-            className="group w-20 h-20 mb-4 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)] cursor-pointer disabled:cursor-default"
+            onClick={() => navigate("/characters?create=1")}
+            aria-label="Create a companion"
+            title="Create a companion"
+            className="group w-20 h-20 mb-4 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)] cursor-pointer"
           >
             {anima?.avatar_url ? (
               <img
@@ -253,39 +206,22 @@ export default function MainHome() {
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-cyan-950/20">
-                <Camera className="w-5 h-5 text-cyan-400/50" />
-                <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 uppercase">Add photo</span>
+                <Plus className="w-5 h-5 text-cyan-400/60 group-hover:text-cyan-300 transition-colors" />
+                <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 group-hover:text-cyan-300/70 uppercase transition-colors">New companion</span>
               </div>
             )}
 
-            {anima?.avatar_url && !uploadingPhoto && (
-              <div className="absolute inset-1 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera className="w-5 h-5 text-cyan-400" />
-              </div>
-            )}
-
-            {uploadingPhoto && (
-              <div className="absolute inset-1 flex items-center justify-center bg-black/70">
-                <Loader className="w-5 h-5 text-cyan-400 animate-spin" />
+            {anima?.avatar_url && (
+              <div className="absolute inset-1 flex flex-col items-center justify-center gap-1 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Plus className="w-5 h-5 text-cyan-400" />
+                <span className="font-mono text-[7px] tracking-widest text-cyan-400/80 uppercase">New companion</span>
               </div>
             )}
 
             <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
             <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
           </button>
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handlePhotoSelected}
-            className="hidden"
-          />
-          {photoError && (
-            <p className="font-mono text-[9px] tracking-wider text-red-400/80 -mt-2 mb-2" role="alert">
-              {photoError}
-            </p>
-          )}
-          {anima?.avatar_url?.startsWith("data:") && !uploadingPhoto && (
+          {anima?.avatar_url?.startsWith("data:") && (
             <button
               type="button"
               onClick={() => setAiEditOpen(true)}

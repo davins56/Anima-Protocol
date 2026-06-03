@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -46,6 +46,7 @@ const defaultForm = {
 
 export default function Characters() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const confirm = useConfirm();
   const [characters, setCharacters] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -67,6 +68,18 @@ export default function Characters() {
   useEffect(() => {
     loadCharacters();
   }, []);
+
+  // Open the create form directly when arrived via "Create a companion" (e.g.
+  // the home-screen button navigates here with ?create=1). Clear the param so a
+  // refresh or back-navigation doesn't re-open the form.
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setEditingChar(null);
+      setForm(defaultForm);
+      setShowForm(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Live cross-device sync: refetch when another device changes our data.
   useStoreSync(loadCharacters);
