@@ -14,3 +14,6 @@ Created characters auto-get a portrait via api-server `GET /api/character-image?
 **Why:** original version marked attempted unconditionally, permanently leaving characters photoless after any transient failure.
 
 Obscure characters legitimately return null → leave avatar_url empty (placeholder); do NOT generate images.
+
+**Dead Fandom seed URLs — `<img onError>` can't detect them:** the starter roster (seedCharacters.js) hardcoded `static.wikia.nocookie.net` (Fandom) hotlinks that now HTTP 404. Fandom answers a missing file with a *valid* 300x171 "image not found" WebP, so the `<img>` decodes/loads successfully and `onError` NEVER fires — the card just shows Fandom's gray placeholder. Detection must be URL-based, not load-event-based: `photoNeedsLookup(url)` (exported from seedCharacters.js) treats empty OR `static.wikia.nocookie.net` URLs as "needs a real photo". Used in both the card render (show placeholder + on-demand "Find photo" button) and the backfill pending filter (auto-replace via the working Wikipedia endpoint on load).
+**Why:** spent a cycle on an `onError` fix that did nothing because the broken URLs still "load".

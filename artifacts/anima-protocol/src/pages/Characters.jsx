@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus } from "lucide-react";
-import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
+import { autoAssignCharacterPhoto, photoNeedsLookup } from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
 import { Link } from "react-router-dom";
@@ -353,7 +353,7 @@ export default function Characters() {
 
                 {/* Avatar */}
                 <div className="relative">
-                  {char.avatar_url && !brokenPhotoIds.has(char.id) ? (
+                  {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
                     <img
                       src={char.avatar_url}
                       alt={char.name}

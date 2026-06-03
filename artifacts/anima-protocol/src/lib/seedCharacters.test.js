@@ -39,7 +39,11 @@ vi.mock("@/lib/characterPhoto", () => ({
 }));
 
 import { base44 } from "@/api/base44Client";
-import { seedCharactersIfNeeded, resetSeedLock } from "@/lib/seedCharacters";
+import {
+  seedCharactersIfNeeded,
+  resetSeedLock,
+  photoNeedsLookup,
+} from "@/lib/seedCharacters";
 
 beforeEach(() => {
   localStorage.clear();
@@ -90,5 +94,30 @@ describe("starter roster seeding", () => {
     const chars = await base44.entities.Character.list();
     expect(chars).toHaveLength(1);
     expect(chars[0].name).toBe("Pre-existing");
+  });
+});
+
+describe("photoNeedsLookup", () => {
+  it("flags missing avatars as needing a lookup", () => {
+    expect(photoNeedsLookup(undefined)).toBe(true);
+    expect(photoNeedsLookup(null)).toBe(true);
+    expect(photoNeedsLookup("")).toBe(true);
+  });
+
+  it("flags dead Fandom hotlinks (which 404 to a valid placeholder webp)", () => {
+    expect(
+      photoNeedsLookup(
+        "https://static.wikia.nocookie.net/marvelcinematicuniverse/images/9/98/Tony_Stark_in_Endgame.png/revision/latest/scale-to-width-down/300",
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts usable portrait URLs", () => {
+    expect(
+      photoNeedsLookup(
+        "https://upload.wikimedia.org/wikipedia/en/f/f2/Robert_Downey_Jr._as_Tony_Stark.jpg",
+      ),
+    ).toBe(false);
+    expect(photoNeedsLookup("/seed-avatars/mark-grayson.webp")).toBe(false);
   });
 });

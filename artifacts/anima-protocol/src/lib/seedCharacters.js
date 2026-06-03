@@ -313,6 +313,18 @@ function markPhotoAttempted(attempts, id) {
   }
 }
 
+// True when a character's avatar_url is missing or known-unusable, so it should
+// be (re)fetched. The seed data shipped Fandom (static.wikia.nocookie.net)
+// hotlinks that now 404 — and Fandom answers a missing file with a *valid*
+// 300x171 "image not found" WebP, so the <img> loads successfully (no onerror)
+// yet renders a gray placeholder. We can't detect that via onerror, so we treat
+// those URLs as missing: it surfaces the on-demand "Find photo" action and lets
+// the backfill replace them with a real Wikipedia portrait.
+export function photoNeedsLookup(url) {
+  if (!url) return true;
+  return url.includes("static.wikia.nocookie.net");
+}
+
 // Auto-find a web photo for one character and persist it.
 // Returns the URL on success, or null for a definitive no-match.
 // THROWS on transient lookup failures (network/server) — callers that batch
@@ -345,7 +357,7 @@ async function doBackfillPhotos() {
     const all = await base44.entities.Character.list("-created_date", 1000);
     const attempts = getPhotoAttempts();
     const pending = (all || []).filter(
-      (c) => c?.id && !c.avatar_url && !attempts.has(c.id)
+      (c) => c?.id && photoNeedsLookup(c.avatar_url) && !attempts.has(c.id)
     );
     if (!pending.length) return;
 
