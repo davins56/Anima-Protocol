@@ -1,4 +1,4 @@
-import { bulkImport } from "@/api/base44Client";
+import { bulkImport, restoreData } from "@/api/base44Client";
 import { seedCharactersIfNeeded, resetSeedLock } from "@/lib/seedCharacters";
 
 // One-time migration of the browser's pre-sync localStorage data up to the
@@ -12,6 +12,12 @@ const LEGACY_AUTH_KEY = "anima_auth_user";
 
 let bootstrapPromise = null;
 let bootstrappedUserId = null;
+
+// Leftover local data stashed when a RETURNING user (account already has server
+// data) signs in on a fresh browser that still holds pre-sync localStorage. The
+// one-time import refuses non-empty accounts, so this data would otherwise be
+// silently abandoned. We hold it here and let the UI offer an optional merge.
+let pendingLocalMerge = null;
 
 export function bootstrapUserData(userId) {
   if (bootstrappedUserId === userId && bootstrapPromise) {
@@ -91,11 +97,19 @@ async function migrateLocalDataOnce() {
     const result = await bulkImport(payload);
     // The account already has server data, so the one-time import (which only
     // ever targets an EMPTY account) is a legitimate no-op, NOT a failure. The
-    // user's data is already safe on their account; mark the migration done so
-    // we stop retrying and never show the "hasn't synced" notice. (Without this,
-    // every returning user with leftover local data on a fresh browser gets a
-    // permanent false-alarm toast that reloads the app when its Retry is tapped.)
+    // account's own data is already safe; the import never put it at risk.
     if (!result?.imported && result?.reason === "account_not_empty") {
+      // But this browser still holds leftover local data that was created
+      // offline and never made it onto the account. If it's meaningful (actual
+      // entity records, not just a settings blob), stash it and let the UI offer
+      // an optional merge. Don't set the migration flag yet and don't clobber
+      // anything — the returning user decides whether to bring it over.
+      if (hasData) {
+        pendingLocalMerge = payload;
+        return "local_data_available";
+      }
+      // Nothing meaningful to merge — behave as before: mark the migration done
+      // so we stop retrying and never show the "hasn't synced" notice.
       localStorage.setItem(MIGRATION_KEY, "1");
       return "skipped";
     }
@@ -113,4 +127,29 @@ async function migrateLocalDataOnce() {
 
   localStorage.setItem(MIGRATION_KEY, "1");
   return "skipped";
+}
+
+// Whether bootstrap stashed leftover local data awaiting the user's decision.
+export function hasPendingLocalMerge() {
+  return pendingLocalMerge != null;
+}
+
+// The returning user accepted the "add this device's data to your account"
+// prompt. Route the stashed local data through the user-driven MERGE restore —
+// which works on a non-empty account and never clobbers records the backup
+// doesn't mention — then mark the one-time migration done so we stop offering.
+export async function mergeLeftoverLocalData() {
+  if (!pendingLocalMerge) return { restored: false };
+  const result = await restoreData(pendingLocalMerge, "merge");
+  localStorage.setItem(MIGRATION_KEY, "1");
+  pendingLocalMerge = null;
+  return result;
+}
+
+// The returning user declined the merge prompt. Leave their local data and
+// account exactly as they are today, and mark the migration done so we don't
+// keep asking on every load.
+export function dismissLeftoverLocalData() {
+  pendingLocalMerge = null;
+  localStorage.setItem(MIGRATION_KEY, "1");
 }

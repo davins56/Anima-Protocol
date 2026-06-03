@@ -31,7 +31,11 @@ import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
 import { useKeyboardAvoidance } from "@/hooks/useKeyboardAvoidance";
-import { bootstrapUserData } from "@/lib/syncBootstrap";
+import {
+  bootstrapUserData,
+  mergeLeftoverLocalData,
+  dismissLeftoverLocalData,
+} from "@/lib/syncBootstrap";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -393,6 +397,50 @@ const AuthenticatedApp = () => {
         } else if (outcome === "migrated") {
           // A later attempt confirmed success — clear any lingering notice.
           toast.dismiss("anima-migration-sync");
+        } else if (outcome === "local_data_available") {
+          // A returning user signed in on a fresh browser that still holds local
+          // data created offline, but their account already has data — so the
+          // one-time import couldn't bring it over. Offer an optional, non-
+          // destructive merge that adds this device's data to their account.
+          toast("We found data saved on this device.", {
+            id: "anima-local-merge",
+            description:
+              "Add it to your account? Nothing already on your account will be overwritten.",
+            duration: Infinity,
+            action: {
+              label: "Add to my account",
+              onClick: async () => {
+                toast.loading("Adding your device's data…", {
+                  id: "anima-local-merge",
+                });
+                try {
+                  await mergeLeftoverLocalData();
+                  toast.success(
+                    "Your device's data was added to your account.",
+                    { id: "anima-local-merge", duration: 6000 },
+                  );
+                } catch (err) {
+                  console.warn("[Anima] Local data merge failed:", err.message);
+                  toast.error(
+                    "We couldn't add your device's data just now.",
+                    {
+                      id: "anima-local-merge",
+                      description: "Please try again.",
+                      duration: Infinity,
+                      action: {
+                        label: "Retry",
+                        onClick: () => window.location.reload(),
+                      },
+                    },
+                  );
+                }
+              },
+            },
+            cancel: {
+              label: "Not now",
+              onClick: () => dismissLeftoverLocalData(),
+            },
+          });
         }
       });
     }

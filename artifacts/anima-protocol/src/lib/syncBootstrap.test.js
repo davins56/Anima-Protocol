@@ -5,13 +5,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // account exactly once, ever, and (2) per-account starter seeding. We mock the
 // two collaborators (the server bulkImport and the seeding routine) and assert
 // the orchestration's guarantees directly.
-const { bulkImport, seedCharactersIfNeeded, resetSeedLock } = vi.hoisted(() => ({
-  bulkImport: vi.fn(),
-  seedCharactersIfNeeded: vi.fn(),
-  resetSeedLock: vi.fn(),
-}));
+const { bulkImport, restoreData, seedCharactersIfNeeded, resetSeedLock } =
+  vi.hoisted(() => ({
+    bulkImport: vi.fn(),
+    restoreData: vi.fn(),
+    seedCharactersIfNeeded: vi.fn(),
+    resetSeedLock: vi.fn(),
+  }));
 
-vi.mock("@/api/base44Client", () => ({ bulkImport }));
+vi.mock("@/api/base44Client", () => ({ bulkImport, restoreData }));
 vi.mock("@/lib/seedCharacters", () => ({ seedCharactersIfNeeded, resetSeedLock }));
 
 const MIGRATION_KEY = "anima_server_migration_v1";
@@ -23,10 +25,18 @@ async function loadBootstrap() {
   return (await import("@/lib/syncBootstrap")).bootstrapUserData;
 }
 
+// Like loadBootstrap, but returns the whole fresh module so a test can drive the
+// merge/dismiss exports against the same module-level pending-data state.
+async function loadBootstrapModule() {
+  vi.resetModules();
+  return import("@/lib/syncBootstrap");
+}
+
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   bulkImport.mockReset().mockResolvedValue({ imported: true, count: 1 });
+  restoreData.mockReset().mockResolvedValue({ restored: true, mode: "merge", count: 1 });
   seedCharactersIfNeeded.mockReset().mockResolvedValue(undefined);
   resetSeedLock.mockReset();
 });
@@ -146,15 +156,16 @@ describe("first sign-in migration", () => {
     expect(outcome).toBe("failed");
   });
 
-  it("treats an account-not-empty response as done (skipped), not failed", async () => {
+  it("offers a merge when the account is non-empty but this device has leftover data", async () => {
     localStorage.setItem(
       "anima_entity_Character",
       JSON.stringify([{ id: "c1", name: "Local Hero" }]),
     );
     // A returning user: the account already has server data, so the one-time
-    // import (empty-accounts only) legitimately no-ops. This must NOT be treated
-    // as a failure — the data is already safe on the account, so the flag is set
-    // and no "hasn't synced" notice is shown.
+    // import (empty-accounts only) no-ops. But this browser still holds local
+    // data created offline. Rather than silently abandoning it, bootstrap reports
+    // "local_data_available" so the UI can offer an optional, non-destructive
+    // merge — and it does NOT set the flag yet (the user hasn't decided).
     bulkImport.mockResolvedValueOnce({
       imported: false,
       reason: "account_not_empty",
@@ -164,11 +175,87 @@ describe("first sign-in migration", () => {
     const outcome = await bootstrapUserData("userA");
 
     expect(bulkImport).toHaveBeenCalledTimes(1);
-    // The migration is marked done so it stops retrying on every load.
-    expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
+    expect(outcome).toBe("local_data_available");
+    // The decision is still pending, so the migration flag stays unset and no
+    // merge has happened yet.
+    expect(localStorage.getItem(MIGRATION_KEY)).toBeNull();
+    expect(restoreData).not.toHaveBeenCalled();
     expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
-    // "skipped" so the UI shows no failed-sync notice.
+  });
+
+  it("treats a non-empty account with no entity data (profile only) as done", async () => {
+    // Only a settings blob, no meaningful entity records. There's nothing worth
+    // prompting the user to merge, so behave as before: mark done and skip.
+    sessionStorage.setItem(
+      "anima_auth_user",
+      JSON.stringify({ id: "old", email: "x@y.z", selected_mode: "story" }),
+    );
+    bulkImport.mockResolvedValueOnce({
+      imported: false,
+      reason: "account_not_empty",
+    });
+
+    const bootstrapUserData = await loadBootstrap();
+    const outcome = await bootstrapUserData("userA");
+
     expect(outcome).toBe("skipped");
+    expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
+    expect(restoreData).not.toHaveBeenCalled();
+  });
+
+  it("accepting the merge routes leftover local data through a merge restore and marks done", async () => {
+    localStorage.setItem(
+      "anima_entity_Character",
+      JSON.stringify([{ id: "c1", name: "Local Hero" }]),
+    );
+    sessionStorage.setItem(
+      "anima_auth_user",
+      JSON.stringify({ id: "old", email: "x@y.z", selected_mode: "story" }),
+    );
+    bulkImport.mockResolvedValueOnce({
+      imported: false,
+      reason: "account_not_empty",
+    });
+
+    const mod = await loadBootstrapModule();
+    const outcome = await mod.bootstrapUserData("userA");
+    expect(outcome).toBe("local_data_available");
+    expect(mod.hasPendingLocalMerge()).toBe(true);
+
+    const result = await mod.mergeLeftoverLocalData();
+
+    // The merge is a non-destructive "merge" restore over the existing account.
+    expect(restoreData).toHaveBeenCalledTimes(1);
+    const [payload, mode] = restoreData.mock.calls[0];
+    expect(mode).toBe("merge");
+    expect(payload.entities.Character).toEqual([{ id: "c1", name: "Local Hero" }]);
+    expect(payload.profile).toEqual({ selected_mode: "story" });
+    expect(result).toEqual({ restored: true, mode: "merge", count: 1 });
+    // Now that the data is on the account, mark done so we stop offering.
+    expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
+    expect(mod.hasPendingLocalMerge()).toBe(false);
+  });
+
+  it("declining the merge marks done without touching the account", async () => {
+    localStorage.setItem(
+      "anima_entity_Character",
+      JSON.stringify([{ id: "c1", name: "Local Hero" }]),
+    );
+    bulkImport.mockResolvedValueOnce({
+      imported: false,
+      reason: "account_not_empty",
+    });
+
+    const mod = await loadBootstrapModule();
+    await mod.bootstrapUserData("userA");
+    expect(mod.hasPendingLocalMerge()).toBe(true);
+
+    mod.dismissLeftoverLocalData();
+
+    // Declining leaves the account untouched but stops re-prompting on next load.
+    expect(restoreData).not.toHaveBeenCalled();
+    expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
+    expect(mod.hasPendingLocalMerge()).toBe(false);
   });
 
   it("retries the migration on the next sign-in after a failed import", async () => {
