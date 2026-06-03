@@ -26,12 +26,19 @@ Use **pnpm only** (root `preinstall` rejects npm/yarn): `pnpm install --frozen-l
 
 ### PostgreSQL (local VM)
 
-PostgreSQL 16 is installed with a dev database:
+On a fresh Cloud VM, install and start Postgres 16 if missing:
+
+```bash
+sudo apt-get install -y postgresql postgresql-contrib
+sudo pg_ctlcluster 16 main start
+sudo -u postgres psql -c "CREATE USER anima WITH PASSWORD 'anima_dev' CREATEDB;" 2>/dev/null || true
+sudo -u postgres psql -c "CREATE DATABASE anima_dev OWNER anima;" 2>/dev/null || true
+```
+
+Dev connection string:
 
 - `DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev`
-- Apply schema: `pnpm --filter @workspace/db run push` (requires `DATABASE_URL`)
-
-Start cluster if needed: `sudo pg_ctlcluster 16 main start`
+- Apply schema: `pnpm --filter @workspace/db run push` (requires `DATABASE_URL`; also runs from `scripts/post-merge.sh` after merges)
 
 ### Required secrets (full stack)
 
@@ -93,9 +100,9 @@ pnpm --filter @workspace/mockup-sandbox run dev
 
 ### Local reverse proxy (nginx)
 
-To mirror Replit routing (`/` → frontend, `/api` → API), nginx listens on **3000** with config at `/etc/nginx/sites-available/anima-dev`. Open the app at `http://127.0.0.1:3000/` after both servers are up.
+To mirror Replit routing (`/` → frontend, `/api` → API), run nginx on **3000** proxying `23660` and `8080`. On a fresh VM: `sudo apt-get install -y nginx`, add `/etc/nginx/sites-available/anima-dev` (proxy `/` → `127.0.0.1:23660`, `/api/` → `127.0.0.1:8080`), enable the site, disable `default`, then `sudo nginx -t && sudo nginx -s reload`.
 
-Reload: `sudo nginx -s reload`
+Open the app at `http://127.0.0.1:3000/` only after **both** dev servers are running.
 
 ### Gotchas
 
