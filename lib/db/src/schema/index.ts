@@ -106,6 +106,25 @@ export const userEntities = pgTable(
       sql`(data ->> 'session_id')`,
       sql`((data ->> 'seq')::numeric)`,
     ),
+    // GIN trigram index backing the store's case-insensitive substring search on
+    // the JSONB `title` field (see store.ts searchCondition: `(data ->> 'title')
+    // ilike '%term%'`). Without it an ILIKE '%...%' must scan the whole partition,
+    // which gets slow once an account amasses a large library; pg_trgm lets the
+    // planner satisfy the ILIKE from the index and bitmap-AND it with the
+    // (user_id, entity_name) index above.
+    //
+    // The expression is the TEXT projection `data ->> 'title'`, NOT the jsonb
+    // `data -> 'title'`: a jsonb (->) expression column makes the publish-time
+    // schema-diff emit a jsonb operator class onto an adjacent text column, which
+    // Postgres rejects and which blocks the production migration. `->>` keeps the
+    // indexed expression text-typed so gin_trgm_ops applies cleanly.
+    //
+    // Requires the pg_trgm extension (created idempotently in scripts/post-merge.sh
+    // before `drizzle-kit push`, since push does not manage extensions).
+    userEntityTitleTrgmIdx: index("user_entities_title_trgm_idx").using(
+      "gin",
+      sql`(data ->> 'title') gin_trgm_ops`,
+    ),
   }),
 );
 
