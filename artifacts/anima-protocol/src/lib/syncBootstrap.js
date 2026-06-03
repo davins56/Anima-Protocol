@@ -81,9 +81,14 @@ async function migrateLocalDataOnce() {
     const payload = { entities };
     if (profile) payload.profile = profile;
     const result = await bulkImport(payload);
-    if (result?.imported) {
-      console.log(`[Anima] Migrated ${result.count} records to your account.`);
+    // Only treat the migration as done when the server confirms the import
+    // succeeded. A partial/failed import that still resolves (e.g.
+    // `{ imported: false }`) must NOT set the flag, or the user's local
+    // characters/profile would be permanently left behind with no retry.
+    if (!result?.imported) {
+      throw new Error("bulk import did not confirm success");
     }
+    console.log(`[Anima] Migrated ${result.count} records to your account.`);
   }
 
   localStorage.setItem(MIGRATION_KEY, "1");

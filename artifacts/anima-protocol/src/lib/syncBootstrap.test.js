@@ -118,4 +118,45 @@ describe("first sign-in migration", () => {
     // A failed import is NOT marked done, so it will be retried next load.
     expect(localStorage.getItem(MIGRATION_KEY)).toBeNull();
   });
+
+  it("does not mark migration done when the import resolves without confirming success", async () => {
+    localStorage.setItem(
+      "anima_entity_Character",
+      JSON.stringify([{ id: "c1", name: "Local Hero" }]),
+    );
+    // A partial/failed import that still RESOLVES (no throw) but does not
+    // confirm success must not flip the one-time flag, or the local data would
+    // be silently abandoned with no retry.
+    bulkImport.mockResolvedValueOnce({ imported: false });
+
+    const bootstrapUserData = await loadBootstrap();
+    await bootstrapUserData("userA");
+
+    expect(bulkImport).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(MIGRATION_KEY)).toBeNull();
+    // Seeding still runs regardless of the migration outcome.
+    expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries the migration on the next sign-in after a failed import", async () => {
+    localStorage.setItem(
+      "anima_entity_Character",
+      JSON.stringify([{ id: "c1", name: "Local Hero" }]),
+    );
+    // First attempt fails to confirm; the flag stays unset.
+    bulkImport.mockResolvedValueOnce({ imported: false });
+
+    const bootstrapUserData = await loadBootstrap();
+    await bootstrapUserData("userA");
+    expect(localStorage.getItem(MIGRATION_KEY)).toBeNull();
+
+    // Second sign-in (same browser): a fresh module instance retries the import,
+    // this time succeeds, and only now marks the migration done.
+    bulkImport.mockResolvedValueOnce({ imported: true, count: 1 });
+    const bootstrapAgain = await loadBootstrap();
+    await bootstrapAgain("userA");
+
+    expect(bulkImport).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
+  });
 });
