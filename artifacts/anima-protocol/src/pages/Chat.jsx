@@ -6,6 +6,11 @@ import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow } from "@/lib/chatRewindHandlers";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
+import {
+  syncActiveMessages as runActiveMessageSync,
+  syncFromRemote as handleRemoteSync,
+  settleDeferredSync,
+} from "@/lib/chatSyncHandlers";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -582,40 +587,17 @@ export default function Chat() {
   // over an in-flight reply. Returns true if applied (or there was nothing to
   // apply because the user navigated away), false if it was skipped/failed and
   // should be retried once the device settles.
-  const syncActiveMessages = useCallback(async () => {
-    if (!sessionId) return true;
-    let messages;
-    try {
-      messages = await base44.messages.list(sessionId);
-    } catch {
-      return false; // transient — caller re-arms a retry
-    }
-    const cur = activeSessionRef.current;
-    if (!cur || cur.id !== sessionId) return true; // navigated away; new session loads fresh
-    // Never clobber a thread whose optimistic thinking/typing bubbles or
-    // streaming reply are in flight — signal a retry instead.
-    const hasPending = (cur.messages || []).some(
-      (m) =>
-        m.character_name === "__typing__" || m.character_name === "__thinking__",
-    );
-    if (hasPending) return false;
-    setActiveSession((prev) =>
-      prev && prev.id === sessionId ? { ...prev, messages } : prev,
-    );
-    return true;
-  }, [sessionId]);
+  const syncActiveMessages = useCallback(
+    () => runActiveMessageSync({ sessionId, activeSessionRef, setActiveSession }),
+    [sessionId],
+  );
 
   const syncFromRemote = useCallback(() => {
-    // The sidebar list is metadata-only (no message hydration) and can't
-    // corrupt an in-progress reply, so refresh it unconditionally.
-    loadSessions();
-    if (isLoading) {
-      // Defer the open conversation's refetch until generation settles.
-      pendingRemoteSyncRef.current = true;
-      return;
-    }
-    syncActiveMessages().then((applied) => {
-      if (!applied) pendingRemoteSyncRef.current = true;
+    handleRemoteSync({
+      isLoading,
+      loadSessions,
+      pendingRemoteSyncRef,
+      runSync: syncActiveMessages,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, syncActiveMessages]);
@@ -626,16 +608,15 @@ export default function Chat() {
   // we were busy (deferred above so it couldn't corrupt the streaming reply).
   // Only clear the pending flag on a successful apply, so a fresh send starting
   // mid-catch-up can't make us drop the deferred remote change.
-  useEffect(() => {
-    if (isLoading || !pendingRemoteSyncRef.current) return;
-    let cancelled = false;
-    syncActiveMessages().then((applied) => {
-      if (!cancelled && applied) pendingRemoteSyncRef.current = false;
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoading, syncActiveMessages]);
+  useEffect(
+    () =>
+      settleDeferredSync({
+        isLoading,
+        pendingRemoteSyncRef,
+        runSync: syncActiveMessages,
+      }),
+    [isLoading, syncActiveMessages],
+  );
 
   const handleNewSession = () => setShowModal(true);
 

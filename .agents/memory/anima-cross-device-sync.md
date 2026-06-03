@@ -75,3 +75,10 @@ bubble. Rules that keep it correct:
 - The pending-bubble check must read the LATEST committed `activeSession` (via an
   `activeSessionRef` updated each render) AFTER the await — not the render-closure snapshot — or
   a reply that started during the fetch is missed and gets clobbered.
+
+## Sync handlers extracted for unit testing
+- The three Chat sync closures live in `src/lib/chatSyncHandlers.js` (DI functions:
+  `syncActiveMessages`, `syncFromRemote`, `settleDeferredSync`); Chat.jsx wraps them
+  in its useCallback/useEffect. Same extract-to-DI pattern as edit/delete/rewind so
+  the mid-reply race can be driven deterministically (mock base44 `messages.list`).
+- The dropped-update race regression test is `src/lib/chatSyncHandlers.test.js`.
