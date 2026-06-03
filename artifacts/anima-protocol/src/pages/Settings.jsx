@@ -17,6 +17,51 @@ import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
 
+// Friendly singular labels for backup entity categories shown in the restore
+// preview. Unknown keys fall back to a humanized version of the entity name.
+const ENTITY_LABELS = {
+  ChatSession: "chat session",
+  ChatMessage: "chat message",
+  Character: "character",
+  CharacterMemory: "memory",
+  VectorMemory: "vector memory",
+  Inventory: "inventory item",
+  CheckIn: "check-in",
+  WorldState: "lore entry",
+  Quest: "quest",
+  Anima: "Anima",
+  MemoryCrystal: "memory crystal",
+  ResonanceProfile: "resonance profile",
+  UserContext: "context entry",
+  KnowledgeGraph: "knowledge graph",
+};
+
+const humanizeEntityName = (name) =>
+  String(name).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").toLowerCase();
+
+const pluralize = (label, count) => {
+  if (count === 1) return label;
+  if (/[^aeiou]y$/i.test(label)) return label.replace(/y$/i, "ies");
+  if (/(s|x|z|ch|sh)$/i.test(label)) return `${label}es`;
+  return `${label}s`;
+};
+
+const entityLabel = (name, count) =>
+  pluralize(ENTITY_LABELS[name] || humanizeEntityName(name), count);
+
+const formatBackupDate = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
 const defaultPrefs = {
   ai_creativity: 0.7,
   ai_response_length: "medium",
@@ -240,15 +285,17 @@ export default function Settings() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const entities = parsed?.entities;
-      if (!entities || typeof entities !== "object") {
+      if (!entities || typeof entities !== "object" || Array.isArray(entities)) {
         throw new Error("This file doesn't look like an Anima backup.");
       }
-      const recordCount = Object.values(entities).reduce(
-        (sum, recs) => sum + (Array.isArray(recs) ? recs.length : 0),
-        0,
-      );
+      const breakdown = Object.entries(entities)
+        .map(([name, recs]) => ({ name, count: Array.isArray(recs) ? recs.length : 0 }))
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count);
+      const recordCount = breakdown.reduce((sum, item) => sum + item.count, 0);
+      const exportedLabel = formatBackupDate(parsed.exported_at);
       // Defer the actual write until the user picks merge vs replace.
-      setPendingRestore({ entities, profile: parsed.profile, recordCount });
+      setPendingRestore({ entities, profile: parsed.profile, recordCount, breakdown, exportedLabel });
       setConfirmReplace(false);
     } catch (err) {
       console.error("Restore failed:", err);
@@ -931,9 +978,25 @@ export default function Settings() {
               <RotateCcw className="w-5 h-5 text-primary flex-shrink-0" />
               <h2 className="font-mono text-primary tracking-[0.2em] uppercase text-sm">Restore Backup</h2>
             </div>
-            <p className="font-mono text-[10px] text-primary/50 tracking-wider leading-relaxed">
-              This backup contains <span className="text-primary font-bold">{pendingRestore.recordCount}</span> record{pendingRestore.recordCount === 1 ? "" : "s"}.
-            </p>
+            <div className="space-y-2">
+              <p className="font-mono text-[10px] text-primary/50 tracking-wider leading-relaxed">
+                This backup contains <span className="text-primary font-bold">{pendingRestore.recordCount}</span> record{pendingRestore.recordCount === 1 ? "" : "s"}
+                {pendingRestore.exportedLabel ? <> · exported {pendingRestore.exportedLabel}</> : null}.
+              </p>
+              {pendingRestore.breakdown.length > 0 && (
+                <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-40 overflow-y-auto border-t border-primary/10 pt-2">
+                  {pendingRestore.breakdown.map((item) => (
+                    <li
+                      key={item.name}
+                      className="font-mono text-[9px] text-primary/40 tracking-wider flex justify-between gap-2"
+                    >
+                      <span className="truncate capitalize">{entityLabel(item.name, item.count)}</span>
+                      <span className="text-primary/70 font-bold flex-shrink-0">{item.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             {!confirmReplace ? (
               <>
