@@ -82,28 +82,28 @@ export const userEntities = pgTable(
       sql`(case when jsonb_typeof(data -> 'updated_date') = 'number' then (data ->> 'updated_date')::numeric end) desc nulls last`,
       sql`((data ->> 'updated_date') collate "C") desc nulls last`,
     ),
-    // Filter indexes for the most common equality lookups (session_id scopes
-    // world state / calendars / quests; character_id scopes journals /
-    // inventory). jsonb sub-value matches the `data -> 'field' = ...` condition.
-    userEntitySessionIdx: index("user_entities_session_idx").on(
-      t.userId,
-      t.entityName,
-      sql`(data -> 'session_id')`,
-    ),
-    userEntityCharacterIdx: index("user_entities_character_idx").on(
-      t.userId,
-      t.entityName,
-      sql`(data -> 'character_id')`,
-    ),
     // Chat messages are stored as individual rows (entity_name 'ChatMessage')
     // keyed by session_id and ordered by a per-session integer `seq`. This
     // composite index lets the store read one session's messages in seq order
     // (with a LIMIT for paging) without a sort step, and keeps appends cheap as
     // a conversation's history grows.
+    //
+    // session_id is projected as TEXT (->>) here, not jsonb (->), for two
+    // reasons: it matches the message-read queries' text scoping (see
+    // sessionIdEq), and it keeps every column of this index on a btree
+    // text/numeric operator class. A jsonb (->) expression column makes the
+    // publish-time schema-diff emit a jsonb operator class onto the adjacent
+    // TEXT column (entity_name) — `... entity_name jsonb_ops ...` — which
+    // Postgres rejects with "operator class jsonb_ops does not accept data type
+    // text" and which blocks the production migration. Pure-equality jsonb
+    // filter lookups (session_id / character_id) fall back to the
+    // (user_id, entity_name) index above; at this store's scale a single user's
+    // per-entity partition is tiny, so the dedicated jsonb indexes are not worth
+    // re-introducing the migration hazard.
     userEntitySessionSeqIdx: index("user_entities_session_seq_idx").on(
       t.userId,
       t.entityName,
-      sql`(data -> 'session_id')`,
+      sql`(data ->> 'session_id')`,
       sql`((data ->> 'seq')::numeric)`,
     ),
   }),

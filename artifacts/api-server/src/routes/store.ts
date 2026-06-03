@@ -530,10 +530,13 @@ router.put("/profile", async (req, res) => {
 const CHAT_MESSAGE = "ChatMessage";
 const CHAT_SESSION = "ChatSession";
 
-// `data -> 'session_id' = "<id>"` — type-faithful jsonb equality, mirroring the
-// generic store's filter so a ChatMessage is scoped to exactly one session.
+// `data ->> 'session_id' = '<id>'` — scope a ChatMessage to exactly one session.
+// session_id is always a string, so this text comparison is equivalent to the
+// jsonb equality used by the generic filter, and it deliberately mirrors the
+// text projection of user_entities_session_seq_idx (and the batch read at
+// inArray below) so seq-ordered message reads stay index-accelerated.
 function sessionIdEq(sessionId: string): SQL {
-  return sql`${userEntities.data} -> 'session_id' = ${JSON.stringify(sessionId)}::jsonb`;
+  return sql`(${userEntities.data} ->> 'session_id') = ${sessionId}`;
 }
 
 type Row = typeof userEntities.$inferSelect;
