@@ -14,53 +14,9 @@ import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen } from "lucide-react";
 import UserContextSettings from "@/components/anima/UserContextSettings";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
+import { entityLabel, parseBackup } from "@/lib/restoreBackup";
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
-
-// Friendly singular labels for backup entity categories shown in the restore
-// preview. Unknown keys fall back to a humanized version of the entity name.
-const ENTITY_LABELS = {
-  ChatSession: "chat session",
-  ChatMessage: "chat message",
-  Character: "character",
-  CharacterMemory: "memory",
-  VectorMemory: "vector memory",
-  Inventory: "inventory item",
-  CheckIn: "check-in",
-  WorldState: "lore entry",
-  Quest: "quest",
-  Anima: "Anima",
-  MemoryCrystal: "memory crystal",
-  ResonanceProfile: "resonance profile",
-  UserContext: "context entry",
-  KnowledgeGraph: "knowledge graph",
-};
-
-const humanizeEntityName = (name) =>
-  String(name).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").toLowerCase();
-
-const pluralize = (label, count) => {
-  if (count === 1) return label;
-  if (/[^aeiou]y$/i.test(label)) return label.replace(/y$/i, "ies");
-  if (/(s|x|z|ch|sh)$/i.test(label)) return `${label}es`;
-  return `${label}s`;
-};
-
-const entityLabel = (name, count) =>
-  pluralize(ENTITY_LABELS[name] || humanizeEntityName(name), count);
-
-const formatBackupDate = (value) => {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-};
 
 const defaultPrefs = {
   ai_creativity: 0.7,
@@ -283,19 +239,11 @@ export default function Settings() {
     setRestoreResult(null);
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
-      const entities = parsed?.entities;
-      if (!entities || typeof entities !== "object" || Array.isArray(entities)) {
-        throw new Error("This file doesn't look like an Anima backup.");
-      }
-      const breakdown = Object.entries(entities)
-        .map(([name, recs]) => ({ name, count: Array.isArray(recs) ? recs.length : 0 }))
-        .filter((item) => item.count > 0)
-        .sort((a, b) => b.count - a.count);
-      const recordCount = breakdown.reduce((sum, item) => sum + item.count, 0);
-      const exportedLabel = formatBackupDate(parsed.exported_at);
+      // Validate + summarize before staging; throws (friendly message) for a
+      // malformed file so nothing is staged and no network call is made.
+      const staged = parseBackup(text);
       // Defer the actual write until the user picks merge vs replace.
-      setPendingRestore({ entities, profile: parsed.profile, recordCount, breakdown, exportedLabel });
+      setPendingRestore(staged);
       setConfirmReplace(false);
     } catch (err) {
       console.error("Restore failed:", err);
