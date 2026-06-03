@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db, conversations, messages } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import OpenAI from "openai";
+import { getAuth } from "@clerk/express";
 import { rateLimit } from "../../lib/rateLimit";
 import { isModelUnavailableError, resolveModel, routeModel } from "../../lib/modelRouter";
 
@@ -15,28 +16,40 @@ const router = Router();
 
 router.use(rateLimit);
 
-router.get("/conversations", async (_req, res) => {
-  const rows = await db.select().from(conversations).orderBy(conversations.createdAt);
+router.get("/conversations", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const rows = await db.select().from(conversations)
+    .where(eq(conversations.userId, userId))
+    .orderBy(conversations.createdAt);
   res.json(rows);
 });
 
 router.post("/conversations", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const { title } = req.body as { title?: string };
-  const [row] = await db.insert(conversations).values({ title: title || "New conversation" }).returning();
+  const [row] = await db.insert(conversations).values({ userId, title: title || "New conversation" }).returning();
   res.status(201).json(row);
 });
 
 router.get("/conversations/:id", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
-  const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
   const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
   res.json({ ...conv, messages: msgs });
 });
 
 router.delete("/conversations/:id", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
-  const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
   await db.delete(messages).where(eq(messages.conversationId, id));
   await db.delete(conversations).where(eq(conversations.id, id));
@@ -44,16 +57,24 @@ router.delete("/conversations/:id", async (req, res) => {
 });
 
 router.get("/conversations/:id/messages", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
+  if (!conv) { res.status(404).json({ error: "Not found" }); return; }
   const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
   res.json(msgs);
 });
 
 router.post("/conversations/:id/messages", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
   const { content, systemPrompt } = req.body as { content: string; systemPrompt?: string };
 
-  const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
 
   await db.insert(messages).values({ conversationId: id, role: "user", content });

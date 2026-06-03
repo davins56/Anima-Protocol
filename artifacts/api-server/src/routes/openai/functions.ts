@@ -14,6 +14,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const router = Router();
 router.use(rateLimit);
+router.use((req, res, next) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 
 async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
   const resp = await openai.chat.completions.create({
@@ -489,14 +497,7 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "processUserContext": {
-        // Gate auth BEFORE any paid model call — analyzing an image/text runs
-        // OpenAI, so an unauthenticated caller must never reach it (avoids a
-        // denial-of-wallet hole; persistence is user-scoped anyway).
-        const { userId } = getAuth(req);
-        if (!userId) {
-          res.status(401).json({ error: "Unauthorized" });
-          return;
-        }
+        const { userId } = getAuth(req) as { userId: string };
         const entityId =
           typeof data.user_context_id === "string" ? data.user_context_id : "";
         const isImage = Boolean(data.is_image);
@@ -525,11 +526,7 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "buildUserContextPrompt": {
-        const { userId } = getAuth(req);
-        if (!userId) {
-          result = { data: { context_prompt: "", context_count: 0 } };
-          break;
-        }
+        const { userId } = getAuth(req) as { userId: string };
         const rows = await db
           .select()
           .from(userEntities)

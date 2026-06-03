@@ -14,6 +14,7 @@ import { z } from "zod/v4";
 
 export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   title: text("title").notNull().default("New conversation"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

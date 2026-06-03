@@ -325,9 +325,8 @@ describe("buildUserContextPrompt", () => {
     expect(context_prompt).not.toContain("Disabled Doc");
   });
 
-  it("returns empty context for an unauthenticated request", async () => {
+  it("rejects unauthenticated callers with 401", async () => {
     const res = await invoke(null, "buildUserContextPrompt", {});
-    expect(res.status).toBe(200);
-    expect(res.json.result.data).toEqual({ context_prompt: "", context_count: 0 });
+    expect(res.status).toBe(401);
   });
 });
