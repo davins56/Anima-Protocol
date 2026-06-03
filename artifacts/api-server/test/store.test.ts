@@ -1,0 +1,246 @@
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import express, { type Express } from "express";
+import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
+
+// The store router derives the user id from the Clerk session via getAuth().
+// For the integration test we replace getAuth with a stub that reads the user
+// id from a test-only header, so we can exercise the REAL router + REAL Postgres
+// per-account isolation, import gate and upsert logic without a live Clerk
+// session. Everything else (the DB queries in store.ts) is unmocked.
+vi.mock("@clerk/express", () => ({
+  getAuth: (req: { headers: Record<string, string | undefined> }) => ({
+    userId: req.headers["x-test-user"] ?? null,
+  }),
+}));
+
+import storeRouter from "../src/routes/store";
+import { db, userEntities, userProfiles } from "@workspace/db";
+import { like } from "drizzle-orm";
+
+// All test users share a unique-per-run prefix so cleanup can target only this
+// run's rows and concurrent runs never collide.
+const PREFIX = `itest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
+const user = (name: string) => `${PREFIX}${name}`;
+
+let server: Server;
+let baseUrl = "";
+
+beforeAll(async () => {
+  const app: Express = express();
+  app.use(express.json({ limit: "16mb" }));
+  app.use("/store", storeRouter);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, () => resolve());
+  });
+  const port = (server.address() as AddressInfo).port;
+  baseUrl = `http://127.0.0.1:${port}`;
+});
+
+afterAll(async () => {
+  // Remove only the rows this run created.
+  await db.delete(userEntities).where(like(userEntities.userId, `${PREFIX}%`));
+  await db.delete(userProfiles).where(like(userProfiles.userId, `${PREFIX}%`));
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+type Json = Record<string, unknown>;
+
+async function call(
+  userId: string | null,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${baseUrl}/store${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(userId ? { "x-test-user": userId } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  let json: any = null;
+  const text = await res.text();
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = text;
+    }
+  }
+  return { status: res.status, json };
+}
+
+describe("store auth", () => {
+  it("rejects unauthenticated requests", async () => {
+    const res = await call(null, "GET", "/Character");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("progress persists per account (account A)", () => {
+  const A = user("A_persist");
+
+  it("a created custom character survives a 'reload' (fresh request)", async () => {
+    const created = await call(A, "POST", "/Character", {
+      name: "Custom Hero A",
+      universe: "Original",
+    });
+    expect(created.status).toBe(201);
+    expect(created.json.id).toBeTruthy();
+    expect(created.json.name).toBe("Custom Hero A");
+
+    // Simulate a reload: a brand new request reading from the server.
+    const list = await call(A, "GET", "/Character");
+    expect(list.status).toBe(200);
+    const names = (list.json as Json[]).map((c) => c.name);
+    expect(names).toContain("Custom Hero A");
+
+    // And it is fetchable by id.
+    const one = await call(A, "GET", `/Character/${created.json.id}`);
+    expect(one.json?.name).toBe("Custom Hero A");
+  });
+});
+
+describe("per-account isolation (account B never sees account A's data)", () => {
+  const A = user("A_iso");
+  const B = user("B_iso");
+  const seedIds = ["seed_x", "seed_y", "seed_z"];
+
+  it("each account only sees its own records", async () => {
+    // Account A creates custom data.
+    await call(A, "POST", "/Character", { name: "A Secret", universe: "A" });
+
+    // Account B seeds its own starter roster (deterministic seed ids).
+    for (const id of seedIds) {
+      await call(B, "PUT", `/Character/${id}`, {
+        name: id,
+        universe: "Starter",
+      });
+    }
+
+    const aList = (await call(A, "GET", "/Character")).json as Json[];
+    const bList = (await call(B, "GET", "/Character")).json as Json[];
+
+    const aNames = aList.map((c) => c.name);
+    const bNames = bList.map((c) => c.name);
+
+    // A sees its own custom char and NONE of B's seeds.
+    expect(aNames).toContain("A Secret");
+    for (const id of seedIds) expect(aNames).not.toContain(id);
+
+    // B sees its starter roster and NOT A's custom char.
+    expect(bNames).not.toContain("A Secret");
+    for (const id of seedIds) expect(bNames).toContain(id);
+
+    // Cross-account get-by-id is impossible: B cannot read A's record.
+    const aChar = aList.find((c) => c.name === "A Secret")!;
+    const leaked = await call(B, "GET", `/Character/${aChar.id}`);
+    expect(leaked.json).toBeNull();
+  });
+});
+
+describe("one-time migration import gate", () => {
+  it("imports into an empty account exactly once and refuses to run again", async () => {
+    const U = user("import_once");
+    const payload = {
+      entities: {
+        Character: [
+          { id: "mig_1", name: "Migrated One" },
+          { id: "mig_2", name: "Migrated Two" },
+        ],
+        Journal: [{ id: "j_1", title: "Old journal" }],
+      },
+      profile: { selected_mode: "story", display_name: "Legacy Name" },
+    };
+
+    const first = await call(U, "POST", "/import", payload);
+    expect(first.status).toBe(200);
+    expect(first.json.imported).toBe(true);
+    expect(first.json.count).toBe(3);
+
+    // Second import must be refused because the account now has data.
+    const second = await call(U, "POST", "/import", payload);
+    expect(second.json.imported).toBe(false);
+    expect(second.json.reason).toBe("account_not_empty");
+
+    // Records are present and not duplicated.
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    expect(chars).toHaveLength(2);
+
+    // Profile migrated.
+    const profile = (await call(U, "GET", "/profile")).json as Json;
+    expect(profile.selected_mode).toBe("story");
+  });
+
+  it("preserves a pre-existing profile field over the imported legacy profile", async () => {
+    const U = user("import_profile_merge");
+    // Sign-in writes a display_name BEFORE the migration runs.
+    await call(U, "PUT", "/profile", { display_name: "Clerk Name" });
+
+    await call(U, "POST", "/import", {
+      entities: { Character: [{ id: "c1", name: "C1" }] },
+      profile: { display_name: "Legacy Name", selected_mode: "companion" },
+    });
+
+    const profile = (await call(U, "GET", "/profile")).json as Json;
+    // Server-set display_name wins; other legacy fields still merge in.
+    expect(profile.display_name).toBe("Clerk Name");
+    expect(profile.selected_mode).toBe("companion");
+  });
+
+  it("does not duplicate records under concurrent imports (id-bearing records)", async () => {
+    const U = user("import_concurrent");
+    const payload = {
+      entities: {
+        Character: [
+          { id: "k1", name: "K1" },
+          { id: "k2", name: "K2" },
+          { id: "k3", name: "K3" },
+        ],
+      },
+    };
+
+    // Two bootstrap calls racing on first sign-in. Even if both pass the empty
+    // gate, the records carry stable ids so upserts converge on the same rows.
+    await Promise.all([
+      call(U, "POST", "/import", payload),
+      call(U, "POST", "/import", payload),
+    ]);
+
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    expect(chars).toHaveLength(3);
+  });
+});
+
+describe("concurrent seeding does not duplicate the starter roster", () => {
+  it("two sessions seeding the same fresh account converge on one roster", async () => {
+    const U = user("seed_concurrent");
+    // Deterministic seed ids (mirrors seedCharacters.seedId()).
+    const roster = Array.from({ length: 8 }, (_, i) => ({
+      id: `seed_char_${i}`,
+      name: `Seed ${i}`,
+      universe: "Starter",
+    }));
+
+    const seedOnce = () =>
+      Promise.all(
+        roster.map((c) => call(U, "PUT", `/Character/${c.id}`, c)),
+      );
+
+    // Two concurrent sessions both observe an empty roster and both seed.
+    await Promise.all([seedOnce(), seedOnce()]);
+
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    // Upsert-by-id means the roster is seeded once, not doubled.
+    expect(chars).toHaveLength(roster.length);
+  });
+});

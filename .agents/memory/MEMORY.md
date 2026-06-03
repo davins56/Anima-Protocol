@@ -9,3 +9,4 @@
 - [lib/db decl rebuild for typecheck](db-decl-rebuild-for-typecheck.md) — after schema edits, api-server typecheck reads stale lib/db/dist .d.ts ("no exported member"); run `cd lib/db && npx tsc -b` first.
 - [Anima Undo/delete-flow tests](anima-undo-tests.md) — real base44 hangs in vitest (no token getter); mock base44 in-memory + extract Chat page handlers to DI functions to test.
 - [Anima typecheck scope](anima-typecheck-scope.md) — typecheck only covers .ts/.tsx (allowJs off on purpose); JS-from-tsx needs colocated .d.ts; mockups/ excluded.
+- [api-server integration tests](api-server-integration-tests.md) — test /api/store against REAL Postgres, mock @clerk/express getAuth via x-test-user header; client-only guarantees tested in anima vitest.
