@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { base44, exportData, bulkImport } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
-  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink
+  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle
 } from "lucide-react";
 const resetTutorial = () => localStorage.removeItem("serenity_tutorial_seen_v1");
 import {
@@ -54,6 +54,11 @@ export default function Settings() {
   const [showAdultGate, setShowAdultGate] = useState(false);
   const [assigningVoices, setAssigningVoices] = useState(false);
   const [voicesAssigned, setVoicesAssigned] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportedAt, setExportedAt] = useState(null);
+  const [exportError, setExportError] = useState(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState(null);
 
   useEffect(() => {
     loadUser();
@@ -194,6 +199,65 @@ export default function Settings() {
       console.error("Factory reset error:", err);
       setResetting(false);
       setShowResetConfirm(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const data = await exportData();
+      const payload = JSON.stringify(data, null, 2);
+      const blob = new Blob([payload], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `anima-backup-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportedAt(new Date());
+      return true;
+    } catch (err) {
+      console.error("Export failed:", err);
+      setExportError(err?.message || "Export failed");
+      return false;
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleRestoreFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setRestoring(true);
+    setRestoreResult(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const entities = parsed?.entities;
+      if (!entities || typeof entities !== "object") {
+        throw new Error("This file doesn't look like an Anima backup.");
+      }
+      const result = await bulkImport({ entities, profile: parsed.profile });
+      if (result?.imported) {
+        setRestoreResult({ ok: true, count: result.count || 0 });
+        await Promise.all([loadStats(), loadUser()]);
+      } else {
+        setRestoreResult({
+          ok: false,
+          message:
+            "Your account already has data. Restore only works on a fresh account — do a Factory Reset first, then restore.",
+        });
+      }
+    } catch (err) {
+      console.error("Restore failed:", err);
+      setRestoreResult({ ok: false, message: err?.message || "Restore failed" });
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -639,6 +703,68 @@ export default function Settings() {
                 <StatBox label="Custom Characters" value={charCount} />
               </div>
 
+              <SectionTitle>Backup &amp; Restore</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5" />
+                      Export My Data
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Download a JSON backup of everything — chat sessions, characters, memories, quests, lore, inventory &amp; more. Keep it safe before wiping your data.
+                    </p>
+                    {exportedAt && (
+                      <p className="text-[9px] font-mono text-green-400/70 mt-1.5 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Backup downloaded {exportedAt.toLocaleTimeString()}
+                      </p>
+                    )}
+                    {exportError && (
+                      <p className="text-[9px] font-mono text-destructive/70 mt-1.5">{exportError}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleExport}
+                    disabled={exporting}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+                  >
+                    {exporting ? <Loader className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                    {exporting ? "Exporting..." : "Export"}
+                  </button>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 pt-4 border-t border-primary/10">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Restore From Backup
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Import a previously exported backup file. Only works on a fresh account — do a Factory Reset first if needed.
+                    </p>
+                    {restoreResult && (
+                      <p className={`text-[9px] font-mono mt-1.5 leading-relaxed ${restoreResult.ok ? "text-green-400/70" : "text-orange-400/70"}`}>
+                        {restoreResult.ok
+                          ? `Restored ${restoreResult.count} record${restoreResult.count === 1 ? "" : "s"}.`
+                          : restoreResult.message}
+                      </p>
+                    )}
+                  </div>
+                  <label className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[10px] tracking-widest uppercase transition-all cursor-pointer">
+                    {restoring ? <Loader className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                    {restoring ? "Restoring..." : "Restore"}
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      disabled={restoring}
+                      onChange={handleRestoreFile}
+                    />
+                  </label>
+                </div>
+              </div>
+
               <SectionTitle>Clear Data</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <DangerAction
@@ -794,6 +920,14 @@ export default function Settings() {
             <p className="font-mono text-xs text-primary/60 leading-relaxed">
               You will be taken back to <span className="text-orange-400 font-bold">onboarding</span> to start fresh. This <span className="text-destructive">cannot be undone</span>.
             </p>
+            <button
+              onClick={handleExport}
+              disabled={resetting || exporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+            >
+              {exporting ? <Loader className="w-3 h-3 animate-spin" /> : exportedAt ? <CheckCircle className="w-3 h-3" /> : <Download className="w-3 h-3" />}
+              {exporting ? "Exporting..." : exportedAt ? "Backup Downloaded — Export Again" : "Export My Data First"}
+            </button>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowResetConfirm(false)}
@@ -838,6 +972,14 @@ export default function Settings() {
             <p className="font-mono text-xs text-primary/60 leading-relaxed">
               This action <span className="text-destructive font-bold">cannot be undone</span>. You will be logged out immediately.
             </p>
+            <button
+              onClick={handleExport}
+              disabled={deletingAccount || exporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all min-h-[44px]"
+            >
+              {exporting ? <Loader className="w-3 h-3 animate-spin" /> : exportedAt ? <CheckCircle className="w-3 h-3" /> : <Download className="w-3 h-3" />}
+              {exporting ? "Exporting..." : exportedAt ? "Backup Downloaded — Export Again" : "Export My Data First"}
+            </button>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowDeleteConfirm(false)}

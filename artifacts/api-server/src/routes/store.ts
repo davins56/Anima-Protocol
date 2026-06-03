@@ -177,6 +177,39 @@ router.post("/import", async (req, res) => {
   res.json({ imported: true, count });
 });
 
+// --- Bulk export ------------------------------------------------------------
+// Returns every entity record for the signed-in user, grouped by entity name,
+// plus the profile. The shape is the same one /import consumes so a backup can
+// be restored after a factory reset (which leaves the account empty).
+router.get("/export", async (req, res) => {
+  const userId = getUserId(req);
+
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(eq(userEntities.userId, userId));
+
+  const entities: Record<string, Record<string, unknown>[]> = {};
+  for (const row of rows) {
+    const name = row.entityName;
+    if (!entities[name]) entities[name] = [];
+    entities[name].push(row.data as Record<string, unknown>);
+  }
+
+  const [profileRow] = await db
+    .select()
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  res.json({
+    version: 1,
+    exported_at: new Date().toISOString(),
+    entities,
+    profile: profileRow ? (profileRow.data as Record<string, unknown>) : null,
+  });
+});
+
 // --- Profile (per-user settings record) -------------------------------------
 router.get("/profile", async (req, res) => {
   const userId = getUserId(req);

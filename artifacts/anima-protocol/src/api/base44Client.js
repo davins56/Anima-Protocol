@@ -73,6 +73,18 @@ export function clearStoreCache() {
   entityVersion.clear();
 }
 
+// Full account export. Returns every entity record for the signed-in user plus
+// their profile, in the same shape bulkImport() consumes so a backup can be
+// restored after a factory reset. Used by the "Export my data" backup feature.
+export async function exportData() {
+  const res = await storeFetch('/export');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
 // One-time bulk import used by the local->server migration. The server only
 // imports when the account has no data yet, so this is safe to call and a no-op
 // for accounts that already have server data.
