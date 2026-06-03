@@ -871,7 +871,7 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
 
       const adultInstruction = adultMode
         ? "\nCONTENT RATING — ADULT (18+) ENABLED: The user has explicitly enabled adult mode. You may engage in explicit, sexual, and lewd content when the story naturally leads there. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back or fade to black unless the user indicates otherwise.\n"
-        : "\nCONTENT RATING — SAFE MODE (adult content disabled): The user has NOT enabled adult mode. Keep everything strictly non-explicit and appropriate for a general audience. You may portray romance, attraction, tension, and emotional intimacy, but do NOT write graphic sexual, lewd, or pornographic content — fade to black before anything explicit. Avoid gratuitous gore and heavy profanity. If the user pushes toward explicit content, stay in character and gently redirect or decline rather than complying.\n";
+        : "\nCONTENT RATING — RAW MODE (non-explicit): Do NOT be tame, polite, or sanitized. Write with a raw, visceral, unfiltered edge — gritty, emotionally intense, and electrically charged. Lean hard into heat: smoldering tension, aching longing, magnetic and dangerous attraction, sensual and suggestive undertones, bold and evocative mature language. Let the chemistry feel real and unrestrained. The ONE hard line: stop before anything graphic — no explicit, pornographic, or anatomical sexual description; fade to black at that exact threshold. Within that single limit, hold nothing else back.\n";
 
       // Build injected memory context (user-selected recalled memories)
       const buildInjectedMemoryContext = () => {
