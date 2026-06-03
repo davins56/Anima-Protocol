@@ -25,7 +25,21 @@ const STARTER_CHARACTER = "Korra";
 // A character that exists ONLY in this browser's pre-sync localStorage. It is
 // never seeded, so its presence on the server proves the migration ran, and
 // its absence for a second account proves the migration runs exactly once.
-const localCharacter = `LegacyLocal ${Math.random().toString(36).slice(2, 8)}`;
+const rand = Math.random().toString(36).slice(2, 8);
+const localCharacter = `LegacyLocal ${rand}`;
+// A stable id for the local character so the seeded conversation can reference
+// it via character_id (mirroring how a real pre-sync chat pointed at its char).
+const localCharacterId = `local-char-${rand}`;
+
+// A chat conversation that exists ONLY in this browser's pre-sync localStorage,
+// stored in the LEGACY shape: a ChatSession whose `messages` live as an inline
+// blob on the session record (the format the server lazily splits into
+// ChatMessage rows on first access — see lib/db/chat-messages.ts). Its presence
+// on the server after sign-in proves chat history — not just characters — makes
+// the migration jump; its absence for a second account proves it runs once.
+const localSessionId = `local-session-${rand}`;
+const localUserMessage = `LegacyUserMsg ${rand}`;
+const localAssistantMessage = `LegacyReplyMsg ${rand}`;
 
 let userA: TestUser;
 let userB: TestUser;
@@ -48,7 +62,7 @@ test.beforeAll(async ({ browser }) => {
 
   context = await browser.newContext();
   await context.addInitScript(
-    ({ entityKey, migrationKey, character }) => {
+    ({ entityKey, sessionEntityKey, migrationKey, character, session }) => {
       try {
         localStorage.setItem("ai_disclaimer_accepted", "true");
         // Seed the pre-sync local data BEFORE any app/Clerk code runs, but only
@@ -56,6 +70,7 @@ test.beforeAll(async ({ browser }) => {
         // has already been (correctly) consumed, and we must not resurrect it.
         if (!localStorage.getItem(migrationKey)) {
           localStorage.setItem(entityKey, JSON.stringify([character]));
+          localStorage.setItem(sessionEntityKey, JSON.stringify([session]));
           // The legacy local identity blob the migration reads its profile from.
           sessionStorage.setItem(
             "anima_auth_user",
@@ -82,9 +97,10 @@ test.beforeAll(async ({ browser }) => {
     },
     {
       entityKey: "anima_entity_Character",
+      sessionEntityKey: "anima_entity_ChatSession",
       migrationKey: MIGRATION_KEY,
       character: {
-        id: `local-${Math.random().toString(36).slice(2, 10)}`,
+        id: localCharacterId,
         name: localCharacter,
         universe: "Pre-Sync Local Saga",
         category: "warrior",
@@ -93,6 +109,32 @@ test.beforeAll(async ({ browser }) => {
         personality: "A character saved in the browser before sync existed.",
         backstory: "Stored locally long before this account ever signed in.",
         speaking_style: "Plain.",
+      },
+      // Legacy-shape ChatSession: messages live inline on the record. The server
+      // preserves the id on import and lazily splits this blob into ChatMessage
+      // rows the first time the conversation is opened.
+      session: {
+        id: localSessionId,
+        title: `Chat with ${localCharacter}`,
+        character_id: localCharacterId,
+        mode: "solo",
+        created_date: "2024-01-01T12:00:00.000Z",
+        updated_date: "2024-01-01T12:05:00.000Z",
+        messages: [
+          {
+            id: `local-msg-user-${rand}`,
+            role: "user",
+            content: localUserMessage,
+            timestamp: "2024-01-01T12:01:00.000Z",
+          },
+          {
+            id: `local-msg-assistant-${rand}`,
+            role: "assistant",
+            content: localAssistantMessage,
+            character_name: localCharacter,
+            timestamp: "2024-01-01T12:02:00.000Z",
+          },
+        ],
       },
     },
   );
@@ -156,6 +198,31 @@ async function openCharactersAndWaitFor(
   throw lastErr;
 }
 
+// Open the migrated conversation directly by its (preserved) session id and wait
+// for the named message to render. Opening the session is what triggers the
+// server's lazy split of the legacy inline `messages` blob into ChatMessage rows
+// AND re-fetches them, so a visible message proves the history reached the
+// account server-side, not just a stale local cache.
+async function openSessionAndWaitFor(
+  messageText: string,
+  attempts = 4,
+): Promise<void> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    await page.goto(`/chat/${localSessionId}`);
+    await dismissOverlays(page);
+    try {
+      await expect(page.getByText(messageText, { exact: false })).toBeVisible({
+        timeout: 20_000,
+      });
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 test("first sign-in lifts the browser's pre-sync local data into the account", async () => {
   await signIn(userA);
   await page.goto("/characters");
@@ -172,8 +239,23 @@ test("first sign-in lifts the browser's pre-sync local data into the account", a
   // re-fetches it from the server, proving it wasn't just a local cache).
   await openCharactersAndWaitFor(localCharacter);
 
+  // ...and so does the pre-sync chat CONVERSATION — opening the session by its
+  // (preserved) id renders the messages the user had before sync ever existed.
+  await openSessionAndWaitFor(localAssistantMessage);
+  await expect(page.getByText(localUserMessage, { exact: false })).toBeVisible();
+
+  // The conversation survives a full reload — it is account state on the server,
+  // not a transient in-memory artifact of the migration that just ran.
+  await page.reload();
+  await dismissOverlays(page);
+  await expect(
+    page.getByText(localAssistantMessage, { exact: false }),
+  ).toBeVisible({ timeout: 20_000 });
+
   // A returning user with existing data must NOT get the starter roster dumped
   // on top — seeding skips any account that already has characters.
+  await page.goto("/characters");
+  await dismissOverlays(page);
   await expect(characterHeading(page, STARTER_CHARACTER)).toHaveCount(0);
 });
 
@@ -189,6 +271,18 @@ test("a second account in the same browser does NOT re-import the first account'
 
   // ...but it must NOT inherit account A's migrated local character.
   await expect(characterHeading(page, localCharacter)).toHaveCount(0);
+
+  // ...nor account A's migrated CONVERSATION. Opening the same session id under
+  // B's account surfaces no messages from A's pre-sync chat history (the session
+  // belongs to A on the server; B never sees its content).
+  await page.goto(`/chat/${localSessionId}`);
+  await dismissOverlays(page);
+  await expect(
+    page.getByText(localAssistantMessage, { exact: false }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(localUserMessage, { exact: false }),
+  ).toHaveCount(0);
 
   // The one-time flag is unchanged — the migration never ran a second time.
   const flag = await page.evaluate(
