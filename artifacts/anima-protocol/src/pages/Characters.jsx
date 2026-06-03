@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
-import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader } from "lucide-react";
+import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus } from "lucide-react";
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
@@ -57,6 +57,8 @@ export default function Characters() {
   const [fetchingBio, setFetchingBio] = useState(false);
   const [longPressTimer, setLongPressTimer] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [photoLoadingId, setPhotoLoadingId] = useState(null);
+  const [photoMsg, setPhotoMsg] = useState(null);
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
@@ -173,6 +175,28 @@ export default function Characters() {
       console.error('Error saving character:', err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // On-demand photo lookup for a card with no avatar. autoAssignCharacterPhoto
+  // throws on transient (network/server) failures and returns null when the
+  // service gave a definitive "no match" — surface those two cases distinctly.
+  const handleFindPhoto = async (char) => {
+    if (photoLoadingId) return;
+    setPhotoLoadingId(char.id);
+    setPhotoMsg(null);
+    try {
+      const url = await autoAssignCharacterPhoto(char);
+      if (url) {
+        await loadCharacters();
+      } else {
+        setPhotoMsg({ id: char.id, text: "No photo found" });
+      }
+    } catch (err) {
+      console.error("Photo lookup failed:", err);
+      setPhotoMsg({ id: char.id, text: "Lookup failed — try again" });
+    } finally {
+      setPhotoLoadingId(null);
     }
   };
 
@@ -325,8 +349,27 @@ export default function Characters() {
                   {char.avatar_url ? (
                     <img src={char.avatar_url} alt={char.name} className="w-full aspect-square object-cover" />
                   ) : (
-                    <div className="w-full aspect-square bg-primary/5 flex items-center justify-center">
+                    <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
                       <span className="font-mono text-primary/30 text-4xl">{char.name[0]}</span>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); handleFindPhoto(char); }}
+                        disabled={photoLoadingId === char.id}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 border border-primary/30 text-primary/60 hover:text-primary hover:border-primary/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors disabled:opacity-60 disabled:cursor-default"
+                      >
+                        {photoLoadingId === char.id ? (
+                          <><Loader className="w-3 h-3 animate-spin" /> Searching</>
+                        ) : (
+                          <><ImagePlus className="w-3 h-3" /> Find photo</>
+                        )}
+                      </button>
+                      {photoMsg?.id === char.id && (
+                        <span className="font-mono text-[8px] tracking-wider text-amber-400/80 text-center px-1">
+                          {photoMsg.text}
+                        </span>
+                      )}
                     </div>
                   )}
                   {/* Status dot */}
