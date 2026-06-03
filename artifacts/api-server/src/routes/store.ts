@@ -115,6 +115,16 @@ function withinLimit(limit: number | undefined): number | undefined {
   return undefined;
 }
 
+// Offset guard, mirroring withinLimit: a finite, positive number skips that many
+// leading rows; anything else means "no offset" (0). Pushed into SQL so paging
+// to a later page fetches only that page's rows instead of every row up to it.
+function withinOffset(offset: number | undefined): number {
+  if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+    return Math.trunc(offset);
+  }
+  return 0;
+}
+
 // Does the sort field hold BOTH a number and a non-number (non-null) JSON value
 // across the matching rows? Only then is the old comparator type-dependent per
 // pair and impossible to push into a single ORDER BY. Runs only when sorting;
@@ -140,6 +150,7 @@ async function listEntities(
   filters: Record<string, unknown> | undefined,
   sort: string | undefined,
   limit: number | undefined,
+  offset: number | undefined,
 ): Promise<Record<string, unknown>[]> {
   const conditions: SQL[] = [
     eq(userEntities.userId, userId),
@@ -152,12 +163,14 @@ async function listEntities(
   }
   const whereClause = and(...conditions) as SQL;
   const cap = withinLimit(limit);
+  const off = withinOffset(offset);
 
   if (typeof sort === "string" && sort) {
     const { field, desc } = parseSort(sort);
     // Mixed-type column: reproduce the old JS comparator exactly. Filters are
-    // still applied in SQL; only ordering + limit happen in memory. This path
-    // is for pathological data only — in practice a field is consistently typed.
+    // still applied in SQL; only ordering + limit + offset happen in memory.
+    // This path is for pathological data only — in practice a field is
+    // consistently typed.
     if (await sortFieldIsMixed(whereClause, field)) {
       const mixedRows = await db
         .select()
@@ -165,7 +178,8 @@ async function listEntities(
         .where(whereClause);
       const data = mixedRows.map((r) => r.data as Record<string, unknown>);
       data.sort(compareByField(field, desc));
-      return cap === undefined ? data : data.slice(0, cap);
+      const end = cap === undefined ? undefined : off + cap;
+      return off > 0 || end !== undefined ? data.slice(off, end) : data;
     }
   }
 
@@ -175,6 +189,9 @@ async function listEntities(
   }
   if (cap !== undefined) {
     q = q.limit(cap);
+  }
+  if (off > 0) {
+    q = q.offset(off);
   }
 
   const rows = await q;
@@ -825,6 +842,10 @@ router.get("/:entity", async (req, res) => {
     typeof req.query.limit === "string" && req.query.limit !== ""
       ? Number(req.query.limit)
       : undefined;
+  const offset =
+    typeof req.query.offset === "string" && req.query.offset !== ""
+      ? Number(req.query.offset)
+      : undefined;
   let filters: Record<string, unknown> | undefined;
   if (typeof req.query.filters === "string" && req.query.filters) {
     try {
@@ -833,7 +854,7 @@ router.get("/:entity", async (req, res) => {
       filters = undefined;
     }
   }
-  const items = await listEntities(userId, entity, filters, sort, limit);
+  const items = await listEntities(userId, entity, filters, sort, limit, offset);
   res.json(items);
 });
 

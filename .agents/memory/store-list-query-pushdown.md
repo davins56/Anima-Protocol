@@ -47,3 +47,12 @@ in-memory query helper.
   indexes encode the same numeric-CASE + `COLLATE "C"` + `DESC NULLS LAST` shape;
   if you change the ORDER BY, change the index in lockstep or it stops being used
   (verify with EXPLAIN — no Sort node for `-created_date`/`-updated_date`+limit).
+
+- **`offset` is pushed into SQL too** (real `OFFSET`, paired with `LIMIT`) for
+  one-page-at-a-time paging; the mixed-type JS fallback applies it via
+  `data.slice(off, off+cap)` so both paths agree. The pagination hook fetches
+  `limit = pageSize + 1` and derives `hasMore` from the extra row (no grand
+  `total` — can't be known from a single page). **Why:** the old client over-
+  fetched `pageSize + skip` rows and sliced in JS, which got slow deep into
+  history. `withinOffset` truncates finite-positive, else 0; OFFSET-without-sort
+  mirrors limit-without-sort (paging callers always pass a sort).

@@ -255,10 +255,11 @@ export async function restoreData(payload, mode = 'merge') {
   return res.json();
 }
 
-function buildQuery({ filters, sort, limit }) {
+function buildQuery({ filters, sort, limit, offset }) {
   const params = new URLSearchParams();
   if (typeof sort === 'string' && sort) params.set('sort', sort);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
+  if (typeof offset === 'number' && offset > 0) params.set('offset', String(offset));
   if (filters && typeof filters === 'object' && Object.keys(filters).length) {
     params.set('filters', JSON.stringify(filters));
   }
@@ -388,17 +389,19 @@ async function hydrateMany(sessions) {
 function entityStore(entityName) {
   const base = {
     // SDK-style signatures used across the app:
-    //   list()                     → all items
-    //   list("-updated_date", 50)  → sorted + limited
-    //   list({ key: value })       → filtered (back-compat)
-    async list(sortOrFilters, limit) {
+    //   list()                          → all items
+    //   list("-updated_date", 50)       → sorted + limited
+    //   list("-created_date", 50, {offset: 100}) → one page, fetched in SQL
+    //   list({ key: value })            → filtered (back-compat)
+    async list(sortOrFilters, limit, opts) {
+      const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
       if (typeof sortOrFilters === 'string') {
-        return queryEntity(entityName, { sort: sortOrFilters, limit });
+        return queryEntity(entityName, { sort: sortOrFilters, limit, offset });
       }
       if (sortOrFilters && typeof sortOrFilters === 'object') {
-        return queryEntity(entityName, { filters: sortOrFilters, limit });
+        return queryEntity(entityName, { filters: sortOrFilters, limit, offset });
       }
-      return queryEntity(entityName, { limit });
+      return queryEntity(entityName, { limit, offset });
     },
 
     async get(id) {
@@ -466,10 +469,11 @@ function entityStore(entityName) {
       return res.json();
     },
 
-    // filter(filters?, sort?, limit?) — SDK-style equality filtering with
-    // optional sort string and numeric limit.
-    async filter(filters = {}, sort, limit) {
-      return queryEntity(entityName, { filters, sort, limit });
+    // filter(filters?, sort?, limit?, opts?) — SDK-style equality filtering with
+    // optional sort string, numeric limit and { offset } for SQL-side paging.
+    async filter(filters = {}, sort, limit, opts) {
+      const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
+      return queryEntity(entityName, { filters, sort, limit, offset });
     },
   };
 
@@ -487,12 +491,13 @@ function entityStore(entityName) {
     return {
       ...base,
       async list(sortOrFilters, limit, opts) {
-        const sessions = await base.list(sortOrFilters, limit);
+        const sessions = await base.list(sortOrFilters, limit, opts);
         if (opts && opts.withMessages === false) return sessions;
         return hydrateMany(sessions);
       },
       async filter(filters = {}, sort, limit, opts) {
-        const sessions = await queryEntity(entityName, { filters, sort, limit });
+        const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
+        const sessions = await queryEntity(entityName, { filters, sort, limit, offset });
         if (opts && opts.withMessages === false) return sessions;
         return hydrateMany(sessions);
       },

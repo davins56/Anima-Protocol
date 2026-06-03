@@ -543,6 +543,17 @@ describe("list query is pushed into SQL with identical semantics", () => {
     expect(ids(desc.json)).toEqual(["m3", "m4", "m1", "m2"]);
   });
 
+  it("offset + limit page the mixed-type fallback path too", async () => {
+    // Same legacy-comparator asc order: m2, m1, m4, m3. The mixed-type field
+    // forces the in-memory fallback, so offset/limit must be applied there.
+    const page1 = await call(U, "GET", `/Mixed?sort=val&limit=2&offset=0`);
+    expect(ids(page1.json)).toEqual(["m2", "m1"]);
+    const page2 = await call(U, "GET", `/Mixed?sort=val&limit=2&offset=2`);
+    expect(ids(page2.json)).toEqual(["m4", "m3"]);
+    const past = await call(U, "GET", `/Mixed?sort=val&limit=2&offset=4`);
+    expect(past.json).toHaveLength(0);
+  });
+
   it("numeric sort compares as numbers, not strings", async () => {
     const res = await call(U, "GET", `/Storypoint?sort=order`);
     // Numeric: 2 < 9 < 10 (string sort would give 10 < 2 < 9).
@@ -564,6 +575,39 @@ describe("list query is pushed into SQL with identical semantics", () => {
       `/Note?filters=${q}&sort=${encodeURIComponent("-created_date")}&limit=1`,
     );
     expect(ids(res.json)).toEqual(["n2"]);
+  });
+
+  it("offset skips leading rows in the DB after sort", async () => {
+    // Full desc order is n4, n2, n3, n1. Offset 1 drops n4.
+    const res = await call(
+      U,
+      "GET",
+      `/Note?sort=${encodeURIComponent("-created_date")}&offset=1`,
+    );
+    expect(ids(res.json)).toEqual(["n2", "n3", "n1"]);
+  });
+
+  it("limit + offset returns one page at a time (no over-fetch)", async () => {
+    const sort = encodeURIComponent("-created_date");
+    // Page through the 4 Notes two at a time.
+    const page0 = await call(U, "GET", `/Note?sort=${sort}&limit=2&offset=0`);
+    expect(ids(page0.json)).toEqual(["n4", "n2"]);
+    const page1 = await call(U, "GET", `/Note?sort=${sort}&limit=2&offset=2`);
+    expect(ids(page1.json)).toEqual(["n3", "n1"]);
+    // Past the end yields an empty page, not an error.
+    const page2 = await call(U, "GET", `/Note?sort=${sort}&limit=2&offset=4`);
+    expect(page2.json).toHaveLength(0);
+  });
+
+  it("filter + sort + limit + offset compose", async () => {
+    const q = encodeURIComponent(JSON.stringify({ session_id: "s2" }));
+    // s2 rows desc: n4 (Apr), n3 (Feb). Offset 1, limit 1 -> just n3.
+    const res = await call(
+      U,
+      "GET",
+      `/Note?filters=${q}&sort=${encodeURIComponent("-created_date")}&limit=1&offset=1`,
+    );
+    expect(ids(res.json)).toEqual(["n3"]);
   });
 });
 

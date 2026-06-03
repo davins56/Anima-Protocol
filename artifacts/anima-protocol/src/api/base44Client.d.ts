@@ -8,6 +8,9 @@ export interface ListOptions {
   // ChatSession only: skip hydrating each session's `messages` (metadata-only
   // lists such as the chat sidebar). Defaults to hydrating.
   withMessages?: boolean;
+  // Skip this many rows in the DB before returning, for one-page-at-a-time
+  // pagination (paired with `limit`). Applied server-side as a real SQL OFFSET.
+  offset?: number;
 }
 
 export interface EntityStore {
