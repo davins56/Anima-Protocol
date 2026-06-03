@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Wand2, Loader, Check, RotateCcw, Ban } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { editImage } from "@/api/base44Client";
+import { downscaleDataUrl } from "@/lib/downscaleImage";
 
 // gpt-image-1 edits usually land in this window. Used to drive the estimate
 // hint and the progress bar so the wait feels bounded instead of open-ended.
@@ -51,25 +52,6 @@ const PRESETS = [
   { label: "Marble Statue", prompt: "Transform this into a polished white marble statue with dramatic lighting." },
   { label: "Watercolor", prompt: "Render this as a delicate watercolor painting with soft washes of color." },
 ];
-
-function downscaleDataUrl(src, maxSize, quality) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onerror = () => reject(new Error("Failed to load image"));
-    img.onload = () => {
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * scale));
-      const h = Math.max(1, Math.round(img.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.src = src;
-  });
-}
 
 export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onApply, allowSaveOriginal = false }) {
   const [prompt, setPrompt] = useState("");

@@ -8,6 +8,7 @@ import {
   Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
+import { downscaleDataUrl } from "@/lib/downscaleImage";
 
 const GREETINGS = [
   "Connection established. The weave hums with your arrival.",
@@ -99,9 +100,18 @@ export default function MainHome() {
     e.target.value = "";
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       if (typeof reader.result !== "string") return;
-      setEditSource(reader.result);
+      // Shrink large phone photos (5–15MB) to ~1024px JPEG before they reach the
+      // AI image-edit request, so they don't slow it down or hit size limits.
+      // Fall back to the raw photo if downscaling fails for any reason.
+      let source = reader.result;
+      try {
+        source = await downscaleDataUrl(reader.result, 1024, 0.85);
+      } catch (err) {
+        console.debug("Photo downscale failed; using original", err);
+      }
+      setEditSource(source);
       setEditingNewPhoto(true);
       setAiEditOpen(true);
     };
