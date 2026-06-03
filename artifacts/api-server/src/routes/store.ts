@@ -395,6 +395,11 @@ router.post("/restore", async (req, res) => {
     let count = 0;
     for (const [entityName, records] of Object.entries(entities)) {
       if (!Array.isArray(records)) continue;
+      // ChatMessage rows are NOT a plain upsert-by-id (see below): merging a
+      // backup whose message ids differ from the local ones would insert them
+      // ALONGSIDE the local rows, leaving two interleaved sets that share the
+      // same per-session seq values. They are restored separately, per session.
+      if (entityName === CHAT_MESSAGE) continue;
       for (const record of records) {
         if (!record || typeof record !== "object") continue;
         const entityId = String(record.id ?? makeId());
@@ -410,6 +415,66 @@ router.post("/restore", async (req, res) => {
             set: { data: { ...record, id: entityId }, updatedAt: new Date() },
           });
         count += 1;
+      }
+    }
+
+    // Chat messages are keyed by their own message id and ordered by a
+    // per-session integer `seq`. Restoring them wholesale per session keeps the
+    // history single and gapless:
+    //   - merge: for every session the backup contains, delete that session's
+    //     existing ChatMessage rows first so the backup REPLACES them rather
+    //     than interleaving (which would duplicate seq). Sessions the backup
+    //     never mentions are left untouched, preserving merge semantics.
+    //   - replace: the whole table was already wiped above, so just insert.
+    // Either way the backup's messages are re-seq'd 0..n-1 by their stored seq,
+    // guaranteeing a gapless, unambiguous order regardless of the source.
+    const chatRecords = entities[CHAT_MESSAGE];
+    if (Array.isArray(chatRecords)) {
+      const bySession = new Map<string, MsgData[]>();
+      for (const record of chatRecords) {
+        if (!record || typeof record !== "object") continue;
+        const sessionId = String((record as MsgData).session_id ?? "");
+        if (!sessionId) continue;
+        const list = bySession.get(sessionId);
+        if (list) list.push(record as MsgData);
+        else bySession.set(sessionId, [record as MsgData]);
+      }
+      for (const [sessionId, msgs] of bySession) {
+        if (mode === "merge") {
+          await tx
+            .delete(userEntities)
+            .where(
+              and(
+                eq(userEntities.userId, userId),
+                eq(userEntities.entityName, CHAT_MESSAGE),
+                sessionIdEq(sessionId),
+              ),
+            );
+        }
+        msgs.sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0));
+        let i = 0;
+        for (const msg of msgs) {
+          const entityId = String(msg.id ?? makeId());
+          const data: MsgData = {
+            ...msg,
+            id: entityId,
+            session_id: sessionId,
+            seq: i,
+          };
+          await tx
+            .insert(userEntities)
+            .values({ userId, entityName: CHAT_MESSAGE, entityId, data })
+            .onConflictDoUpdate({
+              target: [
+                userEntities.userId,
+                userEntities.entityName,
+                userEntities.entityId,
+              ],
+              set: { data, updatedAt: new Date() },
+            });
+          count += 1;
+          i += 1;
+        }
       }
     }
 

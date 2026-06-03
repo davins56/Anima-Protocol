@@ -1338,6 +1338,84 @@ describe("chat history survives export -> restore round trip", () => {
     const ids = dstS1.map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it("merge restore over a session that already has chat replaces it (no duplicate seq)", async () => {
+    // The dangerous case: the default "merge" restore onto a device that
+    // ALREADY has chat in the same session. Chat messages are keyed by their
+    // own id, so backup messages whose ids differ from the local ones used to
+    // be inserted ALONGSIDE the local ones, leaving two interleaved sets that
+    // share the same per-session seq values. Merge must instead replace the
+    // session's messages wholesale with the backup's.
+    const SRC = user("chat_rt_merge_collide_src");
+    const DST = user("chat_rt_merge_collide_dst");
+
+    // Source backup: 3 messages in cs_1, server-assigned (unique) ids.
+    await seedChat(SRC);
+    const srcS1 = await readSession(SRC, "cs_1");
+    const srcS2 = await readSession(SRC, "cs_2");
+    // Sanity: source ids are real, distinct values we can compare against.
+    expect(srcS1).toHaveLength(3);
+
+    // Destination already has its OWN chat in the same session cs_1, with
+    // different ids and a different message count, plus a session (cs_keep) the
+    // backup never mentions which must be preserved by merge.
+    await call(DST, "PUT", "/ChatSession/cs_1", { id: "cs_1", title: "Local One" });
+    await call(DST, "POST", "/messages", {
+      session_id: "cs_1",
+      message: { role: "user", content: "local a" },
+    });
+    await call(DST, "POST", "/messages", {
+      session_id: "cs_1",
+      message: { role: "assistant", content: "local b" },
+    });
+    await call(DST, "POST", "/messages", {
+      session_id: "cs_local_only",
+      message: { role: "user", content: "keep me" },
+    });
+    const localKeep = await readSession(DST, "cs_local_only");
+    expect(localKeep).toHaveLength(1);
+
+    const exported = (await call(SRC, "GET", "/export")).json;
+    const res = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "merge",
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.mode).toBe("merge");
+
+    // cs_1 now holds ONLY the backup's messages: a single, gapless-seq history
+    // with no duplicates and no interleaved local rows.
+    const dstS1 = await readSession(DST, "cs_1");
+    expect(dstS1.map((m) => m.content)).toEqual(["s1 m0", "s1 m1", "s1 m2"]);
+    expect(dstS1.map((m) => m.seq)).toEqual([0, 1, 2]);
+    expect(dstS1).toEqual(srcS1);
+
+    // No duplicate seq and no leftover local ids merged in.
+    const dstSeqs = dstS1.map((m) => m.seq);
+    expect(new Set(dstSeqs).size).toBe(dstSeqs.length);
+    const dstIds = new Set(dstS1.map((m) => m.id));
+    expect(dstIds.size).toBe(3);
+    const localIds = ["local a", "local b"]; // none of the local contents survive
+    expect(dstS1.some((m) => localIds.includes(m.content as string))).toBe(false);
+
+    // The backup also brought cs_2, which the destination lacked — restored too.
+    const dstS2 = await readSession(DST, "cs_2");
+    expect(dstS2).toEqual(srcS2);
+
+    // A session the backup never mentions is left untouched by merge.
+    const keptAfter = await readSession(DST, "cs_local_only");
+    expect(keptAfter).toEqual(localKeep);
+
+    // Append still continues from the restored seq with no collision.
+    const appended = (
+      await call(DST, "POST", "/messages", {
+        session_id: "cs_1",
+        message: { role: "user", content: "after merge" },
+      })
+    ).json as Json;
+    expect(appended.seq).toBe(3);
+  });
 });
 
 // Open the SSE stream and resolve once a real (data) event arrives, or reject
