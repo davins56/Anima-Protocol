@@ -221,6 +221,99 @@ describe("one-time migration import gate", () => {
   });
 });
 
+describe("restore into a non-empty account (merge vs replace)", () => {
+  it("merge upserts the backup over existing data and keeps untouched records", async () => {
+    const U = user("restore_merge");
+    // Existing data the user already has on the server.
+    await call(U, "PUT", "/Character/keep_1", { id: "keep_1", name: "Keep Me" });
+    await call(U, "PUT", "/Character/edit_1", { id: "edit_1", name: "Old Name" });
+    await call(U, "PUT", "/profile", { display_name: "Current Name", theme: "dark" });
+
+    const backup = {
+      entities: {
+        // Overwrites edit_1, adds new_1; never mentions keep_1.
+        Character: [
+          { id: "edit_1", name: "New Name" },
+          { id: "new_1", name: "Fresh One" },
+        ],
+        Journal: [{ id: "jb_1", title: "Backup journal" }],
+      },
+      profile: { display_name: "Backup Name", mood: "calm" },
+      mode: "merge",
+    };
+
+    const res = await call(U, "POST", "/restore", backup);
+    expect(res.status).toBe(200);
+    expect(res.json.restored).toBe(true);
+    expect(res.json.mode).toBe("merge");
+    expect(res.json.count).toBe(3);
+
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    const byId = new Map(chars.map((c) => [c.id, c]));
+    // Untouched record survives.
+    expect(byId.get("keep_1")?.name).toBe("Keep Me");
+    // Backup record overwrites the existing one.
+    expect(byId.get("edit_1")?.name).toBe("New Name");
+    // New record added.
+    expect(byId.get("new_1")?.name).toBe("Fresh One");
+
+    const journals = (await call(U, "GET", "/Journal")).json as Json[];
+    expect(journals.map((j) => j.id)).toContain("jb_1");
+
+    // Profile: backup values win, existing-only keys kept.
+    const profile = (await call(U, "GET", "/profile")).json as Json;
+    expect(profile.display_name).toBe("Backup Name");
+    expect(profile.mood).toBe("calm");
+    expect(profile.theme).toBe("dark");
+  });
+
+  it("replace wipes all existing data first, then restores the backup", async () => {
+    const U = user("restore_replace");
+    await call(U, "PUT", "/Character/old_1", { id: "old_1", name: "Doomed" });
+    await call(U, "PUT", "/Quest/oldq_1", { id: "oldq_1", title: "Doomed Quest" });
+    await call(U, "PUT", "/profile", { display_name: "Old", theme: "dark" });
+
+    const backup = {
+      entities: { Character: [{ id: "r_1", name: "Restored Hero" }] },
+      profile: { display_name: "Restored" },
+      mode: "replace",
+    };
+
+    const res = await call(U, "POST", "/restore", backup);
+    expect(res.status).toBe(200);
+    expect(res.json.mode).toBe("replace");
+    expect(res.json.count).toBe(1);
+
+    // Old entities are gone entirely.
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    expect(chars.map((c) => c.id)).toEqual(["r_1"]);
+    const quests = (await call(U, "GET", "/Quest")).json as Json[];
+    expect(quests).toHaveLength(0);
+
+    // Profile overwritten outright (no leftover keys from the old profile).
+    const profile = (await call(U, "GET", "/profile")).json as Json;
+    expect(profile.display_name).toBe("Restored");
+    expect(profile.theme).toBeUndefined();
+  });
+
+  it("defaults to merge when no mode is supplied", async () => {
+    const U = user("restore_default");
+    await call(U, "PUT", "/Character/d_keep", { id: "d_keep", name: "Survivor" });
+    const res = await call(U, "POST", "/restore", {
+      entities: { Character: [{ id: "d_new", name: "Added" }] },
+    });
+    expect(res.json.mode).toBe("merge");
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    expect(new Set(chars.map((c) => c.id))).toEqual(new Set(["d_keep", "d_new"]));
+  });
+
+  it("rejects a body without an entities object", async () => {
+    const U = user("restore_bad");
+    const res = await call(U, "POST", "/restore", { mode: "merge" });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("list query is pushed into SQL with identical semantics", () => {
   // Seed a mixed dataset for one account, then exercise filter/sort/limit and
   // assert the server returns exactly what the old in-memory applyQuery did.

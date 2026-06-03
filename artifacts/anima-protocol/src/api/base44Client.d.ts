@@ -61,6 +61,10 @@ export declare function setAuthTokenGetter(
 ): void;
 export declare function clearStoreCache(): void;
 export declare function bulkImport(payload?: Record<string, unknown>): Promise<any>;
+export declare function restoreData(
+  payload?: Record<string, unknown>,
+  mode?: "merge" | "replace",
+): Promise<any>;
 
 export declare const base44: Base44Client;
 

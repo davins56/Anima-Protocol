@@ -264,6 +264,89 @@ router.post("/import", async (req, res) => {
   res.json({ imported: true, count });
 });
 
+// --- Restore (backup restore into a possibly non-empty account) -------------
+// Body: { entities: { [entityName]: record[] }, profile?: object, mode }
+// Unlike /import (which refuses any non-empty account), /restore is the
+// user-driven "Restore From Backup" path and works regardless of existing data:
+//   - mode "merge":   upsert every backup record by id over the current data,
+//                     leaving records not present in the backup untouched. The
+//                     backup profile is overlaid on top of the existing profile
+//                     (backup values win, existing-only keys are kept).
+//   - mode "replace": wipe ALL of the user's existing entities, then insert the
+//                     backup, and overwrite the profile with the backup profile.
+// Replace runs in a transaction so a failure never leaves the account half-wiped.
+router.post("/restore", async (req, res) => {
+  const userId = getUserId(req);
+  const body = req.body as {
+    entities?: Record<string, Record<string, unknown>[]>;
+    profile?: Record<string, unknown>;
+    mode?: string;
+  };
+
+  const mode = body.mode === "replace" ? "replace" : "merge";
+  const entities = body.entities;
+  if (!entities || typeof entities !== "object" || Array.isArray(entities)) {
+    res.status(400).json({ error: "Invalid backup: missing entities" });
+    return;
+  }
+
+  const result = await db.transaction(async (tx) => {
+    if (mode === "replace") {
+      await tx.delete(userEntities).where(eq(userEntities.userId, userId));
+    }
+
+    let count = 0;
+    for (const [entityName, records] of Object.entries(entities)) {
+      if (!Array.isArray(records)) continue;
+      for (const record of records) {
+        if (!record || typeof record !== "object") continue;
+        const entityId = String(record.id ?? makeId());
+        await tx
+          .insert(userEntities)
+          .values({ userId, entityName, entityId, data: { ...record, id: entityId } })
+          .onConflictDoUpdate({
+            target: [
+              userEntities.userId,
+              userEntities.entityName,
+              userEntities.entityId,
+            ],
+            set: { data: { ...record, id: entityId }, updatedAt: new Date() },
+          });
+        count += 1;
+      }
+    }
+
+    if (body.profile && typeof body.profile === "object") {
+      const [existingProfile] = await tx
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, userId))
+        .limit(1);
+      // Replace: the backup profile wins outright. Merge: overlay the backup
+      // on top of the existing profile so backup values win but existing-only
+      // keys (e.g. a display_name the backup lacks) are preserved.
+      const merged =
+        mode === "replace"
+          ? body.profile
+          : {
+              ...((existingProfile?.data as Record<string, unknown>) ?? {}),
+              ...body.profile,
+            };
+      await tx
+        .insert(userProfiles)
+        .values({ userId, data: merged })
+        .onConflictDoUpdate({
+          target: userProfiles.userId,
+          set: { data: merged, updatedAt: new Date() },
+        });
+    }
+
+    return count;
+  });
+
+  res.json({ restored: true, mode, count: result });
+});
+
 // --- Bulk export ------------------------------------------------------------
 // Returns every entity record for the signed-in user, grouped by entity name,
 // plus the profile. The shape is the same one /import consumes so a backup can

@@ -238,6 +238,23 @@ export async function bulkImport(payload) {
   return res.json();
 }
 
+// Restore a backup into the signed-in account, even when it already has data.
+// mode "merge" upserts the backup over current data (keeping records the backup
+// doesn't mention); mode "replace" wipes everything first, then restores. Used
+// by the Settings "Restore From Backup" feature.
+export async function restoreData(payload, mode = 'merge') {
+  const res = await storeFetch('/restore', {
+    method: 'POST',
+    body: JSON.stringify({ ...(payload || {}), mode }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  clearStoreCache();
+  return res.json();
+}
+
 function buildQuery({ filters, sort, limit }) {
   const params = new URLSearchParams();
   if (typeof sort === 'string' && sort) params.set('sort', sort);

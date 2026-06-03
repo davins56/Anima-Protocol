@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { base44, exportData, bulkImport } from "@/api/base44Client";
+import { base44, exportData, restoreData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
@@ -59,6 +59,8 @@ export default function Settings() {
   const [exportError, setExportError] = useState(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState(null);
+  const [pendingRestore, setPendingRestore] = useState(null);
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   useEffect(() => {
     loadUser();
@@ -233,7 +235,6 @@ export default function Settings() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setRestoring(true);
     setRestoreResult(null);
     try {
       const text = await file.text();
@@ -242,23 +243,47 @@ export default function Settings() {
       if (!entities || typeof entities !== "object") {
         throw new Error("This file doesn't look like an Anima backup.");
       }
-      const result = await bulkImport({ entities, profile: parsed.profile });
-      if (result?.imported) {
-        setRestoreResult({ ok: true, count: result.count || 0 });
-        await Promise.all([loadStats(), loadUser()]);
-      } else {
-        setRestoreResult({
-          ok: false,
-          message:
-            "Your account already has data. Restore only works on a fresh account — do a Factory Reset first, then restore.",
-        });
-      }
+      const recordCount = Object.values(entities).reduce(
+        (sum, recs) => sum + (Array.isArray(recs) ? recs.length : 0),
+        0,
+      );
+      // Defer the actual write until the user picks merge vs replace.
+      setPendingRestore({ entities, profile: parsed.profile, recordCount });
+      setConfirmReplace(false);
+    } catch (err) {
+      console.error("Restore failed:", err);
+      setRestoreResult({ ok: false, message: err?.message || "Restore failed" });
+    }
+  };
+
+  const performRestore = async (mode) => {
+    if (!pendingRestore) return;
+    setRestoring(true);
+    setRestoreResult(null);
+    try {
+      const result = await restoreData(
+        { entities: pendingRestore.entities, profile: pendingRestore.profile },
+        mode,
+      );
+      setRestoreResult({
+        ok: true,
+        count: result?.count || 0,
+        mode,
+      });
+      setPendingRestore(null);
+      setConfirmReplace(false);
+      await Promise.all([loadStats(), loadUser()]);
     } catch (err) {
       console.error("Restore failed:", err);
       setRestoreResult({ ok: false, message: err?.message || "Restore failed" });
     } finally {
       setRestoring(false);
     }
+  };
+
+  const cancelRestore = () => {
+    setPendingRestore(null);
+    setConfirmReplace(false);
   };
 
   const handleLogout = () => logout();
@@ -741,12 +766,12 @@ export default function Settings() {
                       Restore From Backup
                     </p>
                     <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
-                      Import a previously exported backup file. Only works on a fresh account — do a Factory Reset first if needed.
+                      Import a previously exported backup file. You'll choose whether to merge it into your current data or replace everything.
                     </p>
                     {restoreResult && (
                       <p className={`text-[9px] font-mono mt-1.5 leading-relaxed ${restoreResult.ok ? "text-green-400/70" : "text-orange-400/70"}`}>
                         {restoreResult.ok
-                          ? `Restored ${restoreResult.count} record${restoreResult.count === 1 ? "" : "s"}.`
+                          ? `${restoreResult.mode === "replace" ? "Replaced everything with" : "Merged in"} ${restoreResult.count} record${restoreResult.count === 1 ? "" : "s"}.`
                           : restoreResult.message}
                       </p>
                     )}
@@ -894,6 +919,92 @@ export default function Settings() {
                 I Am 18+ — Enable
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore From Backup Dialog */}
+      {pendingRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-background border border-primary/40 hud-corner p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <RotateCcw className="w-5 h-5 text-primary flex-shrink-0" />
+              <h2 className="font-mono text-primary tracking-[0.2em] uppercase text-sm">Restore Backup</h2>
+            </div>
+            <p className="font-mono text-[10px] text-primary/50 tracking-wider leading-relaxed">
+              This backup contains <span className="text-primary font-bold">{pendingRestore.recordCount}</span> record{pendingRestore.recordCount === 1 ? "" : "s"}.
+            </p>
+
+            {!confirmReplace ? (
+              <>
+                <div className="space-y-3">
+                  <button
+                    onClick={() => performRestore("merge")}
+                    disabled={restoring}
+                    className="w-full text-left border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 disabled:opacity-40 p-4 transition-all"
+                  >
+                    <p className="font-mono text-xs text-primary tracking-wider uppercase flex items-center gap-2">
+                      {restoring ? <Loader className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                      Merge Into Current Data
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/40 mt-1 leading-relaxed">
+                      Adds and updates records from the backup, keeping anything not in the backup. Nothing is deleted.
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => setConfirmReplace(true)}
+                    disabled={restoring}
+                    className="w-full text-left border border-orange-500/40 bg-orange-950/10 hover:bg-orange-900/20 hover:border-orange-400 disabled:opacity-40 p-4 transition-all"
+                  >
+                    <p className="font-mono text-xs text-orange-400 tracking-wider uppercase flex items-center gap-2">
+                      <AlertTriangle className="w-3 h-3" />
+                      Replace Everything
+                    </p>
+                    <p className="text-[9px] font-mono text-orange-300/50 mt-1 leading-relaxed">
+                      Wipes all current data first, then restores the backup. Cannot be undone.
+                    </p>
+                  </button>
+                </div>
+                <button
+                  onClick={cancelRestore}
+                  disabled={restoring}
+                  className="w-full px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-30"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="border border-orange-500/20 bg-orange-950/30 px-4 py-3 space-y-1">
+                  <p className="font-mono text-[10px] text-orange-300/80 tracking-wider leading-relaxed">
+                    Replacing everything will <span className="text-destructive font-bold">permanently delete</span> all of your current data — chat sessions, characters, memories, quests, lore &amp; more — before restoring the backup.
+                  </p>
+                </div>
+                <p className="font-mono text-xs text-primary/60 leading-relaxed">
+                  This <span className="text-destructive">cannot be undone</span>. Continue?
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setConfirmReplace(false)}
+                    disabled={restoring}
+                    className="flex-1 px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-30"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => performRestore("replace")}
+                    disabled={restoring}
+                    className="flex-1 px-4 py-2 bg-orange-900/30 border border-orange-500/60 text-orange-400 hover:bg-orange-900/50 disabled:opacity-50 font-mono text-xs tracking-widest uppercase transition-all flex items-center justify-center gap-2"
+                  >
+                    {restoring ? (
+                      <><Loader className="w-3 h-3 animate-spin" /> Restoring...</>
+                    ) : (
+                      "Replace Everything"
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
