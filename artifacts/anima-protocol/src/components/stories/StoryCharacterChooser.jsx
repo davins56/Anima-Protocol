@@ -5,11 +5,20 @@ import { CANONICAL_STORIES } from "@/lib/canonicalStories";
 import StoryPointSelector from "./StoryPointSelector";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function StoryCharacterChooser({ onClose, onCreateSession }) {
-  const [step, setStep] = useState("story"); // "story" | "character" | "insertion" | "points"
-  const [selectedStory, setSelectedStory] = useState(null);
+export default function StoryCharacterChooser({
+  onClose,
+  onCreateSession,
+  initialStory = null,
+  initialInsertions = null,
+}) {
+  // When opened from the "Canon Stories" universe browser the story and
+  // insertion point are already chosen, so we jump straight to picking who the
+  // user will be and create the session as soon as a character is selected.
+  const seeded = !!(initialStory && initialInsertions && initialInsertions.length > 0);
+  const [step, setStep] = useState(seeded ? "character" : "story"); // "story" | "character" | "points"
+  const [selectedStory, setSelectedStory] = useState(initialStory);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
-  const [selectedInsertions, setSelectedInsertions] = useState([]);
+  const [selectedInsertions, setSelectedInsertions] = useState(initialInsertions || []);
   const [characters, setCharacters] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,33 +59,40 @@ export default function StoryCharacterChooser({ onClose, onCreateSession }) {
     }
   };
 
+  // Show all of the user's characters and Animas — any of them can be dropped
+  // into any series' scene. (The canonical character names in each story almost
+  // never exist as saved Character entities, so filtering by them would leave
+  // this step empty and dead-end the whole flow for most series.)
   const filteredCharacters = characters.filter((c) => {
     const searchLower = search.toLowerCase();
-    const matchesSearch =
+    return (
       c.name.toLowerCase().includes(searchLower) ||
-      (c.universe || "").toLowerCase().includes(searchLower);
-    
-    // Filter by story characters if a story is selected
-    const inStory = !selectedStory || selectedStory.characters.includes(c.name);
-    
-    return matchesSearch && inStory;
+      (c.universe || "").toLowerCase().includes(searchLower)
+    );
   });
 
-  const handleCreateSession = async () => {
-    if (!selectedStory || !selectedCharacter || selectedInsertions.length === 0) return;
+  // Callers pass the insertions/character explicitly because they set them in
+  // the same tick: React state updates are async, so reading selectedInsertions
+  // / selectedCharacter here would see stale values and silently bail on the
+  // length/null checks below (the original bug that made "Enter Story" do
+  // nothing). Fall back to state for the footer button path.
+  const handleCreateSession = async (insertionsArg, characterArg) => {
+    const insertions = insertionsArg || selectedInsertions;
+    const character = characterArg || selectedCharacter;
+    if (!selectedStory || !character || insertions.length === 0) return;
     setLoading(true);
     try {
-      const firstInsertion = selectedInsertions[0];
-      
+      const firstInsertion = insertions[0];
+
       // Build narrator exposition
       const narratorExposition = `[LOCATION: ${firstInsertion.setting || selectedStory.title}]\n\n${firstInsertion.narrative}`;
-      
+
       const session = await base44.entities.ChatSession.create({
         mode: "solo",
-        character_id: selectedCharacter.id,
-        title: `${selectedCharacter.name} in ${selectedStory.title}`,
+        character_id: character.id,
+        title: `${character.name} in ${selectedStory.title}`,
         opening_scene: firstInsertion.narrative,
-        selected_story_points: selectedInsertions.map((p) => ({
+        selected_story_points: insertions.map((p) => ({
           id: p.id,
           title: p.title,
           narrative: p.narrative,
@@ -99,6 +115,16 @@ export default function StoryCharacterChooser({ onClose, onCreateSession }) {
     }
   };
 
+  const selectCharacter = (char) => {
+    setSelectedCharacter(char);
+    if (seeded) {
+      // Story + insertion point are already chosen; create the session now.
+      handleCreateSession(selectedInsertions, char);
+    } else {
+      setStep("points");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
       <div className="w-full max-w-2xl h-[90vh] sm:max-h-[90vh] bg-background border border-primary/30 hud-corner glow-border flex flex-col">
@@ -116,7 +142,7 @@ export default function StoryCharacterChooser({ onClose, onCreateSession }) {
                 : "Pick your insertion point"}
             </p>
           </div>
-          {step !== "story" && (
+          {step !== "story" && !(seeded && step === "character") && (
             <button
               onClick={() => setStep(step === "character" ? "story" : "character")}
               className="text-primary/40 hover:text-primary transition-colors"
@@ -180,11 +206,9 @@ export default function StoryCharacterChooser({ onClose, onCreateSession }) {
                   {filteredCharacters.map((char) => (
                     <button
                       key={char.id}
-                      onClick={() => {
-                        setSelectedCharacter(char);
-                        setStep("points");
-                      }}
-                      className={`p-3 border rounded transition-all ${
+                      onClick={() => selectCharacter(char)}
+                      disabled={loading}
+                      className={`p-3 border rounded transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                         selectedCharacter?.id === char.id
                           ? "border-primary/60 bg-primary/10 text-primary"
                           : "border-primary/15 bg-black/40 text-primary/60 hover:border-primary/40"
@@ -212,7 +236,7 @@ export default function StoryCharacterChooser({ onClose, onCreateSession }) {
                 story={selectedStory}
                 onSelectPoints={(points) => {
                   setSelectedInsertions(points);
-                  handleCreateSession();
+                  handleCreateSession(points);
                 }}
                 onBack={() => setStep("character")}
               />
@@ -233,7 +257,7 @@ export default function StoryCharacterChooser({ onClose, onCreateSession }) {
               Cancel
             </button>
             <button
-              onClick={handleCreateSession}
+              onClick={() => handleCreateSession()}
               disabled={!selectedStory || !selectedCharacter || selectedInsertions.length === 0 || loading}
               className="flex-1 sm:flex-initial px-6 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner glow-border"
             >

@@ -17,6 +17,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("characters"); // "characters", "templates", "stories", "canonical"
   const [showStoryChooser, setShowStoryChooser] = useState(false);
+  const [canonSeed, setCanonSeed] = useState(null); // { story, insertions } from the universe browser
   const [openingScene, setOpeningScene] = useState("");
 
   useEffect(() => {
@@ -134,7 +135,18 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const handleCreateFromChooser = (session) => {
     navigate(`/chat/${session.id}`);
     setShowStoryChooser(false);
+    setCanonSeed(null);
     onClose?.();
+  };
+
+  // The universe browser fires onSelectStory(story) when a story is picked and
+  // again with (story, point) once an insertion point is chosen. Only act on the
+  // point selection: hand off to the character chooser, seeded with this story
+  // and point, so the user picks who they'll be and the session is created.
+  const handleCanonSelect = (story, point) => {
+    if (!point) return;
+    setCanonSeed({ story, insertions: [point] });
+    setShowStoryChooser(true);
   };
 
   const categoryColors = {
@@ -207,7 +219,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
             />
           ) : view === "canonical" ? (
             <CanonicalStoriesBrowser
-              onSelectStory={(story, point) => {}}
+              onSelectStory={handleCanonSelect}
               isInline={true}
             />
           ) : loading ? (
@@ -383,8 +395,13 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
 
       {showStoryChooser && (
         <StoryCharacterChooser
-          onClose={() => setShowStoryChooser(false)}
+          onClose={() => {
+            setShowStoryChooser(false);
+            setCanonSeed(null);
+          }}
           onCreateSession={handleCreateFromChooser}
+          initialStory={canonSeed?.story || null}
+          initialInsertions={canonSeed?.insertions || null}
         />
       )}
     </div>
