@@ -155,8 +155,15 @@ function orderByParts(sort: string): SQL[] {
   const { field, desc } = parseSort(sort);
   const key = fieldKey(field);
   const tail = desc ? "desc nulls last" : "asc nulls last";
+  // Numeric detection uses a regex on the TEXT projection, NOT
+  // jsonb_typeof(data -> key): a bare jsonb `->` in the matching expression
+  // index breaks the publish-time migration (see lib/db schema comment). The
+  // regex `^-?[0-9]+([.][0-9]+)?$` matches the canonical decimal text a JSON
+  // number serializes to via `->>`, so the `::numeric` cast is always safe.
+  // This expression MUST stay byte-for-byte identical to the created/updated
+  // sort indexes (lib/db/src/schema/index.ts) or the planner stops using them.
   return [
-    sql`(case when jsonb_typeof(${userEntities.data} -> ${key}) = 'number' then (${userEntities.data} ->> ${key})::numeric end) ${sql.raw(tail)}`,
+    sql`(case when (${userEntities.data} ->> ${key}) ~ '^-?[0-9]+([.][0-9]+)?$' then (${userEntities.data} ->> ${key})::numeric end) ${sql.raw(tail)}`,
     sql`(${userEntities.data} ->> ${key}) collate "C" ${sql.raw(tail)}`,
   ];
 }

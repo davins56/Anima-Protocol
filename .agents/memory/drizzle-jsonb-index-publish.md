@@ -5,14 +5,23 @@ description: Why btree indexes with `data -> 'field'` (jsonb) columns fail the p
 
 # Drizzle jsonb expression indexes break the publish-time migration
 
-A Drizzle btree index that mixes plain text columns with a **jsonb-returning**
-expression column — `index(...).on(t.userId, t.entityName, sql\`(data -> 'field')\`)`
-— makes Replit's publish-time schema-diff DDL generator **misassign operator
-classes**. It emits `jsonb_ops` onto an adjacent *text* column, e.g.:
+**The rule: NO bare jsonb `->` may appear ANYWHERE in an expression index — not
+even nested inside `jsonb_typeof(...)` or a CASE.** Use only the text projection
+`->>` (optionally `::numeric`). Any bare `->` makes Replit's publish-time
+schema-diff DDL generator misplace operator-class tokens, and it fails in (at
+least) two shapes:
 
+1. Top-level jsonb column → `jsonb_ops` lands on an adjacent *text* column:
 ```
 CREATE INDEX ... USING btree (user_id text_ops, entity_name jsonb_ops, ((data -> 'field')) jsonb_ops)
 -- ERROR: operator class "jsonb_ops" does not accept data type text
+```
+2. `->` nested inside a CASE (e.g. `jsonb_typeof(data -> 'created_date')`) →
+opclass tokens get injected *inside* the CASE, producing a syntax error:
+```
+... USING btree (user_id numeric_ops, entity_name numeric_ops, (
+CASE WHEN (jsonb_typeof((data -> 'created_date'::text)) = text_ops, ...
+-- ERROR: syntax error at or near "text_ops"
 ```
 
 Postgres rejects it, so **Publish fails at the migration step** ("Failed to run
@@ -20,10 +29,16 @@ database migration statement"). It only surfaces on publish, not in dev, because
 dev applies the schema via `drizzle-kit push` (different code path) and the dev
 index itself is valid.
 
-**Why:** the diff generator's per-column opclass serialization shifts when an
-index contains a raw `sql` jsonb expression. The created/updated sort indexes that
-cast to `::numeric` / `collate "C"` (text) do NOT hit this — only `jsonb_ops`
-landing on a text column produces an invalid statement.
+**Why:** the diff generator's per-column opclass serialization shifts whenever an
+index contains a raw `sql` jsonb (`->`) expression — wherever that `->` sits.
+**Correction to a prior belief:** the `::numeric`/`collate "C"` created/updated
+sort indexes were assumed safe; they were NOT — their `jsonb_typeof(data -> ...)`
+CASE triggered shape #2. They now detect numbers with a regex on the `->>` text
+(`(data ->> 'created_date') ~ '^-?[0-9]+([.][0-9]+)?$'`) instead, which matches
+the canonical decimal text a jsonb number serializes to (no exponents), so the
+`::numeric` cast stays safe and the index has no bare `->`. Non-indexed queries
+(the mixed-type probe, generic equality filter) may still use `->`/`jsonb_typeof`
+— only *expression indexes* trip the publish bug.
 
 **How to apply:**
 - In any expression index, project jsonb fields to **text** with `->>` (or cast to
