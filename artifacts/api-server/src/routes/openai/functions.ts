@@ -1,7 +1,7 @@
 import { Router } from "express";
 import OpenAI, { toFile } from "openai";
 import { getAuth } from "@clerk/express";
-import { db, userEntities } from "@workspace/db";
+import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { rateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
@@ -193,6 +193,168 @@ async function persistContextAnalysis(
   return true;
 }
 
+// --- Per-character long-term memory log -------------------------------------
+// Each AI character keeps its own persistent memory log about the person it is
+// talking to, so it can recall details across separate conversations/sessions.
+// Memories are stored as generic store entities (entity name "CharacterMemory")
+// scoped to the Clerk user, each tagged with character_id. The live Chat prompt
+// reads these back (loadCharacterMemories -> "PERSISTENT MEMORIES" block).
+const CHARACTER_MEMORY = "CharacterMemory";
+
+// Load a character's memory log for this user, newest first. Filtering by
+// character_id happens in JS (the per-user CharacterMemory set is small),
+// mirroring how buildUserContextPrompt reads its records.
+async function loadCharacterMemories(
+  userId: string,
+  characterId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHARACTER_MEMORY),
+      ),
+    );
+  return rows
+    .map((r) => r.data as Record<string, unknown>)
+    .filter((m) => m && m.character_id === characterId)
+    .sort((a, b) =>
+      String(b.created_date ?? "").localeCompare(String(a.created_date ?? "")),
+    );
+}
+
+// Normalize a fact for dedupe so trivial wording/spacing/case differences don't
+// create near-duplicate memories.
+function normalizeFact(fact: unknown): string {
+  return String(fact ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Ask the model to distill 0-3 NEW durable memories from the latest exchange,
+// skipping anything already remembered. Returns [] on any parse/LLM failure so a
+// failed extraction never blocks the chat.
+async function extractCharacterMemories(
+  userMessage: string,
+  aiResponse: string,
+  existing: { category?: string; fact?: string }[],
+): Promise<{ category: string; fact: string }[]> {
+  if (!userMessage.trim() && !aiResponse.trim()) return [];
+  // Hard caps on model input: a memory save is an authenticated, repeatable
+  // LLM call, so bound both the exchange text and the existing-memory context
+  // to keep token cost (and prompt size) predictable regardless of payload.
+  const clip = (s: string) => (s.length > 4000 ? s.slice(0, 4000) : s);
+  const existingList =
+    existing.length > 0
+      ? existing.slice(0, 40).map((m) => `- ${m.fact}`).join("\n")
+      : "(none yet)";
+  const raw = await llm(
+    "You maintain a long-term memory log that an AI character keeps about the " +
+      "specific person they are talking to. From the latest exchange, extract " +
+      "durable facts genuinely worth remembering across future conversations: " +
+      "the person's preferences, personal details, important life events, " +
+      "promises made, relationship milestones, or strong lasting emotions. " +
+      "Ignore small talk, transient mood, and anything already listed in the " +
+      'existing memories. Return 0 to 3 items as a JSON array; each item is ' +
+      '{ "category": string, "fact": string }. category is one short lowercase ' +
+      "tag like preference, personal, relationship, event, or emotion. fact is " +
+      "one concise sentence. If nothing is worth remembering, return []. Output " +
+      "ONLY the JSON array.",
+    `EXISTING MEMORIES:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
+    512,
+  ).catch(() => "[]");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      raw.replace(/```json/gi, "").replace(/```/g, "").trim(),
+    );
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((m) => {
+      const obj = (m ?? {}) as { category?: unknown; fact?: unknown };
+      return {
+        category:
+          typeof obj.category === "string" && obj.category.trim()
+            ? obj.category.trim().toLowerCase()
+            : "general",
+        fact: typeof obj.fact === "string" ? obj.fact.trim() : "",
+      };
+    })
+    .filter((m) => m.fact)
+    .slice(0, 3);
+}
+
+// Persist any genuinely-new memories distilled from the latest exchange and
+// return the refreshed log. Dedupes against the authoritative stored log (not
+// just what the client passed) so concurrent saves can't double-write a fact.
+async function saveCharacterMemories(
+  userId: string,
+  characterId: string,
+  data: Record<string, unknown>,
+): Promise<{ created: number; memories: Record<string, unknown>[] }> {
+  const userMessage =
+    typeof data.user_message === "string" ? data.user_message : "";
+  const aiResponse =
+    typeof data.ai_response === "string" ? data.ai_response : "";
+  const sessionId =
+    typeof data.session_id === "string" ? data.session_id : "";
+
+  const current = await loadCharacterMemories(userId, characterId);
+  const seen = new Set(current.map((m) => normalizeFact(m.fact)));
+  // Also honor anything the client believes it already has, defensively.
+  if (Array.isArray(data.existing_memories)) {
+    for (const m of data.existing_memories as { fact?: string }[]) {
+      seen.add(normalizeFact(m?.fact));
+    }
+  }
+
+  const candidates = await extractCharacterMemories(
+    userMessage,
+    aiResponse,
+    current.map((m) => ({
+      category: String(m.category ?? ""),
+      fact: String(m.fact ?? ""),
+    })),
+  );
+
+  const now = new Date().toISOString();
+  const rows: (typeof userEntities.$inferInsert)[] = [];
+  for (const c of candidates) {
+    const key = normalizeFact(c.fact);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const id = makeId();
+    rows.push({
+      userId,
+      entityName: CHARACTER_MEMORY,
+      entityId: id,
+      data: {
+        id,
+        character_id: characterId,
+        session_id: sessionId,
+        category: c.category,
+        fact: c.fact,
+        created_date: now,
+        updated_date: now,
+      },
+    });
+  }
+
+  if (rows.length > 0) {
+    await db.insert(userEntities).values(rows);
+    notifyUser(userId);
+  }
+
+  const memories = await loadCharacterMemories(userId, characterId);
+  return { created: rows.length, memories };
+}
+
 // Consolidate a user's active background-context records into one prompt block.
 // Records still processing (no usable content yet) are skipped. Exported so the
 // assembly can be unit-tested without a DB or OpenAI.
@@ -287,7 +449,25 @@ router.post("/invoke/:fnName", async (req, res) => {
         break;
       }
 
-      case "characterMemory":
+      case "characterMemory": {
+        const { userId } = getAuth(req) as { userId: string };
+        const action = typeof data.action === "string" ? data.action : "get";
+        const characterId =
+          typeof data.character_id === "string" ? data.character_id : "";
+        if (!characterId) {
+          result = { data: { memories: [], created: 0 } };
+          break;
+        }
+        if (action === "save") {
+          result = { data: await saveCharacterMemories(userId, characterId, data) };
+        } else {
+          result = {
+            data: { memories: await loadCharacterMemories(userId, characterId) },
+          };
+        }
+        break;
+      }
+
       case "respondMentalLine": {
         const prompt = (data.prompt as string) || JSON.stringify(data);
         result = await llm(
