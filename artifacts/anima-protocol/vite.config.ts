@@ -63,6 +63,17 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    // Forward API calls to the api-server during local dev. The api-server
+    // binds directly on localhost:8080 (PORT=8080) and serves everything under
+    // /api. Override the target with API_PROXY_TARGET if the backend moves.
+    // changeOrigin keeps the Host header consistent; SSE streams (chat replies
+    // and store sync) pass through unbuffered.
+    proxy: {
+      "/api": {
+        target: process.env.API_PROXY_TARGET || "http://localhost:8080",
+        changeOrigin: true,
+      },
+    },
     fs: {
       strict: false,
     },
