@@ -103,15 +103,34 @@ export function clearStoreCache() {
 // pages can refetch. Local writes are suppressed so a device doesn't reload in
 // response to its own edits.
 const STORE_CHANGED_EVENT = 'anima:store-changed';
+// Polling cadence. With server push (SSE) connected, polling is only a safety
+// net so it runs slowly (PUSH_FALLBACK_POLL_INTERVAL_MS). If the stream is
+// down, we fall back to the original faster cadence (POLL_INTERVAL_MS).
 const POLL_INTERVAL_MS = 15000;
+const PUSH_FALLBACK_POLL_INTERVAL_MS = 60000;
 // If a local write happened within this window of a detected revision change,
-// assume the change was ours and don't force open pages to reload.
-const SELF_WRITE_SUPPRESS_MS = POLL_INTERVAL_MS + 5000;
+// assume the change was ours and don't force open pages to reload. Kept fixed
+// (not tied to the poll interval) so lengthening the fallback poll under push
+// doesn't widen self-write suppression.
+const SELF_WRITE_SUPPRESS_MS = 20000;
 
 let lastLocalWriteAt = 0;
 let lastSeenRevision = null;
 let pollTimer = null;
+let pollIntervalMs = POLL_INTERVAL_MS;
+let suppressRecheckTimer = null;
 let syncStarted = false;
+
+// --- Server push (SSE) state ---
+const SSE_PATH = '/events';
+const SSE_RETRY_BASE_MS = 1000;
+const SSE_RETRY_MAX_MS = 30000;
+const SSE_PUSH_DEBOUNCE_MS = 200;
+let sseController = null;
+let sseConnected = false;
+let sseRetryTimer = null;
+let sseRetryDelay = SSE_RETRY_BASE_MS;
+let pushDebounceTimer = null;
 
 export async function fetchRevision() {
   const token = await getToken();
@@ -159,12 +178,30 @@ async function pollRevision() {
     // rev !== lastSeenRevision and emits it. This guarantees a remote change is
     // never permanently lost — at worst it is delayed until local edits pause.
     dropCaches();
+    // Under push, a genuine remote change that lands inside the suppress window
+    // would otherwise only be caught by the (now-slow) fallback poll. Schedule
+    // a one-shot re-check right after the window closes so the bound stays tight
+    // regardless of the poll cadence.
+    scheduleSuppressRecheck();
     return;
   }
 
   lastSeenRevision = rev;
   dropCaches();
   notifyStoreChanged();
+}
+
+// One-shot re-poll fired just after the self-write suppression window closes,
+// so a remote change masked by a local write is detected promptly even when the
+// periodic poll is running slowly (push connected). Coalesced into one timer.
+function scheduleSuppressRecheck() {
+  if (suppressRecheckTimer || !syncStarted) return;
+  const wait =
+    Math.max(0, SELF_WRITE_SUPPRESS_MS - (Date.now() - lastLocalWriteAt)) + 500;
+  suppressRecheckTimer = setTimeout(() => {
+    suppressRecheckTimer = null;
+    pollRevision();
+  }, wait);
 }
 
 function handleVisibility() {
@@ -179,11 +216,15 @@ function resetSyncBaseline() {
   lastSeenRevision = null;
 }
 
-export function startStoreSync() {
-  if (syncStarted || typeof window === 'undefined') return;
-  syncStarted = true;
-  resetSyncBaseline();
-  pollRevision();
+// (Re)create the periodic poll timer at the given cadence. The poll is the
+// safety net: fast when push is unavailable, slow when push is connected.
+// No-op once sync is stopped so a late SSE teardown (connectSse's finally) can
+// never resurrect polling after stopStoreSync()/sign-out.
+function setPollTimer(intervalMs) {
+  if (!syncStarted) return;
+  if (pollTimer && pollIntervalMs === intervalMs) return;
+  pollIntervalMs = intervalMs;
+  if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
     if (
       typeof document === 'undefined' ||
@@ -191,9 +232,132 @@ export function startStoreSync() {
     ) {
       pollRevision();
     }
-  }, POLL_INTERVAL_MS);
+  }, intervalMs);
+}
+
+function applyPollCadence() {
+  setPollTimer(
+    sseConnected ? PUSH_FALLBACK_POLL_INTERVAL_MS : POLL_INTERVAL_MS,
+  );
+}
+
+// A push from the server only tells us "something changed" — the real change
+// detection (and self-write suppression) still runs against /revision. Coalesce
+// bursts of pushes (e.g. several rapid writes) into a single revision check.
+function onServerPush() {
+  if (pushDebounceTimer) return;
+  pushDebounceTimer = setTimeout(() => {
+    pushDebounceTimer = null;
+    pollRevision();
+  }, SSE_PUSH_DEBOUNCE_MS);
+}
+
+// True when a parsed SSE block contains at least one `data:` line (i.e. a real
+// event, not a heartbeat/comment line beginning with ':').
+function sseBlockHasData(block) {
+  return block.split('\n').some((line) => line.startsWith('data:'));
+}
+
+function scheduleSseReconnect() {
+  if (!syncStarted || sseRetryTimer) return;
+  const delay = sseRetryDelay;
+  sseRetryDelay = Math.min(sseRetryDelay * 2, SSE_RETRY_MAX_MS);
+  sseRetryTimer = setTimeout(() => {
+    sseRetryTimer = null;
+    connectSse();
+  }, delay);
+}
+
+// Subscribe to the server push stream. Uses fetch streaming (not EventSource)
+// so the Clerk bearer token can be sent as an Authorization header. On any drop
+// the periodic poll cadence reverts to fast and a backoff reconnect is queued.
+async function connectSse() {
+  if (
+    !syncStarted ||
+    sseController ||
+    typeof window === 'undefined' ||
+    typeof fetch === 'undefined' ||
+    typeof AbortController === 'undefined'
+  ) {
+    return;
+  }
+  const token = await getToken();
+  if (!syncStarted) return;
+  if (!token) {
+    scheduleSseReconnect();
+    return;
+  }
+  const controller = new AbortController();
+  sseController = controller;
+  try {
+    const res = await fetch(`${STORE_BASE}${SSE_PATH}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+      signal: controller.signal,
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(`SSE connect failed: ${res.status}`);
+    }
+    sseConnected = true;
+    sseRetryDelay = SSE_RETRY_BASE_MS;
+    applyPollCadence();
+    // A freshly opened stream may have missed a change between the last poll and
+    // now; check once on connect so we never start out stale.
+    pollRevision();
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const block = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        if (sseBlockHasData(block)) onServerPush();
+      }
+    }
+  } catch {
+    // aborted (stop/account switch) or network/stream error — handled below.
+  } finally {
+    if (sseController === controller) sseController = null;
+    sseConnected = false;
+    applyPollCadence();
+    scheduleSseReconnect();
+  }
+}
+
+function disconnectSse() {
+  if (sseRetryTimer) {
+    clearTimeout(sseRetryTimer);
+    sseRetryTimer = null;
+  }
+  if (pushDebounceTimer) {
+    clearTimeout(pushDebounceTimer);
+    pushDebounceTimer = null;
+  }
+  sseRetryDelay = SSE_RETRY_BASE_MS;
+  if (sseController) {
+    try {
+      sseController.abort();
+    } catch {
+      /* ignore */
+    }
+    sseController = null;
+  }
+  sseConnected = false;
+}
+
+export function startStoreSync() {
+  if (syncStarted || typeof window === 'undefined') return;
+  syncStarted = true;
+  resetSyncBaseline();
+  pollRevision();
+  applyPollCadence();
   window.addEventListener('focus', pollRevision);
   document.addEventListener('visibilitychange', handleVisibility);
+  connectSse();
 }
 
 export function stopStoreSync() {
@@ -203,6 +367,11 @@ export function stopStoreSync() {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  if (suppressRecheckTimer) {
+    clearTimeout(suppressRecheckTimer);
+    suppressRecheckTimer = null;
+  }
+  disconnectSse();
   if (typeof window !== 'undefined') {
     window.removeEventListener('focus', pollRevision);
     document.removeEventListener('visibilitychange', handleVisibility);

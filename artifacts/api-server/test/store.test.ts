@@ -869,3 +869,93 @@ describe("chat messages stored as individual rows", () => {
     expect(bList).toEqual([]);
   });
 });
+
+// Open the SSE stream and resolve once a real (data) event arrives, or reject
+// on timeout. Returns an abort() so the test can close the connection. The
+// stream is read incrementally so we react to a push without waiting for close.
+function openEventStream(
+  userId: string,
+  { timeoutMs = 5000 }: { timeoutMs?: number } = {},
+): { gotEvent: Promise<void>; status: Promise<number>; abort: () => void } {
+  const controller = new AbortController();
+  let resolveStatus!: (n: number) => void;
+  const status = new Promise<number>((r) => {
+    resolveStatus = r;
+  });
+  const gotEvent = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error("timed out waiting for SSE event"));
+    }, timeoutMs);
+    (async () => {
+      const res = await fetch(`${baseUrl}/store/events`, {
+        headers: {
+          Accept: "text/event-stream",
+          ...(userId ? { "x-test-user": userId } : {}),
+        },
+        signal: controller.signal,
+      });
+      resolveStatus(res.status);
+      if (!res.ok || !res.body) {
+        clearTimeout(timer);
+        reject(new Error(`SSE status ${res.status}`));
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        if (buffer.split("\n").some((l) => l.startsWith("data:"))) {
+          clearTimeout(timer);
+          resolve();
+          controller.abort();
+          return;
+        }
+      }
+    })().catch((err) => {
+      // Abort surfaces as an AbortError once we've already resolved — ignore it.
+      if (controller.signal.aborted) return;
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+  return { gotEvent, status, abort: () => controller.abort() };
+}
+
+describe("live push (SSE)", () => {
+  it("rejects an unauthenticated stream", async () => {
+    const res = await fetch(`${baseUrl}/store/events`, {
+      headers: { Accept: "text/event-stream" },
+    });
+    // Drain/close so the socket doesn't linger.
+    await res.body?.cancel().catch(() => {});
+    expect(res.status).toBe(401);
+  });
+
+  it("pushes a change event to the user's own stream after a write", async () => {
+    const U = user("sse_self");
+    const stream = openEventStream(U);
+    // Wait for the stream's initial bytes (the ": connected" comment) to be sure
+    // the client is registered before we trigger the write.
+    await stream.status;
+    await new Promise((r) => setTimeout(r, 100));
+    await call(U, "POST", "/Character", { name: "Pushed" });
+    await expect(stream.gotEvent).resolves.toBeUndefined();
+    stream.abort();
+  });
+
+  it("does not push a user's write to another account's stream", async () => {
+    const A = user("sse_iso_a");
+    const B = user("sse_iso_b");
+    const streamB = openEventStream(B, { timeoutMs: 1500 });
+    await streamB.status;
+    await new Promise((r) => setTimeout(r, 100));
+    // A writes; B must NOT receive a push, so B's stream times out.
+    await call(A, "POST", "/Character", { name: "A only" });
+    await expect(streamB.gotEvent).rejects.toThrow(/timed out/);
+    streamB.abort();
+  });
+});

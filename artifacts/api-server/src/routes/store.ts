@@ -3,6 +3,7 @@ import { getAuth } from "@clerk/express";
 import { db, userEntities, userProfiles } from "@workspace/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
+import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
 
 const router = Router();
 
@@ -28,6 +29,65 @@ router.use(requireUser);
 function getUserId(req: Request): string {
   return (req as Request & { userId: string }).userId;
 }
+
+// Push notifier: after ANY successful mutating request, signal the user's open
+// SSE streams that their store changed. Hooking res "finish" (rather than
+// instrumenting each route) means every current and future write path is
+// covered automatically. GETs (including the SSE stream and /export) and any
+// 4xx/5xx are ignored, so reads and failed writes never emit a signal.
+function notifyOnWrite(req: Request, res: Response, next: NextFunction): void {
+  const method = req.method;
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+    next();
+    return;
+  }
+  res.on("finish", () => {
+    if (res.statusCode < 400) {
+      notifyUser(getUserId(req));
+    }
+  });
+  next();
+}
+
+router.use(notifyOnWrite);
+
+// --- Live push stream (SSE) -------------------------------------------------
+// An authenticated Server-Sent Events stream. The client opens it while signed
+// in and re-checks /revision whenever a "change" event arrives, making remote
+// updates appear near-instantly instead of waiting for the next poll. The
+// payload is just a nudge — real change detection / self-write suppression
+// still happens client-side against /revision, so this is safe to fan out to
+// all of a user's devices (including the one that made the write).
+router.get("/events", (req: Request, res: Response) => {
+  const userId = getUserId(req);
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    // Defeat proxy/buffering layers that would otherwise hold the stream.
+    "X-Accel-Buffering": "no",
+  });
+  // Initial comment flushes headers and confirms the stream is live.
+  res.write(": connected\n\n");
+
+  addClient(userId, res);
+
+  // Heartbeat keeps idle connections alive through proxy/idle timeouts and lets
+  // the client detect a dead stream so it can fall back to polling.
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": hb\n\n");
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 25000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    removeClient(userId, res);
+  });
+});
 
 function makeId(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;

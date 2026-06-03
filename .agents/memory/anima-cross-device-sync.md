@@ -1,9 +1,33 @@
 ---
 name: Anima cross-device live sync
-description: How open sessions pick up changes made on another device (polling + revision token + window event), and the rules that keep it correct.
+description: How open sessions pick up changes made on another device (server push SSE + revision-token poll fallback + window event), and the rules that keep it correct.
 ---
 
 # Cross-device live sync
+
+## Server push (SSE) — the fast path
+- `GET /api/store/events` is an authenticated SSE stream (under `requireUser`,
+  defined BEFORE the `/:entity` catch-all like `/revision`). It emits a bare
+  `event: change` nudge — never data. Real change detection still happens client-side
+  against `/revision`, so the push is safe to fan out to ALL of a user's devices
+  including the writer.
+- Fan-out is an in-memory per-user `Map<userId, Set<res>>` in `lib/storeEvents.ts`
+  (single process, so no external bus). A `notifyOnWrite` middleware on the store
+  router fires `notifyUser` on `res 'finish'` for any non-GET with `statusCode < 400`
+  — this auto-covers every current/future write route instead of instrumenting each.
+- **Client uses fetch-streaming, NOT EventSource** — EventSource can't send the Clerk
+  bearer header. On a push it debounces ~200ms then calls the existing `pollRevision()`
+  (single source of truth for suppression). Poll cadence stretches to 60s while SSE is
+  connected, reverts to 15s on drop; reconnect is exponential backoff.
+- **Teardown race (fixed, has a regression test):** `connectSse()`'s `finally` always
+  runs `applyPollCadence()` + `scheduleSseReconnect()`. If a `/events` fetch settles
+  AFTER `stopStoreSync()`, those must NOT resurrect polling. Guard: `setPollTimer()` and
+  `scheduleSseReconnect()` are no-ops when `!syncStarted`. Test: `src/api/storeSync.test.js`.
+- Masked-change bound: when a push/poll is suppressed as a self-write, a one-shot
+  `scheduleSuppressRecheck` re-polls just after the ~20s suppress window so a remote
+  change that landed in the window is caught promptly despite the slow 60s fallback.
+
+
 
 The app has no React subscription layer — pages fetch-on-mount via `useEffect`. Live
 cross-device updates are layered on top without rewriting call sites:
