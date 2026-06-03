@@ -344,3 +344,109 @@ describe("LoreArchivesDashboard fast load", () => {
     unmount();
   });
 });
+
+// The crystal auto-generation runs from a load effect with no concurrency guard,
+// so a StrictMode double-invoke (dev) or two near-simultaneous opens (two tabs /
+// devices) could both pass the "no crystal yet" check and mint TWO crystals for
+// the same session. These tests reproduce the race and pin the de-dup fix: at
+// most one crystal per session, no matter how many overlapping opens occur.
+describe("LoreArchivesDashboard crystal de-dup", () => {
+  // One eligible session (count >= 10) that has no crystal yet.
+  function seedOneEligible() {
+    __setState({
+      sessions: [{ id: "dup1", messages: [] }],
+      counts: { dup1: 12 },
+      sessionMessages: {
+        dup1: [
+          { role: "user", content: "hello there" },
+          { role: "assistant", character_name: "Echo", content: "z".repeat(60) },
+        ],
+      },
+      crystals: [],
+      profile: {
+        id: "profile-1",
+        resonance_xp: 0,
+        resonance_rank: "Initiate",
+        unlocked_chapters: ["chapter_zero"],
+      },
+    });
+  }
+
+  function mount(node) {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() => {
+      root.render(node);
+    });
+    return { container, unmount: () => act(() => root.unmount()) };
+  }
+
+  function dashboardNode() {
+    return React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(LoreArchivesDashboard),
+    );
+  }
+
+  it("mints only one crystal when two opens race concurrently", async () => {
+    seedOneEligible();
+
+    // Two roots mounted in the SAME commit => both init() flows run concurrently
+    // and interleave on their awaits, exactly like two tabs opening at once. With
+    // no guard both would create a crystal for dup1 (length 2); the lock makes
+    // the loser wait and re-read, so only one is minted.
+    const c1 = document.createElement("div");
+    const c2 = document.createElement("div");
+    const r1 = createRoot(c1);
+    const r2 = createRoot(c2);
+    act(() => {
+      r1.render(dashboardNode());
+      r2.render(dashboardNode());
+    });
+    await waitForLoaded(c1);
+    await waitForLoaded(c2);
+
+    expect(__calls.crystalCreate).toHaveLength(1);
+    expect(__calls.crystalCreate[0].session_id).toBe("dup1");
+
+    act(() => r1.unmount());
+    act(() => r2.unmount());
+  });
+
+  it("mints only one crystal under a StrictMode double-mount", async () => {
+    seedOneEligible();
+
+    // StrictMode intentionally double-invokes the load effect in dev. Without the
+    // guard both invocations see an empty crystal set and create a duplicate.
+    const { container, unmount } = mount(
+      React.createElement(React.StrictMode, null, dashboardNode()),
+    );
+    await waitForLoaded(container);
+
+    const dupCrystals = __calls.crystalCreate.filter(
+      (c) => c.session_id === "dup1",
+    );
+    expect(dupCrystals).toHaveLength(1);
+
+    unmount();
+  });
+
+  it("never adds a second crystal when re-opening a session that already has one", async () => {
+    seedOneEligible();
+
+    // First open mints the crystal for dup1.
+    const first = mount(dashboardNode());
+    await waitForLoaded(first.container);
+    expect(__calls.crystalCreate).toHaveLength(1);
+    first.unmount();
+
+    // Re-opening must not mint a second crystal for the same session — the
+    // existing-crystal de-dup re-check inside the critical section catches it.
+    __reset();
+    const second = mount(dashboardNode());
+    await waitForLoaded(second.container);
+    expect(__calls.crystalCreate).toHaveLength(0);
+    second.unmount();
+  });
+});

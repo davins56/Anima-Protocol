@@ -1030,6 +1030,57 @@ router.post("/:entity", async (req, res) => {
   const userId = getUserId(req);
   const { entity } = req.params;
   const data = (req.body ?? {}) as Record<string, unknown>;
+
+  // Memory crystals must be unique per (user, session). The Lore Archives screen
+  // auto-generates them from a load effect with no concurrency guard, so a
+  // StrictMode double-invoke or two tabs/devices opening at once can issue
+  // concurrent creates for the SAME session. The client-side lock only covers a
+  // single runtime; this is the cross-process source of truth: serialize on a
+  // per-(user, session) advisory lock and return the existing crystal instead of
+  // minting a duplicate. The second writer blocks until the first commits, then
+  // sees the row and is a no-op. Mirrors the per-session lock used for chat
+  // message migration/append.
+  if (
+    entity === "MemoryCrystal" &&
+    typeof data.session_id === "string" &&
+    data.session_id
+  ) {
+    const sessionId = data.session_id;
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
+      );
+      const [existing] = await tx
+        .select()
+        .from(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, entity),
+            sql`${userEntities.data} ->> 'session_id' = ${sessionId}`,
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        return {
+          record: existing.data as Record<string, unknown>,
+          created: false,
+        };
+      }
+      const id = makeId();
+      const now = new Date().toISOString();
+      const record = { id, created_date: now, updated_date: now, ...data };
+      await tx
+        .insert(userEntities)
+        .values({ userId, entityName: entity, entityId: id, data: record });
+      return { record, created: true };
+    });
+    // 200 (not 201) when an existing crystal is returned so the existing-row case
+    // is observable; the client treats either as success.
+    res.status(result.created ? 201 : 200).json(result.record);
+    return;
+  }
+
   const id = makeId();
   const now = new Date().toISOString();
   const record = {

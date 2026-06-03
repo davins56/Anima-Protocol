@@ -1638,3 +1638,58 @@ describe("one-time backfill migrates legacy blobs without reopening chats", () =
     expect(after).toEqual(first);
   });
 });
+
+describe("memory crystals are unique per session even under concurrent creates", () => {
+  it("two near-simultaneous creates for the same session yield exactly one crystal", async () => {
+    const U = user("crystal_race");
+    const payload = {
+      session_id: "race_sess_1",
+      character_name: "Echo",
+      milestone_type: "first_contact",
+      resonance_xp_awarded: 50,
+    };
+
+    // Fire both creates at once, the way two devices/tabs opening Lore Archives
+    // at the same moment would. The per-(user, session) advisory lock serializes
+    // them server-side: one inserts, the other blocks then returns the existing
+    // row — so the client-runtime lock isn't the only thing standing between us
+    // and a duplicate.
+    const [a, b] = await Promise.all([
+      call(U, "POST", "/MemoryCrystal", payload),
+      call(U, "POST", "/MemoryCrystal", payload),
+    ]);
+
+    // Both calls succeed; exactly one created the row (201) and one returned the
+    // existing crystal (200).
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    // Both responses point at the SAME crystal id.
+    expect(a.json.id).toBe(b.json.id);
+
+    // The store holds exactly one crystal for that session.
+    const list = (await call(U, "GET", "/MemoryCrystal")).json as Json[];
+    const forSession = list.filter((c) => c.session_id === "race_sess_1");
+    expect(forSession).toHaveLength(1);
+  });
+
+  it("re-creating a crystal for a session that already has one is a no-op", async () => {
+    const U = user("crystal_reopen");
+    const payload = {
+      session_id: "reopen_sess_1",
+      character_name: "Echo",
+      milestone_type: "first_contact",
+      resonance_xp_awarded: 50,
+    };
+
+    const first = await call(U, "POST", "/MemoryCrystal", payload);
+    expect(first.status).toBe(201);
+
+    // A later open re-issues the create; it must return the existing crystal,
+    // not mint a second one.
+    const second = await call(U, "POST", "/MemoryCrystal", payload);
+    expect(second.status).toBe(200);
+    expect(second.json.id).toBe(first.json.id);
+
+    const list = (await call(U, "GET", "/MemoryCrystal")).json as Json[];
+    expect(list.filter((c) => c.session_id === "reopen_sess_1")).toHaveLength(1);
+  });
+});
