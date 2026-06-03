@@ -761,10 +761,11 @@ router.post("/messages/by-sessions", async (req, res) => {
 });
 
 // POST /messages/counts { ids: [] } — batch message COUNT per session. Backs
-// metadata-only lists (e.g. the Y/n Stories Library cards) that need each
-// session's message total without hydrating the full history. Migrates each
-// session first (same as by-sessions) so a legacy blob session reports an
-// accurate count, then returns { [sessionId]: number } from one grouped query.
+// metadata-only lists (e.g. the Y/n Stories Library cards and Lore Archives'
+// XP/rank totals) that need each session's message total without hydrating the
+// full history. Migrates each session first (same as by-sessions) so a legacy
+// blob session reports an accurate count, then returns { [sessionId]: number }
+// from one grouped query.
 router.post("/messages/counts", async (req, res) => {
   const userId = getUserId(req);
   const ids = Array.isArray(req.body?.ids)

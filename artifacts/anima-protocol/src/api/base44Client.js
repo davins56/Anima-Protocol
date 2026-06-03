@@ -639,8 +639,8 @@ async function messagesBySessions(ids) {
 }
 
 // Batch message COUNT per session: { [id]: number }. Backs metadata-only lists
-// (e.g. the Stories Library cards) that show each session's message total
-// without hydrating the full history.
+// (e.g. the Stories Library cards and Lore Archives XP/rank totals) that show
+// each session's message total without hydrating the full history.
 async function messageCountsBySessions(ids) {
   const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
   if (list.length === 0) return {};

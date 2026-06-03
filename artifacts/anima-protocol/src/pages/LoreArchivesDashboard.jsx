@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ResonanceRankPanel from "@/components/lore/ResonanceRankPanel";
 import SlipthkChapterGrid from "@/components/lore/SlipthkChapterGrid";
 import MemoryCrystalVault from "@/components/lore/MemoryCrystalVault";
+import { sessionMessageCount } from "@/lib/utils";
 
 const TABS = [
   { id: "rank", label: "Resonance Rank", glyph: "⬟" },
@@ -19,6 +20,7 @@ export default function LoreArchivesDashboard() {
   const [profile, setProfile] = useState(null);
   const [crystals, setCrystals] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [messageCounts, setMessageCounts] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,8 +36,13 @@ export default function LoreArchivesDashboard() {
       const [profiles, myCrystals, mySessions] = await Promise.all([
         base44.entities.ResonanceProfile.filter({ user_email: me.email }),
         base44.entities.MemoryCrystal.filter({ user_email: me.email }, "-created_date", 100),
-        base44.entities.ChatSession.list("-updated_date", 200),
+        // Metadata only — no message history is hydrated here.
+        base44.entities.ChatSession.list("-updated_date", 200, { withMessages: false }),
       ]);
+
+      // One lightweight GROUP BY for per-session message counts (XP/rank totals
+      // + crystal eligibility) instead of pulling every session's full history.
+      const counts = await base44.messages.counts((mySessions || []).map((s) => s.id));
 
       let p = profiles?.[0];
       if (!p) {
@@ -46,13 +53,13 @@ export default function LoreArchivesDashboard() {
           resonance_xp: 0,
           unlocked_chapters: ["chapter_zero"],
           total_sessions: mySessions.length,
-          total_messages: mySessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0),
+          total_messages: mySessions.reduce((sum, s) => sum + sessionMessageCount(s, counts), 0),
           last_sync: new Date().toISOString(),
         });
       } else {
         // Sync totals
-        const totalMsgs = mySessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0);
-        const xp = computeXP(mySessions, myCrystals || []);
+        const totalMsgs = mySessions.reduce((sum, s) => sum + sessionMessageCount(s, counts), 0);
+        const xp = computeXP(mySessions, myCrystals || [], counts);
         const rank = computeRank(xp);
         const unlocked = computeUnlocks(xp, p.unlocked_chapters || []);
         p = await base44.entities.ResonanceProfile.update(p.id, {
@@ -68,9 +75,10 @@ export default function LoreArchivesDashboard() {
       setProfile(p);
       setCrystals(myCrystals || []);
       setSessions(mySessions || []);
+      setMessageCounts(counts || {});
 
       // Auto-generate crystals for sessions without them
-      await autoGenerateCrystals(me.email, mySessions, myCrystals || []);
+      await autoGenerateCrystals(me.email, mySessions, myCrystals || [], counts);
     } catch (err) {
       console.error("Init error:", err);
     } finally {
@@ -78,9 +86,9 @@ export default function LoreArchivesDashboard() {
     }
   };
 
-  const computeXP = (sessions, crystals) => {
+  const computeXP = (sessions, crystals, counts) => {
     const sessionXP = sessions.length * 40;
-    const messageXP = sessions.reduce((sum, s) => sum + Math.min((s.messages?.length || 0) * 2, 200), 0);
+    const messageXP = sessions.reduce((sum, s) => sum + Math.min(sessionMessageCount(s, counts) * 2, 200), 0);
     const crystalXP = crystals.reduce((sum, c) => sum + (c.resonance_xp_awarded || 50), 0);
     return sessionXP + messageXP + crystalXP;
   };
@@ -104,12 +112,14 @@ export default function LoreArchivesDashboard() {
     return Array.from(unlocked);
   };
 
-  const autoGenerateCrystals = async (email, sessions, existing) => {
+  const autoGenerateCrystals = async (email, sessions, existing, counts) => {
     const existingSessionIds = new Set(existing.map(c => c.session_id));
-    const eligible = sessions.filter(s => !existingSessionIds.has(s.id) && (s.messages?.length || 0) >= 10);
+    const eligible = sessions.filter(s => !existingSessionIds.has(s.id) && sessionMessageCount(s, counts) >= 10);
 
     for (const session of eligible.slice(0, 5)) {
-      const msgs = session.messages || [];
+      // Fetch full message content only for the (at most 5) sessions actually
+      // getting a crystal, instead of hydrating every session's history up front.
+      const msgs = await base44.messages.list(session.id);
       const charName = msgs.find(m => m.role === "assistant")?.character_name || "Unknown";
       const excerpt = msgs.find(m => m.role === "assistant" && m.content?.length > 40)?.content?.slice(0, 120) || "";
       const milestoneType = msgs.length >= 50 ? "deep_resonance" : msgs.length >= 20 ? "revelation" : "first_contact";
@@ -226,7 +236,7 @@ export default function LoreArchivesDashboard() {
         <AnimatePresence mode="wait">
           {activeTab === "rank" && (
             <motion.div key="rank" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              <ResonanceRankPanel profile={profile} sessions={sessions} crystals={crystals} />
+              <ResonanceRankPanel profile={profile} sessions={sessions} crystals={crystals} messageCounts={messageCounts} />
             </motion.div>
           )}
           {activeTab === "chapters" && (
