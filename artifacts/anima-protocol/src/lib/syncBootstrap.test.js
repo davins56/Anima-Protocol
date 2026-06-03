@@ -146,6 +146,31 @@ describe("first sign-in migration", () => {
     expect(outcome).toBe("failed");
   });
 
+  it("treats an account-not-empty response as done (skipped), not failed", async () => {
+    localStorage.setItem(
+      "anima_entity_Character",
+      JSON.stringify([{ id: "c1", name: "Local Hero" }]),
+    );
+    // A returning user: the account already has server data, so the one-time
+    // import (empty-accounts only) legitimately no-ops. This must NOT be treated
+    // as a failure — the data is already safe on the account, so the flag is set
+    // and no "hasn't synced" notice is shown.
+    bulkImport.mockResolvedValueOnce({
+      imported: false,
+      reason: "account_not_empty",
+    });
+
+    const bootstrapUserData = await loadBootstrap();
+    const outcome = await bootstrapUserData("userA");
+
+    expect(bulkImport).toHaveBeenCalledTimes(1);
+    // The migration is marked done so it stops retrying on every load.
+    expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
+    expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
+    // "skipped" so the UI shows no failed-sync notice.
+    expect(outcome).toBe("skipped");
+  });
+
   it("retries the migration on the next sign-in after a failed import", async () => {
     localStorage.setItem(
       "anima_entity_Character",

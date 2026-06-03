@@ -48,6 +48,7 @@ const localCharacter = {
 
 let userFailed: TestUser;
 let userMigrated: TestUser;
+let userNotEmpty: TestUser;
 let userSkipped: TestUser;
 
 test.describe.configure({ mode: "serial" });
@@ -58,12 +59,14 @@ test.beforeAll(async () => {
   await clerkSetup();
   userFailed = await createTestUser("sync-fail");
   userMigrated = await createTestUser("sync-ok");
+  userNotEmpty = await createTestUser("sync-nonempty");
   userSkipped = await createTestUser("sync-skip");
 });
 
 test.afterAll(async () => {
   await deleteTestUser(userFailed?.id);
   await deleteTestUser(userMigrated?.id);
+  await deleteTestUser(userNotEmpty?.id);
   await deleteTestUser(userSkipped?.id);
 });
 
@@ -216,6 +219,36 @@ test("does NOT show the notice when the import confirms success (migrated)", asy
 
   // Give the post-migration toast effect a moment to (not) fire, then assert the
   // notice never appeared.
+  await page.waitForTimeout(2_000);
+  await expect(page.getByText(NOTICE_RE)).toHaveCount(0);
+
+  await context.close();
+});
+
+test("does NOT show the notice for a returning user whose account already has data", async ({
+  browser,
+}) => {
+  const context: BrowserContext = await browser.newContext();
+  const page = await context.newPage();
+  await baseInit(page);
+  await seedLocalData(page);
+  // The real-world regression: a returning user signs in on a fresh browser that
+  // still has leftover pre-sync local data. The server refuses the one-time
+  // import because the account already has data ({imported:false,
+  // reason:"account_not_empty"}). That is NOT a failure — the data is already
+  // safe on the account — so no notice should appear and the migration is marked
+  // done (it must not retry/false-alarm on every load).
+  await stubImport(page, { imported: false, reason: "account_not_empty" });
+
+  await signIn(page, userNotEmpty);
+  await dismissOverlays(page);
+
+  await expect
+    .poll(() => page.evaluate((k) => localStorage.getItem(k), MIGRATION_KEY), {
+      timeout: 45_000,
+    })
+    .toBe("1");
+
   await page.waitForTimeout(2_000);
   await expect(page.getByText(NOTICE_RE)).toHaveCount(0);
 

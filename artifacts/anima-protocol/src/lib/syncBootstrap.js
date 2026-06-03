@@ -89,6 +89,16 @@ async function migrateLocalDataOnce() {
     const payload = { entities };
     if (profile) payload.profile = profile;
     const result = await bulkImport(payload);
+    // The account already has server data, so the one-time import (which only
+    // ever targets an EMPTY account) is a legitimate no-op, NOT a failure. The
+    // user's data is already safe on their account; mark the migration done so
+    // we stop retrying and never show the "hasn't synced" notice. (Without this,
+    // every returning user with leftover local data on a fresh browser gets a
+    // permanent false-alarm toast that reloads the app when its Retry is tapped.)
+    if (!result?.imported && result?.reason === "account_not_empty") {
+      localStorage.setItem(MIGRATION_KEY, "1");
+      return "skipped";
+    }
     // Only treat the migration as done when the server confirms the import
     // succeeded. A partial/failed import that still resolves (e.g.
     // `{ imported: false }`) must NOT set the flag, or the user's local

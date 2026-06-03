@@ -15,3 +15,11 @@ There are TWO server endpoints that ingest a backup payload (`{ entities, profil
 **Why:** the migration gate exists so first-sign-in bootstrap can't clobber/duplicate; restore is an explicit user action that must work post-migration. Keeping them separate preserves both guarantees.
 
 **How to apply:** client helper is `restoreData(payload, mode)` in `base44Client.js`; Settings shows a merge/replace choice dialog with a second confirm step for replace before calling it. Tests live in `artifacts/api-server/test/store.test.ts`.
+
+## `account_not_empty` is a no-op SUCCESS, not a failure
+
+`syncBootstrap` must treat `/import` → `{ imported:false, reason:"account_not_empty" }` as DONE: set `MIGRATION_KEY` and return `"skipped"`. Only OTHER non-`imported` responses throw → `"failed"`.
+
+**Why:** a returning user (account already has server data) on a fresh browser with leftover pre-sync local data hits the empty-only import gate. If `account_not_empty` is treated as a failure, the flag never sets, so EVERY load re-fails and shows the pinned (`duration:Infinity`) failed-sync toast. That toast's Retry button calls `window.location.reload()`; touching the screen to scroll lands on it → the app appears to "crash"/reload repeatedly. The data was never at risk — it's already on the account.
+
+**How to apply:** keep the branch `reason`-specific; do NOT broaden to all `imported:false` (that would silently swallow genuine failures). The app has NO React ErrorBoundary, so any path that reaches a full reload reads to the user as a crash.
