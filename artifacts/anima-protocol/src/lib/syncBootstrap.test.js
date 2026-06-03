@@ -5,15 +5,25 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // account exactly once, ever, and (2) per-account starter seeding. We mock the
 // two collaborators (the server bulkImport and the seeding routine) and assert
 // the orchestration's guarantees directly.
-const { bulkImport, restoreData, seedCharactersIfNeeded, resetSeedLock } =
-  vi.hoisted(() => ({
-    bulkImport: vi.fn(),
-    restoreData: vi.fn(),
-    seedCharactersIfNeeded: vi.fn(),
-    resetSeedLock: vi.fn(),
-  }));
+const {
+  bulkImport,
+  restoreData,
+  notifyStoreChanged,
+  seedCharactersIfNeeded,
+  resetSeedLock,
+} = vi.hoisted(() => ({
+  bulkImport: vi.fn(),
+  restoreData: vi.fn(),
+  notifyStoreChanged: vi.fn(),
+  seedCharactersIfNeeded: vi.fn(),
+  resetSeedLock: vi.fn(),
+}));
 
-vi.mock("@/api/base44Client", () => ({ bulkImport, restoreData }));
+vi.mock("@/api/base44Client", () => ({
+  bulkImport,
+  restoreData,
+  notifyStoreChanged,
+}));
 vi.mock("@/lib/seedCharacters", () => ({ seedCharactersIfNeeded, resetSeedLock }));
 
 const MIGRATION_KEY = "anima_server_migration_v1";
@@ -37,6 +47,7 @@ beforeEach(() => {
   sessionStorage.clear();
   bulkImport.mockReset().mockResolvedValue({ imported: true, count: 1 });
   restoreData.mockReset().mockResolvedValue({ restored: true, mode: "merge", count: 1 });
+  notifyStoreChanged.mockReset();
   seedCharactersIfNeeded.mockReset().mockResolvedValue(undefined);
   resetSeedLock.mockReset();
 });
@@ -234,6 +245,10 @@ describe("first sign-in migration", () => {
     // Now that the data is on the account, mark done so we stop offering.
     expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
     expect(mod.hasPendingLocalMerge()).toBe(false);
+    // The merged records must surface immediately: fire the store-changed
+    // signal so any mounted lists (characters, stories, chat) refetch live
+    // without a manual page refresh.
+    expect(notifyStoreChanged).toHaveBeenCalledTimes(1);
   });
 
   it("declining the merge marks done without touching the account", async () => {

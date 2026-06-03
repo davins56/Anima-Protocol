@@ -1,4 +1,4 @@
-import { bulkImport, restoreData } from "@/api/base44Client";
+import { bulkImport, restoreData, notifyStoreChanged } from "@/api/base44Client";
 import { seedCharactersIfNeeded, resetSeedLock } from "@/lib/seedCharacters";
 
 // One-time migration of the browser's pre-sync localStorage data up to the
@@ -143,6 +143,10 @@ export async function mergeLeftoverLocalData() {
   const result = await restoreData(pendingLocalMerge, "merge");
   localStorage.setItem(MIGRATION_KEY, "1");
   pendingLocalMerge = null;
+  // restoreData already cleared the store cache; tell any mounted pages
+  // (character list, stories, chat) to refetch so the merged records show up
+  // immediately without a manual navigation or page refresh.
+  notifyStoreChanged();
   return result;
 }
 

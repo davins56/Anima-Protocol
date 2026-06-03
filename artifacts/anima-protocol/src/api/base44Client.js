@@ -226,7 +226,7 @@ export async function fetchRevision() {
   }
 }
 
-function notifyStoreChanged() {
+export function notifyStoreChanged() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(STORE_CHANGED_EVENT));
   }
