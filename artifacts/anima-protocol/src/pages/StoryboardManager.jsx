@@ -19,9 +19,15 @@ export default function StoryboardManager() {
   }, [sessionId]);
 
   const loadSession = async () => {
+    if (!sessionId) {
+      setLoading(false);
+      return;
+    }
     try {
-      const data = await base44.entities.ChatSession.list("-updated_date", 200);
-      const found = data.find((s) => s.id === sessionId);
+      // Fetch just this one session by id instead of pulling a 200-row batch and
+      // scanning it client-side — instant, and it also finds sessions that would
+      // fall past the old fixed limit for users with lots of history.
+      const found = await base44.entities.ChatSession.get(sessionId);
       setSession(found);
     } catch (err) {
       console.error("Error loading session:", err);

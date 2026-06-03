@@ -77,7 +77,9 @@ export default function Settings() {
 
   const loadStats = async () => {
     const [sessions, chars] = await Promise.all([
-      base44.entities.ChatSession.list("-created_date", 200),
+      // Stats only needs the row count — skip hydrating every session's full
+      // message history so this loads instantly for users with lots of chats.
+      base44.entities.ChatSession.list("-created_date", 200, { withMessages: false }),
       base44.entities.Character.list("-created_date", 200),
     ]);
     setSessionCount(sessions.length);
@@ -125,7 +127,8 @@ export default function Settings() {
     try {
       // Fetch all linked entities in parallel
       const [sessions, chars, memories, vectorMemories, inventory, checkIns, lore, quests] = await Promise.all([
-        base44.entities.ChatSession.list("-created_date", 500),
+        // Deleting only needs each session's id — skip message hydration.
+        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
         base44.entities.Character.filter({ is_default: false }),
         base44.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
         base44.entities.VectorMemory.list("-created_date", 500).catch(() => []),
@@ -160,7 +163,8 @@ export default function Settings() {
     try {
       // Fetch all deletable entity lists in parallel
       const [sessions, chars, animas, quests, lore, memories, worldStates, checkIns, crystals, resonance, userContexts, graphs] = await Promise.all([
-        base44.entities.ChatSession.list("-created_date", 500),
+        // Deleting only needs each session's id — skip message hydration.
+        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
         base44.entities.Character.filter({ is_default: false }),
         base44.entities.Anima.list("-created_date", 500),
         base44.entities.Quest.list("-created_date", 500),
