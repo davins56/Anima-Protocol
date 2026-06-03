@@ -39,6 +39,20 @@ Character → fill placeholder "e.g. Serenity" → Create → assert visible →
 A's unique custom character (`toHaveCount(0)`) absent (server scopes `/api/store` to the Clerk user id).
 Use a random unique custom-character name to avoid cross-run collisions; run serial (B reads the name A made).
 
+**Restore-backup spec (`restore-backup.spec.ts`):** drives the REAL Settings UI restore flow (not the
+client helper): open `/settings` → click the "Data & Privacy" nav button → `setInputFiles` a JSON backup
+onto the hidden `input[type=file]` → the "Restore Backup" dialog → "Merge Into Current Data" OR the
+two-step "Replace Everything" (click it, then the confirm-step "Replace Everything"). Success text is
+"Merged in N record(s)." / "Replaced everything with N record(s).". Backup carries a LEGACY-shape
+ChatSession (inline `messages` blob); opening `/chat/<id>` afterwards lazy-splits it (GET /messages),
+proving the conversation — not just characters — comes back. Merge keeps the seeded starter (Korra count 1),
+replace wipes it (count 0). One fresh context + own Clerk user per mode; serial.
+
+**Can't run e2e from the agent here:** the Chromium binary download (`playwright install chromium`)
+exceeds the 2-minute bash tool limit even in the foreground, so e2e specs can't be executed in-session;
+they're validated by mirroring the proven patterns and reviewing. e2e is NOT in the standard checks
+(vitest `test` only globs `src/**`; typecheck only covers `src/**`), so adding a spec won't break them.
+
 **Harmless noise:** `[reqfail] ... net::ERR_ABORTED` on `/api/...` are in-flight requests cancelled by
 navigation/reload, not failures.
 
