@@ -22,7 +22,12 @@ vi.mock("@clerk/express", () => ({
 }));
 
 import storeRouter from "../src/routes/store";
-import { db, userEntities, userProfiles } from "@workspace/db";
+import {
+  db,
+  userEntities,
+  userProfiles,
+  backfillChatMessages,
+} from "@workspace/db";
 import { like } from "drizzle-orm";
 
 // All test users share a unique-per-run prefix so cleanup can target only this
@@ -1505,5 +1510,89 @@ describe("live push (SSE)", () => {
     await call(A, "POST", "/Character", { name: "A only" });
     await expect(streamB.gotEvent).rejects.toThrow(/timed out/);
     streamB.abort();
+  });
+});
+
+// This block scans EVERY ChatSession row in the test schema, so it is placed
+// last on purpose: by the time it runs, all other suites have created their
+// sessions, and the backfill must tolerate that shared state (it only touches
+// not-yet-migrated sessions and is idempotent on already-migrated ones).
+describe("one-time backfill migrates legacy blobs without reopening chats", () => {
+  // A legacy session is exactly what an old client wrote: a ChatSession whose
+  // `messages` array still holds the full history and which carries no
+  // `messages_migrated` flag, so a metadata-only list would ship the whole blob.
+  const seedLegacy = async (who: string, sid: string, contents: string[]) => {
+    await call(who, "PUT", `/ChatSession/${sid}`, {
+      id: sid,
+      title: `Legacy ${sid}`,
+      messages: contents.map((content, i) => ({ id: `${sid}_${i}`, content })),
+    });
+  };
+
+  it("backfills every user's legacy blob into ordered rows and clears the blob", async () => {
+    const A = user("backfill_a");
+    const B = user("backfill_b");
+    await seedLegacy(A, "bf_a1", ["a1 m0", "a1 m1", "a1 m2"]);
+    await seedLegacy(A, "bf_a2", ["a2 m0"]);
+    await seedLegacy(B, "bf_b1", ["b1 m0", "b1 m1"]);
+
+    // Pre-state: the blob is present and the session is NOT migrated yet — a
+    // metadata read would still carry the whole history over the wire.
+    const preA1 = (await call(A, "GET", "/ChatSession/bf_a1")).json as Json;
+    expect((preA1.messages as unknown[]).length).toBe(3);
+    expect(preA1.messages_migrated).toBeFalsy();
+
+    const { scanned, migrated } = await backfillChatMessages(db);
+    // The scan covers at least our three seeded sessions, and they all migrate.
+    expect(scanned).toBeGreaterThanOrEqual(3);
+    expect(migrated).toBeGreaterThanOrEqual(3);
+
+    // Post-state: every seeded session is flagged migrated and its blob cleared.
+    for (const [who, sid, n] of [
+      [A, "bf_a1", 3],
+      [A, "bf_a2", 1],
+      [B, "bf_b1", 2],
+    ] as const) {
+      const sess = (await call(who, "GET", `/ChatSession/${sid}`)).json as Json;
+      expect(sess.messages_migrated).toBe(true);
+      expect(sess.messages).toEqual([]);
+
+      // The history reads back as individual rows, in seq order, verbatim.
+      const msgs = (await call(who, "GET", `/messages?session_id=${sid}`))
+        .json as Json[];
+      expect(msgs).toHaveLength(n);
+      expect(msgs.map((m) => m.seq)).toEqual(
+        Array.from({ length: n }, (_, i) => i),
+      );
+
+      // And the derived count is accurate without ever reopening the chat.
+      const counts = (
+        await call(who, "POST", "/messages/counts", { ids: [sid] })
+      ).json as Record<string, number>;
+      expect(counts[sid]).toBe(n);
+    }
+
+    // Account isolation survives the global scan: A's rows stay under A.
+    const aMsgs = (await call(A, "GET", "/messages?session_id=bf_a1"))
+      .json as Json[];
+    expect(aMsgs.map((m) => m.content)).toEqual(["a1 m0", "a1 m1", "a1 m2"]);
+  });
+
+  it("is idempotent: a second run migrates nothing and leaves rows untouched", async () => {
+    const U = user("backfill_idem");
+    await seedLegacy(U, "bf_i1", ["m0", "m1"]);
+
+    await backfillChatMessages(db);
+    const first = (await call(U, "GET", "/messages?session_id=bf_i1"))
+      .json as Json[];
+    expect(first.map((m) => m.content)).toEqual(["m0", "m1"]);
+
+    // A second pass must not re-insert, duplicate seq, or re-touch the session.
+    const second = await backfillChatMessages(db);
+    expect(second.migrated).toBe(0);
+
+    const after = (await call(U, "GET", "/messages?session_id=bf_i1"))
+      .json as Json[];
+    expect(after).toEqual(first);
   });
 });

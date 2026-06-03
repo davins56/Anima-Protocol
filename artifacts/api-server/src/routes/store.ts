@@ -1,6 +1,17 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
-import { db, userEntities, userProfiles } from "@workspace/db";
+import {
+  db,
+  userEntities,
+  userProfiles,
+  CHAT_MESSAGE,
+  CHAT_SESSION,
+  makeId,
+  asObject,
+  sessionIdEq,
+  migrateSessionMessages,
+  type MsgData,
+} from "@workspace/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
@@ -88,10 +99,6 @@ router.get("/events", (req: Request, res: Response) => {
     removeClient(userId, res);
   });
 });
-
-function makeId(): string {
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
 
 // The client relies on SDK-style querying: optional equality filters, a sort
 // string ("field" ascending, "-field" descending) and a numeric limit. These
@@ -612,116 +619,14 @@ router.put("/profile", async (req, res) => {
 //
 // These routes are registered before the generic /:entity routes so the literal
 // "messages" segment wins over the entity wildcard.
-const CHAT_MESSAGE = "ChatMessage";
-const CHAT_SESSION = "ChatSession";
-
-// `data ->> 'session_id' = '<id>'` — scope a ChatMessage to exactly one session.
-// session_id is always a string, so this text comparison is equivalent to the
-// jsonb equality used by the generic filter, and it deliberately mirrors the
-// text projection of user_entities_session_seq_idx (and the batch read at
-// inArray below) so seq-ordered message reads stay index-accelerated.
-function sessionIdEq(sessionId: string): SQL {
-  return sql`(${userEntities.data} ->> 'session_id') = ${sessionId}`;
-}
-
+//
+// The chat-message storage model (entity names, the per-session id predicate,
+// id/object helpers and the lazy blob->rows migration) lives in @workspace/db
+// as the single source of truth so this router and the one-time backfill share
+// identical semantics. `migrateSessionMessages` (imported above) is the lazy,
+// transaction-scoped, advisory-locked migration the routes call on first
+// access; the backfill applies the exact same function to every user's data.
 type Row = typeof userEntities.$inferSelect;
-type MsgData = Record<string, unknown>;
-
-function asObject(m: unknown): MsgData {
-  return m && typeof m === "object" && !Array.isArray(m)
-    ? (m as MsgData)
-    : { content: m == null ? "" : String(m) };
-}
-
-// Lazily split a legacy ChatSession.messages blob into ChatMessage rows the
-// first time a session's messages are touched, then clear the blob and flag the
-// session migrated. Runs inside the caller's transaction so it is atomic, and is
-// idempotent: the `messages_migrated` flag short-circuits subsequent calls, and
-// the existing-rows guard avoids double-inserting if a flag was ever lost.
-async function ensureSessionMigrated(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  userId: string,
-  sessionId: string,
-): Promise<void> {
-  // Serialize everything that touches one session's message stream within its
-  // transaction: migration, and (because append/replace call this first) seq
-  // assignment. This makes concurrent appends to the same session strictly
-  // ordered (no duplicate seq) and concurrent first-reads migrate exactly once,
-  // without a unique constraint that would surface as a client-visible failure.
-  // The lock is keyed per (user, session) and auto-releases at transaction end,
-  // and since each transaction locks exactly one pair there is no deadlock risk.
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
-  );
-
-  const [session] = await tx
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
-      ),
-    )
-    .limit(1);
-  if (!session) return;
-  const data = session.data as MsgData;
-  if (data.messages_migrated) return;
-
-  const blob = Array.isArray(data.messages) ? (data.messages as unknown[]) : [];
-  const now = new Date().toISOString();
-
-  if (blob.length > 0) {
-    const existing = await tx
-      .select({ id: userEntities.id })
-      .from(userEntities)
-      .where(
-        and(
-          eq(userEntities.userId, userId),
-          eq(userEntities.entityName, CHAT_MESSAGE),
-          sessionIdEq(sessionId),
-        ),
-      )
-      .limit(1);
-    if (existing.length === 0) {
-      let i = 0;
-      for (const raw of blob) {
-        const msg = asObject(raw);
-        const id = String(msg.id ?? makeId());
-        await tx.insert(userEntities).values({
-          userId,
-          entityName: CHAT_MESSAGE,
-          entityId: id,
-          data: {
-            ...msg,
-            id,
-            session_id: sessionId,
-            seq: i,
-            created_date: msg.created_date ?? msg.timestamp ?? now,
-            updated_date: now,
-          },
-        });
-        i += 1;
-      }
-    }
-  }
-
-  const { messages: _omit, ...rest } = data;
-  await tx
-    .update(userEntities)
-    .set({
-      data: { ...rest, messages: [], messages_migrated: true },
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
-      ),
-    );
-}
 
 // Read one session's messages ordered by seq. Paging contract:
 //   (no limit)            -> the whole history, ascending seq
@@ -780,7 +685,7 @@ router.get("/messages", async (req, res) => {
       ? Number(req.query.before_seq)
       : undefined;
 
-  await db.transaction((tx) => ensureSessionMigrated(tx, userId, sessionId));
+  await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
   const messages = await readMessages(userId, sessionId, limit, beforeSeq);
   res.json(messages);
 });
@@ -801,7 +706,7 @@ router.post("/messages/by-sessions", async (req, res) => {
   }
 
   for (const sid of ids) {
-    await db.transaction((tx) => ensureSessionMigrated(tx, userId, sid));
+    await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
   }
 
   const rows = await db
@@ -844,7 +749,7 @@ router.post("/messages/counts", async (req, res) => {
   }
 
   for (const sid of ids) {
-    await db.transaction((tx) => ensureSessionMigrated(tx, userId, sid));
+    await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
   }
 
   const rows = await db
@@ -880,7 +785,7 @@ router.post("/messages", async (req, res) => {
     return;
   }
   const created = await db.transaction(async (tx) => {
-    await ensureSessionMigrated(tx, userId, sessionId);
+    await migrateSessionMessages(tx, userId, sessionId);
     const [agg] = await tx
       .select({
         maxSeq: sql<string>`coalesce(max((${userEntities.data} ->> 'seq')::numeric), -1)`,
@@ -932,7 +837,7 @@ router.post("/messages/replace", async (req, res) => {
   }
   const incoming = body.messages as unknown[];
   const out = await db.transaction(async (tx) => {
-    await ensureSessionMigrated(tx, userId, sessionId);
+    await migrateSessionMessages(tx, userId, sessionId);
     const current: Row[] = await tx
       .select()
       .from(userEntities)
