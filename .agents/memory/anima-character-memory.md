@@ -1,42 +1,37 @@
 ---
 name: Anima per-character memory log (cross-session recall)
-description: How the AI "remembers past conversations" — the characterMemory server function contract and pitfalls.
+description: How the AI "remembers past conversations" — the characterMemory contract and which memory functions are real vs stubbed.
 ---
 
 # Per-character cross-session memory
 
-The AI "remembering past conversations" is driven by the server `characterMemory`
-function (api-server functions.ts), NOT by the MemoryCrystal/Lore/VectorMemory
-features. The whole client side is wired in `Chat.jsx`:
-- `loadCharacterMemories(charId)` on session open → invoke `characterMemory` {action:"get"} → expects `res.data.memories`.
-- save every 6 messages → invoke `characterMemory` {action:"save", user_message, ai_response, existing_memories} → expects `res.data.created`; reloads on created>0.
-- prompt assembly injects them as "PERSISTENT MEMORIES" / "LONG-TERM MEMORY" blocks (fields used: `m.category`, `m.fact`).
+"The AI remembering past conversations" is driven by the server `characterMemory`
+function — NOT by the MemoryCrystal / Lore / VectorMemory features. The client
+(Chat.jsx) loads a character's log on session open (action:"get"), injects it into
+the prompt as "PERSISTENT MEMORIES" / "LONG-TERM MEMORY", and saves distilled
+facts every few messages (action:"save").
 
-**Why it was broken:** the server `characterMemory` case was a stub shared with
-`respondMentalLine` — it ignored `action` and just returned free LLM text, so get
-never returned memories and save never persisted. Characters never accumulated or
-recalled anything.
+**Non-obvious contract (the trap):** `base44.functions.invoke` returns
+`json.result`, so an invoke handler must return `result = { data: {...} }` for the
+client's `res.data.*` to resolve. A handler that returns plain text/`result = <x>`
+compiles and "works" but the client silently sees `res.data === undefined` — which
+is exactly why the original shared `characterMemory`/`respondMentalLine` stub made
+memory a no-op (it returned free LLM text and ignored `action`).
 
-**The contract:** `base44.functions.invoke` returns `json.result` (base44Client.js),
-so handlers MUST return `result = { data: {...} }` for the client's `res.data.*`
-to resolve. Stub handlers that `result = <text>` look fine but the client sees
-`res.data === undefined`.
+**Decision — save is a per-user, repeatable LLM call, so it must be cost-bounded.**
+Clip the exchange text and cap the existing-memory context fed to the model
+(denial-of-wallet). Dedupe new facts against the authoritative *stored* log by a
+normalized-fact key, not just the client-passed `existing_memories`.
+**Why:** authenticated abuse / large payloads otherwise drive unbounded token cost,
+and trusting only the client's list lets stale clients re-create duplicates.
 
-**Storage:** memories are generic store rows — `userEntities` with
-`entityName="CharacterMemory"`, scoped to the Clerk `userId`, each `data` tagged
-with `character_id` (plus category/fact/session_id/created_date). Load filters by
-character_id in JS (per-user set is small), mirroring buildUserContextPrompt.
+**Known gap (acceptable, low risk):** the save read→insert is not transactional /
+DB-unique-guarded, so truly simultaneous saves could double-write one fact. Fine in
+the sequential every-few-messages path; revisit only if saves become concurrent.
 
-**Save hardening that matters:** `save` always makes an authenticated LLM call, so
-clip message text and cap the existing-memory context passed to the model
-(denial-of-wallet). Dedupe via a normalized-fact key against the authoritative
-stored log (not just client-passed existing_memories). Call `notifyUser(userId)`
-after inserts so other devices sync. Known minor gap: read→insert isn't
-transactional/uniqueness-guarded, so truly concurrent saves could double-write a
-fact (low risk in the sequential every-6-messages path).
-
-**Still stubbed (hit the generic `default` LLM case, return garbage):**
-`buildMemoryContext`, `formCrossSessionMemory`, `updateMemoryFromSession`,
-`retrieveCrossSessionMemories`, `vectorMemorySearch`, `createVectorMemory`,
-`searchMemoriesSemantically` (returns `{memories:[]}`). The `useCrossSessionMemory`
-/ `useVectorMemorySystem` hooks call these — they are NOT the live recall path.
+**Still stubbed — these hit the generic `default` LLM case and return garbage, so
+do NOT treat them as the live recall path:** `buildMemoryContext`,
+`formCrossSessionMemory`, `updateMemoryFromSession`, `retrieveCrossSessionMemories`,
+`vectorMemorySearch`, `createVectorMemory`, and `searchMemoriesSemantically`
+(returns empty). The `useCrossSessionMemory` / `useVectorMemorySystem` hooks call
+these; they are not wired into real persistence.
