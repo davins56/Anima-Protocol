@@ -14,3 +14,4 @@
 - [store list query pushdown](store-list-query-pushdown.md) — GET /:entity pushes filter/sort/limit into SQL; must mirror JS === / comparator (type-faithful, COLLATE "C", nulls last); fields inlined as literals so expression indexes match.
 - [Anima chat messages as rows](anima-chat-messages-rows.md) — messages are ChatMessage rows w/ per-session seq; pg_advisory_xact_lock in ensureSessionMigrated serializes migrate+append; edit/delete via replace shim.
 - [Anima restore vs import](anima-restore-import.md) — /import is empty-only migration (keep it); /restore is user-driven, works on non-empty accounts with merge/replace modes (replace is transactional wipe+insert).
+- [Anima cross-device sync e2e test](anima-e2e-sync-test.md) — committed Playwright spec; programmatic clerk.signIn bypasses CAPTCHA; NEVER mutate document.documentElement in addInitScript (empties the page).
