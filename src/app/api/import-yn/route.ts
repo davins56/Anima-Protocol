@@ -1,6 +1,6 @@
-import { NextRequest } from "next/server";
+import * as server from "next/server";
 
-export async function POST(req: NextRequest) {
+export async function POST(req: server.NextRequest) {
   const { rawText, phone } = await req.json();
 
   // Smart parsing for Y/N style
