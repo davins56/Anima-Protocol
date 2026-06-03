@@ -1,6 +1,8 @@
+// @ts-check
 import { useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 
+/** @param {{ onCharactersLoaded: (...args: any[]) => void }} props */
 export default function CharacterLoader({ onCharactersLoaded }) {
   useEffect(() => {
     loadAndEnrichCharacters();

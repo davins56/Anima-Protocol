@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { track } from "@/lib/analytics";
@@ -86,7 +87,7 @@ export default function PremiumPlans() {
     setLoading(false);
   };
 
-  const handleUpgrade = async (tier) => {
+  const handleUpgrade = async (/** @type {string} */ tier) => {
     // Captures upgrade intent (checkout start), not the completed purchase —
     // payment confirmation happens server-side after Stripe redirect.
     track("subscription_upgrade_started", {

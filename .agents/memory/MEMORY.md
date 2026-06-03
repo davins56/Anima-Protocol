@@ -11,6 +11,7 @@
 - [Anima Undo/delete-flow tests](anima-undo-tests.md) — real base44 hangs in vitest (no token getter); mock base44 in-memory + extract Chat page handlers to DI functions to test.
 - [Anima typecheck scope](anima-typecheck-scope.md) — typecheck only covers .ts/.tsx (allowJs off on purpose); JS-from-tsx needs colocated .d.ts; mockups/ excluded.
 - [api-server integration tests](api-server-integration-tests.md) — test /api/store against REAL Postgres, mock @clerk/express getAuth via x-test-user header; client-only guarantees tested in anima vitest.
+- [Anima checkJs rollout](anima-checkjs-rollout.md) — adopt `// @ts-check` per-file (never global flip); measure clean files via temp checkJs; useState(null)→never & default-undefined props→uncallable are the recurring real bugs.
 - [store list query pushdown](store-list-query-pushdown.md) — GET /:entity pushes filter/sort/limit into SQL; must mirror JS === / comparator (type-faithful, COLLATE "C", nulls last); fields inlined as literals so expression indexes match.
 - [api-server test DB isolation](api-server-test-db-isolation.md) — tests run in a disposable per-run schema via setupFiles + PGOPTIONS search_path (never public); LIKE-clone tables, re-point serial seq, drop CASCADE.
 - [Anima chat messages as rows](anima-chat-messages-rows.md) — messages are ChatMessage rows w/ per-session seq; pg_advisory_xact_lock in ensureSessionMigrated serializes migrate+append; edit/delete via replace shim.

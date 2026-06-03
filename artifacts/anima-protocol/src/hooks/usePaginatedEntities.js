@@ -1,3 +1,4 @@
+// @ts-check
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useState } from 'react';
@@ -5,6 +6,9 @@ import { useState } from 'react';
 /**
  * Wraps entity list queries with automatic pagination.
  * Loads 50 per page by default, loads more on demand.
+ * @param {string} entityName
+ * @param {number} [pageSize]
+ * @param {string} [sortField]
  */
 export function usePaginatedEntities(entityName, pageSize = 50, sortField = '-created_date') {
   const [currentPage, setCurrentPage] = useState(0);

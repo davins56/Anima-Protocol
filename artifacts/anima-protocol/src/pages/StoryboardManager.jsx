@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
@@ -8,7 +9,7 @@ import { motion } from "framer-motion";
 export default function StoryboardManager() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(/** @type {Record<string, any> | null} */ (null));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from "react";
 import {
   Menu,
@@ -23,6 +24,9 @@ import {
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
+/**
+ * @param {{ activeSessionId?: string | null, onMobileMenuClick?: () => void }} [props]
+ */
 export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick } = { activeSessionId: null, onMobileMenuClick: undefined }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -148,4 +152,3 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
     </div>
   );
 }
-

@@ -1,3 +1,4 @@
+// @ts-check
 import { useEffect, useRef } from 'react';
 
 // Re-run a loader when another device changes this account's data.
@@ -8,6 +9,7 @@ import { useEffect, useRef } from 'react';
 // this hook with their existing load function so they refetch live, without a
 // manual reload. Keep the loader cheap/idempotent — it can fire at any time the
 // page is mounted.
+/** @param {() => void} loadFn */
 export function useStoreSync(loadFn) {
   const fnRef = useRef(loadFn);
   fnRef.current = loadFn;

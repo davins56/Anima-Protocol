@@ -1,3 +1,4 @@
+// @ts-check
 import { Heart, Sparkles, History, Scale } from "lucide-react";
 
 // Directorial chips that nudge the scene's emotional register. Every directive
@@ -29,6 +30,7 @@ const CHIPS = [
   },
 ];
 
+/** @param {{ onSelect: (...args: any[]) => void, disabled?: boolean }} props */
 export default function QuickActionChips({ onSelect, disabled = false }) {
   return (
     <div
