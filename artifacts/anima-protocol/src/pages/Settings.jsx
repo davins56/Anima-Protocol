@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { base44, exportData, restoreData } from "@/api/base44Client";
+import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
@@ -15,6 +15,7 @@ import { Upload, BookOpen } from "lucide-react";
 import UserContextSettings from "@/components/anima/UserContextSettings";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup } from "@/lib/restoreBackup";
+import { performRestoreFlow } from "@/lib/restoreHandlers";
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
 
@@ -255,30 +256,16 @@ export default function Settings() {
     }
   };
 
-  const performRestore = async (mode) => {
-    if (!pendingRestore) return;
-    setRestoring(true);
-    setRestoreResult(null);
-    try {
-      const result = await restoreData(
-        { entities: pendingRestore.entities, profile: pendingRestore.profile },
-        mode,
-      );
-      setRestoreResult({
-        ok: true,
-        count: result?.count || 0,
-        mode,
-      });
-      setPendingRestore(null);
-      setConfirmReplace(false);
-      await Promise.all([loadStats(), loadUser()]);
-    } catch (err) {
-      console.error("Restore failed:", err);
-      setRestoreResult({ ok: false, message: err?.message || "Restore failed" });
-    } finally {
-      setRestoring(false);
-    }
-  };
+  const performRestore = (mode) =>
+    performRestoreFlow(mode, {
+      pendingRestore,
+      setRestoring,
+      setRestoreResult,
+      setPendingRestore,
+      setConfirmReplace,
+      loadStats,
+      loadUser,
+    });
 
   const cancelRestore = () => {
     setPendingRestore(null);
