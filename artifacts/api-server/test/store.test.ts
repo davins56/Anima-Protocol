@@ -314,6 +314,144 @@ describe("restore into a non-empty account (merge vs replace)", () => {
   });
 });
 
+describe("export + restore round trip (the backup safety net)", () => {
+  // The export endpoint is the only safety net before irreversible Factory
+  // Reset / Delete Account, and its JSON shape must keep round-tripping through
+  // /import and /restore. These tests seed real data, export it, then prove the
+  // exact export output restores every entity type and the profile into a fresh
+  // account.
+  it("export contains every entity type and the profile for the account", async () => {
+    const U = user("export_full");
+    // Seed several distinct entity types plus some multi-record types.
+    await call(U, "PUT", "/Character/ec_1", { id: "ec_1", name: "Hero", universe: "Original" });
+    await call(U, "PUT", "/Character/ec_2", { id: "ec_2", name: "Sidekick", universe: "Original" });
+    await call(U, "PUT", "/Journal/ej_1", { id: "ej_1", title: "Day one" });
+    await call(U, "PUT", "/Quest/eq_1", { id: "eq_1", title: "Find the relic" });
+    await call(U, "PUT", "/profile", { display_name: "Backup Owner", selected_mode: "story" });
+
+    const res = await call(U, "GET", "/export");
+    expect(res.status).toBe(200);
+    expect(res.json.version).toBe(1);
+    expect(typeof res.json.exported_at).toBe("string");
+
+    const entities = res.json.entities as Record<string, Json[]>;
+    // Every seeded entity type is present.
+    expect(Object.keys(entities).sort()).toEqual(["Character", "Journal", "Quest"]);
+    expect(new Set((entities.Character).map((c) => c.id))).toEqual(
+      new Set(["ec_1", "ec_2"]),
+    );
+    expect((entities.Journal).map((j) => j.id)).toEqual(["ej_1"]);
+    expect((entities.Quest).map((q) => q.id)).toEqual(["eq_1"]);
+
+    // The profile rides along with the export.
+    const profile = res.json.profile as Json;
+    expect(profile.display_name).toBe("Backup Owner");
+    expect(profile.selected_mode).toBe("story");
+  });
+
+  it("an exported backup imports cleanly into a fresh account (records + profile)", async () => {
+    const SRC = user("rt_import_src");
+    const DST = user("rt_import_dst");
+
+    // Build a realistic account on the source.
+    await call(SRC, "PUT", "/Character/c_a", { id: "c_a", name: "Aria", universe: "Origin" });
+    await call(SRC, "PUT", "/Character/c_b", { id: "c_b", name: "Bryn", universe: "Origin" });
+    await call(SRC, "PUT", "/Journal/jr_1", { id: "jr_1", title: "Entry" });
+    await call(SRC, "PUT", "/profile", { display_name: "Owner", theme: "dark" });
+
+    // Export it verbatim, then import the SAME payload into an empty account.
+    const exported = (await call(SRC, "GET", "/export")).json;
+    const imp = await call(DST, "POST", "/import", {
+      entities: exported.entities,
+      profile: exported.profile,
+    });
+    expect(imp.status).toBe(200);
+    expect(imp.json.imported).toBe(true);
+    expect(imp.json.count).toBe(3);
+
+    // Every record came back on the destination.
+    const chars = (await call(DST, "GET", "/Character")).json as Json[];
+    expect(new Set(chars.map((c) => c.id))).toEqual(new Set(["c_a", "c_b"]));
+    const journals = (await call(DST, "GET", "/Journal")).json as Json[];
+    expect(journals.map((j) => j.id)).toEqual(["jr_1"]);
+
+    // The profile came back too.
+    const profile = (await call(DST, "GET", "/profile")).json as Json;
+    expect(profile.display_name).toBe("Owner");
+    expect(profile.theme).toBe("dark");
+  });
+
+  it("an exported backup restores (replace) into a fresh account verbatim", async () => {
+    const SRC = user("rt_restore_src");
+    const DST = user("rt_restore_dst");
+
+    await call(SRC, "PUT", "/Character/s_1", { id: "s_1", name: "Solo", universe: "U" });
+    await call(SRC, "PUT", "/Quest/sq_1", { id: "sq_1", title: "Quest" });
+    await call(SRC, "PUT", "/profile", { display_name: "Restorer", mood: "calm" });
+
+    const exported = (await call(SRC, "GET", "/export")).json;
+    // Restore is the user-driven path; feed it the export output directly.
+    const restored = await call(DST, "POST", "/restore", {
+      entities: exported.entities,
+      profile: exported.profile,
+      mode: "replace",
+    });
+    expect(restored.status).toBe(200);
+    expect(restored.json.restored).toBe(true);
+    expect(restored.json.count).toBe(2);
+
+    const chars = (await call(DST, "GET", "/Character")).json as Json[];
+    expect(chars.map((c) => c.id)).toEqual(["s_1"]);
+    const quests = (await call(DST, "GET", "/Quest")).json as Json[];
+    expect(quests.map((q) => q.id)).toEqual(["sq_1"]);
+    const profile = (await call(DST, "GET", "/profile")).json as Json;
+    expect(profile.display_name).toBe("Restorer");
+    expect(profile.mood).toBe("calm");
+  });
+
+  it("a full round trip preserves arbitrary record fields exactly", async () => {
+    const SRC = user("rt_fidelity_src");
+    const DST = user("rt_fidelity_dst");
+
+    // A record with nested/typed fields that must survive the JSON round trip.
+    const rich = {
+      id: "rich_1",
+      name: "Complex",
+      level: 7,
+      active: true,
+      tags: ["a", "b"],
+      meta: { origin: "test", nested: { deep: 1 } },
+    };
+    await call(SRC, "PUT", "/Character/rich_1", rich);
+
+    const exported = (await call(SRC, "GET", "/export")).json;
+    await call(DST, "POST", "/import", {
+      entities: exported.entities,
+      profile: exported.profile,
+    });
+
+    const back = (await call(DST, "GET", "/Character/rich_1")).json as Json;
+    expect(back).toMatchObject(rich);
+  });
+
+  it("rejects a malformed / non-backup file gracefully", async () => {
+    const U = user("rt_malformed");
+    // A file that isn't an Anima backup at all (no entities object). The client
+    // guards this too, but the server must reject it rather than corrupt data.
+    const bad = await call(U, "POST", "/restore", { foo: "bar", mode: "merge" });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toMatch(/entities/i);
+
+    // entities present but the wrong type (array, not an object map) is also bad.
+    const badArray = await call(U, "POST", "/restore", { entities: [], mode: "replace" });
+    expect(badArray.status).toBe(400);
+
+    // The rejected restore left the account untouched (no rows created).
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    expect(chars).toHaveLength(0);
+  });
+});
+
 describe("list query is pushed into SQL with identical semantics", () => {
   // Seed a mixed dataset for one account, then exercise filter/sort/limit and
   // assert the server returns exactly what the old in-memory applyQuery did.
