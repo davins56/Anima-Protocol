@@ -14,7 +14,7 @@ import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen } from "lucide-react";
 import UserContextSettings from "@/components/anima/UserContextSettings";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
-import { entityLabel, parseBackup } from "@/lib/restoreBackup";
+import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
@@ -63,6 +63,10 @@ export default function Settings() {
   const [restoreResult, setRestoreResult] = useState(null);
   const [pendingRestore, setPendingRestore] = useState(null);
   const [confirmReplace, setConfirmReplace] = useState(false);
+  // Summary of the user's CURRENT data, loaded lazily when they choose to
+  // "Replace Everything" so the confirm step can show exactly what gets wiped.
+  const [currentSummary, setCurrentSummary] = useState(null);
+  const [loadingCurrent, setLoadingCurrent] = useState(false);
 
   useEffect(() => {
     loadUser();
@@ -267,9 +271,28 @@ export default function Settings() {
       loadUser,
     });
 
+  // Move to the "Replace Everything" confirm step, lazily loading a summary of
+  // the user's current data so we can show exactly how much will be wiped.
+  const beginReplace = async () => {
+    setConfirmReplace(true);
+    if (currentSummary || loadingCurrent) return;
+    setLoadingCurrent(true);
+    try {
+      const data = await exportData();
+      setCurrentSummary(summarizeEntities(data?.entities));
+    } catch (err) {
+      console.error("Failed to load current data summary:", err);
+      setCurrentSummary(null);
+    } finally {
+      setLoadingCurrent(false);
+    }
+  };
+
   const cancelRestore = () => {
     setPendingRestore(null);
     setConfirmReplace(false);
+    setCurrentSummary(null);
+    setLoadingCurrent(false);
   };
 
   const handleLogout = () => logout();
@@ -954,7 +977,7 @@ export default function Settings() {
                     </p>
                   </button>
                   <button
-                    onClick={() => setConfirmReplace(true)}
+                    onClick={beginReplace}
                     disabled={restoring}
                     className="w-full text-left border border-orange-500/40 bg-orange-950/10 hover:bg-orange-900/20 hover:border-orange-400 disabled:opacity-40 p-4 transition-all"
                   >
@@ -977,10 +1000,36 @@ export default function Settings() {
               </>
             ) : (
               <>
-                <div className="border border-orange-500/20 bg-orange-950/30 px-4 py-3 space-y-1">
+                <div className="border border-orange-500/20 bg-orange-950/30 px-4 py-3 space-y-2">
                   <p className="font-mono text-[10px] text-orange-300/80 tracking-wider leading-relaxed">
-                    Replacing everything will <span className="text-destructive font-bold">permanently delete</span> all of your current data — chat sessions, characters, memories, quests, lore &amp; more — before restoring the backup.
+                    Replacing everything will <span className="text-destructive font-bold">permanently delete</span> all of your current data before restoring the backup.
                   </p>
+                  {loadingCurrent ? (
+                    <p className="font-mono text-[10px] text-orange-300/60 tracking-wider flex items-center gap-2">
+                      <Loader className="w-3 h-3 animate-spin" /> Checking what you have now...
+                    </p>
+                  ) : currentSummary && currentSummary.recordCount > 0 ? (
+                    <div className="space-y-1.5 border-t border-orange-500/20 pt-2">
+                      <p className="font-mono text-[10px] text-orange-300/80 tracking-wider leading-relaxed">
+                        You currently have <span className="text-destructive font-bold">{currentSummary.recordCount}</span> record{currentSummary.recordCount === 1 ? "" : "s"} that will be wiped:
+                      </p>
+                      <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-y-auto">
+                        {currentSummary.breakdown.map((item) => (
+                          <li
+                            key={item.name}
+                            className="font-mono text-[9px] text-orange-300/50 tracking-wider flex justify-between gap-2"
+                          >
+                            <span className="truncate capitalize">{entityLabel(item.name, item.count)}</span>
+                            <span className="text-orange-300/80 font-bold flex-shrink-0">{item.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : currentSummary ? (
+                    <p className="font-mono text-[10px] text-orange-300/60 tracking-wider leading-relaxed border-t border-orange-500/20 pt-2">
+                      Your account currently has no records to wipe.
+                    </p>
+                  ) : null}
                 </div>
                 <p className="font-mono text-xs text-primary/60 leading-relaxed">
                   This <span className="text-destructive">cannot be undone</span>. Continue?

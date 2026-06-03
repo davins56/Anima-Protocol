@@ -52,6 +52,22 @@ export const formatBackupDate = (value) => {
 // The friendly, user-facing message for a file that isn't a recognizable backup.
 export const NOT_A_BACKUP_MESSAGE = "This file doesn't look like an Anima backup.";
 
+// Summarize an entities map ({ EntityName: [...records] }) into a per-category
+// breakdown (sorted by count, empty categories dropped) and a total record count.
+// Shared by parseBackup (for the uploaded backup) and the Settings restore dialog
+// (for the user's CURRENT data that a "Replace Everything" would wipe).
+export function summarizeEntities(entities) {
+  if (!entities || typeof entities !== "object" || Array.isArray(entities)) {
+    return { breakdown: [], recordCount: 0 };
+  }
+  const breakdown = Object.entries(entities)
+    .map(([name, recs]) => ({ name, count: Array.isArray(recs) ? recs.length : 0 }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const recordCount = breakdown.reduce((sum, item) => sum + item.count, 0);
+  return { breakdown, recordCount };
+}
+
 // Parse the raw text of an uploaded backup file. Throws (with a friendly message
 // for the recognizable "not a backup" case) when the file is malformed so the
 // caller never stages a pending restore. On success returns the staged payload:
@@ -62,11 +78,7 @@ export function parseBackup(text) {
   if (!entities || typeof entities !== "object" || Array.isArray(entities)) {
     throw new Error(NOT_A_BACKUP_MESSAGE);
   }
-  const breakdown = Object.entries(entities)
-    .map(([name, recs]) => ({ name, count: Array.isArray(recs) ? recs.length : 0 }))
-    .filter((item) => item.count > 0)
-    .sort((a, b) => b.count - a.count);
-  const recordCount = breakdown.reduce((sum, item) => sum + item.count, 0);
+  const { breakdown, recordCount } = summarizeEntities(entities);
   const exportedLabel = formatBackupDate(parsed.exported_at);
   return { entities, profile: parsed.profile, recordCount, breakdown, exportedLabel };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseBackup,
+  summarizeEntities,
   NOT_A_BACKUP_MESSAGE,
   entityLabel,
   pluralize,
@@ -85,6 +86,36 @@ describe("parseBackup staging of a valid backup", () => {
       JSON.stringify({ exported_at: "not-a-date", entities: { Character: [{ id: "c1" }] } }),
     );
     expect(badDate.exportedLabel).toBeNull();
+  });
+});
+
+// summarizeEntities also powers the "Replace Everything" confirm step, where it
+// summarizes the user's CURRENT data so they see exactly how much will be wiped.
+// A wrong count here understates the destructiveness of a replace, so the count,
+// the sort order, the empty-category drop, and the bad-input guards must hold.
+describe("summarizeEntities", () => {
+  it("totals the record count and sorts the breakdown by count, dropping empties", () => {
+    const { recordCount, breakdown } = summarizeEntities(validBackup.entities);
+    expect(recordCount).toBe(6);
+    expect(breakdown).toEqual([
+      { name: "CharacterMemory", count: 3 },
+      { name: "ChatSession", count: 2 },
+      { name: "Character", count: 1 },
+    ]);
+    expect(breakdown.some((item) => item.name === "Quest")).toBe(false);
+  });
+
+  it("returns an empty summary for a non-object, null, or array input", () => {
+    expect(summarizeEntities(null)).toEqual({ breakdown: [], recordCount: 0 });
+    expect(summarizeEntities(undefined)).toEqual({ breakdown: [], recordCount: 0 });
+    expect(summarizeEntities([{ id: "x" }])).toEqual({ breakdown: [], recordCount: 0 });
+  });
+
+  it("returns an empty summary when every category is empty", () => {
+    expect(summarizeEntities({ ChatSession: [], Character: [] })).toEqual({
+      breakdown: [],
+      recordCount: 0,
+    });
   });
 });
 
