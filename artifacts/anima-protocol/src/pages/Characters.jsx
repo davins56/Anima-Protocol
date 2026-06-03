@@ -356,7 +356,7 @@ export default function Characters() {
                         onMouseDown={(e) => e.stopPropagation()}
                         onTouchStart={(e) => e.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); handleFindPhoto(char); }}
-                        disabled={photoLoadingId === char.id}
+                        disabled={!!photoLoadingId}
                         className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 border border-primary/30 text-primary/60 hover:text-primary hover:border-primary/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors disabled:opacity-60 disabled:cursor-default"
                       >
                         {photoLoadingId === char.id ? (
