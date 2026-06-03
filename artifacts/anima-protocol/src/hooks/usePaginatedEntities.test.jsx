@@ -17,6 +17,12 @@ vi.mock("@/api/base44Client", () => {
       const offset = opts?.offset || 0;
       return rows.slice(offset, offset + limit);
     },
+    // Grand total: mirrors the server's count endpoint (whole table, no
+    // limit/offset). Recorded so a test can prove it's a single cheap query.
+    async count(opts) {
+      calls.push({ name, count: true, opts: { ...(opts || {}) } });
+      return rows.length;
+    },
   });
   const entities = new Proxy({}, { get: (_, name) => entity(name) });
   return {
@@ -189,6 +195,72 @@ describe("usePaginatedEntities pagination", () => {
     );
     expect(result.current.items).toHaveLength(PAGE_SIZE);
     expect(result.current.hasMore).toBe(false);
+
+    unmount();
+  });
+
+  it("exposes a grand total + pageCount and jumps straight to any page when countTotal is on", async () => {
+    // 120 rows / 50 per page => 3 pages, total 120.
+    __setRowCount(120);
+    const { result, unmount } = renderHook(() =>
+      usePaginatedEntities("ChatSession", PAGE_SIZE, "-updated_date", undefined, {
+        countTotal: true,
+      })
+    );
+
+    await waitFor(
+      () => result.current.isLoading === false && result.current.total === 120
+    );
+    expect(result.current.pageCount).toBe(3);
+
+    // Jump straight to the LAST page in one call (no stepping). It fetches that
+    // page's rows at the matching offset, not every preceding page.
+    act(() => result.current.goToPage(result.current.pageCount - 1));
+    await waitFor(
+      () => result.current.currentPage === 2 && result.current.isLoading === false
+    );
+    expect(result.current.items).toHaveLength(20);
+    const last = __calls.filter((c) => !c.count).pop();
+    expect(last.opts.offset).toBe(PAGE_SIZE * 2);
+
+    // The total came from exactly one count() call (not re-counted per page).
+    expect(__calls.filter((c) => c.count).length).toBe(1);
+
+    unmount();
+  });
+
+  it("clamps an out-of-range jump to the last page", async () => {
+    __setRowCount(70); // 2 pages (50 + 20)
+    const { result, unmount } = renderHook(() =>
+      usePaginatedEntities("ChatSession", PAGE_SIZE, "-updated_date", undefined, {
+        countTotal: true,
+      })
+    );
+
+    await waitFor(
+      () => result.current.isLoading === false && result.current.pageCount === 2
+    );
+
+    // Asking for a wildly-out-of-range page snaps to the last valid page.
+    act(() => result.current.goToPage(999));
+    await waitFor(
+      () => result.current.currentPage === 1 && result.current.isLoading === false
+    );
+    expect(result.current.currentPage).toBe(1);
+
+    unmount();
+  });
+
+  it("does not count when countTotal is off (prev/next-only callers pay nothing)", async () => {
+    __setRowCount(120);
+    const { result, unmount } = renderHook(() =>
+      usePaginatedEntities("ChatSession", PAGE_SIZE)
+    );
+
+    await waitFor(() => result.current.isLoading === false);
+    expect(result.current.total).toBeNull();
+    expect(result.current.pageCount).toBeNull();
+    expect(__calls.some((c) => c.count)).toBe(false);
 
     unmount();
   });

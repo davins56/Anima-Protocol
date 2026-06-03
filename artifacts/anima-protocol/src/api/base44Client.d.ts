@@ -25,6 +25,12 @@ export interface EntityStore {
     limit?: number,
     opts?: ListOptions,
   ): Promise<any[]>;
+  // Grand total matching optional { filters, search } (no sort/limit/offset),
+  // for "Page X of Y" / jump-to-page pagers. One cheap COUNT(*) server-side.
+  count(opts?: {
+    filters?: Record<string, unknown>;
+    search?: Record<string, string>;
+  }): Promise<number>;
   get(id: string): Promise<any | null>;
   create(data: Record<string, unknown>): Promise<any>;
   update(id: string, data: Record<string, unknown>): Promise<any>;

@@ -16,8 +16,20 @@ import { useEffect, useState } from 'react';
  *   is always supplied by the hook and cannot be overridden here. Changing these
  *   options resets paging back to the first page so a new filter/search never
  *   strands the user on an out-of-range page.
+ * @param {{ countTotal?: boolean }} [options]
+ *   `countTotal: true` runs an extra cheap COUNT(*) (same filters/search, no
+ *   limit/offset) so the hook can expose a grand `total` and `pageCount`,
+ *   enabling "jump to page N" / Last-page pagers. Off by default so the many
+ *   prev/next-only callers (sidebars) don't pay for a count they don't show.
  */
-export function usePaginatedEntities(entityName, pageSize = 50, sortField = '-created_date', listOpts) {
+export function usePaginatedEntities(
+  entityName,
+  pageSize = 50,
+  sortField = '-created_date',
+  listOpts,
+  options,
+) {
+  const countTotal = Boolean(options && options.countTotal);
   const [currentPage, setCurrentPage] = useState(0);
   const skip = currentPage * pageSize;
   // Stable key for the extra options so the query refetches when they change but
@@ -49,11 +61,36 @@ export function usePaginatedEntities(entityName, pageSize = 50, sortField = '-cr
     staleTime: 60000, // 1m
   });
 
+  // Grand total (opt-in): one COUNT(*) over the same filters/search powers the
+  // page-count and the jump/last controls. Keyed only by the filters/search
+  // (not the current page) so flipping pages reuses the cached total.
+  const { filters: countFilters, search: countSearch } = listOpts || {};
+  const { data: total } = useQuery({
+    queryKey: [entityName, 'count', JSON.stringify({ f: countFilters, s: countSearch })],
+    queryFn: () => base44.entities[entityName].count({ filters: countFilters, search: countSearch }),
+    enabled: countTotal,
+    staleTime: 60000, // 1m
+  });
+
+  const pageCount =
+    countTotal && typeof total === 'number'
+      ? Math.max(1, Math.ceil(total / pageSize))
+      : null;
+
+  // Clamp jumps into range when a page count is known so a stale "last page"
+  // tap (after rows were deleted) can never strand the user past the end.
+  const goToPage = (/** @type {number} */ page) => {
+    const target = Math.max(0, Math.floor(Number(page) || 0));
+    setCurrentPage(pageCount != null ? Math.min(target, pageCount - 1) : target);
+  };
+
   return {
     items: data?.items || [],
     hasMore: data?.hasMore || false,
     currentPage,
-    goToPage: setCurrentPage,
+    total: typeof total === 'number' ? total : null,
+    pageCount,
+    goToPage,
     nextPage: () => setCurrentPage(p => p + 1),
     prevPage: () => setCurrentPage(p => Math.max(0, p - 1)),
     isLoading,

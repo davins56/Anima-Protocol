@@ -221,15 +221,15 @@ async function sortFieldIsMixed(
   return Boolean(row?.hasNumber && row?.hasOther);
 }
 
-async function listEntities(
+// Build the WHERE clause shared by list and count: per-user + per-entity scope
+// plus the same equality-filter and substring-search semantics, so a count and
+// a list of the same query always agree on which rows match.
+function buildWhereClause(
   userId: string,
   entityName: string,
   filters: Record<string, unknown> | undefined,
-  sort: string | undefined,
-  limit: number | undefined,
-  offset: number | undefined,
   search: Record<string, unknown> | undefined,
-): Promise<Record<string, unknown>[]> {
+): SQL {
   const conditions: SQL[] = [
     eq(userEntities.userId, userId),
     eq(userEntities.entityName, entityName),
@@ -248,7 +248,36 @@ async function listEntities(
       }
     }
   }
-  const whereClause = and(...conditions) as SQL;
+  return and(...conditions) as SQL;
+}
+
+// Total number of rows matching a list query (ignoring limit/offset). Backs
+// "jump to page N" pagers that need a grand total without loading every row —
+// a single COUNT(*) over the same WHERE the list uses, so the two never drift.
+async function countEntities(
+  userId: string,
+  entityName: string,
+  filters: Record<string, unknown> | undefined,
+  search: Record<string, unknown> | undefined,
+): Promise<number> {
+  const whereClause = buildWhereClause(userId, entityName, filters, search);
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(userEntities)
+    .where(whereClause);
+  return row?.count ?? 0;
+}
+
+async function listEntities(
+  userId: string,
+  entityName: string,
+  filters: Record<string, unknown> | undefined,
+  sort: string | undefined,
+  limit: number | undefined,
+  offset: number | undefined,
+  search: Record<string, unknown> | undefined,
+): Promise<Record<string, unknown>[]> {
+  const whereClause = buildWhereClause(userId, entityName, filters, search);
   const cap = withinLimit(limit);
   const off = withinOffset(offset);
 
@@ -957,6 +986,14 @@ router.get("/:entity", async (req, res) => {
     } catch {
       search = undefined;
     }
+  }
+  // count=1 returns just the grand total ({ count }) for the same filters/search
+  // (sort/limit/offset are irrelevant to a total), so a "jump to page N" pager
+  // can size itself without fetching every row.
+  if (req.query.count === "1" || req.query.count === "true") {
+    const total = await countEntities(userId, entity, filters, search);
+    res.json({ count: total });
+    return;
   }
   const items = await listEntities(
     userId,

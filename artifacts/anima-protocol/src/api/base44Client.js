@@ -520,7 +520,7 @@ export async function restoreData(payload, mode = 'merge') {
   return res.json();
 }
 
-function buildQuery({ filters, sort, limit, offset, search }) {
+function buildQuery({ filters, sort, limit, offset, search, count }) {
   const params = new URLSearchParams();
   if (typeof sort === 'string' && sort) params.set('sort', sort);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
@@ -531,7 +531,19 @@ function buildQuery({ filters, sort, limit, offset, search }) {
   if (search && typeof search === 'object' && Object.keys(search).length) {
     params.set('search', JSON.stringify(search));
   }
+  // count=1 flips the list endpoint to return the grand total ({ count }) for
+  // the same filters/search, so a "jump to page N" pager can size itself.
+  if (count) params.set('count', '1');
   return params.toString();
+}
+
+// Grand total of rows matching a list query (same filters/search as list, but
+// ignoring sort/limit/offset). Reuses queryEntity so it shares the same short
+// TTL cache + version invalidation: a write to the entity bumps its version and
+// the next count is refetched fresh.
+async function countEntity(entityName, { filters, search } = {}) {
+  const data = await queryEntity(entityName, { filters, search, count: true });
+  return data && typeof data.count === 'number' ? data.count : 0;
 }
 
 async function queryEntity(entityName, opts) {
@@ -698,6 +710,15 @@ function entityStore(entityName) {
         return queryEntity(entityName, { filters: sortOrFilters, limit, offset, search });
       }
       return queryEntity(entityName, { limit, offset, filters: optFilters, search });
+    },
+
+    // Grand total matching optional { filters, search } — same scoping as
+    // list() but without sort/limit/offset. Lets a paged view show "Page X of Y"
+    // and jump straight to any page without walking every preceding page.
+    async count(opts) {
+      const filters = opts && opts.filters ? opts.filters : undefined;
+      const search = opts && opts.search ? opts.search : undefined;
+      return countEntity(entityName, { filters, search });
     },
 
     async get(id) {

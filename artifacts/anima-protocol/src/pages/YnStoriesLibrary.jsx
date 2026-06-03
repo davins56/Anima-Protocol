@@ -66,11 +66,16 @@ export default function YnStoriesLibrary() {
     items: sessions,
     hasMore,
     currentPage,
+    total,
+    pageCount,
+    goToPage,
     nextPage,
     prevPage,
     isLoading,
     refetch,
-  } = usePaginatedEntities("ChatSession", PAGE_SIZE, "-updated_date", listOpts);
+  } = usePaginatedEntities("ChatSession", PAGE_SIZE, "-updated_date", listOpts, {
+    countTotal: true,
+  });
 
   // Per-card message totals for the CURRENT page only — a lightweight COUNT, not
   // a full-history hydration. Keyed by the page's session ids so it refetches
@@ -109,6 +114,29 @@ export default function YnStoriesLibrary() {
 
   const showPager = hasMore || currentPage > 0;
 
+  // A compact, windowed list of page numbers to render when the grand total is
+  // known: always the first and last page, a small window around the current
+  // page, and "…" gaps between non-adjacent groups. Falls back to nothing when
+  // there's no count (the pager then shows only Prev/Next).
+  const pageItems = useMemo(() => {
+    if (!pageCount || pageCount <= 1) return [];
+    const window = 1; // pages on each side of the current page
+    const pages = new Set([0, pageCount - 1, currentPage]);
+    for (let d = 1; d <= window; d += 1) {
+      pages.add(Math.max(0, currentPage - d));
+      pages.add(Math.min(pageCount - 1, currentPage + d));
+    }
+    const sorted = [...pages].sort((a, b) => a - b);
+    const out = [];
+    let prev = null;
+    for (const p of sorted) {
+      if (prev !== null && p - prev > 1) out.push({ gap: true, key: `gap-${prev}` });
+      out.push({ page: p, key: `p-${p}` });
+      prev = p;
+    }
+    return out;
+  }, [pageCount, currentPage]);
+
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
@@ -119,7 +147,13 @@ export default function YnStoriesLibrary() {
               // Y/n Stories Library
             </h1>
             <p className="text-[10px] font-mono text-primary/30 tracking-widest">
-              {sessions.length} {sessions.length === 1 ? "story" : "stories"} on page {currentPage + 1}
+              {total == null
+                ? `${sessions.length} ${sessions.length === 1 ? "story" : "stories"} on page ${currentPage + 1}`
+                : `${total} ${total === 1 ? "story" : "stories"}${
+                    pageCount && pageCount > 1
+                      ? ` · page ${currentPage + 1} of ${pageCount}`
+                      : ""
+                  }`}
             </p>
           </div>
           <button
@@ -283,24 +317,57 @@ export default function YnStoriesLibrary() {
 
         {/* Pager */}
         {showPager && (
-          <div className="flex items-center justify-center gap-3 mt-8">
+          <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mt-8">
             <button
               onClick={prevPage}
               disabled={currentPage === 0}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 font-mono text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 font-mono text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+              title="Previous page"
             >
               <ChevronLeft className="w-3 h-3" />
-              <span>Prev</span>
+              <span className="hidden sm:inline">Prev</span>
             </button>
-            <span className="font-mono text-[10px] text-primary/40 tracking-widest tabular-nums px-2">
-              Page {currentPage + 1}
-            </span>
+
+            {/* Numbered page jumps (shown once the grand total is known). One tap
+                reaches any page — including the last — instead of stepping. */}
+            {pageItems.length > 0 ? (
+              pageItems.map((item) =>
+                item.gap ? (
+                  <span
+                    key={item.key}
+                    className="font-mono text-[10px] text-primary/30 px-1 select-none"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={item.key}
+                    onClick={() => goToPage(item.page)}
+                    disabled={item.page === currentPage}
+                    aria-current={item.page === currentPage ? "page" : undefined}
+                    className={`min-w-[2.25rem] px-2.5 py-2 font-mono text-[10px] tracking-widest tabular-nums border transition-all ${
+                      item.page === currentPage
+                        ? "border-primary/60 bg-primary/15 text-primary cursor-default"
+                        : "border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40"
+                    }`}
+                  >
+                    {item.page + 1}
+                  </button>
+                ),
+              )
+            ) : (
+              <span className="font-mono text-[10px] text-primary/40 tracking-widest tabular-nums px-2">
+                Page {currentPage + 1}
+              </span>
+            )}
+
             <button
               onClick={nextPage}
-              disabled={!hasMore}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 font-mono text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+              disabled={pageCount != null ? currentPage >= pageCount - 1 : !hasMore}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 font-mono text-[9px] tracking-widest uppercase border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+              title="Next page"
             >
-              <span>Next</span>
+              <span className="hidden sm:inline">Next</span>
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>

@@ -1174,6 +1174,48 @@ describe("list search + filter are pushed into SQL across the whole list", () =>
     expect(page1.map((s) => s.title)).toEqual(["Dragon Lair"]);
     expect(page2.map((s) => s.title)).toEqual(["Dragon Quest"]);
   });
+
+  it("count=1 returns the grand total over the same filters/search (ignoring limit/offset)", async () => {
+    // Whole entity, no filter: all five seeded rows.
+    const all = (await call(U, "GET", "/ChatSession?count=1")).json as {
+      count: number;
+    };
+    expect(all.count).toBe(5);
+
+    // Count must equal the unpaged list length AND ignore limit/offset, so a
+    // "jump to page N" pager can size itself from one cheap query.
+    const limited = (
+      await call(U, "GET", "/ChatSession?count=1&limit=1&offset=2")
+    ).json as { count: number };
+    expect(limited.count).toBe(5);
+
+    // Same filter + search the list uses => same matching count (just the solo
+    // Dragon story).
+    const filtered = (
+      await call(
+        U,
+        "GET",
+        `/ChatSession?count=1&filters=${encodeURIComponent(
+          JSON.stringify({ mode: "solo" }),
+        )}&search=${encodeURIComponent(JSON.stringify({ title: "dragon" }))}`,
+      )
+    ).json as { count: number };
+    expect(filtered.count).toBe(1);
+  });
+
+  it("count is scoped per account (never counts another user's rows)", async () => {
+    const other = user("count_iso");
+    await call(other, "POST", "/ChatSession", { title: "Theirs" });
+    const mine = (await call(U, "GET", "/ChatSession?count=1")).json as {
+      count: number;
+    };
+    // Unchanged by the other account's row.
+    expect(mine.count).toBe(5);
+    const theirs = (await call(other, "GET", "/ChatSession?count=1")).json as {
+      count: number;
+    };
+    expect(theirs.count).toBe(1);
+  });
 });
 
 describe("chat history survives export -> restore round trip", () => {
