@@ -1,0 +1,26 @@
+# Anima Protocol
+
+> Anima Protocol is an emotionally intelligent AI companion web application with persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding. Built by Echoes of Eden Inc.
+
+## Canonical Domain
+
+https://anima-protocol.app
+
+## Key Public URLs
+
+- Homepage / Landing: https://anima-protocol.app/
+- Sign In: https://anima-protocol.app/sign-in/
+- Sign Up: https://anima-protocol.app/sign-up/
+- Terms of Service: https://anima-protocol.app/terms
+- Privacy Policy: https://anima-protocol.app/privacy-policy
+- Disclaimer: https://anima-protocol.app/disclaimer
+- Sitemap: https://anima-protocol.app/sitemap.xml
+
+## Site Summary
+
+Anima Protocol lets users form ongoing relationships with AI companions that remember past conversations, adapt emotionally over time, and exist within a shared sci-fantasy universe. Each companion has a unique personality, voice, and backstory. The app runs entirely in the browser and is published by Echoes of Eden Inc.
+
+## Crawl Assets
+
+- Sitemap: https://anima-protocol.app/sitemap.xml
+- Robots: https://anima-protocol.app/robots.txt
