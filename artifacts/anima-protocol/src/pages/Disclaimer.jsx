@@ -1,8 +1,10 @@
 // @ts-check
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 
 export default function Disclaimer() {
+  usePageMeta(ROUTE_META["/disclaimer"]);
   return (
     <div className="min-h-[100dvh] bg-background">
       {/* Header */}

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { MessageSquare, Users } from "lucide-react";
 import titleBg from "@assets/895CF63C-F126-4D27-9DB4-C43E632DC542_1780413192391.png";
+import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 
 // 1. "ALIVE" GREETING ENGINE - Cyber-Mythic Phrases
 const GREETINGS = [
@@ -41,6 +42,7 @@ const FOOTER_SECTIONS: { id: string; title: string; body: string }[] = [
 ];
 
 export default function Landing() {
+  usePageMeta(ROUTE_META["/landing"]);
   const navigate = useNavigate();
 
   // Canvas Refs

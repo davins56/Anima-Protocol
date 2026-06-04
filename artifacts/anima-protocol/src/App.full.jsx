@@ -26,6 +26,7 @@ import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
+import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 import ConsentBanner from "@/components/ConsentBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import UserNotRegisteredError from "@/components/UserNotRegisteredError";
@@ -269,6 +270,7 @@ function ClerkQueryClientCacheInvalidator() {
 }
 
 function SignInPage() {
+  usePageMeta(ROUTE_META["/sign-in"]);
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <SignIn
@@ -282,6 +284,7 @@ function SignInPage() {
 }
 
 function SignUpPage() {
+  usePageMeta(ROUTE_META["/sign-up"]);
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <SignUp
