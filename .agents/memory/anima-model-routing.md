@@ -6,10 +6,20 @@ description: How/where the chat backend picks an OpenAI model per message, and t
 # Anima model routing
 
 The chat model is chosen **server-side** in the api-server `POST /openai/conversations/:id/messages`
-route, based purely on the text of the latest user message. A pure helper module classifies the
-message into a tier (light / standard / heavy) and resolves it to a concrete model + token budget;
-tiers are env-overridable (`ANIMA_MODEL_LIGHT|STANDARD|HEAVY`). The SSE `done` event reports the
-model + tier actually used.
+route. A pure helper module classifies into a tier (light / standard / heavy) from two signals: the
+latest message's **stakes** (emotional/analytical/question/code/long content) and **conversation
+context** (a `deepMode` toggle from req.body, plus `conversationDepth` = history.length). It resolves
+to a concrete model + token budget; tiers are env-overridable (`ANIMA_MODEL_LIGHT|STANDARD|HEAVY`),
+and the deep-conversation escalation threshold via `ANIMA_DEEP_CONVERSATION_DEPTH` (default 24). The
+SSE `done` event reports the model + tier actually used.
+
+**Tier roles:** `light` = bare greetings/sign-offs (allowlist regex). `heavy` = any stakes-carrying
+turn, OR a routine turn when deepMode is on / the thread is deep. `standard` = routine low-stakes
+substantive turns (the cost-saving default) AND empty-input/fallback. NOTE: `standard` is no longer
+"fallback only" — it is the everyday mid tier for small talk. Stakes signals (`isHighStakesMessage`)
+are explicit content signals, NOT just length; a direct "?" alone routes heavy. Keep code detection
+structural (`=>`,`{}`, backticks) — bare keywords like `let`/`return` false-positive on
+"let's chat"/"return home".
 
 **Why server-side:** the web client's `InvokeLLM({ ..., model })` silently drops `model` (it only
 forwards `prompt`/`systemPrompt` through `animaApi.sendMessage`). So any client-side model choice is

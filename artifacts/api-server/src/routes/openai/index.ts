@@ -71,7 +71,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
-  const { content, systemPrompt } = req.body as { content: string; systemPrompt?: string };
+  const { content, systemPrompt, deepMode } = req.body as { content: string; systemPrompt?: string; deepMode?: boolean };
 
   const [conv] = await db.select().from(conversations)
     .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
@@ -101,8 +101,10 @@ router.post("/conversations/:id/messages", async (req, res) => {
   let fullResponse = "";
 
   try {
-    // Pick the model based on the textual complexity of the latest message.
-    const routed = routeModel(content);
+    // Pick the model from the latest message's stakes plus per-conversation
+    // context: an explicit deep-mode toggle, and how deep this thread already is
+    // (history includes the user message we just inserted).
+    const routed = routeModel(content, { deepMode, conversationDepth: history.length });
     const standard = resolveModel("standard");
     let usedModel = routed.model;
     let usedTier = routed.tier;

@@ -19,18 +19,25 @@ describe("classifyComplexity", () => {
     expect(classifyComplexity("ttyl")).toBe("light");
   });
 
-  it("routes short but substantive / emotional messages to the heavy tier", () => {
-    // These are short yet meaningful — they must NOT be treated as trivial.
+  it("routes short but emotional / vulnerable messages to the heavy tier", () => {
+    // These are short yet high-stakes — they must NOT be treated as routine.
     expect(classifyComplexity("I feel awful today")).toBe("heavy");
     expect(classifyComplexity("don't leave me")).toBe("heavy");
     expect(classifyComplexity("miss you")).toBe("heavy");
+    expect(classifyComplexity("I had a pretty rough day at work today")).toBe("heavy");
   });
 
-  it("routes analytical keyword asks to the heavy tier", () => {
-    expect(classifyComplexity("Can you explain how black holes form?")).toBe("heavy");
+  it("routes analytical / creative keyword asks to the heavy tier", () => {
+    expect(classifyComplexity("Can you explain how black holes form")).toBe("heavy");
     expect(classifyComplexity("Compare stoicism and existentialism for me")).toBe("heavy");
     expect(classifyComplexity("Help me debug this code please")).toBe("heavy");
     expect(classifyComplexity("Write me a poem about the ocean")).toBe("heavy");
+  });
+
+  it("routes any direct question to the heavy tier", () => {
+    expect(classifyComplexity("why?")).toBe("heavy");
+    expect(classifyComplexity("Who are you? What can you do? How do you work?")).toBe("heavy");
+    expect(classifyComplexity("what should I do about this?")).toBe("heavy");
   });
 
   it("routes long messages to the heavy tier", () => {
@@ -38,23 +45,34 @@ describe("classifyComplexity", () => {
     expect(classifyComplexity(long)).toBe("heavy");
   });
 
-  it("routes messages with several questions to the heavy tier", () => {
-    expect(classifyComplexity("Who are you? What can you do? How do you work?")).toBe("heavy");
-  });
-
   it("routes code-like content to the heavy tier", () => {
     expect(classifyComplexity("fix this: const add = (a, b) => { return a + b }")).toBe("heavy");
   });
 
-  it("routes substantive ordinary conversation to the high-capability tier", () => {
-    // Anything beyond trivial small talk is biased to heavy so companions reason
-    // with full depth, even without explicit analytical keywords.
-    expect(classifyComplexity("I had a pretty rough day at work today")).toBe("heavy");
-    expect(classifyComplexity("Tell me something interesting")).toBe("heavy");
-    expect(classifyComplexity("why?")).toBe("heavy");
+  it("routes routine, low-stakes substantive turns to the mid (standard) tier", () => {
+    // No question, no emotional/analytical/code signal, not long: this is the
+    // cost-saving case — capable mid tier, not the top tier.
+    expect(classifyComplexity("Tell me something interesting")).toBe("standard");
+    expect(classifyComplexity("let's just chat for a bit")).toBe("standard");
+    expect(classifyComplexity("that sounds like a fun idea to me")).toBe("standard");
   });
 
-  it("reserves the standard tier for empty input / fallback only", () => {
+  it("escalates routine turns to heavy when deep mode is on", () => {
+    expect(classifyComplexity("Tell me something interesting", { deepMode: true })).toBe("heavy");
+    // High-stakes turns are heavy with or without deep mode.
+    expect(classifyComplexity("miss you", { deepMode: true })).toBe("heavy");
+    // Deep mode never upgrades a bare greeting off the cheap tier.
+    expect(classifyComplexity("hi", { deepMode: true })).toBe("light");
+  });
+
+  it("escalates routine turns to heavy once a conversation is deep", () => {
+    expect(classifyComplexity("Tell me something interesting", { conversationDepth: 5 })).toBe("standard");
+    expect(classifyComplexity("Tell me something interesting", { conversationDepth: 24 })).toBe("heavy");
+    // Deep threads still keep greetings cheap.
+    expect(classifyComplexity("hey", { conversationDepth: 50 })).toBe("light");
+  });
+
+  it("reserves the standard tier for empty input / fallback as well", () => {
     expect(classifyComplexity("")).toBe("standard");
     expect(classifyComplexity("   ")).toBe("standard");
   });
@@ -92,6 +110,11 @@ describe("routeModel", () => {
     const routed = routeModel("hi");
     expect(routed.tier).toBe("light");
     expect(routed.model).toBe("gpt-4.1-mini");
+  });
+
+  it("routes a routine turn to the mid tier and a deep-mode turn to heavy", () => {
+    expect(routeModel("Tell me something interesting").tier).toBe("standard");
+    expect(routeModel("Tell me something interesting", { deepMode: true }).tier).toBe("heavy");
   });
 });
 
