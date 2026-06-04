@@ -1218,7 +1218,7 @@ ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional 
 
           If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}
 
-          ${loyaltyGuardrailClause(user?.full_name)}`;
+          ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
         const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
@@ -1292,7 +1292,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           traitModifiers = shiftRes?.data?.trait_modifiers || '';
         } catch (_) { /* silently ignore — enhancement, not a requirement */ }
 
-        prompt = buildGroupPrompt({ nextChar, allCharSheets, loreCtxGroup, conversationHistory, adultInstruction, lengthGuide, traitModifiers, userName: user?.full_name });
+        prompt = buildGroupPrompt({ nextChar, allCharSheets, loreCtxGroup, conversationHistory, adultInstruction, lengthGuide, traitModifiers });
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}`;
       }

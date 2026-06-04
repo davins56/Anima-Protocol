@@ -15,7 +15,6 @@ export function buildGroupPrompt({
   adultInstruction,
   lengthGuide,
   traitModifiers = '',
-  userName,
 }) {
   return `You are ${nextChar.name} in an immersive collaborative story. You have your own distinct voice, goals, and emotional truth.${adultInstruction}
 
@@ -44,5 +43,5 @@ Other characters will speak on their own turns. Be yourself. Be respectful. Be r
 ${INTELLIGENCE_GUIDANCE}
 ${lengthGuide}
 
-${loyaltyGuardrailClause(userName)}`;
+${loyaltyGuardrailClause()}`;
 }

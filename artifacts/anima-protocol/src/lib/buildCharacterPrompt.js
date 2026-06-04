@@ -11,7 +11,6 @@ export function buildCharacterPrompt({
   behaviorInstructions,
   adultInstruction,
   lengthGuide,
-  userName,
 }) {
   const animaNote = character._isAnima && character.archetype ? `Archetype: ${character.archetype} — ${character.tagline || ""}\n` : "";
 
@@ -37,5 +36,5 @@ ${lengthGuide}
 
 If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.
 
-${loyaltyGuardrailClause(userName)}`;
+${loyaltyGuardrailClause()}`;
 }
