@@ -5,6 +5,7 @@ import openaiFunctionsRouter from "./openai/functions";
 import elevenLabsRouter from "./elevenlabs";
 import characterImageRouter from "./characterImage";
 import storeRouter from "./store";
+import storageRouter from "./storage";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,7 @@ router.use("/openai", openaiFunctionsRouter);
 router.use(elevenLabsRouter);
 router.use(characterImageRouter);
 router.use("/store", storeRouter);
+router.use(storageRouter);
 
 router.get("/placeholder/:w/:h", (req, res) => {
   const w = Math.min(Number(req.params.w) || 150, 1200);

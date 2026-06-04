@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { base44, uploadDataUrl, urlToDataUrl } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
@@ -82,12 +82,26 @@ export default function MainHome() {
 
   const handleApplyAiPhoto = async (dataUrl) => {
     if (!anima?.id) return;
-    await base44.entities.Anima.update(anima.id, { avatar_url: dataUrl });
-    setAnima((prev) => (prev ? { ...prev, avatar_url: dataUrl } : prev));
+    // Persist the portrait as a real file in object storage (not base64 in the
+    // DB) so it survives refresh and syncs across devices.
+    const file_url = await uploadDataUrl(dataUrl);
+    await base44.entities.Anima.update(anima.id, { avatar_url: file_url });
+    setAnima((prev) => (prev ? { ...prev, avatar_url: file_url } : prev));
   };
 
-  const openEditExisting = () => {
-    setEditSource(anima?.avatar_url || null);
+  const openEditExisting = async () => {
+    const src = anima?.avatar_url || null;
+    // The AI image-edit endpoint only accepts data: URLs, so a stored avatar
+    // (now a "/api/storage/..." path) must be inlined before re-editing.
+    let source = src;
+    if (src && !src.startsWith("data:")) {
+      try {
+        source = await urlToDataUrl(src);
+      } catch (err) {
+        console.debug("Couldn't inline avatar for editing", err);
+      }
+    }
+    setEditSource(source);
     setEditingNewPhoto(false);
     setAiEditOpen(true);
   };
@@ -259,7 +273,8 @@ export default function MainHome() {
                 <ImagePlus className="w-3 h-3" />
                 Upload Photo
               </button>
-              {anima?.avatar_url?.startsWith("data:") && (
+              {(anima?.avatar_url?.startsWith("data:") ||
+                anima?.avatar_url?.startsWith("/api/storage")) && (
                 <button
                   type="button"
                   onClick={openEditExisting}

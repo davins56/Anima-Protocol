@@ -9,6 +9,7 @@
 // hundreds of call sites across the app are untouched.
 
 import { animaApi } from './animaApi';
+import { downscaleDataUrl } from '@/lib/downscaleImage';
 
 const STORE_BASE = `${window.location.origin}/api/store`;
 
@@ -79,6 +80,77 @@ export async function editImage({ image, prompt, signal }) {
     throw e;
   }
   return res.json();
+}
+
+// --- file uploads (object storage) ------------------------------------------
+// User-picked and AI-edited portraits are stored as real files in object
+// storage (not base64 in the DB). The flow is: downscale to a small JPEG ->
+// ask the api-server for a presigned PUT URL -> upload the bytes directly to
+// storage -> persist the served object path (e.g. "/api/storage/objects/...").
+// That served path loads in a plain <img> and persists across refresh/devices.
+
+function dataUrlToBlob(dataUrl) {
+  const [header, b64] = String(dataUrl).split(',');
+  const mime = /data:([^;]+)/.exec(header)?.[1] || 'image/jpeg';
+  const bytes = atob(b64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Upload an image blob via a presigned PUT and return the served object path.
+async function uploadBlob(blob) {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_BASE}/storage/uploads/request-url`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ contentType: blob.type, size: blob.size }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  const { uploadURL, objectPath } = await res.json();
+  const putRes = await fetch(uploadURL, {
+    method: 'PUT',
+    headers: { 'Content-Type': blob.type },
+    body: blob,
+  });
+  if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
+  // Root-relative path so the avatar resolves against the current origin and
+  // stays portable across domains (dev preview, deployment, custom domains).
+  return `/api/storage${objectPath}`;
+}
+
+// Downscale a data URL to a small JPEG and upload it. Returns the served path.
+export async function uploadDataUrl(dataUrl, { maxSize = 1024, quality = 0.85 } = {}) {
+  const small = await downscaleDataUrl(dataUrl, maxSize, quality);
+  return uploadBlob(dataUrlToBlob(small));
+}
+
+// Fetch an image URL (e.g. a stored "/api/storage/objects/..." path) and read
+// it back as a data URL. Needed because the AI image-edit endpoint only accepts
+// data: URLs, so a stored avatar must be inlined before it can be re-edited.
+export async function urlToDataUrl(url) {
+  if (typeof url === 'string' && url.startsWith('data:')) return url;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load image (${res.status})`);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 // --- list cache + in-flight de-dupe -----------------------------------------
@@ -1006,9 +1078,11 @@ export const base44 = {
         return null;
       },
 
-      UploadFile: async () => {
-        console.warn('UploadFile not implemented in Replit environment');
-        return { url: null };
+      UploadFile: async ({ file } = {}) => {
+        if (!file) return { file_url: null, url: null };
+        const dataUrl = await readFileAsDataUrl(file);
+        const file_url = await uploadDataUrl(dataUrl);
+        return { file_url, url: file_url };
       },
 
       GetStripeLifetimePrices: async () => {

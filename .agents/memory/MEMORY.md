@@ -5,6 +5,7 @@
 - [Anima voice / TTS](anima-voice-tts.md) — ElevenLabs uses a binary /api/tts route (NOT functions.invoke); auto-play uses speakMessageNative; falls back to default voice.
 - [Anima character seeding race](anima-seeding-race.md) — localStorage seed effects must be StrictMode-race-safe (promise lock + guard); api-server dev has no watch, restart to rebuild.
 - [Anima avatar storage](anima-avatar-storage.md) — Anima created with no avatar_url; user photos must be downscaled to small JPEG data URLs (no object storage; localStorage quota).
+- [Anima avatar object storage](anima-avatar-object-storage.md) — portraits now stored as real files via presigned-PUT; serve publicly (img tags); store root-relative path; re-edit needs data: URL.
 - [Anima Clerk auth bridge](anima-clerk-auth.md) — Clerk owns identity/session, base44 localStorage holds profile; HomeGate at "/", signed-out→Landing; showChrome gates header/tabs/disclaimer.
 - [Anima cross-device live sync](anima-cross-device-sync.md) — /store/revision token + 15s/focus poller drops caches & fires `anima:store-changed`; self-write suppression must NOT advance baseline.
 - [Anima SSE push hardening](anima-sse-hardening.md) — SSE client must collapse CRLF→LF before `\n\n` split; watchdog > 2× server heartbeat; `anima:sync-mode` event; registry is process-local.
