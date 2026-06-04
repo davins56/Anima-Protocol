@@ -28,6 +28,19 @@ the agent loop relies on the `{blocked, reason}` result to rewrite and re-run.
   back via `postMessage` tagged with the preview token.
 - JS/Python run in a Web Worker from a Blob URL (no DOM, hard-killed on timeout).
   Python uses Pyodide from CDN at runtime (no bundled dep).
+- **The worker is SAME-ORIGIN**, so the scanner is NOT the boundary — the real
+  boundary is `hardenGlobalScope(self)` in sandbox.js, which replaces
+  fetch/XHR/WebSocket/EventSource/importScripts/Request/sendBeacon with throwing
+  stubs (non-configurable getters) BEFORE user code runs. Without this, user code
+  (incl. Python via the `js` bridge / pyfetch) could call the app's own /api/*
+  with the user's ambient session. **Why:** code review rejected the worker-only
+  version as an exfil path. **How to apply:** for JS, harden at top of worker
+  source; for Python, harden AFTER `loadPyodide` (it needs importScripts to
+  bootstrap) but BEFORE `runPythonAsync`. Never add allow-same-origin to run
+  contexts. hardenGlobalScope is exported + unit-tested (sandbox.test.js).
+- Scanner promotes ALL network/exfil to `high` (hard-block) in both languages:
+  JS dynamic `import()`, Python `requests/urllib/http.client/httpx/aiohttp/
+  pyfetch/socket`. Python in-memory `open()` is only `low` (MEMFS, advisory).
 
 ## Sync must not clobber in-progress work
 `useStoreSync` reload is guarded by `!dirtyRef.current && !busy && !running`

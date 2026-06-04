@@ -95,11 +95,64 @@ export function isPreviewMessage(event) {
   return Boolean(event && event.data && event.data.__token === PREVIEW_TOKEN);
 }
 
+// Capability lock-down applied to a worker's global scope BEFORE any user code
+// runs. The worker is same-origin with the host, so left untouched its fetch /
+// XHR / WebSocket / EventSource / importScripts could call the app's own /api/*
+// endpoints carrying the user's ambient session — an exfiltration path. We
+// replace each network/escape primitive with a throwing stub so user code
+// (JS, or Python via Pyodide's `js` bridge / pyodide-http) simply cannot reach
+// the network. This is the real isolation boundary; the code scanner is only a
+// second, advisory layer. Exported so it can be unit-tested directly.
+export function hardenGlobalScope(scope) {
+  var BLOCKED = [
+    "fetch",
+    "XMLHttpRequest",
+    "WebSocket",
+    "EventSource",
+    "importScripts",
+    "Request",
+  ];
+  BLOCKED.forEach(function (name) {
+    function denied() {
+      throw new Error(name + " is disabled in the Codespace sandbox.");
+    }
+    try {
+      Object.defineProperty(scope, name, {
+        configurable: false,
+        get: function () {
+          return denied;
+        },
+        set: function () {},
+      });
+    } catch (e) {
+      try {
+        scope[name] = denied;
+      } catch (_e) {
+        /* noop */
+      }
+    }
+  });
+  try {
+    if (scope.navigator && "sendBeacon" in scope.navigator) {
+      Object.defineProperty(scope.navigator, "sendBeacon", {
+        configurable: false,
+        value: function () {
+          throw new Error("navigator.sendBeacon is disabled in the Codespace sandbox.");
+        },
+      });
+    }
+  } catch (e) {
+    /* navigator may be read-only; best effort */
+  }
+}
+
 // Worker source for running a JS file in isolation. Console + errors are posted
-// back; a "done" message signals normal completion.
+// back; a "done" message signals normal completion. Network primitives are
+// stripped (hardenGlobalScope) before the user code executes.
 function jsWorkerSource(code) {
   return `
 self.window=undefined;
+(${hardenGlobalScope.toString()})(self);
 function send(level,text){self.postMessage({type:'log',level:level,text:text});}
 ['log','info','warn','error','debug'].forEach(function(m){
   console[m]=function(){
@@ -136,6 +189,9 @@ self.onerror=function(msg){send('error',String(msg));self.postMessage({type:'don
     var pyodide=await loadPyodide({indexURL:PYODIDE});
     pyodide.setStdout({batched:function(s){send('log',s);}});
     pyodide.setStderr({batched:function(s){send('error',s);}});
+    // Pyodide is now loaded; lock down network primitives BEFORE running user
+    // Python so it cannot reach the host's /api via the js bridge or pyfetch.
+    (${hardenGlobalScope.toString()})(self);
     await pyodide.runPythonAsync(${JSON.stringify(code)});
     self.postMessage({type:'done',ok:true});
   }catch(e){

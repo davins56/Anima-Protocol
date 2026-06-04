@@ -96,10 +96,11 @@ const JS_RULES = [
   },
   {
     re: /\bimport\s*\(/,
-    severity: "medium",
+    severity: "high",
     codename: "ModuleGhost",
     label: "Dynamic import()",
-    explanation: "Loads code from another location at runtime.",
+    explanation:
+      "Loads code from another location at runtime — can pull in remote scripts that bypass this scan.",
   },
   {
     re: /\b(while\s*\(\s*true\s*\)|for\s*\(\s*;\s*;\s*\))/,
@@ -158,11 +159,20 @@ const PY_RULES = [
     explanation: "Runs arbitrary text as live Python code.",
   },
   {
-    re: /\b(open|requests\.|urllib|http\.client)\b/,
-    severity: "medium",
+    re: /\b(requests\.|urllib|http\.client|httpx\.|aiohttp|pyfetch|socket\.)\b/,
+    severity: "high",
     codename: "DataSiphon",
-    label: "File / network access",
-    explanation: "Opens files or reaches out over the network.",
+    label: "Network access",
+    explanation:
+      "Reaches out over the network — could exfiltrate data to an outside server.",
+  },
+  {
+    re: /\bopen\s*\(/,
+    severity: "low",
+    codename: "FileMite",
+    label: "File access",
+    explanation:
+      "Opens a file. The runtime only sees an in-memory filesystem, so this is advisory.",
   },
   {
     re: /\bwhile\s+True\s*:/,
