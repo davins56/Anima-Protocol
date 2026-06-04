@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { ArrowLeft } from "lucide-react";
-import { Plus, X, Edit2, Trash2, Upload, Sparkles, Loader, Volume2, Palette } from "lucide-react";
+import { Plus, X, Edit2, Trash2, Upload, Sparkles, Loader, Volume2, Palette, MessageSquare, Crown, Check, Clock } from "lucide-react";
 import VoicePicker from "@/components/voice/VoicePicker";
 import AnimaCustomizer from "@/components/anima/AnimaCustomizer";
 import { Link } from "react-router-dom";
@@ -54,14 +54,23 @@ export default function Animas() {
   const [generating, setGenerating] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [customizingAnima, setCustomizingAnima] = useState(null);
+  const [me, setMe] = useState(null);
+  const [activatingId, setActivatingId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [generatingField, setGeneratingField] = useState(null);
 
   useEffect(() => {
     loadAnimas();
   }, []);
 
   const loadAnimas = async () => {
-    const data = await base44.entities.Anima.list("-created_date", 100);
+    const [data, meData] = await Promise.all([
+      base44.entities.Anima.list("-created_date", 100),
+      base44.auth.me().catch(() => null),
+    ]);
     setAnimas(data);
+    setMe(meData);
+    setLoading(false);
   };
 
   const handleEdit = (anima) => {
@@ -83,6 +92,28 @@ export default function Animas() {
   const handleDelete = async (id) => {
     await base44.entities.Anima.delete(id);
     await loadAnimas();
+  };
+
+  const handleSetActive = async (anima) => {
+    if (!me?.email || activatingId) return;
+    setActivatingId(anima.id);
+    // Clear the active assignment from any other companion, then bind this one.
+    const others = animas.filter(
+      (a) => a.assigned_user === me.email && a.id !== anima.id
+    );
+    await Promise.all(
+      others.map((a) => base44.entities.Anima.update(a.id, { assigned_user: null }))
+    );
+    await base44.entities.Anima.update(anima.id, { assigned_user: me.email });
+    await loadAnimas();
+    setActivatingId(null);
+  };
+
+  const handleTalk = async (anima) => {
+    if (me?.email && anima.assigned_user !== me.email) {
+      await handleSetActive(anima);
+    }
+    navigate("/chat");
   };
 
   const handleGenerate = async () => {
@@ -116,6 +147,81 @@ Make them feel like a real, singular presence — not generic. Give them contrad
     setGenerating(false);
   };
 
+  const FIELD_PROMPTS = {
+    tagline:
+      "a short, evocative tagline of 4-8 words (no surrounding quotes) that captures their essence",
+    personality:
+      "2-3 sentences describing their core traits, emotional style, and how they engage with others",
+    backstory:
+      "2-3 sentences of evocative origin/history that shapes who they are",
+    speaking_style:
+      "1-2 sentences on their tone, vocabulary, rhythms, and verbal quirks",
+  };
+  const FIELD_LABELS = {
+    tagline: "tagline",
+    personality: "personality",
+    backstory: "backstory",
+    speaking_style: "speaking style",
+  };
+
+  const handleGenerateField = async (field) => {
+    if (!form.name || generating || generatingField) return;
+    setGeneratingField(field);
+    try {
+      const context = [
+        `Name: ${form.name}`,
+        `Archetype: ${form.archetype}`,
+        form.tagline && field !== "tagline" ? `Tagline: ${form.tagline}` : "",
+        form.personality && field !== "personality"
+          ? `Personality: ${form.personality}`
+          : "",
+        form.backstory && field !== "backstory"
+          ? `Backstory: ${form.backstory}`
+          : "",
+        form.speaking_style && field !== "speaking_style"
+          ? `Speaking style: ${form.speaking_style}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: `For an AI companion, write ${FIELD_PROMPTS[field]}.
+Make them feel like a real, singular presence — not generic. Stay consistent with any details already provided.
+
+Details so far:
+${context}
+
+Return JSON with a single "${field}" string field.`,
+        response_json_schema: {
+          type: "object",
+          properties: { [field]: { type: "string" } },
+        },
+      });
+      if (result?.[field]) {
+        setForm((f) => ({ ...f, [field]: result[field] }));
+      }
+    } finally {
+      setGeneratingField(null);
+    }
+  };
+
+  const renderAssist = (field) => (
+    <button
+      type="button"
+      onClick={() => handleGenerateField(field)}
+      disabled={!form.name || generating || !!generatingField}
+      title={form.name ? `AI assist this ${FIELD_LABELS[field]}` : "Enter a name first"}
+      className="flex items-center gap-1 text-[8px] font-mono text-primary/40 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed tracking-[0.2em] uppercase transition-colors"
+    >
+      {generatingField === field ? (
+        <Loader className="w-2.5 h-2.5 animate-spin" />
+      ) : (
+        <Sparkles className="w-2.5 h-2.5" />
+      )}
+      AI Assist
+    </button>
+  );
+
   const handleSave = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
@@ -146,6 +252,13 @@ Make them feel like a real, singular presence — not generic. Give them contrad
     setForm(defaultForm);
   };
 
+  const activeAnima =
+    animas.find((a) => a.assigned_user === me?.email) || animas[0] || null;
+  const activeId = activeAnima?.id || null;
+  const sortedAnimas = [...animas].sort(
+    (a, b) => (b.id === activeId ? 1 : 0) - (a.id === activeId ? 1 : 0)
+  );
+
   return (
     <div className="min-h-[100dvh] bg-background scanline">
       {/* Header */}
@@ -157,10 +270,10 @@ Make them feel like a real, singular presence — not generic. Give them contrad
             </Link>
             <div>
               <h1 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-lg">
-                // Anima Forge
+                // Your Animas
               </h1>
               <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-                Craft your personal AI companions
+                Track &amp; manage your companions
               </p>
             </div>
           </div>
@@ -175,6 +288,26 @@ Make them feel like a real, singular presence — not generic. Give them contrad
       </div>
 
       <div className="max-w-5xl mx-auto p-6 pb-24 lg:pb-6">
+        {/* Summary strip */}
+        {animas.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+            <div className="border border-primary/15 bg-black/40 hud-corner px-4 py-3">
+              <p className="text-[8px] font-mono text-primary/30 tracking-[0.25em] uppercase mb-1">
+                // Total
+              </p>
+              <p className="font-mono text-primary text-xl glow-text">{animas.length}</p>
+            </div>
+            <div className="border border-primary/15 bg-black/40 hud-corner px-4 py-3 col-span-1 sm:col-span-2">
+              <p className="text-[8px] font-mono text-primary/30 tracking-[0.25em] uppercase mb-1">
+                // Active Companion
+              </p>
+              <p className="font-mono text-primary text-sm tracking-wider uppercase flex items-center gap-1.5 truncate">
+                <Crown className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />
+                {activeAnima ? activeAnima.name : "None"}
+              </p>
+            </div>
+          </div>
+        )}
         {animas.length === 0 ? (
           <div className="text-center py-24">
             <div className="w-20 h-20 border border-primary/20 bg-primary/5 mx-auto flex items-center justify-center mb-6">
@@ -195,11 +328,25 @@ Make them feel like a real, singular presence — not generic. Give them contrad
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {animas.map((anima) => (
+            {sortedAnimas.map((anima) => {
+              const isActive = anima.id === activeId;
+              return (
               <div
                 key={anima.id}
-                className="group relative border border-primary/15 bg-black/40 hud-corner hover:border-primary/40 hover:bg-primary/5 transition-all"
+                className={`group relative border bg-black/40 hud-corner transition-all ${
+                  isActive
+                    ? "border-yellow-400/40 shadow-[0_0_14px_rgba(250,204,21,0.12)]"
+                    : "border-primary/15 hover:border-primary/40 hover:bg-primary/5"
+                }`}
               >
+                {isActive && (
+                  <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-black/80 border border-yellow-400/40 px-1.5 py-0.5">
+                    <Crown className="w-3 h-3 text-yellow-400" />
+                    <span className="text-[8px] font-mono text-yellow-400 tracking-[0.2em] uppercase">
+                      Active
+                    </span>
+                  </div>
+                )}
                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                   <button
                     onClick={() => setCustomizingAnima(anima)}
@@ -211,12 +358,14 @@ Make them feel like a real, singular presence — not generic. Give them contrad
                   <button
                     onClick={() => handleEdit(anima)}
                     className="w-7 h-7 bg-black/80 border border-primary/30 text-primary/50 hover:text-primary flex items-center justify-center transition-colors"
+                    title="Edit"
                   >
                     <Edit2 className="w-3 h-3" />
                   </button>
                   <button
                     onClick={() => handleDelete(anima.id)}
                     className="w-7 h-7 bg-black/80 border border-red-900/30 text-red-900 hover:text-red-400 flex items-center justify-center transition-colors"
+                    title="Delete"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -243,9 +392,46 @@ Make them feel like a real, singular presence — not generic. Give them contrad
                   {anima.personality && (
                     <p className="text-[10px] font-mono text-primary/30 line-clamp-2 leading-relaxed">{anima.personality}</p>
                   )}
+
+                  {anima.created_date && (
+                    <p className="text-[8px] font-mono text-primary/20 tracking-widest uppercase mt-3 flex items-center gap-1">
+                      <Clock className="w-2.5 h-2.5" />
+                      {new Date(anima.created_date).toLocaleDateString()}
+                    </p>
+                  )}
+
+                  {/* Tracking actions */}
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => handleTalk(anima)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-[9px] tracking-[0.2em] uppercase transition-all"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      Talk
+                    </button>
+                    <button
+                      onClick={() => handleSetActive(anima)}
+                      disabled={isActive || activatingId === anima.id || !me?.email}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 border font-mono text-[9px] tracking-[0.2em] uppercase transition-all disabled:cursor-not-allowed ${
+                        isActive
+                          ? "border-yellow-400/40 text-yellow-400/70 disabled:opacity-100"
+                          : "border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 disabled:opacity-40"
+                      }`}
+                    >
+                      {activatingId === anima.id ? (
+                        <Loader className="w-3 h-3 animate-spin" />
+                      ) : isActive ? (
+                        <Check className="w-3 h-3" />
+                      ) : (
+                        <Crown className="w-3 h-3" />
+                      )}
+                      {isActive ? "Active" : "Set Active"}
+                    </button>
+                  </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -268,7 +454,7 @@ Make them feel like a real, singular presence — not generic. Give them contrad
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-primary/20">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20">
               <div>
                 <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase">
                   {editingAnima ? "// Edit Anima" : "// Forge Anima"}
@@ -282,7 +468,7 @@ Make them feel like a real, singular presence — not generic. Give them contrad
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
               {/* Avatar */}
               <div className="flex items-center gap-4">
                 <div className="w-20 h-20 border border-primary/30 bg-primary/5 overflow-hidden flex-shrink-0">
@@ -312,7 +498,7 @@ Make them feel like a real, singular presence — not generic. Give them contrad
               </div>
 
               {/* Name & Tagline */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">Name *</label>
                   <input
@@ -323,7 +509,10 @@ Make them feel like a real, singular presence — not generic. Give them contrad
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">Tagline</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Tagline</label>
+                    {renderAssist("tagline")}
+                  </div>
                   <input
                     value={form.tagline}
                     onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))}
@@ -366,7 +555,10 @@ Make them feel like a real, singular presence — not generic. Give them contrad
 
               {/* Personality */}
               <div>
-                <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">Personality</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Personality</label>
+                  {renderAssist("personality")}
+                </div>
                 <textarea
                   value={form.personality}
                   onChange={(e) => setForm((f) => ({ ...f, personality: e.target.value }))}
@@ -378,7 +570,10 @@ Make them feel like a real, singular presence — not generic. Give them contrad
 
               {/* Backstory */}
               <div>
-                <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">Backstory</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Backstory</label>
+                  {renderAssist("backstory")}
+                </div>
                 <textarea
                   value={form.backstory}
                   onChange={(e) => setForm((f) => ({ ...f, backstory: e.target.value }))}
@@ -390,7 +585,10 @@ Make them feel like a real, singular presence — not generic. Give them contrad
 
               {/* Speaking Style */}
               <div>
-                <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">Speaking Style</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Speaking Style</label>
+                  {renderAssist("speaking_style")}
+                </div>
                 <textarea
                   value={form.speaking_style}
                   onChange={(e) => setForm((f) => ({ ...f, speaking_style: e.target.value }))}
@@ -413,7 +611,7 @@ Make them feel like a real, singular presence — not generic. Give them contrad
               </div>
             </div>
 
-            <div className="p-6 border-t border-primary/20 flex justify-end gap-3">
+            <div className="p-4 sm:p-6 border-t border-primary/20 flex justify-end gap-3">
               <button onClick={closeForm} className="px-6 py-2 border border-primary/20 text-primary/40 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all">
                 Cancel
               </button>

@@ -32,3 +32,11 @@ on `ChatSession.create` — the server migrates that blob to rows on first
 **Why it matters:** both bugs failed *silently* (empty list / no-op create), so
 the feature looked missing rather than broken — check these first if a wired flow
 "does nothing".
+
+## Entry point (selector)
+Story mode is surfaced as a first-class "Story" button in the NewChat session-mode
+selector (alongside Solo/Group). It is NOT a distinct `ChatSession.mode` value — the
+button just opens `StoryCharacterChooser`, which creates a `mode:"solo"` session
+(character_id + opening_scene + inline narrator message). So Chat.jsx needs no
+"story" branch. Closing the chooser should only clear its own overlay flag, leaving
+the mode selector visible (don't also force the selector closed).
