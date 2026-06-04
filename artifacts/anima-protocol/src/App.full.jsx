@@ -18,7 +18,7 @@ import {
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
-import { Suspense, lazy, useRef, useEffect } from "react";
+import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import { initializeColorScheme } from "@/lib/colorScheme";
@@ -162,6 +162,7 @@ const Disclaimer = lazy(() => import("./pages/Disclaimer"));
 
 import { Navigate } from "react-router-dom";
 import AIDisclaimerModal from "@/components/legal/AIDisclaimerModal";
+import TutorialOverlay from "@/components/onboarding/TutorialOverlay";
 import InAppBrowserWarning from "@/components/InAppBrowserWarning";
 import TapTargetValidator from "@/components/mobile/TapTargetValidator";
 
@@ -475,6 +476,11 @@ const AuthenticatedApp = () => {
     excludeSelector: "input, textarea, [data-no-swipe]",
   });
 
+  // Gate the first-run tutorial behind the AI disclaimer so the two modals
+  // never stack. The disclaimer fires onAccept on mount when already accepted,
+  // so returning users surface the tutorial immediately (e.g. when replaying).
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+
   if (authError) {
     if (authError.type === "user_not_registered") {
       return <UserNotRegisteredError />;
@@ -507,7 +513,10 @@ const AuthenticatedApp = () => {
 
   return (
     <>
-      {showChrome && <AIDisclaimerModal onAccept={() => {}} />}
+      {showChrome && (
+        <AIDisclaimerModal onAccept={() => setDisclaimerAccepted(true)} />
+      )}
+      {showChrome && disclaimerAccepted && <TutorialOverlay />}
       {showChrome && <MobileHeader />}
       <AnimatePresence mode="wait">
         <motion.div

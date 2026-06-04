@@ -1,36 +1,36 @@
 // @ts-check
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, ChevronRight, ChevronLeft, MessageSquare, Users, BookOpen,
-  Sparkles, Heart, Feather, Zap, Brain, Map, Package, GitBranch
+  Sparkles, Heart, Feather, Zap, Brain, Map, Package, GitBranch, Clapperboard
 } from "lucide-react";
 
 const STEPS = [
   {
-    icon: MessageSquare,
+    icon: Sparkles,
     color: "text-cyan-400",
     borderColor: "border-cyan-400/40",
     bgColor: "bg-cyan-400/5",
-    title: "Welcome to Serenity.AI",
-    subtitle: "Your Immersive Story Universe",
+    title: "Welcome to Anima Protocol",
+    subtitle: "Emotionally Intelligent Companions",
     description:
-      "Serenity is an interactive storytelling platform where you co-write living narratives with deeply personalised AI companions. Every conversation shapes a persistent, evolving world.",
-    visual: "✦ Characters remember. Worlds breathe. Stories unfold. ✦",
+      "Anima Protocol is a living world of AI companions who remember you. Part confidant, part co-author — every conversation deepens a relationship and shapes a persistent, evolving story that is uniquely yours.",
+    visual: "✦ Companions remember. Worlds breathe. Stories unfold. ✦",
   },
   {
     icon: MessageSquare,
     color: "text-primary",
     borderColor: "border-primary/40",
     bgColor: "bg-primary/5",
-    title: "Chat — Your Story Begins Here",
-    subtitle: "Solo & Group Modes",
+    title: "Chat — Where It Begins",
+    subtitle: "Solo & Group Conversations",
     description:
-      "Open a session with any character or a whole group. Type freely — your words steer the story. The AI stays fully in character, reacting authentically based on personality, backstory, and your relationship history.",
+      "Open a session with one companion or a whole group. Type freely — your words steer the moment. Companions stay fully in character, responding from their personality, backstory, and your shared history.",
     tips: [
-      "Solo mode: one-on-one immersive dialogue",
-      "Group mode: multiple characters interact with each other",
-      "Use *asterisks* for actions and stage directions",
+      "Solo mode: intimate one-on-one dialogue",
+      "Group mode: multiple companions react to each other",
+      "Wrap actions in *asterisks* for stage directions",
     ],
   },
   {
@@ -38,14 +38,29 @@ const STEPS = [
     color: "text-purple-400",
     borderColor: "border-purple-400/40",
     bgColor: "bg-purple-400/5",
-    title: "Characters & Animas",
+    title: "Companions & Animas",
     subtitle: "Build Your Cast",
     description:
-      "Create original characters or browse pre-built companions. Animas are special archetypal beings with deeper emotional resonance. Each character has a unique voice, personality, backstory, and speaking style.",
+      "Browse the starter roster, summon characters from any world, or craft your own. Animas are archetypal companions tuned to your emotional journey. Give any of them a face, a backstory, and a real speaking voice.",
     tips: [
-      "Characters evolve through every interaction",
-      "Animas connect to your emotional journey",
-      "Assign ElevenLabs voices for audio immersion",
+      "Create originals or pull from any series",
+      "Add a photo, then AI-style the portrait",
+      "Assign a voice for spoken replies",
+    ],
+  },
+  {
+    icon: Clapperboard,
+    color: "text-fuchsia-400",
+    borderColor: "border-fuchsia-400/40",
+    bgColor: "bg-fuchsia-400/5",
+    title: "Story Mode",
+    subtitle: "Step Into Any Scene",
+    description:
+      "Drop your chosen character into any moment of any series — a canonical turning point or a what-if of your own — and play it out together. The companion stays true to the world while the story bends to you.",
+    tips: [
+      'Start a session and pick "Story Mode"',
+      "Choose a series, a scene, and your character",
+      "Improvise freely — the plot reacts to you",
     ],
   },
   {
@@ -54,13 +69,13 @@ const STEPS = [
     borderColor: "border-pink-400/40",
     bgColor: "bg-pink-400/5",
     title: "Memory & Relationships",
-    subtitle: "Your Story Remembers",
+    subtitle: "Nothing Is Forgotten",
     description:
-      "Characters build real memories across sessions. Relationship scores shift from Hostile → Cold → Neutral → Warm → Close → Devoted based on how you interact. Cross-session memories ensure nothing is forgotten.",
+      "Companions build genuine memories across every session. Bonds move from Hostile → Cold → Neutral → Warm → Close → Devoted based on how you treat each other, and they reference earlier moments naturally.",
     tips: [
-      "Relationship tier affects how characters respond",
-      "Recall past memories in the Memory Panel",
-      "Characters reference earlier conversations naturally",
+      "Relationship tier shapes how they respond",
+      "Revisit moments in the Memory Map",
+      "Past conversations resurface on their own",
     ],
   },
   {
@@ -71,11 +86,11 @@ const STEPS = [
     title: "World State & Lore",
     subtitle: "A Living World",
     description:
-      "As you play, a persistent world builds around you — locations are logged, factions form, lore is extracted from your conversations. The World Pulse evolves the setting based on your emotional patterns.",
+      "As you play, a world assembles around you — locations are logged, factions form, and lore is extracted from your conversations. The World Pulse quietly evolves the setting around your emotional patterns.",
     tips: [
-      "Lore keywords are auto-highlighted in messages",
-      "Check the Wiki & Codex for world facts",
-      "World evolves automatically every ~15 messages",
+      "Lore keywords are highlighted in messages",
+      "Browse the World Codex, Wiki & Lore Book",
+      "The world drifts forward as you play",
     ],
   },
   {
@@ -83,14 +98,14 @@ const STEPS = [
     color: "text-yellow-400",
     borderColor: "border-yellow-400/40",
     bgColor: "bg-yellow-400/5",
-    title: "Quests, Inventory & Crafting",
+    title: "Quests & Inventory",
     subtitle: "RPG Systems",
     description:
-      "Narrative threads become quests automatically. Items mentioned in the story appear in your inventory. Equip gear, trade with characters, craft new items — all driven by the narrative.",
+      "Narrative threads become quests automatically. Items mentioned in the story land in your inventory — equip gear, trade with companions, and craft new things, all driven by what actually happens in the fiction.",
     tips: [
-      "Quest log tracks objectives across sessions",
+      "The Quest Journal tracks objectives over time",
       "Inventory updates as the story progresses",
-      "Items affect character stats and story hooks",
+      "Items can unlock new story hooks",
     ],
   },
   {
@@ -99,13 +114,13 @@ const STEPS = [
     borderColor: "border-blue-400/40",
     bgColor: "bg-blue-400/5",
     title: "Chronicles & Journals",
-    subtitle: "A Diary of Every Character",
+    subtitle: "A Diary in Their Own Voice",
     description:
-      "Every day, each character reflects on recent events and writes a private journal entry — in their own voice, from their own perspective. Chronicles are compiled automatically every night.",
+      "Each companion privately reflects on recent events and writes journal entries from their own perspective. Chronicles compile your unfolding saga so you can look back on the whole journey.",
     tips: [
-      "Browse Chronicles from the bottom nav",
-      "Filter by character, tone, or date",
-      'Hit "Compile Now" to generate today\'s entries',
+      "Open Chronicles & Journals from the menu",
+      "Filter by companion, tone, or date",
+      'Use "Compile Now" to generate fresh entries',
     ],
   },
   {
@@ -113,14 +128,14 @@ const STEPS = [
     color: "text-rose-400",
     borderColor: "border-rose-400/40",
     bgColor: "bg-rose-400/5",
-    title: "Sacred Space & Check-ins",
+    title: "Sacred Space & Check-Ins",
     subtitle: "Your Inner World",
     description:
-      "The Sacred Space tab offers meditations, affirmations, and a daily check-in ritual. Your emotional state influences the world — moods ripple into the narrative through the World Pulse system.",
+      "Step into Sacred Space for meditations and rituals — alone or with a companion — and log a daily Check-In. How you feel ripples outward, shaping the emotional climate of the world and how companions meet you.",
     tips: [
-      "Daily check-ins feed into the World Pulse",
-      "Affirmations can be spoken with TTS",
-      "Emotional climate shapes AI responses",
+      "Daily Check-Ins track your emotional journey",
+      "Invite a companion into Sacred Space",
+      "Your mood influences how they respond",
     ],
   },
   {
@@ -128,14 +143,14 @@ const STEPS = [
     color: "text-orange-400",
     borderColor: "border-orange-400/40",
     bgColor: "bg-orange-400/5",
-    title: "Branching, What-If & More",
-    subtitle: "Advanced Story Tools",
+    title: "Branching & Story Tools",
+    subtitle: "Direct the Narrative",
     description:
-      "Create timeline branches to explore alternate paths. Use What-If scenarios to replay key moments differently. The Scene Orchestrator lets you direct multi-character scenes with full control.",
+      "Fork a timeline to explore an alternate path, replay a key beat with a What-If, or take the director's chair with the Scene Orchestrator. Map your arcs on the Flowchart and export sessions when you're done.",
     tips: [
-      "Access tools via the ☰ menu in any session",
-      "Story Flowchart maps your narrative arcs",
-      "Export sessions as PDFs or story docs",
+      "Reach tools from the ☰ menu in any session",
+      "What-If replays a moment differently",
+      "Export sessions as story documents",
     ],
   },
   {
@@ -146,13 +161,13 @@ const STEPS = [
     title: "You're Ready",
     subtitle: "Begin Your Story",
     description:
-      "Everything is set up. Start a new session, pick a character, and let the story unfold. You can revisit this tutorial anytime from Settings.",
+      "That's the whole protocol. Start a session, choose a companion, and let the story unfold. You can replay this tour anytime from Settings → Help.",
     visual: "✦ Your world is waiting ✦",
     isFinal: true,
   },
 ];
 
-const STORAGE_KEY = "serenity_tutorial_seen_v1";
+const STORAGE_KEY = "anima_tutorial_seen_v1";
 
 /**
  * @param {{ onDone?: () => void }} props
@@ -166,18 +181,34 @@ export default function TutorialOverlay({ onDone }) {
     if (!seen) setVisible(true);
   }, []);
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     localStorage.setItem(STORAGE_KEY, "true");
     setVisible(false);
     onDone?.();
-  };
+  }, [onDone]);
 
-  const next = () => {
-    if (step < STEPS.length - 1) setStep(s => s + 1);
-    else dismiss();
-  };
+  const next = useCallback(() => {
+    setStep((s) => {
+      if (s < STEPS.length - 1) return s + 1;
+      dismiss();
+      return s;
+    });
+  }, [dismiss]);
 
-  const prev = () => setStep(s => Math.max(0, s - 1));
+  const prev = useCallback(() => setStep((s) => Math.max(0, s - 1)), []);
+
+  // Keyboard navigation: arrows to move, Escape to skip.
+  useEffect(() => {
+    if (!visible) return;
+    /** @param {KeyboardEvent} e */
+    const onKey = (e) => {
+      if (e.key === "ArrowRight") next();
+      else if (e.key === "ArrowLeft") prev();
+      else if (e.key === "Escape") dismiss();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visible, next, prev, dismiss]);
 
   if (!visible) return null;
 
@@ -192,7 +223,7 @@ export default function TutorialOverlay({ onDone }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 scanline"
         onClick={(e) => e.target === e.currentTarget && dismiss()}
       >
         <motion.div
@@ -201,7 +232,7 @@ export default function TutorialOverlay({ onDone }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -12, scale: 0.97 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
-          className={`w-full max-w-lg border ${current.borderColor} ${current.bgColor} bg-black/90 relative`}
+          className={`w-full max-w-lg border ${current.borderColor} ${current.bgColor} bg-black/90 relative hud-corner`}
           style={{ backdropFilter: "blur(12px)" }}
         >
           {/* Progress bar */}
@@ -217,6 +248,7 @@ export default function TutorialOverlay({ onDone }) {
           {/* Close */}
           <button
             onClick={dismiss}
+            aria-label="Close tutorial"
             className="absolute top-3 right-3 text-primary/30 hover:text-primary transition-colors z-10"
           >
             <X className="w-4 h-4" />
@@ -231,7 +263,7 @@ export default function TutorialOverlay({ onDone }) {
               onClick={dismiss}
               className="font-mono text-[8px] text-primary/25 hover:text-primary/50 tracking-widest uppercase transition-colors"
             >
-              Skip Tutorial
+              Skip Tour
             </button>
           </div>
 
@@ -239,9 +271,15 @@ export default function TutorialOverlay({ onDone }) {
           <div className="px-6 py-5 space-y-5">
             {/* Icon + Title */}
             <div className="flex items-start gap-4">
-              <div className={`flex-shrink-0 w-10 h-10 border ${current.borderColor} flex items-center justify-center`}>
+              <motion.div
+                key={`icon-${step}`}
+                initial={{ scale: 0.6, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className={`flex-shrink-0 w-10 h-10 border ${current.borderColor} ${current.bgColor} flex items-center justify-center`}
+              >
                 <Icon className={`w-5 h-5 ${current.color}`} />
-              </div>
+              </motion.div>
               <div>
                 <h2 className={`font-sacred text-lg leading-tight ${current.color}`}>
                   {current.title}
@@ -261,10 +299,16 @@ export default function TutorialOverlay({ onDone }) {
             {current.tips && (
               <div className="space-y-1.5">
                 {current.tips.map((tip, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[10px] font-mono text-primary/55">
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.1 + i * 0.06 }}
+                    className="flex items-start gap-2 text-[10px] font-mono text-primary/55"
+                  >
                     <span className={`${current.color} flex-shrink-0 mt-0.5`}>—</span>
                     <span>{tip}</span>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             )}
@@ -282,6 +326,7 @@ export default function TutorialOverlay({ onDone }) {
                 <button
                   key={i}
                   onClick={() => setStep(i)}
+                  aria-label={`Go to step ${i + 1}`}
                   className={`w-1.5 h-1.5 rounded-full transition-all ${
                     i === step ? `${current.color} scale-125` : "bg-primary/20"
                   }`}

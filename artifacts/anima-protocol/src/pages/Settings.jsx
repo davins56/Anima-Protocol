@@ -6,7 +6,7 @@ import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
   ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle
 } from "lucide-react";
-const resetTutorial = () => localStorage.removeItem("serenity_tutorial_seen_v1");
+import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";

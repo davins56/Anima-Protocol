@@ -94,7 +94,6 @@ import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
 import NarrativeDivergencePanel from "@/components/narrative/NarrativeDivergencePanel";
 import { useDivergentPaths } from "@/hooks/useDivergentPaths";
 import GoToTopButton from "@/components/chat/GoToTopButton";
-import TutorialOverlay from "@/components/onboarding/TutorialOverlay";
 import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
 
@@ -1705,8 +1704,6 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
 
   return (
     <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>
-      <TutorialOverlay />
-
       <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
       {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
