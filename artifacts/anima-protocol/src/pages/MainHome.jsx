@@ -95,8 +95,31 @@ export default function MainHome() {
   const [greeting, setGreeting] = useState(GREETINGS[0]);
   const [loading, setLoading] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [creatingAnima, setCreatingAnima] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const photoInputRef = useRef(null);
+
+  const createAnima = async () => {
+    if (creatingAnima || uploadingPhoto) return;
+    setPhotoError("");
+    setCreatingAnima(true);
+    try {
+      const newAnima = await base44.entities.Anima.create({
+        name: "Your Anima",
+        archetype: "Muse",
+        tagline: "Your personal anima.",
+        assigned_user: user?.email,
+        personality: "A gentle, attentive companion attuned to your inner world.",
+        speaking_style: "Warm, calm, and reflective",
+      });
+      setAnima(newAnima);
+    } catch (err) {
+      console.error("Failed to create anima:", err);
+      setPhotoError("Couldn't create your anima right now. Please try again.");
+    } finally {
+      setCreatingAnima(false);
+    }
+  };
 
   const handlePhotoSelected = async (e) => {
     const file = e.target.files?.[0];
@@ -226,10 +249,14 @@ export default function MainHome() {
         >
           <button
             type="button"
-            onClick={() => !uploadingPhoto && anima?.id && photoInputRef.current?.click()}
-            disabled={!anima?.id || uploadingPhoto}
-            aria-label={anima?.id ? "Set your anima's photo" : "Anima"}
-            title={anima?.id ? "Set your anima's photo" : "Anima"}
+            onClick={() => {
+              if (uploadingPhoto || creatingAnima) return;
+              if (anima?.id) photoInputRef.current?.click();
+              else createAnima();
+            }}
+            disabled={uploadingPhoto || creatingAnima}
+            aria-label={anima?.id ? "Set your anima's photo" : "Create your anima"}
+            title={anima?.id ? "Set your anima's photo" : "Create your anima"}
             className="group w-20 h-20 mb-4 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)] cursor-pointer disabled:cursor-default"
           >
             {anima?.avatar_url ? (
@@ -241,7 +268,9 @@ export default function MainHome() {
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-cyan-950/20">
                 <Camera className="w-5 h-5 text-cyan-400/50" />
-                <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 uppercase">Add photo</span>
+                <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 uppercase">
+                  {anima?.id ? "Add photo" : "Create anima"}
+                </span>
               </div>
             )}
 
@@ -251,7 +280,7 @@ export default function MainHome() {
               </div>
             )}
 
-            {uploadingPhoto && (
+            {(uploadingPhoto || creatingAnima) && (
               <div className="absolute inset-1 flex items-center justify-center bg-black/70">
                 <Loader className="w-5 h-5 text-cyan-400 animate-spin" />
               </div>

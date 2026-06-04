@@ -1764,6 +1764,23 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
                 setGeneratedContent={setGeneratedContent}
                 setWorldEvent={setWorldEvent}
               />
+
+              {/* World widget area add-on (inside scrollable message feed) */}
+              <div className="w-full" aria-live="polite">
+                {activeSession?.mode === "solo" && activeSession?.character_id && (
+                  <div className="px-3 py-2 border border-primary/10 bg-black/35 backdrop-blur-sm rounded-lg">
+                    <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-primary/40">Thread Signal</div>
+                    <div className="mt-1 flex items-center justify-between gap-3">
+                      <span className="font-mono text-[11px] text-primary/75">
+                        Resonance: {Math.round(resonance.value)}%
+                      </span>
+                      <span className="font-mono text-[11px] text-primary/50">
+                        Mood: {currentMood}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
               {(!activeSession.messages || activeSession.messages.length === 0) && (
                 <div className="text-center py-8">
                   <p className="font-mono text-[9px] sm:text-xs text-primary/25 tracking-[0.3em] uppercase">
