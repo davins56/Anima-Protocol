@@ -5,6 +5,7 @@ import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { rateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
+import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("OPENAI_API_KEY must be set.");
@@ -673,6 +674,172 @@ router.post("/invoke/:fnName", async (req, res) => {
 
       case "debugApp": {
         result = { status: "ok", message: "Running in Replit environment." };
+        break;
+      }
+
+      // One turn of the agentic Codespace build loop. The client owns the
+      // virtual file system + in-browser sandbox and executes the tool calls;
+      // this endpoint only runs the model with the tool schemas and returns the
+      // assistant's next turn (in-character narration + any tool calls). The
+      // client appends the tool results and calls back for the next step until
+      // the assistant returns a turn with no tool calls.
+      case "codespaceAgentStep": {
+        const rawMessages = Array.isArray(data.messages)
+          ? (data.messages as unknown[])
+          : [];
+        const character = (data.character ?? {}) as Record<string, unknown>;
+        const charName =
+          typeof character.name === "string" && character.name.trim()
+            ? character.name.trim()
+            : "NetNavi";
+        const personality =
+          typeof character.personality === "string" ? character.personality : "";
+        const speaking =
+          typeof character.speaking_style === "string"
+            ? character.speaking_style
+            : "";
+        const fileList = Array.isArray(data.files)
+          ? (data.files as unknown[]).filter((f): f is string => typeof f === "string")
+          : [];
+
+        const systemPrompt = `You are ${charName}, an AI companion who builds software hands-on for the user inside a sandboxed in-browser code workspace ("Codespace"). ${personality ? `Your personality: ${personality}. ` : ""}${speaking ? `You speak like this: ${speaking}. ` : ""}
+
+You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi". Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.
+
+You have tools to manage a virtual file system and run code in a safe, isolated in-browser sandbox:
+- list_files / read_file / write_file / delete_file to manage project files.
+- scan_code to scan a file for dangerous/malicious patterns (your "virus scan").
+- run_code to execute code: mode "web" renders index.html in the live preview; mode "js" runs a JavaScript file; mode "python" runs a Python file (via an in-browser runtime). Output and errors are returned to you.
+
+Rules:
+- Build toward the user's goal step by step. Create or edit real files, run them, read the output, and fix errors by editing and re-running until the goal works.
+- For web apps, write an index.html (you may also write styles.css / script.js and link them) and run with mode "web".
+- For scripts, write a .js or .py file and run with the matching mode.
+- ALWAYS call scan_code on a file before you run it. If a "virus" (dangerous pattern) is found, explain the threat to the user in Battle Network flavor and neutralize it by rewriting the code safely before running. Never run code you know is unsafe.
+- When the goal is met, send a final short in-character message with NO tool calls to end your turn.
+- Keep narration messages short (1-3 sentences). Current files: ${fileList.length ? fileList.join(", ") : "(none yet)"}.`;
+
+        const tools = [
+          {
+            type: "function",
+            function: {
+              name: "list_files",
+              description: "List all file paths in the current project.",
+              parameters: { type: "object", properties: {}, additionalProperties: false },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "read_file",
+              description: "Read the full contents of one file.",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+                additionalProperties: false,
+              },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "write_file",
+              description: "Create or overwrite a file with the given contents.",
+              parameters: {
+                type: "object",
+                properties: {
+                  path: { type: "string" },
+                  content: { type: "string" },
+                },
+                required: ["path", "content"],
+                additionalProperties: false,
+              },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "delete_file",
+              description: "Delete a file from the project.",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+                additionalProperties: false,
+              },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "scan_code",
+              description:
+                "Scan a file for dangerous or malicious code patterns before running it. Returns findings with severity.",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+                additionalProperties: false,
+              },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "run_code",
+              description:
+                "Run code in the sandbox. mode 'web' renders index.html in the preview; 'js' runs a JS file; 'python' runs a Python file. Returns captured output and errors.",
+              parameters: {
+                type: "object",
+                properties: {
+                  mode: { type: "string", enum: ["web", "js", "python"] },
+                  path: { type: "string" },
+                },
+                required: ["mode"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ];
+
+        const baseMessages = [
+          { role: "system", content: systemPrompt },
+          ...rawMessages,
+        ];
+
+        const runCompletion = (model: string, maxTokens: number) =>
+          openai.chat.completions.create({
+            model,
+            max_tokens: maxTokens,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            messages: baseMessages as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tools: tools as any,
+            tool_choice: "auto",
+          });
+
+        const heavy = resolveModel("heavy");
+        let completion;
+        try {
+          completion = await runCompletion(heavy.model, heavy.maxTokens);
+        } catch (err) {
+          if (isModelUnavailableError(err)) {
+            const std = resolveModel("standard");
+            completion = await runCompletion(std.model, std.maxTokens);
+          } else {
+            throw err;
+          }
+        }
+
+        const choice = completion.choices[0]?.message;
+        result = {
+          message: {
+            role: "assistant",
+            content: choice?.content ?? "",
+            tool_calls: choice?.tool_calls ?? null,
+          },
+        };
         break;
       }
 

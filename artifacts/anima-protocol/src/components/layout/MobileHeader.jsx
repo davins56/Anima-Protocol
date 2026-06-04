@@ -31,6 +31,7 @@ const ROUTE_TITLES = {
   "/what-if": "What-If Scenarios",
   "/discoveries": "Discoveries",
   "/check-in": "Check-In",
+  "/codespace": "Codespace",
 };
 
 function getTitle(pathname) {

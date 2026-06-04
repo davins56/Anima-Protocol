@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/AuthContext";
 const ALL_MODULES = [
   { label: "Sign Out", path: "/landing", icon: "⎋", signOut: true },
   { label: "Chat", path: "/chat", icon: "💬" },
+  { label: "Codespace", path: "/codespace", icon: "⌨" },
   { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Storyboard", path: "/storyboard", icon: "📋" },
   { label: "Narrative", path: "/narrative", icon: "📊" },
