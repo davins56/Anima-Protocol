@@ -84,6 +84,7 @@ import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
+import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
 import ChatToolbar from "@/components/chat/ChatToolbar";
@@ -1208,12 +1209,16 @@ ${lewdityGuide}`;
           Story so far:
           ${conversationHistory}
 
+          ${INTELLIGENCE_GUIDANCE}
+
           EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care. Never explicit or anatomical content.
 ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional attunement only — calibrate tone and presence, never explicit content.` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
 
-          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}`;
+          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}
+
+          ${loyaltyGuardrailClause(user?.full_name)}`;
         }
       } else if (activeSession.mode === "group") {
         const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
@@ -1287,7 +1292,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           traitModifiers = shiftRes?.data?.trait_modifiers || '';
         } catch (_) { /* silently ignore — enhancement, not a requirement */ }
 
-        prompt = buildGroupPrompt({ nextChar, allCharSheets, loreCtxGroup, conversationHistory, adultInstruction, lengthGuide, traitModifiers });
+        prompt = buildGroupPrompt({ nextChar, allCharSheets, loreCtxGroup, conversationHistory, adultInstruction, lengthGuide, traitModifiers, userName: user?.full_name });
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}`;
       }

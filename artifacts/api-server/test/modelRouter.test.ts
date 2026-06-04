@@ -13,9 +13,17 @@ describe("classifyComplexity", () => {
     }
   });
 
-  it("routes very short, signal-free messages to the light tier", () => {
+  it("routes trivial sign-offs / small talk to the light tier", () => {
     expect(classifyComplexity("see you soon")).toBe("light");
-    expect(classifyComplexity("miss you")).toBe("light");
+    expect(classifyComplexity("goodnight")).toBe("light");
+    expect(classifyComplexity("ttyl")).toBe("light");
+  });
+
+  it("routes short but substantive / emotional messages to the heavy tier", () => {
+    // These are short yet meaningful — they must NOT be treated as trivial.
+    expect(classifyComplexity("I feel awful today")).toBe("heavy");
+    expect(classifyComplexity("don't leave me")).toBe("heavy");
+    expect(classifyComplexity("miss you")).toBe("heavy");
   });
 
   it("routes analytical keyword asks to the heavy tier", () => {
@@ -38,16 +46,15 @@ describe("classifyComplexity", () => {
     expect(classifyComplexity("fix this: const add = (a, b) => { return a + b }")).toBe("heavy");
   });
 
-  it("does not over-route a bare short keyword", () => {
-    expect(classifyComplexity("why?")).toBe("standard");
+  it("routes substantive ordinary conversation to the high-capability tier", () => {
+    // Anything beyond trivial small talk is biased to heavy so companions reason
+    // with full depth, even without explicit analytical keywords.
+    expect(classifyComplexity("I had a pretty rough day at work today")).toBe("heavy");
+    expect(classifyComplexity("Tell me something interesting")).toBe("heavy");
+    expect(classifyComplexity("why?")).toBe("heavy");
   });
 
-  it("routes ordinary conversational messages to the standard tier", () => {
-    expect(classifyComplexity("I had a pretty rough day at work today")).toBe("standard");
-    expect(classifyComplexity("Tell me something interesting")).toBe("standard");
-  });
-
-  it("falls back to standard for empty input", () => {
+  it("reserves the standard tier for empty input / fallback only", () => {
     expect(classifyComplexity("")).toBe("standard");
     expect(classifyComplexity("   ")).toBe("standard");
   });
@@ -63,7 +70,7 @@ describe("resolveModel", () => {
     delete process.env.ANIMA_MODEL_LIGHT;
     delete process.env.ANIMA_MODEL_STANDARD;
     delete process.env.ANIMA_MODEL_HEAVY;
-    expect(resolveModel("light").model).toBe("gpt-4o-mini");
+    expect(resolveModel("light").model).toBe("gpt-4.1-mini");
     expect(resolveModel("standard").model).toBe("gpt-4o");
     expect(resolveModel("heavy").model).toBe("gpt-4.1");
   });
@@ -84,7 +91,7 @@ describe("routeModel", () => {
   it("classifies and resolves in one step", () => {
     const routed = routeModel("hi");
     expect(routed.tier).toBe("light");
-    expect(routed.model).toBe("gpt-4o-mini");
+    expect(routed.model).toBe("gpt-4.1-mini");
   });
 });
 

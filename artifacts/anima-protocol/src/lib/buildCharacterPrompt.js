@@ -1,3 +1,5 @@
+import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "./companionGuardrail";
+
 export function buildCharacterPrompt({
   character,
   scenario,
@@ -9,6 +11,7 @@ export function buildCharacterPrompt({
   behaviorInstructions,
   adultInstruction,
   lengthGuide,
+  userName,
 }) {
   const animaNote = character._isAnima && character.archetype ? `Archetype: ${character.archetype} — ${character.tagline || ""}\n` : "";
 
@@ -26,9 +29,13 @@ CRITICAL AUTONOMY RULES:
 - You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
 - If the player tries to control you, you'll push back. Real people have agency.
 
+${INTELLIGENCE_GUIDANCE}
+
 Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.
 
 ${lengthGuide}
 
-If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.`;
+If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.
+
+${loyaltyGuardrailClause(userName)}`;
 }

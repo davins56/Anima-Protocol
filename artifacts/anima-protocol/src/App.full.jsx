@@ -21,6 +21,7 @@ import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
+import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
@@ -169,7 +170,7 @@ import TapTargetValidator from "@/components/mobile/TapTargetValidator";
 
 // Loading fallback component
 const PageLoader = () => (
-  <div className="flex items-center justify-center h-screen">
+  <div className="flex items-center justify-center h-screen-safe">
     <div className="text-center">
       <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-3" />
       <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
@@ -269,7 +270,7 @@ function ClerkQueryClientCacheInvalidator() {
 
 function SignInPage() {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <SignIn
         routing="path"
         path={`${basePath}/sign-in`}
@@ -282,7 +283,7 @@ function SignInPage() {
 
 function SignUpPage() {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <SignUp
         routing="path"
         path={`${basePath}/sign-up`}
@@ -1278,6 +1279,7 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
+  useViewportHeight();
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>
@@ -1287,7 +1289,7 @@ function App() {
               <InAppBrowserWarning />
               <TapTargetValidator />
               <div
-                className="flex flex-col h-[100dvh]"
+                className="flex flex-col h-screen-safe"
                 style={{
                   paddingTop: "env(safe-area-inset-top, 0px)",
                   paddingBottom: "env(safe-area-inset-bottom, 0px)",

@@ -127,7 +127,13 @@ export default function StoryCharacterChooser({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
-      <div className="w-full max-w-2xl h-[90vh] sm:max-h-[90vh] bg-background border border-primary/30 hud-corner glow-border flex flex-col">
+      <div
+        className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border flex flex-col"
+        style={{
+          height: "calc(var(--app-height, 100dvh) * 0.9)",
+          maxHeight: "calc(var(--app-height, 100dvh) * 0.9)",
+        }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-3 sm:p-6 border-b border-primary/20 flex-shrink-0">
           <div>

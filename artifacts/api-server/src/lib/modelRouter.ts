@@ -17,8 +17,12 @@ export interface ResolvedModel {
   maxTokens: number;
 }
 
+// `heavy` is the high-capability tier almost all real conversation is routed to
+// (see classifyComplexity). `light` stays cheap for bare greetings. `standard`
+// is intentionally a different, broadly-available model so it can act as the
+// reliable fallback when a routed model is unavailable to the account.
 const DEFAULT_MODELS: Record<ModelTier, string> = {
-  light: "gpt-4o-mini",
+  light: "gpt-4.1-mini",
   standard: "gpt-4o",
   heavy: "gpt-4.1",
 };
@@ -45,76 +49,29 @@ export function resolveModel(tier: ModelTier): ResolvedModel {
   };
 }
 
-// Short greetings / acknowledgements that never need a capable model.
+// Bare greetings / acknowledgements that never need a capable model.
 const GREETING_RE =
   /^(hi+|hey+|hello+|yo|sup|hiya|howdy|good\s?(morning|afternoon|evening|night)|gm|gn|thanks(\s?you)?|thank\s?you|thx|ty|ok(ay)?|k|cool|nice|great|awesome|lol|lmao|haha+|yes|no|yep|nope|yeah|nah|sure|got\s?it|np|wow|aww?)[\s!.,?❤️🙂😊]*$/i;
 
-// Keywords that signal an analytical / multi-step / generative ask.
-const HEAVY_PATTERNS: RegExp[] = [
-  /\bexplain\b/i,
-  /\banaly[sz]e\b/i,
-  /\bcompare\b/i,
-  /\bcontrast\b/i,
-  /\bwhy\b/i,
-  /\bhow (do|does|did|can|could|would|should|might)\b/i,
-  /\bstep[\s-]by[\s-]step\b/i,
-  /\breason(ing|ed)?\b/i,
-  /\bprove\b/i,
-  /\bdebug\b/i,
-  /\brefactor\b/i,
-  /\bcode\b/i,
-  /\bfunction\b/i,
-  /\balgorithm\b/i,
-  /\bwrite (me )?(a|an|the|some)\b/i,
-  /\bdraft\b/i,
-  /\boutline\b/i,
-  /\bplan\b/i,
-  /\bstrateg(y|ies|ize)\b/i,
-  /\bsummari[sz]e\b/i,
-  /\btranslate\b/i,
-  /\bcalculate\b/i,
-  /\bsolve\b/i,
-  /\bpros and cons\b/i,
-  /\bin detail\b/i,
-  /\bcomprehensive\b/i,
-  /\bbreak (it|this|that|them)? ?down\b/i,
-  /\bimplications?\b/i,
-  /\bphilosoph/i,
-  /\bdilemma\b/i,
-  /\btrade[\s-]?offs?\b/i,
-  /\bweigh\b/i,
-  /\bbrainstorm\b/i,
-];
+// Trivial sign-offs / small talk — also safe to keep on the cheap tier. This is
+// an explicit allowlist (not a length heuristic) so that short *substantive*
+// messages like "I feel awful today" or "don't leave me" are NOT misclassified
+// as trivial and still reach the high-capability tier.
+const SMALL_TALK_RE =
+  /^(bye+|goodbye|see\s?(you|ya|u)(\s?(soon|later|around|tomorrow))?|cya|talk\s?(to\s?you\s?)?(later|soon)|later|ttyl|take\s?care|sweet\s?dreams|night+|brb|g2g|gtg)[\s!.,?❤️🙂😊]*$/i;
 
 // Classify a single user message into a model tier based on its text alone.
 export function classifyComplexity(content: string): ModelTier {
   const text = (content || "").trim();
   if (!text) return "standard";
 
-  const charCount = text.length;
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-  const questionMarks = (text.match(/\?/g) || []).length;
-  const hasCodeFence = /```|\bfunction\b|=>|{[\s\S]*}/.test(text);
-  const hasHeavyKeyword = HEAVY_PATTERNS.some((re) => re.test(text));
-
-  // Light: a bare greeting/acknowledgement, or a very short message with no
-  // question and no analytical signal.
-  if (GREETING_RE.test(text)) return "light";
-  if (charCount < 25 && questionMarks === 0 && !hasHeavyKeyword) return "light";
-
-  // Heavy: explicit analytical keywords (with enough substance), long messages,
-  // several questions at once, or anything that looks like code.
-  if (
-    (hasHeavyKeyword && wordCount >= 4) ||
-    wordCount > 120 ||
-    charCount > 600 ||
-    questionMarks >= 3 ||
-    hasCodeFence
-  ) {
-    return "heavy";
-  }
-
-  return "standard";
+  // Only bare greetings and trivial sign-offs / small talk stay on the cheap
+  // tier. Everything else — any genuine conversational turn, however short — is
+  // routed to the high-capability tier so companions reason with full depth and
+  // insight. The mid `standard` tier is reserved for the empty-input case and
+  // the model-unavailable fallback, not for ordinary chat.
+  if (GREETING_RE.test(text) || SMALL_TALK_RE.test(text)) return "light";
+  return "heavy";
 }
 
 // Convenience: classify then resolve in one call.

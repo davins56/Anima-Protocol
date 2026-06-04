@@ -162,6 +162,28 @@
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px); }
 
+/*
+ * Visible-viewport height utilities.
+ * Layered fallback: legacy `vh` -> modern dynamic `dvh` -> JS-measured
+ * `--app-height` (set by useViewportHeight) which wins for pixel-accurate
+ * iOS/Android sizing so mobile browser chrome never clips the bottom UI.
+ */
+.h-screen-safe {
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+}
+.min-h-screen-safe {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
+}
+.max-h-screen-safe {
+  max-height: 100vh;
+  max-height: 100dvh;
+  max-height: var(--app-height, 100dvh);
+}
+
 /* Mobile page content padding — adds space for bottom tab bar on small screens */
 .mobile-page-padding {
   padding-bottom: var(--tab-bar-height, 0px);
