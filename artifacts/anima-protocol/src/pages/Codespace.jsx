@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe,
+  Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
@@ -18,6 +18,7 @@ import {
   isSessionPath, workspaceFiles,
 } from "@/lib/codespace/projectModel";
 import { useCodespaceAgent } from "@/lib/codespace/useCodespaceAgent";
+import { summarizeRunErrors, buildRepairGoal } from "@/lib/codespace/repair";
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,6 +60,8 @@ export default function Codespace() {
   const [agentOpen, setAgentOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Outcome of the most recent run, so a failed run can offer self-repair.
+  const [lastRun, setLastRun] = useState(null);
 
   const filesRef = useRef([]);
   const agentLogRef = useRef([]);
@@ -193,7 +196,11 @@ export default function Codespace() {
       scan = mergeScans(scans, "web project");
     } else {
       const f = findFile(path) || findFile(activePath);
-      if (!f) return { error: "No file to run." };
+      if (!f) {
+        const reason = "No file to run.";
+        setLastRun({ path: path || activePath, mode, ok: false, errors: [reason] });
+        return { ran: false, ok: false, errors: [reason], error: reason };
+      }
       path = f.path;
       scan = scanCode(f.content, f.path);
     }
@@ -212,11 +219,31 @@ export default function Codespace() {
             ? `Run blocked — ${scan.findings.length} high-severity threat(s) must be neutralized before this can run.`
             : `Run aborted — ${scan.findings.length} threat(s) left unresolved.`,
         });
+        // A hard block is a repairable failure (rewrite to remove the threats);
+        // a user-cancelled run is a deliberate stop, so it offers no repair.
+        if (blocking) {
+          setLastRun({
+            path: mode === "web" ? "index.html" : path || activePath,
+            mode,
+            ok: false,
+            errors: [
+              `Blocked by virus scan — neutralize: ${scan.findings
+                .map((f) => f.label)
+                .join(", ")}`,
+            ],
+          });
+        } else {
+          setLastRun(null);
+        }
+        const reason = blocking
+          ? "High-severity threats detected. The code was NOT run. Rewrite the file to remove these patterns, then run again."
+          : "User aborted the run at the virus-scan gate.";
         return {
+          ran: false,
+          ok: false,
+          errors: [reason],
           blocked: true,
-          reason: blocking
-            ? "High-severity threats detected. The code was NOT run. Rewrite the file to remove these patterns, then run again."
-            : "User aborted the run at the virus-scan gate.",
+          reason,
           findings: scan.findings.slice(0, 8),
         };
       }
@@ -233,14 +260,20 @@ export default function Codespace() {
         await delay(1500);
         const logs = runBufferRef.current || [];
         runBufferRef.current = null;
+        const { ok, errors } = summarizeRunErrors(logs, false);
+        setLastRun({ path: "index.html", mode: "web", ok, errors });
         return {
-          ran: true, mode: "web",
+          ran: true, ok, mode: "web", errors,
           console: logs.map((l) => `[${l.level}] ${l.text}`).slice(0, 60),
         };
       }
       // js / python
       const f = findFile(path);
-      if (!f) return { error: "No file to run." };
+      if (!f) {
+        const reason = "No file to run.";
+        setLastRun({ path: path || activePath, mode, ok: false, errors: [reason] });
+        return { ran: false, ok: false, errors: [reason], error: reason };
+      }
       setMobileView("console");
       pushLog({ level: "info", text: `▶ Running ${f.path} (${mode})...` });
       const { logs, timedOut } = await runScript({
@@ -248,8 +281,10 @@ export default function Codespace() {
         code: f.content,
         onLog: (entry) => pushLog(entry),
       });
+      const { ok, errors } = summarizeRunErrors(logs, timedOut);
+      setLastRun({ path: f.path, mode, ok, errors });
       return {
-        ran: true, mode, timedOut,
+        ran: true, ok, mode, timedOut, errors,
         console: logs.map((l) => `[${l.level}] ${l.text}`).slice(0, 60),
       };
     } finally {
@@ -400,6 +435,24 @@ export default function Codespace() {
 
   const handleRun = useCallback(() => { runCode({ path: activePath }); }, [runCode, activePath]);
 
+  // Hand the last failed run (file + observed errors) to the companion so it can
+  // diagnose, fix, and re-run its own code until it works.
+  const handleRepair = useCallback(() => {
+    if (!lastRun || lastRun.ok || running) return;
+    const goal = buildRepairGoal({
+      path: lastRun.path,
+      mode: lastRun.mode,
+      errors: lastRun.errors,
+    });
+    appendAgentLog({
+      type: "msg",
+      role: "user",
+      content: `Debug & repair ${lastRun.path || "the last run"}`,
+    });
+    setAgentOpen(true);
+    runGoal(goal);
+  }, [lastRun, running, appendAgentLog, runGoal]);
+
   const handleRefreshPreview = useCallback(() => {
     runSeqRef.current += 1;
     setPreviewSrcdoc(buildPreviewSrcdoc(filesRef.current) + `\n<!-- run ${runSeqRef.current} -->`);
@@ -483,6 +536,16 @@ export default function Codespace() {
             {busy ? <Cpu className="w-3.5 h-3.5 animate-pulse" /> : <Play className="w-3.5 h-3.5" />}
             Run
           </button>
+          {lastRun && !lastRun.ok && (
+            <button
+              onClick={handleRepair}
+              disabled={running || busy}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-amber-400/50 text-amber-300 hover:bg-amber-400/10 disabled:opacity-40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+              title="Have the companion debug and repair the last failed run"
+            >
+              <Wrench className="w-3.5 h-3.5" /> Repair
+            </button>
+          )}
           <button
             onClick={handleSaveSession}
             className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"

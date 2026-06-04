@@ -33,7 +33,13 @@ let container;
 let root;
 let consoleErrorSpy;
 
+// The boundary stays silent for AUTO_HEAL_DELAY_MS (700ms) on the first crash,
+// attempting one in-place remount before it ever shows the alarm panel. Tests
+// use fake timers to drive past that window deterministically.
+const AUTO_HEAL_DELAY_MS = 700;
+
 beforeEach(() => {
+  vi.useFakeTimers();
   trackCalls.length = 0;
   trackImpl.fn = defaultTrack;
   container = document.createElement("div");
@@ -48,7 +54,16 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   consoleErrorSpy.mockRestore();
+  vi.useRealTimers();
 });
+
+// Let the silent auto-heal attempt fire (and fail, if the child still throws),
+// so the persistent-crash panel is on screen.
+function advancePastAutoHeal() {
+  act(() => {
+    vi.advanceTimersByTime(AUTO_HEAL_DELAY_MS + 50);
+  });
+}
 
 describe("ErrorBoundary", () => {
   it("shows the on-brand recovery panel when a child throws", () => {
@@ -60,11 +75,19 @@ describe("ErrorBoundary", () => {
       );
     });
 
+    // First crash is silent — the boundary tries to heal itself, no alarm panel.
+    expect(container.textContent).not.toContain("Something went wrong");
+    expect(container.querySelector('[data-testid="ok"]')).toBeNull();
+
+    // The auto-heal retry also fails (the child always throws), so the panel
+    // takes over.
+    advancePastAutoHeal();
+
     // Recovery panel content is shown instead of a blank tree.
     expect(container.textContent).toContain("Something went wrong");
-    const reloadBtn = container.querySelector("button");
-    expect(reloadBtn).not.toBeNull();
-    expect(reloadBtn.textContent).toMatch(/reload/i);
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.some((b) => /reload/i.test(b.textContent))).toBe(true);
+    expect(buttons.some((b) => /self-repair/i.test(b.textContent))).toBe(true);
     // The thrown child is NOT in the DOM.
     expect(container.querySelector('[data-testid="ok"]')).toBeNull();
   });
@@ -83,7 +106,7 @@ describe("ErrorBoundary", () => {
   });
 
   it("auto-recovers when the reset key (route) changes", () => {
-    // First render throws -> panel shown.
+    // First render throws -> after the silent heal retry fails, panel shown.
     act(() => {
       root.render(
         <ErrorBoundary resetKey="/a">
@@ -91,6 +114,7 @@ describe("ErrorBoundary", () => {
         </ErrorBoundary>,
       );
     });
+    advancePastAutoHeal();
     expect(container.textContent).toContain("Something went wrong");
 
     // Navigate away: resetKey changes AND the new child no longer throws. The
@@ -115,6 +139,7 @@ describe("ErrorBoundary", () => {
         </ErrorBoundary>,
       );
     });
+    advancePastAutoHeal();
     expect(container.textContent).toContain("Something went wrong");
 
     // Same resetKey: a healthy child re-render must NOT silently clear a real
@@ -174,9 +199,98 @@ describe("ErrorBoundary", () => {
           </ErrorBoundary>,
         );
       });
+      advancePastAutoHeal();
     }).not.toThrow();
 
     expect(container.textContent).toContain("Something went wrong");
     trackImpl.fn = original;
+  });
+
+  it("auto-heals a transient crash in place without showing the panel", () => {
+    // Model a transient crash: the child throws while `down` is true (a race, a
+    // momentarily-missing value). The boundary stays SILENT (no alarm panel),
+    // then its auto-heal timer remounts the subtree. By the time it fires the
+    // condition has cleared, so the child renders — no user action, no reload.
+    // (React 18's createRoot does a synchronous render retry, so a child that
+    // throws exactly once heals before the boundary ever sees it; an external
+    // flag that stays true across those retries is what actually trips it.)
+    let down = true;
+    function Flaky() {
+      if (down) throw new Error("transient");
+      return <div data-testid="ok">recovered</div>;
+    }
+
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/a">
+          <Flaky />
+        </ErrorBoundary>,
+      );
+    });
+    // First crash is silent — the alarm panel is never shown for a transient.
+    expect(container.textContent).not.toContain("Something went wrong");
+    expect(container.querySelector('[data-testid="ok"]')).toBeNull();
+
+    // The transient condition clears, then the auto-heal timer fires.
+    down = false;
+    advancePastAutoHeal();
+
+    expect(container.querySelector('[data-testid="ok"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Something went wrong");
+  });
+
+  it("recovers in place when the user clicks Self-repair", () => {
+    // Child throws while `boom` is true. The silent auto-heal retry also fails,
+    // so the panel appears; flip `boom` false, then click Self-repair and the
+    // boundary remounts the subtree and renders the healthy child — proving
+    // recovery happens without a full page reload.
+    let boom = true;
+    function Toggle() {
+      if (boom) throw new Error("still broken");
+      return <div data-testid="ok">fixed</div>;
+    }
+
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/a">
+          <Toggle />
+        </ErrorBoundary>,
+      );
+    });
+    advancePastAutoHeal();
+    expect(container.textContent).toContain("Something went wrong");
+
+    boom = false;
+    const selfRepairBtn = [...container.querySelectorAll("button")].find((b) =>
+      /self-repair/i.test(b.textContent),
+    );
+    expect(selfRepairBtn).toBeTruthy();
+    act(() => {
+      selfRepairBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-testid="ok"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Something went wrong");
+  });
+
+  it("reports uncaught runtime errors for diagnosis", () => {
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/a">
+          <Boom explode={false} />
+        </ErrorBoundary>,
+      );
+    });
+
+    trackCalls.length = 0;
+    act(() => {
+      window.dispatchEvent(
+        new ErrorEvent("error", { message: "async boom", error: new Error("async boom") }),
+      );
+    });
+
+    expect(
+      trackCalls.some(([name]) => name === "Runtime Error Captured"),
+    ).toBe(true);
   });
 });

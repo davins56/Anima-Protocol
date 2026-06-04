@@ -47,3 +47,24 @@ the agent loop relies on the `{blocked, reason}` result to rewrite and re-run.
 (unsaved edits / active run / agent build). Anything that reads `running` during
 render must come AFTER the `useCodespaceAgent` hook (TDZ) — the sync hook is
 placed after it on purpose.
+
+## Self-debug / self-repair surfaces
+Two surfaces let the companion recover from failure:
+- **Codespace run→fix loop:** `runCode()` returns a UNIFORM result shape at
+  EVERY exit — `{ok, errors}` (plus `ran`) — including the virus-scan blocked
+  branch and the no-file branches. **Why:** the agent loop + server prompt rule
+  ("repeat until ok:true") is only deterministic if no run path can return a
+  shape missing `ok`/`errors`. **How to apply:** if you add a return to
+  `runCode`, give it `{ok:false, errors:[reason]}` and set `lastRun`; the amber
+  Repair toolbar button shows whenever `lastRun && !lastRun.ok` and hands the
+  failing file + errors to `runGoal` via `buildRepairGoal` (pure helpers in
+  `lib/codespace/repair.js`).
+- **App ErrorBoundary silent-first auto-heal:** the FIRST render crash is silent
+  (renders a subtle "Re-syncing" indicator, NOT the alarm panel), schedules one
+  remount via `recoverKey` after ~700ms, and only shows the panel if the retry
+  also fails (`attempts >= 1`). **Why:** most crashes are transient; healing
+  under a quiet indicator beats flashing an alarm. **How to apply (tests):**
+  React 18 `createRoot` does a SYNCHRONOUS render retry, so a child that throws
+  exactly once heals before the boundary ever commits the error — to trip the
+  boundary you need an EXTERNAL flag that stays true across those retries; drive
+  the 700ms window with fake timers (`advanceTimersByTime`).
