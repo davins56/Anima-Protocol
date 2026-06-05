@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Zap, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Zap, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import SessionSummary from "../sidebar/SessionSummary";
 
@@ -112,9 +112,20 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
             >
               <MessageSquare className="w-3 h-3 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-[9px] sm:text-[10px] tracking-wider uppercase truncate">
-                  {session.title || "Untitled"}
-                </p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className="font-mono text-[9px] sm:text-[10px] tracking-wider uppercase truncate">
+                    {session.title || "Untitled"}
+                  </p>
+                  {session.deep_mode && (
+                    <span
+                      title="Deep mode ON — replies use the most capable model"
+                      className="flex items-center gap-0.5 flex-shrink-0 px-1 py-0.5 border border-primary/40 text-primary bg-primary/10 font-mono text-[7px] sm:text-[8px] tracking-widest uppercase"
+                    >
+                      <Sparkles className="w-2 h-2" />
+                      <span>Deep</span>
+                    </span>
+                  )}
+                </div>
                 {session.last_message && (
                   <p className="text-[8px] sm:text-[9px] text-primary/30 truncate mt-0.5">{session.last_message}</p>
                 )}
