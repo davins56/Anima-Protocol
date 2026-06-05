@@ -314,10 +314,19 @@ function SocialAuthButtons({ mode }) {
     }
     setPendingStrategy(strategy);
     try {
-      await authResource.authenticateWithRedirect({
+      if (typeof authResource.authenticateWithRedirect === "function") {
+        await authResource.authenticateWithRedirect({
+          strategy,
+          redirectUrl: oauthCallbackUrl,
+          redirectUrlComplete: authRedirectCompleteUrl,
+        });
+        return;
+      }
+
+      await authResource.sso({
         strategy,
-        redirectUrl: oauthCallbackUrl,
-        redirectUrlComplete: authRedirectCompleteUrl,
+        redirectCallbackUrl: oauthCallbackUrl,
+        redirectUrl: authRedirectCompleteUrl,
       });
     } catch (error) {
       console.error("OAuth redirect failed", error);
