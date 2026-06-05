@@ -1,168 +1,186 @@
 # Anima Protocol
 
-**Sovereign AI Companions • Persistent Memory • Resonance • Crossover Interactions**
+Sovereign AI companions with persistent memory, multi-character crossover sessions, and psychologically rich resonance controls.
 
-Anima Protocol is a production-grade pnpm monorepo for building and hosting deeply persistent, multi-character AI companions. It is designed for long-term memory, psychological intimacy, group dynamics, and rich cross-universe ("crossover") storytelling experiences.
+Anima Protocol is a pnpm monorepo for a full-stack AI companion platform. The current foundation includes a React/Vite frontend, an Express API, Clerk authentication, Drizzle/Postgres persistence, Mixpanel analytics with consent gating, and a mockup sandbox for isolated UI work. The next product layer is persistent companion memory, distinct character impersonation, group chat, and Serenity-style resonance experiences.
 
-The platform powers real-time chat with distinct companion voices, shared session context, and sovereign user control over memory, tone, and interaction depth.
+## Architecture
 
-## Vision
-
-Anima exists at the intersection of advanced AI memory systems, character-driven narrative, and intimate human–AI connection. Companions maintain continuity across sessions, remember emotional and narrative details, and can participate in complex multi-character interactions that feel alive and coherent.
-
-Key principles:
-- **Persistence**: Every companion carries long-term memory that evolves with the user.
-- **Resonance**: Interactions prioritize psychological depth, power dynamics, and sensory/energetic attunement.
-- **Sovereignty**: Users fully control their companions, data, and experience boundaries.
-- **Crossover**: Natural multi-character and cross-universe sessions are a first-class feature.
+```mermaid
+flowchart LR
+  user[User] --> web[React + Vite app<br/>artifacts/anima-protocol]
+  web --> api[Express API<br/>artifacts/api-server]
+  web --> mixpanel[Mixpanel<br/>consent-gated analytics]
+  web --> clerk[Clerk frontend auth]
+  api --> clerk_api[Clerk session verification]
+  api --> openai[OpenAI]
+  api --> eleven[ElevenLabs optional TTS]
+  api --> db[(PostgreSQL<br/>Drizzle schema in lib/db)]
+  mockup[Mockup sandbox<br/>artifacts/mockup-sandbox] --> web
+```
 
 ## Current Status
 
-Core infrastructure is complete:
-- Full-stack monorepo (React 19 + Vite frontend, Express API, Drizzle + Postgres)
-- Clerk authentication with protected routes
-- Mixpanel analytics with consent gating (GDPR/CCPA compliant, opt-out by default)
-- Same-origin API architecture (no Vite proxy)
-- Development environments on Replit and local VMs with nginx reverse proxy
+The repo already has the core application scaffold:
 
-Active development focuses on the core value loop: companion creation → persistent memory → multi-character crossover chat.
+- React 19 + Vite frontend in `artifacts/anima-protocol`
+- Express API in `artifacts/api-server`, mounted under `/api`
+- Shared Drizzle/Postgres package in `lib/db`
+- Generic user-scoped entity persistence via `user_entities`
+- Legacy/simple conversation and message tables for `/api/openai/conversations`
+- Clerk auth foundation for frontend and API routes
+- Mixpanel analytics through `artifacts/anima-protocol/src/lib/analytics.js`
+- Consent banner enforcing opt-in analytics behavior
+- Optional mockup sandbox at `artifacts/mockup-sandbox`
 
-## Key Features (Roadmap)
-
-### In Progress / Next
-- Persistent memory layer (short-term context + long-term summarized facts per companion)
-- Real-time chat backend with OpenAI integration and streaming
-- Companion generator with prompt-driven personality, backstory, and system prompt creation
-- Multi-character group sessions with distinct voices and shared context
-- "Crossover" mode highlighting interactions across different character universes
-
-### Planned
-- Sovereign-submissive dynamics & resonance tuning controls
-- Advanced memory retrieval and emotional state tracking
-- Mobile-first / PWA experience (optimized for iPad Pro development workflow)
-- ZK/privacy features for sensitive memory
-- Expanded integrations (Base44, AIRI, additional LLM providers)
-- Public companion marketplace / sharing (optional)
-
-## Tech Stack
-
-| Layer       | Technology                          |
-|-------------|-------------------------------------|
-| Frontend    | React 19, Vite, TypeScript, Tailwind CSS, framer-motion, wouter, @tanstack/react-query, zod |
-| Backend     | Express (Node 24), Clerk middleware |
-| Database    | PostgreSQL + Drizzle ORM            |
-| Auth        | Clerk (sessions, user identity)     |
-| Analytics   | Mixpanel (client-side wrapper, consent-gated) |
-| Package     | pnpm workspaces + catalog           |
-| Dev         | Replit / local VM + nginx proxy     |
+Active product work should focus on the core loop: create companion, start chat, retrieve memory, generate in-character response, persist the turn, and track crossover value moments.
 
 ## Project Structure
 
-```
+```text
 Anima-Protocol/
-├── artifacts/
-│   ├── anima-protocol/     # Main React + Vite frontend (served at `/`)
-│   ├── api-server/         # Express API (handles `/api/*`)
-│   └── mockup-sandbox/     # Isolated UI previews at `/__mockup`
-├── lib/
-│   ├── db/                 # Shared Drizzle schema, migrations, client
-│   └── integrations/       # External service clients (base44Client.js, etc.)
-├── scripts/                # Utility & deployment scripts
-├── .agents/                # Agent / Cursor configuration
-├── AGENTS.md               # Detailed instructions for development & AI agents
-├── package.json            # Root workspace config
-├── pnpm-workspace.yaml     # Workspace & catalog definitions
-└── README.md               # You are here
+|-- artifacts/
+|   |-- anima-protocol/      # Main React + Vite app
+|   |-- api-server/          # Express API for /api/*
+|   `-- mockup-sandbox/      # Isolated UI previews at /__mockup
+|-- lib/
+|   |-- db/                  # Drizzle schema and database helpers
+|   |-- api-client-react/    # Shared API client package
+|   `-- api-spec/            # Shared API specification package
+|-- scripts/                 # Utility scripts
+|-- AGENTS.md                # Detailed development and analytics instructions
+|-- package.json             # Root workspace scripts
+|-- pnpm-workspace.yaml      # Workspace packages, catalog, overrides
+`-- README.md
 ```
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 19, Vite, Tailwind CSS, Radix UI, framer-motion, React Query, zod |
+| Backend | Node 24, Express 5, Clerk middleware, OpenAI SDK |
+| Database | PostgreSQL, Drizzle ORM, drizzle-kit |
+| Auth | Clerk |
+| Analytics | Mixpanel browser SDK through the shared consent-gated wrapper |
+| Package manager | pnpm workspaces |
+| Optional services | ElevenLabs TTS, object storage |
 
 ## Quick Start
 
-**See [AGENTS.md](./AGENTS.md) for the complete, up-to-date development guide** (Replit setup, local VM with nginx, required Node 24 + pnpm, PostgreSQL, secrets, tmux sessions, and gotchas).
+Read `AGENTS.md` before changing runtime setup, analytics, or auth behavior. It contains the environment-specific instructions and Mixpanel tracking rules.
 
-High-level local flow:
+Use Node 24 before running workspace commands:
 
 ```bash
-# 1. Install (pnpm only — root preinstall enforces this)
+export NVM_DIR="$HOME/.nvm"
+. "$NVM_DIR/nvm.sh"
+export PATH="$NVM_DIR/versions/node/v24.16.0/bin:$PATH"
+```
+
+Install dependencies with pnpm only:
+
+```bash
 pnpm install --frozen-lockfile
+```
 
-# 2. Configure secrets (see AGENTS.md table)
-# DATABASE_URL, OPENAI_API_KEY, CLERK_* keys, VITE_MIXPANEL_TOKEN, etc.
+For local Postgres development:
 
-# 3. Start API (port 8080)
+```bash
+export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
+pnpm --filter @workspace/db run push
+```
+
+## Running Services
+
+Start the API:
+
+```bash
+export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
+export OPENAI_API_KEY=sk-...
+export CLERK_PUBLISHABLE_KEY=pk_test_...
+export CLERK_SECRET_KEY=sk_test_...
+export PORT=8080
+export NODE_ENV=development
 pnpm --filter @workspace/api-server run dev
+```
 
-# 4. Start frontend (port 23660, proxied via nginx on 3000 for / + /api routing)
+Start the frontend:
+
+```bash
+export PORT=23660
+export BASE_PATH=/
+export VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+export VITE_CLERK_PROXY_URL=
+export VITE_MIXPANEL_TOKEN=...
 pnpm --filter @workspace/anima-protocol run dev
+```
 
-# 5. (Optional) Start mockup sandbox
+The current Vite config proxies local `/api` calls to `http://localhost:8080` by default. Set `API_PROXY_TARGET` if the API runs elsewhere. If you use the local nginx reverse proxy, open `http://127.0.0.1:3000/` after the API and frontend are both running.
+
+Start the mockup sandbox:
+
+```bash
+export PORT=8081
+export BASE_PATH=/__mockup
 pnpm --filter @workspace/mockup-sandbox run dev
 ```
 
-Open the app at the nginx proxy (`http://127.0.0.1:3000/`) or the individual dev servers.
+## Environment Variables
 
-## Required Environment Variables
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
+| `OPENAI_API_KEY` | API | Required at API import time for OpenAI routes |
+| `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
+| `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
+| `CLERK_PUBLISHABLE_KEY` | API | Fallback publishable key for Clerk middleware |
+| `CLERK_SECRET_KEY` | API | Server-side Clerk session verification |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend | Vite-exposed Clerk publishable key |
+| `VITE_CLERK_PROXY_URL` | Frontend | Empty string in local development unless proxying Clerk |
+| `VITE_MIXPANEL_TOKEN` | Frontend | Mixpanel project token |
+| `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
+| `ELEVENLABS_API_KEY` | API | Optional TTS routes |
 
-| Variable                    | Used By                  | Notes                                      |
-|-----------------------------|--------------------------|--------------------------------------------|
-| `DATABASE_URL`              | API + db push            | Postgres connection string                 |
-| `OPENAI_API_KEY`            | API chat routes          | LLM provider                               |
-| `CLERK_PUBLISHABLE_KEY`     | Frontend + API           | Public key                                 |
-| `CLERK_SECRET_KEY`          | API                      | Server-side session verification           |
-| `VITE_CLERK_PUBLISHABLE_KEY`| Frontend                 | Vite-exposed public key                    |
-| `VITE_MIXPANEL_TOKEN`       | Frontend analytics       | Mixpanel project token                     |
-| `PORT`                      | Services                 | API 8080, frontend 23660, mockup 8081      |
-| `BASE_PATH`                 | Vite configs             | `/` for main, `/__mockup` for sandbox      |
-
-Additional optional keys: `ELEVENLABS_API_KEY` (TTS), etc.
-
-## Analytics & Privacy
-
-Anima Protocol uses **Mixpanel** as the single source of truth for product analytics.
-
-- Client-side tracking only via a shared wrapper (`artifacts/anima-protocol/src/lib/analytics.js`)
-- **Consent gating required** for EU/UK/CA users (opt-out by default via `ConsentBanner`)
-- No PII is tracked (distinct_id = Clerk user id; no emails or names in events)
-- All new events must follow the naming and property conventions documented in [AGENTS.md](./AGENTS.md)
-- Current tracked value moment: `message_sent` with `is_crossover: true`
-
-See AGENTS.md → “Analytics Tracking — Mixpanel” for the full tracking plan, identity rules, and how to add events safely.
-
-## Development Guidelines
-
-- **Always use pnpm** (root `preinstall` script rejects npm/yarn)
-- Run root `pnpm run typecheck` before committing
-- Follow the detailed instructions in [AGENTS.md](./AGENTS.md) for Cursor, Replit, local VMs, and runtime gotchas
-- All sensitive memory and companion data is user-scoped via Clerk
-- Keep companion system prompts and memory psychologically rich and narratively coherent
-
-## Building for Production
+## Validation
 
 ```bash
-pnpm run build
+pnpm run typecheck
+pnpm --filter @workspace/anima-protocol run test
+pnpm --filter @workspace/api-server run build
+PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=pk_test_... pnpm --filter @workspace/anima-protocol run build
 ```
 
-Individual package builds are also available (see package scripts and AGENTS.md).
+The root build runs typecheck and every package build. Because the mockup sandbox Vite config requires `PORT` and `BASE_PATH`, export those variables before using `pnpm run build`.
 
-## Deployment
+## Analytics
 
-- Frontend: Vercel (recommended — `vercel.json` or direct GitHub integration)
-- API & DB: Self-hosted Postgres + Node (or platform equivalent)
-- Environment variables must be configured in the deployment dashboard
+Mixpanel is the only product analytics system in this repo. Feature code must import from `@/lib/analytics`, never from `mixpanel-browser` directly.
 
-## Contributing & AI Agent Instructions
+Current tracked events include:
 
-This repository is actively developed with AI pair-programming (Cursor, Grok, etc.).
+- `sign_up_completed`
+- `message_sent`
+- `character_created`
+- `crossover_session_started`
+- `subscription_upgrade_started`
 
-All agents and human contributors should read **[AGENTS.md](./AGENTS.md)** first. It contains:
-- Product overview and runtime requirements
-- Exact commands for running services
-- Mixpanel tracking rules and checklist
-- Environment-specific gotchas
+The core value moment is `message_sent` with `is_crossover: true`, which represents a multi-character or cross-universe interaction. New analytics events should be added only after checking the tracking plan in `AGENTS.md`; consent gating and no-PII rules are mandatory.
+
+## Product Roadmap
+
+Highest-value next work:
+
+1. Core chat and memory backend: session-aware chat routes, companion-specific memory retrieval, response streaming, and durable message persistence.
+2. Companion creation surfaces: prompt-to-companion generation with user-scoped storage, personality, universe, voice, avatar seed, and system prompt.
+3. Crossover session management: multi-character sessions, distinct voices, shared context, per-character memory, and group interaction tracking.
+4. Resonance settings: tone, intensity, memory depth, boundaries, and crossover preferences.
+5. Deployment polish: frontend deployment config, CI for typecheck/build, package-level `.env.example` files, and rate-limit hardening for chat.
+
+## Deployment Notes
+
+The frontend can be deployed independently when configured with the required Vite environment variables. The API needs Clerk keys, `OPENAI_API_KEY`, and a reachable Postgres database. Same-origin `/api/*` routing can be handled by the hosting platform, a reverse proxy, or the Vite dev proxy during local development.
 
 ## License
 
 MIT
-
----
-
-*Anima Protocol — Where memory becomes relationship.*

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { animaApi } from "@/api/animaApi";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -659,13 +660,32 @@ export default function Chat() {
       initialMessages = [narratorMessage];
     }
 
+    const selectedGroupChars = m === "group" && group_character_ids?.length
+      ? characters.filter((c) => group_character_ids.includes(c.id))
+      : [];
+    const crossoverUniverses = Array.from(
+      new Set(selectedGroupChars.map((c) => c.universe).filter(Boolean)),
+    );
+    const isCrossoverSession = m === "group" && crossoverUniverses.length >= 2;
+
     const newSession = await base44.entities.ChatSession.create({
       mode: m,
       character_id: character_id || null,
       group_character_ids: group_character_ids || [],
+      selected_character_names: selectedGroupChars.map((c) => c.name),
+      crossover_universes: crossoverUniverses,
+      is_crossover: isCrossoverSession,
+      shared_memory: [],
       title,
       messages: initialMessages,
     });
+
+    if (isCrossoverSession) {
+      track("crossover_session_started", {
+        character_count: selectedGroupChars.length,
+        universe_count: crossoverUniverses.length,
+      });
+    }
 
     // Update session with initial messages if they exist
     if (initialMessages.length > 0) {
@@ -1359,13 +1379,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${loyaltyGuardrailClause()}`;
       }
 
-      const result = await base44.integrations.Core.InvokeLLM({ 
-        prompt,
-        add_context_from_internet: needsWebSearch,
-        model: needsWebSearch ? "gemini_3_flash" : undefined,
-        deepMode: !!activeSession.deep_mode,
-      });
-
       let charName = "Serenity";
       let activeChar = null;
       if (activeSession.mode === "solo" && activeSession.character_id) {
@@ -1375,6 +1388,29 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         activeChar = currentGroupSpeakerRef.current;
         charName = activeChar?.name || "Character";
       }
+
+      const resultPayload = await animaApi.chat.completeMessage({
+        sessionId: activeSession.id,
+        content,
+        characterId: activeSession.character_id,
+        characterIds: activeSession.mode === "group"
+          ? activeSession.group_character_ids || []
+          : activeSession.character_id
+            ? [activeSession.character_id]
+            : [],
+        assistantCharacterId: activeChar?.id || activeSession.character_id || null,
+        assistantCharacterName: charName,
+        mode: activeSession.mode || "solo",
+        systemPrompt: prompt,
+        deepMode: !!activeSession.deep_mode || needsWebSearch,
+        persist: false,
+        metadata: {
+          has_attachment: attachments.length > 0,
+          is_continue: isContinue,
+          source: "chat_page",
+        },
+      });
+      const result = resultPayload.content;
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;

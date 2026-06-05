@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # AGENTS.md
 
 ## Cursor Cloud specific instructions
@@ -7,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`.
 
-The frontend calls same-origin `/api/*` (see `animaApi.js`, `base44Client.js`). There is **no Vite dev proxy** for the API — locally you need a reverse proxy (nginx on port 3000 is preconfigured in this VM) or run on Replit where path routing handles `/` vs `/api`.
+The frontend calls same-origin `/api/*` (see `animaApi.js`, `base44Client.js`). The current Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). nginx on port 3000 is also preconfigured in this VM when you want to mirror Replit-style routing through a single local origin.
 
 ### Node.js
 
@@ -46,6 +45,7 @@ Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 | `CLERK_PUBLISHABLE_KEY` | API `clerkMiddleware` |
 | `CLERK_SECRET_KEY` | API session verification |
 | `VITE_CLERK_PROXY_URL` | Frontend (empty string in dev) |
+| `VITE_MIXPANEL_TOKEN` | Frontend analytics |
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.
 
@@ -104,8 +104,8 @@ Reload: `sudo nginx -s reload`
 - Vite configs for frontend and mockup **require** `PORT` and `BASE_PATH` at config load time.
 - API `dev` script rebuilds on each start (`build` then `start`).
 - pnpm may warn about ignored build scripts for `@clerk/shared`; add to `onlyBuiltDependencies` in `pnpm-workspace.yaml` if Clerk misbehaves after install.
-=======
-# Analytics Tracking — Mixpanel
+
+## Analytics Tracking — Mixpanel
 
 This project uses **Mixpanel** for all product analytics. Mixpanel is the single source of truth for event tracking, user identification, and behavioral data. Do not introduce any other analytics tools, SDKs, or tracking libraries without explicit instruction from a user.
 
@@ -196,6 +196,7 @@ All new events must follow these conventions.
 | `sign_up_completed` | First profile load for a brand-new account | `sign_up_method`, `platform` | `src/lib/AuthContext.jsx` |
 | `message_sent` | User sends a message in a chat session (**value moment** — `is_crossover` flags multi-universe scenes) | `session_mode`, `character_count`, `is_crossover`, `is_continue`, `has_attachment` | `src/pages/Chat.jsx` |
 | `character_created` | A new companion is created from an AI prompt | `creation_method`, `universe`, `category` | `src/pages/CompanionGenerator.jsx` |
+| `crossover_session_started` | User starts a multi-universe group session | `character_count`, `universe_count` | `src/pages/Chat.jsx` |
 | `subscription_upgrade_started` | User starts a premium checkout (intent, not completion) | `tier`, `purchase_type`, `from_tier` | `src/pages/PremiumPlans.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
@@ -231,4 +232,3 @@ track("event_name", {
 - **Do not hardcode the project token** — it lives in `VITE_MIXPANEL_TOKEN`.
 - **Do not skip `resetUser()` on logout.**
 - **Do not call `identifyUser()` before the user is authenticated.**
->>>>>>> d22f08a (Add Mixpanel analytics with consent gating to Anima Protocol)
