@@ -22,6 +22,11 @@ import {
   resolveModel,
   routeModel,
 } from "../lib/modelRouter";
+import {
+  buildCompanionPrompt,
+  type CompanionMemoryRecord,
+  type CharacterData,
+} from "../lib/promptBuilder";
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("OPENAI_API_KEY must be set.");
@@ -253,105 +258,39 @@ async function loadMemories(userId: string, characterIds: string[]) {
     .orderBy(desc(companionMemories.updatedAt));
 }
 
-function buildMemoryBlock(
+/**
+ * Adapts raw DB memory rows into the CompanionMemoryRecord interface
+ * expected by the central prompt builder.
+ */
+function adaptMemories(
   memories: Awaited<ReturnType<typeof loadMemories>>,
-  characters: MsgData[],
-): string {
-  if (memories.length === 0) return "";
-  const names = new Map(characters.map((c) => [String(c.id), String(c.name)]));
-  const body = memories
-    .map((memory) => {
-      const facts = Array.isArray(memory.facts)
-        ? memory.facts
-            .slice(-8)
-            .map((fact) =>
-              typeof fact === "object" && fact
-                ? truncate((fact as { text?: unknown }).text ?? JSON.stringify(fact), 220)
-                : truncate(fact, 220),
-            )
-            .filter(Boolean)
-        : [];
-      return [
-        `${names.get(memory.characterId) || memory.characterId}:`,
-        memory.summary ? `Summary: ${truncate(memory.summary, 500)}` : "",
-        memory.resonanceNotes
-          ? `Resonance: ${truncate(memory.resonanceNotes, 300)}`
-          : "",
-        facts.length ? `Recent memory facts:\n- ${facts.join("\n- ")}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-    })
-    .join("\n\n");
-  return `LONG-TERM COMPANION MEMORY:\n${body}`;
+): CompanionMemoryRecord[] {
+  return memories.map((m) => ({
+    characterId: m.characterId,
+    summary: m.summary,
+    facts: Array.isArray(m.facts) ? m.facts : [],
+    emotionalState: m.emotionalState,
+    resonanceNotes: m.resonanceNotes,
+    updatedAt: m.updatedAt,
+  }));
 }
 
-function buildCharacterBlock(characters: MsgData[]): string {
-  if (characters.length === 0) return "";
-  return characters
-    .map((char) =>
-      [
-        `${char.name || "Companion"}${char.universe ? ` (${char.universe})` : ""}`,
-        char.personality ? `Personality: ${truncate(char.personality, 700)}` : "",
-        char.backstory ? `Backstory: ${truncate(char.backstory, 700)}` : "",
-        char.speaking_style ? `Voice: ${truncate(char.speaking_style, 350)}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    )
-    .join("\n\n");
-}
-
-function buildSharedMemoryBlock(sharedMemory: unknown): string {
-  if (!Array.isArray(sharedMemory) || sharedMemory.length === 0) return "";
-  const facts = sharedMemory
-    .slice(-12)
-    .map((fact) =>
-      typeof fact === "object" && fact
-        ? truncate((fact as { text?: unknown }).text ?? JSON.stringify(fact), 260)
-        : truncate(fact, 260),
-    )
-    .filter(Boolean);
-  return facts.length ? `SHARED SESSION MEMORY:\n- ${facts.join("\n- ")}` : "";
-}
-
-function buildPrompt(params: {
-  systemPrompt?: string;
-  characters: MsgData[];
-  memories: Awaited<ReturnType<typeof loadMemories>>;
-  recentMessages: MsgData[];
-  sharedMemory?: unknown;
-  mode: string;
-  content: string;
-}) {
-  const history = params.recentMessages
-    .slice(-16)
-    .map((message) => {
-      const speaker =
-        message.role === "user"
-          ? "User"
-          : String(message.character_name || message.characterName || "Companion");
-      return `${speaker}: ${truncate(message.content, 900)}`;
-    })
-    .join("\n");
-  const characterBlock = buildCharacterBlock(params.characters);
-  const memoryBlock = buildMemoryBlock(params.memories, params.characters);
-  const sharedMemoryBlock = buildSharedMemoryBlock(params.sharedMemory);
-  const fallback =
-    params.mode === "group"
-      ? "You are orchestrating a multi-character companion scene. Keep every character's voice distinct, let them respond naturally to each other, and label spoken turns with the character name."
-      : "You are a sovereign AI companion. Stay in character, remember the relationship, and respond naturally with emotional continuity.";
-
-  return [
-    params.systemPrompt || fallback,
-    characterBlock ? `CHARACTER CONTEXT:\n${characterBlock}` : "",
-    memoryBlock,
-    sharedMemoryBlock,
-    history ? `RECENT SESSION HISTORY:\n${history}` : "",
-    `LATEST USER MESSAGE:\n${params.content || "(continue the scene)"}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+/**
+ * Adapts raw DB character entity data into the CharacterData interface
+ * expected by the central prompt builder.
+ */
+function adaptCharacters(characters: MsgData[]): CharacterData[] {
+  return characters.map((c) => ({
+    id: String(c.id || ""),
+    name: String(c.name || "Companion"),
+    personality: c.personality ? String(c.personality) : undefined,
+    speaking_style: c.speaking_style ? String(c.speaking_style) : undefined,
+    backstory: c.backstory ? String(c.backstory) : undefined,
+    universe: c.universe ? String(c.universe) : undefined,
+    archetype: c.archetype ? String(c.archetype) : undefined,
+    tagline: c.tagline ? String(c.tagline) : undefined,
+    _isAnima: Boolean(c._isAnima),
+  }));
 }
 
 async function upsertTurnMemory(params: {
@@ -506,14 +445,16 @@ router.post("/messages", async (req, res) => {
     characters.map((c) => c.universe).filter(Boolean).map(String),
   ).size;
   const isCrossover = mode === "group" && distinctUniverses >= 2;
-  const prompt = buildPrompt({
+  const prompt = buildCompanionPrompt({
     systemPrompt: body.system_prompt,
-    characters,
-    memories,
+    characters: adaptCharacters(characters),
+    activeCharacter: characters.length === 1 ? adaptCharacters(characters)[0] : undefined,
+    memories: adaptMemories(memories),
     recentMessages,
     sharedMemory: sessionData.shared_memory,
     mode,
     content,
+    isCrossover,
   });
   const routed = routeModel(content, {
     deepMode: Boolean(body.deep_mode),
