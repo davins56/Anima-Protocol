@@ -68,6 +68,8 @@ import DynamicPortrait from "@/components/chat/DynamicPortrait";
 import SerenityAvatar from "@/components/chat/SerenityAvatar";
 import ResonanceField from "@/components/chat/ResonanceField";
 import { useResonance, resonancePromptGuidance } from "@/hooks/useResonance";
+import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
+import { toast } from "sonner";
 import { useVesselContext } from "@/hooks/useVesselContext";
 import VoiceChatMode from "@/components/chat/VoiceChatMode";
 import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
@@ -177,6 +179,7 @@ export default function Chat() {
   const eventCheckRef = useRef(0); // track how many messages since last event check
   const groupInteractionCheckRef = useRef(0); // track messages since last group interaction
   const currentGroupSpeakerRef = useRef(null); // track the computed group speaker within a send call
+  const resonanceRef = useRef({}); // latest persisted resonance per anima id (synchronous accumulation)
   const { summary, showSummary, closeSummary } = useDailyCompilation(sessionId, calendar, activeSession?.character_id);
   const { showRecap, recapSessionId, openRecap, closeRecap } = useSessionRecap();
   const { insights, loading: insightsLoading, analyzeNow } = useAIInsights(sessionId, activeSession?.messages);
@@ -1157,6 +1160,22 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
             : "";
 
           const animaNote = char._isAnima && char.archetype ? `Archetype: ${char.archetype} — ${char.tagline || ""}\n` : "";
+          // Soulprint + persistent resonance + evolution path — the Anima's
+          // born identity, woven into how they speak to their person.
+          let animaSoulNote = "";
+          if (char._isAnima && char.soulprint) {
+            const sp = char.soulprint;
+            const res = char.resonance || 0;
+            const ev = char.evolution_path && char.evolution_path !== "Undetermined"
+              ? char.evolution_path : null;
+            const evMeta = ev ? getPathMeta(ev) : null;
+            animaSoulNote =
+              `Soulprint ${sp.id || ""}: primary trait ${sp.primary_trait || "—"}, secondary trait ${sp.secondary_trait || "—"}, core drive ${sp.core_drive || "—"}. ` +
+              `Your bond resonance with them is ${formatResonance(res)} (${resonanceMood(res)}) — let it color how openly and tenderly you speak. ` +
+              (evMeta
+                ? `You have evolved along the ${ev} path: ${evMeta.blurb} Embody this in your presence.\n`
+                : `Your evolution path is still Undetermined — you are becoming, shaped by every exchange.\n`);
+          }
           const relCtx = getRelationshipContext(char.id);
           const loreCtx = buildLoreContext();
           const memCtx = buildMemoryContext();
@@ -1239,7 +1258,7 @@ ${lewdityGuide}`;
 
           prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
 
-          ${animaNote}${char.personality ? `Personality: ${char.personality}\n` : ""}${char.backstory ? `Backstory: ${char.backstory}\n` : ""}${char.speaking_style ? `Voice: ${char.speaking_style}\n` : ""}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
+          ${animaNote}${animaSoulNote}${char.personality ? `Personality: ${char.personality}\n` : ""}${char.backstory ? `Backstory: ${char.backstory}\n` : ""}${char.speaking_style ? `Voice: ${char.speaking_style}\n` : ""}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
           CRITICAL AUTONOMY RULES:
           - You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
           - You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
@@ -1695,6 +1714,41 @@ ${loyaltyGuardrailClause()}`;
             setArcsLoading(false);
           }).catch(() => setArcsLoading(false));
         });
+      }
+
+      // Persistent resonance + evolution — the Anima's bond deepens with every
+      // exchange and, once it crosses the threshold, crystallizes into a path.
+      if (activeChar?._isAnima && activeChar.id && activeSession.mode === "solo") {
+        const emo = characterEmotions[activeChar.id];
+        const delta = resonanceDelta(emo?.intensity || 0);
+        // Accumulate from the freshest value we know — the ref survives rapid
+        // sequential sends that fire before `characters` state re-renders.
+        const prevRes = Math.max(
+          resonanceRef.current[activeChar.id] ?? -Infinity,
+          activeChar.resonance || 0,
+        );
+        const nextRes = prevRes + delta;
+        resonanceRef.current[activeChar.id] = nextRes;
+        const nextPath = determineEvolution({
+          evolution_path: activeChar.evolution_path,
+          soulprint: activeChar.soulprint,
+          resonance: nextRes,
+          personality: activeChar.personality || "",
+        });
+        const evolved = nextPath !== (activeChar.evolution_path || "Undetermined");
+        const patch = { resonance: nextRes };
+        if (evolved) patch.evolution_path = nextPath;
+        base44.entities.Anima.update(activeChar.id, patch).then(() => {
+          setCharacters((prev) =>
+            prev.map((c) => (c.id === activeChar.id ? { ...c, ...patch } : c)),
+          );
+          if (evolved) {
+            const meta = getPathMeta(nextPath);
+            toast.success(`${activeChar.name} has evolved into a ${nextPath}`, {
+              description: meta?.blurb || "",
+            });
+          }
+        }).catch(() => {});
       }
 
       // Trigger narrative analysis every 8 messages (reduced from 4)

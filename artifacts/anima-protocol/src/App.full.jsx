@@ -53,6 +53,8 @@ const LoreBook = lazy(() => import("./pages/LoreBook"));
 const WorldMap = lazy(() => import("./pages/WorldMap"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
+const HallOfOrigins = lazy(() => import("./pages/HallOfOrigins"));
+const MemoryCrystals = lazy(() => import("./pages/MemoryCrystals"));
 const ModeSelect = lazy(() => import("./pages/ModeSelect"));
 const CheckIn = lazy(() => import("./pages/CheckIn"));
 const ReflectionLog = lazy(() => import("./pages/ReflectionLog"));
@@ -700,6 +702,22 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <UserProfile />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/origins"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <HallOfOrigins />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/memory-crystals"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <MemoryCrystals />
                   </Suspense>
                 }
               />

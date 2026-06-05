@@ -53,7 +53,7 @@ const PRESETS = [
   { label: "Watercolor", prompt: "Render this as a delicate watercolor painting with soft washes of color." },
 ];
 
-export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onApply, allowSaveOriginal = false }) {
+export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onApply, allowSaveOriginal = false, initialPrompt = "" }) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -64,14 +64,14 @@ export default function AvatarAIEditModal({ isOpen, sourceImage, onClose, onAppl
 
   useEffect(() => {
     if (isOpen) {
-      setPrompt("");
+      setPrompt(initialPrompt || "");
       setError("");
       setResult(null);
       setLoading(false);
       setApplying(false);
       setElapsed(0);
     }
-  }, [isOpen]);
+  }, [isOpen, initialPrompt]);
 
   // Tick an elapsed-seconds counter while a generation is in flight so the UI
   // can show progress and an estimate instead of an open-ended spinner.
