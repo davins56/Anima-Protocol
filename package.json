@@ -20,11 +20,6 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.60.1"
   },
-  "pnpm": {
-    "overrides": {
-      "qs@6.15.1": "6.15.2"
-    }
-  },
   "dependencies": {
     "dotenv": "^17.4.2",
     "drizzle-orm": "catalog:",
