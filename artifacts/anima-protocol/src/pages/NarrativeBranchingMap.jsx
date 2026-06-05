@@ -60,7 +60,7 @@ export default function NarrativeBranchingMap() {
   const currentSession = sessions.find(s => s.id === selectedSession);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center gap-4">

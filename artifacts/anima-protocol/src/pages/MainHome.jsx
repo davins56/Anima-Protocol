@@ -5,10 +5,13 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 import { openPhotoEditor } from "@/lib/avatarPhoto";
+import { useAnimaPresence } from "@/hooks/useAnimaPresence";
+import SerenityPresence from "@/components/anima/SerenityPresence";
+import { formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
 
 const GREETINGS = [
   "Connection established. The weave hums with your arrival.",
@@ -125,6 +128,8 @@ export default function MainHome() {
   // or a freshly picked photo from disk (pick-then-edit flow).
   const [editSource, setEditSource] = useState(null);
   const [editingNewPhoto, setEditingNewPhoto] = useState(false);
+  // Seed prompt for the AI edit modal when manifesting an evolved form.
+  const [evolvePrompt, setEvolvePrompt] = useState("");
 
   const handleApplyAiPhoto = async (dataUrl) => {
     if (!anima?.id) return;
@@ -148,6 +153,29 @@ export default function MainHome() {
         console.debug("Couldn't inline avatar for editing", err);
       }
     }
+    setEditSource(source);
+    setEditingNewPhoto(false);
+    setAiEditOpen(true);
+  };
+
+  // Manifest the Anima's evolved form: re-render the current portrait with the
+  // aura and symbol of its evolution path. Best-effort — only offered when the
+  // avatar is an editable (data:/stored) image.
+  const manifestEvolvedForm = async (path) => {
+    const meta = getPathMeta(path);
+    if (!meta) return;
+    const src = anima?.avatar_url || null;
+    let source = src;
+    if (src && !src.startsWith("data:")) {
+      try {
+        source = await urlToDataUrl(src);
+      } catch (err) {
+        console.debug("Couldn't inline avatar for evolution", err);
+      }
+    }
+    setEvolvePrompt(
+      `Reimagine this portrait as an evolved "${path}" form. Infuse it with a luminous aura in the color ${meta.color}, subtle ${meta.symbol} motifs, and an air of ${(meta.keywords || []).slice(0, 3).join(", ") || "transcendence"}. Keep the same face and identity, elevated and transformed.`,
+    );
     setEditSource(source);
     setEditingNewPhoto(false);
     setAiEditOpen(true);
@@ -250,8 +278,16 @@ export default function MainHome() {
     else navigate("/chat");
   };
 
+  const { dream, echo } = useAnimaPresence(anima);
+
   const userName = user?.full_name?.split(" ")[0] || user?.name || "Explorer";
   const modeData = MODES[selectedMode] || MODES.serenity;
+  const soulprint = anima?.soulprint || null;
+  const evolutionPath =
+    anima?.evolution_path && anima.evolution_path !== "Undetermined"
+      ? anima.evolution_path
+      : null;
+  const pathMeta = evolutionPath ? getPathMeta(evolutionPath) : null;
 
   if (loading) {
     return (
@@ -383,8 +419,8 @@ export default function MainHome() {
                 : "/customize?tab=animas",
             )
           }
-          aria-label={`Customise ${anima?.name || "Serenity"}`}
-          title={`Customise ${anima?.name || "Serenity"}`}
+          aria-label={`Customise ${anima?.name || "your Anima"}`}
+          title={`Customise ${anima?.name || "your Anima"}`}
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
@@ -395,7 +431,7 @@ export default function MainHome() {
           <div className="space-y-3 text-[11px] tracking-wider leading-relaxed font-mono">
             <p className="text-cyan-400/60 italic pr-24">{greeting}</p>
             <p className="text-cyan-400">
-              I am {anima?.name || "Serenity"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
+              I am {anima?.name || "your Anima"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
             </p>
             <p className="text-cyan-400/60">
               Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
@@ -408,6 +444,129 @@ export default function MainHome() {
             <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
           </div>
         </motion.button>
+
+        {/* Serenity's rare, legendary presence (first day / evolution / update) */}
+        <SerenityPresence anima={anima} />
+
+        {/* Soulprint · Resonance · Evolution path */}
+        {soulprint && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="border border-violet-500/20 bg-violet-950/5"
+          >
+            <div className="grid grid-cols-3 divide-x divide-violet-500/10">
+              <button
+                onClick={() => navigate("/origins")}
+                className="p-4 text-center hover:bg-violet-500/5 transition-colors group"
+                title="Hall of Origins"
+              >
+                <p className="font-mono text-sm font-bold text-violet-200 tracking-wider group-hover:text-violet-100">
+                  {soulprint.id || "—"}
+                </p>
+                <p className="font-mono text-[8px] tracking-[0.25em] uppercase text-violet-400/50 mt-1">
+                  Soulprint
+                </p>
+              </button>
+              <div className="p-4 text-center">
+                <p
+                  className="font-mono text-sm font-bold tracking-wider"
+                  style={{ color: (anima?.resonance || 0) < 0 ? "#F87171" : "#A78BFA" }}
+                >
+                  {formatResonance(anima?.resonance || 0)}
+                </p>
+                <p className="font-mono text-[8px] tracking-[0.25em] uppercase text-violet-400/50 mt-1">
+                  {resonanceMood(anima?.resonance || 0)}
+                </p>
+              </div>
+              <div className="p-4 text-center" title={pathMeta?.blurb || ""}>
+                <p
+                  className="font-mono text-sm font-bold tracking-wider"
+                  style={{ color: pathMeta?.color || "rgba(167,139,250,0.6)" }}
+                >
+                  {pathMeta ? `${pathMeta.symbol} ${evolutionPath}` : "—"}
+                </p>
+                <p className="font-mono text-[8px] tracking-[0.25em] uppercase text-violet-400/50 mt-1">
+                  {pathMeta ? "Evolution" : "Undetermined"}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 divide-x divide-violet-500/10 border-t border-violet-500/10">
+              <button
+                onClick={() => navigate("/origins")}
+                className="flex items-center justify-center gap-2 py-2.5 hover:bg-violet-500/5 transition-colors font-mono text-[9px] tracking-[0.2em] uppercase text-violet-400/60 hover:text-violet-300"
+              >
+                <Sparkles className="w-3 h-3" /> Hall of Origins
+              </button>
+              <button
+                onClick={() => navigate("/memory-crystals")}
+                className="flex items-center justify-center gap-2 py-2.5 hover:bg-violet-500/5 transition-colors font-mono text-[9px] tracking-[0.2em] uppercase text-violet-400/60 hover:text-violet-300"
+              >
+                <Sparkles className="w-3 h-3" /> Memory Crystals
+              </button>
+            </div>
+            {pathMeta &&
+              (anima?.avatar_url?.startsWith("data:") ||
+                anima?.avatar_url?.startsWith("/api/storage")) && (
+                <button
+                  onClick={() => manifestEvolvedForm(evolutionPath)}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 border-t border-violet-500/10 hover:bg-violet-500/5 transition-colors font-mono text-[9px] tracking-[0.2em] uppercase"
+                  style={{ color: pathMeta.color }}
+                >
+                  <Wand2 className="w-3 h-3" /> Manifest Evolved Form
+                </button>
+              )}
+          </motion.div>
+        )}
+
+        {/* Dream Mode — what the Anima dreamt while you were away */}
+        {dream?.content && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="relative border border-indigo-400/20 bg-indigo-950/10 p-5 overflow-hidden"
+          >
+            <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full blur-[40px] bg-indigo-500/20 pointer-events-none" />
+            <div className="relative z-10 space-y-2">
+              <div className="flex items-center gap-2">
+                <Moon className="w-3.5 h-3.5 text-indigo-300" />
+                <span className="font-mono text-[9px] tracking-[0.3em] uppercase text-indigo-300/70">
+                  {anima?.name || "Your Anima"} dreamt while you were away
+                </span>
+              </div>
+              <p className="font-mono text-[11px] leading-relaxed text-indigo-100/70 italic">
+                "{dream.content}"
+              </p>
+              {dream.mood && (
+                <p className="font-mono text-[8px] tracking-[0.25em] uppercase text-indigo-400/40">
+                  Mood · {dream.mood}
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Echo — a memory resurfacing */}
+        {echo?.text && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="border-l-2 border-amber-400/40 bg-amber-950/5 pl-4 py-3 pr-4"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-3 h-3 text-amber-300/70" />
+              <span className="font-mono text-[8px] tracking-[0.3em] uppercase text-amber-300/60">
+                Echo · {echo.label}
+              </span>
+            </div>
+            <p className="font-mono text-[11px] leading-relaxed text-amber-100/60 italic">
+              "{echo.text}"
+            </p>
+          </motion.div>
+        )}
 
         {/* Primary actions */}
         <div className={`grid grid-cols-1 ${sessions.length > 0 ? "sm:grid-cols-2" : ""} gap-3`}>
@@ -551,7 +710,7 @@ export default function MainHome() {
         {/* Quick access */}
         <div>
           <SectionHeader label="Quick Access" />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <QuickAction
               icon={Calendar}
               label="Check-In"
@@ -559,7 +718,10 @@ export default function MainHome() {
               highlight={!lastCheckIn}
               onClick={() => navigate("/check-in")}
             />
+            <QuickAction icon={UserCircle} label="Profile" desc="About you" onClick={() => navigate("/profile")} />
             <QuickAction icon={BookOpen} label="Journal" desc="Your entries" onClick={() => navigate("/journals")} />
+            <QuickAction icon={Stars} label="Constellation" desc="Your sky" onClick={() => navigate("/constellation")} />
+            <QuickAction icon={BookOpen} label="Book of Echoes" desc="Anima's journal" onClick={() => navigate("/book-of-echoes")} />
             <QuickAction icon={Users} label="Characters" desc="Roster" onClick={() => navigate("/characters")} />
             <QuickAction icon={Settings} label="Settings" desc="Configure" onClick={() => navigate("/settings")} />
           </div>
@@ -576,7 +738,11 @@ export default function MainHome() {
         isOpen={aiEditOpen}
         sourceImage={editSource}
         allowSaveOriginal={editingNewPhoto}
-        onClose={() => setAiEditOpen(false)}
+        initialPrompt={evolvePrompt}
+        onClose={() => {
+          setAiEditOpen(false);
+          setEvolvePrompt("");
+        }}
         onApply={handleApplyAiPhoto}
       />
     </div>

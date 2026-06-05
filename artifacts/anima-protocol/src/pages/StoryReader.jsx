@@ -94,7 +94,7 @@ export default function StoryReader() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center space-y-3">
           <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -107,7 +107,7 @@ export default function StoryReader() {
 
   if (!session) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center space-y-4">
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
             Session not found
@@ -126,7 +126,7 @@ export default function StoryReader() {
   const storyText = getStoryText();
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 bg-background overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0">
         <div className="flex items-center gap-3">

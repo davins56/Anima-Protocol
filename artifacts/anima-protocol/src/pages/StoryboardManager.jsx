@@ -38,7 +38,7 @@ export default function StoryboardManager() {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
+      <div className="flex-1 min-h-0 flex items-center justify-center bg-background">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-2" />
           <p className="font-mono text-[9px] text-primary/30 tracking-widest uppercase animate-pulse">
@@ -50,7 +50,7 @@ export default function StoryboardManager() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <motion.div

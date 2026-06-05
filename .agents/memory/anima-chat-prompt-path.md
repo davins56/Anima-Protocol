@@ -22,3 +22,11 @@ length, persona), edit `Chat.jsx handleSendMessage`. The content-rating toggle l
 `user.settings.adult_content_enabled` (set in `src/pages/Settings.jsx` Content Rating
 section) and is injected as the `adultInstruction` block — keep ON (permit explicit) and
 OFF (enforce safe/non-explicit) branches in sync across every prompt variant.
+
+**User profile injection:** The account-default "about me" lives at
+`user.settings.user_profile` (edited on the `/profile` page, `pages/UserProfile.jsx`).
+In `handleSendMessage` it's formatted ONCE into `userProfileContext` (a delimited
+`<<<USER_PROFILE>>>…<<<END_USER_PROFILE>>>` data block, fields sanitized of `<<<`/`>>>`)
+and must be interpolated into ALL prompt variants — solo, `buildGroupPrompt` (param),
+and the Serenity ambient prompt. NOTE this is distinct from the document-upload
+`UserContext`/`context_prompt` system, which is still NOT wired into live Chat.

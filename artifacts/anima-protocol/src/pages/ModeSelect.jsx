@@ -88,7 +88,7 @@ export default function ModeSelect() {
   const selectedModeData = MODES.find((m) => m.id === selectedMode);
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline flex flex-col">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline flex flex-col">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-4xl mx-auto">

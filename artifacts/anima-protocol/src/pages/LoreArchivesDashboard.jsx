@@ -198,7 +198,7 @@ export default function LoreArchivesDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center"
+      <div className="flex-1 min-h-0 flex items-center justify-center"
         style={{ background: "linear-gradient(160deg, #030712 0%, #0a0414 40%, #040a1a 100%)" }}>
         <div className="text-center space-y-3">
           <div className="text-3xl text-violet-400 animate-pulse">⬟</div>
@@ -211,7 +211,7 @@ export default function LoreArchivesDashboard() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex flex-col pb-20"
+    <div className="flex-1 min-h-0 overflow-y-auto flex flex-col pb-20"
       style={{ background: "linear-gradient(160deg, #030712 0%, #0a0414 50%, #040a1a 100%)" }}>
 
       {/* Ambient glow */}

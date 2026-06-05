@@ -6,7 +6,7 @@ import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 export default function Disclaimer() {
   usePageMeta(ROUTE_META["/disclaimer"]);
   return (
-    <div className="min-h-[100dvh] bg-background">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-4">

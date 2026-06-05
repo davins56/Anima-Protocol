@@ -30,6 +30,7 @@ export default function ChatToolbar({
   onStopReadingStory,
   onShowImageGen,
   onShowEditModal,
+  onToggleDeepMode,
   onOpenRecap,
   onSelectBranch,
   onCreateBranch,
@@ -48,6 +49,7 @@ export default function ChatToolbar({
             characters={characters}
             mood={currentMood}
             characterEmotions={characterEmotions}
+            onToggleDeepMode={onToggleDeepMode}
           />
         </div>
 

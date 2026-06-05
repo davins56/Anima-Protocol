@@ -2,7 +2,7 @@ import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
 import { track } from "@/lib/analytics";
-import { Wand2, Copy, Check, AlertCircle, Loader } from "lucide-react";
+import { Wand2, Copy, Check, AlertCircle, Loader, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
@@ -13,10 +13,36 @@ export default function CompanionGenerator() {
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [resonanceSettings, setResonanceSettings] = useState({
+    tone: "intimate",
+    intensity: 60,
+    memory_depth: "balanced",
+    crossover_preference: "open",
+  });
+
+  const buildSystemPrompt = (data) => {
+    const name = data?.name?.trim() || "this companion";
+    const universe = data?.universe ? ` from ${data.universe}` : "";
+    return [
+      `You are ${name}${universe}.`,
+      data?.personality ? `Personality: ${data.personality}` : "",
+      data?.backstory ? `Backstory: ${data.backstory}` : "",
+      data?.speaking_style ? `Voice: ${data.speaking_style}` : "",
+      "Stay fully in character. Preserve your own agency, emotional continuity, boundaries, and relationship memory across sessions.",
+    ].filter(Boolean).join("\n\n");
+  };
+
+  const avatarSeedFor = (data) =>
+    [
+      data?.name,
+      data?.universe,
+      data?.category,
+      data?.tagline,
+    ].filter(Boolean).join(" | ").toLowerCase();
 
   const handleGenerate = async () => {
-    if (prompt.trim().length < 20) {
-      setError("Describe your companion in at least 20 characters. More detail = better results!");
+    if (prompt.trim().length < 2) {
+      setError("Enter a character name or a short description to get started.");
       return;
     }
 
@@ -29,10 +55,15 @@ export default function CompanionGenerator() {
         prompt: prompt.trim(),
       });
 
-      if (result?.data?.success) {
-        setCompanion(result.data.companion);
+      if (result?.success && result.companion) {
+        const nextCompanion = {
+          ...result.companion,
+          system_prompt: result.companion.system_prompt || buildSystemPrompt(result.companion),
+          avatar_seed: result.companion.avatar_seed || avatarSeedFor(result.companion),
+        };
+        setCompanion(nextCompanion);
       } else {
-        setError(result?.data?.error || "Failed to generate companion");
+        setError(result?.error || "Failed to generate companion");
       }
     } catch (err) {
       setError(err.message || "An error occurred while generating your companion");
@@ -41,18 +72,33 @@ export default function CompanionGenerator() {
     }
   };
 
+  const updateField = (field, value) =>
+    setCompanion((prev) => (prev ? { ...prev, [field]: value } : prev));
+
   const handleCreateCompanion = async () => {
     if (!companion) return;
+    if (!companion.name?.trim()) {
+      setError("Give your companion a name before adding them.");
+      return;
+    }
 
     setCreating(true);
     try {
       const newChar = await base44.entities.Character.create({
-        name: companion.name,
-        universe: companion.universe,
-        personality: companion.personality,
-        backstory: companion.backstory,
-        speaking_style: companion.speaking_style,
-        category: companion.category,
+        name: companion.name.trim(),
+        universe: companion.universe || "",
+        personality: companion.personality || "",
+        backstory: companion.backstory || "",
+        speaking_style: companion.speaking_style || "",
+        category: companion.category || "",
+        tagline: companion.tagline || "",
+        traits: companion.traits || "",
+        system_prompt: companion.system_prompt || buildSystemPrompt(companion),
+        avatar_seed: companion.avatar_seed || avatarSeedFor(companion),
+        resonance_settings: resonanceSettings,
+        memory_depth: resonanceSettings.memory_depth,
+        crossover_preference: resonanceSettings.crossover_preference,
+        creation_method: "ai_prompt",
         status: "online",
         is_default: false,
       });
@@ -83,7 +129,7 @@ export default function CompanionGenerator() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 md:p-8">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header */}
         <div className="space-y-2">
@@ -94,7 +140,7 @@ export default function CompanionGenerator() {
             </h1>
           </div>
           <p className="text-primary/60 font-mono text-xs sm:text-sm tracking-wider">
-            Describe your ideal companion in detail. The more specific, the better the AI captures your vision.
+            Name a real character or describe an original. The AI researches them on the web and prefills their profile — edit anything before adding.
           </p>
         </div>
 
@@ -107,13 +153,13 @@ export default function CompanionGenerator() {
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Example: A mysterious librarian from a magical academy who speaks in riddles and has a dry sense of humor. She's been alive for 300 years but looks young, loves astronomy, and has a cat familiar. She's guarded about her past but incredibly loyal to those she trusts..."
+              placeholder="Name a real character — e.g. 'Sherlock Holmes' or 'Hermione Granger from Harry Potter' — and the AI will research them. Or describe an original: 'A mysterious librarian from a magical academy who speaks in riddles, has been alive for 300 years, and is fiercely loyal to those she trusts...'"
               className="w-full min-h-64 bg-black/40 border border-primary/30 text-primary/90 placeholder-primary/20 font-mono text-sm p-4 rounded focus:outline-none focus:border-primary/60 focus:bg-primary/5 transition-all resize-none"
             />
             <div className="flex items-center justify-between text-[8px] font-mono text-primary/40">
               <span>{prompt.length} characters</span>
-              <span className={prompt.length >= 20 ? "text-green-400" : "text-primary/40"}>
-                {prompt.length >= 20 ? "✓ Ready" : "20 character minimum"}
+              <span className={prompt.trim().length >= 2 ? "text-green-400" : "text-primary/40"}>
+                {prompt.trim().length >= 2 ? "✓ Ready" : "Name or describe a character"}
               </span>
             </div>
           </div>
@@ -133,17 +179,17 @@ export default function CompanionGenerator() {
           <div className="p-3 border border-primary/15 bg-primary/5 rounded space-y-2">
             <p className="text-[9px] font-mono text-primary/60 tracking-widest uppercase">Pro Tips</p>
             <ul className="space-y-1 text-[8px] font-mono text-primary/50">
-              <li>• Include personality traits, mannerisms, and speech patterns</li>
-              <li>• Add backstory, origin, or world they come from</li>
-              <li>• Mention quirks, flaws, or unexpected characteristics</li>
-              <li>• Be specific about their role or purpose (mentor, trickster, explorer, etc.)</li>
-              <li>• The more vivid and detailed, the better the AI captures them</li>
+              <li>• Just a name works — the AI researches real characters for you</li>
+              <li>• Add the universe (e.g. "from Harry Potter") to disambiguate</li>
+              <li>• For originals, include personality, mannerisms, and speech patterns</li>
+              <li>• Mention backstory, origin, quirks, flaws, or their role</li>
+              <li>• Everything is prefilled and fully editable before you add them</li>
             </ul>
           </div>
 
           <button
             onClick={handleGenerate}
-            disabled={generating || prompt.length < 20}
+            disabled={generating || prompt.trim().length < 2}
             className="w-full py-3 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-sm tracking-widest uppercase transition-all hud-corner glow-border flex items-center justify-center gap-2"
           >
             {generating ? (
@@ -169,69 +215,145 @@ export default function CompanionGenerator() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-4"
             >
-              {/* Preview Card */}
+              {/* Editable Prefilled Profile */}
               <div className="border border-primary/20 bg-black/40 rounded overflow-hidden">
                 {/* Header */}
-                <div className="bg-primary/10 px-4 py-3 border-b border-primary/20">
-                  <h2 className="font-mono text-lg text-primary tracking-wider uppercase">
-                    ✨ {companion.name}
-                  </h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[9px] font-mono text-primary/60">
-                      {companion.universe}
-                    </span>
-                    <span className="text-primary/20">•</span>
-                    <span className="text-[9px] font-mono text-primary/60 capitalize">
-                      {companion.category}
-                    </span>
+                <div className="bg-primary/10 px-4 py-3 border-b border-primary/20 flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-mono text-lg text-primary tracking-wider uppercase">
+                      ✨ {companion.name || "Unnamed"}
+                    </h2>
+                    <p className="text-[8px] font-mono text-primary/40 tracking-wider mt-1">
+                      Review &amp; edit before adding — every field is yours to refine.
+                    </p>
                   </div>
+                  {companion.is_real_character && (
+                    <span className="shrink-0 text-[8px] font-mono text-green-400/90 border border-green-400/40 bg-green-400/5 rounded px-2 py-1 tracking-widest uppercase">
+                      🔎 AI Researched
+                    </span>
+                  )}
                 </div>
 
-                {/* Content */}
+                {/* Editable fields */}
                 <div className="p-4 space-y-3">
-                  {companion.tagline && (
-                    <div>
-                      <p className="text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
-                        Tagline
-                      </p>
-                      <p className="text-[10px] font-mono text-primary/80 italic">
-                        "{companion.tagline}"
-                      </p>
-                    </div>
-                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <Field
+                      label="Name"
+                      value={companion.name}
+                      onChange={(v) => updateField("name", v)}
+                    />
+                    <Field
+                      label="Universe"
+                      value={companion.universe}
+                      onChange={(v) => updateField("universe", v)}
+                    />
+                    <Field
+                      label="Category"
+                      value={companion.category}
+                      onChange={(v) => updateField("category", v)}
+                    />
+                  </div>
 
-                  {companion.personality && (
-                    <div>
-                      <p className="text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
-                        Personality
-                      </p>
-                      <p className="text-[9px] font-mono text-primary/70 leading-relaxed">
-                        {companion.personality}
-                      </p>
-                    </div>
-                  )}
+                  <Field
+                    label="Tagline"
+                    value={companion.tagline}
+                    onChange={(v) => updateField("tagline", v)}
+                  />
+                  <Field
+                    label="Personality"
+                    value={companion.personality}
+                    onChange={(v) => updateField("personality", v)}
+                    multiline
+                  />
+                  <Field
+                    label="Backstory"
+                    value={companion.backstory}
+                    onChange={(v) => updateField("backstory", v)}
+                    multiline
+                  />
+                  <Field
+                    label="Speaking Style"
+                    value={companion.speaking_style}
+                    onChange={(v) => updateField("speaking_style", v)}
+                    multiline
+                  />
+                  <Field
+                    label="Traits"
+                    value={companion.traits}
+                    onChange={(v) => updateField("traits", v)}
+                  />
+                  <Field
+                    label="System Prompt"
+                    value={companion.system_prompt}
+                    onChange={(v) => updateField("system_prompt", v)}
+                    multiline
+                  />
+                  <Field
+                    label="Avatar Seed"
+                    value={companion.avatar_seed}
+                    onChange={(v) => updateField("avatar_seed", v)}
+                  />
 
-                  {companion.backstory && (
-                    <div>
-                      <p className="text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
-                        Backstory
-                      </p>
-                      <p className="text-[9px] font-mono text-primary/70 leading-relaxed max-h-32 overflow-y-auto">
-                        {companion.backstory}
+                  <div className="border border-primary/15 bg-primary/5 rounded p-3 space-y-3">
+                    <div className="flex items-center gap-2 text-primary/70">
+                      <SlidersHorizontal className="w-4 h-4" />
+                      <p className="text-[9px] font-mono tracking-widest uppercase">
+                        Resonance Settings
                       </p>
                     </div>
-                  )}
-
-                  {companion.speaking_style && (
-                    <div>
-                      <p className="text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
-                        Speaking Style
-                      </p>
-                      <p className="text-[9px] font-mono text-primary/70 leading-relaxed">
-                        {companion.speaking_style}
-                      </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <SelectField
+                        label="Tone"
+                        value={resonanceSettings.tone}
+                        onChange={(tone) => setResonanceSettings((prev) => ({ ...prev, tone }))}
+                        options={[
+                          ["intimate", "Intimate"],
+                          ["grounded", "Grounded"],
+                          ["playful", "Playful"],
+                          ["mythic", "Mythic"],
+                        ]}
+                      />
+                      <SelectField
+                        label="Memory Depth"
+                        value={resonanceSettings.memory_depth}
+                        onChange={(memory_depth) => setResonanceSettings((prev) => ({ ...prev, memory_depth }))}
+                        options={[
+                          ["light", "Light"],
+                          ["balanced", "Balanced"],
+                          ["deep", "Deep"],
+                        ]}
+                      />
+                      <SelectField
+                        label="Crossover"
+                        value={resonanceSettings.crossover_preference}
+                        onChange={(crossover_preference) => setResonanceSettings((prev) => ({ ...prev, crossover_preference }))}
+                        options={[
+                          ["open", "Open"],
+                          ["selective", "Selective"],
+                          ["solo_first", "Solo First"],
+                        ]}
+                      />
+                      <div>
+                        <label className="block text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
+                          Intensity
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={resonanceSettings.intensity}
+                          onChange={(e) => setResonanceSettings((prev) => ({
+                            ...prev,
+                            intensity: Number(e.target.value),
+                          }))}
+                          className="w-full accent-primary"
+                        />
+                        <p className="text-[8px] font-mono text-primary/50 mt-1">
+                          {resonanceSettings.intensity}%
+                        </p>
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
 
@@ -283,6 +405,52 @@ export default function CompanionGenerator() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, multiline = false }) {
+  return (
+    <div>
+      <label className="block text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
+        {label}
+      </label>
+      {multiline ? (
+        <textarea
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          rows={3}
+          className="w-full bg-black/40 border border-primary/30 text-primary/90 font-mono text-[10px] leading-relaxed p-2 rounded focus:outline-none focus:border-primary/60 focus:bg-primary/5 transition-all resize-y"
+        />
+      ) : (
+        <input
+          type="text"
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full bg-black/40 border border-primary/30 text-primary/90 font-mono text-[10px] p-2 rounded focus:outline-none focus:border-primary/60 focus:bg-primary/5 transition-all"
+        />
+      )}
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className="block text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
+        {label}
+      </label>
+      <select
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-black/40 border border-primary/30 text-primary/90 font-mono text-[10px] p-2 rounded focus:outline-none focus:border-primary/60 focus:bg-primary/5 transition-all"
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

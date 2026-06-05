@@ -10,14 +10,18 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
+  AuthenticateWithRedirectCallback,
   ClerkProvider,
   SignIn,
   SignUp,
   Show,
   useClerk,
+  useSignIn,
+  useSignUp,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
+import { FaApple, FaGithub } from "react-icons/fa";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
@@ -38,6 +42,7 @@ import {
   mergeLeftoverLocalData,
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
+import { base44 } from "@/api/base44Client";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -52,13 +57,19 @@ const CharacterGroups = lazy(() => import("./pages/CharacterGroups"));
 const Storyboard = lazy(() => import("./pages/Storyboard"));
 const Network = lazy(() => import("./pages/Network"));
 const Settings = lazy(() => import("./pages/Settings"));
+const UserProfile = lazy(() => import("./pages/UserProfile"));
 const Animas = lazy(() => import("./pages/Animas"));
 const LoreBook = lazy(() => import("./pages/LoreBook"));
 const WorldMap = lazy(() => import("./pages/WorldMap"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
+const HallOfOrigins = lazy(() => import("./pages/HallOfOrigins"));
+const MemoryCrystals = lazy(() => import("./pages/MemoryCrystals"));
+const ConstellationMap = lazy(() => import("./pages/ConstellationMap"));
+const BookOfEchoes = lazy(() => import("./pages/BookOfEchoes"));
 const ModeSelect = lazy(() => import("./pages/ModeSelect"));
 const CheckIn = lazy(() => import("./pages/CheckIn"));
+const ReflectionLog = lazy(() => import("./pages/ReflectionLog"));
 const Journals = lazy(() => import("./pages/Journals"));
 const Wiki = lazy(() => import("./pages/Wiki"));
 const NarrativeProgress = lazy(() => import("./pages/NarrativeProgress"));
@@ -193,6 +204,21 @@ const clerkPubKey = publishableKeyFromHost(
 );
 
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const authRedirectCompleteUrl = basePath || "/";
+const oauthCallbackUrl = `${basePath}/sso-callback`;
+
+const socialAuthProviders = [
+  {
+    label: "Continue with Apple",
+    strategy: "oauth_apple",
+    Icon: FaApple,
+  },
+  {
+    label: "Continue with GitHub",
+    strategy: "oauth_github",
+    Icon: FaGithub,
+  },
+];
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -236,6 +262,8 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
+    socialButtonsRoot: "!hidden",
+    dividerRow: "!hidden",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -269,31 +297,128 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
+function SocialAuthButtons({ mode }) {
+  const signInState = useSignIn();
+  const signUpState = useSignUp();
+  const authResource =
+    mode === "sign-up" ? signUpState.signUp : signInState.signIn;
+  const isLoaded =
+    mode === "sign-up" ? signUpState.isLoaded : signInState.isLoaded;
+  const [pendingStrategy, setPendingStrategy] = useState(null);
+
+  const handleOAuth = async (strategy) => {
+    if (!isLoaded || !authResource) return;
+    setPendingStrategy(strategy);
+    try {
+      await authResource.authenticateWithRedirect({
+        strategy,
+        redirectUrl: oauthCallbackUrl,
+        redirectUrlComplete: authRedirectCompleteUrl,
+      });
+    } catch (error) {
+      console.error("OAuth redirect failed", error);
+      toast.error("That sign-in provider is not available right now.");
+      setPendingStrategy(null);
+    }
+  };
+
+  return (
+    <div className="w-full space-y-2">
+      {socialAuthProviders.map(({ label, strategy, Icon }) => (
+        <button
+          key={strategy}
+          type="button"
+          disabled={!isLoaded || Boolean(pendingStrategy)}
+          onClick={() => handleOAuth(strategy)}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Icon className="h-4 w-4" aria-hidden="true" />
+          <span>
+            {pendingStrategy === strategy ? "Redirecting..." : label}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AuthFormShell({ mode, children }) {
+  return (
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+      <div className="w-[420px] max-w-full space-y-3">
+        <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
+          <SocialAuthButtons mode={mode} />
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
   return (
-    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+    <AuthFormShell mode="sign-in">
       <SignIn
         routing="path"
         path={`${basePath}/sign-in`}
         signUpUrl={`${basePath}/sign-up`}
-        fallbackRedirectUrl={basePath || "/"}
+        fallbackRedirectUrl={authRedirectCompleteUrl}
       />
-    </div>
+    </AuthFormShell>
   );
 }
 
 function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
   return (
-    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+    <AuthFormShell mode="sign-up">
       <SignUp
         routing="path"
         path={`${basePath}/sign-up`}
         signInUrl={`${basePath}/sign-in`}
-        fallbackRedirectUrl={basePath || "/"}
+        fallbackRedirectUrl={authRedirectCompleteUrl}
       />
-    </div>
+    </AuthFormShell>
+  );
+}
+
+function SsoCallbackPage() {
+  return <AuthenticateWithRedirectCallback />;
+}
+
+// First-run gate for signed-in users: if they have not yet awakened an Anima,
+// show the Serenity-led onboarding. Once an Anima exists, load their dashboard.
+// Fails open to the dashboard so a transient lookup error never traps the user.
+function SignedInHome() {
+  const [state, setState] = useState("checking"); // 'checking' | 'onboarding' | 'home'
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const animas = await base44.entities.Anima.list("-created_date", 1);
+        if (!cancelled) {
+          setState((animas?.length || 0) > 0 ? "home" : "onboarding");
+        }
+      } catch {
+        if (!cancelled) setState("home");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state === "checking") return <PageLoader />;
+  return (
+    <Suspense fallback={<PageLoader />}>
+      {state === "onboarding" ? (
+        <OnboardingFlow onComplete={() => setState("home")} />
+      ) : (
+        <MainHome />
+      )}
+    </Suspense>
   );
 }
 
@@ -302,9 +427,7 @@ function HomeGate() {
   return (
     <>
       <Show when="signed-in">
-        <Suspense fallback={<PageLoader />}>
-          <MainHome />
-        </Suspense>
+        <SignedInHome />
       </Show>
       <Show when="signed-out">
         <Suspense fallback={<PageLoader />}>
@@ -349,10 +472,9 @@ function ClerkProviderWithRoutes({ children }) {
 
 // Public routes that signed-out users may reach without authentication.
 const PUBLIC_PREFIXES = [
-  "/landing",
-  "/login",
   "/sign-in",
   "/sign-up",
+  "/sso-callback",
   "/terms",
   "/privacy-policy",
   "/disclaimer",
@@ -427,18 +549,15 @@ const AuthenticatedApp = () => {
                   );
                 } catch (err) {
                   console.warn("[Anima] Local data merge failed:", err.message);
-                  toast.error(
-                    "We couldn't add your device's data just now.",
-                    {
-                      id: "anima-local-merge",
-                      description: "Please try again.",
-                      duration: Infinity,
-                      action: {
-                        label: "Retry",
-                        onClick: () => window.location.reload(),
-                      },
+                  toast.error("We couldn't add your device's data just now.", {
+                    id: "anima-local-merge",
+                    description: "Please try again.",
+                    duration: Infinity,
+                    action: {
+                      label: "Retry",
+                      onClick: () => window.location.reload(),
                     },
-                  );
+                  });
                 }
               },
             },
@@ -480,7 +599,23 @@ const AuthenticatedApp = () => {
     onSwipeLeft: handleSwipeLeft,
     excludeSelector: "input, textarea, [data-no-swipe]",
   });
+  // ── EMERGENCY CHARACTER RESTORE ─────────────────────
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      console.log("🔄 Emergency local data restore...");
 
+      mergeLeftoverLocalData()
+        .then(() => {
+          toast.success("✅ Characters restored!", {
+            description: "Refresh the Characters page if needed.",
+            duration: 6000,
+          });
+        })
+        .catch((err) => {
+          console.error("Restore failed:", err);
+        });
+    }
+  }, [isAuthenticated, user?.id]);
   // Gate the first-run tutorial behind the AI disclaimer so the two modals
   // never stack. The disclaimer fires onAccept on mount when already accepted,
   // so returning users surface the tutorial immediately (e.g. when replaying).
@@ -503,16 +638,13 @@ const AuthenticatedApp = () => {
   const pathname = location.pathname;
   const isPublicPath =
     pathname === "/" ||
-    PUBLIC_PREFIXES.some(
-      (p) => pathname === p || pathname.startsWith(p + "/"),
-    );
+    PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
   if (!isAuthenticated && !isPublicPath) {
     return <Navigate to="/" replace />;
   }
 
   const showChrome =
     isAuthenticated &&
-    !["/landing", "/login"].includes(pathname) &&
     !pathname.startsWith("/sign-in") &&
     !pathname.startsWith("/sign-up");
 
@@ -535,744 +667,779 @@ const AuthenticatedApp = () => {
           style={{ paddingBottom: "var(--tab-bar-height, 0px)" }}
         >
           <ErrorBoundary resetKey={location.pathname}>
-          <Routes location={location}>
-            {/* Root: signed-out -> Landing, signed-in -> MainHome */}
-            <Route path="/" element={<HomeGate />} />
-            <Route path="/sign-in/*" element={<SignInPage />} />
-            <Route path="/sign-up/*" element={<SignUpPage />} />
-            <Route
-              path="/landing"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Landing />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/login"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Landing />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/chat"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <NewChat />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/chat/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Chat />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/codespace"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Codespace />
-                </Suspense>
-              }
-            />
+            <Routes location={location}>
+              {/* Root: signed-out -> Landing, signed-in -> MainHome */}
+              <Route path="/" element={<HomeGate />} />
+              <Route path="/sign-in/*" element={<SignInPage />} />
+              <Route path="/sign-up/*" element={<SignUpPage />} />
+              <Route path="/sso-callback/*" element={<SsoCallbackPage />} />
+              <Route path="/landing" element={<Navigate to="/" replace />} />
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              <Route
+                path="/chat"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NewChat />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/chat/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Chat />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/codespace"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Codespace />
+                  </Suspense>
+                }
+              />
 
-            {/* Everything else remains as-is */}
-            <Route
-              path="/onboarding"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <OnboardingFlow />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/legacy-onboarding"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Onboarding />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/mode-select"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <ModeSelect />
-                </Suspense>
-              }
-            />
-            <Route path="/home" element={<Navigate to="/" replace />} />
-            <Route
-              path="/check-in"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CheckIn />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/characters"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Characters />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/groups"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterGroups />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/storyboard"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Storyboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/storyboard-manager/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <StoryboardManager />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/network"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Network />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Settings />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/animas"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Animas />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/lorebook"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <LoreBook />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/worldmap"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WorldMap />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/journals"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Journals />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/wiki"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Wiki />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/narrative"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <NarrativeProgress />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/flowchart"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <StoryFlowchart />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/relationships"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <RelationshipNetwork />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/graph"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterGraphVisualization />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/archive"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <LoreArchive />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/insights"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Insights />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/reflections"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Reflections />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/discoveries"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <DiscoveryQueue />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/locationsmap"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <LocationsMap />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/relationshipviz"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <RelationshipVisualization />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/globalwiki"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <GlobalWiki />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/worldcalendar"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WorldCalendar />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/worldcodex"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WorldCodex />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/relationshipgraph"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <RelationshipGraph />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/inventory"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <InventoryPanel />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/calenderview"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CalendarView />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/branching"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <StoryBranching />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/memory-map"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterMemoryMap />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/world-pulse"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WorldPulse />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/branching-map"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <NarrativeBranchingMap />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/relationship-graph"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <RelationshipGraphPage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/yn-library"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <YnStoriesLibrary />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/world-timeline"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WorldTimeline />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/characters-repository"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterRepository />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/analytics"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <StoryAnalyticsDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/faction-network"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <FactionNetwork />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/story-control"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <NarrativeFlowchartPage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/character-memories"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterMemories />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/customize"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterCustomization />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/orchestrate/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <SceneOrchestrator />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/memory-graph/:characterId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <MemoryGraphDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/create-scenario"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CreateScenario />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/quests/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <QuestTrackingDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/looks"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterLookCustomizer />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/ai-behavior"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <AIBehaviorSettings />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/dashboard/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <RelationshipAndLocationDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/graph-visualization"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <InteractiveGraphVisualization />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/graph-visualization/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <InteractiveGraphVisualization />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/integrated-calendar"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <IntegratedWorldCalendar />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/integrated-calendar/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <IntegratedWorldCalendar />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/quest-log"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <QuestLog />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/quest-log/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <QuestLog />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/memories"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CharacterMemoriesDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/story-branching/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <StoryBranchingGraph />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/story-branching"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <StoryBranchingGraph />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/world-calendar-dashboard"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WorldCalendarDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/world-calendar-dashboard/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WorldCalendarDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/conflict-dashboard"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <NarrativeConflictDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/interactive-inventory"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <InteractiveInventory />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/interactive-inventory/:sessionId/:characterId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <InteractiveInventory />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/quest-log-page"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <QuestLogPage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/quest-log-page/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <QuestLogPage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/lore-archives"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <LoreArchivesDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/meditation"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Meditation />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/subscription"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Subscription />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/lifetime-access"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <LifetimeAccess />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/narrative-world-map/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <NarrativeWorldMap />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/companion-generator"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <CompanionGenerator />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/what-if"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <WhatIfScenarios />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/story-reader/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <StoryReader />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/quest-journal"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <QuestJournal />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/timeline/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <TimelineDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/relationship-graph/:sessionId"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <RelationshipNodeGraphPage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/relationship-graph"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <RelationshipNodeGraphPage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/terms"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <TermsOfUse />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/chronicles"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Chronicles />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/privacy-policy"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <PrivacyPolicy />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/disclaimer"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <Disclaimer />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/progress"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <ProgressDashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/premium"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <PremiumPlans />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/templates"
-              element={
-                <Suspense fallback={<PageLoader />}>
-                  <TemplateHub />
-                </Suspense>
-              }
-            />
-            <Route path="*" element={<PageNotFound />} />
-          </Routes>
+              {/* Everything else remains as-is */}
+              <Route
+                path="/onboarding"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <OnboardingFlow />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/legacy-onboarding"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Onboarding />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/mode-select"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <ModeSelect />
+                  </Suspense>
+                }
+              />
+              <Route path="/home" element={<Navigate to="/" replace />} />
+              <Route
+                path="/check-in"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CheckIn />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/reflection-log"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <ReflectionLog />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/characters"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Characters />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/groups"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterGroups />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/storyboard"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Storyboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/storyboard-manager/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StoryboardManager />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/network"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Network />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Settings />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <UserProfile />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/origins"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <HallOfOrigins />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/memory-crystals"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <MemoryCrystals />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/constellation"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <ConstellationMap />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/book-of-echoes"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <BookOfEchoes />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/animas"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Animas />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/lorebook"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LoreBook />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/worldmap"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WorldMap />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/journals"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Journals />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/wiki"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Wiki />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/narrative"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NarrativeProgress />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/flowchart"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StoryFlowchart />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/relationships"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <RelationshipNetwork />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/graph"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterGraphVisualization />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/archive"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LoreArchive />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/insights"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Insights />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/reflections"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Reflections />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/discoveries"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <DiscoveryQueue />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/locationsmap"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LocationsMap />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/relationshipviz"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <RelationshipVisualization />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/globalwiki"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <GlobalWiki />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/worldcalendar"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WorldCalendar />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/worldcodex"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WorldCodex />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/relationshipgraph"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <RelationshipGraph />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/inventory"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <InventoryPanel />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/calenderview"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CalendarView />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/branching"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StoryBranching />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/memory-map"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterMemoryMap />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/world-pulse"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WorldPulse />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/branching-map"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NarrativeBranchingMap />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/relationship-graph"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <RelationshipGraphPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/yn-library"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <YnStoriesLibrary />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/world-timeline"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WorldTimeline />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/characters-repository"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterRepository />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/analytics"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StoryAnalyticsDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/faction-network"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <FactionNetwork />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/story-control"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NarrativeFlowchartPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/character-memories"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterMemories />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/customize"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterCustomization />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/orchestrate/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <SceneOrchestrator />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/memory-graph/:characterId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <MemoryGraphDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/create-scenario"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CreateScenario />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/quests/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <QuestTrackingDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/looks"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterLookCustomizer />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/ai-behavior"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AIBehaviorSettings />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/dashboard/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <RelationshipAndLocationDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/graph-visualization"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <InteractiveGraphVisualization />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/graph-visualization/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <InteractiveGraphVisualization />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/integrated-calendar"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <IntegratedWorldCalendar />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/integrated-calendar/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <IntegratedWorldCalendar />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/quest-log"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <QuestLog />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/quest-log/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <QuestLog />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/memories"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CharacterMemoriesDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/story-branching/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StoryBranchingGraph />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/story-branching"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StoryBranchingGraph />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/world-calendar-dashboard"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WorldCalendarDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/world-calendar-dashboard/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WorldCalendarDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/conflict-dashboard"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NarrativeConflictDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/interactive-inventory"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <InteractiveInventory />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/interactive-inventory/:sessionId/:characterId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <InteractiveInventory />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/quest-log-page"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <QuestLogPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/quest-log-page/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <QuestLogPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/lore-archives"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LoreArchivesDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/meditation"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Meditation />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/subscription"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Subscription />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/lifetime-access"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LifetimeAccess />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/narrative-world-map/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NarrativeWorldMap />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/companion-generator"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CompanionGenerator />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/what-if"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WhatIfScenarios />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/story-reader/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StoryReader />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/quest-journal"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <QuestJournal />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/timeline/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <TimelineDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/relationship-graph/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <RelationshipNodeGraphPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/relationship-graph"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <RelationshipNodeGraphPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/terms"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <TermsOfUse />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/chronicles"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Chronicles />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/privacy-policy"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <PrivacyPolicy />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/disclaimer"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Disclaimer />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/progress"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <ProgressDashboard />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/premium"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <PremiumPlans />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/templates"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <TemplateHub />
+                  </Suspense>
+                }
+              />
+              <Route path="*" element={<PageNotFound />} />
+            </Routes>
           </ErrorBoundary>
         </motion.div>
       </AnimatePresence>

@@ -7,8 +7,12 @@ import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 
 const ALL_MODULES = [
-  { label: "Sign Out", path: "/landing", icon: "⎋", signOut: true },
+  { label: "Sign Out", path: "/", icon: "⎋", signOut: true },
   { label: "Chat", path: "/chat", icon: "💬" },
+  { label: "Hall of Origins", path: "/origins", icon: "✨" },
+  { label: "Memory Crystals", path: "/memory-crystals", icon: "💎" },
+  { label: "Constellation", path: "/constellation", icon: "🌌" },
+  { label: "Book of Echoes", path: "/book-of-echoes", icon: "📖" },
   { label: "Codespace", path: "/codespace", icon: "⌨" },
   { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Storyboard", path: "/storyboard", icon: "📋" },
@@ -29,6 +33,7 @@ const ALL_MODULES = [
   { label: "Inventory", path: "/inventory", icon: "🎒" },
   { label: "Characters", path: "/characters", icon: "👥" },
   { label: "Check-In", path: "/check-in", icon: "✚" },
+  { label: "Reflect Log", path: "/reflection-log", icon: "📝" },
 ];
 
 const PINNED_TABS = [
@@ -74,10 +79,10 @@ export default function BottomTabBar() {
   const confirmAndSignOut = async () => {
     setConfirmSignOut(false);
     try {
-      await logout("/landing");
+      await logout("/");
     } catch (err) {
       console.error("Sign out failed:", err);
-      navigate("/landing");
+      navigate("/");
     }
   };
 
@@ -140,6 +145,7 @@ export default function BottomTabBar() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
+              data-no-swipe
               onClick={() => setOpen(false)}
             />
             <motion.div
@@ -147,7 +153,17 @@ export default function BottomTabBar() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 30, stiffness: 320 }}
-              className="fixed bottom-[52px] left-0 right-0 z-50 bg-[#090912] border-t border-primary/20 max-h-[65dvh] overflow-y-auto"
+              className="fixed bottom-[52px] left-0 right-0 z-50 bg-[#090912] border-t border-primary/20 max-h-[65dvh] overflow-y-auto overscroll-contain"
+              data-no-swipe
+              data-scroll-preserve
+              onTouchStartCapture={(e) => e.stopPropagation()}
+              onTouchMoveCapture={(e) => e.stopPropagation()}
+              onTouchEndCapture={(e) => e.stopPropagation()}
+              style={{
+                WebkitOverflowScrolling: "touch",
+                overscrollBehavior: "contain",
+                touchAction: "pan-y",
+              }}
             >
               <div className="flex items-center justify-between px-5 py-3 border-b border-primary/10">
                 <span className="font-mono text-[11px] tracking-[0.3em] text-primary/80 uppercase">// All Modules</span>
@@ -155,7 +171,7 @@ export default function BottomTabBar() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-px bg-primary/5 p-px">
+              <div className="grid grid-cols-3 gap-px bg-primary/5 p-px" data-no-swipe>
                 {ALL_MODULES.map(({ label, path, icon, signOut }) => {
                   const isActive = isTabActive(path, location.pathname);
                   return (

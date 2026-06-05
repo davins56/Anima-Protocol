@@ -10,12 +10,19 @@
   },
   "private": true,
   "devDependencies": {
+    "drizzle-kit": "^0.31.10",
     "prettier": "^3.8.3",
+    "tsx": "catalog:",
     "typescript": "~5.9.3"
   },
   "pnpm": {
     "overrides": {
       "qs@6.15.1": "6.15.2"
     }
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "catalog:",
+    "postgres": "^3.4.9"
   }
 }

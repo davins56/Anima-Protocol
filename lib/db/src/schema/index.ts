@@ -5,6 +5,7 @@ import {
   timestamp,
   integer,
   jsonb,
+  boolean,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
@@ -14,7 +15,11 @@ import { z } from "zod/v4";
 
 export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  // Server-side default so the publish-time migration can add this NOT NULL
+  // column to pre-existing production rows (legacy test conversations) without
+  // failing. App code always inserts an explicit userId, so the default is only
+  // ever applied to those legacy rows, never in normal operation.
+  userId: text("user_id").notNull().default(""),
   title: text("title").notNull().default("New conversation"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -35,6 +40,88 @@ export const messages = pgTable("messages", {
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
+
+// Product chat backend tables. These mirror the high-level ChatSession /
+// ChatMessage entity-store model with a structured schema the API can use for
+// memory-aware generation, analytics, and future vector indexing. The generic
+// user_entities rows remain the compatibility surface for the existing client.
+export const chatSessions = pgTable(
+  "chat_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    title: text("title").notNull().default("New session"),
+    mode: text("mode").notNull().default("solo"),
+    characterIds: jsonb("character_ids").$type<string[]>().notNull().default([]),
+    isCrossover: boolean("is_crossover").notNull().default(false),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    chatSessionsUserIdx: index("chat_sessions_user_idx").on(t.userId),
+    chatSessionsUpdatedIdx: index("chat_sessions_updated_idx").on(
+      t.userId,
+      t.updatedAt,
+    ),
+  }),
+);
+
+export type ChatSession = typeof chatSessions.$inferSelect;
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    userId: text("user_id").notNull(),
+    role: text("role").notNull(),
+    content: text("content").notNull(),
+    characterId: text("character_id"),
+    characterName: text("character_name"),
+    isCrossover: boolean("is_crossover").notNull().default(false),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    chatMessagesSessionIdx: index("chat_messages_session_idx").on(
+      t.userId,
+      t.sessionId,
+      t.createdAt,
+    ),
+    chatMessagesCharacterIdx: index("chat_messages_character_idx").on(
+      t.userId,
+      t.characterId,
+    ),
+  }),
+);
+
+export type ChatMessage = typeof chatMessages.$inferSelect;
+
+export const companionMemories = pgTable(
+  "companion_memories",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    characterId: text("character_id").notNull(),
+    summary: text("summary").notNull().default(""),
+    facts: jsonb("facts").$type<Record<string, unknown>[]>().notNull().default([]),
+    emotionalState: jsonb("emotional_state").$type<Record<string, unknown>>().notNull().default({}),
+    resonanceNotes: text("resonance_notes").notNull().default(""),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    companionMemoriesUserCharacterUq: uniqueIndex(
+      "companion_memories_user_character_uq",
+    ).on(t.userId, t.characterId),
+    companionMemoriesUserIdx: index("companion_memories_user_idx").on(
+      t.userId,
+    ),
+  }),
+);
+
+export type CompanionMemory = typeof companionMemories.$inferSelect;
 
 // Generic per-user entity store. One row per (user, entity name, entity id),
 // holding the whole record as JSON. Backs the client's base44 entity CRUD so

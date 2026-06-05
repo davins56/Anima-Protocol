@@ -921,16 +921,27 @@ const PROFILE_DEFAULTS = {
   selected_mode: 'companion',
 };
 
+const ADMIN_EMAILS = new Set([
+  'davins56@gmail.com',
+  ...(import.meta.env.VITE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+]);
+
 let currentIdentity = null; // { id, email, full_name } from Clerk
 let profileCache = null; // server profile data
 let profileExpiry = 0;
 const PROFILE_TTL = 2000;
 
 function mergedUser(profileData) {
+  const email = currentIdentity?.email?.toLowerCase?.() || '';
+  const adminRole = ADMIN_EMAILS.has(email) ? { role: 'admin' } : {};
   return {
     ...PROFILE_DEFAULTS,
     created_date: new Date().toISOString(),
     ...(profileData || {}),
+    ...adminRole,
     ...(currentIdentity || {}),
   };
 }
@@ -1051,7 +1062,7 @@ export const base44 = {
 
   integrations: {
     Core: {
-      InvokeLLM: async ({ prompt, systemPrompt }) => {
+      InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
         // Create/reuse a conversation for LLM calls
         let convId = sessionStorage.getItem('anima_llm_conv_id');
         if (!convId) {
@@ -1065,6 +1076,7 @@ export const base44 = {
           Number(convId),
           prompt,
           systemPrompt || '',
+          !!deepMode,
         )) {
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);

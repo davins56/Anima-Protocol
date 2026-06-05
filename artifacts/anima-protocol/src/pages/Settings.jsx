@@ -323,7 +323,7 @@ export default function Settings() {
   ];
 
   return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-background scanline">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-4 sm:px-6 py-4 flex-shrink-0 relative z-40">
         <div className="max-w-4xl mx-auto flex items-center gap-3 sm:gap-4">
@@ -369,6 +369,20 @@ export default function Settings() {
                 <InfoRow label="Display Name" value={user?.full_name || "—"} />
                 <InfoRow label="Role" value={user?.role || "user"} />
               </div>
+
+              <SectionTitle>Your Profile</SectionTitle>
+              <button
+                onClick={() => navigate("/profile")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  About you • seen by your Anima
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span>Create or edit your profile</span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
 
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">

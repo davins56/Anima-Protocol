@@ -139,7 +139,7 @@ export default function CharacterRepository() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center flex-1 min-h-0">
         <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase animate-pulse">
           Loading character repository...
         </p>
@@ -148,7 +148,7 @@ export default function CharacterRepository() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>

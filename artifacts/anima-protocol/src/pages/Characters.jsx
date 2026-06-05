@@ -263,7 +263,7 @@ export default function Characters() {
   };
 
   return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-background scanline">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
@@ -307,7 +307,7 @@ export default function Characters() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6" style={{ WebkitOverflowScrolling: 'touch', overflowY: 'scroll', paddingBottom: 'var(--tab-bar-height, 120px)' }}>
+      <div className="flex-1 overflow-y-auto p-6" style={{ WebkitOverflowScrolling: 'touch', overflowY: 'scroll' }}>
         <div className="max-w-6xl mx-auto space-y-6">
           {characters.length === 0 ? (
             <div className="text-center py-24">
@@ -458,13 +458,13 @@ export default function Characters() {
               </div>
 
               {/* Name & Universe */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Character Name *" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder="e.g. Serenity" />
                 <Field label="Universe / Series" value={form.universe} onChange={(v) => setForm((f) => ({ ...f, universe: v }))} placeholder="e.g. Original" />
               </div>
 
               {/* Category & Status */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <SelectField label="Category" value={form.category} options={CATEGORIES} onChange={(v) => setForm((f) => ({ ...f, category: v }))} />
                 <SelectField label="Status" value={form.status} options={STATUSES} onChange={(v) => setForm((f) => ({ ...f, status: v }))} />
               </div>

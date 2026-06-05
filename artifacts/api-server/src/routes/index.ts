@@ -6,6 +6,7 @@ import elevenLabsRouter from "./elevenlabs";
 import characterImageRouter from "./characterImage";
 import storeRouter from "./store";
 import storageRouter from "./storage";
+import chatRouter from "./chat";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,7 @@ router.use("/openai", openaiRouter);
 router.use("/openai", openaiFunctionsRouter);
 router.use(elevenLabsRouter);
 router.use(characterImageRouter);
+router.use("/chat", chatRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
 

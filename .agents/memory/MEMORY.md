@@ -10,6 +10,7 @@
 - [Anima cross-device live sync](anima-cross-device-sync.md) — /store/revision token + 15s/focus poller drops caches & fires `anima:store-changed`; self-write suppression must NOT advance baseline.
 - [Anima SSE push hardening](anima-sse-hardening.md) — SSE client must collapse CRLF→LF before `\n\n` split; watchdog > 2× server heartbeat; `anima:sync-mode` event; registry is process-local.
 - [Anima AI image edit](anima-image-edit.md) — inline base64 image routes need raised express.json limit (default 100KB too small); backend only accepts data: URLs so gate buttons accordingly.
+- [Helium DB credential recovery](db-credential-recovery.md) — after creds overwritten, deleteEnvVars restores PG* env vars but DATABASE_URL/PGPASSWORD are Secrets the user must delete in the tab; original DB+data survive.
 - [api-server rate-limit leak](api-server-ratelimit-leak.md) — path-less mounted sub-routers' top-level router.use(rateLimit) runs for ALL /api requests (429s on /api/store); scope it to the router's own paths.
 - [lib/db decl rebuild for typecheck](db-decl-rebuild-for-typecheck.md) — after schema edits, api-server typecheck reads stale lib/db/dist .d.ts ("no exported member"); run `cd lib/db && npx tsc -b` first.
 - [Anima Undo/delete-flow tests](anima-undo-tests.md) — real base44 hangs in vitest (no token getter); mock base44 in-memory + extract Chat page handlers to DI functions to test.
@@ -23,5 +24,12 @@
 - [Anima chat messages as rows](anima-chat-messages-rows.md) — messages are ChatMessage rows w/ per-session seq; pg_advisory_xact_lock in ensureSessionMigrated serializes migrate+append; edit/delete via replace shim.
 - [Anima restore vs import](anima-restore-import.md) — /import is empty-only migration (keep it); /restore is user-driven, works on non-empty accounts with merge/replace modes (replace is transactional wipe+insert).
 - [Anima cross-device sync e2e test](anima-e2e-sync-test.md) — committed Playwright spec; programmatic clerk.signIn bypasses CAPTCHA; NEVER mutate document.documentElement in addInitScript (empties the page).
+- [Anima prod DB SSL outage](anima-prod-ssl-outage.md) — pg-connection-string now treats sslmode=require as verify-full → prod-only all-query 500s; fix: set Pool ssl explicitly (disable→false else rejectUnauthorized:false), needs redeploy.
 - [Anima Codespace run gate & sandbox](anima-codespace.md) — high-severity scan HARD-blocks run (never executes); iframe no allow-same-origin; sync guarded by dirty/busy/running.
 - [Anima story mode](anima-story-mode.md) — self-insert canonical-scene chat; NOT a distinct session.mode (creates mode:"solo"); NewChat selector "Story" button just opens StoryCharacterChooser.
+- [Anima identity systems](anima-identity-systems.md) — soulprint/resonance/evolution/dream all live on schemaless Anima; resonance accrues client-side in Chat (resonanceRef vs stale closure); useAnimaPresence lockRef stops last_visit write-loop.
+- [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by two flows (check-in page vs in-chat ritual) with divergent fields; filter by the field you need; list() no-limit = full history.
+- [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].
+- [Anima page scroll contract](anima-page-scroll-contract.md) — page roots must be `flex-1 min-h-0 (+overflow-y-auto)`, NEVER `*-screen`/`*-[100dvh]`; wrapper already pads for the fixed tab bar.
+- [Anima onboarding gate](anima-onboarding-gate.md) — Serenity is the (unseeded) guide not a companion; SignedInHome gates "/" on Anima existence (mount-only → needs onComplete to flip, fails open to home).
+- [Anima auto-gen entity dedupe](anima-autogen-dedupe.md) — client ref + read-then-create dedupe is best-effort only (base44 has no unique constraint); always guard the first-entry case with lastCount>0.
