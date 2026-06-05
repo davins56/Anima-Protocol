@@ -370,6 +370,20 @@ export default function Settings() {
                 <InfoRow label="Role" value={user?.role || "user"} />
               </div>
 
+              <SectionTitle>Your Profile</SectionTitle>
+              <button
+                onClick={() => navigate("/profile")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  About you • seen by your Anima
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span>Create or edit your profile</span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
                 <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">

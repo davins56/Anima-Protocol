@@ -15,6 +15,7 @@ export function buildGroupPrompt({
   adultInstruction,
   lengthGuide,
   traitModifiers = '',
+  userProfileContext = '',
 }) {
   return `You are ${nextChar.name} in an immersive collaborative story. You have your own distinct voice, goals, and emotional truth.${adultInstruction}
 
@@ -22,6 +23,7 @@ CHARACTER CONTEXT:
 ${allCharSheets}
 ${traitModifiers}
 ${loreCtxGroup}
+${userProfileContext}
 
 Story so far:
 ${conversationHistory}

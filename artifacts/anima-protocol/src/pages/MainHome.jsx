@@ -5,7 +5,7 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 import { openPhotoEditor } from "@/lib/avatarPhoto";
@@ -473,7 +473,7 @@ export default function MainHome() {
         {/* Quick access */}
         <div>
           <SectionHeader label="Quick Access" />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <QuickAction
               icon={Calendar}
               label="Check-In"
@@ -481,6 +481,7 @@ export default function MainHome() {
               highlight={!lastCheckIn}
               onClick={() => navigate("/check-in")}
             />
+            <QuickAction icon={UserCircle} label="Profile" desc="About you" onClick={() => navigate("/profile")} />
             <QuickAction icon={BookOpen} label="Journal" desc="Your entries" onClick={() => navigate("/journals")} />
             <QuickAction icon={Users} label="Characters" desc="Roster" onClick={() => navigate("/characters")} />
             <QuickAction icon={Settings} label="Settings" desc="Configure" onClick={() => navigate("/settings")} />

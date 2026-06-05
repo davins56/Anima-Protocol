@@ -47,6 +47,7 @@ const CharacterGroups = lazy(() => import("./pages/CharacterGroups"));
 const Storyboard = lazy(() => import("./pages/Storyboard"));
 const Network = lazy(() => import("./pages/Network"));
 const Settings = lazy(() => import("./pages/Settings"));
+const UserProfile = lazy(() => import("./pages/UserProfile"));
 const Animas = lazy(() => import("./pages/Animas"));
 const LoreBook = lazy(() => import("./pages/LoreBook"));
 const WorldMap = lazy(() => import("./pages/WorldMap"));
@@ -691,6 +692,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <Settings />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <UserProfile />
                   </Suspense>
                 }
               />
