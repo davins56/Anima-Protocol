@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { sessionMessageCount } from "@/lib/utils";
 
 const RANKS = [
   {
@@ -45,7 +46,7 @@ const STATS = [
   { label: "Crystals Formed", key: "_crystalCount", icon: "⬟" },
 ];
 
-export default function ResonanceRankPanel({ profile, sessions, crystals }) {
+export default function ResonanceRankPanel({ profile, sessions, crystals, messageCounts }) {
   if (!profile) return null;
 
   const currentXP = profile.resonance_xp || 0;
@@ -60,7 +61,13 @@ export default function ResonanceRankPanel({ profile, sessions, crystals }) {
 
   const statsData = {
     total_sessions: sessions.length,
-    total_messages: sessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0),
+    // Sessions are loaded metadata-only (no hydrated history), so derive the
+    // total from the server-counted per-session map, falling back to a legacy
+    // blob length for sessions not yet migrated to per-message rows.
+    total_messages: sessions.reduce(
+      (sum, s) => sum + sessionMessageCount(s, messageCounts),
+      0,
+    ),
     _crystalCount: crystals.length,
   };
 

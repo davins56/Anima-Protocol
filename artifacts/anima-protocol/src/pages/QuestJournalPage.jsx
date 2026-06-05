@@ -1,3 +1,4 @@
+// @ts-check
 import { useParams } from 'react-router-dom';
 import QuestJournal from '@/components/quests/QuestJournal';
 

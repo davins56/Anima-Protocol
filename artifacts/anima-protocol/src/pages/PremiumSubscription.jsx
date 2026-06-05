@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { Check, Loader, AlertCircle } from "lucide-react";
@@ -7,7 +8,7 @@ const PRICE_ID = "price_1TVD7JEQeUkUPyATLV81vJ25";
 
 export default function PremiumSubscription() {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(/** @type {string | null} */ (null));
   const navigate = useNavigate();
 
   const handleSubscribe = async () => {
@@ -25,8 +26,8 @@ export default function PremiumSubscription() {
       } else {
         setError("Failed to create checkout session");
       }
-    } catch (err) {
-      setError(err.message || "Subscription failed");
+    } catch (/** @type {any} */ err) {
+      setError(err?.message || "Subscription failed");
       console.error("Subscription error:", err);
     } finally {
       setLoading(false);

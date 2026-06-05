@@ -1,6 +1,8 @@
+// @ts-check
 import ChatToolbar from './ChatToolbar';
 import ChapterRecap from './ChapterRecap';
 
+/** @param {import('react').ComponentProps<typeof ChatToolbar>} props */
 export default function ChatToolbarSection(props) {
   return (
     <>

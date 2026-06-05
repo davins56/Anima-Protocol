@@ -1,5 +1,7 @@
+// @ts-check
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 
 const sections = [
   {
@@ -226,6 +228,7 @@ const sections = [
 ];
 
 export default function PrivacyPolicy() {
+  usePageMeta(ROUTE_META["/privacy-policy"]);
   return (
     <div className="min-h-[100dvh] bg-background pb-24">
       {/* Header */}

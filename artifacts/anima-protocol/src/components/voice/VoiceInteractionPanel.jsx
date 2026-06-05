@@ -1,8 +1,12 @@
+// @ts-check
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Volume2 } from 'lucide-react';
 import VoiceStateIndicator from './VoiceStateIndicator';
 
+/**
+ * @param {{ characterName?: string, characterEmotion?: string, isEnabled?: boolean, onToggle?: () => void, messageContent?: string, isMessagePlaying?: boolean }} props
+ */
 export default function VoiceInteractionPanel({
   characterName,
   characterEmotion = 'neutral',

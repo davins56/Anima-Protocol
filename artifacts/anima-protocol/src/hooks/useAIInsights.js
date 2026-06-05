@@ -1,6 +1,11 @@
+// @ts-check
 import { useState, useEffect, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 
+/**
+ * @param {string} sessionId
+ * @param {any[]} messages
+ */
 export function useAIInsights(sessionId, messages) {
   const [insights, setInsights] = useState(null);
   const [loading, setLoading] = useState(false);

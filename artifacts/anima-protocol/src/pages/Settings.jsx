@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
-  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink
+  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle
 } from "lucide-react";
-const resetTutorial = () => localStorage.removeItem("serenity_tutorial_seen_v1");
+import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
@@ -14,6 +14,8 @@ import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen } from "lucide-react";
 import UserContextSettings from "@/components/anima/UserContextSettings";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
+import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
+import { performRestoreFlow } from "@/lib/restoreHandlers";
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
 
@@ -54,6 +56,17 @@ export default function Settings() {
   const [showAdultGate, setShowAdultGate] = useState(false);
   const [assigningVoices, setAssigningVoices] = useState(false);
   const [voicesAssigned, setVoicesAssigned] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportedAt, setExportedAt] = useState(null);
+  const [exportError, setExportError] = useState(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState(null);
+  const [pendingRestore, setPendingRestore] = useState(null);
+  const [confirmReplace, setConfirmReplace] = useState(false);
+  // Summary of the user's CURRENT data, loaded lazily when they choose to
+  // "Replace Everything" so the confirm step can show exactly what gets wiped.
+  const [currentSummary, setCurrentSummary] = useState(null);
+  const [loadingCurrent, setLoadingCurrent] = useState(false);
 
   useEffect(() => {
     loadUser();
@@ -69,7 +82,9 @@ export default function Settings() {
 
   const loadStats = async () => {
     const [sessions, chars] = await Promise.all([
-      base44.entities.ChatSession.list("-created_date", 200),
+      // Stats only needs the row count — skip hydrating every session's full
+      // message history so this loads instantly for users with lots of chats.
+      base44.entities.ChatSession.list("-created_date", 200, { withMessages: false }),
       base44.entities.Character.list("-created_date", 200),
     ]);
     setSessionCount(sessions.length);
@@ -117,7 +132,8 @@ export default function Settings() {
     try {
       // Fetch all linked entities in parallel
       const [sessions, chars, memories, vectorMemories, inventory, checkIns, lore, quests] = await Promise.all([
-        base44.entities.ChatSession.list("-created_date", 500),
+        // Deleting only needs each session's id — skip message hydration.
+        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
         base44.entities.Character.filter({ is_default: false }),
         base44.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
         base44.entities.VectorMemory.list("-created_date", 500).catch(() => []),
@@ -152,7 +168,8 @@ export default function Settings() {
     try {
       // Fetch all deletable entity lists in parallel
       const [sessions, chars, animas, quests, lore, memories, worldStates, checkIns, crystals, resonance, userContexts, graphs] = await Promise.all([
-        base44.entities.ChatSession.list("-created_date", 500),
+        // Deleting only needs each session's id — skip message hydration.
+        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
         base44.entities.Character.filter({ is_default: false }),
         base44.entities.Anima.list("-created_date", 500),
         base44.entities.Quest.list("-created_date", 500),
@@ -195,6 +212,87 @@ export default function Settings() {
       setResetting(false);
       setShowResetConfirm(false);
     }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const data = await exportData();
+      const payload = JSON.stringify(data, null, 2);
+      const blob = new Blob([payload], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `anima-backup-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportedAt(new Date());
+      return true;
+    } catch (err) {
+      console.error("Export failed:", err);
+      setExportError(err?.message || "Export failed");
+      return false;
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleRestoreFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setRestoreResult(null);
+    try {
+      const text = await file.text();
+      // Validate + summarize before staging; throws (friendly message) for a
+      // malformed file so nothing is staged and no network call is made.
+      const staged = parseBackup(text);
+      // Defer the actual write until the user picks merge vs replace.
+      setPendingRestore(staged);
+      setConfirmReplace(false);
+    } catch (err) {
+      console.error("Restore failed:", err);
+      setRestoreResult({ ok: false, message: err?.message || "Restore failed" });
+    }
+  };
+
+  const performRestore = (mode) =>
+    performRestoreFlow(mode, {
+      pendingRestore,
+      setRestoring,
+      setRestoreResult,
+      setPendingRestore,
+      setConfirmReplace,
+      loadStats,
+      loadUser,
+    });
+
+  // Move to the "Replace Everything" confirm step, lazily loading a summary of
+  // the user's current data so we can show exactly how much will be wiped.
+  const beginReplace = async () => {
+    setConfirmReplace(true);
+    if (currentSummary || loadingCurrent) return;
+    setLoadingCurrent(true);
+    try {
+      const data = await exportData();
+      setCurrentSummary(summarizeEntities(data?.entities));
+    } catch (err) {
+      console.error("Failed to load current data summary:", err);
+      setCurrentSummary(null);
+    } finally {
+      setLoadingCurrent(false);
+    }
+  };
+
+  const cancelRestore = () => {
+    setPendingRestore(null);
+    setConfirmReplace(false);
+    setCurrentSummary(null);
+    setLoadingCurrent(false);
   };
 
   const handleLogout = () => logout();
@@ -639,6 +737,68 @@ export default function Settings() {
                 <StatBox label="Custom Characters" value={charCount} />
               </div>
 
+              <SectionTitle>Backup &amp; Restore</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5" />
+                      Export My Data
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Download a JSON backup of everything — chat sessions, characters, memories, quests, lore, inventory &amp; more. Keep it safe before wiping your data.
+                    </p>
+                    {exportedAt && (
+                      <p className="text-[9px] font-mono text-green-400/70 mt-1.5 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Backup downloaded {exportedAt.toLocaleTimeString()}
+                      </p>
+                    )}
+                    {exportError && (
+                      <p className="text-[9px] font-mono text-destructive/70 mt-1.5">{exportError}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleExport}
+                    disabled={exporting}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+                  >
+                    {exporting ? <Loader className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                    {exporting ? "Exporting..." : "Export"}
+                  </button>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 pt-4 border-t border-primary/10">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Restore From Backup
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Import a previously exported backup file. You'll choose whether to merge it into your current data or replace everything.
+                    </p>
+                    {restoreResult && (
+                      <p className={`text-[9px] font-mono mt-1.5 leading-relaxed ${restoreResult.ok ? "text-green-400/70" : "text-orange-400/70"}`}>
+                        {restoreResult.ok
+                          ? `${restoreResult.mode === "replace" ? "Replaced everything with" : "Merged in"} ${restoreResult.count} record${restoreResult.count === 1 ? "" : "s"}.`
+                          : restoreResult.message}
+                      </p>
+                    )}
+                  </div>
+                  <label className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[10px] tracking-widest uppercase transition-all cursor-pointer">
+                    {restoring ? <Loader className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                    {restoring ? "Restoring..." : "Restore"}
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      disabled={restoring}
+                      onChange={handleRestoreFile}
+                    />
+                  </label>
+                </div>
+              </div>
+
               <SectionTitle>Clear Data</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <DangerAction
@@ -772,6 +932,134 @@ export default function Settings() {
         </div>
       )}
 
+      {/* Restore From Backup Dialog */}
+      {pendingRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-background border border-primary/40 hud-corner p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <RotateCcw className="w-5 h-5 text-primary flex-shrink-0" />
+              <h2 className="font-mono text-primary tracking-[0.2em] uppercase text-sm">Restore Backup</h2>
+            </div>
+            <div className="space-y-2">
+              <p className="font-mono text-[10px] text-primary/50 tracking-wider leading-relaxed">
+                This backup contains <span className="text-primary font-bold">{pendingRestore.recordCount}</span> record{pendingRestore.recordCount === 1 ? "" : "s"}
+                {pendingRestore.exportedLabel ? <> · exported {pendingRestore.exportedLabel}</> : null}.
+              </p>
+              {pendingRestore.breakdown.length > 0 && (
+                <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-40 overflow-y-auto border-t border-primary/10 pt-2">
+                  {pendingRestore.breakdown.map((item) => (
+                    <li
+                      key={item.name}
+                      className="font-mono text-[9px] text-primary/40 tracking-wider flex justify-between gap-2"
+                    >
+                      <span className="truncate capitalize">{entityLabel(item.name, item.count)}</span>
+                      <span className="text-primary/70 font-bold flex-shrink-0">{item.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {!confirmReplace ? (
+              <>
+                <div className="space-y-3">
+                  <button
+                    onClick={() => performRestore("merge")}
+                    disabled={restoring}
+                    className="w-full text-left border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 disabled:opacity-40 p-4 transition-all"
+                  >
+                    <p className="font-mono text-xs text-primary tracking-wider uppercase flex items-center gap-2">
+                      {restoring ? <Loader className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                      Merge Into Current Data
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/40 mt-1 leading-relaxed">
+                      Adds and updates records from the backup, keeping anything not in the backup. Nothing is deleted.
+                    </p>
+                  </button>
+                  <button
+                    onClick={beginReplace}
+                    disabled={restoring}
+                    className="w-full text-left border border-orange-500/40 bg-orange-950/10 hover:bg-orange-900/20 hover:border-orange-400 disabled:opacity-40 p-4 transition-all"
+                  >
+                    <p className="font-mono text-xs text-orange-400 tracking-wider uppercase flex items-center gap-2">
+                      <AlertTriangle className="w-3 h-3" />
+                      Replace Everything
+                    </p>
+                    <p className="text-[9px] font-mono text-orange-300/50 mt-1 leading-relaxed">
+                      Wipes all current data first, then restores the backup. Cannot be undone.
+                    </p>
+                  </button>
+                </div>
+                <button
+                  onClick={cancelRestore}
+                  disabled={restoring}
+                  className="w-full px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-30"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="border border-orange-500/20 bg-orange-950/30 px-4 py-3 space-y-2">
+                  <p className="font-mono text-[10px] text-orange-300/80 tracking-wider leading-relaxed">
+                    Replacing everything will <span className="text-destructive font-bold">permanently delete</span> all of your current data before restoring the backup.
+                  </p>
+                  {loadingCurrent ? (
+                    <p className="font-mono text-[10px] text-orange-300/60 tracking-wider flex items-center gap-2">
+                      <Loader className="w-3 h-3 animate-spin" /> Checking what you have now...
+                    </p>
+                  ) : currentSummary && currentSummary.recordCount > 0 ? (
+                    <div className="space-y-1.5 border-t border-orange-500/20 pt-2">
+                      <p className="font-mono text-[10px] text-orange-300/80 tracking-wider leading-relaxed">
+                        You currently have <span className="text-destructive font-bold">{currentSummary.recordCount}</span> record{currentSummary.recordCount === 1 ? "" : "s"} that will be wiped:
+                      </p>
+                      <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-y-auto">
+                        {currentSummary.breakdown.map((item) => (
+                          <li
+                            key={item.name}
+                            className="font-mono text-[9px] text-orange-300/50 tracking-wider flex justify-between gap-2"
+                          >
+                            <span className="truncate capitalize">{entityLabel(item.name, item.count)}</span>
+                            <span className="text-orange-300/80 font-bold flex-shrink-0">{item.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : currentSummary ? (
+                    <p className="font-mono text-[10px] text-orange-300/60 tracking-wider leading-relaxed border-t border-orange-500/20 pt-2">
+                      Your account currently has no records to wipe.
+                    </p>
+                  ) : null}
+                </div>
+                <p className="font-mono text-xs text-primary/60 leading-relaxed">
+                  This <span className="text-destructive">cannot be undone</span>. Continue?
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setConfirmReplace(false)}
+                    disabled={restoring}
+                    className="flex-1 px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-30"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => performRestore("replace")}
+                    disabled={restoring}
+                    className="flex-1 px-4 py-2 bg-orange-900/30 border border-orange-500/60 text-orange-400 hover:bg-orange-900/50 disabled:opacity-50 font-mono text-xs tracking-widest uppercase transition-all flex items-center justify-center gap-2"
+                  >
+                    {restoring ? (
+                      <><Loader className="w-3 h-3 animate-spin" /> Restoring...</>
+                    ) : (
+                      "Replace Everything"
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Factory Reset Confirmation Dialog */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
@@ -794,6 +1082,14 @@ export default function Settings() {
             <p className="font-mono text-xs text-primary/60 leading-relaxed">
               You will be taken back to <span className="text-orange-400 font-bold">onboarding</span> to start fresh. This <span className="text-destructive">cannot be undone</span>.
             </p>
+            <button
+              onClick={handleExport}
+              disabled={resetting || exporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+            >
+              {exporting ? <Loader className="w-3 h-3 animate-spin" /> : exportedAt ? <CheckCircle className="w-3 h-3" /> : <Download className="w-3 h-3" />}
+              {exporting ? "Exporting..." : exportedAt ? "Backup Downloaded — Export Again" : "Export My Data First"}
+            </button>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowResetConfirm(false)}
@@ -838,6 +1134,14 @@ export default function Settings() {
             <p className="font-mono text-xs text-primary/60 leading-relaxed">
               This action <span className="text-destructive font-bold">cannot be undone</span>. You will be logged out immediately.
             </p>
+            <button
+              onClick={handleExport}
+              disabled={deletingAccount || exporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all min-h-[44px]"
+            >
+              {exporting ? <Loader className="w-3 h-3 animate-spin" /> : exportedAt ? <CheckCircle className="w-3 h-3" /> : <Download className="w-3 h-3" />}
+              {exporting ? "Exporting..." : exportedAt ? "Backup Downloaded — Export Again" : "Export My Data First"}
+            </button>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowDeleteConfirm(false)}

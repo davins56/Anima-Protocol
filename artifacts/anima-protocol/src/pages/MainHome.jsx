@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { base44, uploadDataUrl, urlToDataUrl } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Camera, Loader,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus,
 } from "lucide-react";
+import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
+import { openPhotoEditor } from "@/lib/avatarPhoto";
 
 const GREETINGS = [
   "Connection established. The weave hums with your arrival.",
@@ -47,30 +50,6 @@ function timeAgo(dateStr) {
   return `${days}d ago`;
 }
 
-function downscaleImage(file, maxSize, quality) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Failed to load image"));
-      img.onload = () => {
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-        const w = Math.max(1, Math.round(img.width * scale));
-        const h = Math.max(1, Math.round(img.height * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 function SectionHeader({ label, action }) {
   return (
     <div className="flex items-center justify-between mb-3">
@@ -86,6 +65,7 @@ export default function MainHome() {
   const navigate = useNavigate();
   const canvasRef = useRef(null);
   const animRef = useRef(null);
+  const photoInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
   const [anima, setAnima] = useState(null);
@@ -94,6 +74,7 @@ export default function MainHome() {
   const [selectedMode, setSelectedMode] = useState("serenity");
   const [greeting, setGreeting] = useState(GREETINGS[0]);
   const [loading, setLoading] = useState(true);
+<<<<<<< HEAD
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [creatingAnima, setCreatingAnima] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -138,42 +119,87 @@ export default function MainHome() {
     } finally {
       setUploadingPhoto(false);
     }
+=======
+  const [aiEditOpen, setAiEditOpen] = useState(false);
+  // The image fed into the AI edit modal: either the saved avatar (edit flow)
+  // or a freshly picked photo from disk (pick-then-edit flow).
+  const [editSource, setEditSource] = useState(null);
+  const [editingNewPhoto, setEditingNewPhoto] = useState(false);
+
+  const handleApplyAiPhoto = async (dataUrl) => {
+    if (!anima?.id) return;
+    // Persist the portrait as a real file in object storage (not base64 in the
+    // DB) so it survives refresh and syncs across devices.
+    const file_url = await uploadDataUrl(dataUrl);
+    await base44.entities.Anima.update(anima.id, { avatar_url: file_url });
+    setAnima((prev) => (prev ? { ...prev, avatar_url: file_url } : prev));
+>>>>>>> refs/remotes/origin/main
   };
 
-  useEffect(() => {
-    const init = async () => {
+  const openEditExisting = async () => {
+    const src = anima?.avatar_url || null;
+    // The AI image-edit endpoint only accepts data: URLs, so a stored avatar
+    // (now a "/api/storage/..." path) must be inlined before re-editing.
+    let source = src;
+    if (src && !src.startsWith("data:")) {
       try {
-        const me = await base44.auth.me();
-        setUser(me);
-        setSelectedMode(me?.selected_mode || "serenity");
-
-        const [sessionList, animas, checkIns] = await Promise.all([
-          base44.entities.ChatSession.list(),
-          base44.entities.Anima.list(),
-          base44.entities.CheckIn.list(),
-        ]);
-
-        const recent = [...(sessionList || [])]
-          .sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0))
-          .slice(0, 5);
-        setSessions(recent);
-
-        const userAnima = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;
-        setAnima(userAnima);
-
-        const sortedCheckIns = [...(checkIns || [])].sort(
-          (a, b) => new Date(b.timestamp || b.created_date || 0) - new Date(a.timestamp || a.created_date || 0)
-        );
-        if (sortedCheckIns.length > 0) setLastCheckIn(sortedCheckIns[0]);
-        setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
+        source = await urlToDataUrl(src);
       } catch (err) {
-        console.debug("MainHome init in restricted context");
-      } finally {
-        setLoading(false);
+        console.debug("Couldn't inline avatar for editing", err);
       }
-    };
-    init();
+    }
+    setEditSource(source);
+    setEditingNewPhoto(false);
+    setAiEditOpen(true);
+  };
+
+  // Pick a photo from disk, then open the AI edit modal pre-loaded with it so
+  // the user can transform and preview before it becomes the avatar. The modal
+  // downscales to a small JPEG on save (whether AI-edited or used as-is).
+  const handlePhotoSelected = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    openPhotoEditor(file, { setEditSource, setEditingNewPhoto, setAiEditOpen });
+  };
+
+  const loadHomeData = useCallback(async () => {
+    try {
+      const me = await base44.auth.me();
+      setUser(me);
+      setSelectedMode(me?.selected_mode || "serenity");
+
+      const [sessionList, animas, checkIns] = await Promise.all([
+        base44.entities.ChatSession.list(),
+        base44.entities.Anima.list(),
+        base44.entities.CheckIn.list(),
+      ]);
+
+      const recent = [...(sessionList || [])]
+        .sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0))
+        .slice(0, 5);
+      setSessions(recent);
+
+      const userAnima = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;
+      setAnima(userAnima);
+
+      const sortedCheckIns = [...(checkIns || [])].sort(
+        (a, b) => new Date(b.timestamp || b.created_date || 0) - new Date(a.timestamp || a.created_date || 0)
+      );
+      if (sortedCheckIns.length > 0) setLastCheckIn(sortedCheckIns[0]);
+    } catch (err) {
+      console.debug("MainHome init in restricted context");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
+    loadHomeData();
+  }, [loadHomeData]);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadHomeData);
 
   // Subtle circuit-board grid background (from the cyber-mythic greeting screen)
   useEffect(() => {
@@ -249,6 +275,7 @@ export default function MainHome() {
         >
           <button
             type="button"
+<<<<<<< HEAD
             onClick={() => {
               if (uploadingPhoto || creatingAnima) return;
               if (anima?.id) photoInputRef.current?.click();
@@ -258,6 +285,12 @@ export default function MainHome() {
             aria-label={anima?.id ? "Set your anima's photo" : "Create your anima"}
             title={anima?.id ? "Set your anima's photo" : "Create your anima"}
             className="group w-20 h-20 mb-4 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)] cursor-pointer disabled:cursor-default"
+=======
+            onClick={() => navigate("/characters?create=1")}
+            aria-label="Create a companion"
+            title="Create a companion"
+            className="group w-20 h-20 mb-4 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)] cursor-pointer"
+>>>>>>> refs/remotes/origin/main
           >
             {anima?.avatar_url ? (
               <img
@@ -267,6 +300,7 @@ export default function MainHome() {
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-cyan-950/20">
+<<<<<<< HEAD
                 <Camera className="w-5 h-5 text-cyan-400/50" />
                 <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 uppercase">
                   {anima?.id ? "Add photo" : "Create anima"}
@@ -283,23 +317,52 @@ export default function MainHome() {
             {(uploadingPhoto || creatingAnima) && (
               <div className="absolute inset-1 flex items-center justify-center bg-black/70">
                 <Loader className="w-5 h-5 text-cyan-400 animate-spin" />
+=======
+                <Plus className="w-5 h-5 text-cyan-400/60 group-hover:text-cyan-300 transition-colors" />
+                <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 group-hover:text-cyan-300/70 uppercase transition-colors">New companion</span>
+              </div>
+            )}
+
+            {anima?.avatar_url && (
+              <div className="absolute inset-1 flex flex-col items-center justify-center gap-1 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Plus className="w-5 h-5 text-cyan-400" />
+                <span className="font-mono text-[7px] tracking-widest text-cyan-400/80 uppercase">New companion</span>
+>>>>>>> refs/remotes/origin/main
               </div>
             )}
 
             <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
             <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
           </button>
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handlePhotoSelected}
-            className="hidden"
-          />
-          {photoError && (
-            <p className="font-mono text-[9px] tracking-wider text-red-400/80 -mt-2 mb-2" role="alert">
-              {photoError}
-            </p>
+          {anima?.id && (
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoSelected}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-2.5 py-1 border border-cyan-500/25 text-cyan-400/70 hover:text-cyan-300 hover:border-cyan-400/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors"
+              >
+                <ImagePlus className="w-3 h-3" />
+                Upload Photo
+              </button>
+              {(anima?.avatar_url?.startsWith("data:") ||
+                anima?.avatar_url?.startsWith("/api/storage")) && (
+                <button
+                  type="button"
+                  onClick={openEditExisting}
+                  className="flex items-center gap-1.5 px-2.5 py-1 border border-cyan-500/25 text-cyan-400/70 hover:text-cyan-300 hover:border-cyan-400/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors"
+                >
+                  <Wand2 className="w-3 h-3" />
+                  AI Edit
+                </button>
+              )}
+            </div>
           )}
           <h1
             className="text-2xl sm:text-3xl tracking-[0.35em] font-bold text-cyan-400 uppercase"
@@ -310,17 +373,27 @@ export default function MainHome() {
           <p className="text-[9px] tracking-[0.3em] text-cyan-800 mt-2 uppercase">// AI COMPANION SYSTEM</p>
         </motion.div>
 
-        {/* Greeting box */}
-        <motion.div
+        {/* Greeting box — tap to customise the active Anima */}
+        <motion.button
+          type="button"
+          onClick={() =>
+            navigate(
+              anima?.id
+                ? `/customize?tab=animas&character=${anima.id}`
+                : "/customize?tab=animas",
+            )
+          }
+          aria-label={`Customise ${anima?.name || "Serenity"}`}
+          title={`Customise ${anima?.name || "Serenity"}`}
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
-          className="relative border border-cyan-500/20 bg-cyan-950/5 p-5 group"
+          className="relative w-full text-left border border-cyan-500/20 hover:border-cyan-400/50 bg-cyan-950/5 hover:bg-cyan-950/10 p-5 group cursor-pointer transition-colors"
         >
           <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
           <div className="space-y-3 text-[11px] tracking-wider leading-relaxed font-mono">
-            <p className="text-cyan-400/60 italic">{greeting}</p>
+            <p className="text-cyan-400/60 italic pr-24">{greeting}</p>
             <p className="text-cyan-400">
               I am {anima?.name || "Serenity"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
             </p>
@@ -328,8 +401,13 @@ export default function MainHome() {
               Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
             </p>
           </div>
-          <MessageSquare className="absolute top-4 right-4 w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
-        </motion.div>
+          <div className="absolute top-4 right-4 flex items-center gap-1.5">
+            <span className="font-mono text-[7px] tracking-widest uppercase text-cyan-900 group-hover:text-cyan-400/70 transition-colors">
+              Customise
+            </span>
+            <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
+          </div>
+        </motion.button>
 
         {/* Primary actions */}
         <div className={`grid grid-cols-1 ${sessions.length > 0 ? "sm:grid-cols-2" : ""} gap-3`}>
@@ -493,6 +571,14 @@ export default function MainHome() {
           Online • V4.3.0
         </div>
       </div>
+
+      <AvatarAIEditModal
+        isOpen={aiEditOpen}
+        sourceImage={editSource}
+        allowSaveOriginal={editingNewPhoto}
+        onClose={() => setAiEditOpen(false)}
+        onApply={handleApplyAiPhoto}
+      />
     </div>
   );
 }

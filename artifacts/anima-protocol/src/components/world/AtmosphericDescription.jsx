@@ -1,6 +1,10 @@
+// @ts-check
 import { motion } from "framer-motion";
 import { Cloud, Wind, Eye } from "lucide-react";
 
+/**
+ * @param {{ description?: string, location?: string, isLoading?: boolean }} props
+ */
 export default function AtmosphericDescription({ description, location, isLoading = false }) {
   if (!description && !isLoading) {
     return null;

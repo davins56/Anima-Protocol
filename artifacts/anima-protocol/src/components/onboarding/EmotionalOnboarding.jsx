@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { base44 } from '@/api/base44Client';
@@ -5,12 +6,16 @@ import SerenityGreeting from './SerenityGreeting';
 import PresetScenarios from './PresetScenarios';
 import { useNavigate } from 'react-router-dom';
 
+/**
+ * @param {{ user?: any, onComplete?: () => void }} props
+ */
 export default function EmotionalOnboarding({ user, onComplete }) {
   const navigate = useNavigate();
   const [step, setStep] = useState('greeting'); // 'greeting' | 'scenarios' | 'complete'
-  const [selectedScenario, setSelectedScenario] = useState(null);
+  const [selectedScenario, setSelectedScenario] = useState(/** @type {any} */ (null));
   const [saving, setSaving] = useState(false);
 
+  /** @param {any} scenario */
   const handleScenarioSelect = async (scenario) => {
     setSelectedScenario(scenario);
     setSaving(true);

@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en" class="dark">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ANIMA • ARCHIVE</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+        />
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap");
+
+            :root {
+                --neon-purple: #a855f7;
+            }
+
+            body {
+                font-family: "Inter", system-ui, sans-serif;
+            }
+
+            .title-font {
+                font-family: "Space Grotesk", sans-serif;
+            }
+
+            .card {
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .card:hover {
+                transform: translateY(-8px) scale(1.03);
+                box-shadow: 0 0 30px -5px rgb(168 85 247);
+            }
+
+            .neon-text {
+                text-shadow: 0 0 10px rgb(168 85 247);
+            }
+
+            .modal {
+                animation: modalPop 0.3s ease forwards;
+            }
+
+            @keyframes modalPop {
+                from {
+                    opacity: 0;
+                    transform: scale(0.8) translateY(40px);
+                }
+                to {
+                    opacity: 1;
+                    transform: scale(1) translateY(0);
+                }
+            }
+
+            .type-badge {
+                font-size: 0.7rem;
+                letter-spacing: 0.5px;
+            }
+        </style>
+    </head>
+    <body class="bg-zinc-950 text-zinc-200 min-h-screen">
+        <div class="max-w-7xl mx-auto px-6 py-8">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-10">
+                <div class="flex items-center gap-4">
+                    <div
+                        class="w-12 h-12 bg-gradient-to-br from-purple-600 to-violet-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-purple-500/50"
+                    >
+                        ✨
+                    </div>
+                    <div>
+                        <h1
+                            class="title-font text-5xl font-semibold tracking-tighter neon-text"
+                        >
+                            ANIMA ARCHIVE
+                        </h1>
+                        <p class="text-zinc-500 text-sm">
+                            Track your ethereal companions
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <button
+                        onclick="showAddModal()"
+                        class="flex items-center gap-3 bg-purple-600 hover:bg-purple-700 transition-colors px-6 py-3 rounded-2xl font-medium text-sm"
+                    >
+                        <i class="fa-solid fa-plus"></i>
+                        <span>BIND NEW ANIMA</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="grid grid-cols-3 gap-6 mb-10">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs text-zinc-500 tracking-widest">
+                                TOTAL BOUND
+                            </p>
+                            <p
+                                id="total-count"
+                                class="text-5xl font-semibold title-font mt-1"
+                            >
+                                12
+                            </p>
+                        </div>
+                        <i
+                            class="fa-solid fa-heart text-purple-500 text-4xl"
+                        ></i>
+                    </div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs text-zinc-500 tracking-widest">
+                                HIGHEST LEVEL
+                            </p>
+                            <p
+                                id="highest-level"
+                                class="text-5xl font-semibold title-font mt-1"
+                            >
+                                47
+                            </p>
+                        </div>
+                        <i
+                            class="fa-solid fa-crown text-amber-500 text-4xl"
+                        ></i>
+                    </div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs text-zinc-500 tracking-widest">
+                                RARITY
+                            </p>
+                            <p
+                                id="rarity-distribution"
+                                class="text-5xl font-semibold title-font mt-1"
+                            >
+                                4★
+                            </p>
+                        </div>
+                        <i class="fa-solid fa-gem text-sky-400 text-4xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grid -->
+            <div
+                id="anima-grid"
+                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+            >
+                <!-- Cards populated by JS -->
+            </div>
+        </div>
+
+        <!-- Add/Edit Modal -->
+        <div
+            id="modal"
+            class="hidden fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-50"
+        >
+            <div
+                class="modal bg-zinc-900 border border-zinc-700 w-full max-w-lg mx-4 rounded-3xl overflow-hidden"
+            >
+                <!-- Modal Header -->
+                <div class="px-8 pt-8 pb-6 border-b border-zinc-800">
+                    <h2
+                        id="modal-title"
+                        class="title-font text-3xl font-semibold"
+                    >
+                        Bind New Anima
+                    </h2>
+                </div>
+
+                <form
+                    id="anima-form"
+                    onsubmit="handleFormSubmit(event)"
+                    class="p-8 space-y-6"
+                >
+                    <input type="hidden" id="edit-id" />
+
+                    <!-- Image URL -->
+                    <div>
+                        <label
+                            class="block text-xs uppercase tracking-widest text-zinc-500 mb-2"
+                            >Manifestation Image</label
+                        >
+                        <input
+                            type="text"
+                            id="image-url"
+                            class="w-full bg-zinc-950 border border-zinc-700 focus:border-purple-500 rounded-2xl px-5 py-4 outline-none text-sm"
+                            placeholder="https://example.com/image.jpg"
+                        />
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <!-- Name -->
+                        <div>
+                            <label
+                                class="block text-xs uppercase tracking-widest text-zinc-500 mb-2"
+                                >Name</label
+                            >
+                            <input
+                                type="text"
+                                id="name"
+                                required
+                                class="w-full bg-zinc-950 border border-zinc-700 focus:border-purple-500 rounded-2xl px-5 py-4 outline-none text-sm"
+                                placeholder="Lunara"
+                            />
+                        </div>
+
+                        <!-- Type -->
+                        <div>
+                            <label
+                                class="block text-xs uppercase tracking-widest text-zinc-500 mb-2"
+                                >Essence Type</label
+                            >
+                            <select
+                                id="type"
+                                required
+                                class="w-full bg-zinc-950 border border-zinc-700 focus:border-purple-500 rounded-2xl px-5 py-4 outline-none text-sm"
+                            >
+                                <option value="Shadow">Shadow</option>
+                                <option value="Flame">Flame</option>
+                                <option value="Aether">Aether</option>
+                                <option value="Frost">Frost</option>
+                                <option value="Verdant">Verdant</option>
+                                <option value="Void">Void</option>
+                                <option value="Storm">Storm</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <!-- Level -->
+                        <div>
+                            <label
+                                class="block text-xs uppercase tracking-widest text-zinc-500 mb-2"
+                                >Level</label
+                            >
+                            <input
+                                type="number"
+                                id="level"
+                                min="1"
+                                max="100"
+                                value="1"
+                                required
+                                class="w-full bg-zinc-950 border border-zinc-700 focus:border-purple-500 rounded-2xl px-5 py-4 outline-none text-sm"
+                            />
+                        </div>
+
+                        <!-- Rarity -->
+                        <div>
+                            <label
+                                class="block text-xs uppercase tracking-widest text-zinc-500 mb-2"
+                                >Rarity</label
+                            >
+                            <select
+                                id="rarity"
+                                required
+                                class="w-full bg-zinc-950 border border-zinc-700 focus:border-purple-500 rounded-2xl px-5 py-4 outline-none text-sm"
+                            >
+                                <option value="1★">1★ Common</option>
+                                <option value="2★">2★ Uncommon</option>
+                                <option value="3★" selected>3★ Rare</option>
+                                <option value="4★">4★ Epic</option>
+                                <option value="5★">5★ Legendary</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Description -->
+                    <div>
+                        <label
+                            class="block text-xs uppercase tracking-widest text-zinc-500 mb-2"
+                            >Soul Binding Description</label
+                        >
+                        <textarea
+                            id="description"
+                            rows="4"
+                            required
+                            class="w-full bg-zinc-950 border border-zinc-700 focus:border-purple-500 rounded-3xl px-5 py-4 outline-none text-sm resize-none"
+                            placeholder="A mysterious nocturnal entity..."
+                        ></textarea>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="flex gap-4 pt-6">
+                        <button
+                            type="button"
+                            onclick="hideModal()"
+                            class="flex-1 py-4 rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors font-medium"
+                        >
+                            CANCEL
+                        </button>
+                        <button
+                            type="submit"
+                            class="flex-1 py-4 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 transition-all rounded-2xl font-medium"
+                        >
+                            <span id="submit-text">BIND ANIMA</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+            // Tailwind script
+            function initTailwind() {
+                tailwind.config = {
+                    content: [],
+                    theme: {
+                        extend: {},
+                    },
+                };
+            }
+
+            let animaList = [];
+
+            // Sample data
+            const sampleData = [
+                {
+                    id: "a1",
+                    name: "Nyxara",
+                    type: "Shadow",
+                    level: 27,
+                    rarity: "4★",
+                    image: "https://picsum.photos/id/1015/300/300",
+                    description:
+                        "A silent guardian born from forgotten dreams. Moves between shadows with terrifying grace.",
+                },
+                {
+                    id: "a2",
+                    name: "Pyraeth",
+                    type: "Flame",
+                    level: 41,
+                    rarity: "5★",
+                    image: "https://picsum.photos/id/201/300/300",
+                    description:
+                        "The living embodiment of wildfire. His presence alone can ignite the air.",
+                },
+                {
+                    id: "a3",
+                    name: "Lumineth",
+                    type: "Aether",
+                    level: 19,
+                    rarity: "3★",
+                    image: "https://picsum.photos/id/237/300/300",
+                    description:
+                        "A celestial being of pure light. She heals with a touch and blinds with a glance.",
+                },
+            ];
+
+            function saveToLocalStorage() {
+                localStorage.setItem(
+                    "animaCompanions",
+                    JSON.stringify(animaList),
+                );
+            }
+
+            function loadFromLocalStorage() {
+                const saved = localStorage.getItem("animaCompanions");
+                if (saved) {
+                    animaList = JSON.parse(saved);
+                } else {
+                    animaList = [...sampleData];
+                    saveToLocalStorage();
+                }
+            }
+
+            function getTypeColor(type) {
+                const colors = {
+                    Shadow: "bg-zinc-700 text-purple-300",
+                    Flame: "bg-red-900 text-orange-300",
+                    Aether: "bg-sky-900 text-cyan-300",
+                    Frost: "bg-blue-900 text-sky-300",
+                    Verdant: "bg-emerald-900 text-green-300",
+                    Void: "bg-violet-900 text-fuchsia-300",
+                    Storm: "bg-indigo-900 text-blue-300",
+                };
+                return colors[type] || "bg-zinc-700 text-zinc-300";
+            }
+
+            function renderGrid() {
+                const grid = document.getElementById("anima-grid");
+                grid.innerHTML = "";
+
+                if (animaList.length === 0) {
+                    grid.innerHTML = `
+                    <div class="col-span-full text-center py-20">
+                        <div class="mx-auto w-24 h-24 bg-zinc-900 rounded-full flex items-center justify-center mb-6">
+                            <i class="fa-solid fa-dragon text-5xl text-zinc-700"></i>
+                        </div>
+                        <p class="text-xl text-zinc-500">No Anima bound yet...</p>
+                        <button onclick="showAddModal()" 
+                                class="mt-6 px-8 py-3 bg-zinc-800 hover:bg-purple-600 transition-colors rounded-2xl text-sm">
+                            Bind your first companion
+                        </button>
+                    </div>
+                `;
+                    return;
+                }
+
+                animaList.forEach((anima) => {
+                    const cardHTML = `
+                    <div class="card bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden group">
+                        <div class="relative h-64">
+                            <img src="${anima.image}" 
+                                 class="w-full h-full object-cover transition-all group-hover:scale-110 duration-700"
+                                 alt="${anima.name}">
+                            <div class="absolute top-4 right-4">
+                                <span class="px-4 py-1.5 text-xs font-medium rounded-3xl ${getTypeColor(anima.type)}">
+                                    ${anima.type}
+                                </span>
+                            </div>
+                            <div class="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded-2xl text-sm font-mono">
+                                Lv.${anima.level}
+                            </div>
+                        </div>
+
+                        <div class="p-6">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="title-font text-2xl font-semibold">${anima.name}</h3>
+                                    <p class="text-purple-400 text-sm">${anima.rarity}</p>
+                                </div>
+                            </div>
+
+                            <p class="mt-4 text-zinc-400 line-clamp-3 text-sm leading-relaxed">
+                                ${anima.description}
+                            </p>
+
+                            <div class="flex gap-3 mt-8">
+                                <button onclick="editAnima('${anima.id}')" 
+                                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 transition-colors py-3 rounded-2xl text-sm font-medium">
+                                    <i class="fa-solid fa-pen mr-2"></i>RESOUL
+                                </button>
+                                <button onclick="deleteAnima('${anima.id}')" 
+                                        class="flex-1 bg-red-950 hover:bg-red-900 transition-colors py-3 rounded-2xl text-sm font-medium text-red-400">
+                                    <i class="fa-solid fa-trash mr-2"></i>UNBIND
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                    grid.innerHTML += cardHTML;
+                });
+
+                // Update stats
+                document.getElementById("total-count").textContent =
+                    animaList.length;
+
+                const highest = Math.max(...animaList.map((a) => a.level));
+                document.getElementById("highest-level").textContent = highest;
+            }
+
+            function showAddModal() {
+                document.getElementById("modal-title").textContent =
+                    "Bind New Anima";
+                document.getElementById("submit-text").textContent =
+                    "BIND ANIMA";
+                document.getElementById("anima-form").reset();
+                document.getElementById("edit-id").value = "";
+                document.getElementById("modal").classList.remove("hidden");
+                document.getElementById("image-url").focus();
+            }
+
+            function hideModal() {
+                document.getElementById("modal").classList.add("hidden");
+            }
+
+            function handleFormSubmit(e) {
+                e.preventDefault();
+
+                const id = document.getElementById("edit-id").value;
+                const name = document.getElementById("name").value.trim();
+                const type = document.getElementById("type").value;
+                const level = parseInt(document.getElementById("level").value);
+                const rarity = document.getElementById("rarity").value;
+                const image =
+                    document.getElementById("image-url").value.trim() ||
+                    "https://picsum.photos/id/1015/300/300";
+                const description = document
+                    .getElementById("description")
+                    .value.trim();
+
+                if (id) {
+                    // Edit existing
+                    const anima = animaList.find((a) => a.id === id);
+                    if (anima) {
+                        anima.name = name;
+                        anima.type = type;
+                        anima.level = level;
+                        anima.rarity = rarity;
+                        anima.image = image;
+                        anima.description = description;
+                    }
+                } else {
+                    // Add new
+                    const newAnima = {
+                        id: "a" + Date.now().toString(36),
+                        name,
+                        type,
+                        level,
+                        rarity,
+                        image,
+                        description,
+                    };
+                    animaList.push(newAnima);
+                }
+
+                saveToLocalStorage();
+                renderGrid();
+                hideModal();
+            }
+
+            function editAnima(id) {
+                const anima = animaList.find((a) => a.id === id);
+                if (!anima) return;
+
+                document.getElementById("edit-id").value = id;
+                document.getElementById("name").value = anima.name;
+                document.getElementById("type").value = anima.type;
+                document.getElementById("level").value = anima.level;
+                document.getElementById("rarity").value = anima.rarity;
+                document.getElementById("image-url").value = anima.image;
+                document.getElementById("description").value =
+                    anima.description;
+
+                document.getElementById("modal-title").textContent =
+                    `Resoul ${anima.name}`;
+                document.getElementById("submit-text").textContent =
+                    "SAVE CHANGES";
+                document.getElementById("modal").classList.remove("hidden");
+            }
+
+            function deleteAnima(id) {
+                if (!confirm("Unbind this Anima permanently?")) return;
+
+                animaList = animaList.filter((a) => a.id !== id);
+                saveToLocalStorage();
+                renderGrid();
+            }
+
+            // Initialize the app
+            function initializeApp() {
+                initTailwind();
+                loadFromLocalStorage();
+                renderGrid();
+
+                // Close modal when clicking outside
+                document
+                    .getElementById("modal")
+                    .addEventListener("click", function (e) {
+                        if (e.target === this) {
+                            hideModal();
+                        }
+                    });
+
+                // Keyboard shortcut
+                document.addEventListener("keydown", function (e) {
+                    if (e.key === "Escape") {
+                        hideModal();
+                    }
+                    if (e.key === "n" && e.ctrlKey) {
+                        e.preventDefault();
+                        showAddModal();
+                    }
+                });
+            }
+
+            // Boot the application
+            window.onload = initializeApp;
+        </script>
+    </body>
+</html>

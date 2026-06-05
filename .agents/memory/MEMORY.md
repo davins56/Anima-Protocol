@@ -1,10 +1,27 @@
 - [Anima chat prompt path](anima-chat-prompt-path.md) — live AI prompt assembly is in Chat.jsx handleSendMessage; chatMessageHandler.js is dead code (never imported).
+- [Anima per-character memory](anima-character-memory.md) — "remember past conversations" lives in server characterMemory get/save; invoke handlers must return {data:{...}} or client res.data is undefined.
+- [Anima model routing](anima-model-routing.md) — model picked server-side by message-text heuristic (light/standard/heavy); client `model` param is dropped; fallback to standard only on model-unavailable (not 429).
 - [Anima character photos](anima-character-photos.md) — auto portrait lookup uses Wikipedia REST summary (not PageImages, which skips fair-use fictional art); transient vs definitive retry rule.
 - [Anima voice / TTS](anima-voice-tts.md) — ElevenLabs uses a binary /api/tts route (NOT functions.invoke); auto-play uses speakMessageNative; falls back to default voice.
 - [Anima character seeding race](anima-seeding-race.md) — localStorage seed effects must be StrictMode-race-safe (promise lock + guard); api-server dev has no watch, restart to rebuild.
 - [Anima avatar storage](anima-avatar-storage.md) — Anima created with no avatar_url; user photos must be downscaled to small JPEG data URLs (no object storage; localStorage quota).
+- [Anima avatar object storage](anima-avatar-object-storage.md) — portraits now stored as real files via presigned-PUT; serve publicly (img tags); store root-relative path; re-edit needs data: URL.
 - [Anima Clerk auth bridge](anima-clerk-auth.md) — Clerk owns identity/session, base44 localStorage holds profile; HomeGate at "/", signed-out→Landing; showChrome gates header/tabs/disclaimer.
+- [Anima cross-device live sync](anima-cross-device-sync.md) — /store/revision token + 15s/focus poller drops caches & fires `anima:store-changed`; self-write suppression must NOT advance baseline.
+- [Anima SSE push hardening](anima-sse-hardening.md) — SSE client must collapse CRLF→LF before `\n\n` split; watchdog > 2× server heartbeat; `anima:sync-mode` event; registry is process-local.
+- [Anima AI image edit](anima-image-edit.md) — inline base64 image routes need raised express.json limit (default 100KB too small); backend only accepts data: URLs so gate buttons accordingly.
 - [api-server rate-limit leak](api-server-ratelimit-leak.md) — path-less mounted sub-routers' top-level router.use(rateLimit) runs for ALL /api requests (429s on /api/store); scope it to the router's own paths.
 - [lib/db decl rebuild for typecheck](db-decl-rebuild-for-typecheck.md) — after schema edits, api-server typecheck reads stale lib/db/dist .d.ts ("no exported member"); run `cd lib/db && npx tsc -b` first.
 - [Anima Undo/delete-flow tests](anima-undo-tests.md) — real base44 hangs in vitest (no token getter); mock base44 in-memory + extract Chat page handlers to DI functions to test.
 - [Anima typecheck scope](anima-typecheck-scope.md) — typecheck only covers .ts/.tsx (allowJs off on purpose); JS-from-tsx needs colocated .d.ts; mockups/ excluded.
+- [api-server integration tests](api-server-integration-tests.md) — test /api/store against REAL Postgres, mock @clerk/express getAuth via x-test-user header; client-only guarantees tested in anima vitest.
+- [Anima checkJs rollout](anima-checkjs-rollout.md) — adopt `// @ts-check` per-file (never global flip); measure clean files via temp checkJs; useState(null)→never & default-undefined props→uncallable are the recurring real bugs.
+- [store list query pushdown](store-list-query-pushdown.md) — GET /:entity pushes filter/sort/limit into SQL; must mirror JS === / comparator (type-faithful, COLLATE "C", nulls last); fields inlined as literals so expression indexes match.
+- [Anima user-context pipeline](anima-user-context.md) — uploads have NO fetchable storage (UploadFile stub→url:null) so server reads files inline (image_data_url); context_prompt not wired into live Chat; paid-model cases must self-gate auth.
+- [Drizzle jsonb index breaks publish](drizzle-jsonb-index-publish.md) — btree index with `data -> 'field'` (jsonb) col makes publish-time diff emit jsonb_ops on adjacent text col → migration fails; use `->>` in expression indexes.
+- [api-server test DB isolation](api-server-test-db-isolation.md) — tests run in a disposable per-run schema via setupFiles + PGOPTIONS search_path (never public); LIKE-clone tables, re-point serial seq, drop CASCADE.
+- [Anima chat messages as rows](anima-chat-messages-rows.md) — messages are ChatMessage rows w/ per-session seq; pg_advisory_xact_lock in ensureSessionMigrated serializes migrate+append; edit/delete via replace shim.
+- [Anima restore vs import](anima-restore-import.md) — /import is empty-only migration (keep it); /restore is user-driven, works on non-empty accounts with merge/replace modes (replace is transactional wipe+insert).
+- [Anima cross-device sync e2e test](anima-e2e-sync-test.md) — committed Playwright spec; programmatic clerk.signIn bypasses CAPTCHA; NEVER mutate document.documentElement in addInitScript (empties the page).
+- [Anima Codespace run gate & sandbox](anima-codespace.md) — high-severity scan HARD-blocks run (never executes); iframe no allow-same-origin; sync guarded by dirty/busy/running.
+- [Anima story mode](anima-story-mode.md) — self-insert canonical-scene chat; NOT a distinct session.mode (creates mode:"solo"); NewChat selector "Story" button just opens StoryCharacterChooser.

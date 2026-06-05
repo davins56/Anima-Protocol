@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useRef, useLayoutEffect } from "react";
 import { Send, Zap, Paperclip, Loader } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+
+// Max height the input grows to before it starts scrolling internally (px).
+const MAX_INPUT_HEIGHT = 200;
 
 // Check if the entire text (or the segment around cursor) is italic (*...*) 
 function isInItalicContext(text) {
@@ -13,6 +16,17 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const textareaRef = useRef(null);
+
+  // Grow the textarea to fit its content (up to MAX_INPUT_HEIGHT, then it
+  // scrolls internally). Runs on every value change — including the reset to ""
+  // after sending — so the box shrinks back down once a message is sent.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_HEIGHT)}px`;
+  }, [value]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -110,18 +124,15 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
 
         <div className="flex-1 min-w-0">
           <textarea
+            ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={allowEmpty ? "Message... (or send empty to continue story)" : "Ask me anything (I'm an AI and can make mistakes)..."}
             disabled={disabled || isLoading}
             rows={1}
-            className="w-full input-sacred text-primary/90 placeholder-primary/20 font-mono text-base sm:text-sm px-3 sm:px-4 py-2 sm:py-3 resize-none focus:outline-none transition-all hud-corner"
-            style={{ minHeight: "40px", maxHeight: "120px", fontSize: "16px", fontStyle: isInItalicContext(value) ? "italic" : "normal" }}
-            onInput={(e) => {
-              e.target.style.height = "auto";
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
-            }}
+            className="w-full input-sacred text-primary/90 placeholder-primary/20 font-mono text-base sm:text-sm px-3 sm:px-4 py-2 sm:py-3 resize-none focus:outline-none transition-all hud-corner overflow-y-auto"
+            style={{ minHeight: "40px", maxHeight: `${MAX_INPUT_HEIGHT}px`, fontSize: "16px", fontStyle: isInItalicContext(value) ? "italic" : "normal" }}
           />
         </div>
         <button

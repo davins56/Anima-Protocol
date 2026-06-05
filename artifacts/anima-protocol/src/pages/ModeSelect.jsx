@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
@@ -53,8 +54,8 @@ const MODES = [
 
 export default function ModeSelect() {
   const navigate = useNavigate();
-  const [selectedMode, setSelectedMode] = useState(null);
-  const [user, setUser] = useState(null);
+  const [selectedMode, setSelectedMode] = useState(/** @type {string | null} */ (null));
+  const [user, setUser] = useState(/** @type {any} */ (null));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -62,6 +63,7 @@ export default function ModeSelect() {
     base44.auth.me().then(setUser).catch(() => navigate("/"));
   }, [navigate]);
 
+  /** @param {string} modeId */
   const handleSelect = (modeId) => {
     setSelectedMode(modeId);
     setError("");
@@ -105,6 +107,7 @@ export default function ModeSelect() {
           {MODES.map((mode) => {
             const Icon = mode.icon;
             const isSelected = selectedMode === mode.id;
+            /** @type {Record<string, { border: string, bg: string, text: string }>} */
             const colorMap = {
               cyan: { border: "border-cyan-400/50", bg: "bg-cyan-400/10", text: "text-cyan-400" },
               purple: { border: "border-purple-400/50", bg: "bg-purple-400/10", text: "text-purple-400" },

@@ -4,8 +4,33 @@
 // `any` while the call shapes (list/get/create/update/delete/filter, auth,
 // integrations, functions) are described accurately.
 
+export interface ListOptions {
+  // ChatSession only: skip hydrating each session's `messages` (metadata-only
+  // lists such as the chat sidebar). Defaults to hydrating.
+  withMessages?: boolean;
+  // Skip this many rows in the DB before returning, for one-page-at-a-time
+  // pagination (paired with `limit`). Applied server-side as a real SQL OFFSET.
+  offset?: number;
+  // Equality filters pushed into the SQL WHERE alongside a sort string (the
+  // positional first arg can only carry sort OR filters, so this rides via opts).
+  filters?: Record<string, unknown>;
+  // Case-insensitive substring search per field (e.g. { title: "quest" }),
+  // pushed into SQL so it spans the whole history, not just the loaded page.
+  search?: Record<string, string>;
+}
+
 export interface EntityStore {
-  list(sortOrFilters?: string | Record<string, unknown>, limit?: number): Promise<any[]>;
+  list(
+    sortOrFilters?: string | Record<string, unknown>,
+    limit?: number,
+    opts?: ListOptions,
+  ): Promise<any[]>;
+  // Grand total matching optional { filters, search } (no sort/limit/offset),
+  // for "Page X of Y" / jump-to-page pagers. One cheap COUNT(*) server-side.
+  count(opts?: {
+    filters?: Record<string, unknown>;
+    search?: Record<string, string>;
+  }): Promise<number>;
   get(id: string): Promise<any | null>;
   create(data: Record<string, unknown>): Promise<any>;
   update(id: string, data: Record<string, unknown>): Promise<any>;
@@ -15,10 +40,31 @@ export interface EntityStore {
     filters?: Record<string, unknown>,
     sort?: string,
     limit?: number,
+    opts?: ListOptions,
   ): Promise<any[]>;
 }
 
 export type EntitiesProxy = Record<string, EntityStore>;
+
+export interface MessagePageOptions {
+  limit?: number;
+  beforeSeq?: number;
+}
+
+export interface Base44Messages {
+  // Read a session's messages in ascending (chronological) seq order. No
+  // options returns the whole history; limit/beforeSeq page it.
+  list(sessionId: string, opts?: MessagePageOptions): Promise<any[]>;
+  // Append one message; the server assigns its seq. Returns the stored message.
+  append(sessionId: string, message: Record<string, unknown>): Promise<any>;
+  // Reconcile a full message array into rows (diff by id).
+  replace(sessionId: string, messages: any[]): Promise<any[]>;
+  // Batch hydrate: { [sessionId]: message[] }.
+  bySessions(ids: string[]): Promise<Record<string, any[]>>;
+  // Batch message COUNT per session: { [sessionId]: number }. Metadata-only —
+  // no full-history hydration. Backs the Stories Library card counts.
+  counts(ids: string[]): Promise<Record<string, number>>;
+}
 
 export interface Base44Auth {
   isAuthenticated(): Promise<boolean>;
@@ -51,6 +97,7 @@ export type Base44Functions = {
 export interface Base44Client {
   auth: Base44Auth;
   entities: EntitiesProxy;
+  messages: Base44Messages;
   asServiceRole: { entities: EntitiesProxy };
   integrations: Base44Integrations;
   functions: Base44Functions;
@@ -61,6 +108,10 @@ export declare function setAuthTokenGetter(
 ): void;
 export declare function clearStoreCache(): void;
 export declare function bulkImport(payload?: Record<string, unknown>): Promise<any>;
+export declare function restoreData(
+  payload?: Record<string, unknown>,
+  mode?: "merge" | "replace",
+): Promise<any>;
 
 export declare const base44: Base44Client;
 

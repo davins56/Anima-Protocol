@@ -27,3 +27,26 @@ tab; multi-tab simultaneous first-run is a known residual gap (not yet handled).
 
 Note: the `api-server` dev workflow runs `build && start` (esbuild, no watch), so
 restart that workflow to pick up backend source edits before curling endpoints.
+
+## Extension: Lore Archives crystal generation
+
+The same StrictMode/concurrent-open race applies to Lore Archives memory crystal
+auto-generation (`LoreArchivesDashboard.jsx` `autoGenerateCrystals`, run from a
+no-guard load effect). Fixed with the same shape: a module-level promise lock
+(`crystalGenLocks`, keyed by email) so concurrent opens share one pass, PLUS a
+re-read of existing crystals *inside* the locked critical section so a sequential
+re-open never mints a second crystal for an already-crystalized session. The lock
+is per-runtime, so two separate devices/processes are still a residual gap — that
+needs a server-side (user_email, session_id) uniqueness guard, not a client lock.
+
+## Server-side crystal uniqueness (cross-device source of truth)
+
+Client locks are per-runtime, so two devices/tabs (separate processes) could
+still both mint a crystal for the same session. The authoritative guard lives in
+api-server `store.ts` POST /:entity: for `MemoryCrystal` with a `session_id`, it
+runs inside a transaction holding `pg_advisory_xact_lock(hashtext(userId),
+hashtext(sessionId))`, checks for an existing crystal (`data ->> 'session_id'`),
+and returns it (HTTP 200) instead of inserting a duplicate; a real insert is 201.
+The generic `user_entities` unique index is on the generated entityId, NOT
+session_id, so it does NOT dedup crystals by session — the advisory-lock
+check-then-insert is what guarantees one-per-session under concurrent writers.

@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as SonnerToaster } from "sonner";
+import { Toaster as SonnerToaster, toast } from "sonner";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import {
@@ -18,21 +18,30 @@ import {
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
-import { Suspense, lazy, useRef, useEffect } from "react";
+import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
+import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
+import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
+import ConsentBanner from "@/components/ConsentBanner";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
 import { useKeyboardAvoidance } from "@/hooks/useKeyboardAvoidance";
-import { bootstrapUserData } from "@/lib/syncBootstrap";
+import {
+  bootstrapUserData,
+  mergeLeftoverLocalData,
+  dismissLeftoverLocalData,
+} from "@/lib/syncBootstrap";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
+const Codespace = lazy(() => import("./pages/Codespace"));
 const Landing = lazy(() => import("./pages/Landing"));
 const MainHome = lazy(() => import("./pages/MainHome"));
 const NewChat = lazy(() => import("./pages/NewChat"));
@@ -156,12 +165,13 @@ const Disclaimer = lazy(() => import("./pages/Disclaimer"));
 
 import { Navigate } from "react-router-dom";
 import AIDisclaimerModal from "@/components/legal/AIDisclaimerModal";
+import TutorialOverlay from "@/components/onboarding/TutorialOverlay";
 import InAppBrowserWarning from "@/components/InAppBrowserWarning";
 import TapTargetValidator from "@/components/mobile/TapTargetValidator";
 
 // Loading fallback component
 const PageLoader = () => (
-  <div className="flex items-center justify-center h-screen">
+  <div className="flex items-center justify-center h-screen-safe">
     <div className="text-center">
       <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-3" />
       <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
@@ -260,8 +270,9 @@ function ClerkQueryClientCacheInvalidator() {
 }
 
 function SignInPage() {
+  usePageMeta(ROUTE_META["/sign-in"]);
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <SignIn
         routing="path"
         path={`${basePath}/sign-in`}
@@ -273,8 +284,9 @@ function SignInPage() {
 }
 
 function SignUpPage() {
+  usePageMeta(ROUTE_META["/sign-up"]);
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <SignUp
         routing="path"
         path={`${basePath}/sign-up`}
@@ -373,7 +385,70 @@ const AuthenticatedApp = () => {
   // resolved user id so it runs per-account and only after the token is ready.
   useEffect(() => {
     if (isAuthenticated && user?.id) {
-      bootstrapUserData(user.id);
+      bootstrapUserData(user.id).then((outcome) => {
+        if (outcome === "failed") {
+          // The one-time import of this browser's pre-sync local data didn't
+          // confirm success. Let the user know their local characters/profile
+          // haven't synced yet (it retries automatically on the next sign-in).
+          toast.error("Your saved data hasn't synced to your account yet.", {
+            id: "anima-migration-sync",
+            description:
+              "We'll keep trying automatically. Refresh or sign in again to retry now.",
+            duration: Infinity,
+            action: {
+              label: "Retry",
+              onClick: () => window.location.reload(),
+            },
+          });
+        } else if (outcome === "migrated") {
+          // A later attempt confirmed success — clear any lingering notice.
+          toast.dismiss("anima-migration-sync");
+        } else if (outcome === "local_data_available") {
+          // A returning user signed in on a fresh browser that still holds local
+          // data created offline, but their account already has data — so the
+          // one-time import couldn't bring it over. Offer an optional, non-
+          // destructive merge that adds this device's data to their account.
+          toast("We found data saved on this device.", {
+            id: "anima-local-merge",
+            description:
+              "Add it to your account? Nothing already on your account will be overwritten.",
+            duration: Infinity,
+            action: {
+              label: "Add to my account",
+              onClick: async () => {
+                toast.loading("Adding your device's data…", {
+                  id: "anima-local-merge",
+                });
+                try {
+                  await mergeLeftoverLocalData();
+                  toast.success(
+                    "Your device's data was added to your account.",
+                    { id: "anima-local-merge", duration: 6000 },
+                  );
+                } catch (err) {
+                  console.warn("[Anima] Local data merge failed:", err.message);
+                  toast.error(
+                    "We couldn't add your device's data just now.",
+                    {
+                      id: "anima-local-merge",
+                      description: "Please try again.",
+                      duration: Infinity,
+                      action: {
+                        label: "Retry",
+                        onClick: () => window.location.reload(),
+                      },
+                    },
+                  );
+                }
+              },
+            },
+            cancel: {
+              label: "Not now",
+              onClick: () => dismissLeftoverLocalData(),
+            },
+          });
+        }
+      });
     }
   }, [isAuthenticated, user?.id]);
 
@@ -405,6 +480,11 @@ const AuthenticatedApp = () => {
     onSwipeLeft: handleSwipeLeft,
     excludeSelector: "input, textarea, [data-no-swipe]",
   });
+
+  // Gate the first-run tutorial behind the AI disclaimer so the two modals
+  // never stack. The disclaimer fires onAccept on mount when already accepted,
+  // so returning users surface the tutorial immediately (e.g. when replaying).
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -438,7 +518,10 @@ const AuthenticatedApp = () => {
 
   return (
     <>
-      {showChrome && <AIDisclaimerModal onAccept={() => {}} />}
+      {showChrome && (
+        <AIDisclaimerModal onAccept={() => setDisclaimerAccepted(true)} />
+      )}
+      {showChrome && disclaimerAccepted && <TutorialOverlay />}
       {showChrome && <MobileHeader />}
       <AnimatePresence mode="wait">
         <motion.div
@@ -451,6 +534,7 @@ const AuthenticatedApp = () => {
           className="flex-1 min-h-0 flex flex-col"
           style={{ paddingBottom: "var(--tab-bar-height, 0px)" }}
         >
+          <ErrorBoundary resetKey={location.pathname}>
           <Routes location={location}>
             {/* Root: signed-out -> Landing, signed-in -> MainHome */}
             <Route path="/" element={<HomeGate />} />
@@ -485,6 +569,14 @@ const AuthenticatedApp = () => {
               element={
                 <Suspense fallback={<PageLoader />}>
                   <Chat />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/codespace"
+              element={
+                <Suspense fallback={<PageLoader />}>
+                  <Codespace />
                 </Suspense>
               }
             />
@@ -1181,6 +1273,7 @@ const AuthenticatedApp = () => {
             />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
+          </ErrorBoundary>
         </motion.div>
       </AnimatePresence>
       {showChrome && <BottomTabBar />}
@@ -1189,6 +1282,7 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
+  useViewportHeight();
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>
@@ -1198,7 +1292,7 @@ function App() {
               <InAppBrowserWarning />
               <TapTargetValidator />
               <div
-                className="flex flex-col h-[100dvh]"
+                className="flex flex-col h-screen-safe"
                 style={{
                   paddingTop: "env(safe-area-inset-top, 0px)",
                   paddingBottom: "env(safe-area-inset-bottom, 0px)",
@@ -1209,6 +1303,7 @@ function App() {
             </ConfirmProvider>
           </AuthProvider>
         </ClerkProviderWithRoutes>
+        <ConsentBanner />
         <Toaster />
         <SonnerToaster
           theme="dark"

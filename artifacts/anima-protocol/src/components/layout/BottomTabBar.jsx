@@ -1,3 +1,4 @@
+// @ts-check
 import { useLocation, useNavigate } from "react-router-dom";
 import { MessageSquare, BookOpen, Globe, Grid3x3, Home, X } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -8,6 +9,7 @@ import { useAuth } from "@/lib/AuthContext";
 const ALL_MODULES = [
   { label: "Sign Out", path: "/landing", icon: "⎋", signOut: true },
   { label: "Chat", path: "/chat", icon: "💬" },
+  { label: "Codespace", path: "/codespace", icon: "⌨" },
   { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Storyboard", path: "/storyboard", icon: "📋" },
   { label: "Narrative", path: "/narrative", icon: "📊" },
@@ -36,6 +38,10 @@ const PINNED_TABS = [
   { path: "/worldmap", label: "Map", Icon: Globe },
 ];
 
+/**
+ * @param {string} tabPath
+ * @param {string} pathname
+ */
 function isTabActive(tabPath, pathname) {
   if (tabPath === "/") return pathname === "/";
   if (tabPath === "/chat") return pathname === "/chat" || pathname.startsWith("/chat/");

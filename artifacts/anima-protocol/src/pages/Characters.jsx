@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
-import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader } from "lucide-react";
-import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
+import { useStoreSync } from "@/lib/useStoreSync";
+import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus } from "lucide-react";
+import { autoAssignCharacterPhoto, photoNeedsLookup } from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
 import { Link } from "react-router-dom";
@@ -45,6 +46,7 @@ const defaultForm = {
 
 export default function Characters() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const confirm = useConfirm();
   const [characters, setCharacters] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -55,17 +57,35 @@ export default function Characters() {
   const [fetchingBio, setFetchingBio] = useState(false);
   const [longPressTimer, setLongPressTimer] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [photoLoadingId, setPhotoLoadingId] = useState(null);
+  const [photoMsg, setPhotoMsg] = useState(null);
+  const [brokenPhotoIds, setBrokenPhotoIds] = useState(() => new Set());
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
-
-  useEffect(() => {
-    loadCharacters();
-  }, []);
 
   const loadCharacters = async () => {
     const data = await base44.entities.Character.list("-created_date", 100);
     setCharacters(data);
   };
+
+  useEffect(() => {
+    loadCharacters();
+  }, []);
+
+  // Open the create form directly when arrived via "Create a companion" (e.g.
+  // the home-screen button navigates here with ?create=1). Clear the param so a
+  // refresh or back-navigation doesn't re-open the form.
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setEditingChar(null);
+      setForm(defaultForm);
+      setShowForm(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadCharacters);
 
   const handleEdit = (char) => {
     setEditingChar(char);
@@ -156,6 +176,34 @@ export default function Characters() {
       console.error('Error saving character:', err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // On-demand photo lookup for a card with no avatar. autoAssignCharacterPhoto
+  // throws on transient (network/server) failures and returns null when the
+  // service gave a definitive "no match" — surface those two cases distinctly.
+  const handleFindPhoto = async (char) => {
+    if (photoLoadingId) return;
+    setPhotoLoadingId(char.id);
+    setPhotoMsg(null);
+    try {
+      const url = await autoAssignCharacterPhoto(char);
+      if (url) {
+        setBrokenPhotoIds((prev) => {
+          if (!prev.has(char.id)) return prev;
+          const next = new Set(prev);
+          next.delete(char.id);
+          return next;
+        });
+        await loadCharacters();
+      } else {
+        setPhotoMsg({ id: char.id, text: "No photo found" });
+      }
+    } catch (err) {
+      console.error("Photo lookup failed:", err);
+      setPhotoMsg({ id: char.id, text: "Lookup failed — try again" });
+    } finally {
+      setPhotoLoadingId(null);
     }
   };
 
@@ -305,11 +353,39 @@ export default function Characters() {
 
                 {/* Avatar */}
                 <div className="relative">
-                  {char.avatar_url ? (
-                    <img src={char.avatar_url} alt={char.name} className="w-full aspect-square object-cover" />
+                  {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
+                    <img
+                      src={char.avatar_url}
+                      alt={char.name}
+                      className="w-full aspect-square object-cover"
+                      onError={() =>
+                        setBrokenPhotoIds((prev) =>
+                          prev.has(char.id) ? prev : new Set(prev).add(char.id)
+                        )
+                      }
+                    />
                   ) : (
-                    <div className="w-full aspect-square bg-primary/5 flex items-center justify-center">
+                    <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
                       <span className="font-mono text-primary/30 text-4xl">{char.name[0]}</span>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); handleFindPhoto(char); }}
+                        disabled={!!photoLoadingId}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 border border-primary/30 text-primary/60 hover:text-primary hover:border-primary/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors disabled:opacity-60 disabled:cursor-default"
+                      >
+                        {photoLoadingId === char.id ? (
+                          <><Loader className="w-3 h-3 animate-spin" /> Searching</>
+                        ) : (
+                          <><ImagePlus className="w-3 h-3" /> Find photo</>
+                        )}
+                      </button>
+                      {photoMsg?.id === char.id && (
+                        <span className="font-mono text-[8px] tracking-wider text-amber-400/80 text-center px-1">
+                          {photoMsg.text}
+                        </span>
+                      )}
                     </div>
                   )}
                   {/* Status dot */}

@@ -1,3 +1,4 @@
+// @ts-check
 import { useSearchParams } from "react-router-dom";
 import FactionNetworkGraph from "@/components/network/FactionNetworkGraph";
 import { ChevronLeft } from "lucide-react";

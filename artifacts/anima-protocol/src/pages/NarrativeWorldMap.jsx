@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
@@ -9,7 +10,7 @@ export default function NarrativeWorldMap() {
   const [jumpLoading, setJumpLoading] = useState(false);
   const [jumpedTo, setJumpedTo] = useState(null);
 
-  const handleSelectBranch = async (snapshot) => {
+  const handleSelectBranch = async (/** @type {any} */ snapshot) => {
     if (snapshot.is_active) return;
     
     setJumpLoading(true);

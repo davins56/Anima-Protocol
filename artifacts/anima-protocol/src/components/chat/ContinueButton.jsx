@@ -1,3 +1,7 @@
+// @ts-check
+/**
+ * @param {{ onClick?: () => void, disabled?: boolean, mode?: string }} props
+ */
 export default function ContinueButton({ onClick, disabled, mode }) {
   if (mode !== "solo") return null;
 

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ResonanceRankPanel from "@/components/lore/ResonanceRankPanel";
 import SlipthkChapterGrid from "@/components/lore/SlipthkChapterGrid";
 import MemoryCrystalVault from "@/components/lore/MemoryCrystalVault";
+import { sessionMessageCount } from "@/lib/utils";
 
 const TABS = [
   { id: "rank", label: "Resonance Rank", glyph: "⬟" },
@@ -13,12 +14,21 @@ const TABS = [
   { id: "crystals", label: "Memory Crystals", glyph: "✦" },
 ];
 
+// Auto crystal generation runs from a load effect with no concurrency guard.
+// React StrictMode double-invokes effects in dev, and two tabs/devices can open
+// the screen at once — without a guard both passes see "no crystal yet" and mint
+// a duplicate for the same session. This module-level promise lock (keyed by
+// user email) serializes generation within a runtime so only one pass mints,
+// mirroring the StrictMode-safe seeding pattern. See anima-seeding-race.md.
+const crystalGenLocks = new Map();
+
 export default function LoreArchivesDashboard() {
   const [activeTab, setActiveTab] = useState("rank");
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [crystals, setCrystals] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [messageCounts, setMessageCounts] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,8 +44,13 @@ export default function LoreArchivesDashboard() {
       const [profiles, myCrystals, mySessions] = await Promise.all([
         base44.entities.ResonanceProfile.filter({ user_email: me.email }),
         base44.entities.MemoryCrystal.filter({ user_email: me.email }, "-created_date", 100),
-        base44.entities.ChatSession.list("-updated_date", 200),
+        // Metadata only — no message history is hydrated here.
+        base44.entities.ChatSession.list("-updated_date", 200, { withMessages: false }),
       ]);
+
+      // One lightweight GROUP BY for per-session message counts (XP/rank totals
+      // + crystal eligibility) instead of pulling every session's full history.
+      const counts = await base44.messages.counts((mySessions || []).map((s) => s.id));
 
       let p = profiles?.[0];
       if (!p) {
@@ -46,13 +61,13 @@ export default function LoreArchivesDashboard() {
           resonance_xp: 0,
           unlocked_chapters: ["chapter_zero"],
           total_sessions: mySessions.length,
-          total_messages: mySessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0),
+          total_messages: mySessions.reduce((sum, s) => sum + sessionMessageCount(s, counts), 0),
           last_sync: new Date().toISOString(),
         });
       } else {
         // Sync totals
-        const totalMsgs = mySessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0);
-        const xp = computeXP(mySessions, myCrystals || []);
+        const totalMsgs = mySessions.reduce((sum, s) => sum + sessionMessageCount(s, counts), 0);
+        const xp = computeXP(mySessions, myCrystals || [], counts);
         const rank = computeRank(xp);
         const unlocked = computeUnlocks(xp, p.unlocked_chapters || []);
         p = await base44.entities.ResonanceProfile.update(p.id, {
@@ -68,9 +83,10 @@ export default function LoreArchivesDashboard() {
       setProfile(p);
       setCrystals(myCrystals || []);
       setSessions(mySessions || []);
+      setMessageCounts(counts || {});
 
       // Auto-generate crystals for sessions without them
-      await autoGenerateCrystals(me.email, mySessions, myCrystals || []);
+      await autoGenerateCrystals(me.email, mySessions, myCrystals || [], counts);
     } catch (err) {
       console.error("Init error:", err);
     } finally {
@@ -78,9 +94,9 @@ export default function LoreArchivesDashboard() {
     }
   };
 
-  const computeXP = (sessions, crystals) => {
+  const computeXP = (sessions, crystals, counts) => {
     const sessionXP = sessions.length * 40;
-    const messageXP = sessions.reduce((sum, s) => sum + Math.min((s.messages?.length || 0) * 2, 200), 0);
+    const messageXP = sessions.reduce((sum, s) => sum + Math.min(sessionMessageCount(s, counts) * 2, 200), 0);
     const crystalXP = crystals.reduce((sum, c) => sum + (c.resonance_xp_awarded || 50), 0);
     return sessionXP + messageXP + crystalXP;
   };
@@ -104,38 +120,79 @@ export default function LoreArchivesDashboard() {
     return Array.from(unlocked);
   };
 
-  const autoGenerateCrystals = async (email, sessions, existing) => {
-    const existingSessionIds = new Set(existing.map(c => c.session_id));
-    const eligible = sessions.filter(s => !existingSessionIds.has(s.id) && (s.messages?.length || 0) >= 10);
+  const autoGenerateCrystals = async (email, sessions, existing, counts) => {
+    // Cheap pre-check off the already-loaded data: if nothing is eligible there
+    // is no work and we stay entirely on the fast load path (no extra fetches,
+    // no lock).
+    const seededSessionIds = new Set((existing || []).map(c => c.session_id));
+    const candidates = sessions.filter(
+      s => !seededSessionIds.has(s.id) && sessionMessageCount(s, counts) >= 10,
+    );
+    if (candidates.length === 0) return;
 
-    for (const session of eligible.slice(0, 5)) {
-      const msgs = session.messages || [];
-      const charName = msgs.find(m => m.role === "assistant")?.character_name || "Unknown";
-      const excerpt = msgs.find(m => m.role === "assistant" && m.content?.length > 40)?.content?.slice(0, 120) || "";
-      const milestoneType = msgs.length >= 50 ? "deep_resonance" : msgs.length >= 20 ? "revelation" : "first_contact";
-      const xp = milestoneType === "deep_resonance" ? 150 : milestoneType === "revelation" ? 80 : 50;
-
-      await base44.entities.MemoryCrystal.create({
-        user_email: email,
-        session_id: session.id,
-        character_name: charName,
-        title: milestoneType === "first_contact" ? `First Contact · ${charName}` :
-               milestoneType === "revelation" ? `Revelation · ${charName}` :
-               `Deep Resonance · ${charName}`,
-        excerpt: excerpt + (excerpt.length >= 120 ? "..." : ""),
-        milestone_type: milestoneType,
-        resonance_xp_awarded: xp,
-        crystal_color: milestoneType === "deep_resonance" ? "#A78BFA" :
-                       milestoneType === "revelation" ? "#60A5FA" : "#34D399",
-        emotional_tone: "resonant",
-        message_index: msgs.length - 1,
-      });
-    }
-
-    // Reload crystals
-    if (eligible.length > 0) {
+    // Another open in this runtime (StrictMode double-invoke, or a second tab) is
+    // already minting for this user — wait for it instead of racing a second
+    // pass, then just refresh from whatever it created.
+    const inflight = crystalGenLocks.get(email);
+    if (inflight) {
+      await inflight.catch(() => {});
       const updated = await base44.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
       setCrystals(updated || []);
+      return;
+    }
+
+    const run = (async () => {
+      // Re-read crystals inside the critical section: another open (or device)
+      // may have minted some since this screen first loaded, so we never create
+      // a second crystal for a session that already has one.
+      const fresh = await base44.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
+      const haveCrystal = new Set((fresh || []).map(c => c.session_id));
+      const eligible = candidates.filter(s => !haveCrystal.has(s.id));
+
+      let created = 0;
+      for (const session of eligible.slice(0, 5)) {
+        // Guard again inside the loop so a session can never be minted twice.
+        if (haveCrystal.has(session.id)) continue;
+
+        // Fetch full message content only for the (at most 5) sessions actually
+        // getting a crystal, instead of hydrating every session's history up front.
+        const msgs = await base44.messages.list(session.id);
+        const charName = msgs.find(m => m.role === "assistant")?.character_name || "Unknown";
+        const excerpt = msgs.find(m => m.role === "assistant" && m.content?.length > 40)?.content?.slice(0, 120) || "";
+        const milestoneType = msgs.length >= 50 ? "deep_resonance" : msgs.length >= 20 ? "revelation" : "first_contact";
+        const xp = milestoneType === "deep_resonance" ? 150 : milestoneType === "revelation" ? 80 : 50;
+
+        await base44.entities.MemoryCrystal.create({
+          user_email: email,
+          session_id: session.id,
+          character_name: charName,
+          title: milestoneType === "first_contact" ? `First Contact · ${charName}` :
+                 milestoneType === "revelation" ? `Revelation · ${charName}` :
+                 `Deep Resonance · ${charName}`,
+          excerpt: excerpt + (excerpt.length >= 120 ? "..." : ""),
+          milestone_type: milestoneType,
+          resonance_xp_awarded: xp,
+          crystal_color: milestoneType === "deep_resonance" ? "#A78BFA" :
+                         milestoneType === "revelation" ? "#60A5FA" : "#34D399",
+          emotional_tone: "resonant",
+          message_index: msgs.length - 1,
+        });
+        haveCrystal.add(session.id);
+        created += 1;
+      }
+
+      // Reload crystals
+      if (created > 0) {
+        const updated = await base44.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
+        setCrystals(updated || []);
+      }
+    })();
+
+    crystalGenLocks.set(email, run);
+    try {
+      await run;
+    } finally {
+      crystalGenLocks.delete(email);
     }
   };
 
@@ -226,7 +283,7 @@ export default function LoreArchivesDashboard() {
         <AnimatePresence mode="wait">
           {activeTab === "rank" && (
             <motion.div key="rank" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              <ResonanceRankPanel profile={profile} sessions={sessions} crystals={crystals} />
+              <ResonanceRankPanel profile={profile} sessions={sessions} crystals={crystals} messageCounts={messageCounts} />
             </motion.div>
           )}
           {activeTab === "chapters" && (

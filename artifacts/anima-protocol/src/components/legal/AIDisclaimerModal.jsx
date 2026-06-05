@@ -1,9 +1,13 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const STORAGE_KEY = "ai_disclaimer_accepted";
 
+/**
+ * @param {{ onAccept?: () => void }} props
+ */
 export default function AIDisclaimerModal({ onAccept }) {
   // Read localStorage synchronously — no flicker, no re-run on prop change
   const [hasAccepted, setHasAccepted] = useState(

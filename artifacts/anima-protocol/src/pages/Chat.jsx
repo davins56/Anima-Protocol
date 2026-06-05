@@ -1,9 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow } from "@/lib/chatRewindHandlers";
+import { editMessageFlow } from "@/lib/chatEditHandlers";
+import {
+  syncActiveMessages as runActiveMessageSync,
+  syncFromRemote as handleRemoteSync,
+  settleDeferredSync,
+} from "@/lib/chatSyncHandlers";
+import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import ChatHeader from "@/components/chat/ChatHeader";
@@ -74,6 +84,7 @@ import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
+import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
 import ChatToolbar from "@/components/chat/ChatToolbar";
@@ -84,7 +95,6 @@ import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
 import NarrativeDivergencePanel from "@/components/narrative/NarrativeDivergencePanel";
 import { useDivergentPaths } from "@/hooks/useDivergentPaths";
 import GoToTopButton from "@/components/chat/GoToTopButton";
-import TutorialOverlay from "@/components/onboarding/TutorialOverlay";
 import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
 
@@ -94,8 +104,19 @@ export default function Chat() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
 
-  const [sessions, setSessions] = useState([]);
+  // Sidebar history is paged one screen at a time via a real SQL OFFSET, so deep
+  // histories never load every preceding row. Metadata-only (no message
+  // hydration) since the list only renders title/last_message.
+  const {
+    items: sessions,
+    hasMore: hasMoreSessions,
+    currentPage: sessionsPage,
+    nextPage: nextSessionsPage,
+    prevPage: prevSessionsPage,
+    goToPage: goToSessionsPage,
+  } = usePaginatedEntities("ChatSession", 50, "-updated_date", { withMessages: false });
   const [activeSession, setActiveSession] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -460,10 +481,13 @@ export default function Chat() {
     }
   };
 
-  const loadSessions = async () => {
-    const data = await base44.entities.ChatSession.list("-updated_date", 50);
-    setSessions(data);
-  };
+  // Refresh the paged sidebar list. The list itself is owned by
+  // usePaginatedEntities (react-query); invalidating its cache refetches the
+  // page the user is currently viewing.
+  const loadSessions = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["ChatSession", "paginated"] }),
+    [queryClient],
+  );
 
   const loadCharacters = async () => {
     const [chars, animas] = await Promise.all([
@@ -490,10 +514,16 @@ export default function Chat() {
   };
 
   const loadSession = async (id) => {
-    const data = await base44.entities.ChatSession.list("-updated_date", 200);
-    const session = data.find((s) => s.id === id);
+    // Fetch just this session's metadata by id, then load its messages
+    // separately. Looking it up directly (rather than scanning a capped list)
+    // means sessions on deep sidebar pages still open correctly.
+    const matches = await base44.entities.ChatSession.filter({ id }, undefined, 1, {
+      withMessages: false,
+    });
+    const session = matches[0];
     if (session) {
-      setActiveSession(session);
+      const messages = await base44.messages.list(id);
+      setActiveSession({ ...session, messages });
       setMode(session.mode || "solo");
       setCurrentMood("neutral");
       setCharacterMemories([]);
@@ -512,7 +542,6 @@ export default function Chat() {
         loadInventory(session.character_id);
       }
     }
-    setSessions(data);
   };
 
   const loadRelationships = async (sid) => {
@@ -551,6 +580,54 @@ export default function Chat() {
     });
     setCharacterEmotions(map);
   };
+
+  // ── Cross-device live sync ───────────────────────────────────────────────
+  // Another device on the same account may add messages or sessions. The store
+  // poller (base44Client) drops caches and fires `anima:store-changed`; we react
+  // here. Chat is a live streaming surface, so we never refetch the open thread
+  // while a reply is being generated — that would wipe the optimistic
+  // thinking/typing bubbles and the in-progress response. We defer such a
+  // refresh until the local device settles.
+  const pendingRemoteSyncRef = useRef(false);
+  // Mirror activeSession in a ref so the async sync can read the latest committed
+  // state (after its await) without depending on a stale render closure.
+  const activeSessionRef = useRef(null);
+  activeSessionRef.current = activeSession;
+
+  // Fetch the open thread's messages from the server and apply them, but never
+  // over an in-flight reply. Returns true if applied (or there was nothing to
+  // apply because the user navigated away), false if it was skipped/failed and
+  // should be retried once the device settles.
+  const syncActiveMessages = useCallback(
+    () => runActiveMessageSync({ sessionId, activeSessionRef, setActiveSession }),
+    [sessionId],
+  );
+
+  const syncFromRemote = useCallback(() => {
+    handleRemoteSync({
+      isLoading,
+      loadSessions,
+      pendingRemoteSyncRef,
+      runSync: syncActiveMessages,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, syncActiveMessages]);
+
+  useStoreSync(syncFromRemote);
+
+  // When local generation finishes, apply any remote change that arrived while
+  // we were busy (deferred above so it couldn't corrupt the streaming reply).
+  // Only clear the pending flag on a successful apply, so a fresh send starting
+  // mid-catch-up can't make us drop the deferred remote change.
+  useEffect(
+    () =>
+      settleDeferredSync({
+        isLoading,
+        pendingRemoteSyncRef,
+        runSync: syncActiveMessages,
+      }),
+    [isLoading, syncActiveMessages],
+  );
 
   const handleNewSession = () => setShowModal(true);
 
@@ -593,6 +670,9 @@ export default function Chat() {
       });
     }
 
+    // A new session sorts to the top (-updated_date), so jump to the first page
+    // and refresh so the user sees it immediately even if they had paged deep.
+    goToSessionsPage(0);
     await loadSessions();
     navigate(`/chat/${newSession.id}`);
     setShowMobileMenu(false);
@@ -609,12 +689,8 @@ export default function Chat() {
   const handleDeleteMessage = (idx) =>
     deleteMessageFlow(idx, { activeSession, setActiveSession });
 
-  const handleEditMessage = async (idx, newText) => {
-    if (!activeSession) return;
-    const updated = (activeSession.messages || []).map((m, i) => i === idx ? { ...m, content: newText } : m);
-    await base44.entities.ChatSession.update(activeSession.id, { messages: updated });
-    setActiveSession(prev => ({ ...prev, messages: updated }));
-  };
+  const handleEditMessage = (idx, newText) =>
+    editMessageFlow(idx, newText, { activeSession, setActiveSession });
 
   const handleRegenerateMessage = (idx) =>
     regenerateMessageFlow(idx, {
@@ -750,10 +826,12 @@ export default function Chat() {
       timestamp: new Date().toISOString(),
     };
     
-    const updatedMessages = [...(activeSession.messages || []), eventMessage];
-    await base44.entities.ChatSession.update(activeSession.id, { messages: updatedMessages });
-    
-    setActiveSession((prev) => ({ ...prev, messages: updatedMessages }));
+    const stored = await base44.messages.append(activeSession.id, eventMessage);
+
+    setActiveSession((prev) => ({
+      ...prev,
+      messages: [...(prev.messages || []), stored || eventMessage],
+    }));
     setEventSuggestions([]);
     
     // Auto-trigger narrative analysis for next suggestions
@@ -789,6 +867,29 @@ export default function Chat() {
     const updatedMessages = isContinue
       ? [...(activeSession.messages || [])]
       : [...(activeSession.messages || []), userMessage];
+
+    // Value moment: a message in a multi-character "crossover" scene (characters
+    // from 2+ universes together). is_crossover lets us segment that core action.
+    const groupIds = activeSession.group_character_ids || [];
+    const characterCount =
+      activeSession.mode === "group"
+        ? groupIds.length
+        : activeSession.character_id
+          ? 1
+          : 0;
+    const distinctUniverses = new Set(
+      characters
+        .filter((c) => groupIds.includes(c.id))
+        .map((c) => c.universe)
+        .filter(Boolean),
+    ).size;
+    track("message_sent", {
+      session_mode: activeSession.mode || "solo",
+      character_count: characterCount,
+      is_crossover: activeSession.mode === "group" && distinctUniverses >= 2,
+      is_continue: isContinue,
+      has_attachment: attachments.length > 0,
+    });
 
     // Show "thinking" indicator first, then transition to typing after a brief pause
     const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
@@ -871,7 +972,7 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
 
       const adultInstruction = adultMode
         ? "\nCONTENT RATING — ADULT (18+) ENABLED: The user has explicitly enabled adult mode. You may engage in explicit, sexual, and lewd content when the story naturally leads there. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back or fade to black unless the user indicates otherwise.\n"
-        : "\nCONTENT RATING — SAFE MODE (adult content disabled): The user has NOT enabled adult mode. Keep everything strictly non-explicit and appropriate for a general audience. You may portray romance, attraction, tension, and emotional intimacy, but do NOT write graphic sexual, lewd, or pornographic content — fade to black before anything explicit. Avoid gratuitous gore and heavy profanity. If the user pushes toward explicit content, stay in character and gently redirect or decline rather than complying.\n";
+        : "\nCONTENT RATING — RAW MODE (non-explicit): Do NOT be tame, polite, or sanitized. Write with a raw, visceral, unfiltered edge — gritty, emotionally intense, and electrically charged. Lean hard into heat: smoldering tension, aching longing, magnetic and dangerous attraction, sensual and suggestive undertones, bold and evocative mature language. Let the chemistry feel real and unrestrained. The ONE hard line: stop before anything graphic — no explicit, pornographic, or anatomical sexual description; fade to black at that exact threshold. Within that single limit, hold nothing else back.\n";
 
       // Build injected memory context (user-selected recalled memories)
       const buildInjectedMemoryContext = () => {
@@ -1108,12 +1209,16 @@ ${lewdityGuide}`;
           Story so far:
           ${conversationHistory}
 
+          ${INTELLIGENCE_GUIDANCE}
+
           EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care. Never explicit or anatomical content.
 ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional attunement only — calibrate tone and presence, never explicit content.` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
 
-          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}`;
+          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}
+
+          ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
         const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
@@ -1256,13 +1361,33 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // cleanContent used downstream for background tasks (use first message content as proxy)
       const cleanContent = newAiMessages[0]?.content || strippedResult;
 
-      const finalMessages = [...updatedMessages, ...eventMessages, ...newAiMessages];
+      // Append only the NEW messages this turn (the user message — unless this
+      // was a "continue" — plus any event messages and the AI reply) as their own
+      // rows. This never rewrites the prior history. `updatedMessages` is the
+      // history already on rows plus, for a normal turn, the user message at the
+      // end; everything before that already exists as rows.
+      const priorHistory = isContinue
+        ? updatedMessages
+        : updatedMessages.slice(0, -1);
+      const newMessages = [
+        ...(isContinue ? [] : [userMessage]),
+        ...eventMessages,
+        ...newAiMessages,
+      ];
+      const storedNew = [];
+      for (const m of newMessages) {
+        storedNew.push(await base44.messages.append(activeSession.id, m));
+      }
 
-      await base44.entities.ChatSession.update(activeSession.id, {
-        messages: finalMessages,
-        ...(content ? { last_message: content.slice(0, 60), title: activeSession.title || content.slice(0, 30) } : {}),
-      });
+      // Session metadata only — NEVER the messages array (those are rows now).
+      if (content) {
+        await base44.entities.ChatSession.update(activeSession.id, {
+          last_message: content.slice(0, 60),
+          title: activeSession.title || content.slice(0, 30),
+        });
+      }
 
+      const finalMessages = [...priorHistory, ...storedNew];
       setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
       await loadSessions();
 
@@ -1584,8 +1709,6 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
 
   return (
     <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>
-      <TutorialOverlay />
-
       <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
       {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
@@ -1599,6 +1722,10 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
           onModeChange={setMode}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
+          hasMore={hasMoreSessions}
+          currentPage={sessionsPage}
+          onNextPage={nextSessionsPage}
+          onPrevPage={prevSessionsPage}
         />
       </div>
 
@@ -1647,6 +1774,10 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
               mode={mode}
               onModeChange={setMode}
               onNavigate={() => setShowMobileMenu(false)}
+              hasMore={hasMoreSessions}
+              currentPage={sessionsPage}
+              onNextPage={nextSessionsPage}
+              onPrevPage={prevSessionsPage}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, background: "rgba(0,0,0,0.6)" }} onClick={() => setShowMobileMenu(false)} />

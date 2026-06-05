@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "python-3.11"]
+modules = ["nodejs-20", "nodejs-24", "postgresql-16", "python-3.11"]
 
 [deployment]
 router = "application"
@@ -28,12 +28,12 @@ args = "typecheck"
 name = "test"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm --filter @workspace/anima-protocol run test"
-
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/anima-protocol --filter @workspace/api-server run test"
 
 [[workflows.workflow]]
 name = "typecheck"
@@ -52,7 +52,7 @@ expertMode = true
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 20000
+timeoutMs = 180000
 
 [[ports]]
 localPort = 8080
@@ -69,3 +69,11 @@ externalPort = 3002
 [[ports]]
 localPort = 23660
 externalPort = 3000
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+VITE_MIXPANEL_TOKEN = "0b53f8dc53496e26bbc41f04bb2faad1"

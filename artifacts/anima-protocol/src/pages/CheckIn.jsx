@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
@@ -8,7 +9,7 @@ const PHYSICAL_STATES = ["energized", "neutral", "tired", "restless", "grounded"
 
 export default function CheckIn() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(/** @type {Record<string, any> | null} */ (null));
   const [selectedMode, setSelectedMode] = useState(null);
   const [mood, setMood] = useState("neutral");
   const [moodIntensity, setMoodIntensity] = useState(5);

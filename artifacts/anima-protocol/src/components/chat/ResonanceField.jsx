@@ -1,3 +1,4 @@
+// @ts-check
 import { motion } from "framer-motion";
 import { RESONANCE_TIERS } from "@/hooks/useResonance";
 

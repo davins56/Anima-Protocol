@@ -1,7 +1,9 @@
+// @ts-check
 import { useState, useEffect } from 'react';
 import { ArrowUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+/** @param {{ containerRef: import('react').RefObject<HTMLElement | null> }} props */
 export default function GoToTopButton({ containerRef }) {
   const [visible, setVisible] = useState(false);
 
