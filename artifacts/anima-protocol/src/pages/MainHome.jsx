@@ -305,8 +305,8 @@ export default function MainHome() {
                 : "/customize?tab=animas",
             )
           }
-          aria-label={`Customise ${anima?.name || "Serenity"}`}
-          title={`Customise ${anima?.name || "Serenity"}`}
+          aria-label={`Customise ${anima?.name || "your Anima"}`}
+          title={`Customise ${anima?.name || "your Anima"}`}
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
@@ -317,7 +317,7 @@ export default function MainHome() {
           <div className="space-y-3 text-[11px] tracking-wider leading-relaxed font-mono">
             <p className="text-cyan-400/60 italic pr-24">{greeting}</p>
             <p className="text-cyan-400">
-              I am {anima?.name || "Serenity"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
+              I am {anima?.name || "your Anima"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
             </p>
             <p className="text-cyan-400/60">
               Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.

@@ -32,6 +32,7 @@ import {
   mergeLeftoverLocalData,
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
+import { base44 } from "@/api/base44Client";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -292,14 +293,47 @@ function SignUpPage() {
   );
 }
 
+// First-run gate for signed-in users: if they have not yet awakened an Anima,
+// show the Serenity-led onboarding. Once an Anima exists, load their dashboard.
+// Fails open to the dashboard so a transient lookup error never traps the user.
+function SignedInHome() {
+  const [state, setState] = useState("checking"); // 'checking' | 'onboarding' | 'home'
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const animas = await base44.entities.Anima.list("-created_date", 1);
+        if (!cancelled) {
+          setState((animas?.length || 0) > 0 ? "home" : "onboarding");
+        }
+      } catch {
+        if (!cancelled) setState("home");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state === "checking") return <PageLoader />;
+  return (
+    <Suspense fallback={<PageLoader />}>
+      {state === "onboarding" ? (
+        <OnboardingFlow onComplete={() => setState("home")} />
+      ) : (
+        <MainHome />
+      )}
+    </Suspense>
+  );
+}
+
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
   return (
     <>
       <Show when="signed-in">
-        <Suspense fallback={<PageLoader />}>
-          <MainHome />
-        </Suspense>
+        <SignedInHome />
       </Show>
       <Show when="signed-out">
         <Suspense fallback={<PageLoader />}>
