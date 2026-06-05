@@ -73,6 +73,62 @@ function parseTraits(raw: string): { personality: string; backstory: string; spe
   }
 }
 
+export type GeneratedCompanion = {
+  name: string;
+  universe: string;
+  category: string;
+  tagline: string;
+  personality: string;
+  backstory: string;
+  speaking_style: string;
+  traits: string;
+  is_real_character: boolean;
+};
+
+// Tolerant JSON parse of the research-grounded companion generator output.
+// Exported so the normalization can be unit-tested without hitting OpenAI.
+export function parseCompanion(raw: string): GeneratedCompanion {
+  const empty: GeneratedCompanion = {
+    name: "",
+    universe: "",
+    category: "",
+    tagline: "",
+    personality: "",
+    backstory: "",
+    speaking_style: "",
+    traits: "",
+    is_real_character: false,
+  };
+  try {
+    const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start === -1 || end === -1) return empty;
+    const obj = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
+    const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+    const traitsRaw = obj.traits;
+    const traits = Array.isArray(traitsRaw)
+      ? traitsRaw
+          .filter((t): t is string => typeof t === "string" && t.trim() !== "")
+          .map((t) => t.trim())
+          .join(", ")
+      : str(traitsRaw);
+    return {
+      name: str(obj.name),
+      universe: str(obj.universe),
+      category: str(obj.category),
+      tagline: str(obj.tagline),
+      personality: str(obj.personality),
+      backstory: str(obj.backstory),
+      speaking_style: str(obj.speaking_style),
+      traits,
+      is_real_character: obj.is_real_character === true,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 // --- User background context (documents + photos) --------------------------
 // A user can upload background documents (novels, journals, character sheets)
 // AND photos (scanned pages, reference images) so the AI companion understands
@@ -624,12 +680,29 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "generateCompanionFromPrompt": {
-        const prompt = (data.prompt as string) || "";
-        const raw = await llm(
-          "Create an AI companion character. Return a JSON object with: { name, personality, backstory, speaking_style, traits }. Output only valid JSON.",
-          `Create companion: ${prompt}`
+        const prompt = ((data.prompt as string) || "").trim();
+        if (!prompt) {
+          result = { success: false, error: "Please describe the companion you want to create." };
+          break;
+        }
+        // Research-grounded generation: the assistant uses web search to decide
+        // whether the description names a real, established character. If so it
+        // grounds every field in canonical detail; otherwise it invents a
+        // coherent original. Either way the user gets a prefilled, editable
+        // profile.
+        const raw = await webSearchLLM(
+          "You are a character research assistant for an AI-companion app. The user will describe a character they want to create. This may be an established, identifiable character (from fiction, film, TV, anime, games, comics, mythology, or history) OR an original character of their own invention. First use web search to determine whether the description refers to a real, well-known character. If it does, research them and ground EVERY field in accurate, canonical detail. If it is original, invent a vivid, coherent profile faithful to the description. Return ONLY a valid JSON object with exactly these fields: \"name\" (string), \"universe\" (string \u2014 the franchise/world/origin they belong to, or a short evocative origin for an original), \"category\" (string \u2014 a one or two word type such as warrior, detective, sage, trickster), \"tagline\" (string \u2014 a short evocative one-line hook), \"personality\" (string, 2-4 sentences), \"backstory\" (string, 2-4 sentences), \"speaking_style\" (string, 2-4 sentences capturing concrete, imitable details: verbal tics, catchphrases, vocabulary, rhythm, tone, and mannerisms so an AI can convincingly speak as them), \"traits\" (array of 3-6 short trait words), and \"is_real_character\" (boolean \u2014 true only if you grounded the profile in a real, established character you confirmed via research). Do not include markdown, code fences, or any text outside the JSON.",
+          `Research and create a companion from this description: ${prompt}`
         );
-        try { result = JSON.parse(raw); } catch { result = {}; }
+        const companion = parseCompanion(raw);
+        if (!companion.name) {
+          result = {
+            success: false,
+            error: "Could not generate a companion from that description. Try adding more detail.",
+          };
+          break;
+        }
+        result = { success: true, companion };
         break;
       }
 
