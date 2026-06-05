@@ -27,6 +27,11 @@ import {
   type ResonanceState,
 } from "./resonanceState";
 import {
+  type SynchroState,
+  synchroToMemoryConfig,
+  synchroToPromptGuidance,
+} from "./synchroEngine";
+import {
   type CharacterData,
   extractVoiceAnchors,
   formatVoiceAnchors,
@@ -34,7 +39,7 @@ import {
 } from "./voiceAnchors";
 
 // Re-export sub-module types for consumers
-export type { CompanionMemoryRecord, CharacterData, ResonanceState };
+export type { CompanionMemoryRecord, CharacterData, ResonanceState, SynchroState };
 
 export interface MsgData {
   role?: string;
@@ -66,6 +71,8 @@ export interface PromptBuilderParams {
   relationshipTier?: string | null;
   /** Whether this is a crossover session */
   isCrossover?: boolean;
+  /** Pre-computed synchro state (if provided, overrides internal resonance init) */
+  synchroState?: SynchroState | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -206,6 +213,7 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     content,
     relationshipTier,
     isCrossover,
+    synchroState,
   } = params;
 
   const mainChar = activeCharacter || characters[0];
@@ -223,16 +231,19 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
       ? characters.map((c) => buildCharacterDefinition(c, BUDGET.characterDef / characters.length)).join("\n\n")
       : "";
 
-  // 3. Resonance state (derive from memory + relationship + current message)
+  // 3. Resonance / synchro state
   let resonanceBlock = "";
-  if (mainChar && memories.length > 0) {
+  if (synchroState) {
+    // Use the pre-computed synchro state (includes resonance + synchro guidance)
+    resonanceBlock = synchroToPromptGuidance(synchroState);
+  } else if (mainChar && memories.length > 0) {
+    // Fallback to basic resonance (backward compatible)
     const memoryForChar = memories.find((m) => m.characterId === String(mainChar.id || ""));
     const resonanceState = initResonanceState(
       memoryForChar?.emotionalState,
       memoryForChar?.resonanceNotes,
       relationshipTier,
     );
-    // Detect shifts from the current user message
     if (content) {
       const shifts = detectResonanceShift(content, resonanceState);
       const evolved = evolveResonanceState(resonanceState, shifts);
@@ -242,10 +253,14 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     }
   }
 
-  // 4. Smart memory retrieval
+  // 4. Smart memory retrieval (synchro-gated when available)
+  const memConfig = synchroState
+    ? synchroToMemoryConfig(synchroState)
+    : { topK: 12, preferTypes: undefined };
   const scoredMemories = retrieveRelevantMemories(memories, {
-    topK: 12,
+    topK: memConfig.topK,
     contextHint: content,
+    preferTypes: memConfig.preferTypes,
   });
   const memoryBlock = formatMemoriesForPrompt(scoredMemories, characterNames);
   const memorySummary = buildMemorySummaryBlock(memories, characterNames);
