@@ -24,5 +24,6 @@
 - [Anima chat messages as rows](anima-chat-messages-rows.md) — messages are ChatMessage rows w/ per-session seq; pg_advisory_xact_lock in ensureSessionMigrated serializes migrate+append; edit/delete via replace shim.
 - [Anima restore vs import](anima-restore-import.md) — /import is empty-only migration (keep it); /restore is user-driven, works on non-empty accounts with merge/replace modes (replace is transactional wipe+insert).
 - [Anima cross-device sync e2e test](anima-e2e-sync-test.md) — committed Playwright spec; programmatic clerk.signIn bypasses CAPTCHA; NEVER mutate document.documentElement in addInitScript (empties the page).
+- [Anima prod DB SSL outage](anima-prod-ssl-outage.md) — pg-connection-string now treats sslmode=require as verify-full → prod-only all-query 500s; fix: set Pool ssl explicitly (disable→false else rejectUnauthorized:false), needs redeploy.
 - [Anima Codespace run gate & sandbox](anima-codespace.md) — high-severity scan HARD-blocks run (never executes); iframe no allow-same-origin; sync guarded by dirty/busy/running.
 - [Anima story mode](anima-story-mode.md) — self-insert canonical-scene chat; NOT a distinct session.mode (creates mode:"solo"); NewChat selector "Story" button just opens StoryCharacterChooser.
