@@ -1051,7 +1051,7 @@ export const base44 = {
 
   integrations: {
     Core: {
-      InvokeLLM: async ({ prompt, systemPrompt }) => {
+      InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
         // Create/reuse a conversation for LLM calls
         let convId = sessionStorage.getItem('anima_llm_conv_id');
         if (!convId) {
@@ -1065,6 +1065,7 @@ export const base44 = {
           Number(convId),
           prompt,
           systemPrompt || '',
+          !!deepMode,
         )) {
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);

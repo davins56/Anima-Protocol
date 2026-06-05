@@ -796,6 +796,23 @@ export default function Chat() {
     }
   };
 
+  // Per-conversation "deep mode": when on, every substantive reply is forced
+  // onto the most capable (heavy) model tier instead of the cost-saving
+  // auto-routed tier. Persisted on the session so it survives reloads and
+  // syncs across devices. Optimistic toggle with rollback on failure.
+  const handleToggleDeepMode = async () => {
+    if (!activeSession?.id) return;
+    const next = !activeSession.deep_mode;
+    setActiveSession((prev) => ({ ...prev, deep_mode: next }));
+    try {
+      await base44.entities.ChatSession.update(activeSession.id, { deep_mode: next });
+      track("deep_mode_toggled", { session_id: activeSession.id, enabled: next });
+    } catch (err) {
+      console.error("Error toggling deep mode:", err);
+      setActiveSession((prev) => ({ ...prev, deep_mode: !next }));
+    }
+  };
+
   const analyzeNarrative = async () => {
     if (!activeSession?.messages || activeSession.messages.length < 3) return;
     
@@ -1301,6 +1318,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         prompt,
         add_context_from_internet: needsWebSearch,
         model: needsWebSearch ? "gemini_3_flash" : undefined,
+        deepMode: !!activeSession.deep_mode,
       });
 
       let charName = "Serenity";
@@ -1522,7 +1540,7 @@ ${charName}: ${cleanContent || result}
 
 Someone has just addressed you, Serenity. Respond briefly and in character — present but not dominating. ${serenityLengthGuide}`;
 
-        base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt }).then(async (serenityResult) => {
+        base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt, deepMode: !!activeSession.deep_mode }).then(async (serenityResult) => {
           const serenityMsg = {
             role: "assistant",
             content: serenityResult.replace(/\[(EMOTION|LOCATION):[^\]]+\]/gi, "").trim(),
@@ -1804,6 +1822,7 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
               onStopReadingStory={handleStopReadingStory}
               onShowImageGen={() => setShowImageGen(true)}
               onShowEditModal={() => setShowEditModal(true)}
+              onToggleDeepMode={handleToggleDeepMode}
               onOpenRecap={() => openRecap(activeSession.id)}
               onSelectBranch={handleSelectBranch}
               onCreateBranch={() => setShowCreateBranch(true)}

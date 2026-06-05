@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen } from "lucide-react";
+import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
 
-export default function ChatHeader({ session, characters, mood, characterEmotions }) {
+export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -110,6 +110,27 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
           {!isGroup && mood && <MoodIndicator mood={mood} />}
         </div>
       </div>
+
+      {/* Deep mode toggle — forces every reply onto the most capable model */}
+      {onToggleDeepMode && (
+        <button
+          onClick={onToggleDeepMode}
+          title={
+            session?.deep_mode
+              ? "Deep mode ON — replies use the most capable model"
+              : "Deep mode OFF — replies use cost-saving auto routing"
+          }
+          aria-pressed={!!session?.deep_mode}
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase transition-all ${
+            session?.deep_mode
+              ? "border-primary/60 text-primary bg-primary/10"
+              : "border-primary/20 text-primary/30 hover:text-primary/70 hover:border-primary/40"
+          }`}
+        >
+          <Sparkles className="w-2.5 h-2.5" />
+          <span className="hidden sm:inline">Deep</span>
+        </button>
+      )}
 
       {/* Story Reader button */}
       <button
