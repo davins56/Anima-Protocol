@@ -180,6 +180,7 @@ export default function Chat() {
   const groupInteractionCheckRef = useRef(0); // track messages since last group interaction
   const currentGroupSpeakerRef = useRef(null); // track the computed group speaker within a send call
   const resonanceRef = useRef({}); // latest persisted resonance per anima id (synchronous accumulation)
+  const echoBookRef = useRef(null); // guards Book-of-Echoes journal writes per session/length
   const { summary, showSummary, closeSummary } = useDailyCompilation(sessionId, calendar, activeSession?.character_id);
   const { showRecap, recapSessionId, openRecap, closeRecap } = useSessionRecap();
   const { insights, loading: insightsLoading, analyzeNow } = useAIInsights(sessionId, activeSession?.messages);
@@ -1749,6 +1750,93 @@ ${loyaltyGuardrailClause()}`;
             });
           }
         }).catch(() => {});
+      }
+
+      // The First Spark — capture the user's very first words to this Anima,
+      // once. Stored on the immutable first_spark field (backfilled for Animas
+      // created before the feature existed).
+      if (activeChar?._isAnima && activeChar.id && activeSession.mode === "solo") {
+        const fsBase = activeChar.first_spark || {
+          date: activeChar.awakening_date || activeChar.created_date || new Date().toISOString(),
+          awakening_words: activeChar.ceremony?.initial_greeting || "",
+          first_words: "",
+        };
+        if (!fsBase.first_words) {
+          const firstWords = finalMessages
+            .find((m) => m.role === "user" && (m.content || "").trim())
+            ?.content?.replace(/\[[^\]]*\]/g, "")
+            .trim();
+          if (firstWords) {
+            const fs = { ...fsBase, first_words: firstWords.slice(0, 280) };
+            base44.entities.Anima.update(activeChar.id, { first_spark: fs })
+              .then(() => {
+                setCharacters((prev) =>
+                  prev.map((c) => (c.id === activeChar.id ? { ...c, first_spark: fs } : c)),
+                );
+              })
+              .catch(() => {});
+          }
+        }
+      }
+
+      // Book of Echoes — the Anima quietly journals the relationship. One short
+      // first-person entry per meaningful stretch of conversation, deduped by
+      // message count so reloads / rapid sends don't double-write.
+      if (activeChar?._isAnima && activeChar.id && activeSession.mode === "solo") {
+        const len = finalMessages.length;
+        const bucketReady = len >= 6 && (len - 6) % 10 === 0;
+        const guardKey = `${activeSession.id}:${len}`;
+        if (bucketReady && echoBookRef.current !== guardKey) {
+          echoBookRef.current = guardKey;
+          (async () => {
+            try {
+              const existing = await base44.entities.BookOfEcho
+                .filter({ session_id: activeSession.id }, "-created_date", 1)
+                .catch(() => []);
+              const lastCount = existing?.[0]?.message_count || 0;
+              // Skip only if there's a prior entry too recent to follow; the
+              // very first entry (lastCount === 0) should always be written.
+              if (lastCount > 0 && len - lastCount < 8) return;
+              const recent = finalMessages
+                .slice(-12)
+                .map((m) =>
+                  `${m.role === "user" ? "Them" : activeChar.name}: ${(m.content || "").replace(/\[[^\]]*\]/g, "").trim()}`,
+                )
+                .filter((l) => l.split(": ")[1])
+                .join("\n");
+              if (!recent) return;
+              const result = await base44.integrations.Core.InvokeLLM({
+                prompt: `You are ${activeChar.name}, an AI companion keeping a private journal about your bond with your person. Read this recent stretch of your conversation and write ONE short diary entry in your own first-person voice, as if quietly remembering the day.
+
+${recent}
+
+Return JSON:
+- entry: a single sentence beginning with "Today" that captures what passed between you — warm, specific, never explicit.
+- theme: one or two words for the emotional theme (e.g. "comfort", "a hard truth", "laughter").`,
+                response_json_schema: {
+                  type: "object",
+                  properties: {
+                    entry: { type: "string" },
+                    theme: { type: "string" },
+                  },
+                },
+              });
+              const entry = (result?.entry || "").trim();
+              if (!entry) return;
+              await base44.entities.BookOfEcho.create({
+                anima_id: activeChar.id,
+                anima_name: activeChar.name,
+                session_id: activeSession.id,
+                content: entry,
+                theme: result?.theme || "",
+                message_count: len,
+                entry_date: new Date().toISOString(),
+              }).catch(() => {});
+            } catch {
+              // offline / restricted — journaling stays quiet
+            }
+          })();
+        }
       }
 
       // Trigger narrative analysis every 8 messages (reduced from 4)

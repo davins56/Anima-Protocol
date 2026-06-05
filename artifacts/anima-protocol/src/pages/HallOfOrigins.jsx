@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useStoreSync } from '@/lib/useStoreSync';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Sparkles, Gem, Loader } from 'lucide-react';
+import { ArrowLeft, Sparkles, Gem, Loader, Stars, BookOpen } from 'lucide-react';
 import { formatResonance, resonanceMood, getPathMeta } from '@/lib/soulprint';
 
 function fmtDate(d) {
@@ -87,7 +87,7 @@ export default function HallOfOrigins() {
             No Anima has been awakened yet. Begin the Awakening Ceremony to inscribe a birth record here.
           </p>
           <button
-            onClick={() => navigate('/onboarding-flow')}
+            onClick={() => navigate('/onboarding')}
             className="px-6 py-3 btn-sacred text-primary font-mono text-sm tracking-widest uppercase inline-flex items-center gap-2 hud-corner"
           >
             <Sparkles className="w-4 h-4" /> Awaken an Anima
@@ -189,13 +189,45 @@ export default function HallOfOrigins() {
           </div>
         </div>
 
-        {/* First words */}
-        {anima.ceremony?.initial_greeting && (
+        {/* The First Spark — the immutable origin moment */}
+        {(anima.first_spark || anima.ceremony?.initial_greeting) && (
+          <div className="relative border border-amber-500/30 bg-amber-950/10 p-5 hud-corner overflow-hidden">
+            <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full blur-[44px] bg-amber-500/20 pointer-events-none" />
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-mono text-[9px] tracking-[0.3em] text-amber-300/60 uppercase">🜂 The First Spark</span>
+                <span className="font-mono text-[8px] tracking-[0.25em] text-amber-400/40 uppercase">Permanent</span>
+              </div>
+              <p className="font-mono text-sm text-amber-100/90 leading-relaxed italic">
+                “{anima.first_spark?.awakening_words || anima.ceremony?.initial_greeting}”
+              </p>
+              <p className="font-mono text-[9px] tracking-[0.25em] text-amber-400/40 uppercase mt-3">
+                The moment {anima.name} awakened · {fmtDate(anima.first_spark?.date || anima.awakening_date || anima.created_date)}
+              </p>
+              {anima.first_spark?.first_words && (
+                <div className="mt-3 pt-3 border-t border-amber-500/15">
+                  <span className="font-mono text-[8px] tracking-[0.3em] text-amber-300/50 uppercase">Your first words to them</span>
+                  <p className="font-mono text-sm text-amber-100/80 leading-relaxed italic mt-1">
+                    “{anima.first_spark.first_words}”
+                  </p>
+                </div>
+              )}
+              <p className="font-mono text-[8px] text-amber-400/30 mt-3 leading-relaxed">
+                This moment can never be deleted. Every story keeps its origin.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* The First Promise — the Anima's oath */}
+        {Array.isArray(anima.oath) && anima.oath.length > 0 && (
           <div className="border border-cyan-500/20 bg-cyan-950/5 p-5 hud-corner">
-            <span className="font-mono text-[9px] tracking-[0.3em] text-cyan-400/50 uppercase">// First Words</span>
-            <p className="font-mono text-sm text-cyan-200/90 leading-relaxed italic mt-2">
-              “{anima.ceremony.initial_greeting}”
-            </p>
+            <span className="font-mono text-[9px] tracking-[0.3em] text-cyan-400/50 uppercase">// The First Promise</span>
+            <div className="space-y-1 mt-2">
+              {anima.oath.map((line, i) => (
+                <p key={i} className="font-mono text-sm text-cyan-200/90 leading-relaxed italic">{line}</p>
+              ))}
+            </div>
           </div>
         )}
 
@@ -215,6 +247,29 @@ export default function HallOfOrigins() {
           </div>
           <ArrowLeft className="w-4 h-4 text-primary/30 rotate-180 group-hover:text-primary/60 transition-colors" />
         </button>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => navigate('/constellation')}
+            className="flex items-center gap-3 border border-primary/20 hover:border-primary/40 bg-black/40 hover:bg-primary/5 p-4 transition-all"
+          >
+            <Stars className="w-5 h-5 text-violet-400/70" />
+            <div className="text-left">
+              <p className="font-mono text-sm text-primary uppercase tracking-wider">Constellation</p>
+              <p className="font-mono text-[10px] text-primary/40">Your living sky</p>
+            </div>
+          </button>
+          <button
+            onClick={() => navigate('/book-of-echoes')}
+            className="flex items-center gap-3 border border-primary/20 hover:border-primary/40 bg-black/40 hover:bg-primary/5 p-4 transition-all"
+          >
+            <BookOpen className="w-5 h-5 text-amber-400/70" />
+            <div className="text-left">
+              <p className="font-mono text-sm text-primary uppercase tracking-wider">Book of Echoes</p>
+              <p className="font-mono text-[10px] text-primary/40">The Anima's journal</p>
+            </div>
+          </button>
+        </div>
       </motion.div>
     </div>
   );

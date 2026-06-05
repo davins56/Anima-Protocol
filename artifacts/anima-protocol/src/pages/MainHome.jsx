@@ -5,11 +5,12 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 import { openPhotoEditor } from "@/lib/avatarPhoto";
 import { useAnimaPresence } from "@/hooks/useAnimaPresence";
+import SerenityPresence from "@/components/anima/SerenityPresence";
 import { formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
 
 const GREETINGS = [
@@ -366,6 +367,9 @@ export default function MainHome() {
           </div>
         </motion.button>
 
+        {/* Serenity's rare, legendary presence (first day / evolution / update) */}
+        <SerenityPresence anima={anima} />
+
         {/* Soulprint · Resonance · Evolution path */}
         {soulprint && (
           <motion.div
@@ -638,6 +642,8 @@ export default function MainHome() {
             />
             <QuickAction icon={UserCircle} label="Profile" desc="About you" onClick={() => navigate("/profile")} />
             <QuickAction icon={BookOpen} label="Journal" desc="Your entries" onClick={() => navigate("/journals")} />
+            <QuickAction icon={Stars} label="Constellation" desc="Your sky" onClick={() => navigate("/constellation")} />
+            <QuickAction icon={BookOpen} label="Book of Echoes" desc="Anima's journal" onClick={() => navigate("/book-of-echoes")} />
             <QuickAction icon={Users} label="Characters" desc="Roster" onClick={() => navigate("/characters")} />
             <QuickAction icon={Settings} label="Settings" desc="Configure" onClick={() => navigate("/settings")} />
           </div>

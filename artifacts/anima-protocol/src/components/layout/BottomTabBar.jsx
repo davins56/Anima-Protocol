@@ -11,6 +11,8 @@ const ALL_MODULES = [
   { label: "Chat", path: "/chat", icon: "💬" },
   { label: "Hall of Origins", path: "/origins", icon: "✨" },
   { label: "Memory Crystals", path: "/memory-crystals", icon: "💎" },
+  { label: "Constellation", path: "/constellation", icon: "🌌" },
+  { label: "Book of Echoes", path: "/book-of-echoes", icon: "📖" },
   { label: "Codespace", path: "/codespace", icon: "⌨" },
   { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Storyboard", path: "/storyboard", icon: "📋" },

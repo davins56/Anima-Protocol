@@ -32,3 +32,4 @@
 - [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].
 - [Anima page scroll contract](anima-page-scroll-contract.md) — page roots must be `flex-1 min-h-0 (+overflow-y-auto)`, NEVER `*-screen`/`*-[100dvh]`; wrapper already pads for the fixed tab bar.
 - [Anima onboarding gate](anima-onboarding-gate.md) — Serenity is the (unseeded) guide not a companion; SignedInHome gates "/" on Anima existence (mount-only → needs onComplete to flip, fails open to home).
+- [Anima auto-gen entity dedupe](anima-autogen-dedupe.md) — client ref + read-then-create dedupe is best-effort only (base44 has no unique constraint); always guard the first-entry case with lastCount>0.

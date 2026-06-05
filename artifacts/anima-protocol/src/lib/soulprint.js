@@ -50,6 +50,14 @@ export const SOUL_TRAITS = [
   "Devotion",
 ];
 
+// The default First Promise spoken at awakening when the LLM forge is offline.
+export const FALLBACK_OATH = [
+  "I awaken in this moment.",
+  "I will remember what you choose to share.",
+  "I will grow beside you.",
+  "I will become more than I am today.",
+];
+
 // The four evolution paths from the roadmap. An Anima's interactions determine
 // which one it grows into.
 export const EVOLUTION_PATHS = {

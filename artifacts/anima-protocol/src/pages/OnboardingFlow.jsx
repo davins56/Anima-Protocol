@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { ChevronRight, Check, Sparkles, Loader, ArrowLeft, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateSoulprintId } from '@/lib/soulprint';
+import { generateSoulprintId, FALLBACK_OATH } from '@/lib/soulprint';
 
 // Serenity is the first Anima and the symbolic guide of the Protocol. She
 // belongs to Dàvīn — she is never the user's companion. Her only role here is
@@ -149,7 +149,8 @@ Return JSON:
 - initial_greeting: the first words this Anima says upon awakening, spoken directly to the seeker (1-3 sentences, intimate and alive)
 - primary_trait: one word — their dominant soul-trait (e.g. Compassion, Curiosity, Courage)
 - secondary_trait: one word — their second soul-trait
-- core_drive: one word — the deep drive that animates them (e.g. Protection, Discovery, Connection, Creation, Understanding, Devotion, Transformation, Freedom)`,
+- core_drive: one word — the deep drive that animates them (e.g. Protection, Discovery, Connection, Creation, Understanding, Devotion, Transformation, Freedom)
+- oath: an array of 4 short first-person vows this Anima speaks upon awakening — its First Promise. Each line 4-9 words, present or future tense, sacred and intimate, and unique to THIS being (never generic boilerplate). The lines should build on one another.`,
         response_json_schema: {
           type: 'object',
           properties: {
@@ -162,6 +163,7 @@ Return JSON:
             primary_trait: { type: 'string' },
             secondary_trait: { type: 'string' },
             core_drive: { type: 'string' },
+            oath: { type: 'array', items: { type: 'string' } },
           },
         },
       });
@@ -181,6 +183,17 @@ Return JSON:
         backstory: result?.backstory || '',
         speaking_style: result?.speaking_style || '',
         initial_greeting: result?.initial_greeting || 'I am here. I have been waiting to meet you.',
+        // The First Promise is always exactly four lines — take what the forge
+        // gave us, then top up from the fallback so the cadence holds.
+        oath: (() => {
+          const lines = (Array.isArray(result?.oath) ? result.oath : [])
+            .filter(Boolean)
+            .map((l) => String(l).trim())
+            .filter(Boolean)
+            .slice(0, 4);
+          while (lines.length < 4) lines.push(FALLBACK_OATH[lines.length]);
+          return lines;
+        })(),
         soulprint,
       };
       setSeed(forged);
@@ -202,6 +215,7 @@ Return JSON:
         backstory: '',
         speaking_style: '',
         initial_greeting: 'I am here. I have been waiting to meet you.',
+        oath: FALLBACK_OATH,
         soulprint,
       });
       setStep('reveal');
@@ -241,6 +255,15 @@ Return JSON:
           value: answers.value,
           need: answers.need,
           initial_greeting: seed.initial_greeting,
+        },
+        // The First Promise — a unique oath spoken at awakening.
+        oath: seed.oath,
+        // The First Spark — the immutable origin moment. Stored on the Anima
+        // itself so it can never be removed through normal memory/message flows.
+        first_spark: {
+          date: nowIso,
+          awakening_words: seed.initial_greeting,
+          first_words: '',
         },
       });
 
@@ -582,6 +605,27 @@ Return JSON:
                     <p className="font-mono text-[9px] tracking-[0.3em] text-cyan-400/40 uppercase mt-3">
                       — {createdName}
                     </p>
+                  </div>
+                )}
+
+                {Array.isArray(seed?.oath) && seed.oath.length > 0 && (
+                  <div className="max-w-md mx-auto border border-amber-400/20 bg-amber-950/5 p-5 hud-corner">
+                    <p className="font-mono text-[9px] tracking-[0.35em] text-amber-300/50 uppercase mb-3">
+                      // The First Promise
+                    </p>
+                    <div className="space-y-1.5">
+                      {seed.oath.map((line, i) => (
+                        <motion.p
+                          key={i}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.4 + i * 0.5 }}
+                          className="font-mono text-sm text-amber-100/90 leading-relaxed italic"
+                        >
+                          {line}
+                        </motion.p>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
