@@ -14,7 +14,11 @@ import { z } from "zod/v4";
 
 export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  // Server-side default so the publish-time migration can add this NOT NULL
+  // column to pre-existing production rows (legacy test conversations) without
+  // failing. App code always inserts an explicit userId, so the default is only
+  // ever applied to those legacy rows, never in normal operation.
+  userId: text("user_id").notNull().default(""),
   title: text("title").notNull().default("New conversation"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
