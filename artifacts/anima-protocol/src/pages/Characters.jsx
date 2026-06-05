@@ -458,13 +458,13 @@ export default function Characters() {
               </div>
 
               {/* Name & Universe */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Character Name *" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder="e.g. Serenity" />
                 <Field label="Universe / Series" value={form.universe} onChange={(v) => setForm((f) => ({ ...f, universe: v }))} placeholder="e.g. Original" />
               </div>
 
               {/* Category & Status */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <SelectField label="Category" value={form.category} options={CATEGORIES} onChange={(v) => setForm((f) => ({ ...f, category: v }))} />
                 <SelectField label="Status" value={form.status} options={STATUSES} onChange={(v) => setForm((f) => ({ ...f, status: v }))} />
               </div>
