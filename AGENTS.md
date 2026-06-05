@@ -26,9 +26,11 @@ Use **pnpm only** (root `preinstall` rejects npm/yarn): `pnpm install --frozen-l
 
 ### PostgreSQL (local VM)
 
-PostgreSQL 16 is installed with a dev database:
+PostgreSQL 16 with dev database `anima_dev` (user `anima` / password `anima_dev`):
 
 - `DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev`
+- On a **fresh VM** without Postgres: `sudo apt-get install -y postgresql-16`, then `sudo pg_ctlcluster 16 main start`, create role/db if missing (`CREATE USER anima ...`, `CREATE DATABASE anima_dev OWNER anima`).
+- Before first `db push`, enable trigram search: `sudo -u postgres psql -d anima_dev -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"` (schema uses `gin_trgm_ops`).
 - Apply schema: `pnpm --filter @workspace/db run push` (requires `DATABASE_URL`)
 
 Start cluster if needed: `sudo pg_ctlcluster 16 main start`
@@ -106,6 +108,7 @@ Reload: `sudo nginx -s reload`
 - Vite configs for frontend and mockup **require** `PORT` and `BASE_PATH` at config load time.
 - API `dev` script rebuilds on each start (`build` then `start`).
 - pnpm may warn about ignored build scripts for `@clerk/shared`; add to `onlyBuiltDependencies` in `pnpm-workspace.yaml` if Clerk misbehaves after install.
+- If `api-server` typecheck complains that `lib/db/dist` or `lib/api-zod/dist` is missing, run `pnpm exec tsc --build lib/db lib/api-zod --force` once (stale `tsbuildinfo` without `dist/` can happen after a clean checkout).
 
 ## Analytics Tracking — Mixpanel
 
