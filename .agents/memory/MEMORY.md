@@ -27,4 +27,5 @@
 - [Anima prod DB SSL outage](anima-prod-ssl-outage.md) — pg-connection-string now treats sslmode=require as verify-full → prod-only all-query 500s; fix: set Pool ssl explicitly (disable→false else rejectUnauthorized:false), needs redeploy.
 - [Anima Codespace run gate & sandbox](anima-codespace.md) — high-severity scan HARD-blocks run (never executes); iframe no allow-same-origin; sync guarded by dirty/busy/running.
 - [Anima story mode](anima-story-mode.md) — self-insert canonical-scene chat; NOT a distinct session.mode (creates mode:"solo"); NewChat selector "Story" button just opens StoryCharacterChooser.
+- [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by two flows (check-in page vs in-chat ritual) with divergent fields; filter by the field you need; list() no-limit = full history.
 - [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].

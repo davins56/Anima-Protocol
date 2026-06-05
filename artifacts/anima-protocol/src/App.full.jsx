@@ -53,6 +53,7 @@ const Onboarding = lazy(() => import("./pages/Onboarding"));
 const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
 const ModeSelect = lazy(() => import("./pages/ModeSelect"));
 const CheckIn = lazy(() => import("./pages/CheckIn"));
+const ReflectionLog = lazy(() => import("./pages/ReflectionLog"));
 const Journals = lazy(() => import("./pages/Journals"));
 const Wiki = lazy(() => import("./pages/Wiki"));
 const NarrativeProgress = lazy(() => import("./pages/NarrativeProgress"));
@@ -600,6 +601,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <CheckIn />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/reflection-log"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <ReflectionLog />
                   </Suspense>
                 }
               />

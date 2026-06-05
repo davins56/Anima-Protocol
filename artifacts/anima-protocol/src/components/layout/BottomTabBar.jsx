@@ -29,6 +29,7 @@ const ALL_MODULES = [
   { label: "Inventory", path: "/inventory", icon: "🎒" },
   { label: "Characters", path: "/characters", icon: "👥" },
   { label: "Check-In", path: "/check-in", icon: "✚" },
+  { label: "Reflect Log", path: "/reflection-log", icon: "📝" },
 ];
 
 const PINNED_TABS = [

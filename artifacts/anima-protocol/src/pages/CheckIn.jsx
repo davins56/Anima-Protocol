@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, Send, Sparkles, ScrollText } from "lucide-react";
 
 const MOODS = ["joyful", "calm", "sad", "anxious", "angry", "peaceful", "hopeful", "conflicted", "neutral"];
 const PHYSICAL_STATES = ["energized", "neutral", "tired", "restless", "grounded", "overwhelmed"];
@@ -71,21 +71,31 @@ export default function CheckIn() {
     <div className="min-h-[100dvh] bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <button
-            onClick={() => navigate("/")}
-            className="text-primary/40 hover:text-primary transition-colors p-1"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-lg">
-              // Daily Resonance Check-in
-            </h1>
-            <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-              How are you today, {user?.full_name?.split(" ")[0] || "friend"}?
-            </p>
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate("/")}
+              className="text-primary/40 hover:text-primary transition-colors p-1"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-lg">
+                // Daily Resonance Check-in
+              </h1>
+              <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
+                How are you today, {user?.full_name?.split(" ")[0] || "friend"}?
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => navigate("/reflection-log")}
+            className="flex items-center gap-2 px-4 py-2 border border-primary/25 text-primary/60 hover:text-primary hover:border-primary/50 transition-all font-mono text-[10px] tracking-widest uppercase flex-shrink-0"
+            title="View your reflection log"
+          >
+            <ScrollText className="w-4 h-4" />
+            <span className="hidden sm:inline">Reflection Log</span>
+          </button>
         </div>
       </div>
 
