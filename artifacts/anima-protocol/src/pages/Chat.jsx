@@ -1311,7 +1311,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
 
         prompt = buildGroupPrompt({ nextChar, allCharSheets, loreCtxGroup, conversationHistory, adultInstruction, lengthGuide, traitModifiers });
       } else {
-        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}`;
+        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${loyaltyGuardrailClause()}`;
       }
 
       const result = await base44.integrations.Core.InvokeLLM({ 
@@ -1538,7 +1538,11 @@ ${conversationHistory}
 [Most recent exchange:]
 ${charName}: ${cleanContent || result}
 
-Someone has just addressed you, Serenity. Respond briefly and in character — present but not dominating. ${serenityLengthGuide}`;
+Someone has just addressed you, Serenity. Respond briefly and in character — present but not dominating. ${serenityLengthGuide}
+
+${INTELLIGENCE_GUIDANCE}
+
+${loyaltyGuardrailClause()}`;
 
         base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt, deepMode: !!activeSession.deep_mode }).then(async (serenityResult) => {
           const serenityMsg = {
