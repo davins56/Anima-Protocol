@@ -22,3 +22,8 @@
 
 ## Dismissed categories
 - (None yet)
+
+## Notes from scans
+- Build-time prerendering in `artifacts/anima-protocol/scripts/prerender.mjs` is part of the intended SEO strategy for the public marketing, auth, and legal routes.
+- `/` is the preferred homepage URL. Alternate aliases such as `/landing` and `/login` should not be promoted in sitemaps or user-facing navigation.
+- Any standalone HTML file placed in `artifacts/anima-protocol/public/` is treated as a first-class crawlable URL and should either join the canonical route/metadata flow or be removed/noindexed.
