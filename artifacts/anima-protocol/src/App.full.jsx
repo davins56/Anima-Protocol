@@ -9,9 +9,19 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { ClerkProvider, SignIn, SignUp, Show, useClerk } from "@clerk/react";
+import {
+  AuthenticateWithRedirectCallback,
+  ClerkProvider,
+  SignIn,
+  SignUp,
+  Show,
+  useClerk,
+  useSignIn,
+  useSignUp,
+} from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
+import { FaApple, FaGithub } from "react-icons/fa";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
@@ -194,6 +204,21 @@ const clerkPubKey = publishableKeyFromHost(
 );
 
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const authRedirectCompleteUrl = basePath || "/";
+const oauthCallbackUrl = `${basePath}/sso-callback`;
+
+const socialAuthProviders = [
+  {
+    label: "Continue with Apple",
+    strategy: "oauth_apple",
+    Icon: FaApple,
+  },
+  {
+    label: "Continue with GitHub",
+    strategy: "oauth_github",
+    Icon: FaGithub,
+  },
+];
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -237,6 +262,8 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
+    socialButtonsRoot: "!hidden",
+    dividerRow: "!hidden",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -270,32 +297,94 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
+function SocialAuthButtons({ mode }) {
+  const signInState = useSignIn();
+  const signUpState = useSignUp();
+  const authResource =
+    mode === "sign-up" ? signUpState.signUp : signInState.signIn;
+  const isLoaded =
+    mode === "sign-up" ? signUpState.isLoaded : signInState.isLoaded;
+  const [pendingStrategy, setPendingStrategy] = useState(null);
+
+  const handleOAuth = async (strategy) => {
+    if (!isLoaded || !authResource) return;
+    setPendingStrategy(strategy);
+    try {
+      await authResource.authenticateWithRedirect({
+        strategy,
+        redirectUrl: oauthCallbackUrl,
+        redirectUrlComplete: authRedirectCompleteUrl,
+      });
+    } catch (error) {
+      console.error("OAuth redirect failed", error);
+      toast.error("That sign-in provider is not available right now.");
+      setPendingStrategy(null);
+    }
+  };
+
+  return (
+    <div className="w-full space-y-2">
+      {socialAuthProviders.map(({ label, strategy, Icon }) => (
+        <button
+          key={strategy}
+          type="button"
+          disabled={!isLoaded || Boolean(pendingStrategy)}
+          onClick={() => handleOAuth(strategy)}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Icon className="h-4 w-4" aria-hidden="true" />
+          <span>
+            {pendingStrategy === strategy ? "Redirecting..." : label}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AuthFormShell({ mode, children }) {
+  return (
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+      <div className="w-[420px] max-w-full space-y-3">
+        <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
+          <SocialAuthButtons mode={mode} />
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
   return (
-    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+    <AuthFormShell mode="sign-in">
       <SignIn
         routing="path"
         path={`${basePath}/sign-in`}
         signUpUrl={`${basePath}/sign-up`}
-        fallbackRedirectUrl={basePath || "/"}
+        fallbackRedirectUrl={authRedirectCompleteUrl}
       />
-    </div>
+    </AuthFormShell>
   );
 }
 
 function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
   return (
-    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+    <AuthFormShell mode="sign-up">
       <SignUp
         routing="path"
         path={`${basePath}/sign-up`}
         signInUrl={`${basePath}/sign-in`}
-        fallbackRedirectUrl={basePath || "/"}
+        fallbackRedirectUrl={authRedirectCompleteUrl}
       />
-    </div>
+    </AuthFormShell>
   );
+}
+
+function SsoCallbackPage() {
+  return <AuthenticateWithRedirectCallback />;
 }
 
 // First-run gate for signed-in users: if they have not yet awakened an Anima,
@@ -385,6 +474,7 @@ function ClerkProviderWithRoutes({ children }) {
 const PUBLIC_PREFIXES = [
   "/sign-in",
   "/sign-up",
+  "/sso-callback",
   "/terms",
   "/privacy-policy",
   "/disclaimer",
@@ -582,6 +672,7 @@ const AuthenticatedApp = () => {
               <Route path="/" element={<HomeGate />} />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
+              <Route path="/sso-callback/*" element={<SsoCallbackPage />} />
               <Route path="/landing" element={<Navigate to="/" replace />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route

@@ -921,16 +921,27 @@ const PROFILE_DEFAULTS = {
   selected_mode: 'companion',
 };
 
+const ADMIN_EMAILS = new Set([
+  'davins56@gmail.com',
+  ...(import.meta.env.VITE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+]);
+
 let currentIdentity = null; // { id, email, full_name } from Clerk
 let profileCache = null; // server profile data
 let profileExpiry = 0;
 const PROFILE_TTL = 2000;
 
 function mergedUser(profileData) {
+  const email = currentIdentity?.email?.toLowerCase?.() || '';
+  const adminRole = ADMIN_EMAILS.has(email) ? { role: 'admin' } : {};
   return {
     ...PROFILE_DEFAULTS,
     created_date: new Date().toISOString(),
     ...(profileData || {}),
+    ...adminRole,
     ...(currentIdentity || {}),
   };
 }

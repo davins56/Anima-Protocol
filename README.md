@@ -142,6 +142,8 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
 | `ELEVENLABS_API_KEY` | API | Optional TTS routes |
 
+Apple and GitHub login buttons use Clerk OAuth strategies (`oauth_apple` and `oauth_github`). Enable both social connections in the Clerk Dashboard for the active Clerk application; no additional frontend environment variables are required.
+
 ## Validation
 
 ```bash

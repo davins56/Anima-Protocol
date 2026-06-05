@@ -49,6 +49,8 @@ Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.
 
+Apple and GitHub login use Clerk social connections (`oauth_apple`, `oauth_github`). Enable both providers in the Clerk Dashboard for the active application before testing those buttons.
+
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
 
 ### Lint / test / build
