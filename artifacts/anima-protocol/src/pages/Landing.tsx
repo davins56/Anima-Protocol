@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { MessageSquare, Users } from "lucide-react";
-import titleBg from "@assets/895CF63C-F126-4D27-9DB4-C43E632DC542_1780413192391.png";
+import titleBg from "@/assets/title-bg.webp";
 import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 
 // 1. "ALIVE" GREETING ENGINE - Cyber-Mythic Phrases
@@ -58,6 +58,10 @@ export default function Landing() {
   const [userName, setUserName] = useState("Dàvīn");
   const [welcomePhrase, setWelcomePhrase] = useState("");
   const [openSection, setOpenSection] = useState<string | null>(null);
+  const [bgReady, setBgReady] = useState(false);
+
+  // Defer background image until after first paint
+  useEffect(() => { setBgReady(true); }, []);
 
   // 2. LOAD DATA & RANDOM GREETING
   useEffect(() => {
@@ -136,10 +140,10 @@ export default function Landing() {
   return (
     <div className="relative min-h-[100dvh] bg-[#050505] flex flex-col items-center pt-12 pb-16 px-6 font-mono select-none overflow-x-clip">
 
-      {/* Emblem Background (title page only) */}
+      {/* Emblem Background (title page only) — loaded after first paint */}
       <div
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-50 pointer-events-none"
-        style={{ backgroundImage: `url(${titleBg})` }}
+        style={bgReady ? { backgroundImage: `url(${titleBg})` } : undefined}
       />
       <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#050505]/70 via-[#050505]/45 to-[#050505] pointer-events-none" />
 
