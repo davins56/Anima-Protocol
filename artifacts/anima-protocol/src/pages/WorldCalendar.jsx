@@ -99,7 +99,7 @@ export default function WorldCalendar() {
 
   if (!selectedSession) {
     return (
-      <div className="min-h-[100dvh] bg-background scanline flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background scanline flex items-center justify-center">
         <div className="text-center space-y-4">
           <Calendar className="w-12 h-12 text-primary/20 mx-auto" />
           <p className="font-mono text-primary/40 text-sm tracking-[0.3em] uppercase">Select a session</p>
@@ -112,7 +112,7 @@ export default function WorldCalendar() {
   const seasonData = calendar ? SEASONS[calendar.current_season] : {};
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">

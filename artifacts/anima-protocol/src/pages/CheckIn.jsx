@@ -57,7 +57,7 @@ export default function CheckIn() {
 
   if (saved) {
     return (
-      <div className="min-h-[100dvh] bg-background scanline flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background scanline flex items-center justify-center">
         <div className="text-center space-y-4">
           <Sparkles className="w-12 h-12 text-primary glow-text mx-auto animate-pulse" />
           <p className="font-mono text-primary glow-text tracking-[0.2em] uppercase">Check-in Recorded</p>
@@ -68,7 +68,7 @@ export default function CheckIn() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">

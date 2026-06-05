@@ -167,7 +167,7 @@ export default function QuestLogPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
         <div className="text-center">
           <Loader className="w-8 h-8 text-primary/50 animate-spin mx-auto mb-3" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -179,7 +179,7 @@ export default function QuestLogPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <motion.div

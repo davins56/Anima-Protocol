@@ -103,7 +103,7 @@ export default function InteractiveGraphVisualization() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center">
           <Loader className="w-8 h-8 text-primary/60 animate-spin mx-auto mb-3" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -115,7 +115,7 @@ export default function InteractiveGraphVisualization() {
   }
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-background">
+    <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
       {/* Graph Canvas */}
       <div className="flex-1 border-r border-primary/20 overflow-hidden relative">
         <svg

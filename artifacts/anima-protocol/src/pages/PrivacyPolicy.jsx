@@ -230,7 +230,7 @@ const sections = [
 export default function PrivacyPolicy() {
   usePageMeta(ROUTE_META["/privacy-policy"]);
   return (
-    <div className="min-h-[100dvh] bg-background pb-24">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background pb-24">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto flex items-center gap-4">

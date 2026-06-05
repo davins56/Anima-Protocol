@@ -111,7 +111,7 @@ export default function PremiumPlans() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline p-4 sm:p-6" style={{ paddingBottom: 'var(--tab-bar-height, 120px)' }}>
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline p-4 sm:p-6">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
         <div className="space-y-4">

@@ -323,7 +323,7 @@ export default function Settings() {
   ];
 
   return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-background scanline">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-4 sm:px-6 py-4 flex-shrink-0 relative z-40">
         <div className="max-w-4xl mx-auto flex items-center gap-3 sm:gap-4">

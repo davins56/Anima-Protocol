@@ -114,7 +114,7 @@ export default function OnboardingFlow() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-start">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col items-center justify-start">
       <div className="w-full max-w-2xl px-4 py-8">
         <AnimatePresence mode="wait">
           {step === 'time-slipthk' && (

@@ -29,3 +29,4 @@
 - [Anima story mode](anima-story-mode.md) — self-insert canonical-scene chat; NOT a distinct session.mode (creates mode:"solo"); NewChat selector "Story" button just opens StoryCharacterChooser.
 - [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by two flows (check-in page vs in-chat ritual) with divergent fields; filter by the field you need; list() no-limit = full history.
 - [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].
+- [Anima page scroll contract](anima-page-scroll-contract.md) — page roots must be `flex-1 min-h-0 (+overflow-y-auto)`, NEVER `*-screen`/`*-[100dvh]`; wrapper already pads for the fixed tab bar.

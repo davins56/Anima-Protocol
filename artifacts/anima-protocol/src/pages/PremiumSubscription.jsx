@@ -35,7 +35,7 @@ export default function PremiumSubscription() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-6 flex items-center justify-center">
+    <div className="flex-1 min-h-0 bg-background p-6 flex items-center justify-center">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <h1 className="text-3xl font-sacred text-primary glow-text tracking-[0.15em] uppercase">

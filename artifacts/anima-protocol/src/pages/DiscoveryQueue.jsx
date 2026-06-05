@@ -100,7 +100,7 @@ export default function DiscoveryQueue() {
   );
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
