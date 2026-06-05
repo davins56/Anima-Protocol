@@ -27,6 +27,13 @@ import {
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
+import {
+  initSynchroState,
+  evolveSynchroFromUser,
+  evolveSynchroFromCompanion,
+  serializeSynchroState,
+  type SynchroState,
+} from "../lib/synchroEngine";
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("OPENAI_API_KEY must be set.");
@@ -445,16 +452,35 @@ router.post("/messages", async (req, res) => {
     characters.map((c) => c.universe).filter(Boolean).map(String),
   ).size;
   const isCrossover = mode === "group" && distinctUniverses >= 2;
+  // Initialize and evolve synchro state for the active character
+  const adaptedMemories = adaptMemories(memories);
+  const adaptedChars = adaptCharacters(characters);
+  const activeChar = adaptedChars.length === 1 ? adaptedChars[0] : undefined;
+  let synchroState: SynchroState | null = null;
+  if (activeChar && memories.length > 0) {
+    const memForChar = memories.find(
+      (m) => m.characterId === String(activeChar.id || ""),
+    );
+    synchroState = initSynchroState(
+      memForChar?.emotionalState as Record<string, unknown> | null,
+      memForChar?.resonanceNotes ?? null,
+      null,
+    );
+    if (content) {
+      synchroState = evolveSynchroFromUser(synchroState, content);
+    }
+  }
   const prompt = buildCompanionPrompt({
     systemPrompt: body.system_prompt,
-    characters: adaptCharacters(characters),
-    activeCharacter: characters.length === 1 ? adaptCharacters(characters)[0] : undefined,
-    memories: adaptMemories(memories),
+    characters: adaptedChars,
+    activeCharacter: activeChar,
+    memories: adaptedMemories,
     recentMessages,
     sharedMemory: sessionData.shared_memory,
     mode,
     content,
     isCrossover,
+    synchroState,
   });
   const routed = routeModel(content, {
     deepMode: Boolean(body.deep_mode),
@@ -578,6 +604,25 @@ router.post("/messages", async (req, res) => {
         userContent: content,
         assistantContent: fullResponse,
       });
+      // Evolve synchro from companion response and persist
+      if (synchroState && fullResponse) {
+        const evolved = evolveSynchroFromCompanion(synchroState, fullResponse);
+        const serialized = serializeSynchroState(evolved);
+        for (const cid of characterIds) {
+          await db
+            .update(companionMemories)
+            .set({
+              emotionalState: serialized,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(companionMemories.userId, userId),
+                eq(companionMemories.characterId, cid),
+              ),
+            );
+        }
+      }
     }
 
     res.write(
