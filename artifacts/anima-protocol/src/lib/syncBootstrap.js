@@ -29,6 +29,12 @@ export function bootstrapUserData(userId) {
   return bootstrapPromise;
 }
 
+// Pages that list server-backed data on first paint should await this so they
+// don't render an empty roster while migration + starter seeding finish.
+export function whenBootstrapReady() {
+  return bootstrapPromise ?? Promise.resolve();
+}
+
 // Possible migration outcomes surfaced to the caller so the UI can tell the
 // user when their pre-sync local data hasn't made it up to their account yet.
 //   "migrated" — local data was imported and the server confirmed success

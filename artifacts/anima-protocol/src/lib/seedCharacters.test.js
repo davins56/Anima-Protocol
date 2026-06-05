@@ -6,6 +6,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // load even under concurrent calls. We back base44 with an in-memory store whose
 // update() upserts by id (mirroring the real server PUT), and stub the photo
 // lookup so seeding never hits the network.
+const { notifyStoreChanged, clearStoreCache } = vi.hoisted(() => ({
+  notifyStoreChanged: vi.fn(),
+  clearStoreCache: vi.fn(),
+}));
+
 vi.mock("@/api/base44Client", () => {
   const store = new Map();
   let updateCalls = 0;
@@ -30,7 +35,12 @@ vi.mock("@/api/base44Client", () => {
       updateCalls = 0;
     },
   };
-  return { base44, default: base44 };
+  return {
+    base44,
+    default: base44,
+    notifyStoreChanged,
+    clearStoreCache,
+  };
 });
 
 // No network during seeding: every character resolves to "no photo found".
@@ -48,6 +58,8 @@ import {
 beforeEach(() => {
   localStorage.clear();
   base44.__reset();
+  notifyStoreChanged.mockClear();
+  clearStoreCache.mockClear();
   // Clear the per-load promise locks so each test re-evaluates seeding.
   resetSeedLock();
 });
@@ -63,6 +75,8 @@ describe("starter roster seeding", () => {
     expect(new Set(ids).size).toBe(ids.length);
     // Every seeded character carries a stable seed_ id.
     expect(ids.every((id) => id.startsWith("seed_"))).toBe(true);
+    expect(notifyStoreChanged).toHaveBeenCalledTimes(1);
+    expect(clearStoreCache).toHaveBeenCalledTimes(1);
   });
 
   it("concurrent calls share one run and never double-seed (StrictMode safe)", async () => {
@@ -79,21 +93,32 @@ describe("starter roster seeding", () => {
     expect(base44.__stats().updateCalls).toBe(rosterSize);
   });
 
-  it("does not seed when the account already has characters", async () => {
+  it("still seeds the starter roster when the account only has custom characters", async () => {
     await base44.entities.Character.update("existing_1", {
       id: "existing_1",
       name: "Pre-existing",
       avatar_url: "x",
     });
-    const before = base44.__stats().updateCalls;
 
     await seedCharactersIfNeeded();
 
-    // The roster already had data, so doSeed() is a no-op (no new upserts).
-    expect(base44.__stats().updateCalls).toBe(before);
     const chars = await base44.entities.Character.list();
-    expect(chars).toHaveLength(1);
-    expect(chars[0].name).toBe("Pre-existing");
+    expect(chars.some((c) => c.id === "existing_1")).toBe(true);
+    expect(chars.some((c) => c.id.startsWith("seed_"))).toBe(true);
+    expect(chars.length).toBeGreaterThan(1);
+  });
+
+  it("does not re-seed when every starter character is already present", async () => {
+    await seedCharactersIfNeeded();
+    const before = base44.__stats().updateCalls;
+    notifyStoreChanged.mockClear();
+    clearStoreCache.mockClear();
+    resetSeedLock();
+
+    await seedCharactersIfNeeded();
+
+    expect(base44.__stats().updateCalls).toBe(before);
+    expect(notifyStoreChanged).not.toHaveBeenCalled();
   });
 });
 

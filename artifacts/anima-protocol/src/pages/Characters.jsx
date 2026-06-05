@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -69,7 +70,14 @@ export default function Characters() {
   };
 
   useEffect(() => {
-    loadCharacters();
+    let cancelled = false;
+    (async () => {
+      await whenBootstrapReady();
+      if (!cancelled) await loadCharacters();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Open the create form directly when arrived via "Create a companion" (e.g.

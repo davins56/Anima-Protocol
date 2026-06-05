@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { base44, clearStoreCache, notifyStoreChanged } from "@/api/base44Client";
 import { findCharacterPhoto } from "@/lib/characterPhoto";
 
 // Characters whose photo lookup has already been attempted (by id), so we don't
@@ -483,22 +483,27 @@ function seedId(char) {
 
 async function doSeed() {
   try {
-    const existing = await base44.entities.Character.list("-created_date", 1);
-    if (existing && existing.length > 0) return;
-
     const allCharacters = [
       ...KORRA_CHARACTERS,
       ...MARVEL_CHARACTERS,
       ...GUARDIANS_CHARACTERS,
       ...INVINCIBLE_CHARACTERS,
     ];
-    // Upsert by deterministic id so concurrent seeds converge instead of
-    // duplicating (PUT /:entity/:id is an upsert on the server).
-    for (const char of allCharacters) {
+    const existing = await base44.entities.Character.list("-created_date", 1000);
+    const existingIds = new Set((existing || []).map((c) => c.id));
+    // Upsert only missing starter rows (deterministic seed_* ids). Accounts with
+    // a single custom/migrated character still receive the full default roster;
+    // accounts that already have every starter id are left alone.
+    const missing = allCharacters.filter((char) => !existingIds.has(seedId(char)));
+    if (!missing.length) return;
+
+    for (const char of missing) {
       const id = seedId(char);
-      await base44.entities.Character.update(id, { ...char, id });
+      await base44.entities.Character.update(id, { ...char, id, is_default: true });
     }
-    console.log(`[Anima] Seeded ${allCharacters.length} characters.`);
+    clearStoreCache();
+    notifyStoreChanged();
+    console.log(`[Anima] Seeded ${missing.length} character(s).`);
   } catch (err) {
     console.warn("[Anima] Character seed failed:", err.message);
   }

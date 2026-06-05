@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { ChevronRight, Sparkles, Heart } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -44,18 +46,29 @@ export default function Onboarding() {
   const [resonanceAnswers, setResonanceAnswers] = useState({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
 
-  useEffect(() => {
-    Promise.all([
-      base44.auth.me(),
-      base44.entities.Character.list("-created_date", 12),
-    ]).then(([user, chars]) => {
+  const loadOnboardingCharacters = async () => {
+    try {
+      await whenBootstrapReady();
+      const [user, chars] = await Promise.all([
+        base44.auth.me(),
+        base44.entities.Character.list("-created_date", 12),
+      ]);
       if (user?.full_name) {
         setUserName(user.full_name.split(" ")[0]);
       }
       setCharacters(chars || []);
+    } catch {
+      /* ignore */
+    } finally {
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }
+  };
+
+  useEffect(() => {
+    loadOnboardingCharacters();
   }, []);
+
+  useStoreSync(loadOnboardingCharacters);
 
   const handleSelectCharacter = (charId) => {
     setSelectedCharId(charId);
