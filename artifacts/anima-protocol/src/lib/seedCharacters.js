@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { base44, waitForStoreAuth } from "@/api/base44Client";
 import { findCharacterPhoto } from "@/lib/characterPhoto";
 
 // Characters whose photo lookup has already been attempted (by id), so we don't
@@ -360,7 +360,14 @@ const GUARDIANS_CHARACTERS = [
 let seedPromise = null;
 
 export function seedCharactersIfNeeded() {
-  if (!seedPromise) seedPromise = doSeed().then(() => backfillCharacterPhotos());
+  if (!seedPromise) {
+    seedPromise = doSeed()
+      .then(() => backfillCharacterPhotos())
+      .catch((err) => {
+        seedPromise = null;
+        throw err;
+      });
+  }
   return seedPromise;
 }
 
@@ -483,6 +490,7 @@ function seedId(char) {
 
 async function doSeed() {
   try {
+    await waitForStoreAuth();
     const existing = await base44.entities.Character.list("-created_date", 1);
     if (existing && existing.length > 0) return;
 
@@ -501,5 +509,6 @@ async function doSeed() {
     console.log(`[Anima] Seeded ${allCharacters.length} characters.`);
   } catch (err) {
     console.warn("[Anima] Character seed failed:", err.message);
+    throw err;
   }
 }

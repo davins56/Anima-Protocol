@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { animaApi } from "@/api/animaApi";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -282,20 +283,27 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    loadSessions();
-    loadCharacters();
-    // Preload ElevenLabs voices in background
-    base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
-    base44.auth.me().then((me) => {
-      if (me?.settings?.chat_bg_theme) setBgTheme(me.settings.chat_bg_theme);
-      if (me?.settings?.chat_bg_image) setBgImage(me.settings.chat_bg_image);
-      setActiveAspects((prev) => (prev.length ? prev : [me?.selected_mode || "serenity"]));
-    }).catch(() => {});
-    // Auto-open new session modal when navigated from dashboard "New Chat"
-    if (location.state?.openNew) {
-      setShowModal(true);
-      navigate(location.pathname, { replace: true, state: {} });
-    }
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (cancelled) return;
+      loadSessions();
+      loadCharacters();
+      // Preload ElevenLabs voices in background
+      base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
+      base44.auth.me().then((me) => {
+        if (me?.settings?.chat_bg_theme) setBgTheme(me.settings.chat_bg_theme);
+        if (me?.settings?.chat_bg_image) setBgImage(me.settings.chat_bg_image);
+        setActiveAspects((prev) => (prev.length ? prev : [me?.selected_mode || "serenity"]));
+      }).catch(() => {});
+      // Auto-open new session modal when navigated from dashboard "New Chat"
+      if (location.state?.openNew) {
+        setShowModal(true);
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -609,6 +617,7 @@ export default function Chat() {
   );
 
   const syncFromRemote = useCallback(() => {
+    loadCharacters();
     handleRemoteSync({
       isLoading,
       loadSessions,
