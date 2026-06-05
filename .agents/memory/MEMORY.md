@@ -10,6 +10,7 @@
 - [Anima cross-device live sync](anima-cross-device-sync.md) — /store/revision token + 15s/focus poller drops caches & fires `anima:store-changed`; self-write suppression must NOT advance baseline.
 - [Anima SSE push hardening](anima-sse-hardening.md) — SSE client must collapse CRLF→LF before `\n\n` split; watchdog > 2× server heartbeat; `anima:sync-mode` event; registry is process-local.
 - [Anima AI image edit](anima-image-edit.md) — inline base64 image routes need raised express.json limit (default 100KB too small); backend only accepts data: URLs so gate buttons accordingly.
+- [Helium DB credential recovery](db-credential-recovery.md) — after creds overwritten, deleteEnvVars restores PG* env vars but DATABASE_URL/PGPASSWORD are Secrets the user must delete in the tab; original DB+data survive.
 - [api-server rate-limit leak](api-server-ratelimit-leak.md) — path-less mounted sub-routers' top-level router.use(rateLimit) runs for ALL /api requests (429s on /api/store); scope it to the router's own paths.
 - [lib/db decl rebuild for typecheck](db-decl-rebuild-for-typecheck.md) — after schema edits, api-server typecheck reads stale lib/db/dist .d.ts ("no exported member"); run `cd lib/db && npx tsc -b` first.
 - [Anima Undo/delete-flow tests](anima-undo-tests.md) — real base44 hangs in vitest (no token getter); mock base44 in-memory + extract Chat page handlers to DI functions to test.
