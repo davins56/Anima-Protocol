@@ -1,0 +1,12 @@
+{
+  "framework": "vite",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && PORT=23660 BASE_PATH=/ pnpm --filter @workspace/anima-protocol run build",
+  "outputDirectory": "dist/public",
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

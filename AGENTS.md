@@ -94,6 +94,18 @@ export PORT=8081 BASE_PATH=/__mockup
 pnpm --filter @workspace/mockup-sandbox run dev
 ```
 
+### Vercel (production frontend)
+
+This monorepo’s frontend is **not** at repo path `anima-protocol/` (that folder does not exist). It lives at `artifacts/anima-protocol/`.
+
+| Vercel **Root Directory** | Config file used | Notes |
+|---------------------------|------------------|--------|
+| **`.`** (empty / repository root) | `/vercel.json` | Recommended. `installCommand` / `outputDirectory` paths are repo-relative. |
+| **`artifacts/anima-protocol`** | `artifacts/anima-protocol/vercel.json` | OK. Install/build `cd ../..` to the pnpm workspace root. |
+| **`anima-protocol`** | — | **Invalid** — Vercel error: “Root Directory does not exist”. Change to `.` or `artifacts/anima-protocol`. |
+
+Set production env vars in Vercel: `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_CLERK_PROXY_URL` (often empty), `VITE_MIXPANEL_TOKEN` (optional). The static deploy does not include the Express API; host `/api` separately or add rewrites to your API origin.
+
 ### Local reverse proxy (nginx)
 
 To mirror Replit routing (`/` → frontend, `/api` → API), nginx listens on **3000** with config at `/etc/nginx/sites-available/anima-dev`. Open the app at `http://127.0.0.1:3000/` after both servers are up.

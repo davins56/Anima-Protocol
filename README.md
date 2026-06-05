@@ -181,7 +181,16 @@ Highest-value next work:
 
 ## Deployment Notes
 
-The frontend can be deployed independently when configured with the required Vite environment variables. The API needs Clerk keys, `OPENAI_API_KEY`, and a reachable Postgres database. Same-origin `/api/*` routing can be handled by the hosting platform, a reverse proxy, or the Vite dev proxy during local development.
+### Vercel (frontend)
+
+In **Project Settings → General → Root Directory**, use one of:
+
+- **`.`** (repository root) — uses root `vercel.json`
+- **`artifacts/anima-protocol`** — uses `artifacts/anima-protocol/vercel.json`
+
+Do **not** set Root Directory to `anima-protocol`; that path does not exist in this repo.
+
+The frontend can be deployed independently when configured with the required Vite environment variables (`VITE_CLERK_PUBLISHABLE_KEY`, etc.). The API needs Clerk keys, `OPENAI_API_KEY`, and a reachable Postgres database on a separate host. Same-origin `/api/*` routing can be handled by the hosting platform, a reverse proxy, or the Vite dev proxy during local development.
 
 ## License
 
