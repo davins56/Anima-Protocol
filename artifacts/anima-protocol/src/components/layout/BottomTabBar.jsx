@@ -7,7 +7,7 @@ import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 
 const ALL_MODULES = [
-  { label: "Sign Out", path: "/landing", icon: "⎋", signOut: true },
+  { label: "Sign Out", path: "/", icon: "⎋", signOut: true },
   { label: "Chat", path: "/chat", icon: "💬" },
   { label: "Codespace", path: "/codespace", icon: "⌨" },
   { label: "Settings", path: "/settings", icon: "⚙" },
@@ -74,10 +74,10 @@ export default function BottomTabBar() {
   const confirmAndSignOut = async () => {
     setConfirmSignOut(false);
     try {
-      await logout("/landing");
+      await logout("/");
     } catch (err) {
       console.error("Sign out failed:", err);
-      navigate("/landing");
+      navigate("/");
     }
   };
 

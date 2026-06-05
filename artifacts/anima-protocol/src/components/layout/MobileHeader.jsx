@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 
 // Routes where the back button should NOT appear
-const ROOT_ROUTES = new Set(["/", "/landing", "/onboarding"]);
+const ROOT_ROUTES = new Set(["/", "/onboarding"]);
 
 // Human-readable titles for routes
 const ROUTE_TITLES = {

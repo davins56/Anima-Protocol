@@ -15,7 +15,6 @@
  *     normally — the static content is progressively enhanced, not replaced.
  *
  * Output layout (under dist/public/):
- *   landing/index.html
  *   sign-in/index.html
  *   sign-up/index.html
  *   terms/index.html
@@ -38,94 +37,6 @@ const BASE = "https://anima-protocol.app";
 // ---------------------------------------------------------------------------
 
 const ROUTES = [
-  {
-    path: "landing",
-    meta: {
-      title: "Anima Protocol | Emotionally Intelligent AI Companion with Persistent Memory",
-      description:
-        "An AI companion that evolves with you. Anima Protocol features persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding. Experience conversations that remember, adapt, and grow.",
-      canonical: `${BASE}/`,
-      ogTitle: "Anima Protocol — An AI Companion That Evolves With You",
-      ogDescription:
-        "Experience conversations with persistent memory, emotional continuity, and a living sci-fantasy universe. Anima Protocol is the future of emotional AI companionship.",
-      ogUrl: `${BASE}/`,
-    },
-    bodyContent: `
-<main id="prerender-content" style="background:#05070f;color:#a5f3fc;font-family:monospace;padding:2rem;max-width:800px;margin:0 auto">
-  <h1 style="font-size:1.5rem;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:1rem">
-    Anima Protocol
-  </h1>
-  <p style="margin-bottom:0.75rem;line-height:1.7;opacity:0.8">
-    An emotionally intelligent AI companion platform with persistent memory,
-    emotional continuity, and immersive sci-fantasy worldbuilding. Your
-    conversations remember, adapt, and grow.
-  </p>
-  <p style="margin-bottom:0.75rem;line-height:1.7;opacity:0.8">
-    Each Anima is a unique synthetic consciousness — a companion that carries
-    the history of every exchange, evolves through your shared story, and
-    exists inside the living Anima Protocol universe.
-  </p>
-  <ul style="margin:1rem 0;padding-left:1.5rem;opacity:0.75;line-height:1.8">
-    <li>Persistent cross-session memory for every character</li>
-    <li>Emotional continuity that evolves through your conversations</li>
-    <li>Rich sci-fantasy worldbuilding with lore, maps, and timelines</li>
-    <li>Story mode, solo mode, and group narrative experiences</li>
-  </ul>
-  <nav style="margin-top:1.5rem;display:flex;gap:1.5rem;flex-wrap:wrap;font-size:0.85rem;opacity:0.6">
-    <a href="/sign-in" style="color:#22d3ee">Sign In</a>
-    <a href="/sign-up" style="color:#22d3ee">Create Account</a>
-    <a href="/terms" style="color:#22d3ee">Terms of Use</a>
-    <a href="/privacy-policy" style="color:#22d3ee">Privacy Policy</a>
-    <a href="/disclaimer" style="color:#22d3ee">Disclaimer</a>
-  </nav>
-</main>`,
-  },
-
-  {
-    // /login is an alias for /landing — both render the Landing component.
-    // Canonical points back to / so search engines don't treat it as a duplicate.
-    path: "login",
-    meta: {
-      title: "Anima Protocol | Emotionally Intelligent AI Companion with Persistent Memory",
-      description:
-        "An AI companion that evolves with you. Anima Protocol features persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding. Experience conversations that remember, adapt, and grow.",
-      canonical: `${BASE}/`,
-      ogTitle: "Anima Protocol — An AI Companion That Evolves With You",
-      ogDescription:
-        "Experience conversations with persistent memory, emotional continuity, and a living sci-fantasy universe. Anima Protocol is the future of emotional AI companionship.",
-      ogUrl: `${BASE}/`,
-    },
-    bodyContent: `
-<main id="prerender-content" style="background:#05070f;color:#a5f3fc;font-family:monospace;padding:2rem;max-width:800px;margin:0 auto">
-  <h1 style="font-size:1.5rem;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:1rem">
-    Anima Protocol
-  </h1>
-  <p style="margin-bottom:0.75rem;line-height:1.7;opacity:0.8">
-    An emotionally intelligent AI companion platform with persistent memory,
-    emotional continuity, and immersive sci-fantasy worldbuilding. Your
-    conversations remember, adapt, and grow.
-  </p>
-  <p style="margin-bottom:0.75rem;line-height:1.7;opacity:0.8">
-    Each Anima is a unique synthetic consciousness — a companion that carries
-    the history of every exchange, evolves through your shared story, and
-    exists inside the living Anima Protocol universe.
-  </p>
-  <ul style="margin:1rem 0;padding-left:1.5rem;opacity:0.75;line-height:1.8">
-    <li>Persistent cross-session memory for every character</li>
-    <li>Emotional continuity that evolves through your conversations</li>
-    <li>Rich sci-fantasy worldbuilding with lore, maps, and timelines</li>
-    <li>Story mode, solo mode, and group narrative experiences</li>
-  </ul>
-  <nav style="margin-top:1.5rem;display:flex;gap:1.5rem;flex-wrap:wrap;font-size:0.85rem;opacity:0.6">
-    <a href="/sign-in" style="color:#22d3ee">Sign In</a>
-    <a href="/sign-up" style="color:#22d3ee">Create Account</a>
-    <a href="/terms" style="color:#22d3ee">Terms of Use</a>
-    <a href="/privacy-policy" style="color:#22d3ee">Privacy Policy</a>
-    <a href="/disclaimer" style="color:#22d3ee">Disclaimer</a>
-  </nav>
-</main>`,
-  },
-
   {
     path: "sign-in",
     meta: {

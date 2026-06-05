@@ -42,7 +42,7 @@ const FOOTER_SECTIONS: { id: string; title: string; body: string }[] = [
 ];
 
 export default function Landing() {
-  usePageMeta(ROUTE_META["/landing"]);
+  usePageMeta(ROUTE_META["/"]);
   const navigate = useNavigate();
 
   // Canvas Refs

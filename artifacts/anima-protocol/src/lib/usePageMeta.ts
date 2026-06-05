@@ -94,16 +94,6 @@ export const ROUTE_META: Record<string, PageMeta> = {
     ogDescription:
       "Experience conversations with persistent memory, emotional continuity, and a living sci-fantasy universe. Anima Protocol is the future of emotional AI companionship.",
   },
-  "/landing": {
-    title: "Anima Protocol | Emotionally Intelligent AI Companion with Persistent Memory",
-    description:
-      "An AI companion that evolves with you. Anima Protocol features persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding. Experience conversations that remember, adapt, and grow.",
-    canonical: `${BASE_URL}/`,
-    ogTitle: "Anima Protocol — An AI Companion That Evolves With You",
-    ogDescription:
-      "Experience conversations with persistent memory, emotional continuity, and a living sci-fantasy universe. Anima Protocol is the future of emotional AI companionship.",
-    ogUrl: `${BASE_URL}/`,
-  },
   "/sign-in": {
     title: "Sign In | Anima Protocol",
     description:

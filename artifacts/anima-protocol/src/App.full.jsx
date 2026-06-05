@@ -343,8 +343,6 @@ function ClerkProviderWithRoutes({ children }) {
 
 // Public routes that signed-out users may reach without authentication.
 const PUBLIC_PREFIXES = [
-  "/landing",
-  "/login",
   "/sign-in",
   "/sign-up",
   "/terms",
@@ -517,7 +515,6 @@ const AuthenticatedApp = () => {
 
   const showChrome =
     isAuthenticated &&
-    !["/landing", "/login"].includes(pathname) &&
     !pathname.startsWith("/sign-in") &&
     !pathname.startsWith("/sign-up");
 
@@ -545,22 +542,8 @@ const AuthenticatedApp = () => {
               <Route path="/" element={<HomeGate />} />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
-              <Route
-                path="/landing"
-                element={
-                  <Suspense fallback={<PageLoader />}>
-                    <Landing />
-                  </Suspense>
-                }
-              />
-              <Route
-                path="/login"
-                element={
-                  <Suspense fallback={<PageLoader />}>
-                    <Landing />
-                  </Suspense>
-                }
-              />
+              <Route path="/landing" element={<Navigate to="/" replace />} />
+              <Route path="/login" element={<Navigate to="/" replace />} />
               <Route
                 path="/chat"
                 element={
