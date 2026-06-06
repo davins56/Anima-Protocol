@@ -29,6 +29,11 @@ export function setAuthTokenGetter(fn) {
   if (fn) resolveReady();
 }
 
+// Clear the registered getter on sign-out so stale tokens are never reused.
+export function clearAuthTokenGetter() {
+  tokenGetter = null;
+}
+
 async function getToken() {
   if (!tokenGetter) await readyPromise;
   try {
@@ -59,8 +64,20 @@ async function authHeaders(extra) {
 }
 
 async function storeFetch(path, options = {}) {
+  const token = await getToken();
+  if (!token) {
+    const err = new Error(
+      'Not signed in — your session may have expired. Sign out and sign in again, then retry.',
+    );
+    err.status = 401;
+    throw err;
+  }
   const headers = await authHeaders(options.headers);
-  return fetch(`${STORE_BASE()}${path}`, { ...options, headers });
+  return fetch(`${STORE_BASE()}${path}`, {
+    ...options,
+    headers,
+    credentials: 'same-origin',
+  });
 }
 
 // Parse a failed store response into a human-readable message. Non-JSON bodies
@@ -694,6 +711,12 @@ async function queryEntity(entityName, opts) {
 // ~50 places that read `session.messages` and the handful that write it keep
 // working unchanged, while appends stay O(1) and reads can page.
 async function throwErr(res) {
+  if (res.status === 401) {
+    throw storeError(
+      res,
+      'Session not recognized by the server — sign out, sign back in, and try again.',
+    );
+  }
   throw storeError(res, await parseStoreErrorResponse(res));
 }
 

@@ -185,6 +185,8 @@ The frontend can be deployed independently when configured with the required Vit
 
 **Vercel + Replit split:** production frontend at `www.anima-protocol.com` (Vercel) proxies `/api/*` to `https://anima-protocol.replit.app` via `vercel.json` rewrites. Without that proxy, character storage and restore cannot work. Alternatively set `VITE_API_ORIGIN=https://anima-protocol.replit.app` at build time so the browser calls the API host directly (CORS is enabled on the api-server).
 
+**Netlify (GitHub merge checks only):** If you deploy on **Vercel**, you do not need Netlify hosting — but the **Netlify GitHub App** may still post checks on PRs. Root `netlify.toml` plus `artifacts/anima-protocol/netlify.toml` cover both repo-root and package-base Netlify sites. To stop Netlify from blocking merges: GitHub **Settings → Integrations → Netlify** → configure linked sites, or remove Netlify from **branch protection** required checks. **Continuous AI** checks are from Continue.dev; remove them from required checks if the agent errors. Required checks that matter for this repo: **CI** (`checks`) and **Vercel**.
+
 ## License
 
 MIT

@@ -43,13 +43,37 @@ export const CLERK_PROXY_PATH = "/api/__clerk";
  * hostname is canonical — otherwise multi-domain/custom-domain flows
  * break.
  */
+function hostFromUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value).host;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getClerkProxyHost(req: {
   headers: IncomingHttpHeaders;
 }): string | undefined {
   const forwarded = req.headers["x-forwarded-host"];
   const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
   const firstHop = raw?.split(",")[0]?.trim();
-  return firstHop || req.headers.host?.trim() || undefined;
+  if (firstHop) return firstHop;
+
+  // Vercel → Replit rewrites sometimes arrive with only the backend Host while
+  // the browser Origin still reflects the public custom domain. Clerk JWT
+  // verification must use that public host to pick the right publishable key.
+  const originHost = hostFromUrl(
+    typeof req.headers.origin === "string" ? req.headers.origin : undefined,
+  );
+  if (originHost) return originHost;
+
+  const refererHost = hostFromUrl(
+    typeof req.headers.referer === "string" ? req.headers.referer : undefined,
+  );
+  if (refererHost) return refererHost;
+
+  return req.headers.host?.trim() || undefined;
 }
 
 export function clerkProxyMiddleware(): RequestHandler {

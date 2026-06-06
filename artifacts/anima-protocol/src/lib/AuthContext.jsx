@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   base44,
   setAuthTokenGetter,
+  clearAuthTokenGetter,
   startStoreSync,
   stopStoreSync,
 } from '@/api/base44Client';
@@ -41,8 +42,21 @@ export const AuthProvider = ({ children }) => {
   // Make the Clerk session token available to the non-React data layer so
   // every entity/profile request can identify the user (in dev and prod).
   useEffect(() => {
-    setAuthTokenGetter(() => getToken());
-  }, [getToken]);
+    if (!isSignedIn) {
+      clearAuthTokenGetter();
+      return;
+    }
+    setAuthTokenGetter(() => async () => {
+      try {
+        const token = await getToken();
+        if (token) return token;
+        return await getToken({ skipCache: true });
+      } catch (err) {
+        console.warn("[Anima] Clerk getToken failed:", err);
+        return null;
+      }
+    });
+  }, [getToken, isSignedIn]);
 
   // Poll for cross-device changes only while signed in; stop on sign-out so we
   // never hit the per-user store endpoint without a session.
@@ -115,6 +129,7 @@ export const AuthProvider = ({ children }) => {
         }
       })();
     } else {
+      clearAuthTokenGetter();
       base44.auth.clearSession();
       setUser(null);
     }
