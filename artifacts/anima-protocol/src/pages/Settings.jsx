@@ -783,11 +783,16 @@ export default function Settings() {
                       setStartersRestored(false);
                       setStartersRestoreError(null);
                       try {
-                        await repairStarterCharacters();
+                        const restored = await repairStarterCharacters();
                         await loadStats();
                         setStartersRestored(true);
+                        if (restored > 0) {
+                          setStartersRestoreError(null);
+                        }
                       } catch (err) {
-                        setStartersRestoreError(err?.message || "Could not restore starter characters.");
+                        setStartersRestoreError(
+                          err?.message?.trim() || "Could not restore starter characters.",
+                        );
                       } finally {
                         setRestoringStarters(false);
                       }
