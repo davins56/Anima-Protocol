@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react';
+import { apiUrl } from '@/lib/apiOrigin';
 
 function stripMarkup(text) {
   return text
@@ -9,7 +10,7 @@ function stripMarkup(text) {
 }
 
 async function fetchTTSAudio(payload) {
-  const res = await fetch(`${window.location.origin}/api/tts`, {
+  const res = await fetch(apiUrl('/tts'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

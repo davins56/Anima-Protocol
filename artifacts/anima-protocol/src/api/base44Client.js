@@ -10,8 +10,9 @@
 
 import { animaApi } from './animaApi';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
+import { apiUrl } from '@/lib/apiOrigin';
 
-const STORE_BASE = `${window.location.origin}/api/store`;
+const STORE_BASE = () => apiUrl('/store');
 
 // --- Clerk token bridge -----------------------------------------------------
 // The non-React client cannot read the Clerk session directly. AuthContext
@@ -59,7 +60,7 @@ async function authHeaders(extra) {
 
 async function storeFetch(path, options = {}) {
   const headers = await authHeaders(options.headers);
-  return fetch(`${STORE_BASE}${path}`, { ...options, headers });
+  return fetch(`${STORE_BASE()}${path}`, { ...options, headers });
 }
 
 // Parse a failed store response into a human-readable message. Non-JSON bodies
@@ -88,13 +89,11 @@ function storeError(res, message) {
 // AI photo edit. Sends a base64 image data URL + a text prompt to the
 // api-server (gpt-image-1 edit) and returns the transformed image as a data
 // URL. Used by the home-page "add photo" AI edit feature.
-const API_BASE = `${window.location.origin}/api`;
-
 export async function editImage({ image, prompt, signal }) {
   const headers = await authHeaders();
   let res;
   try {
-    res = await fetch(`${API_BASE}/openai/image-edit`, {
+    res = await fetch(apiUrl('/openai/image-edit'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ image, prompt }),
@@ -146,7 +145,7 @@ function readFileAsDataUrl(file) {
 // Upload an image blob via a presigned PUT and return the served object path.
 async function uploadBlob(blob) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/storage/uploads/request-url`, {
+  const res = await fetch(apiUrl('/storage/uploads/request-url'), {
     method: 'POST',
     headers,
     body: JSON.stringify({ contentType: blob.type, size: blob.size }),
@@ -1159,7 +1158,7 @@ export const base44 = {
           const payload = fnName === 'invoke' ? data : nameOrData;
           try {
             const res = await fetch(
-              `${window.location.origin}/api/openai/invoke/${realName}`,
+              apiUrl(`/openai/invoke/${realName}`),
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

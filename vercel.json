@@ -5,6 +5,10 @@
   "outputDirectory": "artifacts/anima-protocol/dist/public",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://anima-protocol.replit.app/api/:path*"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

@@ -183,6 +183,8 @@ Highest-value next work:
 
 The frontend can be deployed independently when configured with the required Vite environment variables. The API needs Clerk keys, `OPENAI_API_KEY`, and a reachable Postgres database. Same-origin `/api/*` routing can be handled by the hosting platform, a reverse proxy, or the Vite dev proxy during local development.
 
+**Vercel + Replit split:** production frontend at `www.anima-protocol.com` (Vercel) proxies `/api/*` to `https://anima-protocol.replit.app` via `vercel.json` rewrites. Without that proxy, character storage and restore cannot work. Alternatively set `VITE_API_ORIGIN=https://anima-protocol.replit.app` at build time so the browser calls the API host directly (CORS is enabled on the api-server).
+
 ## License
 
 MIT
