@@ -6,8 +6,10 @@
   "outputDirectory": "artifacts/anima-protocol/dist/public",
   "functions": {
     "api/index.mjs": {
-      "maxDuration": 60,
-      "includeFiles": "artifacts/api-server/dist/**"
+      "maxDuration": 60
+    },
+    "api/server.mjs": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

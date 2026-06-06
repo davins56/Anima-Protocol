@@ -28,6 +28,9 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `OPENAI_API_KEY` | Yes | For chat / AI features |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 
+If `DATABASE_URL` or `CLERK_SECRET_KEY` is missing, `/api/*` returns **503**
+(with a JSON body) instead of crashing the Vercel function.
+
 Copy any other secrets your Replit deployment uses (e.g. object storage, ElevenLabs)
 if those features are needed.
 

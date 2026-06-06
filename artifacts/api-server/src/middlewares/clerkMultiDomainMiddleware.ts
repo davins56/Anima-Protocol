@@ -7,6 +7,25 @@ import {
   resolveClerkPublishableKey,
 } from "./clerkProxyMiddleware";
 
+/** Minimal signed-out auth so @clerk/express getAuth() never throws. */
+function attachSignedOutAuth(req: Request): void {
+  Object.assign(req, {
+    auth: () => ({
+      userId: null,
+      sessionId: null,
+      sessionClaims: null,
+      orgId: null,
+      orgRole: null,
+      orgSlug: null,
+      orgPermissions: null,
+      factorVerificationAge: null,
+      getToken: async () => null,
+      has: () => false,
+      debug: () => ({}),
+    }),
+  });
+}
+
 function expressToWebRequest(req: Request): globalThis.Request {
   const host = getClerkProxyHost(req) || req.headers.host || "localhost";
   const protocol =
@@ -73,7 +92,10 @@ export function clerkMultiDomainMiddleware(): RequestHandler {
         auth: (opts?: Parameters<typeof state.toAuth>[0]) => state.toAuth(opts),
       });
     } catch {
-      // leave req without auth; store routes return 401
+      // Clerk misconfigured or token invalid — treat as signed-out, not crash.
+    }
+    if (!("auth" in req)) {
+      attachSignedOutAuth(req);
     }
     next();
   };
