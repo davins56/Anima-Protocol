@@ -1,4 +1,9 @@
-import express, { type Express } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
@@ -46,5 +51,28 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use(clerkMultiDomainMiddleware());
 
 app.use("/api", router);
+
+// Prevent unhandled errors from wedging the Vercel function instance.
+app.use(
+  (
+    err: unknown,
+    _req: Request,
+    res: Response,
+    _next: NextFunction,
+  ) => {
+    logger.error({ err }, "Unhandled API error");
+    if (!res.headersSent) {
+      const message =
+        err instanceof Error ? err.message : "Internal server error";
+      const isConfig =
+        message.includes("DATABASE_URL") || message.includes("CLERK_SECRET_KEY");
+      res.status(isConfig ? 503 : 500).json({
+        error: isConfig
+          ? "API is misconfigured on the server. Check Vercel environment variables."
+          : "Internal server error",
+      });
+    }
+  },
+);
 
 export default app;

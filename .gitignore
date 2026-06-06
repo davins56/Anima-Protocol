@@ -6,5 +6,8 @@ replit.nix
 *.log
 dist/
 build/
+api/server.mjs
+api/server.mjs.map
 .DS_Store
 .aider*
+*.tsbuildinfo

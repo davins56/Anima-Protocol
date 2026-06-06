@@ -6,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`.
 
-The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server via `api/index.mjs` (rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server via `api/index.mjs` → `api/server.mjs` (built/copied by `api-server` build; rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
 
 ### Node.js
 
@@ -49,7 +49,7 @@ Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.
 
-Sign-in social buttons are Clerk's built-in OAuth controls on `<SignIn>` / `<SignUp>` (`oauthFlow="redirect"`). Enable Google, Apple, and GitHub in the Clerk Dashboard; callback routes are `/sign-in/sso-callback` and `/sign-up/sso-callback`.
+Sign-in shows custom Google / Apple / GitHub buttons (`oauth_google`, `oauth_apple`, `oauth_github`) above `<SignIn>` / `<SignUp>` using `authenticateWithRedirect` to `/sign-in/sso-callback` or `/sign-up/sso-callback`. Enable each provider in the Clerk Dashboard → Social connections.
 
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
 
