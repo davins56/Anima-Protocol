@@ -19,6 +19,10 @@
  *   app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
  */
 
+import {
+  isDevelopmentFromPublishableKey,
+  publishableKeyFromHost,
+} from "@clerk/shared/keys";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import type { RequestHandler } from "express";
 import type { IncomingHttpHeaders } from "http";
@@ -52,28 +56,102 @@ function hostFromUrl(value: string | undefined): string | undefined {
   }
 }
 
+function headerValue(
+  value: string | string[] | undefined,
+): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.split(",")[0]?.trim() || undefined;
+}
+
+function normalizeHostname(host: string | undefined): string {
+  return (host ?? "").toLowerCase().replace(/:\d+$/, "");
+}
+
+function isLocalDevHost(hostname: string): boolean {
+  if (!hostname) return true;
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.startsWith("127.0.0.1")
+  );
+}
+
+function isBackendProxyHost(hostname: string): boolean {
+  return (
+    hostname.endsWith(".replit.app") ||
+    hostname.endsWith(".replit.dev") ||
+    hostname.endsWith(".repl.co")
+  );
+}
+
+/**
+ * Pick the Clerk publishable key for this request. The dev fallback key is only
+ * used for local development hosts — never for Vercel custom domains proxied to
+ * Replit, where the JWT was minted for clerk.{public-host}.
+ */
+export function resolveClerkPublishableKey(
+  host: string | undefined,
+  fallbackKey: string | undefined,
+): string {
+  const hostname = normalizeHostname(host);
+  const useDevFallback =
+    fallbackKey &&
+    isDevelopmentFromPublishableKey(fallbackKey) &&
+    isLocalDevHost(hostname);
+  if (useDevFallback) return fallbackKey;
+  // publishableKeyFromHost also short-circuits on dev fallbacks — strip them
+  // for production/custom-domain hosts so verification uses clerk.{hostname}.
+  const hostFallback =
+    fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)
+      ? undefined
+      : fallbackKey;
+  return publishableKeyFromHost(hostname, hostFallback);
+}
+
 export function getClerkProxyHost(req: {
   headers: IncomingHttpHeaders;
 }): string | undefined {
-  const forwarded = req.headers["x-forwarded-host"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const firstHop = raw?.split(",")[0]?.trim();
-  if (firstHop) return firstHop;
+  const originHost = hostFromUrl(
+    typeof req.headers.origin === "string" ? req.headers.origin : undefined,
+  );
+  const refererHost = hostFromUrl(
+    typeof req.headers.referer === "string" ? req.headers.referer : undefined,
+  );
+
+  const forwarded = headerValue(req.headers["x-forwarded-host"]);
+  if (forwarded && !isBackendProxyHost(normalizeHostname(forwarded))) {
+    return forwarded;
+  }
+  if (forwarded && !originHost && !refererHost) {
+    return forwarded;
+  }
+
+  // Browser sends this on store calls so Vercel → Replit proxies still resolve
+  // the public custom domain when upstream strips forwarded-host.
+  const publicHost = headerValue(req.headers["x-anima-public-host"]);
+  if (publicHost) {
+    const normalized = normalizeHostname(publicHost);
+    if (
+      normalized === normalizeHostname(originHost) ||
+      normalized === normalizeHostname(refererHost)
+    ) {
+      return publicHost;
+    }
+  }
 
   // Vercel → Replit rewrites sometimes arrive with only the backend Host while
   // the browser Origin still reflects the public custom domain. Clerk JWT
   // verification must use that public host to pick the right publishable key.
-  const originHost = hostFromUrl(
-    typeof req.headers.origin === "string" ? req.headers.origin : undefined,
-  );
   if (originHost) return originHost;
-
-  const refererHost = hostFromUrl(
-    typeof req.headers.referer === "string" ? req.headers.referer : undefined,
-  );
   if (refererHost) return refererHost;
+  if (forwarded) return forwarded;
 
-  return req.headers.host?.trim() || undefined;
+  const hostHeader = headerValue(req.headers.host);
+  if (hostHeader && !isBackendProxyHost(normalizeHostname(hostHeader))) {
+    return hostHeader;
+  }
+
+  return hostHeader;
 }
 
 export function clerkProxyMiddleware(): RequestHandler {
