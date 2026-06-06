@@ -30,6 +30,13 @@ import type { IncomingHttpHeaders } from "http";
 const CLERK_FAPI = "https://frontend-api.clerk.dev";
 export const CLERK_PROXY_PATH = "/api/__clerk";
 
+/** Public hosts that mint Clerk sessions for this product (apex + www). */
+export const KNOWN_PUBLIC_HOSTS = new Set([
+  "www.anima-protocol.com",
+  "anima-protocol.com",
+  "anima-protocol.replit.app",
+]);
+
 /**
  * Returns the first effective public hostname for the given request,
  * preferring x-forwarded-host over the Host header so callers behind a
@@ -126,11 +133,14 @@ export function getClerkProxyHost(req: {
     return forwarded;
   }
 
-  // Browser sends this on store calls so Vercel → Replit proxies still resolve
-  // the public custom domain when upstream strips forwarded-host.
+  // Browser (or Vercel edge proxy) sends this on store calls so Vercel → Replit
+  // proxies still resolve the public custom domain when upstream strips Origin.
   const publicHost = headerValue(req.headers["x-anima-public-host"]);
   if (publicHost) {
     const normalized = normalizeHostname(publicHost);
+    if (KNOWN_PUBLIC_HOSTS.has(normalized)) {
+      return publicHost;
+    }
     if (
       normalized === normalizeHostname(originHost) ||
       normalized === normalizeHostname(refererHost)
@@ -152,6 +162,21 @@ export function getClerkProxyHost(req: {
   }
 
   return hostHeader;
+}
+
+/** Hostnames to try when verifying a Clerk JWT (www/apex + known production). */
+export function getClerkAuthHostCandidates(req: {
+  headers: IncomingHttpHeaders;
+}): string[] {
+  const hosts = new Set<string>();
+  const primary = getClerkProxyHost(req);
+  if (primary) hosts.add(normalizeHostname(primary));
+  for (const known of KNOWN_PUBLIC_HOSTS) hosts.add(known);
+  for (const h of [...hosts]) {
+    if (h.startsWith("www.")) hosts.add(h.slice(4));
+    else if (h.includes(".") && !isLocalDevHost(h)) hosts.add(`www.${h}`);
+  }
+  return [...hosts].filter(Boolean);
 }
 
 export function clerkProxyMiddleware(): RequestHandler {

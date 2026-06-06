@@ -11,6 +11,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@clerk/backend": "^3.5.0",
     "@clerk/express": "^2.1.22",
     "@clerk/shared": "^4.14.0",
     "@google-cloud/storage": "^7.19.0",

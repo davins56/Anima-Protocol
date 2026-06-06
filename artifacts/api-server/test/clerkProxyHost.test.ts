@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getClerkAuthHostCandidates,
   getClerkProxyHost,
   resolveClerkPublishableKey,
 } from "../src/middlewares/clerkProxyMiddleware";
@@ -39,6 +40,17 @@ describe("getClerkProxyHost", () => {
     ).toBe("www.anima-protocol.com");
   });
 
+  it("trusts x-anima-public-host for known production domains without Origin", () => {
+    expect(
+      getClerkProxyHost({
+        headers: {
+          host: "anima-protocol.replit.app",
+          "x-anima-public-host": "anima-protocol.com",
+        },
+      }),
+    ).toBe("anima-protocol.com");
+  });
+
   it("ignores x-anima-public-host when it does not match Origin", () => {
     expect(
       getClerkProxyHost({
@@ -60,6 +72,19 @@ describe("getClerkProxyHost", () => {
         },
       }),
     ).toBe("anima-protocol.com");
+  });
+});
+
+describe("getClerkAuthHostCandidates", () => {
+  it("includes www and apex variants for known hosts", () => {
+    const hosts = getClerkAuthHostCandidates({
+      headers: {
+        host: "anima-protocol.replit.app",
+        "x-anima-public-host": "www.anima-protocol.com",
+      },
+    });
+    expect(hosts).toContain("www.anima-protocol.com");
+    expect(hosts).toContain("anima-protocol.com");
   });
 });
 
