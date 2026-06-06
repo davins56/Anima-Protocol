@@ -943,6 +943,51 @@ router.post("/messages/replace", async (req, res) => {
   res.json(out);
 });
 
+// --- Bulk upsert (client-provided ids) --------------------------------------
+// Like PUT /:entity/:id but for many records in one request. Used by starter
+// character seed/repair so ~30 upserts don't each round-trip separately.
+router.post("/:entity/bulk-upsert", async (req, res) => {
+  const userId = getUserId(req);
+  const { entity } = req.params;
+  const items = (req.body?.items ?? []) as Record<string, unknown>[];
+  const now = new Date().toISOString();
+  const upserted: Record<string, unknown>[] = [];
+
+  for (const data of items) {
+    const id =
+      typeof data.id === "string" && data.id.trim() ? data.id.trim() : makeId();
+
+    const [existing] = await db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, entity),
+          eq(userEntities.entityId, id),
+        ),
+      )
+      .limit(1);
+
+    let record: Record<string, unknown>;
+    if (existing) {
+      const prev = existing.data as Record<string, unknown>;
+      record = { ...prev, ...data, id, updated_date: now };
+    } else {
+      record = {
+        id,
+        created_date: now,
+        updated_date: now,
+        ...data,
+      };
+    }
+    await upsertEntity(userId, entity, id, record);
+    upserted.push(record);
+  }
+
+  res.json({ count: upserted.length, items: upserted });
+});
+
 // --- Bulk create ------------------------------------------------------------
 router.post("/:entity/bulk", async (req, res) => {
   const userId = getUserId(req);

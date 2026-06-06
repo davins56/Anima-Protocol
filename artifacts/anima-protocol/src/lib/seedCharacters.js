@@ -1,4 +1,9 @@
-import { base44, waitForStoreAuth, notifyStoreChanged } from "@/api/base44Client";
+import {
+  base44,
+  waitForStoreAuth,
+  notifyStoreChanged,
+  clearStoreCache,
+} from "@/api/base44Client";
 import { findCharacterPhoto } from "@/lib/characterPhoto";
 
 // Characters whose photo lookup has already been attempted (by id), so we don't
@@ -378,12 +383,28 @@ export function resetSeedLock() {
   backfillPromise = null;
 }
 
-// User-triggered repair (Settings) or support flow: re-run the missing-starter
-// upsert and tell open pages to refetch.
+// User-triggered repair (Settings): seed missing starters only (no photo
+// backfill), verify the roster landed, then tell open pages to refetch.
 export async function repairStarterCharacters() {
   resetSeedLock();
-  await seedCharactersIfNeeded();
+  backfillPromise = null;
+  clearStoreCache();
+  await waitForStoreAuth(30000);
+  const restored = await upsertMissingStarters();
+  clearStoreCache();
   notifyStoreChanged();
+
+  const starters = getStarterRoster();
+  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existingIds = new Set((existing || []).map((c) => c.id));
+  const present = starters.filter((c) => existingIds.has(c.id)).length;
+  if (present < starters.length) {
+    throw new Error(
+      `Only ${present} of ${starters.length} starter characters are in your account. ` +
+        "Check that you are signed in and the API at /api/store is reachable.",
+    );
+  }
+  return restored;
 }
 
 function getPhotoAttempts() {
@@ -509,22 +530,42 @@ export function getStarterRoster() {
   });
 }
 
+async function upsertMissingStarters() {
+  clearStoreCache();
+  const starters = getStarterRoster();
+  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existingIds = new Set((existing || []).map((c) => c.id));
+  // Repair mode: upsert any starter that's missing. Accounts that never got a
+  // full seed (failed mid-run, empty roster, or pre-fix race) are filled in
+  // without touching user-created characters or starters already present.
+  const missing = starters.filter((c) => !existingIds.has(c.id));
+  if (!missing.length) return 0;
+
+  try {
+    await base44.entities.Character.bulkUpsert(missing);
+  } catch (err) {
+    // Older api-server builds without /bulk-upsert — fall back to per-row PUT.
+    if (err?.status !== 404) {
+      throw new Error(err?.message || "Failed to restore starter characters");
+    }
+    for (const char of missing) {
+      try {
+        await base44.entities.Character.update(char.id, char);
+      } catch (updateErr) {
+        throw new Error(
+          `Failed to save ${char.name}: ${updateErr?.message || "unknown error"}`,
+        );
+      }
+    }
+  }
+  console.log(`[Anima] Seeded ${missing.length} starter character(s).`);
+  return missing.length;
+}
+
 async function doSeed() {
   try {
     await waitForStoreAuth();
-    const starters = getStarterRoster();
-    const existing = await base44.entities.Character.list("-created_date", 5000);
-    const existingIds = new Set((existing || []).map((c) => c.id));
-    // Repair mode: upsert any starter that's missing. Accounts that never got a
-    // full seed (failed mid-run, empty roster, or pre-fix race) are filled in
-    // without touching user-created characters or starters already present.
-    const missing = starters.filter((c) => !existingIds.has(c.id));
-    if (!missing.length) return;
-
-    for (const char of missing) {
-      await base44.entities.Character.update(char.id, char);
-    }
-    console.log(`[Anima] Seeded ${missing.length} starter character(s).`);
+    return await upsertMissingStarters();
   } catch (err) {
     console.warn("[Anima] Character seed failed:", err.message);
     throw err;

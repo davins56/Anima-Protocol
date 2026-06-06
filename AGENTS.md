@@ -6,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`.
 
-The frontend calls same-origin `/api/*` (see `animaApi.js`, `base44Client.js`). The current Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). nginx on port 3000 is also preconfigured in this VM when you want to mirror Replit-style routing through a single local origin.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel (`www.anima-protocol.com`) must proxy `/api/*` to the Replit api-server (`vercel.json` → `https://anima-protocol.replit.app/api/:path*`) — without it, character seed/restore and all persisted data fail with 404.
 
 ### Node.js
 

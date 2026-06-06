@@ -1,7 +1,7 @@
-const API_BASE = `${window.location.origin}/api`;
+import { apiUrl } from '@/lib/apiOrigin';
 
 async function request(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiUrl(path), {
     headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
   });
@@ -27,7 +27,7 @@ export const animaApi = {
 
   sendMessage: async function* (conversationId, content, systemPrompt, deepMode) {
     const res = await fetch(
-      `${API_BASE}/openai/conversations/${conversationId}/messages`,
+      apiUrl(`/openai/conversations/${conversationId}/messages`),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,7 +73,7 @@ export const animaApi = {
       persist = true,
       metadata,
     }) {
-      const res = await fetch(`${API_BASE}/chat/messages`, {
+      const res = await fetch(apiUrl('/chat/messages'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
