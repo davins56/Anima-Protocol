@@ -16,12 +16,9 @@ import {
   SignUp,
   Show,
   useClerk,
-  useSignIn,
-  useSignUp,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
-import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
@@ -213,33 +210,6 @@ const clerkProxyUrl =
     : "";
 const authRedirectCompleteUrl = basePath || "/";
 
-function oauthCallbackPath(mode) {
-  const segment = mode === "sign-up" ? "sign-up" : "sign-in";
-  return `${basePath}/${segment}/sso-callback`;
-}
-
-function absoluteAppUrl(path) {
-  return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-const socialAuthProviders = [
-  {
-    label: "Continue with Google",
-    strategy: "oauth_google",
-    Icon: FaGoogle,
-  },
-  {
-    label: "Continue with Apple",
-    strategy: "oauth_apple",
-    Icon: FaApple,
-  },
-  {
-    label: "Continue with GitHub",
-    strategy: "oauth_github",
-    Icon: FaGithub,
-  },
-];
-
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
     ? path.slice(basePath.length) || "/"
@@ -282,8 +252,6 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
-    socialButtonsRoot: "!hidden",
-    dividerRow: "!hidden",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -317,74 +285,10 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
-function SocialAuthButtons({ mode }) {
-  const signInState = useSignIn();
-  const signUpState = useSignUp();
-  const authResource =
-    mode === "sign-up" ? signUpState.signUp : signInState.signIn;
-  const isLoaded =
-    mode === "sign-up" ? signUpState.isLoaded : signInState.isLoaded;
-  const isAuthResourceReady =
-    typeof isLoaded === "boolean" ? isLoaded : Boolean(authResource);
-  const [pendingStrategy, setPendingStrategy] = useState(null);
-
-  const handleOAuth = async (strategy) => {
-    if (!isAuthResourceReady || !authResource) {
-      return;
-    }
-    setPendingStrategy(strategy);
-    const redirectUrl = absoluteAppUrl(oauthCallbackPath(mode));
-    try {
-      if (typeof authResource.authenticateWithRedirect === "function") {
-        await authResource.authenticateWithRedirect({
-          strategy,
-          redirectUrl,
-          redirectUrlComplete: absoluteAppUrl(authRedirectCompleteUrl),
-        });
-        return;
-      }
-
-      await authResource.sso({
-        strategy,
-        redirectCallbackUrl: redirectUrl,
-        redirectUrl: absoluteAppUrl(authRedirectCompleteUrl),
-      });
-    } catch (error) {
-      console.error("OAuth redirect failed", error);
-      toast.error("That sign-in provider is not available right now.");
-      setPendingStrategy(null);
-    }
-  };
-
-  return (
-    <div className="w-full space-y-2">
-      {socialAuthProviders.map(({ label, strategy, Icon }) => (
-        <button
-          key={strategy}
-          type="button"
-          disabled={!isAuthResourceReady || Boolean(pendingStrategy)}
-          onClick={() => handleOAuth(strategy)}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Icon className="h-4 w-4" aria-hidden="true" />
-          <span>
-            {pendingStrategy === strategy ? "Redirecting..." : label}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function AuthFormShell({ mode, children }) {
+function AuthFormShell({ children }) {
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
-      <div className="w-[420px] max-w-full space-y-3">
-        <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
-          <SocialAuthButtons mode={mode} />
-        </div>
-        {children}
-      </div>
+      <div className="w-[420px] max-w-full">{children}</div>
     </div>
   );
 }
@@ -392,12 +296,14 @@ function AuthFormShell({ mode, children }) {
 function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
   return (
-    <AuthFormShell mode="sign-in">
+    <AuthFormShell>
       <SignIn
         routing="path"
         path={`${basePath}/sign-in`}
         signUpUrl={`${basePath}/sign-up`}
+        oauthFlow="redirect"
         fallbackRedirectUrl={authRedirectCompleteUrl}
+        forceRedirectUrl={authRedirectCompleteUrl}
       />
     </AuthFormShell>
   );
@@ -406,12 +312,14 @@ function SignInPage() {
 function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
   return (
-    <AuthFormShell mode="sign-up">
+    <AuthFormShell>
       <SignUp
         routing="path"
         path={`${basePath}/sign-up`}
         signInUrl={`${basePath}/sign-in`}
+        oauthFlow="redirect"
         fallbackRedirectUrl={authRedirectCompleteUrl}
+        forceRedirectUrl={authRedirectCompleteUrl}
       />
     </AuthFormShell>
   );

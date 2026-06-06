@@ -183,7 +183,7 @@ Highest-value next work:
 
 The frontend can be deployed independently when configured with the required Vite environment variables. The API needs Clerk keys, `OPENAI_API_KEY`, and a reachable Postgres database. Same-origin `/api/*` routing can be handled by the hosting platform, a reverse proxy, or the Vite dev proxy during local development.
 
-**Production (Vercel):** the frontend and Express api-server deploy together — root `server.mjs` serves `/api/*` on Vercel Fluid compute. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, and `OPENAI_API_KEY` from Replit Secrets into Vercel environment variables (no Replit republish required). See [docs/vercel-api-migration.md](docs/vercel-api-migration.md).
+**Production (Vercel):** the frontend and Express api-server deploy together — `api/index.mjs` serves `/api/*` via a Vercel Function rewrite. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, and `OPENAI_API_KEY` from Replit Secrets into Vercel environment variables (no Replit republish required). See [docs/vercel-api-migration.md](docs/vercel-api-migration.md).
 
 **Netlify (GitHub merge checks only):** If you deploy on **Vercel**, you do not need Netlify hosting — but the **Netlify GitHub App** may still post checks on PRs. Root `netlify.toml` plus `artifacts/anima-protocol/netlify.toml` cover both repo-root and package-base Netlify sites. To stop Netlify from blocking merges: GitHub **Settings → Integrations → Netlify** → configure linked sites, or remove Netlify from **branch protection** required checks. **Continuous AI** checks are from Continue.dev; remove them from required checks if the agent errors. Required checks that matter for this repo: **CI** (`checks`) and **Vercel**.
 
