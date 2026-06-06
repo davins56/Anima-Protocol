@@ -10,17 +10,19 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
-  AuthenticateWithRedirectCallback,
   ClerkProvider,
+  HandleSSOCallback,
   SignIn,
   SignUp,
   Show,
   useClerk,
+  useSignIn,
+  useSignUp,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
 import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
-import { Suspense, lazy, useRef, useEffect, useState } from "react";
+import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
@@ -349,41 +351,85 @@ function formatClerkOAuthError(error) {
       .filter(Boolean)
       .join(" ");
   }
-  return error?.message || "";
+  return error?.longMessage || error?.message || "";
+}
+
+function getEnabledOAuthStrategies(clerk) {
+  const environment =
+    clerk?.__internal_environment ?? clerk?.environment ?? null;
+  const strategies =
+    environment?.userSettings?.authenticatableSocialStrategies ?? null;
+  if (Array.isArray(strategies) && strategies.length > 0) {
+    return strategies;
+  }
+
+  const social = environment?.userSettings?.social;
+  if (social && typeof social === "object") {
+    const fromSocial = Object.values(social)
+      .filter((provider) => provider?.enabled && provider?.authenticatable)
+      .map((provider) => provider.strategy)
+      .filter(Boolean);
+    if (fromSocial.length > 0) {
+      return fromSocial;
+    }
+  }
+
+  const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
+  if (typeof envList === "string" && envList.trim()) {
+    return envList.split(",").map((entry) => entry.trim()).filter(Boolean);
+  }
+
+  return null;
 }
 
 function SocialAuthButtons({ mode }) {
   const clerk = useClerk();
+  const { signIn } = useSignIn();
+  const { signUp } = useSignUp();
   const [pendingStrategy, setPendingStrategy] = useState(null);
 
+  const enabledProviders = useMemo(() => {
+    if (!clerk.loaded) {
+      return [];
+    }
+    const enabledStrategies = getEnabledOAuthStrategies(clerk);
+    if (Array.isArray(enabledStrategies)) {
+      return socialAuthProviders.filter((provider) =>
+        enabledStrategies.includes(provider.strategy),
+      );
+    }
+    // Clerk environment not readable yet — only show Google (enabled by default in dev).
+    return socialAuthProviders.filter(
+      (provider) => provider.strategy === "oauth_google",
+    );
+  }, [clerk.loaded, clerk.__internal_environment]);
+
   const handleOAuth = async (strategy) => {
-    if (!clerk.loaded || !clerk.client) {
+    if (!clerk.loaded) {
       return;
     }
     setPendingStrategy(strategy);
-    const redirectUrl = oauthCallbackPath(mode);
-    const redirectUrlComplete = authRedirectCompleteUrl;
-    const authResource =
-      mode === "sign-up" ? clerk.client.signUp : clerk.client.signIn;
+    const redirectCallbackUrl = oauthCallbackPath(mode);
+    const redirectUrl = authRedirectCompleteUrl;
+    const authResource = mode === "sign-up" ? signUp : signIn;
     try {
-      if (authResource.status == null) {
-        await authResource.create({});
-      }
-      await authResource.authenticateWithRedirect({
+      const { error } = await authResource.sso({
         strategy,
+        redirectCallbackUrl,
         redirectUrl,
-        redirectUrlComplete,
-        continueSignUp: true,
       });
+      if (error) {
+        throw error;
+      }
     } catch (error) {
       console.error("OAuth redirect failed", error);
       const providerName =
-        socialAuthProviders.find((p) => p.strategy === strategy)?.label ??
-        "That provider";
+        socialAuthProviders.find((provider) => provider.strategy === strategy)
+          ?.label ?? "That provider";
       const detail = formatClerkOAuthError(error);
       toast.error(
         detail ||
-          `${providerName} is not available. Enable it in the Clerk Dashboard (Social connections) and add redirect URL ${window.location.origin}${redirectUrl}.`,
+          `${providerName} is not available. Enable it in the Clerk Dashboard (Configure → SSO connections) and add redirect URL ${window.location.origin}${redirectCallbackUrl}.`,
       );
       setPendingStrategy(null);
     }
@@ -395,8 +441,13 @@ function SocialAuthButtons({ mode }) {
         <p className="py-2 text-center text-sm text-cyan-400/50">
           Loading sign-in options…
         </p>
+      ) : enabledProviders.length === 0 ? (
+        <p className="py-2 text-center text-sm text-cyan-400/50">
+          No social sign-in providers are enabled. Turn on Google, Apple, or
+          GitHub under Clerk Dashboard → Configure → SSO connections.
+        </p>
       ) : (
-        socialAuthProviders.map(({ label, strategy, Icon }) => (
+        enabledProviders.map(({ label, strategy, Icon }) => (
           <button
             key={strategy}
             type="button"
@@ -462,24 +513,35 @@ function SignUpPage() {
   );
 }
 
-function SsoCallbackPage({ mode = "sign-in" }) {
-  const signInUrl = `${basePath}/sign-in`;
-  const signUpUrl = `${basePath}/sign-up`;
+function SsoCallbackPage() {
+  const navigate = useNavigate();
+
+  const navigateAfterAuth = ({ session, decorateUrl }) => {
+    if (session?.currentTask) {
+      const destination = decorateUrl(`/${session.currentTask.key}`);
+      if (destination.startsWith("http")) {
+        window.location.href = destination;
+      } else {
+        navigate(stripBase(destination));
+      }
+      return;
+    }
+
+    const destination = decorateUrl(authRedirectCompleteUrl);
+    if (destination.startsWith("http")) {
+      window.location.href = destination;
+    } else {
+      navigate(stripBase(destination));
+    }
+  };
+
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
-      <AuthenticateWithRedirectCallback
-        signInUrl={signInUrl}
-        signUpUrl={signUpUrl}
-        signInFallbackRedirectUrl={authRedirectCompleteUrl}
-        signUpFallbackRedirectUrl={authRedirectCompleteUrl}
-        signInForceRedirectUrl={
-          mode === "sign-in" ? authRedirectCompleteUrl : undefined
-        }
-        signUpForceRedirectUrl={
-          mode === "sign-up" ? authRedirectCompleteUrl : undefined
-        }
+      <HandleSSOCallback
+        navigateToApp={navigateAfterAuth}
+        navigateToSignIn={() => navigate(`${basePath}/sign-in`)}
+        navigateToSignUp={() => navigate(`${basePath}/sign-up`)}
       />
-      <div id="clerk-captcha" />
     </div>
   );
 }
@@ -767,11 +829,11 @@ const AuthenticatedApp = () => {
               <Route path="/" element={<HomeGate />} />
               <Route
                 path="/sign-in/sso-callback"
-                element={<SsoCallbackPage mode="sign-in" />}
+                element={<SsoCallbackPage />}
               />
               <Route
                 path="/sign-up/sso-callback"
-                element={<SsoCallbackPage mode="sign-up" />}
+                element={<SsoCallbackPage />}
               />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
