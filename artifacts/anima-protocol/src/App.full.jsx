@@ -203,14 +203,14 @@ const clerkPubKey = publishableKeyFromHost(
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
 
-// Custom domains (e.g. Vercel) must route Clerk through same-origin /api/__clerk,
-// which is proxied to the api-server in production. Replit injects
-// VITE_CLERK_PROXY_URL at build time; elsewhere derive it from the live origin.
+// Clerk proxy is only used when explicitly configured (Replit sets
+// VITE_CLERK_PROXY_URL at build time). Do NOT auto-derive a proxy URL on Vercel
+// or other custom domains — proxied Clerk POSTs fail with origin_invalid when
+// the API runs on a different host unless DNS/proxy headers are fully aligned.
 const clerkProxyUrl =
-  import.meta.env.VITE_CLERK_PROXY_URL ||
-  (import.meta.env.PROD
-    ? `${window.location.origin}${basePath}/api/__clerk`
-    : "");
+  typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
+    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
+    : "";
 const authRedirectCompleteUrl = basePath || "/";
 const oauthCallbackUrl = `${basePath}/sso-callback`;
 
@@ -463,7 +463,7 @@ function ClerkProviderWithRoutes({ children }) {
   return (
     <ClerkProvider
       publishableKey={clerkPubKey}
-      proxyUrl={clerkProxyUrl}
+      {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
@@ -619,23 +619,6 @@ const AuthenticatedApp = () => {
     onSwipeLeft: handleSwipeLeft,
     excludeSelector: "input, textarea, [data-no-swipe]",
   });
-  // ── EMERGENCY CHARACTER RESTORE ─────────────────────
-  useEffect(() => {
-    if (isAuthenticated && user?.id) {
-      console.log("🔄 Emergency local data restore...");
-
-      mergeLeftoverLocalData()
-        .then(() => {
-          toast.success("✅ Characters restored!", {
-            description: "Refresh the Characters page if needed.",
-            duration: 6000,
-          });
-        })
-        .catch((err) => {
-          console.error("Restore failed:", err);
-        });
-    }
-  }, [isAuthenticated, user?.id]);
   // Gate the first-run tutorial behind the AI disclaimer so the two modals
   // never stack. The disclaimer fires onAccept on mount when already accepted,
   // so returning users surface the tutorial immediately (e.g. when replaying).

@@ -101,6 +101,13 @@ export function clerkProxyMiddleware(): RequestHandler {
         proxyReq.setHeader("Clerk-Proxy-Url", proxyUrl);
         proxyReq.setHeader("Clerk-Secret-Key", secretKey);
 
+        // Clerk validates that Origin matches the proxy URL's host. When the
+        // browser hits a backend on a different host (e.g. Vercel → Replit),
+        // rewrite Origin to the public proxy origin so POST /client succeeds.
+        if (host) {
+          proxyReq.setHeader("Origin", `${protocol}://${host}`);
+        }
+
         const xff = req.headers["x-forwarded-for"];
         const clientIp =
           (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim() ||
