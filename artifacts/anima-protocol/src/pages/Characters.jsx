@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
-import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus } from "lucide-react";
+import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
 import { autoAssignCharacterPhoto, photoNeedsLookup } from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -63,6 +64,12 @@ export default function Characters() {
   const [brokenPhotoIds, setBrokenPhotoIds] = useState(() => new Set());
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [showSeriesModal, setShowSeriesModal] = useState(false);
+
+  const existingCharacterIds = useMemo(
+    () => new Set(characters.map((c) => c.id)),
+    [characters],
+  );
 
   const loadCharacters = async () => {
     const data = await base44.entities.Character.list("-created_date", 100);
@@ -304,6 +311,15 @@ export default function Characters() {
               Manage Groups
             </Link>
             <button
+              type="button"
+              onClick={() => setShowSeriesModal(true)}
+              className="flex items-center gap-2 px-5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-all font-mono text-xs tracking-widest uppercase hud-corner glow-border"
+            >
+              <Library className="w-4 h-4" />
+              <span className="hidden sm:inline">Add From Series</span>
+              <span className="sm:hidden">Series</span>
+            </button>
+            <button
               onClick={() => setShowForm(true)}
               className="flex items-center gap-2 px-5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-all font-mono text-xs tracking-widest uppercase hud-corner glow-border"
             >
@@ -318,15 +334,27 @@ export default function Characters() {
         <div className="max-w-6xl mx-auto space-y-6">
           {characters.length === 0 ? (
             <div className="text-center py-24">
-              <p className="font-mono text-primary/20 text-sm tracking-[0.3em] uppercase mb-6">
+              <p className="font-mono text-primary/20 text-sm tracking-[0.3em] uppercase mb-2">
                 No characters indexed
               </p>
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-8 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
-              >
-                + Create First Character
-              </button>
+              <p className="font-mono text-primary/25 text-[10px] tracking-wider max-w-md mx-auto mb-8 leading-relaxed">
+                Add preloaded characters from Korra, Marvel, Guardians of the Galaxy, or Invincible — or create your own.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSeriesModal(true)}
+                  className="px-8 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
+                >
+                  + Add From Series
+                </button>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="px-8 py-3 border border-primary/25 text-primary/60 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all"
+                >
+                  Create Custom Character
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -555,6 +583,13 @@ export default function Characters() {
             </div>
             </div>
             )}
+
+      <AddSeriesCharactersModal
+        open={showSeriesModal}
+        existingIds={existingCharacterIds}
+        onClose={() => setShowSeriesModal(false)}
+        onAdded={loadCharacters}
+      />
 
       {/* Delete All Confirmation Modal */}
       {showDeleteAll && (

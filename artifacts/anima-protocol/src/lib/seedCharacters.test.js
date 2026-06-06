@@ -128,6 +128,7 @@ describe("repairStarterCharacters", () => {
     const roster = getStarterRoster();
     characterList
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(roster);
     characterBulkUpsert.mockResolvedValue({ count: roster.length, items: roster });
 
