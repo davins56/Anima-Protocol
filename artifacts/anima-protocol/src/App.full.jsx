@@ -21,7 +21,7 @@ import {
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
-import { FaApple, FaGithub } from "react-icons/fa";
+import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
@@ -212,9 +212,22 @@ const clerkProxyUrl =
     ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
     : "";
 const authRedirectCompleteUrl = basePath || "/";
-const oauthCallbackUrl = `${basePath}/sso-callback`;
+
+function oauthCallbackPath(mode) {
+  const segment = mode === "sign-up" ? "sign-up" : "sign-in";
+  return `${basePath}/${segment}/sso-callback`;
+}
+
+function absoluteAppUrl(path) {
+  return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 const socialAuthProviders = [
+  {
+    label: "Continue with Google",
+    strategy: "oauth_google",
+    Icon: FaGoogle,
+  },
   {
     label: "Continue with Apple",
     strategy: "oauth_apple",
@@ -320,20 +333,21 @@ function SocialAuthButtons({ mode }) {
       return;
     }
     setPendingStrategy(strategy);
+    const redirectUrl = absoluteAppUrl(oauthCallbackPath(mode));
     try {
       if (typeof authResource.authenticateWithRedirect === "function") {
         await authResource.authenticateWithRedirect({
           strategy,
-          redirectUrl: oauthCallbackUrl,
-          redirectUrlComplete: authRedirectCompleteUrl,
+          redirectUrl,
+          redirectUrlComplete: absoluteAppUrl(authRedirectCompleteUrl),
         });
         return;
       }
 
       await authResource.sso({
         strategy,
-        redirectCallbackUrl: oauthCallbackUrl,
-        redirectUrl: authRedirectCompleteUrl,
+        redirectCallbackUrl: redirectUrl,
+        redirectUrl: absoluteAppUrl(authRedirectCompleteUrl),
       });
     } catch (error) {
       console.error("OAuth redirect failed", error);
@@ -403,8 +417,26 @@ function SignUpPage() {
   );
 }
 
-function SsoCallbackPage() {
-  return <AuthenticateWithRedirectCallback />;
+function SsoCallbackPage({ mode = "sign-in" }) {
+  const signInUrl = `${basePath}/sign-in`;
+  const signUpUrl = `${basePath}/sign-up`;
+  return (
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+      <AuthenticateWithRedirectCallback
+        signInUrl={signInUrl}
+        signUpUrl={signUpUrl}
+        signInFallbackRedirectUrl={authRedirectCompleteUrl}
+        signUpFallbackRedirectUrl={authRedirectCompleteUrl}
+        signInForceRedirectUrl={
+          mode === "sign-in" ? authRedirectCompleteUrl : undefined
+        }
+        signUpForceRedirectUrl={
+          mode === "sign-up" ? authRedirectCompleteUrl : undefined
+        }
+      />
+      <div id="clerk-captcha" />
+    </div>
+  );
 }
 
 // First-run gate for signed-in users: if they have not yet awakened an Anima,
@@ -494,7 +526,6 @@ function ClerkProviderWithRoutes({ children }) {
 const PUBLIC_PREFIXES = [
   "/sign-in",
   "/sign-up",
-  "/sso-callback",
   "/terms",
   "/privacy-policy",
   "/disclaimer",
@@ -673,9 +704,20 @@ const AuthenticatedApp = () => {
             <Routes location={location}>
               {/* Root: signed-out -> Landing, signed-in -> MainHome */}
               <Route path="/" element={<HomeGate />} />
+              <Route
+                path="/sign-in/sso-callback"
+                element={<SsoCallbackPage mode="sign-in" />}
+              />
+              <Route
+                path="/sign-up/sso-callback"
+                element={<SsoCallbackPage mode="sign-up" />}
+              />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
-              <Route path="/sso-callback/*" element={<SsoCallbackPage />} />
+              <Route
+                path="/sso-callback/*"
+                element={<Navigate to="/sign-in/sso-callback" replace />}
+              />
               <Route path="/landing" element={<Navigate to="/" replace />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route

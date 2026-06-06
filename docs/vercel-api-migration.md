@@ -6,7 +6,9 @@ do **not** need to republish the Replit app.
 
 ## 1. Merge and deploy
 
-Merge the PR that adds `server.mjs` at the repo root. Vercel will:
+Merge the PR that adds `server.mjs` at the repo root (zero-config Express
+detection — do **not** list it under `vercel.json` `functions`, which only
+accepts paths under `api/`). Vercel will:
 
 1. Build `artifacts/api-server` → `dist/vercel.mjs`
 2. Build the Vite frontend
