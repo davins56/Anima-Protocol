@@ -17,7 +17,6 @@ import {
   Show,
   useClerk,
   useSignIn,
-  useSignUp,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
@@ -267,6 +266,16 @@ function oauthCallbackPath(mode) {
   return `${basePath}/${segment}/sso-callback`;
 }
 
+function oauthRedirectUrl(path) {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+  return path;
+}
+
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
     ? path.slice(basePath.length) || "/"
@@ -354,6 +363,11 @@ function formatClerkOAuthError(error) {
   return error?.longMessage || error?.message || "";
 }
 
+function clerkInstanceLabel() {
+  if (typeof clerkPubKey !== "string") return "Clerk";
+  return clerkPubKey.startsWith("pk_test_") ? "Development" : "Production";
+}
+
 function getEnabledOAuthStrategies(clerk) {
   const environment =
     clerk?.__internal_environment ?? clerk?.environment ?? null;
@@ -385,35 +399,44 @@ function getEnabledOAuthStrategies(clerk) {
 function SocialAuthButtons({ mode }) {
   const clerk = useClerk();
   const { signIn } = useSignIn();
-  const { signUp } = useSignUp();
   const [pendingStrategy, setPendingStrategy] = useState(null);
+  const [enabledStrategies, setEnabledStrategies] = useState(null);
+
+  useEffect(() => {
+    if (!clerk.loaded) {
+      setEnabledStrategies(null);
+      return;
+    }
+    const syncStrategies = () => {
+      setEnabledStrategies(getEnabledOAuthStrategies(clerk));
+    };
+    syncStrategies();
+    return clerk.addListener(syncStrategies);
+  }, [clerk, clerk.loaded]);
 
   const enabledProviders = useMemo(() => {
     if (!clerk.loaded) {
       return [];
     }
-    const enabledStrategies = getEnabledOAuthStrategies(clerk);
     if (Array.isArray(enabledStrategies)) {
       return socialAuthProviders.filter((provider) =>
         enabledStrategies.includes(provider.strategy),
       );
     }
-    // Clerk environment not readable yet — only show Google (enabled by default in dev).
-    return socialAuthProviders.filter(
-      (provider) => provider.strategy === "oauth_google",
-    );
-  }, [clerk.loaded, clerk.__internal_environment]);
+    // Environment metadata unavailable — show configured buttons; Clerk validates on click.
+    return socialAuthProviders;
+  }, [clerk.loaded, enabledStrategies]);
 
   const handleOAuth = async (strategy) => {
     if (!clerk.loaded) {
       return;
     }
     setPendingStrategy(strategy);
-    const redirectCallbackUrl = oauthCallbackPath(mode);
-    const redirectUrl = authRedirectCompleteUrl;
-    const authResource = mode === "sign-up" ? signUp : signIn;
+    const redirectCallbackUrl = oauthRedirectUrl(oauthCallbackPath(mode));
+    const redirectUrl = oauthRedirectUrl(authRedirectCompleteUrl);
     try {
-      const { error } = await authResource.sso({
+      // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
+      const { error } = await signIn.sso({
         strategy,
         redirectCallbackUrl,
         redirectUrl,
@@ -427,9 +450,14 @@ function SocialAuthButtons({ mode }) {
         socialAuthProviders.find((provider) => provider.strategy === strategy)
           ?.label ?? "That provider";
       const detail = formatClerkOAuthError(error);
+      const instanceHint =
+        clerkInstanceLabel() === "Development"
+          ? "Confirm GitHub/Apple are enabled in the Clerk Dashboard Development instance (SSO connections), and that Vercel uses the matching pk_test_ key."
+          : "Confirm GitHub/Apple are enabled in the Clerk Dashboard Production instance — Development SSO settings do not apply to pk_live_ keys.";
       toast.error(
-        detail ||
-          `${providerName} is not available. Enable it in the Clerk Dashboard (Configure → SSO connections) and add redirect URL ${window.location.origin}${redirectCallbackUrl}.`,
+        detail
+          ? `${detail} (${instanceHint})`
+          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${instanceHint} Add redirect URL ${redirectCallbackUrl}.`,
       );
       setPendingStrategy(null);
     }
