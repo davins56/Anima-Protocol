@@ -42,11 +42,15 @@ if those features are needed.
 
 ## 3. Clerk OAuth (Google / Apple / GitHub)
 
+Clerk has **two separate instances**: **Development** (`pk_test_…`) and **Production** (`pk_live_…`). SSO connections you enable in the Development tab (as in the Clerk dashboard screenshot) apply only when the site is built with a `pk_test_` publishable key. If Vercel uses `pk_live_`, you must enable Apple/GitHub again under the **Production** instance → Configure → SSO connections (shared dev credentials do not carry over).
+
 The frontend proxies Clerk’s Frontend API through **`/api/__clerk`** on production
 (same origin as the Vite app). That is required for GitHub and Apple sign-in on
-`anima-protocol.com` when there is no `clerk.{domain}` DNS CNAME.
+`anima-protocol.com` when there is no `clerk.{domain}` DNS CNAME. Do **not** use
+the Clerk proxy with `pk_test_` on a custom domain — it causes Origin mismatch;
+use `pk_live_` + proxy for production OAuth on `anima-protocol.com`.
 
-In the **Clerk Dashboard** for this application:
+In the **Clerk Dashboard** for the **same instance as your publishable key**:
 
 1. **Social connections** — enable Google, Apple, and GitHub (Apple needs a
    Services ID and return URLs configured in Clerk’s Apple setup guide).
