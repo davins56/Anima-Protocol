@@ -201,14 +201,27 @@ const clerkPubKey = publishableKeyFromHost(
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
 
-// Clerk proxy is only used when explicitly configured (Replit sets
-// VITE_CLERK_PROXY_URL at build time). Do NOT auto-derive a proxy URL on Vercel
-// or other custom domains — proxied Clerk POSTs fail with origin_invalid when
-// the API runs on a different host unless DNS/proxy headers are fully aligned.
-const clerkProxyUrl =
-  typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-    : "";
+// Clerk Frontend API proxy — required for OAuth (Google/Apple/GitHub) on custom
+// domains without a clerk.{domain} CNAME. Replit injects VITE_CLERK_PROXY_URL at
+// build time; on same-origin production (Vercel + /api/__clerk) derive it at runtime.
+function resolveClerkProxyUrl() {
+  const configured =
+    typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
+      ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
+      : "";
+  if (configured) return configured;
+  if (typeof window === "undefined" || !import.meta.env.PROD) return "";
+  const host = window.location.hostname.toLowerCase();
+  const sameOriginApi =
+    host === "anima-protocol.com" ||
+    host === "www.anima-protocol.com" ||
+    host.endsWith(".anima-protocol.com") ||
+    host.endsWith(".replit.app") ||
+    host.endsWith(".vercel.app");
+  return sameOriginApi ? `${window.location.origin}/api/__clerk` : "";
+}
+
+const clerkProxyUrl = resolveClerkProxyUrl();
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -232,10 +245,6 @@ const socialAuthProviders = [
 function oauthCallbackPath(mode) {
   const segment = mode === "sign-up" ? "sign-up" : "sign-in";
   return `${basePath}/${segment}/sso-callback`;
-}
-
-function absoluteAppUrl(path) {
-  return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 function stripBase(path) {
@@ -315,6 +324,16 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
+function formatClerkOAuthError(error) {
+  if (error?.errors?.length) {
+    return error.errors
+      .map((entry) => entry.longMessage || entry.message)
+      .filter(Boolean)
+      .join(" ");
+  }
+  return error?.message || "";
+}
+
 function SocialAuthButtons({ mode }) {
   const clerk = useClerk();
   const [pendingStrategy, setPendingStrategy] = useState(null);
@@ -324,8 +343,8 @@ function SocialAuthButtons({ mode }) {
       return;
     }
     setPendingStrategy(strategy);
-    const redirectUrl = absoluteAppUrl(oauthCallbackPath(mode));
-    const redirectUrlComplete = absoluteAppUrl(authRedirectCompleteUrl);
+    const redirectUrl = oauthCallbackPath(mode);
+    const redirectUrlComplete = authRedirectCompleteUrl;
     const authResource =
       mode === "sign-up" ? clerk.client.signUp : clerk.client.signIn;
     try {
@@ -336,15 +355,17 @@ function SocialAuthButtons({ mode }) {
         strategy,
         redirectUrl,
         redirectUrlComplete,
-        continueSignUp: mode === "sign-in",
+        continueSignUp: true,
       });
     } catch (error) {
       console.error("OAuth redirect failed", error);
       const providerName =
         socialAuthProviders.find((p) => p.strategy === strategy)?.label ??
         "That provider";
+      const detail = formatClerkOAuthError(error);
       toast.error(
-        `${providerName} is not available. Enable it in the Clerk Dashboard under Social connections.`,
+        detail ||
+          `${providerName} is not available. Enable it in the Clerk Dashboard (Social connections) and add redirect URL ${window.location.origin}${redirectUrl}.`,
       );
       setPendingStrategy(null);
     }
@@ -415,6 +436,7 @@ function SignUpPage() {
         path={`${basePath}/sign-up`}
         signInUrl={`${basePath}/sign-in`}
         oauthFlow="redirect"
+        transferable
         fallbackRedirectUrl={authRedirectCompleteUrl}
         forceRedirectUrl={authRedirectCompleteUrl}
       />

@@ -119,12 +119,16 @@ async function buildAll() {
   });
 
   // Vercel serverless — bundle JS deps (no runtime node_modules); skip pino workers.
+  // Fold NODE_ENV=production so the logger never references pino-pretty in the bundle.
   await esbuild({
     ...sharedEsbuildOptions,
     entryPoints: [path.resolve(artifactDir, "src/vercel.ts")],
     outfile: path.resolve(distDir, "vercel.mjs"),
     external: nativeExternals,
     plugins: [],
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
   });
 
   // Vercel only deploys files under api/ as Serverless Functions. Copy the
