@@ -44,7 +44,7 @@ Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) |
 | `CLERK_PUBLISHABLE_KEY` | API `clerkMiddleware` |
 | `CLERK_SECRET_KEY` | API session verification |
-| `VITE_CLERK_PROXY_URL` | Frontend (optional; auto-enables `{origin}/api/__clerk` only after `/api/healthz` succeeds) |
+| `VITE_CLERK_PROXY_URL` | Frontend (Replit sets explicitly; never auto-proxy with `pk_test_*` keys — causes Origin 400 on custom domains) |
 | `VITE_MIXPANEL_TOKEN` | Frontend analytics |
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.

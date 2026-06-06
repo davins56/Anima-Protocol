@@ -201,9 +201,9 @@ const clerkPubKey = publishableKeyFromHost(
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
 
-// Clerk Frontend API proxy — required for OAuth on custom domains without a
-// clerk.{domain} CNAME. Never point Clerk at /api/__clerk unless the API is
-// healthy; a broken API function blocks all auth initialization.
+// Clerk Frontend API proxy — only when explicitly configured or for production
+// Clerk keys on same-origin hosts. Development keys (pk_test_*) break with the
+// proxy on custom domains (POST /api/__clerk/v1/client → 400 Origin mismatch).
 function configuredClerkProxyUrl() {
   return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
     ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
@@ -222,21 +222,24 @@ function isSameOriginProductionHost() {
   );
 }
 
-async function resolveClerkProxyUrlAsync() {
-  const configured = configuredClerkProxyUrl();
-  if (configured) return configured;
-  if (!isSameOriginProductionHost()) return "";
-  try {
-    const res = await fetch(`${window.location.origin}/api/healthz`, {
-      signal: AbortSignal.timeout(4000),
-    });
-    if (res.ok) return `${window.location.origin}/api/__clerk`;
-  } catch {
-    /* API down — use direct Clerk FAPI so sign-in and home still load */
-  }
-  return "";
+function isDevClerkKey(key) {
+  const builtIn =
+    typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
+      ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+      : "";
+  if (builtIn.startsWith("pk_test_")) return true;
+  return typeof key === "string" && key.startsWith("pk_test_");
 }
 
+function effectiveClerkProxyUrl() {
+  const configured = configuredClerkProxyUrl();
+  if (configured) return configured;
+  if (isDevClerkKey(clerkPubKey)) return "";
+  if (!isSameOriginProductionHost()) return "";
+  return `${window.location.origin}/api/__clerk`;
+}
+
+const clerkProxyUrl = effectiveClerkProxyUrl();
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -540,32 +543,6 @@ function HomeGate() {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-  const [clerkProxyUrl, setClerkProxyUrl] = useState(configuredClerkProxyUrl);
-  const [clerkProxyReady, setClerkProxyReady] = useState(
-    Boolean(configuredClerkProxyUrl()) || !isSameOriginProductionHost(),
-  );
-
-  useEffect(() => {
-    if (configuredClerkProxyUrl()) return;
-    if (!isSameOriginProductionHost()) {
-      setClerkProxyReady(true);
-      return;
-    }
-    let cancelled = false;
-    resolveClerkProxyUrlAsync().then((url) => {
-      if (cancelled) return;
-      if (url) setClerkProxyUrl(url);
-      setClerkProxyReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!clerkProxyReady) {
-    return <PageLoader />;
-  }
-
   return (
     <ClerkProvider
       publishableKey={clerkPubKey}
