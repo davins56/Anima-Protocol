@@ -185,6 +185,8 @@ The frontend can be deployed independently when configured with the required Vit
 
 **Vercel + Replit split:** production frontend at `www.anima-protocol.com` (Vercel) proxies `/api/*` to `https://anima-protocol.replit.app` via `vercel.json` rewrites. Without that proxy, character storage and restore cannot work. Alternatively set `VITE_API_ORIGIN=https://anima-protocol.replit.app` at build time so the browser calls the API host directly (CORS is enabled on the api-server).
 
+**Netlify:** `netlify.toml` at the repo root builds the frontend and proxies `/api/*` to Replit (same as Vercel). Set `VITE_CLERK_PUBLISHABLE_KEY` in each Netlify site’s environment variables for production — deploy previews use a placeholder so CI checks can pass.
+
 ## License
 
 MIT
