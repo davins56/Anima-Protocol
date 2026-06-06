@@ -304,16 +304,29 @@ function SocialAuthButtons({ mode }) {
     mode === "sign-up" ? signUpState.signUp : signInState.signIn;
   const isLoaded =
     mode === "sign-up" ? signUpState.isLoaded : signInState.isLoaded;
+  const isAuthResourceReady =
+    typeof isLoaded === "boolean" ? isLoaded : Boolean(authResource);
   const [pendingStrategy, setPendingStrategy] = useState(null);
 
   const handleOAuth = async (strategy) => {
-    if (!isLoaded || !authResource) return;
+    if (!isAuthResourceReady || !authResource) {
+      return;
+    }
     setPendingStrategy(strategy);
     try {
-      await authResource.authenticateWithRedirect({
+      if (typeof authResource.authenticateWithRedirect === "function") {
+        await authResource.authenticateWithRedirect({
+          strategy,
+          redirectUrl: oauthCallbackUrl,
+          redirectUrlComplete: authRedirectCompleteUrl,
+        });
+        return;
+      }
+
+      await authResource.sso({
         strategy,
-        redirectUrl: oauthCallbackUrl,
-        redirectUrlComplete: authRedirectCompleteUrl,
+        redirectCallbackUrl: oauthCallbackUrl,
+        redirectUrl: authRedirectCompleteUrl,
       });
     } catch (error) {
       console.error("OAuth redirect failed", error);
@@ -328,7 +341,7 @@ function SocialAuthButtons({ mode }) {
         <button
           key={strategy}
           type="button"
-          disabled={!isLoaded || Boolean(pendingStrategy)}
+          disabled={!isAuthResourceReady || Boolean(pendingStrategy)}
           onClick={() => handleOAuth(strategy)}
           className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
