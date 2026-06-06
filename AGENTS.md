@@ -6,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`.
 
-The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel (`www.anima-protocol.com`) must proxy `/api/*` to the Replit api-server (`vercel.json` → `https://anima-protocol.replit.app/api/:path*`) — without it, character seed/restore and all persisted data fail with 404.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel (`www.anima-protocol.com`) must proxy `/api/*` to the Replit api-server (`vercel.json` → `https://anima-protocol.replit.app/api/:path*`) — without it, character seed/restore and all persisted data fail with 404. Store writes (e.g. **Add From Series**) return **401** if the Replit api-server is not republished after auth fixes: the API must resolve the **public Vercel host** (`X-Anima-Public-Host` / `Origin`) for Clerk JWT verification, not `anima-protocol.replit.app` alone.
 
 ### Node.js
 

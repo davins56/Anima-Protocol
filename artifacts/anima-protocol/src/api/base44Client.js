@@ -65,9 +65,25 @@ export async function waitForStoreAuth(timeoutMs = 15000) {
   throw new Error('Store auth token not available');
 }
 
+// Tell the api-server which public host minted the Clerk session. Vercel →
+// Replit rewrites often drop forwarded-host, which makes JWT verification use
+// the wrong publishable key (401 on writes like bulk-upsert).
+function publicOriginHeaders() {
+  if (typeof window === 'undefined' || !window.location?.host) return {};
+  return {
+    'X-Anima-Public-Host': window.location.host,
+    'X-Forwarded-Host': window.location.host,
+    'X-Forwarded-Proto': window.location.protocol.replace(':', ''),
+  };
+}
+
 async function authHeaders(extra) {
   const token = await getToken();
-  const headers = { 'Content-Type': 'application/json', ...extra };
+  const headers = {
+    'Content-Type': 'application/json',
+    ...publicOriginHeaders(),
+    ...extra,
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
