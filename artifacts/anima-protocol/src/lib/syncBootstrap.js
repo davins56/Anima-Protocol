@@ -1,4 +1,9 @@
-import { bulkImport, restoreData, notifyStoreChanged } from "@/api/base44Client";
+import {
+  bulkImport,
+  restoreData,
+  notifyStoreChanged,
+  waitForStoreAuth,
+} from "@/api/base44Client";
 import { seedCharactersIfNeeded, resetSeedLock } from "@/lib/seedCharacters";
 
 // One-time migration of the browser's pre-sync localStorage data up to the
@@ -25,8 +30,31 @@ export function bootstrapUserData(userId) {
   }
   bootstrappedUserId = userId;
   resetSeedLock();
-  bootstrapPromise = run();
+  bootstrapPromise = run().catch((err) => {
+    bootstrapPromise = null;
+    bootstrappedUserId = null;
+    throw err;
+  });
   return bootstrapPromise;
+}
+
+// UI layers that list characters should await this so they don't read the
+// store while starter seeding is still in flight (which looked like "no
+// preloaded characters" on first sign-in). If bootstrap hasn't been kicked off
+// yet (profile still loading), wait briefly for it to start rather than
+// resolving immediately with an empty roster.
+export function whenBootstrapReady() {
+  if (bootstrapPromise) return bootstrapPromise;
+  return waitForBootstrapStart();
+}
+
+async function waitForBootstrapStart(timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (bootstrapPromise) return bootstrapPromise;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return Promise.resolve();
 }
 
 // Possible migration outcomes surfaced to the caller so the UI can tell the
@@ -35,6 +63,7 @@ export function bootstrapUserData(userId) {
 //   "skipped"  — nothing to migrate, or it was already migrated previously
 //   "failed"   — there was local data but the import did not confirm success
 async function run() {
+  await waitForStoreAuth();
   let outcome = "skipped";
   try {
     outcome = await migrateLocalDataOnce();
@@ -43,6 +72,7 @@ async function run() {
     outcome = "failed";
   }
   await seedCharactersIfNeeded();
+  notifyStoreChanged();
   return outcome;
 }
 

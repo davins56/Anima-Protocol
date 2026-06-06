@@ -37,6 +37,19 @@ async function getToken() {
   }
 }
 
+// Block until Clerk has registered a token getter and a session token is
+// available. Used by one-time bootstrap/seed routines so they never treat a
+// transient "no token yet" state as an empty account.
+export async function waitForStoreAuth(timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const token = await getToken();
+    if (token) return token;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error('Store auth token not available');
+}
+
 async function authHeaders(extra) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json', ...extra };
