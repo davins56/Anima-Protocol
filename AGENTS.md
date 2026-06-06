@@ -49,7 +49,7 @@ Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.
 
-Sign-in social buttons are Clerk's built-in OAuth controls on `<SignIn>` / `<SignUp>` (`oauthFlow="redirect"`). Enable Google, Apple, and GitHub in the Clerk Dashboard; callback routes are `/sign-in/sso-callback` and `/sign-up/sso-callback`.
+Sign-in shows custom Google / Apple / GitHub buttons (`oauth_google`, `oauth_apple`, `oauth_github`) above `<SignIn>` / `<SignUp>` using `authenticateWithRedirect` to `/sign-in/sso-callback` or `/sign-up/sso-callback`. Enable each provider in the Clerk Dashboard → Social connections.
 
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
 

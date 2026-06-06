@@ -142,7 +142,7 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
 | `ELEVENLABS_API_KEY` | API | Optional TTS routes |
 
-Sign-in uses Clerk's built-in Google, Apple, and GitHub buttons (`oauthFlow="redirect"`). Enable each social connection in the Clerk Dashboard; OAuth callbacks use `/sign-in/sso-callback` and `/sign-up/sso-callback`.
+Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard; callbacks use `/sign-in/sso-callback` and `/sign-up/sso-callback`.
 
 ## Validation
 
