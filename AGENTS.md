@@ -53,6 +53,21 @@ Sign-in shows custom Google / Apple / GitHub buttons above `<SignIn>` / `<SignUp
 
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
 
+### Account data migration (ops)
+
+Characters and all progress are scoped by **Clerk `user_id`** in Postgres (`user_entities`), not email. To copy data between two accounts (e.g. `davins56@hotmail.com` → `davins56@gmail.com`):
+
+```bash
+export DATABASE_URL=... CLERK_SECRET_KEY=...
+pnpm --filter @workspace/scripts run migrate:account -- \
+  --from davins56@hotmail.com --to davins56@gmail.com --dry-run
+# remove --dry-run to apply
+```
+
+Or after deploy, set `ADMIN_MIGRATION_SECRET` on Vercel and POST to `/api/admin/migrate-user-data` with `Authorization: Bearer <secret>`.
+
+User-driven alternative: sign in as source → Settings → Export → sign in as target → Restore (merge).
+
 ### Lint / test / build
 
 No ESLint script at repo root. Validation workflows from `.replit`:

@@ -647,6 +647,9 @@ importers:
 
   lib/db:
     dependencies:
+      '@clerk/backend':
+        specifier: ^3.5.0
+        version: 3.5.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.20.0)(pg@8.21.0)(postgres@3.4.9)
@@ -672,6 +675,9 @@ importers:
 
   scripts:
     dependencies:
+      '@clerk/backend':
+        specifier: ^3.4.14
+        version: 3.5.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@workspace/db':
         specifier: workspace:*
         version: link:../lib/db
