@@ -1,15 +1,13 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
-  getClerkProxyHost,
-  resolveClerkPublishableKey,
 } from "./middlewares/clerkProxyMiddleware";
+import { clerkMultiDomainMiddleware } from "./middlewares/clerkMultiDomainMiddleware";
 
 const app: Express = express();
 
@@ -44,17 +42,8 @@ app.use(cors({ credentials: true, origin: true }));
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-// Resolve the publishable key from the incoming request host so the same
-// server can serve multiple Clerk custom domains. Falls back to
-// CLERK_PUBLISHABLE_KEY when the host doesn't map to a custom domain.
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: resolveClerkPublishableKey(
-      getClerkProxyHost(req),
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
-);
+// Verify Clerk JWTs against www/apex and other known hosts (Vercel → Replit).
+app.use(clerkMultiDomainMiddleware());
 
 app.use("/api", router);
 
