@@ -276,7 +276,15 @@ Return JSON:
       setStep('farewell');
     } catch (err) {
       console.error('Failed to awaken Anima:', err);
-      setError("Your Anima couldn't be awakened just now. Please try again.");
+      const detail =
+        err instanceof Error && err.message && !err.message.startsWith('Not signed in')
+          ? err.message
+          : null;
+      setError(
+        detail
+          ? `Your Anima couldn't be awakened: ${detail}`
+          : "Your Anima couldn't be awakened just now. Please try again.",
+      );
     } finally {
       setCreating(false);
     }

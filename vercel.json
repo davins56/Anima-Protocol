@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "env": {
+    "NODE_ENV": "production"
+  },
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @workspace/api-server run build && PORT=23660 BASE_PATH=/ pnpm --filter @workspace/anima-protocol run build",
   "outputDirectory": "artifacts/anima-protocol/dist/public",
