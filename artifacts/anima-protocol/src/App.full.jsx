@@ -201,27 +201,45 @@ const clerkPubKey = publishableKeyFromHost(
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
 
-// Clerk Frontend API proxy — required for OAuth (Google/Apple/GitHub) on custom
-// domains without a clerk.{domain} CNAME. Replit injects VITE_CLERK_PROXY_URL at
-// build time; on same-origin production (Vercel + /api/__clerk) derive it at runtime.
-function resolveClerkProxyUrl() {
-  const configured =
-    typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-      ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-      : "";
-  if (configured) return configured;
-  if (typeof window === "undefined" || !import.meta.env.PROD) return "";
+// Clerk Frontend API proxy — only when explicitly configured or for production
+// Clerk keys on same-origin hosts. Development keys (pk_test_*) break with the
+// proxy on custom domains (POST /api/__clerk/v1/client → 400 Origin mismatch).
+function configuredClerkProxyUrl() {
+  return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
+    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
+    : "";
+}
+
+function isSameOriginProductionHost() {
+  if (typeof window === "undefined" || !import.meta.env.PROD) return false;
   const host = window.location.hostname.toLowerCase();
-  const sameOriginApi =
+  return (
     host === "anima-protocol.com" ||
     host === "www.anima-protocol.com" ||
     host.endsWith(".anima-protocol.com") ||
     host.endsWith(".replit.app") ||
-    host.endsWith(".vercel.app");
-  return sameOriginApi ? `${window.location.origin}/api/__clerk` : "";
+    host.endsWith(".vercel.app")
+  );
 }
 
-const clerkProxyUrl = resolveClerkProxyUrl();
+function isDevClerkKey(key) {
+  const builtIn =
+    typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
+      ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+      : "";
+  if (builtIn.startsWith("pk_test_")) return true;
+  return typeof key === "string" && key.startsWith("pk_test_");
+}
+
+function effectiveClerkProxyUrl() {
+  const configured = configuredClerkProxyUrl();
+  if (configured) return configured;
+  if (isDevClerkKey(clerkPubKey)) return "";
+  if (!isSameOriginProductionHost()) return "";
+  return `${window.location.origin}/api/__clerk`;
+}
+
+const clerkProxyUrl = effectiveClerkProxyUrl();
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -474,6 +492,9 @@ function SignedInHome() {
 
   useEffect(() => {
     let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setState("home");
+    }, 12000);
     (async () => {
       try {
         const animas = await base44.entities.Anima.list("-created_date", 1);
@@ -482,10 +503,13 @@ function SignedInHome() {
         }
       } catch {
         if (!cancelled) setState("home");
+      } finally {
+        clearTimeout(timeout);
       }
     })();
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
     };
   }, []);
 
@@ -681,6 +705,16 @@ const AuthenticatedApp = () => {
   // never stack. The disclaimer fires onAccept on mount when already accepted,
   // so returning users surface the tutorial immediately (e.g. when replaying).
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+  const [authWaitExpired, setAuthWaitExpired] = useState(false);
+
+  useEffect(() => {
+    if (!isLoadingAuth) {
+      setAuthWaitExpired(false);
+      return;
+    }
+    const timer = setTimeout(() => setAuthWaitExpired(true), 15000);
+    return () => clearTimeout(timer);
+  }, [isLoadingAuth]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -691,7 +725,7 @@ const AuthenticatedApp = () => {
   }
 
   // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth) {
+  if (isLoadingAuth && !authWaitExpired) {
     return <PageLoader />;
   }
 
