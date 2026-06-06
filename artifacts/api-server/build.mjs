@@ -127,10 +127,13 @@ async function buildAll() {
     plugins: [],
   });
 
+  // Vercel only deploys files under api/ as Serverless Functions. Copy the
+  // self-contained bundle directly to api/index.mjs (do not use api/server.mjs
+  // — listing it in vercel.json functions causes deploy errors).
   await mkdir(apiDir, { recursive: true });
   await copyFile(
     path.resolve(distDir, "vercel.mjs"),
-    path.resolve(apiDir, "server.mjs"),
+    path.resolve(apiDir, "index.mjs"),
   );
 }
 
