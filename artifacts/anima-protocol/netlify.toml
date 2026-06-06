@@ -1,0 +1,45 @@
+# Netlify sites whose "Base directory" is artifacts/anima-protocol (not repo root).
+# See /netlify.toml at the monorepo root for sites that build from the repository root.
+
+[build]
+  command = "cd ../.. && corepack enable && corepack prepare pnpm@10.15.1 --activate && pnpm install --frozen-lockfile && pnpm --filter @workspace/anima-protocol run build"
+  publish = "dist/public"
+
+[build.environment]
+  NODE_VERSION = "24"
+  PORT = "23660"
+  BASE_PATH = "/"
+  VITE_CLERK_PROXY_URL = ""
+  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+
+[context.deploy-preview.environment]
+  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+
+[context.branch-deploy.environment]
+  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+
+[context.production.environment]
+  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://anima-protocol.replit.app/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

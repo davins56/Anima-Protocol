@@ -22,6 +22,11 @@
 [context.branch-deploy.environment]
   VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
 
+# Production sites (e.g. animaprotocolmain) need a build-time key too when the
+# Netlify UI does not set one — override in Site settings for real deploys.
+[context.production.environment]
+  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+
 # API → Replit backend (character store, chat, Clerk proxy, etc.)
 [[redirects]]
   from = "/api/*"
