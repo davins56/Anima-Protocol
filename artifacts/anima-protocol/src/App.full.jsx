@@ -203,7 +203,14 @@ const clerkPubKey = publishableKeyFromHost(
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
 
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+// Custom domains (e.g. Vercel) must route Clerk through same-origin /api/__clerk,
+// which is proxied to the api-server in production. Replit injects
+// VITE_CLERK_PROXY_URL at build time; elsewhere derive it from the live origin.
+const clerkProxyUrl =
+  import.meta.env.VITE_CLERK_PROXY_URL ||
+  (import.meta.env.PROD
+    ? `${window.location.origin}${basePath}/api/__clerk`
+    : "");
 const authRedirectCompleteUrl = basePath || "/";
 const oauthCallbackUrl = `${basePath}/sso-callback`;
 
