@@ -112,6 +112,8 @@ export declare function restoreData(
   payload?: Record<string, unknown>,
   mode?: "merge" | "replace",
 ): Promise<any>;
+export declare function waitForStoreAuth(timeoutMs?: number): Promise<string>;
+export declare function notifyStoreChanged(): void;
 
 export declare const base44: Base44Client;
 

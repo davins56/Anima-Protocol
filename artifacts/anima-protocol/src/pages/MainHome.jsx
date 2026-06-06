@@ -12,6 +12,7 @@ import { openPhotoEditor } from "@/lib/avatarPhoto";
 import { useAnimaPresence } from "@/hooks/useAnimaPresence";
 import SerenityPresence from "@/components/anima/SerenityPresence";
 import { formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 const GREETINGS = [
   "Connection established. The weave hums with your arrival.",
@@ -77,52 +78,6 @@ export default function MainHome() {
   const [selectedMode, setSelectedMode] = useState("serenity");
   const [greeting, setGreeting] = useState(GREETINGS[0]);
   const [loading, setLoading] = useState(true);
-<<<<<<< HEAD
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [creatingAnima, setCreatingAnima] = useState(false);
-  const [photoError, setPhotoError] = useState("");
-  const photoInputRef = useRef(null);
-
-  const createAnima = async () => {
-    if (creatingAnima || uploadingPhoto) return;
-    setPhotoError("");
-    setCreatingAnima(true);
-    try {
-      const newAnima = await base44.entities.Anima.create({
-        name: "Your Anima",
-        archetype: "Muse",
-        tagline: "Your personal anima.",
-        assigned_user: user?.email,
-        personality: "A gentle, attentive companion attuned to your inner world.",
-        speaking_style: "Warm, calm, and reflective",
-      });
-      setAnima(newAnima);
-    } catch (err) {
-      console.error("Failed to create anima:", err);
-      setPhotoError("Couldn't create your anima right now. Please try again.");
-    } finally {
-      setCreatingAnima(false);
-    }
-  };
-
-  const handlePhotoSelected = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !anima?.id) return;
-    setPhotoError("");
-    setUploadingPhoto(true);
-    try {
-      const dataUrl = await downscaleImage(file, 512, 0.85);
-      await base44.entities.Anima.update(anima.id, { avatar_url: dataUrl });
-      setAnima((prev) => (prev ? { ...prev, avatar_url: dataUrl } : prev));
-    } catch (err) {
-      console.error("Failed to set anima photo:", err);
-      const quota = err?.name === "QuotaExceededError" || /quota/i.test(err?.message || "");
-      setPhotoError(quota ? "Image too large to store. Try a smaller photo." : "Couldn't set that photo. Try another image.");
-    } finally {
-      setUploadingPhoto(false);
-    }
-=======
   const [aiEditOpen, setAiEditOpen] = useState(false);
   // The image fed into the AI edit modal: either the saved avatar (edit flow)
   // or a freshly picked photo from disk (pick-then-edit flow).
@@ -138,7 +93,6 @@ export default function MainHome() {
     const file_url = await uploadDataUrl(dataUrl);
     await base44.entities.Anima.update(anima.id, { avatar_url: file_url });
     setAnima((prev) => (prev ? { ...prev, avatar_url: file_url } : prev));
->>>>>>> refs/remotes/origin/main
   };
 
   const openEditExisting = async () => {
@@ -223,7 +177,13 @@ export default function MainHome() {
 
   useEffect(() => {
     setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
-    loadHomeData();
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadHomeData();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [loadHomeData]);
 
   // Live cross-device sync: refetch when another device changes our data.
@@ -311,22 +271,10 @@ export default function MainHome() {
         >
           <button
             type="button"
-<<<<<<< HEAD
-            onClick={() => {
-              if (uploadingPhoto || creatingAnima) return;
-              if (anima?.id) photoInputRef.current?.click();
-              else createAnima();
-            }}
-            disabled={uploadingPhoto || creatingAnima}
-            aria-label={anima?.id ? "Set your anima's photo" : "Create your anima"}
-            title={anima?.id ? "Set your anima's photo" : "Create your anima"}
-            className="group w-20 h-20 mb-4 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)] cursor-pointer disabled:cursor-default"
-=======
             onClick={() => navigate("/characters?create=1")}
             aria-label="Create a companion"
             title="Create a companion"
             className="group w-20 h-20 mb-4 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)] cursor-pointer"
->>>>>>> refs/remotes/origin/main
           >
             {anima?.avatar_url ? (
               <img
@@ -336,24 +284,6 @@ export default function MainHome() {
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-cyan-950/20">
-<<<<<<< HEAD
-                <Camera className="w-5 h-5 text-cyan-400/50" />
-                <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 uppercase">
-                  {anima?.id ? "Add photo" : "Create anima"}
-                </span>
-              </div>
-            )}
-
-            {anima?.avatar_url && !uploadingPhoto && (
-              <div className="absolute inset-1 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera className="w-5 h-5 text-cyan-400" />
-              </div>
-            )}
-
-            {(uploadingPhoto || creatingAnima) && (
-              <div className="absolute inset-1 flex items-center justify-center bg-black/70">
-                <Loader className="w-5 h-5 text-cyan-400 animate-spin" />
-=======
                 <Plus className="w-5 h-5 text-cyan-400/60 group-hover:text-cyan-300 transition-colors" />
                 <span className="font-mono text-[7px] tracking-widest text-cyan-400/40 group-hover:text-cyan-300/70 uppercase transition-colors">New companion</span>
               </div>
@@ -363,7 +293,6 @@ export default function MainHome() {
               <div className="absolute inset-1 flex flex-col items-center justify-center gap-1 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Plus className="w-5 h-5 text-cyan-400" />
                 <span className="font-mono text-[7px] tracking-widest text-cyan-400/80 uppercase">New companion</span>
->>>>>>> refs/remotes/origin/main
               </div>
             )}
 

@@ -16,6 +16,7 @@ import UserContextSettings from "@/components/anima/UserContextSettings";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
+import { repairStarterCharacters } from "@/lib/seedCharacters";
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
 
@@ -67,6 +68,9 @@ export default function Settings() {
   // "Replace Everything" so the confirm step can show exactly what gets wiped.
   const [currentSummary, setCurrentSummary] = useState(null);
   const [loadingCurrent, setLoadingCurrent] = useState(false);
+  const [restoringStarters, setRestoringStarters] = useState(false);
+  const [startersRestored, setStartersRestored] = useState(false);
+  const [startersRestoreError, setStartersRestoreError] = useState(null);
 
   useEffect(() => {
     loadUser();
@@ -748,7 +752,52 @@ export default function Settings() {
               <SectionTitle>Storage</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 grid grid-cols-2 gap-4">
                 <StatBox label="Chat Sessions" value={sessionCount} />
-                <StatBox label="Custom Characters" value={charCount} />
+                <StatBox label="Characters" value={charCount} />
+              </div>
+
+              <div className="border border-primary/15 bg-black/40 p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <Bot className="w-3.5 h-3.5" />
+                      Restore Starter Characters
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Re-add the preloaded Korra, Marvel, Guardians, and Invincible roster if your character list is empty or incomplete. Your own custom characters are not removed.
+                    </p>
+                    {startersRestored && (
+                      <p className="text-[9px] font-mono text-green-400/70 mt-1.5 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Starter characters restored. Open Characters or start a new chat to see them.
+                      </p>
+                    )}
+                    {startersRestoreError && (
+                      <p className="text-[9px] font-mono text-destructive/70 mt-1.5">{startersRestoreError}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={restoringStarters}
+                    onClick={async () => {
+                      setRestoringStarters(true);
+                      setStartersRestored(false);
+                      setStartersRestoreError(null);
+                      try {
+                        await repairStarterCharacters();
+                        await loadStats();
+                        setStartersRestored(true);
+                      } catch (err) {
+                        setStartersRestoreError(err?.message || "Could not restore starter characters.");
+                      } finally {
+                        setRestoringStarters(false);
+                      }
+                    }}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+                  >
+                    {restoringStarters ? <Loader className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                    {restoringStarters ? "Restoring..." : "Restore"}
+                  </button>
+                </div>
               </div>
 
               <SectionTitle>Backup &amp; Restore</SectionTitle>
