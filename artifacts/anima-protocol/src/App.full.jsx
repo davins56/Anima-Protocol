@@ -21,7 +21,7 @@ import {
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
 import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
-import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
@@ -368,64 +368,24 @@ function clerkInstanceLabel() {
   return clerkPubKey.startsWith("pk_test_") ? "Development" : "Production";
 }
 
-function getEnabledOAuthStrategies(clerk) {
-  const environment =
-    clerk?.__internal_environment ?? clerk?.environment ?? null;
-  const strategies =
-    environment?.userSettings?.authenticatableSocialStrategies ?? null;
-  if (Array.isArray(strategies) && strategies.length > 0) {
-    return strategies;
-  }
-
-  const social = environment?.userSettings?.social;
-  if (social && typeof social === "object") {
-    const fromSocial = Object.values(social)
-      .filter((provider) => provider?.enabled && provider?.authenticatable)
-      .map((provider) => provider.strategy)
-      .filter(Boolean);
-    if (fromSocial.length > 0) {
-      return fromSocial;
-    }
-  }
-
+function visibleSocialProviders() {
   const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
   if (typeof envList === "string" && envList.trim()) {
-    return envList.split(",").map((entry) => entry.trim()).filter(Boolean);
+    const allowed = new Set(
+      envList.split(",").map((entry) => entry.trim()).filter(Boolean),
+    );
+    return socialAuthProviders.filter((provider) =>
+      allowed.has(provider.strategy),
+    );
   }
-
-  return null;
+  return socialAuthProviders;
 }
 
 function SocialAuthButtons({ mode }) {
   const clerk = useClerk();
   const { signIn } = useSignIn();
   const [pendingStrategy, setPendingStrategy] = useState(null);
-  const [enabledStrategies, setEnabledStrategies] = useState(null);
-
-  useEffect(() => {
-    if (!clerk.loaded) {
-      setEnabledStrategies(null);
-      return;
-    }
-    const syncStrategies = () => {
-      setEnabledStrategies(getEnabledOAuthStrategies(clerk));
-    };
-    syncStrategies();
-    return clerk.addListener(syncStrategies);
-  }, [clerk, clerk.loaded]);
-
-  const enabledProviders = useMemo(() => {
-    if (!clerk.loaded) {
-      return [];
-    }
-    if (Array.isArray(enabledStrategies)) {
-      return socialAuthProviders.filter((provider) =>
-        enabledStrategies.includes(provider.strategy),
-      );
-    }
-    // Environment metadata unavailable — show configured buttons; Clerk validates on click.
-    return socialAuthProviders;
-  }, [clerk.loaded, enabledStrategies]);
+  const providers = visibleSocialProviders();
 
   const handleOAuth = async (strategy) => {
     if (!clerk.loaded) {
@@ -469,13 +429,12 @@ function SocialAuthButtons({ mode }) {
         <p className="py-2 text-center text-sm text-cyan-400/50">
           Loading sign-in options…
         </p>
-      ) : enabledProviders.length === 0 ? (
+      ) : providers.length === 0 ? (
         <p className="py-2 text-center text-sm text-cyan-400/50">
-          No social sign-in providers are enabled. Turn on Google, Apple, or
-          GitHub under Clerk Dashboard → Configure → SSO connections.
+          No social sign-in providers configured.
         </p>
       ) : (
-        enabledProviders.map(({ label, strategy, Icon }) => (
+        providers.map(({ label, strategy, Icon }) => (
           <button
             key={strategy}
             type="button"
