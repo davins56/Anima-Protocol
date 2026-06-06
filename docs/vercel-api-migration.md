@@ -6,12 +6,16 @@ do **not** need to republish the Replit app.
 
 ## 1. Merge and deploy
 
-Merge the PR that adds `api/index.mjs` (imports `artifacts/api-server/dist/vercel.mjs`).
+Merge the PR that adds `api/index.mjs` as the Vercel Serverless Function entry.
 `vercel.json` rewrites `/api/*` to that function. Vercel will:
 
-1. Build `artifacts/api-server` → `dist/vercel.mjs`
+1. Build `artifacts/api-server` → `dist/vercel.mjs`, then copy it to `api/index.mjs`
 2. Build the Vite frontend
 3. Run the Express app as a Vercel Function for `/api/*`
+
+Only `api/index.mjs` may appear under `functions` in `vercel.json`. A separate
+`api/server.mjs` pattern causes deploy errors: *"The pattern doesn't match any
+Serverless Functions inside the api directory."*
 
 Trigger a **Production** redeploy on Vercel after merge.
 

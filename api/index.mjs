@@ -1,8 +1,7 @@
 /**
- * Vercel serverless entry for the Express api-server.
- * vercel.json rewrites /api/* here; Express handles routing under /api.
- * The bundle is copied to ./server.mjs during api-server build.
+ * Vercel API entry — overwritten by `pnpm --filter @workspace/api-server run build`
+ * with a self-contained Express bundle. Local fallback imports dist output.
  */
-import app from "./server.mjs";
+import app from "../artifacts/api-server/dist/vercel.mjs";
 
 export default app;

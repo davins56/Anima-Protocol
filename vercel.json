@@ -7,9 +7,6 @@
   "functions": {
     "api/index.mjs": {
       "maxDuration": 60
-    },
-    "api/server.mjs": {
-      "maxDuration": 60
     }
   },
   "rewrites": [

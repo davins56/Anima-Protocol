@@ -11,14 +11,11 @@ import {
 } from "react-router-dom";
 import {
   AuthenticateWithRedirectCallback,
-  ClerkLoaded,
   ClerkProvider,
   SignIn,
   SignUp,
   Show,
   useClerk,
-  useSignIn,
-  useSignUp,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
@@ -319,26 +316,20 @@ function ClerkQueryClientCacheInvalidator() {
 }
 
 function SocialAuthButtons({ mode }) {
-  const signInState = useSignIn();
-  const signUpState = useSignUp();
-  const authResource =
-    mode === "sign-up" ? signUpState.signUp : signInState.signIn;
-  const isLoaded =
-    mode === "sign-up" ? signUpState.isLoaded : signInState.isLoaded;
+  const clerk = useClerk();
   const [pendingStrategy, setPendingStrategy] = useState(null);
 
   const handleOAuth = async (strategy) => {
-    if (!isLoaded || !authResource) {
+    if (!clerk.loaded || !clerk.client) {
       return;
     }
     setPendingStrategy(strategy);
     const redirectUrl = absoluteAppUrl(oauthCallbackPath(mode));
     const redirectUrlComplete = absoluteAppUrl(authRedirectCompleteUrl);
+    const authResource =
+      mode === "sign-up" ? clerk.client.signUp : clerk.client.signIn;
     try {
-      if (
-        authResource.status == null &&
-        typeof authResource.create === "function"
-      ) {
+      if (authResource.status == null) {
         await authResource.create({});
       }
       await authResource.authenticateWithRedirect({
@@ -359,26 +350,28 @@ function SocialAuthButtons({ mode }) {
     }
   };
 
-  if (!isLoaded) {
-    return null;
-  }
-
   return (
     <div className="w-full space-y-2">
-      {socialAuthProviders.map(({ label, strategy, Icon }) => (
-        <button
-          key={strategy}
-          type="button"
-          disabled={!authResource || Boolean(pendingStrategy)}
-          onClick={() => handleOAuth(strategy)}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Icon className="h-4 w-4" aria-hidden="true" />
-          <span>
-            {pendingStrategy === strategy ? "Redirecting..." : label}
-          </span>
-        </button>
-      ))}
+      {!clerk.loaded ? (
+        <p className="py-2 text-center text-sm text-cyan-400/50">
+          Loading sign-in options…
+        </p>
+      ) : (
+        socialAuthProviders.map(({ label, strategy, Icon }) => (
+          <button
+            key={strategy}
+            type="button"
+            disabled={Boolean(pendingStrategy)}
+            onClick={() => handleOAuth(strategy)}
+            className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Icon className="h-4 w-4" aria-hidden="true" />
+            <span>
+              {pendingStrategy === strategy ? "Redirecting..." : label}
+            </span>
+          </button>
+        ))
+      )}
     </div>
   );
 }
@@ -387,11 +380,9 @@ function AuthFormShell({ mode, children }) {
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
-        <ClerkLoaded>
-          <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
-            <SocialAuthButtons mode={mode} />
-          </div>
-        </ClerkLoaded>
+        <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
+          <SocialAuthButtons mode={mode} />
+        </div>
         {children}
       </div>
     </div>
