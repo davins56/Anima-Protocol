@@ -88,6 +88,8 @@ async function authHeaders(extra) {
   return headers;
 }
 
+const STORE_FETCH_TIMEOUT_MS = 15000;
+
 async function storeFetch(path, options = {}) {
   const token = await getToken();
   if (!token) {
@@ -98,11 +100,34 @@ async function storeFetch(path, options = {}) {
     throw err;
   }
   const headers = await authHeaders(options.headers);
-  return fetch(`${STORE_BASE()}${path}`, {
-    ...options,
-    headers,
-    credentials: 'same-origin',
-  });
+  const timeoutSignal =
+    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+      ? AbortSignal.timeout(STORE_FETCH_TIMEOUT_MS)
+      : undefined;
+  const userSignal = options.signal;
+  let signal = timeoutSignal;
+  if (userSignal && timeoutSignal) {
+    signal = AbortSignal.any([userSignal, timeoutSignal]);
+  } else if (userSignal) {
+    signal = userSignal;
+  }
+  try {
+    return await fetch(`${STORE_BASE()}${path}`, {
+      ...options,
+      headers,
+      credentials: 'same-origin',
+      signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
+      const timeoutErr = new Error(
+        'The server took too long to respond. Check your connection or try again in a moment.',
+      );
+      timeoutErr.code = 'timeout';
+      throw timeoutErr;
+    }
+    throw err;
+  }
 }
 
 // Parse a failed store response into a human-readable message. Non-JSON bodies

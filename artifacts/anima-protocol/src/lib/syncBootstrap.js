@@ -44,8 +44,17 @@ export function bootstrapUserData(userId) {
 // yet (profile still loading), wait briefly for it to start rather than
 // resolving immediately with an empty roster.
 export function whenBootstrapReady() {
-  if (bootstrapPromise) return bootstrapPromise;
-  return waitForBootstrapStart();
+  if (bootstrapPromise) return withBootstrapTimeout(bootstrapPromise);
+  return withBootstrapTimeout(waitForBootstrapStart());
+}
+
+const BOOTSTRAP_UI_TIMEOUT_MS = 20000;
+
+function withBootstrapTimeout(promise) {
+  return Promise.race([
+    promise.catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, BOOTSTRAP_UI_TIMEOUT_MS)),
+  ]);
 }
 
 async function waitForBootstrapStart(timeoutMs = 15000) {
@@ -63,7 +72,11 @@ async function waitForBootstrapStart(timeoutMs = 15000) {
 //   "skipped"  — nothing to migrate, or it was already migrated previously
 //   "failed"   — there was local data but the import did not confirm success
 async function run() {
-  await waitForStoreAuth();
+  try {
+    await waitForStoreAuth();
+  } catch {
+    // Token or store unreachable — still let the UI load; seeding can retry later.
+  }
   let outcome = "skipped";
   try {
     outcome = await migrateLocalDataOnce();
@@ -71,7 +84,11 @@ async function run() {
     console.warn("[Anima] Local data migration failed:", err.message);
     outcome = "failed";
   }
-  await seedCharactersIfNeeded();
+  try {
+    await seedCharactersIfNeeded();
+  } catch (err) {
+    console.warn("[Anima] Starter character seed skipped:", err.message);
+  }
   notifyStoreChanged();
   return outcome;
 }
