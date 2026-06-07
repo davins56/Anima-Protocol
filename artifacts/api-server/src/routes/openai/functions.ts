@@ -36,7 +36,7 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
 // across SDK minor versions). Falls back to the plain model if unavailable.
 async function webSearchLLM(systemPrompt: string, userPrompt: string): Promise<string> {
   try {
-    const resp = await (openai as any).responses.create({
+    const resp = await (getOpenAIClient() as any).responses.create({
       model: "gpt-4o",
       tools: [{ type: "web_search_preview" }],
       instructions: systemPrompt,
