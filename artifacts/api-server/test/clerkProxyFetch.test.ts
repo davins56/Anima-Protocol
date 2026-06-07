@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildClerkProxyHeaderValues,
   buildClerkUpstreamHeaders,
+  resolveClerkUpstreamPath,
   resolveClerkUpstreamUrl,
 } from "../src/middlewares/clerkProxyFetch";
 
@@ -53,8 +54,31 @@ describe("clerkProxyFetch", () => {
       "https://www.anima-protocol.com/api/__clerk/",
     );
     expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
-    expect(headers.get("Host")).toBe("frontend-api.clerk.dev");
+    expect(headers.get("Host")).toBeNull();
     expect(headers.get("Origin")).toBe("https://www.anima-protocol.com");
+  });
+
+  it("derives upstream path from originalUrl when mount path is missing", () => {
+    expect(
+      resolveClerkUpstreamPath({
+        url: "/api",
+        originalUrl: "/api/__clerk/v1/environment",
+      } as import("http").IncomingMessage),
+    ).toBe("/v1/environment");
+  });
+
+  it("falls back to www proxy host when request host headers are missing", () => {
+    process.env.CLERK_PUBLISHABLE_KEY =
+      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
+
+    const values = buildClerkProxyHeaderValues(
+      { headers: {} },
+      "sk_live_test", // pragma: allowlist secret
+    );
+
+    expect(values.proxyUrl).toBe(
+      "https://www.anima-protocol.com/api/__clerk/",
+    );
   });
 
   it("uses dashboard www proxy headers for localhost pk_live_ dev", () => {
