@@ -8,7 +8,7 @@ describe("app health checks", () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    process.env.OPENAI_API_KEY = "sk-test-placeholder";
+    delete process.env.OPENAI_API_KEY;
     process.env.CLERK_PUBLISHABLE_KEY = "not-a-valid-clerk-key";
     process.env.CLERK_SECRET_KEY = "not-a-valid-clerk-secret";
 

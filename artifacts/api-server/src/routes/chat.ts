@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import OpenAI from "openai";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -34,12 +33,8 @@ import {
   serializeSynchroState,
   type SynchroState,
 } from "../lib/synchroEngine";
+import { getOpenAIClient } from "../lib/openaiClient";
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY must be set.");
-}
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const router = Router();
 
 router.use(rateLimit);
@@ -532,7 +527,7 @@ router.post("/messages", async (req, res) => {
   try {
     let stream;
     try {
-      stream = await openai.chat.completions.create({
+      stream = await getOpenAIClient().chat.completions.create({
         model: routed.model,
         max_tokens: routed.maxTokens,
         messages: [{ role: "system", content: prompt }],
@@ -542,7 +537,7 @@ router.post("/messages", async (req, res) => {
       if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
         usedModel = standard.model;
         usedTier = standard.tier;
-        stream = await openai.chat.completions.create({
+        stream = await getOpenAIClient().chat.completions.create({
           model: standard.model,
           max_tokens: standard.maxTokens,
           messages: [{ role: "system", content: prompt }],

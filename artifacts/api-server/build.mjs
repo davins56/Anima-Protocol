@@ -139,6 +139,10 @@ async function buildAll() {
     path.resolve(distDir, "vercel.mjs"),
     path.resolve(apiDir, "index.mjs"),
   );
+  await copyFile(
+    path.resolve(distDir, "vercel.mjs.map"),
+    path.resolve(apiDir, "vercel.mjs.map"),
+  );
 }
 
 buildAll().catch((err) => {

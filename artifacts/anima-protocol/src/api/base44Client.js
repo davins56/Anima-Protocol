@@ -11,68 +11,17 @@
 import { animaApi } from './animaApi';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
 import { apiUrl } from '@/lib/apiOrigin';
+import {
+  authHeaders,
+  clearAuthTokenGetter,
+  getToken,
+  setAuthTokenGetter,
+  waitForStoreAuth,
+} from './authBridge';
 
 const STORE_BASE = () => apiUrl('/store');
 
-// --- Clerk token bridge -----------------------------------------------------
-// The non-React client cannot read the Clerk session directly. AuthContext
-// registers a token getter here (see setAuthTokenGetter) so every request can
-// attach the user's Clerk session token. Calls are gated until a getter exists.
-let tokenGetter = null;
-
-export function setAuthTokenGetter(fn) {
-  tokenGetter = fn;
-}
-
-// Clear the registered getter on sign-out so stale tokens are never reused.
-export function clearAuthTokenGetter() {
-  tokenGetter = null;
-}
-
-async function getToken() {
-  if (!tokenGetter) return null;
-  try {
-    return await tokenGetter();
-  } catch {
-    return null;
-  }
-}
-
-// Block until Clerk has registered a token getter and a session token is
-// available. Used by one-time bootstrap/seed routines so they never treat a
-// transient "no token yet" state as an empty account.
-export async function waitForStoreAuth(timeoutMs = 15000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const token = await getToken();
-    if (token) return token;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error('Store auth token not available');
-}
-
-// Tell the api-server which public host minted the Clerk session. Vercel →
-// Replit rewrites often drop forwarded-host, which makes JWT verification use
-// the wrong publishable key (401 on writes like bulk-upsert).
-function publicOriginHeaders() {
-  if (typeof window === 'undefined' || !window.location?.host) return {};
-  return {
-    'X-Anima-Public-Host': window.location.host,
-    'X-Forwarded-Host': window.location.host,
-    'X-Forwarded-Proto': window.location.protocol.replace(':', ''),
-  };
-}
-
-async function authHeaders(extra) {
-  const token = await getToken();
-  const headers = {
-    'Content-Type': 'application/json',
-    ...publicOriginHeaders(),
-    ...extra,
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
+export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
 
 const STORE_FETCH_TIMEOUT_MS = 15000;
 
@@ -531,8 +480,8 @@ async function connectSse() {
   const controller = new AbortController();
   sseController = controller;
   try {
-    const res = await fetch(`${STORE_BASE}${SSE_PATH}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+    const res = await fetch(`${STORE_BASE()}${SSE_PATH}`, {
+      headers: await authHeaders({ Accept: 'text/event-stream' }),
       signal: controller.signal,
     });
     if (!res.ok || !res.body) {
@@ -1220,7 +1169,7 @@ export const base44 = {
               apiUrl(`/openai/invoke/${realName}`),
               {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await authHeaders(),
                 body: JSON.stringify(payload || {}),
               },
             );

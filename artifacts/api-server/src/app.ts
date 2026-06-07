@@ -4,6 +4,7 @@ import express, {
   type Response,
   type NextFunction,
 } from "express";
+import "./lib/loadEnv";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import healthRouter from "./routes/health";
