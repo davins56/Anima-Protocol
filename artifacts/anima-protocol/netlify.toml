@@ -4,7 +4,7 @@
 [build]
   command = "cd ../.. && corepack enable && corepack prepare pnpm@10.15.1 --activate && pnpm install --frozen-lockfile && pnpm --filter @workspace/anima-protocol run build"
   publish = "dist/public"
-  ignore = "bash -lc '[ \"$CONTEXT\" = deploy-preview ] || [ \"$CONTEXT\" = branch-deploy ]'"
+  ignore = "true"
 
 [build.environment]
   NETLIFY_USE_PNPM = "true"
