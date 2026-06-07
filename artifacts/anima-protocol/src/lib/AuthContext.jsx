@@ -154,7 +154,7 @@ export const AuthProvider = ({ children }) => {
         window.location.pathname === '/sign-up' ||
         window.location.pathname.startsWith('/sign-in/') ||
         window.location.pathname.startsWith('/sign-up/'));
-    const stallMs = onAuthScreen ? 20_000 : 8_000;
+    const stallMs = onAuthScreen ? 15_000 : 5_000;
     const timer = setTimeout(() => setAuthStalled(true), stallMs);
     return () => clearTimeout(timer);
   }, [isLoadingAuth]);
