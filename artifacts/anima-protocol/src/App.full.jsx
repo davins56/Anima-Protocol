@@ -46,10 +46,7 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
-import {
-  resolveClerkProxyUrl,
-  shouldFallbackToDirectClerk,
-} from "@/lib/clerkProxy";
+import { resolveClerkProxyUrl } from "@/lib/clerkProxy";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -763,26 +760,10 @@ function HomeGate() {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-  const [activeProxyUrl, setActiveProxyUrl] = useState(initialClerkProxyUrl);
-
-  useEffect(() => {
-    if (!activeProxyUrl) return undefined;
-    let cancelled = false;
-    shouldFallbackToDirectClerk(clerkPubKey).then((fallback) => {
-      if (cancelled || !fallback) return;
-      console.warn(
-        "[Anima] Clerk proxy is unavailable; retrying sign-in without proxyUrl.",
-      );
-      setActiveProxyUrl("");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProxyUrl]);
+  const activeProxyUrl = initialClerkProxyUrl;
 
   return (
     <ClerkProvider
-      key={activeProxyUrl || "direct-clerk"}
       publishableKey={clerkPubKey}
       {...(activeProxyUrl ? { proxyUrl: activeProxyUrl } : {})}
       appearance={clerkAppearance}
