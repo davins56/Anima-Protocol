@@ -8,7 +8,18 @@ import {
 } from "./clerkProxyHosts";
 
 const CLERK_FAPI = "https://frontend-api.clerk.dev";
+const PRODUCTION_PROXY_HOST = "www.anima-protocol.com";
 const UPSTREAM_TIMEOUT_MS = 25_000;
+
+/** Safe to forward from the browser — skip hop-by-hop and forbidden fetch headers. */
+const FORWARD_REQUEST_HEADERS = [
+  "accept",
+  "accept-language",
+  "content-type",
+  "user-agent",
+  "cookie",
+  "referer",
+] as const;
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -26,9 +37,41 @@ function normalizeHostname(host: string | undefined): string {
   return (host ?? "").toLowerCase().replace(/:\d+$/, "");
 }
 
-export function resolveClerkUpstreamUrl(requestUrl: string | undefined): URL {
-  const path = requestUrl?.startsWith("/") ? requestUrl : `/${requestUrl ?? ""}`;
+export function resolveClerkUpstreamPath(
+  req: IncomingMessage & { originalUrl?: string },
+): string {
+  const url = req.url || "";
+  if (
+    url.startsWith("/v1/") ||
+    url.startsWith("/v1") ||
+    url.startsWith("/npm/")
+  ) {
+    return url;
+  }
+
+  const original = req.originalUrl || "";
+  const marker = CLERK_PROXY_PATH;
+  const markerIndex = original.indexOf(marker);
+  if (markerIndex >= 0) {
+    const suffix = original.slice(markerIndex + marker.length);
+    return suffix.startsWith("/") ? suffix : `/${suffix}`;
+  }
+
+  return url || "/v1/environment";
+}
+
+export function resolveClerkUpstreamUrl(
+  requestUrl: string | undefined,
+): URL {
+  const path = requestUrl?.startsWith("/")
+    ? requestUrl
+    : `/${requestUrl ?? ""}`;
   return new URL(path, CLERK_FAPI);
+}
+
+function productionProxyHostFallback(): string {
+  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  return publishableKey.startsWith("pk_live_") ? PRODUCTION_PROXY_HOST : "";
 }
 
 export function buildClerkProxyHeaderValues(
@@ -43,9 +86,12 @@ export function buildClerkProxyHeaderValues(
   const protocol = usePublicProxy
     ? "https"
     : (req.headers["x-forwarded-proto"] as string) || "https";
-  const host = usePublicProxy
-    ? "www.anima-protocol.com"
-    : canonicalClerkProxyHeaderHost(getClerkProxyHost(req));
+  const host =
+    (usePublicProxy
+      ? PRODUCTION_PROXY_HOST
+      : canonicalClerkProxyHeaderHost(getClerkProxyHost(req))) ||
+    productionProxyHostFallback() ||
+    requestHost;
 
   const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}/`;
   const origin = host ? `${protocol}://${host}` : "";
@@ -69,10 +115,8 @@ export function buildClerkUpstreamHeaders(
   const { proxyUrl, origin } = buildClerkProxyHeaderValues(req, secretKey);
   const headers = new Headers();
 
-  for (const [name, value] of Object.entries(req.headers)) {
-    const lower = name.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lower)) continue;
-    if (lower === "content-length" && req.method === "GET") continue;
+  for (const name of FORWARD_REQUEST_HEADERS) {
+    const value = req.headers[name];
     if (value === undefined) continue;
     if (Array.isArray(value)) {
       for (const entry of value) headers.append(name, entry);
@@ -82,8 +126,7 @@ export function buildClerkUpstreamHeaders(
   }
 
   headers.set("Clerk-Proxy-Url", proxyUrl);
-  headers.set("Clerk-Secret-Key", secretKey);
-  headers.set("Host", "frontend-api.clerk.dev");
+  headers.set("Clerk-Secret-Key", secretKey.trim());
   if (origin) {
     headers.set("Origin", origin);
   }
@@ -94,6 +137,15 @@ export function buildClerkUpstreamHeaders(
   }
 
   return headers;
+}
+
+function upstreamAbortSignal(): AbortSignal {
+  if (typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  return controller.signal;
 }
 
 async function readRequestBody(
@@ -120,21 +172,23 @@ function forwardResponseHeaders(
 }
 
 export async function proxyClerkWithFetch(
-  req: IncomingMessage,
+  req: IncomingMessage & { originalUrl?: string },
   res: ServerResponse,
   secretKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const upstreamUrl = resolveClerkUpstreamUrl(req.url);
+  const upstreamPath = resolveClerkUpstreamPath(req);
+  const upstreamUrl = resolveClerkUpstreamUrl(upstreamPath);
   const headers = buildClerkUpstreamHeaders(req, secretKey);
   const body = await readRequestBody(req);
+  const method = req.method?.toUpperCase() || "GET";
 
   const upstream = await fetchImpl(upstreamUrl, {
-    method: req.method,
+    method,
     headers,
     body: body ? new Uint8Array(body) : undefined,
     redirect: "manual",
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    signal: upstreamAbortSignal(),
   });
 
   res.statusCode = upstream.status;
@@ -145,14 +199,21 @@ export async function proxyClerkWithFetch(
 }
 
 export async function handleClerkProxyRequest(
-  req: IncomingMessage,
+  req: IncomingMessage & { originalUrl?: string },
   res: ServerResponse,
   secretKey: string,
 ): Promise<void> {
   try {
     await proxyClerkWithFetch(req, res, secretKey);
   } catch (err) {
-    logger.error({ err, url: req.url }, "Clerk proxy upstream fetch failed");
+    const cause =
+      err instanceof Error && "cause" in err && err.cause instanceof Error
+        ? err.cause.message
+        : undefined;
+    logger.error(
+      { err, url: req.url, originalUrl: req.originalUrl, cause },
+      "Clerk proxy upstream fetch failed",
+    );
     if (!res.headersSent) {
       res.statusCode = 502;
       res.setHeader("content-type", "application/json");
@@ -161,7 +222,9 @@ export async function handleClerkProxyRequest(
           error: "clerk_proxy_upstream_failed",
           message:
             err instanceof Error
-              ? err.message
+              ? cause
+                ? `${err.message}: ${cause}`
+                : err.message
               : "Could not reach Clerk Frontend API",
         }),
       );

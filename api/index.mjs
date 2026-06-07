@@ -108337,7 +108337,16 @@ function getClerkAuthHostCandidates(req) {
 
 // src/middlewares/clerkProxyFetch.ts
 var CLERK_FAPI = "https://frontend-api.clerk.dev";
+var PRODUCTION_PROXY_HOST = "www.anima-protocol.com";
 var UPSTREAM_TIMEOUT_MS = 25e3;
+var FORWARD_REQUEST_HEADERS = [
+  "accept",
+  "accept-language",
+  "content-type",
+  "user-agent",
+  "cookie",
+  "referer"
+];
 var HOP_BY_HOP_HEADERS = /* @__PURE__ */ new Set([
   "connection",
   "keep-alive",
@@ -108352,15 +108361,33 @@ var HOP_BY_HOP_HEADERS = /* @__PURE__ */ new Set([
 function normalizeHostname3(host) {
   return (host ?? "").toLowerCase().replace(/:\d+$/, "");
 }
+function resolveClerkUpstreamPath(req) {
+  const url3 = req.url || "";
+  if (url3.startsWith("/v1/") || url3.startsWith("/v1") || url3.startsWith("/npm/")) {
+    return url3;
+  }
+  const original = req.originalUrl || "";
+  const marker = CLERK_PROXY_PATH;
+  const markerIndex = original.indexOf(marker);
+  if (markerIndex >= 0) {
+    const suffix = original.slice(markerIndex + marker.length);
+    return suffix.startsWith("/") ? suffix : `/${suffix}`;
+  }
+  return url3 || "/v1/environment";
+}
 function resolveClerkUpstreamUrl(requestUrl) {
   const path2 = requestUrl?.startsWith("/") ? requestUrl : `/${requestUrl ?? ""}`;
   return new URL(path2, CLERK_FAPI);
+}
+function productionProxyHostFallback() {
+  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  return publishableKey.startsWith("pk_live_") ? PRODUCTION_PROXY_HOST : "";
 }
 function buildClerkProxyHeaderValues(req, secretKey) {
   const requestHost = normalizeHostname3(getClerkProxyHost(req) || "");
   const usePublicProxy = isLocalDevHost(requestHost) && process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_");
   const protocol = usePublicProxy ? "https" : req.headers["x-forwarded-proto"] || "https";
-  const host = usePublicProxy ? "www.anima-protocol.com" : canonicalClerkProxyHeaderHost(getClerkProxyHost(req));
+  const host = (usePublicProxy ? PRODUCTION_PROXY_HOST : canonicalClerkProxyHeaderHost(getClerkProxyHost(req))) || productionProxyHostFallback() || requestHost;
   const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}/`;
   const origin = host ? `${protocol}://${host}` : "";
   return { proxyUrl, origin, host };
@@ -108372,10 +108399,8 @@ function clientIpFromHeaders(headers) {
 function buildClerkUpstreamHeaders(req, secretKey) {
   const { proxyUrl, origin } = buildClerkProxyHeaderValues(req, secretKey);
   const headers = new Headers();
-  for (const [name, value] of Object.entries(req.headers)) {
-    const lower = name.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lower)) continue;
-    if (lower === "content-length" && req.method === "GET") continue;
+  for (const name of FORWARD_REQUEST_HEADERS) {
+    const value = req.headers[name];
     if (value === void 0) continue;
     if (Array.isArray(value)) {
       for (const entry of value) headers.append(name, entry);
@@ -108384,8 +108409,7 @@ function buildClerkUpstreamHeaders(req, secretKey) {
     }
   }
   headers.set("Clerk-Proxy-Url", proxyUrl);
-  headers.set("Clerk-Secret-Key", secretKey);
-  headers.set("Host", "frontend-api.clerk.dev");
+  headers.set("Clerk-Secret-Key", secretKey.trim());
   if (origin) {
     headers.set("Origin", origin);
   }
@@ -108394,6 +108418,14 @@ function buildClerkUpstreamHeaders(req, secretKey) {
     headers.set("X-Forwarded-For", clientIp);
   }
   return headers;
+}
+function upstreamAbortSignal() {
+  if (typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  return controller.signal;
 }
 async function readRequestBody(req) {
   if (req.method === "GET" || req.method === "HEAD") return void 0;
@@ -108412,15 +108444,17 @@ function forwardResponseHeaders(upstream, res) {
   });
 }
 async function proxyClerkWithFetch(req, res, secretKey, fetchImpl = fetch) {
-  const upstreamUrl = resolveClerkUpstreamUrl(req.url);
+  const upstreamPath = resolveClerkUpstreamPath(req);
+  const upstreamUrl = resolveClerkUpstreamUrl(upstreamPath);
   const headers = buildClerkUpstreamHeaders(req, secretKey);
   const body = await readRequestBody(req);
+  const method = req.method?.toUpperCase() || "GET";
   const upstream = await fetchImpl(upstreamUrl, {
-    method: req.method,
+    method,
     headers,
     body: body ? new Uint8Array(body) : void 0,
     redirect: "manual",
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+    signal: upstreamAbortSignal()
   });
   res.statusCode = upstream.status;
   forwardResponseHeaders(upstream, res);
@@ -108431,14 +108465,18 @@ async function handleClerkProxyRequest(req, res, secretKey) {
   try {
     await proxyClerkWithFetch(req, res, secretKey);
   } catch (err) {
-    logger2.error({ err, url: req.url }, "Clerk proxy upstream fetch failed");
+    const cause = err instanceof Error && "cause" in err && err.cause instanceof Error ? err.cause.message : void 0;
+    logger2.error(
+      { err, url: req.url, originalUrl: req.originalUrl, cause },
+      "Clerk proxy upstream fetch failed"
+    );
     if (!res.headersSent) {
       res.statusCode = 502;
       res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
           error: "clerk_proxy_upstream_failed",
-          message: err instanceof Error ? err.message : "Could not reach Clerk Frontend API"
+          message: err instanceof Error ? cause ? `${err.message}: ${cause}` : err.message : "Could not reach Clerk Frontend API"
         })
       );
     }
@@ -108452,12 +108490,20 @@ function clerkProxyEnabled() {
   return publishableKey.startsWith("pk_live_");
 }
 function clerkProxyMiddleware() {
-  const secretKey = process.env.CLERK_SECRET_KEY;
+  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
   if (!clerkProxyEnabled() || !secretKey) {
     return (_req, res) => {
       res.status(503).json({
         error: "clerk_proxy_unavailable",
         message: "Clerk proxy is not configured. Set CLERK_SECRET_KEY (and CLERK_PUBLISHABLE_KEY) on the server."
+      });
+    };
+  }
+  if (!secretKey.startsWith("sk_")) {
+    return (_req, res) => {
+      res.status(503).json({
+        error: "clerk_proxy_invalid_secret",
+        message: "CLERK_SECRET_KEY must be a secret key (sk_live_\u2026 or sk_test_\u2026), not a publishable key."
       });
     };
   }

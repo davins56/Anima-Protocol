@@ -32,13 +32,23 @@ function clerkProxyEnabled(): boolean {
 }
 
 export function clerkProxyMiddleware(): RequestHandler {
-  const secretKey = process.env.CLERK_SECRET_KEY;
+  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
   if (!clerkProxyEnabled() || !secretKey) {
     return (_req, res) => {
       res.status(503).json({
         error: "clerk_proxy_unavailable",
         message:
           "Clerk proxy is not configured. Set CLERK_SECRET_KEY (and CLERK_PUBLISHABLE_KEY) on the server.",
+      });
+    };
+  }
+
+  if (!secretKey.startsWith("sk_")) {
+    return (_req, res) => {
+      res.status(503).json({
+        error: "clerk_proxy_invalid_secret",
+        message:
+          "CLERK_SECRET_KEY must be a secret key (sk_live_… or sk_test_…), not a publishable key.",
       });
     };
   }
