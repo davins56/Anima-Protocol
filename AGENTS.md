@@ -98,7 +98,8 @@ No ESLint script at repo root. Validation workflows from `.replit`:
 | Unit tests (no DB/API) | `pnpm --filter @workspace/anima-protocol run test` |
 | Build API | `pnpm --filter @workspace/api-server run build` |
 | Build frontend | `PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=... pnpm --filter @workspace/anima-protocol run build` |
-| Root `pnpm run build` | Also builds mockup-sandbox — needs `PORT` + `BASE_PATH` for that package |
+| Root `pnpm run build` | Deployment build: API bundle + frontend |
+| Full workspace build | `pnpm run build:all` (typecheck + every package build; needs `PORT` + `BASE_PATH` for mockup-sandbox) |
 
 ### Running services (tmux)
 
