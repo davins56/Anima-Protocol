@@ -46,10 +46,7 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
-import {
-  resolveClerkProxyUrl,
-  shouldUseClerkProxy,
-} from "@/lib/clerkProxy";
+import { resolveClerkProxyUrl } from "@/lib/clerkProxy";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -228,7 +225,6 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
 );
 
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
-const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -758,40 +754,12 @@ function HomeGate() {
   );
 }
 
-function ClerkStallRecovery({ useProxy, onToggleProxy }) {
-  const clerk = useClerk();
-  const toggledRef = useRef(false);
-
-  useEffect(() => {
-    if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
-
-    const timer = setTimeout(() => {
-      if (clerk.loaded || toggledRef.current) return;
-      toggledRef.current = true;
-      onToggleProxy(!useProxy);
-    }, 10_000);
-
-    return () => clearTimeout(timer);
-  }, [clerk.loaded, onToggleProxy, useProxy]);
-
-  return null;
-}
-
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-  const [useProxy, setUseProxy] = useState(Boolean(initialClerkProxyUrl));
-  const [providerKey, setProviderKey] = useState(0);
-
-  const activeProxyUrl = useProxy ? resolveClerkProxyUrl(clerkPubKey) : "";
-
-  const handleToggleProxy = (nextUseProxy) => {
-    setUseProxy(nextUseProxy);
-    setProviderKey((key) => key + 1);
-  };
+  const activeProxyUrl = initialClerkProxyUrl;
 
   return (
     <ClerkProvider
-      key={`clerk-${providerKey}-${useProxy ? "proxy" : "direct"}`}
       publishableKey={clerkPubKey}
       {...(activeProxyUrl ? { proxyUrl: activeProxyUrl } : {})}
       appearance={clerkAppearance}
@@ -816,7 +784,6 @@ function ClerkProviderWithRoutes({ children }) {
       routerPush={(to) => navigate(stripBase(to))}
       routerReplace={(to) => navigate(stripBase(to), { replace: true })}
     >
-      <ClerkStallRecovery useProxy={useProxy} onToggleProxy={handleToggleProxy} />
       <ClerkQueryClientCacheInvalidator />
       {children}
     </ClerkProvider>
@@ -831,6 +798,24 @@ const PUBLIC_PREFIXES = [
   "/privacy-policy",
   "/disclaimer",
 ];
+
+function isPublicAuthPath(pathname) {
+  return (
+    pathname === "/" ||
+    PUBLIC_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    )
+  );
+}
+
+function isSignInPath(pathname) {
+  return (
+    pathname === "/sign-in" ||
+    pathname === "/sign-up" ||
+    pathname.startsWith("/sign-in/") ||
+    pathname.startsWith("/sign-up/")
+  );
+}
 
 const AuthenticatedApp = () => {
   const {
@@ -957,25 +942,40 @@ const AuthenticatedApp = () => {
   // so returning users surface the tutorial immediately (e.g. when replaying).
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
 
+  const pathname = location.pathname;
+  const onPublicPath = isPublicAuthPath(pathname);
+
   useEffect(() => {
-    if (!isLoadingAuth || !authStalled) return;
-    const onSignInScreen =
-      location.pathname === "/sign-in" ||
-      location.pathname === "/sign-up" ||
-      location.pathname.startsWith("/sign-in/") ||
-      location.pathname.startsWith("/sign-up/");
-    if (onSignInScreen) return;
+    if (!isLoadingAuth) {
+      toast.dismiss("anima-clerk-unavailable");
+      try {
+        sessionStorage.removeItem("anima-clerk-toast-shown");
+      } catch {
+        /* private mode */
+      }
+      return;
+    }
+    if (!authStalled || isSignInPath(pathname)) {
+      toast.dismiss("anima-clerk-unavailable");
+      return;
+    }
+    try {
+      if (sessionStorage.getItem("anima-clerk-toast-shown") === "1") return;
+      sessionStorage.setItem("anima-clerk-toast-shown", "1");
+    } catch {
+      /* private mode */
+    }
     toast.error("Sign-in is temporarily unavailable.", {
       id: "anima-clerk-unavailable",
       description:
-        "The app will load in guest mode. Check your connection or Clerk keys, then refresh.",
-      duration: Infinity,
+        "You can browse in guest mode. Tap Sign in on the landing page to try again.",
+      duration: 12_000,
       action: {
-        label: "Retry",
-        onClick: () => window.location.reload(),
+        label: "Sign in",
+        onClick: () => navigate("/sign-in"),
       },
     });
-  }, [isLoadingAuth, authStalled, location.pathname]);
+  }, [isLoadingAuth, authStalled, pathname, navigate]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -985,17 +985,12 @@ const AuthenticatedApp = () => {
     }
   }
 
-  // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth && !authStalled) {
+  // Only block protected routes while Clerk loads — public pages render immediately.
+  if (isLoadingAuth && !authStalled && !onPublicPath) {
     return <PageLoader />;
   }
 
-  // Gate protected routes: signed-out users are sent to the public Landing.
-  const pathname = location.pathname;
-  const isPublicPath =
-    pathname === "/" ||
-    PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  if (!isAuthenticated && !isPublicPath) {
+  if (!isAuthenticated && !onPublicPath) {
     return <Navigate to="/" replace />;
   }
 
