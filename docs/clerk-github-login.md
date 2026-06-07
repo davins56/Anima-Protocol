@@ -1,6 +1,6 @@
-# Clerk GitHub login setup
+# Clerk Google and GitHub login setup
 
-Use this checklist when GitHub sign-in is unavailable on `www.anima-protocol.com`.
+Use this checklist when Google/Gmail or GitHub sign-in is unavailable on `www.anima-protocol.com`.
 
 ## 1. Fix Vercel production keys
 
@@ -13,7 +13,25 @@ In Vercel Project Settings -> Environment Variables -> Production:
 
 Redeploy without build cache after changing these values.
 
-## 2. Give GitHub OAuth keys to Clerk
+## 2. Give Google OAuth keys to Clerk
+
+In Google Cloud Console, create or open the OAuth client used for Anima Protocol:
+
+- Application type: Web application
+- Authorized JavaScript origin: `https://www.anima-protocol.com`
+- Authorized redirect URI: `https://www.anima-protocol.com/sign-in/sso-callback`
+
+Copy the Google OAuth **Client ID** and **Client Secret**.
+
+In Clerk Dashboard -> Production -> Configure -> SSO connections:
+
+1. Add or open the **Google** connection.
+2. Enable it for all users.
+3. Turn on custom credentials if Clerk asks for production credentials.
+4. Paste the Google OAuth Client ID and Client Secret.
+5. Save.
+
+## 3. Give GitHub OAuth keys to Clerk
 
 In GitHub, create or open the OAuth App used for Anima Protocol:
 
@@ -30,7 +48,7 @@ In Clerk Dashboard -> Production -> Configure -> SSO connections:
 4. Paste the GitHub OAuth Client ID and Client Secret.
 5. Save.
 
-## 3. Verify
+## 4. Verify
 
 Run from the repo root with the production Clerk keys in the environment:
 
