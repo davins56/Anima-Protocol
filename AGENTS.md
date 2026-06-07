@@ -49,7 +49,7 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `OPENAI_API_KEY` | API (import-time check) |
 | `PORT` | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend `/`, mockup `/__mockup` |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) — must match `CLERK_PUBLISHABLE_KEY`; Vite build also reads `CLERK_PUBLISHABLE_KEY` if `VITE_` is unset |
 | `CLERK_PUBLISHABLE_KEY` | API `clerkMiddleware` |
 | `CLERK_SECRET_KEY` | API session verification |
 | `VITE_CLERK_PROXY_URL` | Frontend (Replit sets explicitly; never auto-proxy with `pk_test_*` keys — causes Origin 400 on custom domains) |

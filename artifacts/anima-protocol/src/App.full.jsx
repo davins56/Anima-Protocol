@@ -21,7 +21,7 @@ import {
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
 import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
-import { Suspense, lazy, useRef, useEffect, useState } from "react";
+import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
@@ -350,6 +350,8 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
+    socialButtonsRoot: "!hidden",
+    dividerRow: "!hidden",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -401,62 +403,89 @@ function clerkInstanceLabel() {
 function getEnabledOAuthStrategies(clerk) {
   const environment =
     clerk?.__internal_environment ?? clerk?.environment ?? null;
-  const strategies =
+  const strategies = new Set();
+
+  const authList =
     environment?.userSettings?.authenticatableSocialStrategies ?? null;
-  if (Array.isArray(strategies) && strategies.length > 0) {
-    return strategies;
+  if (Array.isArray(authList)) {
+    for (const strategy of authList) {
+      if (strategy) strategies.add(strategy);
+    }
   }
 
   const social = environment?.userSettings?.social;
   if (social && typeof social === "object") {
-    const fromSocial = Object.values(social)
-      .filter((provider) => provider?.enabled)
-      .map((provider) => provider.strategy)
-      .filter(Boolean);
-    if (fromSocial.length > 0) {
-      return fromSocial;
-    }
-  }
-
-  return null;
-}
-
-function visibleSocialProviders(clerk, clerkLoaded) {
-  const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
-  if (typeof envList === "string" && envList.trim()) {
-    const allowed = new Set(
-      envList.split(",").map((entry) => entry.trim()).filter(Boolean),
-    );
-    return socialAuthProviders.filter((provider) =>
-      allowed.has(provider.strategy),
-    );
-  }
-
-  // Development keys: always offer GitHub/Apple/Google — Clerk validates on click.
-  if (isDevClerkKey(clerkPubKey)) {
-    return socialAuthProviders;
-  }
-
-  if (clerkLoaded && clerk) {
-    const enabled = getEnabledOAuthStrategies(clerk);
-    if (Array.isArray(enabled) && enabled.length > 0) {
-      const filtered = socialAuthProviders.filter((provider) =>
-        enabled.includes(provider.strategy),
-      );
-      if (filtered.length > 0) {
-        return filtered;
+    for (const provider of Object.values(social)) {
+      if (provider?.enabled && provider?.strategy) {
+        strategies.add(provider.strategy);
       }
     }
   }
 
-  return socialAuthProviders;
+  return strategies.size > 0 ? [...strategies] : null;
+}
+
+function filterProvidersByEnvList(providers) {
+  const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
+  if (typeof envList !== "string" || !envList.trim()) {
+    return providers;
+  }
+  const allowed = new Set(
+    envList.split(",").map((entry) => entry.trim()).filter(Boolean),
+  );
+  return providers.filter((provider) => allowed.has(provider.strategy));
+}
+
+function clerkGitHubSetupHint() {
+  const instance = clerkInstanceLabel();
+  if (instance === "Development") {
+    return (
+      "In Clerk Dashboard → Development → SSO connections: Add connection → " +
+      "For all users → GitHub. Leave “Use custom credentials” OFF (dev uses " +
+      "shared GitHub OAuth). Then add https://www.anima-protocol.com/sign-in/sso-callback " +
+      "under Paths → Redirect URLs."
+    );
+  }
+  return (
+    "In Clerk Dashboard → Production → SSO connections: enable GitHub with " +
+    "custom OAuth credentials, set Proxy URL to https://www.anima-protocol.com/api/__clerk, " +
+    "and add the sign-in/sso-callback redirect URLs."
+  );
 }
 
 function SocialAuthButtons({ mode }) {
   const clerk = useClerk();
   const { signIn, fetchStatus } = useSignIn();
   const [pendingStrategy, setPendingStrategy] = useState(null);
-  const providers = visibleSocialProviders(clerk, clerk.loaded);
+  const [enabledStrategies, setEnabledStrategies] = useState(null);
+
+  useEffect(() => {
+    if (!clerk.loaded) {
+      setEnabledStrategies(null);
+      return;
+    }
+    const syncStrategies = () => {
+      setEnabledStrategies(getEnabledOAuthStrategies(clerk));
+    };
+    syncStrategies();
+    return clerk.addListener(syncStrategies);
+  }, [clerk, clerk.loaded]);
+
+  const providers = useMemo(() => {
+    if (!clerk.loaded) return [];
+    if (!Array.isArray(enabledStrategies)) return [];
+    const enabled = filterProvidersByEnvList(
+      socialAuthProviders.filter((provider) =>
+        enabledStrategies.includes(provider.strategy),
+      ),
+    );
+    return enabled;
+  }, [clerk.loaded, enabledStrategies]);
+
+  const githubMissing =
+    clerk.loaded &&
+    Array.isArray(enabledStrategies) &&
+    !enabledStrategies.includes("oauth_github");
 
   const handleOAuth = async (strategy) => {
     if (!clerk.loaded || fetchStatus === "fetching") {
@@ -481,15 +510,10 @@ function SocialAuthButtons({ mode }) {
         socialAuthProviders.find((provider) => provider.strategy === strategy)
           ?.label ?? "That provider";
       const detail = formatClerkOAuthError(error);
-      const instanceHint =
-        clerkInstanceLabel() === "Development"
-          ? "Enable GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
-          : "Enable GitHub under Clerk Dashboard → Production → SSO connections (Development settings do not apply to pk_live_).";
-      const redirectHint = `Add ${redirectCallbackUrl} under Clerk → Paths → Redirect URLs.`;
       toast.error(
         detail
-          ? `${detail} ${instanceHint} ${redirectHint}`
-          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${instanceHint} ${redirectHint}`,
+          ? `${detail} ${clerkGitHubSetupHint()}`
+          : `${providerName} is not enabled for this Clerk ${clerkInstanceLabel()} instance. ${clerkGitHubSetupHint()}`,
       );
       setPendingStrategy(null);
     }
@@ -503,7 +527,7 @@ function SocialAuthButtons({ mode }) {
         </p>
       ) : providers.length === 0 ? (
         <p className="py-2 text-center text-sm text-cyan-400/50">
-          No social sign-in providers configured.
+          No social sign-in providers configured in Clerk yet.
         </p>
       ) : (
         providers.map(({ label, strategy, Icon }) => (
@@ -521,6 +545,12 @@ function SocialAuthButtons({ mode }) {
           </button>
         ))
       )}
+      {githubMissing ? (
+        <p className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
+          GitHub is not active for this Clerk {clerkInstanceLabel()} instance
+          yet. {clerkGitHubSetupHint()}
+        </p>
+      ) : null}
     </div>
   );
 }
