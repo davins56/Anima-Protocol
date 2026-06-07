@@ -197,9 +197,31 @@ const PageLoader = () => (
 // from the clerk-auth skill; only the router glue is adapted to react-router.
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const clerkPubKey = publishableKeyFromHost(
+const viteClerkPublishableKey =
+  typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
+    ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY.trim()
+    : "";
+
+/**
+ * Match api-server resolveClerkPublishableKey: Development keys (pk_test_) talk
+ * to the dev Clerk instance directly on custom domains (no proxy). Host-derived
+ * pk_live_ keys must not override a configured pk_test_ build — that mismatch
+ * makes oauth_github fail with "strategy not allowed" when GitHub is only
+ * enabled in the Development dashboard.
+ */
+function resolveFrontendClerkPublishableKey(hostname, envKey) {
+  if (envKey.startsWith("pk_test_")) {
+    return envKey;
+  }
+  if (envKey.startsWith("pk_live_")) {
+    return publishableKeyFromHost(hostname, envKey);
+  }
+  return publishableKeyFromHost(hostname, envKey || undefined);
+}
+
+const clerkPubKey = resolveFrontendClerkPublishableKey(
   window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+  viteClerkPublishableKey,
 );
 
 // Clerk Frontend API proxy — only when explicitly configured or for production
@@ -286,6 +308,16 @@ if (!clerkPubKey) {
   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
 }
 
+if (
+  import.meta.env.PROD &&
+  (clerkPubKey.includes("placeholder") || !viteClerkPublishableKey)
+) {
+  console.error(
+    "[Anima] VITE_CLERK_PUBLISHABLE_KEY must be set at build time on Vercel. " +
+      "GitHub sign-in will fail without the real pk_test_ or pk_live_ key.",
+  );
+}
+
 const clerkAppearance = {
   theme: dark,
   cssLayerName: "clerk",
@@ -318,8 +350,6 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
-    socialButtonsRoot: "!hidden",
-    dividerRow: "!hidden",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -368,7 +398,30 @@ function clerkInstanceLabel() {
   return clerkPubKey.startsWith("pk_test_") ? "Development" : "Production";
 }
 
-function visibleSocialProviders() {
+function getEnabledOAuthStrategies(clerk) {
+  const environment =
+    clerk?.__internal_environment ?? clerk?.environment ?? null;
+  const strategies =
+    environment?.userSettings?.authenticatableSocialStrategies ?? null;
+  if (Array.isArray(strategies) && strategies.length > 0) {
+    return strategies;
+  }
+
+  const social = environment?.userSettings?.social;
+  if (social && typeof social === "object") {
+    const fromSocial = Object.values(social)
+      .filter((provider) => provider?.enabled)
+      .map((provider) => provider.strategy)
+      .filter(Boolean);
+    if (fromSocial.length > 0) {
+      return fromSocial;
+    }
+  }
+
+  return null;
+}
+
+function visibleSocialProviders(clerk, clerkLoaded) {
   const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
   if (typeof envList === "string" && envList.trim()) {
     const allowed = new Set(
@@ -378,17 +431,35 @@ function visibleSocialProviders() {
       allowed.has(provider.strategy),
     );
   }
+
+  // Development keys: always offer GitHub/Apple/Google — Clerk validates on click.
+  if (isDevClerkKey(clerkPubKey)) {
+    return socialAuthProviders;
+  }
+
+  if (clerkLoaded && clerk) {
+    const enabled = getEnabledOAuthStrategies(clerk);
+    if (Array.isArray(enabled) && enabled.length > 0) {
+      const filtered = socialAuthProviders.filter((provider) =>
+        enabled.includes(provider.strategy),
+      );
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+  }
+
   return socialAuthProviders;
 }
 
 function SocialAuthButtons({ mode }) {
   const clerk = useClerk();
-  const { signIn } = useSignIn();
+  const { signIn, fetchStatus } = useSignIn();
   const [pendingStrategy, setPendingStrategy] = useState(null);
-  const providers = visibleSocialProviders();
+  const providers = visibleSocialProviders(clerk, clerk.loaded);
 
   const handleOAuth = async (strategy) => {
-    if (!clerk.loaded) {
+    if (!clerk.loaded || fetchStatus === "fetching") {
       return;
     }
     setPendingStrategy(strategy);
@@ -412,12 +483,13 @@ function SocialAuthButtons({ mode }) {
       const detail = formatClerkOAuthError(error);
       const instanceHint =
         clerkInstanceLabel() === "Development"
-          ? "Confirm GitHub/Apple are enabled in the Clerk Dashboard Development instance (SSO connections), and that Vercel uses the matching pk_test_ key."
-          : "Confirm GitHub/Apple are enabled in the Clerk Dashboard Production instance — Development SSO settings do not apply to pk_live_ keys.";
+          ? "Enable GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
+          : "Enable GitHub under Clerk Dashboard → Production → SSO connections (Development settings do not apply to pk_live_).";
+      const redirectHint = `Add ${redirectCallbackUrl} under Clerk → Paths → Redirect URLs.`;
       toast.error(
         detail
-          ? `${detail} (${instanceHint})`
-          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${instanceHint} Add redirect URL ${redirectCallbackUrl}.`,
+          ? `${detail} ${instanceHint} ${redirectHint}`
+          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${instanceHint} ${redirectHint}`,
       );
       setPendingStrategy(null);
     }
@@ -438,7 +510,7 @@ function SocialAuthButtons({ mode }) {
           <button
             key={strategy}
             type="button"
-            disabled={Boolean(pendingStrategy)}
+            disabled={Boolean(pendingStrategy) || fetchStatus === "fetching"}
             onClick={() => handleOAuth(strategy)}
             className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -459,6 +531,11 @@ function AuthFormShell({ mode, children }) {
       <div className="w-[420px] max-w-full space-y-3">
         <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
           <SocialAuthButtons mode={mode} />
+          <p className="mt-3 text-center text-xs text-cyan-400/45">
+            {mode === "sign-in"
+              ? "Use GitHub if that is how you created your account. You can also sign in with email below."
+              : "Or continue with email below."}
+          </p>
         </div>
         {children}
       </div>
@@ -529,6 +606,7 @@ function SsoCallbackPage() {
         navigateToSignIn={() => navigate(`${basePath}/sign-in`)}
         navigateToSignUp={() => navigate(`${basePath}/sign-up`)}
       />
+      <div id="clerk-captcha" />
     </div>
   );
 }
@@ -599,6 +677,8 @@ function ClerkProviderWithRoutes({ children }) {
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
+      signInFallbackRedirectUrl={authRedirectCompleteUrl}
+      signUpFallbackRedirectUrl={authRedirectCompleteUrl}
       localization={{
         signIn: {
           start: {

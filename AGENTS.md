@@ -51,7 +51,7 @@ When Vercel uses **`pk_test_` / `sk_test_`** on `www.anima-protocol.com`, the br
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.
 
-Sign-in shows custom Google / Apple / GitHub buttons above `<SignIn>` / `<SignUp>` (always visible unless limited by `VITE_CLERK_OAUTH_STRATEGIES`). OAuth uses Clerk v6 `signIn.sso()` with `/sign-in/sso-callback` and `/sign-up/sso-callback` (`HandleSSOCallback`). Enable each provider under Clerk Dashboard → Configure → SSO connections for the same instance as your publishable key.
+Sign-in shows custom Google / Apple / GitHub buttons above `<SignIn>` / `<SignUp>` (always visible for `pk_test_`; filtered from Clerk env for `pk_live_` unless limited by `VITE_CLERK_OAUTH_STRATEGIES`). OAuth uses Clerk v6 `signIn.sso()` with `/sign-in/sso-callback` and `/sign-up/sso-callback` (`HandleSSOCallback`). Enable each provider under Clerk Dashboard → Configure → SSO connections for the **same instance** as your publishable key (`pk_test_` = Development tab; `pk_live_` = Production tab). Register redirect URLs: `https://www.anima-protocol.com/sign-in/sso-callback` and `/sign-up/sso-callback`. `VITE_CLERK_PUBLISHABLE_KEY` must be set at **build** time on Vercel (not only `CLERK_PUBLISHABLE_KEY` for the API).
 
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
 
