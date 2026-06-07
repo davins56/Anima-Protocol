@@ -400,6 +400,22 @@ function clerkInstanceLabel() {
   return clerkPubKey.startsWith("pk_test_") ? "Development" : "Production";
 }
 
+function clerkInstanceSlug() {
+  if (typeof clerkPubKey !== "string") return null;
+  const match = clerkPubKey.match(/^pk_(?:test|live)_(.+)$/);
+  if (!match) return null;
+  try {
+    const decoded = atob(match[1]);
+    return decoded.split(".")[0]?.replace(/\$$/, "") ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function providerShortName(strategy) {
+  return strategy.replace(/^oauth_/, "").replace(/^\w/, (c) => c.toUpperCase());
+}
+
 function getEnabledOAuthStrategies(clerk) {
   const environment =
     clerk?.__internal_environment ?? clerk?.environment ?? null;
@@ -439,19 +455,21 @@ function filterProvidersByEnvList(providers) {
 const CLERK_SSO_DASHBOARD_URL =
   "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
 
-function clerkGitHubSetupHint() {
+function clerkSsoSetupHint(providerName) {
   const instance = clerkInstanceLabel();
+  const slug = clerkInstanceSlug();
+  const instanceNote = slug ? ` (${slug})` : "";
   if (instance === "Development") {
     return (
-      "In Clerk Dashboard → Development → SSO connections: Add connection → " +
-      "For all users → GitHub. Leave “Use custom credentials” OFF (dev uses " +
-      "shared GitHub OAuth). Redirect URLs are already registered for anima-protocol.com."
+      `Enable ${providerName} in Clerk Dashboard → Development${instanceNote} → ` +
+      "SSO connections → Add connection → For all users → " +
+      `${providerName}. Leave “Use custom credentials” OFF.`
     );
   }
   return (
-    "In Clerk Dashboard → Production → SSO connections: enable GitHub with " +
-    "custom OAuth credentials, set Proxy URL to https://www.anima-protocol.com/api/__clerk, " +
-    "and add the sign-in/sso-callback redirect URLs."
+    `Enable ${providerName} in Clerk Dashboard → Production${instanceNote} → ` +
+    "SSO connections with custom OAuth credentials, Proxy URL " +
+    "https://www.anima-protocol.com/api/__clerk, and sign-in/sso-callback redirect URLs."
   );
 }
 
@@ -474,20 +492,20 @@ function SocialAuthButtons({ mode }) {
   }, [clerk, clerk.loaded]);
 
   const providers = useMemo(() => {
-    if (!clerk.loaded) return [];
-    if (!Array.isArray(enabledStrategies)) return [];
-    const enabled = filterProvidersByEnvList(
-      socialAuthProviders.filter((provider) =>
-        enabledStrategies.includes(provider.strategy),
-      ),
-    );
-    return enabled;
+    if (!clerk.loaded || !Array.isArray(enabledStrategies)) return [];
+    return filterProvidersByEnvList(socialAuthProviders).map((provider) => ({
+      ...provider,
+      isEnabled: enabledStrategies.includes(provider.strategy),
+    }));
   }, [clerk.loaded, enabledStrategies]);
 
-  const githubMissing =
-    clerk.loaded &&
-    Array.isArray(enabledStrategies) &&
-    !enabledStrategies.includes("oauth_github");
+  const missingProviderNames = useMemo(
+    () =>
+      providers
+        .filter((provider) => !provider.isEnabled)
+        .map((provider) => providerShortName(provider.strategy)),
+    [providers],
+  );
 
   const handleOAuth = async (strategy) => {
     if (!clerk.loaded || fetchStatus === "fetching") {
@@ -512,10 +530,11 @@ function SocialAuthButtons({ mode }) {
         socialAuthProviders.find((provider) => provider.strategy === strategy)
           ?.label ?? "That provider";
       const detail = formatClerkOAuthError(error);
+      const shortName = providerShortName(strategy);
       toast.error(
         detail
-          ? `${detail} ${clerkGitHubSetupHint()}`
-          : `${providerName} is not enabled for this Clerk ${clerkInstanceLabel()} instance. ${clerkGitHubSetupHint()}`,
+          ? `${detail} ${clerkSsoSetupHint(shortName)}`
+          : `${providerName} is not enabled for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)}`,
       );
       setPendingStrategy(null);
     }
@@ -532,34 +551,66 @@ function SocialAuthButtons({ mode }) {
           No social sign-in providers configured in Clerk yet.
         </p>
       ) : (
-        providers.map(({ label, strategy, Icon }) => (
+        providers.map(({ label, strategy, Icon, isEnabled }) => (
           <button
             key={strategy}
             type="button"
-            disabled={Boolean(pendingStrategy) || fetchStatus === "fetching"}
-            onClick={() => handleOAuth(strategy)}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded border border-cyan-400/30 bg-cyan-400/5 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={
+              isEnabled &&
+              (Boolean(pendingStrategy) || fetchStatus === "fetching")
+            }
+            title={
+              isEnabled
+                ? undefined
+                : clerkSsoSetupHint(providerShortName(strategy))
+            }
+            onClick={() => {
+              if (!isEnabled) {
+                toast.error(clerkSsoSetupHint(providerShortName(strategy)));
+                return;
+              }
+              handleOAuth(strategy);
+            }}
+            className={`flex h-10 w-full items-center justify-center gap-2 rounded border px-4 text-sm font-semibold transition ${
+              isEnabled
+                ? "border-cyan-400/30 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+                : "cursor-pointer border-amber-400/20 bg-amber-400/5 text-amber-200/70 hover:bg-amber-400/10"
+            }`}
           >
-            <Icon className="h-4 w-4" aria-hidden="true" />
-            <span>
-              {pendingStrategy === strategy ? "Redirecting..." : label}
+            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="text-left">
+              {pendingStrategy === strategy
+                ? "Redirecting..."
+                : isEnabled
+                  ? label
+                  : `${label} (not set up in Clerk)`}
             </span>
           </button>
         ))
       )}
-      {githubMissing ? (
-        <p className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
-          GitHub is not active for this Clerk {clerkInstanceLabel()} instance
-          yet. {clerkGitHubSetupHint()}{" "}
+      {missingProviderNames.length > 0 ? (
+        <div className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
+          <p>
+            Only{" "}
+            {providers
+              .filter((provider) => provider.isEnabled)
+              .map((provider) => providerShortName(provider.strategy))
+              .join(", ") || "email"}{" "}
+            is active in Clerk {clerkInstanceLabel()}
+            {clerkInstanceSlug() ? ` (${clerkInstanceSlug()})` : ""}. To enable{" "}
+            {missingProviderNames.join(" and ")}: Clerk Dashboard →{" "}
+            {clerkInstanceLabel()} → SSO connections → Add connection → For all
+            users.
+          </p>
           <a
             href={CLERK_SSO_DASHBOARD_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-cyan-300 underline hover:text-cyan-200"
+            className="mt-1 inline-block text-cyan-300 underline hover:text-cyan-200"
           >
             Open Clerk SSO settings
           </a>
-        </p>
+        </div>
       ) : null}
     </div>
   );
