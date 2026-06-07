@@ -7,6 +7,7 @@
   publish = "artifacts/anima-protocol/dist/public"
 
 [build.environment]
+  NETLIFY_USE_PNPM = "true"
   NODE_VERSION = "24"
   PORT = "23660"
   BASE_PATH = "/"
