@@ -5,9 +5,11 @@ import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { config as loadEnv } from "dotenv";
 
-loadEnv();
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+loadEnv({ path: path.join(repoRoot, ".env") });
+loadEnv({ path: path.join(import.meta.dirname, ".env"), override: true });
 
-const rawPort = process.env.PORT;
+const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT;
 
 if (!rawPort) {
   throw new Error(

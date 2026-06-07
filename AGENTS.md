@@ -33,7 +33,15 @@ PostgreSQL 16 is installed with a dev database:
 
 Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 
-### Required secrets (full stack)
+### Environment file
+
+Copy the template and fill in your keys:
+
+```bash
+cp .env.example .env
+```
+
+The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`api-server`** load it on startup. Optional per-package overrides: `artifacts/anima-protocol/.env`, `artifacts/api-server/.env`.
 
 | Variable | Used by |
 |----------|---------|
