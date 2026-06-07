@@ -219,52 +219,6 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
-// Clerk Frontend API proxy — only when explicitly configured or for production
-// Clerk keys on same-origin hosts. Development keys (pk_test_*) break with the
-// proxy on custom domains (POST /api/__clerk/v1/client → 400 Origin mismatch).
-function configuredClerkProxyUrl() {
-  const value =
-    typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-      ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-      : "";
-
-  if (!value || value === "none" || value === "false" || value === "off") {
-    return "";
-  }
-
-  return value;
-}
-
-function isSameOriginProductionHost() {
-  if (typeof window === "undefined" || !import.meta.env.PROD) return false;
-  const host = window.location.hostname.toLowerCase();
-  return (
-    host === "anima-protocol.com" ||
-    host === "www.anima-protocol.com" ||
-    host.endsWith(".anima-protocol.com") ||
-    host.endsWith(".replit.app") ||
-    host.endsWith(".vercel.app")
-  );
-}
-
-function isDevClerkKey(key) {
-  const builtIn =
-    typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
-      ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-      : "";
-  if (builtIn.startsWith("pk_test_")) return true;
-  return typeof key === "string" && key.startsWith("pk_test_");
-}
-
-function effectiveClerkProxyUrl() {
-  const configured = configuredClerkProxyUrl();
-  if (configured) return configured;
-  if (isDevClerkKey(clerkPubKey)) return "";
-  if (!isSameOriginProductionHost()) return "";
-  return `${window.location.origin}/api/__clerk`;
-}
-
-const clerkProxyUrl = effectiveClerkProxyUrl();
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -715,7 +669,6 @@ function ClerkProviderWithRoutes({ children }) {
   return (
     <ClerkProvider
       publishableKey={clerkPubKey}
-      {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
