@@ -148,7 +148,14 @@ export const AuthProvider = ({ children }) => {
       setAuthStalled(false);
       return;
     }
-    const timer = setTimeout(() => setAuthStalled(true), 8000);
+    const onAuthScreen =
+      typeof window !== 'undefined' &&
+      (window.location.pathname === '/sign-in' ||
+        window.location.pathname === '/sign-up' ||
+        window.location.pathname.startsWith('/sign-in/') ||
+        window.location.pathname.startsWith('/sign-up/'));
+    const stallMs = onAuthScreen ? 20_000 : 8_000;
+    const timer = setTimeout(() => setAuthStalled(true), stallMs);
     return () => clearTimeout(timer);
   }, [isLoadingAuth]);
 

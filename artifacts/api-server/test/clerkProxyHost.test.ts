@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalClerkProxyHeaderHost,
   getClerkAuthHostCandidates,
   getClerkProxyHost,
   resolveClerkPublishableKey,
@@ -85,6 +86,23 @@ describe("getClerkAuthHostCandidates", () => {
     });
     expect(hosts).toContain("www.anima-protocol.com");
     expect(hosts).toContain("anima-protocol.com");
+  });
+});
+
+describe("canonicalClerkProxyHeaderHost", () => {
+  it("normalizes apex to www for Clerk proxy headers", () => {
+    expect(canonicalClerkProxyHeaderHost("anima-protocol.com")).toBe(
+      "www.anima-protocol.com",
+    );
+    expect(canonicalClerkProxyHeaderHost("www.anima-protocol.com")).toBe(
+      "www.anima-protocol.com",
+    );
+  });
+
+  it("leaves unrelated hosts unchanged", () => {
+    expect(canonicalClerkProxyHeaderHost("preview.vercel.app")).toBe(
+      "preview.vercel.app",
+    );
   });
 });
 

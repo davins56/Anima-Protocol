@@ -1,12 +1,15 @@
 import { apiUrl } from '@/lib/apiOrigin';
+import { clerkProxyProbeBase } from '@/lib/clerkProxy';
 
 /**
  * Probe API + Clerk proxy when Clerk JS fails to load. Returns human-readable
  * hints for the sign-in error UI.
  */
-export async function probeClerkConnectivity() {
+export async function probeClerkConnectivity(clerkPubKey) {
   const hints = [];
-  const proxyUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
+  const proxyUrl =
+    clerkProxyProbeBase(clerkPubKey) ||
+    `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
 
   try {
     const healthRes = await fetch(apiUrl('/healthz'), { credentials: 'same-origin' });

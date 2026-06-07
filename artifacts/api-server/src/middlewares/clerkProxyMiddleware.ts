@@ -91,6 +91,18 @@ function isBackendProxyHost(hostname: string): boolean {
   );
 }
 
+/** Clerk dashboard Proxy URL uses www; apex must not produce a mismatched header. */
+export function canonicalClerkProxyHeaderHost(host: string | undefined): string {
+  const normalized = normalizeHostname(host);
+  if (
+    normalized === "anima-protocol.com" ||
+    normalized === "www.anima-protocol.com"
+  ) {
+    return "www.anima-protocol.com";
+  }
+  return host?.split(",")[0]?.trim() || "";
+}
+
 /**
  * Pick the Clerk publishable key for JWT verification.
  *
@@ -216,8 +228,8 @@ export function clerkProxyMiddleware(): RequestHandler {
           : (req.headers["x-forwarded-proto"] as string) || "https";
         const host = usePublicProxy
           ? "www.anima-protocol.com"
-          : getClerkProxyHost(req) || "";
-        const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}`;
+          : canonicalClerkProxyHeaderHost(getClerkProxyHost(req));
+        const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}/`;
 
         proxyReq.setHeader("Clerk-Proxy-Url", proxyUrl);
         proxyReq.setHeader("Clerk-Secret-Key", secretKey);
