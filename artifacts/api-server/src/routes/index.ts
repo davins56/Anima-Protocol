@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import healthRouter from "./health";
 import openaiRouter from "./openai/index";
 import openaiFunctionsRouter from "./openai/functions";
 import elevenLabsRouter from "./elevenlabs";
@@ -10,7 +9,6 @@ import chatRouter from "./chat";
 
 const router: IRouter = Router();
 
-router.use(healthRouter);
 router.use("/openai", openaiRouter);
 router.use("/openai", openaiFunctionsRouter);
 router.use(elevenLabsRouter);

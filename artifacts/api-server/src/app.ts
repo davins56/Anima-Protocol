@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
+import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import {
@@ -43,6 +44,10 @@ app.use(cors({ credentials: true, origin: true }));
 // 20MB byte cap on the decoded buffer.
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+
+// Health checks must remain public so platform probes can distinguish service
+// availability from auth configuration problems.
+app.use("/api", healthRouter);
 
 // Resolve the publishable key from the incoming request host so the same
 // server can serve multiple Clerk custom domains. Falls back to
