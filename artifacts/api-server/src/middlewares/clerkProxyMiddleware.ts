@@ -110,6 +110,9 @@ export function resolveClerkPublishableKey(
   if (fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)) {
     return fallbackKey;
   }
+  if (fallbackKey?.startsWith("pk_live_") && isLocalDevHost(hostname)) {
+    return fallbackKey;
+  }
   return publishableKeyFromHost(hostname, fallbackKey);
 }
 
@@ -177,14 +180,16 @@ export function getClerkAuthHostCandidates(req: {
   return [...hosts].filter(Boolean);
 }
 
-export function clerkProxyMiddleware(): RequestHandler {
-  // Only run proxy in production — Clerk proxying doesn't work for dev instances
-  if (process.env.NODE_ENV !== "production") {
-    return (_req, _res, next) => next();
-  }
+function clerkProxyEnabled(): boolean {
+  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  if (process.env.NODE_ENV === "production") return true;
+  // pk_live_ on localhost needs the proxy; pk_test_ talks to Clerk dev directly.
+  return publishableKey.startsWith("pk_live_");
+}
 
+export function clerkProxyMiddleware(): RequestHandler {
   const secretKey = process.env.CLERK_SECRET_KEY;
-  if (!secretKey) {
+  if (!clerkProxyEnabled() || !secretKey) {
     return (_req, _res, next) => next();
   }
 
@@ -195,8 +200,17 @@ export function clerkProxyMiddleware(): RequestHandler {
       path.replace(new RegExp(`^${CLERK_PROXY_PATH}`), ""),
     on: {
       proxyReq: (proxyReq, req) => {
-        const protocol = req.headers["x-forwarded-proto"] || "https";
-        const host = getClerkProxyHost(req) || "";
+        const requestHost = normalizeHostname(getClerkProxyHost(req) || "");
+        const usePublicProxy =
+          isLocalDevHost(requestHost) &&
+          process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_");
+
+        const protocol = usePublicProxy
+          ? "https"
+          : (req.headers["x-forwarded-proto"] as string) || "https";
+        const host = usePublicProxy
+          ? "www.anima-protocol.com"
+          : getClerkProxyHost(req) || "";
         const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}`;
 
         proxyReq.setHeader("Clerk-Proxy-Url", proxyUrl);

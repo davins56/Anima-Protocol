@@ -108,4 +108,12 @@ describe("resolveClerkPublishableKey", () => {
     const key = resolveClerkPublishableKey("www.anima-protocol.com", prodKey);
     expect(key.startsWith("pk_")).toBe(true);
   });
+
+  it("uses the live fallback on localhost for local dev proxy", () => {
+    const prodKey =
+      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
+    expect(resolveClerkPublishableKey("127.0.0.1:23660", prodKey)).toBe(
+      prodKey,
+    );
+  });
 });

@@ -219,6 +219,58 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
+function configuredClerkProxyUrl() {
+  const value =
+    typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
+      ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
+      : "";
+
+  if (!value || value === "none" || value === "false" || value === "off") {
+    return "";
+  }
+
+  return value;
+}
+
+function isLocalDevHostname(hostname) {
+  const host = (hostname || "").toLowerCase();
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "127.0.0.1" ||
+    host.startsWith("127.0.0.1")
+  );
+}
+
+/**
+ * Production pk_live_ instances use the Clerk dashboard proxy
+ * (www.anima-protocol.com/api/__clerk). On localhost that URL is unreachable,
+ * so route Clerk through the local Vite → api-server proxy instead.
+ * pk_test_ always talks to the dev Clerk instance directly (no proxy).
+ * Set VITE_CLERK_PROXY_URL=none on Vercel to omit proxyUrl in production builds.
+ */
+function resolveClerkProxyUrl() {
+  const configured = configuredClerkProxyUrl();
+  if (configured) return configured;
+
+  if (typeof clerkPubKey === "string" && clerkPubKey.startsWith("pk_test_")) {
+    return "";
+  }
+
+  if (
+    import.meta.env.DEV &&
+    typeof window !== "undefined" &&
+    isLocalDevHostname(window.location.hostname) &&
+    typeof clerkPubKey === "string" &&
+    clerkPubKey.startsWith("pk_live_")
+  ) {
+    return `${window.location.origin}/api/__clerk`;
+  }
+
+  return "";
+}
+
+const clerkProxyUrl = resolveClerkProxyUrl();
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -262,6 +314,12 @@ function stripBase(path) {
 
 if (!clerkPubKey) {
   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
+}
+
+if (clerkPubKey.startsWith("sk_")) {
+  throw new Error(
+    "VITE_CLERK_PUBLISHABLE_KEY must be a publishable key (pk_live_… or pk_test_…), not a secret key (sk_…).",
+  );
 }
 
 if (
@@ -669,6 +727,7 @@ function ClerkProviderWithRoutes({ children }) {
   return (
     <ClerkProvider
       publishableKey={clerkPubKey}
+      {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
