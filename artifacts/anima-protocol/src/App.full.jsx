@@ -10,6 +10,9 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
+  ClerkFailed,
+  ClerkLoaded,
+  ClerkLoading,
   ClerkProvider,
   HandleSSOCallback,
   SignIn,
@@ -43,6 +46,10 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
+import {
+  resolveClerkProxyUrl,
+  shouldUseClerkProxy,
+} from "@/lib/clerkProxy";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -220,89 +227,8 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
-function clerkProxyEnvValue() {
-  return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-    : "";
-}
-
-function isClerkProxyExplicitlyDisabled() {
-  const value = clerkProxyEnvValue().toLowerCase();
-  return value === "none" || value === "false" || value === "off";
-}
-
-function configuredClerkProxyUrl() {
-  const value = clerkProxyEnvValue();
-  if (!value || isClerkProxyExplicitlyDisabled()) {
-    return "";
-  }
-  return value;
-}
-
-function isLocalDevHostname(hostname) {
-  const host = (hostname || "").toLowerCase();
-  return (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "127.0.0.1" ||
-    host.startsWith("127.0.0.1")
-  );
-}
-
-function isAnimaProductionHost(hostname) {
-  const host = (hostname || "").toLowerCase();
-  return (
-    host === "anima-protocol.com" ||
-    host === "www.anima-protocol.com" ||
-    host.endsWith(".anima-protocol.com")
-  );
-}
-
-function sameOriginClerkProxyUrl() {
-  if (typeof window === "undefined") return "";
-  return `${window.location.origin}/api/__clerk`;
-}
-
-/**
- * pk_test_ always talks to the dev Clerk instance directly (no proxy).
- *
- * pk_live_ on anima-protocol.com (and localhost dev) must use the same-origin
- * /api/__clerk proxy — it matches the Clerk dashboard Proxy URL
- * (https://www.anima-protocol.com/api/__clerk). Loading clerk.anima-protocol.com
- * directly while the dashboard expects the proxy breaks sign-in.
- *
- * Set VITE_CLERK_PROXY_URL=none only when intentionally disabling the proxy.
- */
-function resolveClerkProxyUrl() {
-  if (isClerkProxyExplicitlyDisabled()) {
-    return "";
-  }
-
-  const configured = configuredClerkProxyUrl();
-  if (configured) return configured;
-
-  if (typeof clerkPubKey !== "string" || clerkPubKey.startsWith("pk_test_")) {
-    return "";
-  }
-
-  if (typeof window === "undefined" || !clerkPubKey.startsWith("pk_live_")) {
-    return "";
-  }
-
-  const host = window.location.hostname;
-
-  if (import.meta.env.DEV && isLocalDevHostname(host)) {
-    return sameOriginClerkProxyUrl();
-  }
-
-  if (import.meta.env.PROD && isAnimaProductionHost(host)) {
-    return sameOriginClerkProxyUrl();
-  }
-
-  return "";
-}
-
-const clerkProxyUrl = resolveClerkProxyUrl();
+const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
+const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -515,7 +441,7 @@ function SocialAuthButtons({ mode }) {
       return;
     }
     let cancelled = false;
-    probeClerkConnectivity().then((hints) => {
+    probeClerkConnectivity(clerkPubKey).then((hints) => {
       if (!cancelled) setConnectHints(hints);
     });
     return () => {
@@ -673,15 +599,28 @@ function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
   return (
     <AuthFormShell mode="sign-in">
-      <SignIn
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-in…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-in is unavailable until Clerk connects. Use Retry above or
+          refresh after redeploying with CLERK_SECRET_KEY set on Vercel.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignIn
+          routing="path"
+          path={`${basePath}/sign-in`}
+          signUpUrl={`${basePath}/sign-up`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -690,15 +629,28 @@ function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
   return (
     <AuthFormShell mode="sign-up">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-up…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-up is unavailable until Clerk connects. Use Retry above or
+          refresh after redeploying with CLERK_SECRET_KEY set on Vercel.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -806,12 +758,42 @@ function HomeGate() {
   );
 }
 
+function ClerkStallRecovery({ useProxy, onToggleProxy }) {
+  const clerk = useClerk();
+  const toggledRef = useRef(false);
+
+  useEffect(() => {
+    if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
+
+    const timer = setTimeout(() => {
+      if (clerk.loaded || toggledRef.current) return;
+      toggledRef.current = true;
+      onToggleProxy(!useProxy);
+    }, 10_000);
+
+    return () => clearTimeout(timer);
+  }, [clerk.loaded, onToggleProxy, useProxy]);
+
+  return null;
+}
+
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
+  const [useProxy, setUseProxy] = useState(Boolean(initialClerkProxyUrl));
+  const [providerKey, setProviderKey] = useState(0);
+
+  const activeProxyUrl = useProxy ? resolveClerkProxyUrl(clerkPubKey) : "";
+
+  const handleToggleProxy = (nextUseProxy) => {
+    setUseProxy(nextUseProxy);
+    setProviderKey((key) => key + 1);
+  };
+
   return (
     <ClerkProvider
+      key={`clerk-${providerKey}-${useProxy ? "proxy" : "direct"}`}
       publishableKey={clerkPubKey}
-      {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}
+      {...(activeProxyUrl ? { proxyUrl: activeProxyUrl } : {})}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
@@ -834,6 +816,7 @@ function ClerkProviderWithRoutes({ children }) {
       routerPush={(to) => navigate(stripBase(to))}
       routerReplace={(to) => navigate(stripBase(to), { replace: true })}
     >
+      <ClerkStallRecovery useProxy={useProxy} onToggleProxy={handleToggleProxy} />
       <ClerkQueryClientCacheInvalidator />
       {children}
     </ClerkProvider>
