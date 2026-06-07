@@ -55593,9 +55593,6 @@ var import_express17 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
-// src/routes/index.ts
-var import_express15 = __toESM(require_express2(), 1);
-
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
 
@@ -59487,6 +59484,9 @@ router.get("/healthz", (_req, res) => {
   res.json(data);
 });
 var health_default = router;
+
+// src/routes/index.ts
+var import_express15 = __toESM(require_express2(), 1);
 
 // src/routes/openai/index.ts
 var import_express2 = __toESM(require_express2(), 1);
@@ -107102,6 +107102,13 @@ var DEFAULT_VECTOR = {
 };
 function initResonanceState(emotionalState, resonanceNotes, relationshipTier) {
   const vector2 = { ...DEFAULT_VECTOR };
+  if (emotionalState) {
+    if (typeof emotionalState.intimacy === "number") vector2.intimacy = emotionalState.intimacy;
+    if (typeof emotionalState.powerDynamic === "number") vector2.powerDynamic = emotionalState.powerDynamic;
+    if (typeof emotionalState.spiritualAttunement === "number") vector2.spiritualAttunement = emotionalState.spiritualAttunement;
+    if (typeof emotionalState.primalIntensity === "number") vector2.primalIntensity = emotionalState.primalIntensity;
+    if (typeof emotionalState.crossoverOpenness === "number") vector2.crossoverOpenness = emotionalState.crossoverOpenness;
+  }
   if (relationshipTier) {
     const tierIntimacy = {
       hostile: 5,
@@ -107111,14 +107118,7 @@ function initResonanceState(emotionalState, resonanceNotes, relationshipTier) {
       close: 75,
       devoted: 95
     };
-    vector2.intimacy = tierIntimacy[relationshipTier] ?? 30;
-  }
-  if (emotionalState) {
-    if (typeof emotionalState.intimacy === "number") vector2.intimacy = emotionalState.intimacy;
-    if (typeof emotionalState.powerDynamic === "number") vector2.powerDynamic = emotionalState.powerDynamic;
-    if (typeof emotionalState.spiritualAttunement === "number") vector2.spiritualAttunement = emotionalState.spiritualAttunement;
-    if (typeof emotionalState.primalIntensity === "number") vector2.primalIntensity = emotionalState.primalIntensity;
-    if (typeof emotionalState.crossoverOpenness === "number") vector2.crossoverOpenness = emotionalState.crossoverOpenness;
+    vector2.intimacy = tierIntimacy[relationshipTier] ?? vector2.intimacy;
   }
   let emotionalTone = "neutral";
   if (resonanceNotes) {
@@ -107656,7 +107656,7 @@ function buildCompanionPrompt(params) {
   const historyBlock = buildConversationContext(recentMessages, BUDGET.history);
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
-    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} this turn. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
+    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
 
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
@@ -108208,7 +108208,6 @@ var admin_default = router9;
 
 // src/routes/index.ts
 var router10 = (0, import_express15.Router)();
-router10.use(health_default);
 router10.use("/admin", admin_default);
 router10.use("/openai", openai_default2);
 router10.use("/openai", functions_default);
@@ -108562,7 +108561,7 @@ function clerkMultiDomainMiddleware() {
           publishableKey
         });
         const auth = state.toAuth();
-        if (auth.userId) {
+        if (auth?.userId) {
           Object.assign(req, {
             auth: (opts) => state.toAuth(opts)
           });
@@ -108614,6 +108613,7 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
 app.use(import_express17.default.json({ limit: "25mb" }));
 app.use(import_express17.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use("/api", health_default);
 app.use(clerkMultiDomainMiddleware());
 app.use("/api", routes_default);
 app.use(
