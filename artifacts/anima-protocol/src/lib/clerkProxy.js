@@ -50,6 +50,26 @@ export function ensureTrailingSlash(url) {
   return url.endsWith('/') ? url : `${url}/`;
 }
 
+function decodePublishableKeyPayload(clerkPubKey) {
+  if (typeof clerkPubKey !== 'string') return '';
+  const payload = clerkPubKey.split('_').slice(2).join('_');
+  if (!payload) return '';
+  try {
+    return atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+  } catch {
+    return '';
+  }
+}
+
+export function clerkFrontendApiHost(clerkPubKey) {
+  return decodePublishableKeyPayload(clerkPubKey).replace(/\$$/, '');
+}
+
+export function clerkFrontendApiBase(clerkPubKey) {
+  const host = clerkFrontendApiHost(clerkPubKey);
+  return host ? `https://${host}` : '';
+}
+
 /**
  * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
  */
@@ -117,4 +137,42 @@ export function clerkJsScriptProbeUrl(clerkPubKey) {
   const base = clerkProxyProbeBase(clerkPubKey);
   if (!base) return '';
   return `${base}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`;
+}
+
+export async function shouldFallbackToDirectClerk(
+  clerkPubKey,
+  fetchImpl = fetch,
+) {
+  const proxyBase = clerkProxyProbeBase(clerkPubKey);
+  const directBase = clerkFrontendApiBase(clerkPubKey);
+  if (!proxyBase || !directBase) return false;
+
+  const fetchOptions = () => ({
+    credentials: 'omit',
+    signal:
+      typeof AbortSignal !== 'undefined' &&
+      typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(5000)
+        : undefined,
+  });
+
+  try {
+    const proxyRes = await fetchImpl(
+      `${proxyBase}/v1/environment`,
+      fetchOptions(),
+    );
+    if (proxyRes.ok) return false;
+  } catch {
+    // If the proxy cannot be reached, try direct Clerk before falling back.
+  }
+
+  try {
+    const directRes = await fetchImpl(
+      `${directBase}/v1/environment`,
+      fetchOptions(),
+    );
+    return directRes.ok;
+  } catch {
+    return false;
+  }
 }
