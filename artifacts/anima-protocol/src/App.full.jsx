@@ -408,14 +408,6 @@ function filterProvidersByEnvList(providers) {
   return providers.filter((provider) => allowed.has(provider.strategy));
 }
 
-function prioritizeGitHubProvider(providers) {
-  return [...providers].sort((a, b) => {
-    if (a.strategy === "oauth_github") return -1;
-    if (b.strategy === "oauth_github") return 1;
-    return 0;
-  });
-}
-
 const CLERK_SSO_DASHBOARD_URL =
   "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
 
@@ -423,13 +415,13 @@ function clerkGitHubSetupHint() {
   const instance = clerkInstanceLabel();
   if (instance === "Development") {
     return (
-      "In Clerk Dashboard → Development → SSO connections: Add connection → " +
-      "For all users → GitHub. Leave “Use custom credentials” OFF (dev uses " +
-      "shared GitHub OAuth). Redirect URLs are already registered for anima-protocol.com."
+      "In Clerk Dashboard → Development → SSO connections: Add connections → " +
+      "For all users → Google and GitHub. Leave “Use custom credentials” OFF " +
+      "where Clerk offers shared dev OAuth. Redirect URLs are already registered for anima-protocol.com."
     );
   }
   return (
-    "In Clerk Dashboard → Production → SSO connections: enable GitHub with " +
+    "In Clerk Dashboard → Production → SSO connections: enable Google and GitHub with " +
     "custom OAuth credentials, set Proxy URL to https://www.anima-protocol.com/api/__clerk, " +
     "and add the sign-in/sso-callback redirect URLs."
   );
@@ -472,20 +464,19 @@ function SocialAuthButtons({ mode }) {
   const providers = useMemo(() => {
     if (!clerk.loaded) return [];
     if (!Array.isArray(enabledStrategies)) return [];
-    const enabled = prioritizeGitHubProvider(
-      filterProvidersByEnvList(
-        socialAuthProviders.filter((provider) =>
-          enabledStrategies.includes(provider.strategy),
-        ),
+    const enabled = filterProvidersByEnvList(
+      socialAuthProviders.filter((provider) =>
+        enabledStrategies.includes(provider.strategy),
       ),
     );
     return enabled;
   }, [clerk.loaded, enabledStrategies]);
 
-  const githubMissing =
+  const requiredSocialMissing =
     clerk.loaded &&
     Array.isArray(enabledStrategies) &&
-    !enabledStrategies.includes("oauth_github");
+    (!enabledStrategies.includes("oauth_google") ||
+      !enabledStrategies.includes("oauth_github"));
 
   const handleOAuth = async (strategy) => {
     if (!clerk.loaded || fetchStatus === "fetching") {
@@ -553,10 +544,10 @@ function SocialAuthButtons({ mode }) {
         </p>
       ) : providers.length === 0 ? (
         <div className="space-y-2 py-2 text-center text-sm text-cyan-400/50">
-          <p>GitHub sign-in is not configured in Clerk yet.</p>
+          <p>Google and GitHub sign-in are not configured in Clerk yet.</p>
           <p className="text-xs leading-relaxed text-cyan-400/40">
-            Add the GitHub OAuth Client ID and Client Secret in Clerk Production,
-            then redeploy.
+            Add the Google and GitHub OAuth Client IDs and Client Secrets in
+            Clerk Production, then redeploy.
           </p>
         </div>
       ) : (
@@ -575,10 +566,10 @@ function SocialAuthButtons({ mode }) {
           </button>
         ))
       )}
-      {githubMissing ? (
+      {requiredSocialMissing ? (
         <p className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
-          GitHub is not active for this Clerk {clerkInstanceLabel()} instance
-          yet. {clerkGitHubSetupHint()}{" "}
+          Google or GitHub is not active for this Clerk {clerkInstanceLabel()}{" "}
+          instance yet. {clerkGitHubSetupHint()}{" "}
           <a
             href={CLERK_SSO_DASHBOARD_URL}
             target="_blank"
@@ -601,8 +592,8 @@ function AuthFormShell({ mode, children }) {
           <SocialAuthButtons mode={mode} />
           <p className="mt-3 text-center text-xs text-cyan-400/45">
             {mode === "sign-in"
-              ? "GitHub is the primary login. Email login appears below once Clerk connects."
-              : "Create an account with GitHub, or use email below once Clerk connects."}
+              ? "Google and GitHub are the primary login options. Email login appears below once Clerk connects."
+              : "Create an account with Google or GitHub, or use email below once Clerk connects."}
           </p>
         </div>
         {children}

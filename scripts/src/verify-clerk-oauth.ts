@@ -9,7 +9,7 @@
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY?.trim();
 const CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY?.trim();
 
-const REQUIRED_STRATEGIES = ["oauth_github"] as const;
+const REQUIRED_STRATEGIES = ["oauth_google", "oauth_github"] as const;
 
 const DEFAULT_REDIRECT_URLS = [
   "https://www.anima-protocol.com/sign-in/sso-callback",
@@ -132,10 +132,10 @@ function dashboardHint(publishableKey: string | undefined): string {
   const slugNote = slug ? ` (instance: ${slug})` : "";
   return [
     `Clerk Dashboard → ${label}${slugNote} → Configure → SSO connections`,
-    "→ Add connection → For all users → GitHub",
+    "→ Add connection → For all users → Google and GitHub",
     label === "Development"
       ? "→ Leave “Use custom credentials” OFF (shared dev OAuth)"
-      : "→ Enable sign-up/sign-in + add your GitHub OAuth app credentials",
+      : "→ Enable sign-up/sign-in + add your Google and GitHub OAuth app credentials",
     "→ Paths → Redirect URLs: include www.anima-protocol.com/sign-in/sso-callback",
     "→ Redeploy Vercel after any env key changes",
   ].join("\n  ");
@@ -200,7 +200,7 @@ async function main(): Promise<void> {
   }
 
   if (!oauthOk) {
-    console.log("\nGitHub sign-in will fail until you enable it in Clerk:\n");
+    console.log("\nGoogle/GitHub sign-in will fail until you enable them in Clerk:\n");
     console.log(`  ${dashboardHint(CLERK_PUBLISHABLE_KEY)}`);
     console.log(
       "\nNote: Creating the repo on GitHub or signing into Clerk with GitHub",
@@ -212,7 +212,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log("\n✓ GitHub OAuth is configured for this Clerk instance");
+  console.log("\n✓ Google and GitHub OAuth are configured for this Clerk instance");
 }
 
 main().catch((error) => {
