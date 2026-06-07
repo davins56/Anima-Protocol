@@ -153,7 +153,7 @@ pnpm --filter @workspace/api-server run build
 PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=pk_test_... pnpm --filter @workspace/anima-protocol run build
 ```
 
-The root build runs typecheck and every package build. Because the mockup sandbox Vite config requires `PORT` and `BASE_PATH`, export those variables before using `pnpm run build`.
+The root `pnpm run build` is deployment-oriented: it builds the API bundle and frontend. Use `pnpm run build:all` when you explicitly need the older full workspace typecheck plus every package build.
 
 ## Analytics
 

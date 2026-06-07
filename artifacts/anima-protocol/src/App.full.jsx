@@ -371,17 +371,21 @@ function clerkInstanceLabel() {
 function getEnabledOAuthStrategies(clerk) {
   const environment =
     clerk?.__internal_environment ?? clerk?.environment ?? null;
+  const userSettings =
+    environment?.userSettings ?? environment?.user_settings ?? null;
   const strategies = new Set();
 
   const authList =
-    environment?.userSettings?.authenticatableSocialStrategies ?? null;
+    userSettings?.authenticatableSocialStrategies ??
+    userSettings?.authenticatable_social_strategies ??
+    null;
   if (Array.isArray(authList)) {
     for (const strategy of authList) {
       if (strategy) strategies.add(strategy);
     }
   }
 
-  const social = environment?.userSettings?.social;
+  const social = userSettings?.social;
   if (social && typeof social === "object") {
     for (const provider of Object.values(social)) {
       if (provider?.enabled && provider?.strategy) {
@@ -402,6 +406,14 @@ function filterProvidersByEnvList(providers) {
     envList.split(",").map((entry) => entry.trim()).filter(Boolean),
   );
   return providers.filter((provider) => allowed.has(provider.strategy));
+}
+
+function prioritizeGitHubProvider(providers) {
+  return [...providers].sort((a, b) => {
+    if (a.strategy === "oauth_github") return -1;
+    if (b.strategy === "oauth_github") return 1;
+    return 0;
+  });
 }
 
 const CLERK_SSO_DASHBOARD_URL =
@@ -460,9 +472,11 @@ function SocialAuthButtons({ mode }) {
   const providers = useMemo(() => {
     if (!clerk.loaded) return [];
     if (!Array.isArray(enabledStrategies)) return [];
-    const enabled = filterProvidersByEnvList(
-      socialAuthProviders.filter((provider) =>
-        enabledStrategies.includes(provider.strategy),
+    const enabled = prioritizeGitHubProvider(
+      filterProvidersByEnvList(
+        socialAuthProviders.filter((provider) =>
+          enabledStrategies.includes(provider.strategy),
+        ),
       ),
     );
     return enabled;
@@ -508,8 +522,10 @@ function SocialAuthButtons({ mode }) {
   return (
     <div className="w-full space-y-2">
       {!clerk.loaded && authStalled ? (
-        <div className="space-y-2 py-1 text-center text-sm text-cyan-400/60">
-          <p>Clerk could not connect.</p>
+        <div className="space-y-3 py-1 text-center text-sm text-cyan-400/60">
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-cyan-200">
+            Login is blocked
+          </p>
           {connectHints.length > 0 ? (
             <ul className="space-y-1 text-left text-xs leading-relaxed text-cyan-400/45">
               {connectHints.map((hint) => (
@@ -533,12 +549,16 @@ function SocialAuthButtons({ mode }) {
         </div>
       ) : !clerk.loaded ? (
         <p className="py-2 text-center text-sm text-cyan-400/50">
-          Loading sign-in options…
+          Connecting to secure login…
         </p>
       ) : providers.length === 0 ? (
-        <p className="py-2 text-center text-sm text-cyan-400/50">
-          No social sign-in providers configured in Clerk yet.
-        </p>
+        <div className="space-y-2 py-2 text-center text-sm text-cyan-400/50">
+          <p>GitHub sign-in is not configured in Clerk yet.</p>
+          <p className="text-xs leading-relaxed text-cyan-400/40">
+            Add the GitHub OAuth Client ID and Client Secret in Clerk Production,
+            then redeploy.
+          </p>
+        </div>
       ) : (
         providers.map(({ label, strategy, Icon }) => (
           <button
@@ -581,8 +601,8 @@ function AuthFormShell({ mode, children }) {
           <SocialAuthButtons mode={mode} />
           <p className="mt-3 text-center text-xs text-cyan-400/45">
             {mode === "sign-in"
-              ? "Use GitHub if that is how you created your account. You can also sign in with email below."
-              : "Or continue with email below."}
+              ? "GitHub is the primary login. Email login appears below once Clerk connects."
+              : "Create an account with GitHub, or use email below once Clerk connects."}
           </p>
         </div>
         {children}
@@ -602,8 +622,8 @@ function SignInPage() {
       </ClerkLoading>
       <ClerkFailed>
         <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
-          Email sign-in is unavailable until Clerk connects. Use Retry above or
-          refresh after redeploying with CLERK_SECRET_KEY set on Vercel.
+          Email login is unavailable until the Clerk keys are fixed and the app
+          is redeployed.
         </p>
       </ClerkFailed>
       <ClerkLoaded>
@@ -632,8 +652,8 @@ function SignUpPage() {
       </ClerkLoading>
       <ClerkFailed>
         <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
-          Email sign-up is unavailable until Clerk connects. Use Retry above or
-          refresh after redeploying with CLERK_SECRET_KEY set on Vercel.
+          Email sign-up is unavailable until the Clerk keys are fixed and the app
+          is redeployed.
         </p>
       </ClerkFailed>
       <ClerkLoaded>

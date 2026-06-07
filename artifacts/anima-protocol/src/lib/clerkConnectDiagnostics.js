@@ -4,6 +4,14 @@ import {
   clerkProxyProbeBase,
 } from '@/lib/clerkProxy';
 
+async function readProxyError(res) {
+  try {
+    return await res.clone().json();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Probe API + Clerk proxy when Clerk JS fails to load. Returns human-readable
  * hints for the sign-in error UI.
@@ -40,9 +48,15 @@ export async function probeClerkConnectivity(clerkPubKey) {
     });
     proxyOk = clerkRes.ok;
     if (!clerkRes.ok) {
-      if (clerkRes.status === 503) {
+      const proxyError = await readProxyError(clerkRes);
+      if (proxyError?.error === 'clerk_proxy_invalid_secret') {
         hints.push(
-          'Clerk proxy unavailable (503). Set CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY on Vercel (Production), then redeploy without cache.',
+          'Clerk proxy is misconfigured: Vercel Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
+        );
+        return hints;
+      } else if (clerkRes.status === 503) {
+        hints.push(
+          'Login service is unavailable (503). Confirm Vercel Production has the matching CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, and VITE_CLERK_PUBLISHABLE_KEY values, then redeploy without cache.',
         );
       } else if (clerkRes.status === 504 || clerkRes.status === 502) {
         hints.push(
@@ -71,7 +85,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
       scriptOk = scriptRes.ok;
       if (!scriptRes.ok) {
         hints.push(
-          `Clerk JS bundle failed to load (${scriptRes.status}) via ${scriptUrl}. Redeploy the API after merging the latest Clerk proxy fix.`,
+          `Login script failed to load (${scriptRes.status}) via ${scriptUrl}. Fix the Clerk proxy environment values, then redeploy without cache.`,
         );
       }
     } catch {
