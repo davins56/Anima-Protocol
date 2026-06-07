@@ -374,17 +374,21 @@ function clerkInstanceLabel() {
 function getEnabledOAuthStrategies(clerk) {
   const environment =
     clerk?.__internal_environment ?? clerk?.environment ?? null;
+  const userSettings =
+    environment?.userSettings ?? environment?.user_settings ?? null;
   const strategies = new Set();
 
   const authList =
-    environment?.userSettings?.authenticatableSocialStrategies ?? null;
+    userSettings?.authenticatableSocialStrategies ??
+    userSettings?.authenticatable_social_strategies ??
+    null;
   if (Array.isArray(authList)) {
     for (const strategy of authList) {
       if (strategy) strategies.add(strategy);
     }
   }
 
-  const social = environment?.userSettings?.social;
+  const social = userSettings?.social;
   if (social && typeof social === "object") {
     for (const provider of Object.values(social)) {
       if (provider?.enabled && provider?.strategy) {
