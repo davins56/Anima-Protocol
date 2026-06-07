@@ -96,9 +96,16 @@ describe("resolveClerkPublishableKey", () => {
     expect(resolveClerkPublishableKey("localhost:23660", devKey)).toBe(devKey);
   });
 
-  it("uses host-based key for custom domains even when fallback is dev", () => {
-    const key = resolveClerkPublishableKey("www.anima-protocol.com", devKey);
-    expect(key).not.toBe(devKey);
+  it("uses dev fallback on custom domains when env is dev (no Clerk proxy on client)", () => {
+    expect(resolveClerkPublishableKey("www.anima-protocol.com", devKey)).toBe(
+      devKey,
+    );
+  });
+
+  it("uses host-based key for production custom domains", () => {
+    const prodKey =
+      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
+    const key = resolveClerkPublishableKey("www.anima-protocol.com", prodKey);
     expect(key.startsWith("pk_")).toBe(true);
   });
 });
