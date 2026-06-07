@@ -191,38 +191,6 @@ const PageLoader = () => (
   </div>
 );
 
-function ClerkLoadError({ proxyUrl, onRetry }) {
-  const instance = clerkInstanceLabel();
-  return (
-    <div className="flex items-center justify-center h-screen-safe px-6">
-      <div className="max-w-md text-center space-y-4">
-        <p className="font-mono text-xs text-primary/70 tracking-[0.2em] uppercase">
-          Sign-in unavailable
-        </p>
-        <p className="text-sm text-primary/50 leading-relaxed">
-          Clerk ({instance}) did not finish loading. This is usually a network
-          block, a missing{" "}
-          <span className="text-primary/70">VITE_CLERK_PUBLISHABLE_KEY</span> at
-          build time, or a proxy mismatch.
-          {proxyUrl ? (
-            <>
-              {" "}
-              Proxy: <span className="text-primary/70">{proxyUrl}</span>
-            </>
-          ) : null}
-        </p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 border border-primary/40 text-primary hover:bg-primary/10"
-        >
-          Retry
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── Clerk auth wiring ─────────────────────────────────────────────────────
 // BASE_URL is "/" for this artifact, so basePath is "" and the sign-in/up
 // routes live at the domain root. Canonical Clerk constants are copied verbatim
@@ -290,11 +258,15 @@ function isAnimaProductionHost(hostname) {
 }
 
 /**
- * Production pk_live_ instances use the Clerk dashboard proxy
- * (www.anima-protocol.com/api/__clerk). On localhost that URL is unreachable,
- * so route Clerk through the local Vite → api-server proxy instead.
  * pk_test_ always talks to the dev Clerk instance directly (no proxy).
- * Set VITE_CLERK_PROXY_URL=none to skip all proxying (direct clerk.* domain).
+ *
+ * pk_live_ with a custom Frontend API host (clerk.anima-protocol.com) also loads
+ * directly on localhost — do not route through /api/__clerk locally; that proxy
+ * targets production Origin headers and fails when the api-server cannot reach
+ * Clerk upstream.
+ *
+ * On production anima-protocol.com, same-origin /api/__clerk is required for
+ * OAuth on the public domain unless VITE_CLERK_PROXY_URL=none.
  */
 function resolveClerkProxyUrl() {
   if (isClerkProxyExplicitlyDisabled()) {
@@ -308,17 +280,12 @@ function resolveClerkProxyUrl() {
     return "";
   }
 
-  if (typeof window === "undefined" || !clerkPubKey.startsWith("pk_live_")) {
-    return "";
-  }
-
-  const host = window.location.hostname;
-
-  if (import.meta.env.DEV && isLocalDevHostname(host)) {
-    return `${window.location.origin}/api/__clerk`;
-  }
-
-  if (import.meta.env.PROD && isAnimaProductionHost(host)) {
+  if (
+    typeof window !== "undefined" &&
+    import.meta.env.PROD &&
+    clerkPubKey.startsWith("pk_live_") &&
+    isAnimaProductionHost(window.location.hostname)
+  ) {
     return `${window.location.origin}/api/__clerk`;
   }
 
@@ -763,6 +730,18 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
+  const { isLoadingAuth, authStalled } = useAuth();
+
+  // Clerk <Show> renders nothing until the SDK loads. If Clerk stalls, fall back
+  // to the public landing so the app still loads in guest mode.
+  if (isLoadingAuth && authStalled) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Landing />
+      </Suspense>
+    );
+  }
+
   return (
     <>
       <Show when="signed-in">
@@ -823,6 +802,7 @@ const PUBLIC_PREFIXES = [
 const AuthenticatedApp = () => {
   const {
     isLoadingAuth,
+    authStalled,
     isLoadingPublicSettings,
     authError,
     navigateToLogin,
@@ -943,16 +923,20 @@ const AuthenticatedApp = () => {
   // never stack. The disclaimer fires onAccept on mount when already accepted,
   // so returning users surface the tutorial immediately (e.g. when replaying).
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
-  const [authWaitExpired, setAuthWaitExpired] = useState(false);
 
   useEffect(() => {
-    if (!isLoadingAuth) {
-      setAuthWaitExpired(false);
-      return;
-    }
-    const timer = setTimeout(() => setAuthWaitExpired(true), 8000);
-    return () => clearTimeout(timer);
-  }, [isLoadingAuth]);
+    if (!isLoadingAuth || !authStalled) return;
+    toast.error("Sign-in is temporarily unavailable.", {
+      id: "anima-clerk-unavailable",
+      description:
+        "The app will load in guest mode. Check your connection or Clerk keys, then refresh.",
+      duration: Infinity,
+      action: {
+        label: "Retry",
+        onClick: () => window.location.reload(),
+      },
+    });
+  }, [isLoadingAuth, authStalled]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -963,17 +947,8 @@ const AuthenticatedApp = () => {
   }
 
   // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth && !authWaitExpired) {
+  if (isLoadingAuth && !authStalled) {
     return <PageLoader />;
-  }
-
-  if (isLoadingAuth && authWaitExpired) {
-    return (
-      <ClerkLoadError
-        proxyUrl={clerkProxyUrl}
-        onRetry={() => window.location.reload()}
-      />
-    );
   }
 
   // Gate protected routes: signed-out users are sent to the public Landing.

@@ -141,6 +141,16 @@ export const AuthProvider = ({ children }) => {
 
   const isAuthenticated = !!isSignedIn;
   const isLoadingAuth = !isLoaded;
+  const [authStalled, setAuthStalled] = useState(false);
+
+  useEffect(() => {
+    if (!isLoadingAuth) {
+      setAuthStalled(false);
+      return;
+    }
+    const timer = setTimeout(() => setAuthStalled(true), 8000);
+    return () => clearTimeout(timer);
+  }, [isLoadingAuth]);
 
   const navigateToLogin = useCallback(() => {
     navigate('/sign-in');
@@ -176,6 +186,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated,
         setIsAuthenticated: () => {},
         isLoadingAuth,
+        authStalled,
         authChecked: isLoaded,
         checkUserAuth: () => {},
         isLoadingPublicSettings,
