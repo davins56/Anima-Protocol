@@ -42,6 +42,7 @@ import {
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
+import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -257,28 +258,20 @@ function isAnimaProductionHost(hostname) {
   );
 }
 
-/** True when the publishable key targets a custom clerk.{domain} FAPI (not *.clerk.accounts.dev). */
-function isCustomFrontendApiKey(key) {
-  const match =
-    typeof key === "string" ? key.match(/^pk_(?:test|live)_(.+)$/) : null;
-  if (!match) return false;
-  try {
-    const decoded = atob(match[1]);
-    return !decoded.includes("clerk.accounts.dev");
-  } catch {
-    return false;
-  }
+function sameOriginClerkProxyUrl() {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}/api/__clerk`;
 }
 
 /**
  * pk_test_ always talks to the dev Clerk instance directly (no proxy).
  *
- * pk_live_ + custom FAPI (clerk.anima-protocol.com): load Clerk JS directly from
- * that host in production. Forcing /api/__clerk when the proxy is misconfigured
- * prevents Clerk from loading at all.
+ * pk_live_ on anima-protocol.com (and localhost dev) must use the same-origin
+ * /api/__clerk proxy — it matches the Clerk dashboard Proxy URL
+ * (https://www.anima-protocol.com/api/__clerk). Loading clerk.anima-protocol.com
+ * directly while the dashboard expects the proxy breaks sign-in.
  *
- * pk_live_ on localhost: route through the local Vite → api-server proxy so
- * Clerk-Proxy-Url matches www.anima-protocol.com (dashboard setting).
+ * Set VITE_CLERK_PROXY_URL=none only when intentionally disabling the proxy.
  */
 function resolveClerkProxyUrl() {
   if (isClerkProxyExplicitlyDisabled()) {
@@ -299,15 +292,11 @@ function resolveClerkProxyUrl() {
   const host = window.location.hostname;
 
   if (import.meta.env.DEV && isLocalDevHostname(host)) {
-    return `${window.location.origin}/api/__clerk`;
-  }
-
-  if (isCustomFrontendApiKey(clerkPubKey)) {
-    return "";
+    return sameOriginClerkProxyUrl();
   }
 
   if (import.meta.env.PROD && isAnimaProductionHost(host)) {
-    return `${window.location.origin}/api/__clerk`;
+    return sameOriginClerkProxyUrl();
   }
 
   return "";
@@ -518,6 +507,21 @@ function SocialAuthButtons({ mode }) {
   const { authStalled } = useAuth();
   const [pendingStrategy, setPendingStrategy] = useState(null);
   const [enabledStrategies, setEnabledStrategies] = useState(null);
+  const [connectHints, setConnectHints] = useState([]);
+
+  useEffect(() => {
+    if (!authStalled || clerk.loaded) {
+      setConnectHints([]);
+      return;
+    }
+    let cancelled = false;
+    probeClerkConnectivity().then((hints) => {
+      if (!cancelled) setConnectHints(hints);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authStalled, clerk.loaded]);
 
   useEffect(() => {
     if (!clerk.loaded) {
@@ -584,11 +588,19 @@ function SocialAuthButtons({ mode }) {
       {!clerk.loaded && authStalled ? (
         <div className="space-y-2 py-1 text-center text-sm text-cyan-400/60">
           <p>Clerk could not connect.</p>
-          <p className="text-xs leading-relaxed text-cyan-400/45">
-            {import.meta.env.DEV
-              ? "Start the api-server on port 8080, confirm pk_live_ keys in .env, then refresh."
-              : "Redeploy with VITE_CLERK_PUBLISHABLE_KEY=pk_live_… at build time and ensure https://www.anima-protocol.com/api/healthz returns ok."}
-          </p>
+          {connectHints.length > 0 ? (
+            <ul className="space-y-1 text-left text-xs leading-relaxed text-cyan-400/45">
+              {connectHints.map((hint) => (
+                <li key={hint}>• {hint}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs leading-relaxed text-cyan-400/45">
+              {import.meta.env.DEV
+                ? "Start the api-server on port 8080, confirm pk_live_ keys in .env, then refresh."
+                : "Checking API and Clerk proxy…"}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => window.location.reload()}

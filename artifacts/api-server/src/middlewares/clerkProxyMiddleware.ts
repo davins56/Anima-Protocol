@@ -190,7 +190,13 @@ function clerkProxyEnabled(): boolean {
 export function clerkProxyMiddleware(): RequestHandler {
   const secretKey = process.env.CLERK_SECRET_KEY;
   if (!clerkProxyEnabled() || !secretKey) {
-    return (_req, _res, next) => next();
+    return (_req, res) => {
+      res.status(503).json({
+        error: "clerk_proxy_unavailable",
+        message:
+          "Clerk proxy is not configured. Set CLERK_SECRET_KEY (and CLERK_PUBLISHABLE_KEY) on the server.",
+      });
+    };
   }
 
   return createProxyMiddleware({

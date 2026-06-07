@@ -55,7 +55,7 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_CLERK_PROXY_URL` | Explicit proxy URL, or `none` / `false` / `off` to disable all proxying. When unset, `pk_live_` auto-proxies through `/api/__clerk` on `anima-protocol.com` and on localhost dev |
 | `VITE_MIXPANEL_TOKEN` | Frontend analytics |
 
-**Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`). This project uses a **custom Clerk FAPI** (`clerk.anima-protocol.com` in the key) — production loads Clerk **directly** from that host (no `/api/__clerk` proxy unless you set `VITE_CLERK_PROXY_URL` explicitly). Enable OAuth under Clerk **Production** → SSO connections, and redeploy **without build cache**.
+**Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`). Leave `VITE_CLERK_PROXY_URL` **empty** (do not set `none`) so production uses `/api/__clerk` (must match Clerk dashboard Proxy URL). Verify `curl https://www.anima-protocol.com/api/healthz` and `curl https://www.anima-protocol.com/api/__clerk/v1/environment` return 200 after deploy. Redeploy **without build cache**.
 
 **Local dev with `pk_live_`:** run **api-server on 8080** and the Vite app on 23660 — the frontend auto-proxies Clerk through `http://localhost:23660/api/__clerk` so the dashboard proxy URL (`www.anima-protocol.com/api/__clerk`) matches. For simpler local auth, use **`pk_test_`** keys from the Clerk Development instance instead.
 
