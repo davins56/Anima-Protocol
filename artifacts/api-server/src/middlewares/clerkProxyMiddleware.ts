@@ -92,27 +92,25 @@ function isBackendProxyHost(hostname: string): boolean {
 }
 
 /**
- * Pick the Clerk publishable key for this request. The dev fallback key is only
- * used for local development hosts — never for Vercel custom domains proxied to
- * Replit, where the JWT was minted for clerk.{public-host}.
+ * Pick the Clerk publishable key for JWT verification.
+ *
+ * Development (`pk_test_`): the browser skips the Clerk proxy on custom domains
+ * (see App.full.jsx) and talks to the dev Clerk instance directly, so tokens
+ * must be verified with the same dev publishable key from env — not
+ * publishableKeyFromHost(clerk.{hostname}).
+ *
+ * Production (`pk_live_`): sessions on custom domains are minted via the
+ * /api/__clerk proxy, so verification uses the host-derived publishable key.
  */
 export function resolveClerkPublishableKey(
   host: string | undefined,
   fallbackKey: string | undefined,
 ): string {
   const hostname = normalizeHostname(host);
-  const useDevFallback =
-    fallbackKey &&
-    isDevelopmentFromPublishableKey(fallbackKey) &&
-    isLocalDevHost(hostname);
-  if (useDevFallback) return fallbackKey;
-  // publishableKeyFromHost also short-circuits on dev fallbacks — strip them
-  // for production/custom-domain hosts so verification uses clerk.{hostname}.
-  const hostFallback =
-    fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)
-      ? undefined
-      : fallbackKey;
-  return publishableKeyFromHost(hostname, hostFallback);
+  if (fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)) {
+    return fallbackKey;
+  }
+  return publishableKeyFromHost(hostname, fallbackKey);
 }
 
 export function getClerkProxyHost(req: {
