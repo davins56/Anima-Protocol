@@ -436,14 +436,16 @@ function filterProvidersByEnvList(providers) {
   return providers.filter((provider) => allowed.has(provider.strategy));
 }
 
+const CLERK_SSO_DASHBOARD_URL =
+  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
+
 function clerkGitHubSetupHint() {
   const instance = clerkInstanceLabel();
   if (instance === "Development") {
     return (
       "In Clerk Dashboard → Development → SSO connections: Add connection → " +
       "For all users → GitHub. Leave “Use custom credentials” OFF (dev uses " +
-      "shared GitHub OAuth). Then add https://www.anima-protocol.com/sign-in/sso-callback " +
-      "under Paths → Redirect URLs."
+      "shared GitHub OAuth). Redirect URLs are already registered for anima-protocol.com."
     );
   }
   return (
@@ -548,7 +550,15 @@ function SocialAuthButtons({ mode }) {
       {githubMissing ? (
         <p className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
           GitHub is not active for this Clerk {clerkInstanceLabel()} instance
-          yet. {clerkGitHubSetupHint()}
+          yet. {clerkGitHubSetupHint()}{" "}
+          <a
+            href={CLERK_SSO_DASHBOARD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-cyan-300 underline hover:text-cyan-200"
+          >
+            Open Clerk SSO settings
+          </a>
         </p>
       ) : null}
     </div>
