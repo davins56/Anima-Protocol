@@ -1,15 +1,11 @@
 # Dependencies
 node_modules/
-**/node_modules/
 .pnpm-store/
 
 # Environment and local secrets
 .env
 .env.*
-**/.env
-**/.env.*
 !.env.example
-!**/.env.example
 *.pem
 *.key
 *.p12
@@ -33,37 +29,25 @@ lerna-debug.log*
 
 # Build outputs
 dist/
-**/dist/
 dist-ssr/
-**/dist-ssr/
 build/
-**/build/
 coverage/
-**/coverage/
 *.tsbuildinfo
-.tsbuildinfo
 
 # Vite and tooling caches
 .vite/
-**/.vite/
 .vite-inspect/
-**/.vite-inspect/
 .turbo/
 .eslintcache
 .stylelintcache
 .parcel-cache/
 .cache/
-**/.cache/
 
 # Tests and browser automation output
 test-results/
-**/test-results/
 playwright-report/
-**/playwright-report/
 blob-report/
-**/blob-report/
 .playwright/
-**/.playwright/
 
 # Local database and generated runtime state
 *.sqlite
