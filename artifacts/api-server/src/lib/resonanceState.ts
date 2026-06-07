@@ -47,7 +47,17 @@ export function initResonanceState(
 ): ResonanceState {
   const vector = { ...DEFAULT_VECTOR };
 
-  // Seed from relationship tier
+  // Seed from stored emotional state
+  if (emotionalState) {
+    if (typeof emotionalState.intimacy === "number") vector.intimacy = emotionalState.intimacy;
+    if (typeof emotionalState.powerDynamic === "number") vector.powerDynamic = emotionalState.powerDynamic;
+    if (typeof emotionalState.spiritualAttunement === "number") vector.spiritualAttunement = emotionalState.spiritualAttunement;
+    if (typeof emotionalState.primalIntensity === "number") vector.primalIntensity = emotionalState.primalIntensity;
+    if (typeof emotionalState.crossoverOpenness === "number") vector.crossoverOpenness = emotionalState.crossoverOpenness;
+  }
+
+  // The relationship tier is the current coarse-grained relationship state.
+  // Apply it after stored memory so stale snapshots cannot downgrade a known tier.
   if (relationshipTier) {
     const tierIntimacy: Record<string, number> = {
       hostile: 5,
@@ -57,16 +67,7 @@ export function initResonanceState(
       close: 75,
       devoted: 95,
     };
-    vector.intimacy = tierIntimacy[relationshipTier] ?? 30;
-  }
-
-  // Seed from stored emotional state
-  if (emotionalState) {
-    if (typeof emotionalState.intimacy === "number") vector.intimacy = emotionalState.intimacy;
-    if (typeof emotionalState.powerDynamic === "number") vector.powerDynamic = emotionalState.powerDynamic;
-    if (typeof emotionalState.spiritualAttunement === "number") vector.spiritualAttunement = emotionalState.spiritualAttunement;
-    if (typeof emotionalState.primalIntensity === "number") vector.primalIntensity = emotionalState.primalIntensity;
-    if (typeof emotionalState.crossoverOpenness === "number") vector.crossoverOpenness = emotionalState.crossoverOpenness;
+    vector.intimacy = tierIntimacy[relationshipTier] ?? vector.intimacy;
   }
 
   // Detect tone from resonance notes

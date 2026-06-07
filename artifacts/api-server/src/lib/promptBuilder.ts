@@ -287,7 +287,7 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   // 9. Group mode instruction
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
-    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} this turn. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
+    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
 
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
