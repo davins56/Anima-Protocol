@@ -203,19 +203,14 @@ const viteClerkPublishableKey =
     : "";
 
 /**
- * Match api-server resolveClerkPublishableKey: Development keys (pk_test_) talk
- * to the dev Clerk instance directly on custom domains (no proxy). Host-derived
- * pk_live_ keys must not override a configured pk_test_ build — that mismatch
- * makes oauth_github fail with "strategy not allowed" when GitHub is only
- * enabled in the Development dashboard.
+ * Use the build-time publishable key when set (pk_test_ or pk_live_). Only fall
+ * back to host-derived keys when no env key is configured.
  */
 function resolveFrontendClerkPublishableKey(hostname, envKey) {
-  if (envKey.startsWith("pk_test_")) {
+  if (envKey.startsWith("pk_test_") || envKey.startsWith("pk_live_")) {
     return envKey;
   }
-  if (envKey.startsWith("pk_live_")) {
-    return publishableKeyFromHost(hostname, envKey);
-  }
+
   return publishableKeyFromHost(hostname, envKey || undefined);
 }
 
@@ -224,45 +219,58 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
-// Clerk Frontend API proxy — only when explicitly configured or for production
-// Clerk keys on same-origin hosts. Development keys (pk_test_*) break with the
-// proxy on custom domains (POST /api/__clerk/v1/client → 400 Origin mismatch).
 function configuredClerkProxyUrl() {
-  return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-    : "";
+  const value =
+    typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
+      ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
+      : "";
+
+  if (!value || value === "none" || value === "false" || value === "off") {
+    return "";
+  }
+
+  return value;
 }
 
-function isSameOriginProductionHost() {
-  if (typeof window === "undefined" || !import.meta.env.PROD) return false;
-  const host = window.location.hostname.toLowerCase();
+function isLocalDevHostname(hostname) {
+  const host = (hostname || "").toLowerCase();
   return (
-    host === "anima-protocol.com" ||
-    host === "www.anima-protocol.com" ||
-    host.endsWith(".anima-protocol.com") ||
-    host.endsWith(".replit.app") ||
-    host.endsWith(".vercel.app")
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "127.0.0.1" ||
+    host.startsWith("127.0.0.1")
   );
 }
 
-function isDevClerkKey(key) {
-  const builtIn =
-    typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
-      ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-      : "";
-  if (builtIn.startsWith("pk_test_")) return true;
-  return typeof key === "string" && key.startsWith("pk_test_");
-}
-
-function effectiveClerkProxyUrl() {
+/**
+ * Production pk_live_ instances use the Clerk dashboard proxy
+ * (www.anima-protocol.com/api/__clerk). On localhost that URL is unreachable,
+ * so route Clerk through the local Vite → api-server proxy instead.
+ * pk_test_ always talks to the dev Clerk instance directly (no proxy).
+ * Set VITE_CLERK_PROXY_URL=none on Vercel to omit proxyUrl in production builds.
+ */
+function resolveClerkProxyUrl() {
   const configured = configuredClerkProxyUrl();
   if (configured) return configured;
-  if (isDevClerkKey(clerkPubKey)) return "";
-  if (!isSameOriginProductionHost()) return "";
-  return `${window.location.origin}/api/__clerk`;
+
+  if (typeof clerkPubKey === "string" && clerkPubKey.startsWith("pk_test_")) {
+    return "";
+  }
+
+  if (
+    import.meta.env.DEV &&
+    typeof window !== "undefined" &&
+    isLocalDevHostname(window.location.hostname) &&
+    typeof clerkPubKey === "string" &&
+    clerkPubKey.startsWith("pk_live_")
+  ) {
+    return `${window.location.origin}/api/__clerk`;
+  }
+
+  return "";
 }
 
-const clerkProxyUrl = effectiveClerkProxyUrl();
+const clerkProxyUrl = resolveClerkProxyUrl();
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -306,6 +314,12 @@ function stripBase(path) {
 
 if (!clerkPubKey) {
   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
+}
+
+if (clerkPubKey.startsWith("sk_")) {
+  throw new Error(
+    "VITE_CLERK_PUBLISHABLE_KEY must be a publishable key (pk_live_… or pk_test_…), not a secret key (sk_…).",
+  );
 }
 
 if (
