@@ -1,16 +1,10 @@
 import { Router } from "express";
 import { db, conversations, messages } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import OpenAI from "openai";
 import { getAuth } from "@clerk/express";
 import { rateLimit } from "../../lib/rateLimit";
 import { isModelUnavailableError, resolveModel, routeModel } from "../../lib/modelRouter";
-
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY must be set.");
-}
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { getOpenAIClient } from "../../lib/openaiClient";
 
 const router = Router();
 
@@ -111,7 +105,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
 
     let stream;
     try {
-      stream = await openai.chat.completions.create({
+      stream = await getOpenAIClient().chat.completions.create({
         model: routed.model,
         max_tokens: routed.maxTokens,
         messages: chatMessages,
@@ -124,7 +118,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
       if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
         usedModel = standard.model;
         usedTier = standard.tier;
-        stream = await openai.chat.completions.create({
+        stream = await getOpenAIClient().chat.completions.create({
           model: standard.model,
           max_tokens: standard.maxTokens,
           messages: chatMessages,

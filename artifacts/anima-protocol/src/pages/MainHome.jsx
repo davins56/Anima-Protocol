@@ -78,7 +78,6 @@ export default function MainHome() {
   const [selectedMode, setSelectedMode] = useState("serenity");
   const [greeting, setGreeting] = useState(GREETINGS[0]);
   const [loading, setLoading] = useState(true);
-  console.log("[Anima:loading-debug] MainHome render", { loading });
   const [aiEditOpen, setAiEditOpen] = useState(false);
   // The image fed into the AI edit modal: either the saved avatar (edit flow)
   // or a freshly picked photo from disk (pick-then-edit flow).

@@ -8,6 +8,8 @@ replit.nix
 *.log
 dist/
 build/
+*.tsbuildinfo
+.tsbuildinfo
 .DS_Store
 .aider*
 *.tsbuildinfo

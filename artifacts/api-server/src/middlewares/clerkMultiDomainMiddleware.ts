@@ -69,7 +69,7 @@ export function clerkMultiDomainMiddleware(): RequestHandler {
           publishableKey,
         });
         const auth = state.toAuth();
-        if (auth.userId) {
+        if (auth?.userId) {
           Object.assign(req, {
             auth: (opts?: Parameters<typeof state.toAuth>[0]) =>
               state.toAuth(opts),

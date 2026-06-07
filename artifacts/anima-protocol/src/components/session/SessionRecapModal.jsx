@@ -33,7 +33,8 @@ export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
 
       // Compile the recap
       const compiledRecap = {
-        title: session.title || "Untitled Session",
+        originalTitle: session.title || "Untitled Session",
+        title: summaryRes?.data?.title || session.title || "Session",
         date: new Date().toLocaleDateString("en-US", {
           weekday: "long",
           year: "numeric",
@@ -46,7 +47,6 @@ export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
         }),
         messageCount: session.messages?.length || 0,
         summary: summaryRes?.data?.summary || "A narrative journey unfolds...",
-        title: summaryRes?.data?.title || session.title || "Session",
         keyMoments: summaryRes?.data?.key_moments || [],
         characters: summaryRes?.data?.characters_involved || [],
         emotionalArc: summaryRes?.data?.emotional_arc || "Undefined",

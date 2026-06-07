@@ -5,6 +5,7 @@ import { track } from "@/lib/analytics";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Check, Zap, Crown, Infinity } from "lucide-react";
 import { motion } from "framer-motion";
+import toast from "react-hot-toast";
 
 const PLANS = [
   {
@@ -95,19 +96,21 @@ export default function PremiumPlans() {
       purchase_type: tier === "eternal" ? "one-time" : "subscription",
       from_tier: currentTier || "free",
     });
-    if (tier === "eternal") {
-      // Redirect to lifetime purchase
-      await base44.functions.invoke("createCheckoutSession", {
-        tier: "eternal",
-        type: "one-time",
-      });
-    } else {
-      // Redirect to subscription
-      await base44.functions.invoke("createCheckoutSession", {
-        tier,
-        type: "subscription",
-      });
+    const response = await base44.functions.invoke("createCheckoutSession", {
+      tier,
+      type: tier === "eternal" ? "one-time" : "subscription",
+      success_url: `${window.location.origin}/`,
+      cancel_url: window.location.href,
+    });
+    const checkoutUrl =
+      response?.data?.checkout_url || response?.checkout_url || response?.url;
+    if (checkoutUrl) {
+      window.location.href = checkoutUrl;
+      return;
     }
+    toast.error(
+      response?.error || response?.data?.error || "Checkout is not configured yet.",
+    );
   };
 
   return (
