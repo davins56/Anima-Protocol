@@ -179,11 +179,15 @@ export default function MainHome() {
   useEffect(() => {
     setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
     let cancelled = false;
+    const loadingTimeout = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 12000);
     whenBootstrapReady().then(() => {
       if (!cancelled) loadHomeData();
     });
     return () => {
       cancelled = true;
+      clearTimeout(loadingTimeout);
     };
   }, [loadHomeData]);
 

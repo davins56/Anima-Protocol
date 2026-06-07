@@ -52,10 +52,10 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) — must match `CLERK_PUBLISHABLE_KEY`; Vite build also reads `CLERK_PUBLISHABLE_KEY` if `VITE_` is unset |
 | `CLERK_PUBLISHABLE_KEY` | API `clerkMiddleware` |
 | `CLERK_SECRET_KEY` | API session verification |
-| `VITE_CLERK_PROXY_URL` | Frontend proxy URL; `none` / `false` / `off` disables proxy (use with `pk_live_` on Vercel). Empty auto-proxies on production hosts unless `pk_test_*` |
+| `VITE_CLERK_PROXY_URL` | Explicit proxy URL, or `none` / `false` / `off` to disable all proxying. When unset, `pk_live_` auto-proxies through `/api/__clerk` on `anima-protocol.com` and on localhost dev |
 | `VITE_MIXPANEL_TOKEN` | Frontend analytics |
 
-**Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`), set `VITE_CLERK_PROXY_URL=none`, enable OAuth providers under Clerk **Production** → SSO connections, and redeploy **without build cache**.
+**Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`), leave `VITE_CLERK_PROXY_URL` empty so the app proxies Clerk through `https://www.anima-protocol.com/api/__clerk` (set `none` only if you use direct `clerk.*` without the app proxy), enable OAuth under Clerk **Production** → SSO connections, and redeploy **without build cache**.
 
 **Local dev with `pk_live_`:** the frontend auto-sets `proxyUrl` to `http://localhost:<port>/api/__clerk` so Clerk JS loads through the local api-server proxy (dashboard proxy `www.anima-protocol.com` is unreachable from localhost).
 

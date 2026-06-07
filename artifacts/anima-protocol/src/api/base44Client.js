@@ -19,31 +19,17 @@ const STORE_BASE = () => apiUrl('/store');
 // registers a token getter here (see setAuthTokenGetter) so every request can
 // attach the user's Clerk session token. Calls are gated until a getter exists.
 let tokenGetter = null;
-let authGetterReady = false;
-let resolveAuthGetterReady;
-const authGetterReadyPromise = new Promise((r) => {
-  resolveAuthGetterReady = r;
-});
-
-function markAuthGetterReady() {
-  if (authGetterReady) return;
-  authGetterReady = true;
-  resolveAuthGetterReady();
-}
 
 export function setAuthTokenGetter(fn) {
   tokenGetter = fn;
-  markAuthGetterReady();
 }
 
 // Clear the registered getter on sign-out so stale tokens are never reused.
 export function clearAuthTokenGetter() {
   tokenGetter = null;
-  markAuthGetterReady();
 }
 
 async function getToken() {
-  if (!authGetterReady) await authGetterReadyPromise;
   if (!tokenGetter) return null;
   try {
     return await tokenGetter();

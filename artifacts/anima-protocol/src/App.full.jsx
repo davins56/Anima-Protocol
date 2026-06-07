@@ -191,6 +191,38 @@ const PageLoader = () => (
   </div>
 );
 
+function ClerkLoadError({ proxyUrl, onRetry }) {
+  const instance = clerkInstanceLabel();
+  return (
+    <div className="flex items-center justify-center h-screen-safe px-6">
+      <div className="max-w-md text-center space-y-4">
+        <p className="font-mono text-xs text-primary/70 tracking-[0.2em] uppercase">
+          Sign-in unavailable
+        </p>
+        <p className="text-sm text-primary/50 leading-relaxed">
+          Clerk ({instance}) did not finish loading. This is usually a network
+          block, a missing{" "}
+          <span className="text-primary/70">VITE_CLERK_PUBLISHABLE_KEY</span> at
+          build time, or a proxy mismatch.
+          {proxyUrl ? (
+            <>
+              {" "}
+              Proxy: <span className="text-primary/70">{proxyUrl}</span>
+            </>
+          ) : null}
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 border border-primary/40 text-primary hover:bg-primary/10"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Clerk auth wiring ─────────────────────────────────────────────────────
 // BASE_URL is "/" for this artifact, so basePath is "" and the sign-in/up
 // routes live at the domain root. Canonical Clerk constants are copied verbatim
@@ -219,16 +251,22 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
-function configuredClerkProxyUrl() {
-  const value =
-    typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-      ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-      : "";
+function clerkProxyEnvValue() {
+  return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
+    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
+    : "";
+}
 
-  if (!value || value === "none" || value === "false" || value === "off") {
+function isClerkProxyExplicitlyDisabled() {
+  const value = clerkProxyEnvValue().toLowerCase();
+  return value === "none" || value === "false" || value === "off";
+}
+
+function configuredClerkProxyUrl() {
+  const value = clerkProxyEnvValue();
+  if (!value || isClerkProxyExplicitlyDisabled()) {
     return "";
   }
-
   return value;
 }
 
@@ -242,28 +280,45 @@ function isLocalDevHostname(hostname) {
   );
 }
 
+function isAnimaProductionHost(hostname) {
+  const host = (hostname || "").toLowerCase();
+  return (
+    host === "anima-protocol.com" ||
+    host === "www.anima-protocol.com" ||
+    host.endsWith(".anima-protocol.com")
+  );
+}
+
 /**
  * Production pk_live_ instances use the Clerk dashboard proxy
  * (www.anima-protocol.com/api/__clerk). On localhost that URL is unreachable,
  * so route Clerk through the local Vite → api-server proxy instead.
  * pk_test_ always talks to the dev Clerk instance directly (no proxy).
- * Set VITE_CLERK_PROXY_URL=none on Vercel to omit proxyUrl in production builds.
+ * Set VITE_CLERK_PROXY_URL=none to skip all proxying (direct clerk.* domain).
  */
 function resolveClerkProxyUrl() {
-  const configured = configuredClerkProxyUrl();
-  if (configured) return configured;
-
-  if (typeof clerkPubKey === "string" && clerkPubKey.startsWith("pk_test_")) {
+  if (isClerkProxyExplicitlyDisabled()) {
     return "";
   }
 
-  if (
-    import.meta.env.DEV &&
-    typeof window !== "undefined" &&
-    isLocalDevHostname(window.location.hostname) &&
-    typeof clerkPubKey === "string" &&
-    clerkPubKey.startsWith("pk_live_")
-  ) {
+  const configured = configuredClerkProxyUrl();
+  if (configured) return configured;
+
+  if (typeof clerkPubKey !== "string" || clerkPubKey.startsWith("pk_test_")) {
+    return "";
+  }
+
+  if (typeof window === "undefined" || !clerkPubKey.startsWith("pk_live_")) {
+    return "";
+  }
+
+  const host = window.location.hostname;
+
+  if (import.meta.env.DEV && isLocalDevHostname(host)) {
+    return `${window.location.origin}/api/__clerk`;
+  }
+
+  if (import.meta.env.PROD && isAnimaProductionHost(host)) {
     return `${window.location.origin}/api/__clerk`;
   }
 
@@ -895,7 +950,7 @@ const AuthenticatedApp = () => {
       setAuthWaitExpired(false);
       return;
     }
-    const timer = setTimeout(() => setAuthWaitExpired(true), 15000);
+    const timer = setTimeout(() => setAuthWaitExpired(true), 8000);
     return () => clearTimeout(timer);
   }, [isLoadingAuth]);
 
@@ -910,6 +965,15 @@ const AuthenticatedApp = () => {
   // Wait for Clerk to resolve the session before deciding what to show.
   if (isLoadingAuth && !authWaitExpired) {
     return <PageLoader />;
+  }
+
+  if (isLoadingAuth && authWaitExpired) {
+    return (
+      <ClerkLoadError
+        proxyUrl={clerkProxyUrl}
+        onRetry={() => window.location.reload()}
+      />
+    );
   }
 
   // Gate protected routes: signed-out users are sent to the public Landing.
