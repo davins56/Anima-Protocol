@@ -763,33 +763,22 @@ function HomeGate() {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-  const [activeProxyUrl, setActiveProxyUrl] = useState(
-    initialClerkProxyUrl ? null : "",
-  );
+  const [activeProxyUrl, setActiveProxyUrl] = useState(initialClerkProxyUrl);
 
   useEffect(() => {
-    if (!initialClerkProxyUrl) {
-      setActiveProxyUrl("");
-      return undefined;
-    }
+    if (!activeProxyUrl) return undefined;
     let cancelled = false;
     shouldFallbackToDirectClerk(clerkPubKey).then((fallback) => {
-      if (cancelled) return;
-      if (fallback) {
-        console.warn(
-          "[Anima] Clerk proxy is unavailable; retrying sign-in without proxyUrl.",
-        );
-      }
-      setActiveProxyUrl(fallback ? "" : initialClerkProxyUrl);
+      if (cancelled || !fallback) return;
+      console.warn(
+        "[Anima] Clerk proxy is unavailable; retrying sign-in without proxyUrl.",
+      );
+      setActiveProxyUrl("");
     });
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  if (activeProxyUrl === null) {
-    return <PageLoader />;
-  }
+  }, [activeProxyUrl]);
 
   return (
     <ClerkProvider
