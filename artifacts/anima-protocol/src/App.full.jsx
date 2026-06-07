@@ -495,7 +495,8 @@ function SocialAuthButtons({ mode }) {
     }
     setPendingStrategy(strategy);
     const redirectCallbackUrl = oauthRedirectUrl(oauthCallbackPath(mode));
-    const redirectUrl = oauthRedirectUrl(authRedirectCompleteUrl);
+   
+ const redirectUrl = oauthRedirectUrl(authRedirectCompleteUrl);
     try {
       // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
       const { error } = await signIn.sso({
