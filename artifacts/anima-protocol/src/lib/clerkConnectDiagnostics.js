@@ -40,9 +40,23 @@ export async function probeClerkConnectivity(clerkPubKey) {
     });
     proxyOk = clerkRes.ok;
     if (!clerkRes.ok) {
+      let proxyDetail = '';
+      try {
+        const body = await clerkRes.clone().json();
+        if (body?.error === 'clerk_proxy_invalid_secret') {
+          proxyDetail =
+            'CLERK_SECRET_KEY on Vercel is set to a publishable key (pk_…). Replace it with your Clerk secret key (sk_live_… or sk_test_…). Keep pk_live_… only in CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY.';
+        } else if (body?.message) {
+          proxyDetail = body.message;
+        }
+      } catch {
+        // ignore non-JSON error bodies
+      }
+
       if (clerkRes.status === 503) {
         hints.push(
-          'Clerk proxy unavailable (503). Set CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY on Vercel (Production), then redeploy without cache.',
+          proxyDetail ||
+            'Clerk proxy unavailable (503). Set CLERK_SECRET_KEY (sk_live_…) and CLERK_PUBLISHABLE_KEY (pk_live_…) on Vercel (Production), then redeploy without cache.',
         );
       } else if (clerkRes.status === 504 || clerkRes.status === 502) {
         hints.push(
