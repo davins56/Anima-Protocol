@@ -48,5 +48,10 @@ describe('probeClerkConnectivity', () => {
     expect(hints).toContain(
       'Clerk proxy is misconfigured: Vercel Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
     );
+    expect(hints).toHaveLength(1);
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/npm/@clerk/clerk-js@6/dist/clerk.browser.js'),
+      expect.anything(),
+    );
   });
 });
