@@ -51,18 +51,22 @@ export function ensureTrailingSlash(url) {
 }
 
 /**
- * Production Clerk dashboard Proxy URL (must match Clerk-Proxy-Url on the API).
+ * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
  */
 export function animaProductionClerkProxyUrl() {
   return `${ANIMA_WWW}/api/__clerk/`;
 }
 
-function sameOriginClerkProxyUrl() {
-  if (typeof window === 'undefined') return '';
-  if (import.meta.env.PROD && isAnimaProductionHost(window.location.hostname)) {
-    return animaProductionClerkProxyUrl();
-  }
-  return ensureTrailingSlash(`${window.location.origin}/api/__clerk`);
+/**
+ * Client-side proxyUrl for ClerkProvider.
+ *
+ * Must be a **relative** path so Clerk loads clerk-js from
+ * `/api/__clerk/npm/@clerk/clerk-js@…` on the same origin. An absolute
+ * https://www… URL makes Clerk build a broken script URL and the SDK never
+ * reaches `clerk.loaded`.
+ */
+export function clerkProviderProxyPath() {
+  return '/api/__clerk/';
 }
 
 /**
@@ -93,13 +97,24 @@ export function resolveClerkProxyUrl(clerkPubKey) {
 
   if (!shouldUseClerkProxy(clerkPubKey)) return '';
 
-  return sameOriginClerkProxyUrl();
+  return clerkProviderProxyPath();
 }
 
 /**
- * Probe URL for connectivity checks (no trailing slash before path segments).
+ * Absolute base URL for connectivity probes (fetch from the browser).
  */
 export function clerkProxyProbeBase(clerkPubKey) {
   const proxy = resolveClerkProxyUrl(clerkPubKey);
-  return proxy ? proxy.replace(/\/$/, '') : '';
+  if (!proxy) return '';
+  if (proxy.startsWith('/') && typeof window !== 'undefined') {
+    return `${window.location.origin}${proxy.replace(/\/$/, '')}`;
+  }
+  return proxy.replace(/\/$/, '');
+}
+
+/** clerk-js bundle path served through the Clerk proxy when proxyUrl is relative. */
+export function clerkJsScriptProbeUrl(clerkPubKey) {
+  const base = clerkProxyProbeBase(clerkPubKey);
+  if (!base) return '';
+  return `${base}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`;
 }

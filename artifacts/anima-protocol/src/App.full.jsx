@@ -10,6 +10,9 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
+  ClerkFailed,
+  ClerkLoaded,
+  ClerkLoading,
   ClerkProvider,
   HandleSSOCallback,
   SignIn,
@@ -596,15 +599,28 @@ function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
   return (
     <AuthFormShell mode="sign-in">
-      <SignIn
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-in…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-in is unavailable until Clerk connects. Use Retry above or
+          refresh after redeploying with CLERK_SECRET_KEY set on Vercel.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignIn
+          routing="path"
+          path={`${basePath}/sign-in`}
+          signUpUrl={`${basePath}/sign-up`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -613,15 +629,28 @@ function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
   return (
     <AuthFormShell mode="sign-up">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-up…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-up is unavailable until Clerk connects. Use Retry above or
+          refresh after redeploying with CLERK_SECRET_KEY set on Vercel.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -740,7 +769,7 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
       if (clerk.loaded || toggledRef.current) return;
       toggledRef.current = true;
       onToggleProxy(!useProxy);
-    }, 12_000);
+    }, 10_000);
 
     return () => clearTimeout(timer);
   }, [clerk.loaded, onToggleProxy, useProxy]);

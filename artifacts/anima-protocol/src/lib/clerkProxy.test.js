@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   animaProductionClerkProxyUrl,
+  clerkJsScriptProbeUrl,
+  clerkProxyProbeBase,
   ensureTrailingSlash,
   isAnimaProductionHost,
   resolveClerkProxyUrl,
@@ -36,11 +38,20 @@ describe('clerkProxy', () => {
     );
   });
 
-  it('uses canonical www proxy on production anima hosts', () => {
-    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe(animaProductionClerkProxyUrl());
+  it('uses relative same-origin proxy path for ClerkProvider', () => {
+    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('/api/__clerk/');
     window.location.hostname = 'anima-protocol.com';
     window.location.origin = 'https://anima-protocol.com';
-    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe(animaProductionClerkProxyUrl());
+    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('/api/__clerk/');
+  });
+
+  it('builds probe URLs from the current origin', () => {
+    expect(clerkProxyProbeBase(LIVE_KEY)).toBe(
+      'https://www.anima-protocol.com/api/__clerk',
+    );
+    expect(clerkJsScriptProbeUrl(LIVE_KEY)).toContain(
+      '/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
+    );
   });
 
   it('skips proxy for pk_test_', () => {

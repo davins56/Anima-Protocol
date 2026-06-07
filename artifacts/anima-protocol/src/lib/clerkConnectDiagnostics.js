@@ -1,5 +1,8 @@
 import { apiUrl } from '@/lib/apiOrigin';
-import { clerkProxyProbeBase } from '@/lib/clerkProxy';
+import {
+  clerkJsScriptProbeUrl,
+  clerkProxyProbeBase,
+} from '@/lib/clerkProxy';
 
 /**
  * Probe API + Clerk proxy when Clerk JS fails to load. Returns human-readable
@@ -11,10 +14,20 @@ export async function probeClerkConnectivity(clerkPubKey) {
     clerkProxyProbeBase(clerkPubKey) ||
     `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
 
+  let apiOk = false;
+  let proxyOk = false;
+  let scriptOk = false;
+
   try {
-    const healthRes = await fetch(apiUrl('/healthz'), { credentials: 'same-origin' });
+    const healthRes = await fetch(apiUrl('/healthz'), {
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(8000),
+    });
+    apiOk = healthRes.ok;
     if (!healthRes.ok) {
-      hints.push(`API health check failed (${healthRes.status}). Set DATABASE_URL and CLERK_SECRET_KEY on Vercel.`);
+      hints.push(
+        `API health check failed (${healthRes.status}). Set DATABASE_URL and CLERK_SECRET_KEY on Vercel.`,
+      );
     }
   } catch {
     hints.push('API is unreachable — /api/healthz did not respond.');
@@ -23,7 +36,9 @@ export async function probeClerkConnectivity(clerkPubKey) {
   try {
     const clerkRes = await fetch(`${proxyUrl}/v1/environment`, {
       credentials: 'same-origin',
+      signal: AbortSignal.timeout(8000),
     });
+    proxyOk = clerkRes.ok;
     if (!clerkRes.ok) {
       hints.push(
         `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
@@ -35,9 +50,36 @@ export async function probeClerkConnectivity(clerkPubKey) {
     );
   }
 
+  const scriptUrl = clerkJsScriptProbeUrl(clerkPubKey);
+  if (scriptUrl) {
+    try {
+      const scriptRes = await fetch(scriptUrl, {
+        method: 'GET',
+        credentials: 'same-origin',
+        signal: AbortSignal.timeout(8000),
+      });
+      scriptOk = scriptRes.ok;
+      if (!scriptRes.ok) {
+        hints.push(
+          `Clerk JS bundle failed to load (${scriptRes.status}) via ${scriptUrl}. Redeploy the API after merging the latest Clerk proxy fix.`,
+        );
+      }
+    } catch {
+      hints.push(
+        'Clerk JS bundle could not be fetched through /api/__clerk — sign-in cannot start until this path returns clerk.browser.js.',
+      );
+    }
+  }
+
   if (import.meta.env.PROD && !import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
     hints.push(
       'VITE_CLERK_PUBLISHABLE_KEY was missing at build time — set it on Vercel and redeploy without cache.',
+    );
+  }
+
+  if (apiOk && proxyOk && scriptOk && hints.length === 0) {
+    hints.push(
+      'API and Clerk proxy look healthy, but the Clerk SDK did not finish loading. Disable ad blockers, try another browser, or refresh in a few seconds.',
     );
   }
 
