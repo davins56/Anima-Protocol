@@ -6,9 +6,12 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backfill:messages": "tsx ./src/backfill-chat-messages.ts",
+    "migrate:account": "tsx ./src/migrate-account.ts",
+    "verify:clerk-oauth": "tsx ./src/verify-clerk-oauth.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@clerk/backend": "^3.4.14",
     "@workspace/db": "workspace:*"
   },
   "devDependencies": {

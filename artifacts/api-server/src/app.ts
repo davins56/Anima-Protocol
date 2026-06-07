@@ -1,16 +1,19 @@
-import express, { type Express } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
-import { publishableKeyFromHost } from "@clerk/shared/keys";
 import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
-  getClerkProxyHost,
 } from "./middlewares/clerkProxyMiddleware";
+import { clerkMultiDomainMiddleware } from "./middlewares/clerkMultiDomainMiddleware";
 
 const app: Express = express();
 
@@ -49,18 +52,32 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 // availability from auth configuration problems.
 app.use("/api", healthRouter);
 
-// Resolve the publishable key from the incoming request host so the same
-// server can serve multiple Clerk custom domains. Falls back to
-// CLERK_PUBLISHABLE_KEY when the host doesn't map to a custom domain.
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
-);
+// Verify Clerk JWTs against www/apex and other known hosts (Vercel → Replit).
+app.use(clerkMultiDomainMiddleware());
 
 app.use("/api", router);
+
+// Prevent unhandled errors from wedging the Vercel function instance.
+app.use(
+  (
+    err: unknown,
+    _req: Request,
+    res: Response,
+    _next: NextFunction,
+  ) => {
+    logger.error({ err }, "Unhandled API error");
+    if (!res.headersSent) {
+      const message =
+        err instanceof Error ? err.message : "Internal server error";
+      const isConfig =
+        message.includes("DATABASE_URL") || message.includes("CLERK_SECRET_KEY");
+      res.status(isConfig ? 503 : 500).json({
+        error: isConfig
+          ? "API is misconfigured on the server. Check Vercel environment variables."
+          : "Internal server error",
+      });
+    }
+  },
+);
 
 export default app;

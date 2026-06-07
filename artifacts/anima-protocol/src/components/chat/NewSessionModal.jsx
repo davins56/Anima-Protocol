@@ -6,6 +6,7 @@ import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
 import { useTimelineBranching } from "@/hooks/useTimelineBranching";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -45,7 +46,13 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         setLoading(false);
       }
     };
-    loadData();
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadData();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredCharacters = characters.filter((c) => {

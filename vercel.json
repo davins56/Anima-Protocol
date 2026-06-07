@@ -1,9 +1,30 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "env": {
+    "NODE_ENV": "production"
+  },
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "PORT=23660 BASE_PATH=/ pnpm --filter @workspace/anima-protocol run build",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && PORT=23660 BASE_PATH=/ pnpm --filter @workspace/anima-protocol run build",
   "outputDirectory": "artifacts/anima-protocol/dist/public",
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 60
+    }
+  },
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "anima-protocol.com" }],
+      "destination": "https://www.anima-protocol.com/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
