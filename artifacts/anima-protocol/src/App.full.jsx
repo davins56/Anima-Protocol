@@ -203,19 +203,14 @@ const viteClerkPublishableKey =
     : "";
 
 /**
- * Match api-server resolveClerkPublishableKey: Development keys (pk_test_) talk
- * to the dev Clerk instance directly on custom domains (no proxy). Host-derived
- * pk_live_ keys must not override a configured pk_test_ build — that mismatch
- * makes oauth_github fail with "strategy not allowed" when GitHub is only
- * enabled in the Development dashboard.
+ * Use the build-time publishable key when set (pk_test_ or pk_live_). Only fall
+ * back to host-derived keys when no env key is configured.
  */
 function resolveFrontendClerkPublishableKey(hostname, envKey) {
-  if (envKey.startsWith("pk_test_")) {
+  if (envKey.startsWith("pk_test_") || envKey.startsWith("pk_live_")) {
     return envKey;
   }
-  if (envKey.startsWith("pk_live_")) {
-    return publishableKeyFromHost(hostname, envKey);
-  }
+
   return publishableKeyFromHost(hostname, envKey || undefined);
 }
 
@@ -228,9 +223,16 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
 // Clerk keys on same-origin hosts. Development keys (pk_test_*) break with the
 // proxy on custom domains (POST /api/__clerk/v1/client → 400 Origin mismatch).
 function configuredClerkProxyUrl() {
-  return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-    : "";
+  const value =
+    typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
+      ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
+      : "";
+
+  if (!value || value === "none" || value === "false" || value === "off") {
+    return "";
+  }
+
+  return value;
 }
 
 function isSameOriginProductionHost() {

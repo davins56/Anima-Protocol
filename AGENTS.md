@@ -52,10 +52,12 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) — must match `CLERK_PUBLISHABLE_KEY`; Vite build also reads `CLERK_PUBLISHABLE_KEY` if `VITE_` is unset |
 | `CLERK_PUBLISHABLE_KEY` | API `clerkMiddleware` |
 | `CLERK_SECRET_KEY` | API session verification |
-| `VITE_CLERK_PROXY_URL` | Frontend (Replit sets explicitly; never auto-proxy with `pk_test_*` keys — causes Origin 400 on custom domains) |
+| `VITE_CLERK_PROXY_URL` | Frontend proxy URL; `none` / `false` / `off` disables proxy (use with `pk_live_` on Vercel). Empty auto-proxies on production hosts unless `pk_test_*` |
 | `VITE_MIXPANEL_TOKEN` | Frontend analytics |
 
-When Vercel uses **`pk_test_` / `sk_test_`** on `www.anima-protocol.com`, the browser skips the Clerk proxy and mints **Development** session tokens. The API must verify with the same dev publishable key from `CLERK_PUBLISHABLE_KEY` (not host-derived `pk_live_` keys). A mismatch surfaces as **401** on `/api/store` and “Session not recognized by the server” in the UI.
+**Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`**, set `VITE_CLERK_PROXY_URL=none`, enable OAuth providers under Clerk **Production** → SSO connections, and redeploy **without build cache**.
+
+**Development keys on custom domain:** when Vercel uses **`pk_test_` / `sk_test_`**, the browser skips the Clerk proxy and mints **Development** session tokens. The API must verify with the same dev publishable key from `CLERK_PUBLISHABLE_KEY`. A mismatch surfaces as **401** on `/api/store` and “Session not recognized by the server” in the UI. Build-time `pk_test_` / `pk_live_` keys are used as-is (not rewritten via `publishableKeyFromHost`).
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.
 
