@@ -257,16 +257,28 @@ function isAnimaProductionHost(hostname) {
   );
 }
 
+/** True when the publishable key targets a custom clerk.{domain} FAPI (not *.clerk.accounts.dev). */
+function isCustomFrontendApiKey(key) {
+  const match =
+    typeof key === "string" ? key.match(/^pk_(?:test|live)_(.+)$/) : null;
+  if (!match) return false;
+  try {
+    const decoded = atob(match[1]);
+    return !decoded.includes("clerk.accounts.dev");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * pk_test_ always talks to the dev Clerk instance directly (no proxy).
  *
- * pk_live_ with a custom Frontend API host (clerk.anima-protocol.com) also loads
- * directly on localhost — do not route through /api/__clerk locally; that proxy
- * targets production Origin headers and fails when the api-server cannot reach
- * Clerk upstream.
+ * pk_live_ + custom FAPI (clerk.anima-protocol.com): load Clerk JS directly from
+ * that host in production. Forcing /api/__clerk when the proxy is misconfigured
+ * prevents Clerk from loading at all.
  *
- * On production anima-protocol.com, same-origin /api/__clerk is required for
- * OAuth on the public domain unless VITE_CLERK_PROXY_URL=none.
+ * pk_live_ on localhost: route through the local Vite → api-server proxy so
+ * Clerk-Proxy-Url matches www.anima-protocol.com (dashboard setting).
  */
 function resolveClerkProxyUrl() {
   if (isClerkProxyExplicitlyDisabled()) {
@@ -280,12 +292,21 @@ function resolveClerkProxyUrl() {
     return "";
   }
 
-  if (
-    typeof window !== "undefined" &&
-    import.meta.env.PROD &&
-    clerkPubKey.startsWith("pk_live_") &&
-    isAnimaProductionHost(window.location.hostname)
-  ) {
+  if (typeof window === "undefined" || !clerkPubKey.startsWith("pk_live_")) {
+    return "";
+  }
+
+  const host = window.location.hostname;
+
+  if (import.meta.env.DEV && isLocalDevHostname(host)) {
+    return `${window.location.origin}/api/__clerk`;
+  }
+
+  if (isCustomFrontendApiKey(clerkPubKey)) {
+    return "";
+  }
+
+  if (import.meta.env.PROD && isAnimaProductionHost(host)) {
     return `${window.location.origin}/api/__clerk`;
   }
 
@@ -494,6 +515,7 @@ function clerkGitHubSetupHint() {
 function SocialAuthButtons({ mode }) {
   const clerk = useClerk();
   const { signIn, fetchStatus } = useSignIn();
+  const { authStalled } = useAuth();
   const [pendingStrategy, setPendingStrategy] = useState(null);
   const [enabledStrategies, setEnabledStrategies] = useState(null);
 
@@ -559,7 +581,23 @@ function SocialAuthButtons({ mode }) {
 
   return (
     <div className="w-full space-y-2">
-      {!clerk.loaded ? (
+      {!clerk.loaded && authStalled ? (
+        <div className="space-y-2 py-1 text-center text-sm text-cyan-400/60">
+          <p>Clerk could not connect.</p>
+          <p className="text-xs leading-relaxed text-cyan-400/45">
+            {import.meta.env.DEV
+              ? "Start the api-server on port 8080, confirm pk_live_ keys in .env, then refresh."
+              : "Redeploy with VITE_CLERK_PUBLISHABLE_KEY=pk_live_… at build time and ensure https://www.anima-protocol.com/api/healthz returns ok."}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="font-mono text-[10px] tracking-[0.2em] uppercase text-cyan-300 underline underline-offset-4"
+          >
+            Retry
+          </button>
+        </div>
+      ) : !clerk.loaded ? (
         <p className="py-2 text-center text-sm text-cyan-400/50">
           Loading sign-in options…
         </p>
@@ -926,6 +964,12 @@ const AuthenticatedApp = () => {
 
   useEffect(() => {
     if (!isLoadingAuth || !authStalled) return;
+    const onSignInScreen =
+      location.pathname === "/sign-in" ||
+      location.pathname === "/sign-up" ||
+      location.pathname.startsWith("/sign-in/") ||
+      location.pathname.startsWith("/sign-up/");
+    if (onSignInScreen) return;
     toast.error("Sign-in is temporarily unavailable.", {
       id: "anima-clerk-unavailable",
       description:
@@ -936,7 +980,7 @@ const AuthenticatedApp = () => {
         onClick: () => window.location.reload(),
       },
     });
-  }, [isLoadingAuth, authStalled]);
+  }, [isLoadingAuth, authStalled, location.pathname]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
