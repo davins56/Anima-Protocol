@@ -40,9 +40,19 @@ export async function probeClerkConnectivity(clerkPubKey) {
     });
     proxyOk = clerkRes.ok;
     if (!clerkRes.ok) {
-      hints.push(
-        `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
-      );
+      if (clerkRes.status === 503) {
+        hints.push(
+          'Clerk proxy unavailable (503). Set CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY on Vercel (Production), then redeploy without cache.',
+        );
+      } else if (clerkRes.status === 504 || clerkRes.status === 502) {
+        hints.push(
+          `Clerk proxy upstream failed (${clerkRes.status}). Redeploy the latest API build — the server now proxies Clerk via fetch on Vercel. Also confirm CLERK_SECRET_KEY is your Production sk_live_ key.`,
+        );
+      } else {
+        hints.push(
+          `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
+        );
+      }
     }
   } catch {
     hints.push(
