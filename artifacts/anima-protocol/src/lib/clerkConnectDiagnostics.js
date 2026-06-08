@@ -3,6 +3,7 @@ import {
   clerkJsScriptProbeUrl,
   clerkProxyProbeBase,
   publishableKeyUsesCustomDomain,
+  resolveClerkProxyUrl,
 } from '@/lib/clerkProxy';
 
 async function readProxyError(res) {
@@ -18,11 +19,15 @@ async function readProxyError(res) {
  * ClerkProvider should skip proxyUrl so email/OAuth can use Clerk's API directly.
  */
 export async function isClerkProxyHealthy(clerkPubKey) {
-  const proxyUrl = clerkProxyProbeBase(clerkPubKey);
+  const proxyUrl = resolveClerkProxyUrl(clerkPubKey);
   if (!proxyUrl) return true;
+  const proxyBase =
+    proxyUrl.startsWith('/') && typeof window !== 'undefined'
+      ? `${window.location.origin}${proxyUrl.replace(/\/$/, '')}`
+      : proxyUrl.replace(/\/$/, '');
 
   try {
-    const res = await fetch(`${proxyUrl}/v1/environment`, {
+    const res = await fetch(`${proxyBase}/v1/environment`, {
       credentials: 'same-origin',
       signal: AbortSignal.timeout(8000),
     });

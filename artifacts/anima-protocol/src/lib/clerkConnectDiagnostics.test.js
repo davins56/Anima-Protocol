@@ -4,9 +4,9 @@ import {
   probeClerkConnectivity,
 } from './clerkConnectDiagnostics';
 
-// Development-shaped key so probes target /api/__clerk (not a custom Clerk domain).
+// Production-shaped key with an accounts.dev host so production probes /api/__clerk.
 const LIVE_KEY =
-  'pk_test_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ';
+  'pk_live_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ';
 
 describe('probeClerkConnectivity', () => {
   beforeEach(() => {
