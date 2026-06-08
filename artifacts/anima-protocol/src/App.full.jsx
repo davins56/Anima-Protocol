@@ -32,10 +32,6 @@ import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
-import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
-import ConsentBanner from "@/components/ConsentBanner";
-import ErrorBoundary from "@/components/ErrorBoundary";
-import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
 import { useKeyboardAvoidance } from "@/hooks/useKeyboardAvoidance";
@@ -1381,7 +1377,7 @@ const AuthenticatedApp = () => {
                     <Reflections />
                   </Suspense>
                 }
-              />
+              />git remote remove gitlab
               <Route
                 path="/discoveries"
                 element={
@@ -1389,11 +1385,12 @@ const AuthenticatedApp = () => {
                     <DiscoveryQueue />
                   </Suspense>
                 }
-              />
+              /g
               <Route
                 path="/locationsmap"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <Suspense fallba
+                  ßck={<PageLoader />}>
                     <LocationsMap />
                   </Suspense>
                 }
