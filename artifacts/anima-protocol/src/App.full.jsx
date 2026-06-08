@@ -413,21 +413,20 @@ function getEnabledOAuthStrategies(clerk) {
   return null;
 }
 
-function visibleSocialProviders(clerk, clerkLoaded) {
+function filterProvidersByEnvList(providers) {
   const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
-  if (typeof envList === "string" && envList.trim()) {
-    const allowed = new Set(
-      envList.split(",").map((entry) => entry.trim()).filter(Boolean),
-    );
-    return socialAuthProviders.filter((provider) =>
-      allowed.has(provider.strategy),
-    );
+  if (typeof envList !== "string" || !envList.trim()) {
+    return providers;
   }
 
-  // Development keys: always offer GitHub/Apple/Google — Clerk validates on click.
-  if (isDevClerkKey(clerkPubKey)) {
-    return socialAuthProviders;
-  }
+  const allowed = new Set(
+    envList.split(",").map((entry) => entry.trim()).filter(Boolean),
+  );
+  return providers.filter((provider) => allowed.has(provider.strategy));
+}
+
+const CLERK_SSO_DASHBOARD_URL =
+  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
 
 function clerkSsoSetupHint(providerName) {
   const instance = clerkInstanceLabel();
@@ -480,7 +479,6 @@ function SocialAuthButtons({ mode }) {
         .map((provider) => providerShortName(provider.strategy)),
     [providers],
   );
-  const providers = visibleSocialProviders(clerk, clerk.loaded);
 
   const handleOAuth = async (strategy) => {
     if (!clerk.loaded || fetchStatus === "fetching") {
@@ -513,11 +511,6 @@ function SocialAuthButtons({ mode }) {
         socialAuthProviders.find((provider) => provider.strategy === strategy)
           ?.label ?? "That provider";
       const detail = formatClerkOAuthError(error);
-      const shortName = providerShortName(strategy);
-      toast.error(
-        detail
-          ? `${detail} ${clerkSsoSetupHint(shortName)}`
-          : `${providerName} is not enabled for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)}`,
       const instanceHint =
         clerkInstanceLabel() === "Development"
           ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
