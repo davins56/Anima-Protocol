@@ -47,6 +47,10 @@ import {
 import { base44 } from "@/api/base44Client";
 import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
 import { resolveClerkProxyUrl } from "@/lib/clerkProxy";
+import {
+  clerkOAuthCallbackAbsolute,
+  clerkOAuthRedirectPaths,
+} from "@/lib/clerkOAuthPaths";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -256,21 +260,6 @@ const socialAuthProviders = [
   },
 ];
 
-function oauthCallbackPath(mode) {
-  const segment = mode === "sign-up" ? "sign-up" : "sign-in";
-  return `${basePath}/${segment}/sso-callback`;
-}
-
-function oauthRedirectUrl(path) {
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
-  }
-  return path;
-}
-
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
     ? path.slice(basePath.length) || "/"
@@ -436,8 +425,16 @@ function SocialAuthButtons({ mode }) {
       return;
     }
     setPendingStrategy(strategy);
-    const redirectCallbackUrl = oauthRedirectUrl(oauthCallbackPath(mode));
-    const redirectUrl = oauthRedirectUrl(authRedirectCompleteUrl);
+    // Clerk requires relative same-origin paths — absolute URLs fail validation.
+    const { redirectCallbackUrl, redirectUrl } = clerkOAuthRedirectPaths(
+      basePath,
+      mode,
+    );
+    const redirectCallbackAbsolute = clerkOAuthCallbackAbsolute(
+      window.location.origin,
+      basePath,
+      mode,
+    );
     try {
       // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
       const { error } = await signIn.sso({
@@ -458,7 +455,7 @@ function SocialAuthButtons({ mode }) {
         clerkInstanceLabel() === "Development"
           ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
           : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
-      const redirectHint = `Add ${redirectCallbackUrl} under Clerk → Paths → Redirect URLs.`;
+      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.`;
       toast.error(
         detail
           ? `${detail} ${instanceHint} ${redirectHint}`
@@ -679,6 +676,7 @@ function ClerkProviderWithRoutes({ children }) {
 const PUBLIC_PREFIXES = [
   "/sign-in",
   "/sign-up",
+  "/sso-callback",
   "/terms",
   "/privacy-policy",
   "/disclaimer",
@@ -875,6 +873,7 @@ const AuthenticatedApp = () => {
                 path="/sign-up/sso-callback"
                 element={<SsoCallbackPage />}
               />
+              <Route path="/sso-callback" element={<SsoCallbackPage />} />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
               <Route
