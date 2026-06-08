@@ -50,6 +50,39 @@ export function ensureTrailingSlash(url) {
   return url.endsWith('/') ? url : `${url}/`;
 }
 
+/** Domain embedded in pk_test_/pk_live_ (e.g. clerk.anima-protocol.com). */
+export function decodeClerkFrontendHost(clerkPubKey) {
+  if (typeof clerkPubKey !== 'string') return '';
+  const match = clerkPubKey.match(/^pk_(?:test|live)_(.+)$/);
+  if (!match) return '';
+  try {
+    const decoded = atob(match[1]);
+    return decoded.replace(/\$$/, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Production keys that decode to a custom Clerk FAPI host (not *.clerk.accounts.dev)
+ * should talk to that host directly — not through /api/__clerk proxy.
+ */
+export function publishableKeyUsesCustomDomain(clerkPubKey) {
+  const host = decodeClerkFrontendHost(clerkPubKey);
+  return (
+    host.length > 0 &&
+    !host.endsWith('.clerk.accounts.dev') &&
+    !host.endsWith('.accounts.dev')
+  );
+}
+
+/** Absolute Clerk Frontend API base for connectivity probes (no trailing slash). */
+export function clerkFrontendApiProbeBase(clerkPubKey) {
+  const host = decodeClerkFrontendHost(clerkPubKey);
+  if (!host || !publishableKeyUsesCustomDomain(clerkPubKey)) return '';
+  return `https://${host}`;
+}
+
 /**
  * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
  */
@@ -82,7 +115,13 @@ export function shouldUseClerkProxy(clerkPubKey) {
 
   const host = window.location.hostname;
   if (import.meta.env.DEV && isLocalDevHostname(host)) return true;
-  if (import.meta.env.PROD && isAnimaProductionHost(host)) return true;
+  if (
+    import.meta.env.PROD &&
+    isAnimaProductionHost(host) &&
+    !publishableKeyUsesCustomDomain(clerkPubKey)
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -104,6 +143,9 @@ export function resolveClerkProxyUrl(clerkPubKey) {
  * Absolute base URL for connectivity probes (fetch from the browser).
  */
 export function clerkProxyProbeBase(clerkPubKey) {
+  const customBase = clerkFrontendApiProbeBase(clerkPubKey);
+  if (customBase) return customBase;
+
   const proxy = resolveClerkProxyUrl(clerkPubKey);
   if (!proxy) return '';
   if (proxy.startsWith('/') && typeof window !== 'undefined') {
@@ -112,7 +154,7 @@ export function clerkProxyProbeBase(clerkPubKey) {
   return proxy.replace(/\/$/, '');
 }
 
-/** clerk-js bundle path served through the Clerk proxy when proxyUrl is relative. */
+/** clerk-js bundle path for connectivity probes (proxy or custom Clerk domain). */
 export function clerkJsScriptProbeUrl(clerkPubKey) {
   const base = clerkProxyProbeBase(clerkPubKey);
   if (!base) return '';
