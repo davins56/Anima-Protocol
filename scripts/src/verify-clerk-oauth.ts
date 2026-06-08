@@ -9,7 +9,7 @@
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY?.trim();
 const CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY?.trim();
 
-const REQUIRED_STRATEGIES = ["oauth_google", "oauth_github"] as const;
+const REQUIRED_STRATEGIES = ["oauth_github", "oauth_apple"] as const;
 
 const DEFAULT_REDIRECT_URLS = [
   "https://www.anima-protocol.com/sign-in/sso-callback",
