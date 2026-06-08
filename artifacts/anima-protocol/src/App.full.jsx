@@ -845,7 +845,6 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
       if (clerk.loaded || toggledRef.current) return;
       toggledRef.current = true;
       onToggleProxy(false);
-      onToggleProxy(!useProxy);
     }, 10_000);
 
     return () => clearTimeout(timer);
