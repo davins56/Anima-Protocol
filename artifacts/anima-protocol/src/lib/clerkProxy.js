@@ -36,6 +36,10 @@ export function isLocalDevHostname(hostname) {
   );
 }
 
+export function isVercelPreviewHost(hostname) {
+  return (hostname || '').toLowerCase().endsWith('.vercel.app');
+}
+
 export function isAnimaProductionHost(hostname) {
   const host = (hostname || '').toLowerCase();
   return (

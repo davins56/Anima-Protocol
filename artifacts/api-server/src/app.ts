@@ -5,6 +5,7 @@ import express, {
   type NextFunction,
 } from "express";
 import "./lib/loadEnv";
+import "./lib/ensureClerkPreviewRedirects";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import healthRouter from "./routes/health";

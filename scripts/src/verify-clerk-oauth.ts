@@ -26,6 +26,37 @@ function hasFlag(name: string): boolean {
   return process.argv.includes(name);
 }
 
+function previewHostsFromArgs(): string[] {
+  const hosts: string[] = [];
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--preview-host" && argv[i + 1]) {
+      hosts.push(argv[i + 1].trim());
+      i += 1;
+      continue;
+    }
+    if (argv[i]?.startsWith("--preview-host=")) {
+      hosts.push(argv[i].slice("--preview-host=".length).trim());
+    }
+  }
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) {
+    hosts.push(vercelUrl.replace(/^https?:\/\//, ""));
+  }
+  return [...new Set(hosts.filter(Boolean))];
+}
+
+function redirectUrlsForHost(host: string): string[] {
+  const normalized = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const origin = normalized.startsWith("http")
+    ? normalized
+    : `https://${normalized}`;
+  return [
+    `${origin}/sign-in/sso-callback`,
+    `${origin}/sign-up/sso-callback`,
+  ];
+}
+
 function decodeFrontendHost(publishableKey: string): string | null {
   const match = publishableKey.match(/^pk_(?:test|live)_(.+)$/);
   if (!match) return null;
@@ -199,7 +230,10 @@ async function main(): Promise<void> {
     console.log(`  • ${url}`);
   }
 
-  const missingRedirects = DEFAULT_REDIRECT_URLS.filter(
+  const previewRedirectUrls = previewHostsFromArgs().flatMap(redirectUrlsForHost);
+  const requiredRedirects = [...DEFAULT_REDIRECT_URLS, ...previewRedirectUrls];
+
+  const missingRedirects = requiredRedirects.filter(
     (url) => !existingRedirects.includes(url),
   );
 
