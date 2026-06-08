@@ -46,6 +46,10 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
+  isClerkProxyHealthy,
+  probeClerkConnectivity,
+} from "@/lib/clerkConnectDiagnostics";
+import {
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
@@ -481,9 +485,14 @@ function SocialAuthButtons({ mode }) {
           Loading sign-in options…
         </p>
       ) : providers.length === 0 ? (
-        <p className="py-2 text-center text-sm text-cyan-400/50">
-          No social sign-in providers configured.
-        </p>
+        <div className="space-y-2 py-2 text-center text-sm text-cyan-400/50">
+          <p>Google and GitHub sign-in are not enabled in Clerk yet.</p>
+          <p className="text-xs leading-relaxed text-cyan-400/40">
+            Add OAuth credentials under Clerk → Production → SSO connections
+            (see docs/clerk-github-login.md). Email sign-in below still works
+            when Clerk connects.
+          </p>
+        </div>
       ) : (
         providers.map(({ label, strategy, Icon }) => (
           <button
@@ -504,10 +513,38 @@ function SocialAuthButtons({ mode }) {
   );
 }
 
+function ClerkLoginDiagnostics() {
+  const [hints, setHints] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await probeClerkConnectivity(clerkPubKey);
+      if (!cancelled) setHints(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (hints.length === 0) return null;
+
+  return (
+    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+      {hints.map((hint) => (
+        <p key={hint} className="mt-1 first:mt-0">
+          {hint}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function AuthFormShell({ mode, children }) {
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
+        <ClerkLoginDiagnostics />
         <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
           <SocialAuthButtons mode={mode} />
           <p className="mt-3 text-center text-xs text-cyan-400/45">
@@ -691,10 +728,13 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
   useEffect(() => {
     if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
+    // Already on direct Clerk — never flip back to a broken same-origin proxy.
+    if (!useProxy) return;
 
     const timer = setTimeout(() => {
       if (clerk.loaded || toggledRef.current) return;
       toggledRef.current = true;
+      onToggleProxy(false);
       onToggleProxy(!useProxy);
     }, 10_000);
 
@@ -706,6 +746,28 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
+  const [useProxy, setUseProxy] = useState(null);
+  const [providerKey, setProviderKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!initialClerkProxyUrl) {
+        if (!cancelled) setUseProxy(false);
+        return;
+      }
+      const healthy = await isClerkProxyHealthy(clerkPubKey);
+      if (!cancelled) setUseProxy(healthy);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const activeProxyUrl =
+    useProxy === true ? resolveClerkProxyUrl(clerkPubKey) : "";
   const [useProxy, setUseProxy] = useState(Boolean(initialClerkProxyUrl));
   const [providerKey, setProviderKey] = useState(0);
 
@@ -715,6 +777,10 @@ function ClerkProviderWithRoutes({ children }) {
     setUseProxy(nextUseProxy);
     setProviderKey((key) => key + 1);
   };
+
+  if (useProxy === null) {
+    return <PageLoader />;
+  }
 
   return (
     <ClerkProvider
