@@ -53,4 +53,42 @@ describe('probeClerkConnectivity', () => {
       expect.anything(),
     );
   });
+
+  it('surfaces Clerk host mismatch from publishable key or proxy URL configuration', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+          });
+        }
+        if (String(url).endsWith('/api/__clerk/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: 'host_invalid',
+                  message: 'Invalid host',
+                },
+              ],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(LIVE_KEY);
+
+    expect(hints).toContain(
+      'Clerk proxy host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+    );
+    expect(hints).toHaveLength(1);
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/npm/@clerk/clerk-js@6/dist/clerk.browser.js'),
+      expect.anything(),
+    );
+  });
 });
