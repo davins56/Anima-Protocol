@@ -1,5 +1,6 @@
 import { clerkSetup } from "@clerk/testing/playwright";
 import type { FullConfig } from "@playwright/test";
+import { assertValidClerkE2EEnv } from "../src/lib/clerkE2EEnv";
 
 // Runs once before the suite. clerkSetup() fetches a "testing token" from the
 // Clerk Backend API and stores it on process.env (CLERK_FAPI /
@@ -8,19 +9,7 @@ import type { FullConfig } from "@playwright/test";
 // clerk.signIn) then appends the token to Frontend API requests, which is what
 // lets us bypass the sign-up/sign-in bot protection (CAPTCHA).
 async function globalSetup(_config: FullConfig) {
-  const missing = [
-    "CLERK_SECRET_KEY",
-    "CLERK_PUBLISHABLE_KEY",
-  ].filter((k) => !process.env[k]);
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Cannot run the Anima e2e suite: missing env var(s) ${missing.join(
-        ", ",
-      )}. These are required for programmatic Clerk auth.`,
-    );
-  }
-
+  assertValidClerkE2EEnv(process.env);
   await clerkSetup();
 }
 
