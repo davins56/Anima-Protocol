@@ -735,6 +735,7 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
       if (clerk.loaded || toggledRef.current) return;
       toggledRef.current = true;
       onToggleProxy(false);
+      onToggleProxy(!useProxy);
     }, 10_000);
 
     return () => clearTimeout(timer);
@@ -767,6 +768,10 @@ function ClerkProviderWithRoutes({ children }) {
 
   const activeProxyUrl =
     useProxy === true ? resolveClerkProxyUrl(clerkPubKey) : "";
+  const [useProxy, setUseProxy] = useState(Boolean(initialClerkProxyUrl));
+  const [providerKey, setProviderKey] = useState(0);
+
+  const activeProxyUrl = useProxy ? resolveClerkProxyUrl(clerkPubKey) : "";
 
   const handleToggleProxy = (nextUseProxy) => {
     setUseProxy(nextUseProxy);
