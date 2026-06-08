@@ -45,6 +45,10 @@ import {
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
+import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
+import {
+  isVercelPreviewHost,
+  resolveClerkProxyUrl,
 import {
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -468,7 +472,12 @@ function SocialAuthButtons({ mode }) {
         clerkInstanceLabel() === "Development"
           ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
           : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
-      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.`;
+      const previewNote = isVercelPreviewHost(window.location.hostname)
+        ? " Vercel preview URLs change on each deploy — redeploy (or restart the API) so redirect URLs auto-register, or run pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects --preview-host=" +
+          window.location.host +
+          "."
+        : "";
+      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.${previewNote}`;
       toast.error(
         detail
           ? `${detail} ${instanceHint} ${redirectHint}`

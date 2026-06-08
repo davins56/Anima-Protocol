@@ -65,8 +65,9 @@ In Clerk Dashboard -> Production -> Configure -> SSO connections:
 
 ## 4. Vercel preview deployments (`*.vercel.app`)
 
-Every preview host needs its own redirect URLs in **Clerk Dashboard → Paths →
-Redirect URLs** (Development instance for `pk_test_`, Production for `pk_live_`).
+Clerk does **not** support wildcard redirect URLs. Every preview host needs its
+own entries in **Clerk Dashboard → Paths → Redirect URLs** (Production for
+`pk_live_`, Development for `pk_test_`).
 
 For each preview URL (example:
 `https://anima-protocol-abc123-anima-protocol1.vercel.app`), add **both**:
@@ -74,10 +75,26 @@ For each preview URL (example:
 - `https://<preview-host>/sign-in/sso-callback`
 - `https://<preview-host>/sign-up/sso-callback`
 
-Preview builds also need Vercel env vars for the matching Clerk instance
-(`CLERK_SECRET_KEY` as `sk_test_*` or `sk_live_*`, never `pk_*`).
+**Automatic registration:** the API registers `VERCEL_URL` callback URLs on cold
+start when `CLERK_SECRET_KEY` is set. Redeploy the preview after merging the
+latest API build, or run manually:
 
-After changing env vars, redeploy the preview **without build cache**.
+```bash
+pnpm --filter @workspace/scripts run verify:clerk-oauth -- \
+  --fix-redirects \
+  --preview-host=anima-protocol-abc123-anima-protocol1.vercel.app
+```
+
+**Recommended:** use **`pk_test_` / `sk_test_`** on Vercel **Preview** only and
+`pk_live_` / `sk_live_` on **Production**, so preview OAuth uses the Clerk
+Development instance (easier to iterate).
+
+Preview builds need `CLERK_SECRET_KEY` as `sk_*` (never `pk_*`). After changing
+env vars, redeploy **without build cache**.
+
+If **Vercel Deployment Protection** is enabled on previews, OAuth callbacks to
+`/sign-in/sso-callback` may be blocked — disable protection for preview or test
+on `www.anima-protocol.com` instead.
 
 Verify the Clerk proxy on the preview host:
 

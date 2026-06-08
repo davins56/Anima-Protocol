@@ -4,7 +4,9 @@ import {
   probeClerkConnectivity,
 } from './clerkConnectDiagnostics';
 
-const LIVE_KEY = ['pk', 'live', 'test'].join('_');
+// Development-shaped key so probes target /api/__clerk (not a custom Clerk domain).
+const LIVE_KEY =
+  'pk_test_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ';
 
 describe('probeClerkConnectivity', () => {
   beforeEach(() => {
@@ -35,7 +37,10 @@ describe('probeClerkConnectivity', () => {
             status: 200,
           });
         }
-        if (String(url).endsWith('/api/__clerk/v1/environment')) {
+        if (
+          String(url).includes('/v1/environment') &&
+          String(url).includes('/api/__clerk')
+        ) {
           return new Response(
             JSON.stringify({ error: 'clerk_proxy_invalid_secret' }),
             { status: 503 },

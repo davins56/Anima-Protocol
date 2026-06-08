@@ -26,16 +26,67 @@ function hasFlag(name: string): boolean {
   return process.argv.includes(name);
 }
 
-function decodeInstanceSlug(publishableKey: string): string | null {
+function previewHostsFromArgs(): string[] {
+  const hosts: string[] = [];
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--preview-host" && argv[i + 1]) {
+      hosts.push(argv[i + 1].trim());
+      i += 1;
+      continue;
+    }
+    if (argv[i]?.startsWith("--preview-host=")) {
+      hosts.push(argv[i].slice("--preview-host=".length).trim());
+    }
+  }
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) {
+    hosts.push(vercelUrl.replace(/^https?:\/\//, ""));
+  }
+  return [...new Set(hosts.filter(Boolean))];
+}
+
+function redirectUrlsForHost(host: string): string[] {
+  const normalized = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const origin = normalized.startsWith("http")
+    ? normalized
+    : `https://${normalized}`;
+  return [
+    `${origin}/sign-in/sso-callback`,
+    `${origin}/sign-up/sso-callback`,
+  ];
+}
+
+function decodeFrontendHost(publishableKey: string): string | null {
   const match = publishableKey.match(/^pk_(?:test|live)_(.+)$/);
   if (!match) return null;
   try {
     const decoded = Buffer.from(match[1], "base64").toString("utf8");
-    const slug = decoded.split(".")[0]?.replace(/\$$/, "");
-    return slug || null;
+    return decoded.replace(/\$$/, "") || null;
   } catch {
     return null;
   }
+}
+
+function decodeInstanceSlug(publishableKey: string): string | null {
+  const host = decodeFrontendHost(publishableKey);
+  if (!host) return null;
+  if (host.endsWith(".clerk.accounts.dev")) {
+    return host.split(".")[0] ?? null;
+  }
+  return host;
+}
+
+function environmentUrl(publishableKey: string): string {
+  const host = decodeFrontendHost(publishableKey);
+  if (!host) {
+    throw new Error("Could not decode Clerk publishable key");
+  }
+  if (host.endsWith(".clerk.accounts.dev")) {
+    const slug = host.split(".")[0];
+    return `https://${slug}.clerk.accounts.dev/v1/environment`;
+  }
+  return `https://${host}/v1/environment`;
 }
 
 async function clerkFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -52,8 +103,8 @@ async function clerkFetch(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
-async function fetchEnvironment(slug: string) {
-  const response = await fetch(`https://${slug}.clerk.accounts.dev/v1/environment`);
+async function fetchEnvironment(publishableKey: string) {
+  const response = await fetch(environmentUrl(publishableKey));
   if (!response.ok) {
     throw new Error(`Failed to fetch Clerk environment (${response.status})`);
   }
@@ -156,7 +207,7 @@ async function main(): Promise<void> {
 
   console.log(`Clerk instance: ${slug} (${instanceLabel(CLERK_PUBLISHABLE_KEY)})`);
 
-  const environment = await fetchEnvironment(slug);
+  const environment = await fetchEnvironment(CLERK_PUBLISHABLE_KEY);
   const strategies = environment.auth_config?.identification_strategies ?? [];
   const firstFactors = environment.auth_config?.first_factors ?? [];
 
@@ -179,7 +230,10 @@ async function main(): Promise<void> {
     console.log(`  • ${url}`);
   }
 
-  const missingRedirects = DEFAULT_REDIRECT_URLS.filter(
+  const previewRedirectUrls = previewHostsFromArgs().flatMap(redirectUrlsForHost);
+  const requiredRedirects = [...DEFAULT_REDIRECT_URLS, ...previewRedirectUrls];
+
+  const missingRedirects = requiredRedirects.filter(
     (url) => !existingRedirects.includes(url),
   );
 

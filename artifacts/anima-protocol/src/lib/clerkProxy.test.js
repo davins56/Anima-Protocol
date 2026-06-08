@@ -1,10 +1,13 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   animaProductionClerkProxyUrl,
+  clerkFrontendApiProbeBase,
   clerkJsScriptProbeUrl,
   clerkProxyProbeBase,
+  decodeClerkFrontendHost,
   ensureTrailingSlash,
   isAnimaProductionHost,
+  publishableKeyUsesCustomDomain,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from './clerkProxy';
@@ -38,19 +41,25 @@ describe('clerkProxy', () => {
     );
   });
 
-  it('uses relative same-origin proxy path for ClerkProvider', () => {
-    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('/api/__clerk/');
+  it('skips proxy on production when pk_live_ uses a Clerk custom domain', () => {
+    expect(decodeClerkFrontendHost(LIVE_KEY)).toBe('clerk.anima-protocol.com');
+    expect(publishableKeyUsesCustomDomain(LIVE_KEY)).toBe(true);
+    expect(shouldUseClerkProxy(LIVE_KEY)).toBe(false);
+    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('');
     window.location.hostname = 'anima-protocol.com';
     window.location.origin = 'https://anima-protocol.com';
-    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('/api/__clerk/');
+    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('');
   });
 
-  it('builds probe URLs from the current origin', () => {
-    expect(clerkProxyProbeBase(LIVE_KEY)).toBe(
-      'https://www.anima-protocol.com/api/__clerk',
+  it('builds probe URLs from the Clerk custom domain when proxy is off', () => {
+    expect(clerkFrontendApiProbeBase(LIVE_KEY)).toBe(
+      'https://clerk.anima-protocol.com',
     );
-    expect(clerkJsScriptProbeUrl(LIVE_KEY)).toContain(
-      '/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
+    expect(clerkProxyProbeBase(LIVE_KEY)).toBe(
+      'https://clerk.anima-protocol.com',
+    );
+    expect(clerkJsScriptProbeUrl(LIVE_KEY)).toBe(
+      'https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
     );
   });
 

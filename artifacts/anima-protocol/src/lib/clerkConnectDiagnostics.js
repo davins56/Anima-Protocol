@@ -2,6 +2,7 @@ import { apiUrl } from '@/lib/apiOrigin';
 import {
   clerkJsScriptProbeUrl,
   clerkProxyProbeBase,
+  publishableKeyUsesCustomDomain,
 } from '@/lib/clerkProxy';
 
 async function readProxyError(res) {
@@ -37,6 +38,7 @@ export async function isClerkProxyHealthy(clerkPubKey) {
  */
 export async function probeClerkConnectivity(clerkPubKey) {
   const hints = [];
+  const usesCustomDomain = publishableKeyUsesCustomDomain(clerkPubKey);
   const proxyUrl =
     clerkProxyProbeBase(clerkPubKey) ||
     `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
@@ -62,7 +64,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
 
   try {
     const clerkRes = await fetch(`${proxyUrl}/v1/environment`, {
-      credentials: 'same-origin',
+      credentials: usesCustomDomain ? 'omit' : 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
     proxyOk = clerkRes.ok;
@@ -90,13 +92,17 @@ export async function probeClerkConnectivity(clerkPubKey) {
         );
       } else {
         hints.push(
-          `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
+          usesCustomDomain
+            ? `Clerk custom domain failed (${clerkRes.status}) at ${proxyUrl}. Confirm clerk.anima-protocol.com DNS in Clerk → Domains.`
+            : `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
         );
       }
     }
   } catch {
     hints.push(
-      'Clerk proxy unreachable at /api/__clerk — the api-server must proxy to Clerk in production.',
+      usesCustomDomain
+        ? `Clerk custom domain unreachable at ${proxyUrl} — check clerk.anima-protocol.com DNS.`
+        : 'Clerk proxy unreachable at /api/__clerk — the api-server must proxy to Clerk in production.',
     );
   }
 
@@ -105,7 +111,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
     try {
       const scriptRes = await fetch(scriptUrl, {
         method: 'GET',
-        credentials: 'same-origin',
+        credentials: usesCustomDomain ? 'omit' : 'same-origin',
         signal: AbortSignal.timeout(8000),
       });
       scriptOk = scriptRes.ok;
