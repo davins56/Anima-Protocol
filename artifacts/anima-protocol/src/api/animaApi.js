@@ -1,9 +1,12 @@
 import { apiUrl } from '@/lib/apiOrigin';
+import { authHeaders } from './authBridge';
 
 async function request(path, options = {}) {
+  const headers = await authHeaders(options.headers);
   const res = await fetch(apiUrl(path), {
-    headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
+    headers,
+    credentials: 'same-origin',
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -30,7 +33,8 @@ export const animaApi = {
       apiUrl(`/openai/conversations/${conversationId}/messages`),
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify({ content, systemPrompt, deepMode: !!deepMode }),
       }
     );
@@ -75,7 +79,8 @@ export const animaApi = {
     }) {
       const res = await fetch(apiUrl('/chat/messages'), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify({
           session_id: sessionId,
           content,

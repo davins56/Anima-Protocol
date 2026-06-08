@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalClerkProxyHeaderHost,
   getClerkAuthHostCandidates,
   getClerkProxyHost,
   resolveClerkPublishableKey,
@@ -88,6 +89,23 @@ describe("getClerkAuthHostCandidates", () => {
   });
 });
 
+describe("canonicalClerkProxyHeaderHost", () => {
+  it("normalizes apex to www for Clerk proxy headers", () => {
+    expect(canonicalClerkProxyHeaderHost("anima-protocol.com")).toBe(
+      "www.anima-protocol.com",
+    );
+    expect(canonicalClerkProxyHeaderHost("www.anima-protocol.com")).toBe(
+      "www.anima-protocol.com",
+    );
+  });
+
+  it("leaves unrelated hosts unchanged", () => {
+    expect(canonicalClerkProxyHeaderHost("preview.vercel.app")).toBe(
+      "preview.vercel.app",
+    );
+  });
+});
+
 describe("resolveClerkPublishableKey", () => {
   const devKey =
     "pk_test_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ";
@@ -107,5 +125,13 @@ describe("resolveClerkPublishableKey", () => {
       "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
     const key = resolveClerkPublishableKey("www.anima-protocol.com", prodKey);
     expect(key.startsWith("pk_")).toBe(true);
+  });
+
+  it("uses the live fallback on localhost for local dev proxy", () => {
+    const prodKey =
+      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
+    expect(resolveClerkPublishableKey("127.0.0.1:23660", prodKey)).toBe(
+      prodKey,
+    );
   });
 });

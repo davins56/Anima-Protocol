@@ -9,6 +9,14 @@ const repoRoot = path.resolve(import.meta.dirname, "../..");
 loadEnv({ path: path.join(repoRoot, ".env") });
 loadEnv({ path: path.join(import.meta.dirname, ".env"), override: true });
 
+// Vite only exposes VITE_* to the client. On Vercel, CLERK_PUBLISHABLE_KEY is
+// often set without the VITE_ prefix — mirror it so production builds embed the
+// correct Clerk instance (avoids host-derived pk_live_ + missing GitHub SSO).
+const clerkPublishableKey =
+  process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ||
+  process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
+  "";
+
 const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT;
 
 if (!rawPort) {
@@ -17,7 +25,7 @@ if (!rawPort) {
   );
 }
 
-const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const port = parseInt(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
@@ -33,10 +41,19 @@ if (!basePath) {
 
 export default defineConfig({
   base: basePath,
+  ...(clerkPublishableKey
+    ? {
+        define: {
+          "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY":
+            JSON.stringify(clerkPublishableKey),
+        },
+      }
+    : {}),
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
-    runtimeErrorOverlay(),
+    // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
+    ...(process.env.REPL_ID !== undefined ? [runtimeErrorOverlay()] : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

@@ -141,6 +141,23 @@ export const AuthProvider = ({ children }) => {
 
   const isAuthenticated = !!isSignedIn;
   const isLoadingAuth = !isLoaded;
+  const [authStalled, setAuthStalled] = useState(false);
+
+  useEffect(() => {
+    if (!isLoadingAuth) {
+      setAuthStalled(false);
+      return;
+    }
+    const onAuthScreen =
+      typeof window !== 'undefined' &&
+      (window.location.pathname === '/sign-in' ||
+        window.location.pathname === '/sign-up' ||
+        window.location.pathname.startsWith('/sign-in/') ||
+        window.location.pathname.startsWith('/sign-up/'));
+    const stallMs = onAuthScreen ? 15_000 : 5_000;
+    const timer = setTimeout(() => setAuthStalled(true), stallMs);
+    return () => clearTimeout(timer);
+  }, [isLoadingAuth]);
 
   const navigateToLogin = useCallback(() => {
     navigate('/sign-in');
@@ -176,6 +193,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated,
         setIsAuthenticated: () => {},
         isLoadingAuth,
+        authStalled,
         authChecked: isLoaded,
         checkUserAuth: () => {},
         isLoadingPublicSettings,
