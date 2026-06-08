@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { probeClerkConnectivity } from './clerkConnectDiagnostics';
+import {
+  isClerkProxyHealthy,
+  probeClerkConnectivity,
+} from './clerkConnectDiagnostics';
 
 const LIVE_KEY = ['pk', 'live', 'test'].join('_');
 
@@ -52,5 +55,44 @@ describe('probeClerkConnectivity', () => {
       expect.stringContaining('/npm/@clerk/clerk-js@6/dist/clerk.browser.js'),
       expect.anything(),
     );
+  });
+});
+
+describe('isClerkProxyHealthy', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {
+      location: {
+        hostname: 'www.anima-protocol.com',
+        origin: 'https://www.anima-protocol.com',
+      },
+    });
+    vi.stubEnv('PROD', true);
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('VITE_CLERK_PROXY_URL', '');
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', LIVE_KEY);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('returns false when the Clerk proxy responds with 503', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 503 })),
+    );
+
+    await expect(isClerkProxyHealthy(LIVE_KEY)).resolves.toBe(false);
+  });
+
+  it('returns true when proxy is not used', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_example');
+
+    await expect(isClerkProxyHealthy('pk_test_example')).resolves.toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });

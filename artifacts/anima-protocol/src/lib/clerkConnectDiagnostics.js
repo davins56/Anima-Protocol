@@ -13,6 +13,25 @@ async function readProxyError(res) {
 }
 
 /**
+ * Quick health check for the same-origin Clerk proxy. When this returns false,
+ * ClerkProvider should skip proxyUrl so email/OAuth can use Clerk's API directly.
+ */
+export async function isClerkProxyHealthy(clerkPubKey) {
+  const proxyUrl = clerkProxyProbeBase(clerkPubKey);
+  if (!proxyUrl) return true;
+
+  try {
+    const res = await fetch(`${proxyUrl}/v1/environment`, {
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(8000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Probe API + Clerk proxy when Clerk JS fails to load. Returns human-readable
  * hints for the sign-in error UI.
  */
