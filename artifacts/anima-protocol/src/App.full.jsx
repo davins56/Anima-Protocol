@@ -45,15 +45,12 @@ import {
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
-import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
-import {
-  isVercelPreviewHost,
-  resolveClerkProxyUrl,
 import {
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  isVercelPreviewHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
