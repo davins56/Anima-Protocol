@@ -1,17 +1,12 @@
 import { Router } from "express";
-import OpenAI, { toFile } from "openai";
+import { toFile } from "openai";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { rateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
-
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY must be set.");
-}
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { getOpenAIClient } from "../../lib/openaiClient";
 
 const router = Router();
 router.use(rateLimit);
@@ -25,7 +20,7 @@ router.use((req, res, next) => {
 });
 
 async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
-  const resp = await openai.chat.completions.create({
+  const resp = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     max_tokens: maxTokens,
     messages: [
@@ -41,7 +36,7 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
 // across SDK minor versions). Falls back to the plain model if unavailable.
 async function webSearchLLM(systemPrompt: string, userPrompt: string): Promise<string> {
   try {
-    const resp = await (openai as any).responses.create({
+    const resp = await (getOpenAIClient() as any).responses.create({
       model: "gpt-4o",
       tools: [{ type: "web_search_preview" }],
       instructions: systemPrompt,
@@ -204,7 +199,7 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 // Reads an uploaded photo with a vision model: OCRs any visible text and
 // describes the image, then distills it into the same ContextAnalysis shape.
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
-  const resp = await openai.chat.completions.create({
+  const resp = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     max_tokens: 1500,
     messages: [
@@ -883,7 +878,7 @@ Rules:
         ];
 
         const runCompletion = (model: string, maxTokens: number) =>
-          openai.chat.completions.create({
+          getOpenAIClient().chat.completions.create({
             model,
             max_tokens: maxTokens,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1087,7 +1082,7 @@ router.post("/image-edit", async (req, res) => {
 
   try {
     const file = await toFile(buffer, `source.${ext}`, { type: mime });
-    const result = await openai.images.edit({
+    const result = await getOpenAIClient().images.edit({
       model: "gpt-image-1",
       image: file,
       prompt: prompt.trim().slice(0, 1000),

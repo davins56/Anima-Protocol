@@ -4,8 +4,10 @@ import express, {
   type Response,
   type NextFunction,
 } from "express";
+import "./lib/loadEnv";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import {
@@ -46,6 +48,10 @@ app.use(cors({ credentials: true, origin: true }));
 // 20MB byte cap on the decoded buffer.
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+
+// Health checks must remain public so platform probes can distinguish service
+// availability from auth configuration problems.
+app.use("/api", healthRouter);
 
 // Verify Clerk JWTs against www/apex and other known hosts (Vercel → Replit).
 app.use(clerkMultiDomainMiddleware());

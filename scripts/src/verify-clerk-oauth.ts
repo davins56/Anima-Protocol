@@ -95,16 +95,47 @@ function instanceLabel(publishableKey: string | undefined): string {
   return publishableKey.startsWith("pk_test_") ? "Development" : "Production";
 }
 
+function assertClerkKeyPair(): void {
+  if (!CLERK_SECRET_KEY) {
+    throw new Error("Set CLERK_SECRET_KEY in .env or the environment");
+  }
+  if (CLERK_SECRET_KEY.startsWith("pk_")) {
+    throw new Error(
+      "CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk secret key (sk_live_* for Production, sk_test_* for Development).",
+    );
+  }
+  if (!CLERK_SECRET_KEY.startsWith("sk_")) {
+    throw new Error("CLERK_SECRET_KEY must start with sk_");
+  }
+  if (!CLERK_PUBLISHABLE_KEY) {
+    throw new Error(
+      "Set CLERK_PUBLISHABLE_KEY (pk_test_ or pk_live_) in .env to inspect OAuth strategies",
+    );
+  }
+  if (!CLERK_PUBLISHABLE_KEY.startsWith("pk_")) {
+    throw new Error("CLERK_PUBLISHABLE_KEY must start with pk_");
+  }
+  const secretEnv = CLERK_SECRET_KEY.startsWith("sk_live_") ? "live" : "test";
+  const publicEnv = CLERK_PUBLISHABLE_KEY.startsWith("pk_live_")
+    ? "live"
+    : "test";
+  if (secretEnv !== publicEnv) {
+    throw new Error(
+      `Clerk key mismatch: CLERK_SECRET_KEY is ${secretEnv}, but CLERK_PUBLISHABLE_KEY is ${publicEnv}. Use keys from the same Clerk instance.`,
+    );
+  }
+}
+
 function dashboardHint(publishableKey: string | undefined): string {
   const label = instanceLabel(publishableKey);
   const slug = publishableKey ? decodeInstanceSlug(publishableKey) : null;
   const slugNote = slug ? ` (instance: ${slug})` : "";
   return [
     `Clerk Dashboard → ${label}${slugNote} → Configure → SSO connections`,
-    "→ Add connection → For all users → GitHub",
+    "→ Add connection → For all users → Google and GitHub",
     label === "Development"
       ? "→ Leave “Use custom credentials” OFF (shared dev OAuth)"
-      : "→ Enable sign-up/sign-in + add your GitHub OAuth app credentials",
+      : "→ Enable sign-up/sign-in + add your Google and GitHub OAuth app credentials",
     "→ Paths → Redirect URLs: include www.anima-protocol.com/sign-in/sso-callback",
     "→ Redeploy Vercel after any env key changes",
   ].join("\n  ");
@@ -112,10 +143,7 @@ function dashboardHint(publishableKey: string | undefined): string {
 
 async function main(): Promise<void> {
   const fixRedirects = hasFlag("--fix-redirects");
-
-  if (!CLERK_SECRET_KEY) {
-    throw new Error("Set CLERK_SECRET_KEY in .env or the environment");
-  }
+  assertClerkKeyPair();
 
   const slug = CLERK_PUBLISHABLE_KEY
     ? decodeInstanceSlug(CLERK_PUBLISHABLE_KEY)
@@ -172,7 +200,7 @@ async function main(): Promise<void> {
   }
 
   if (!oauthOk) {
-    console.log("\nGitHub sign-in will fail until you enable it in Clerk:\n");
+    console.log("\nGoogle/GitHub sign-in will fail until you enable them in Clerk:\n");
     console.log(`  ${dashboardHint(CLERK_PUBLISHABLE_KEY)}`);
     console.log(
       "\nNote: Creating the repo on GitHub or signing into Clerk with GitHub",
@@ -184,7 +212,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log("\n✓ GitHub OAuth is configured for this Clerk instance");
+  console.log("\n✓ Google and GitHub OAuth are configured for this Clerk instance");
 }
 
 main().catch((error) => {

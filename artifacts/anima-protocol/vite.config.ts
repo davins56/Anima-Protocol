@@ -25,7 +25,7 @@ if (!rawPort) {
   );
 }
 
-const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const port = parseInt(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
@@ -52,7 +52,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
-    runtimeErrorOverlay(),
+    // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
+    ...(process.env.REPL_ID !== undefined ? [runtimeErrorOverlay()] : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

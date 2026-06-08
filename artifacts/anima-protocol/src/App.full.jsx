@@ -10,6 +10,9 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
+  ClerkFailed,
+  ClerkLoaded,
+  ClerkLoading,
   ClerkProvider,
   HandleSSOCallback,
   SignIn,
@@ -42,6 +45,12 @@ import {
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
+import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
+import { resolveClerkProxyUrl } from "@/lib/clerkProxy";
+import {
+  clerkOAuthCallbackAbsolute,
+  clerkOAuthRedirectPaths,
+} from "@/lib/clerkOAuthPaths";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -203,19 +212,14 @@ const viteClerkPublishableKey =
     : "";
 
 /**
- * Match api-server resolveClerkPublishableKey: Development keys (pk_test_) talk
- * to the dev Clerk instance directly on custom domains (no proxy). Host-derived
- * pk_live_ keys must not override a configured pk_test_ build — that mismatch
- * makes oauth_github fail with "strategy not allowed" when GitHub is only
- * enabled in the Development dashboard.
+ * Use the build-time publishable key when set (pk_test_ or pk_live_). Only fall
+ * back to host-derived keys when no env key is configured.
  */
 function resolveFrontendClerkPublishableKey(hostname, envKey) {
-  if (envKey.startsWith("pk_test_")) {
+  if (envKey.startsWith("pk_test_") || envKey.startsWith("pk_live_")) {
     return envKey;
   }
-  if (envKey.startsWith("pk_live_")) {
-    return publishableKeyFromHost(hostname, envKey);
-  }
+
   return publishableKeyFromHost(hostname, envKey || undefined);
 }
 
@@ -223,27 +227,6 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   window.location.hostname,
   viteClerkPublishableKey,
 );
-
-// Clerk Frontend API proxy — only when explicitly configured or for production
-// Clerk keys on same-origin hosts. Development keys (pk_test_*) break with the
-// proxy on custom domains (POST /api/__clerk/v1/client → 400 Origin mismatch).
-function configuredClerkProxyUrl() {
-  return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-    : "";
-}
-
-function isSameOriginProductionHost() {
-  if (typeof window === "undefined" || !import.meta.env.PROD) return false;
-  const host = window.location.hostname.toLowerCase();
-  return (
-    host === "anima-protocol.com" ||
-    host === "www.anima-protocol.com" ||
-    host.endsWith(".anima-protocol.com") ||
-    host.endsWith(".replit.app") ||
-    host.endsWith(".vercel.app")
-  );
-}
 
 function isDevClerkKey(key) {
   const builtIn =
@@ -254,15 +237,9 @@ function isDevClerkKey(key) {
   return typeof key === "string" && key.startsWith("pk_test_");
 }
 
-function effectiveClerkProxyUrl() {
-  const configured = configuredClerkProxyUrl();
-  if (configured) return configured;
-  if (isDevClerkKey(clerkPubKey)) return "";
-  if (!isSameOriginProductionHost()) return "";
-  return `${window.location.origin}/api/__clerk`;
-}
-
-const clerkProxyUrl = effectiveClerkProxyUrl();
+// Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
+// absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
+const clerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -282,21 +259,6 @@ const socialAuthProviders = [
     Icon: FaGithub,
   },
 ];
-
-function oauthCallbackPath(mode) {
-  const segment = mode === "sign-up" ? "sign-up" : "sign-in";
-  return `${basePath}/${segment}/sso-callback`;
-}
-
-function oauthRedirectUrl(path) {
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
-  }
-  return path;
-}
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -350,8 +312,6 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
-    socialButtonsRoot: "!hidden",
-    dividerRow: "!hidden",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -419,41 +379,41 @@ function providerShortName(strategy) {
 function getEnabledOAuthStrategies(clerk) {
   const environment =
     clerk?.__internal_environment ?? clerk?.environment ?? null;
-  const strategies = new Set();
-
-  const authList =
+  const strategies =
     environment?.userSettings?.authenticatableSocialStrategies ?? null;
-  if (Array.isArray(authList)) {
-    for (const strategy of authList) {
-      if (strategy) strategies.add(strategy);
-    }
+  if (Array.isArray(strategies) && strategies.length > 0) {
+    return strategies;
   }
 
   const social = environment?.userSettings?.social;
   if (social && typeof social === "object") {
-    for (const provider of Object.values(social)) {
-      if (provider?.enabled && provider?.strategy) {
-        strategies.add(provider.strategy);
-      }
+    const fromSocial = Object.values(social)
+      .filter((provider) => provider?.enabled)
+      .map((provider) => provider.strategy)
+      .filter(Boolean);
+    if (fromSocial.length > 0) {
+      return fromSocial;
     }
   }
 
-  return strategies.size > 0 ? [...strategies] : null;
+  return null;
 }
 
-function filterProvidersByEnvList(providers) {
+function visibleSocialProviders(clerk, clerkLoaded) {
   const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
-  if (typeof envList !== "string" || !envList.trim()) {
-    return providers;
+  if (typeof envList === "string" && envList.trim()) {
+    const allowed = new Set(
+      envList.split(",").map((entry) => entry.trim()).filter(Boolean),
+    );
+    return socialAuthProviders.filter((provider) =>
+      allowed.has(provider.strategy),
+    );
   }
-  const allowed = new Set(
-    envList.split(",").map((entry) => entry.trim()).filter(Boolean),
-  );
-  return providers.filter((provider) => allowed.has(provider.strategy));
-}
 
-const CLERK_SSO_DASHBOARD_URL =
-  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
+  // Development keys: always offer GitHub/Apple/Google — Clerk validates on click.
+  if (isDevClerkKey(clerkPubKey)) {
+    return socialAuthProviders;
+  }
 
 function clerkSsoSetupHint(providerName) {
   const instance = clerkInstanceLabel();
@@ -506,14 +466,23 @@ function SocialAuthButtons({ mode }) {
         .map((provider) => providerShortName(provider.strategy)),
     [providers],
   );
+  const providers = visibleSocialProviders(clerk, clerk.loaded);
 
   const handleOAuth = async (strategy) => {
     if (!clerk.loaded || fetchStatus === "fetching") {
       return;
     }
     setPendingStrategy(strategy);
-    const redirectCallbackUrl = oauthRedirectUrl(oauthCallbackPath(mode));
-    const redirectUrl = oauthRedirectUrl(authRedirectCompleteUrl);
+    // Clerk requires relative same-origin paths — absolute URLs fail validation.
+    const { redirectCallbackUrl, redirectUrl } = clerkOAuthRedirectPaths(
+      basePath,
+      mode,
+    );
+    const redirectCallbackAbsolute = clerkOAuthCallbackAbsolute(
+      window.location.origin,
+      basePath,
+      mode,
+    );
     try {
       // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
       const { error } = await signIn.sso({
@@ -535,6 +504,15 @@ function SocialAuthButtons({ mode }) {
         detail
           ? `${detail} ${clerkSsoSetupHint(shortName)}`
           : `${providerName} is not enabled for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)}`,
+      const instanceHint =
+        clerkInstanceLabel() === "Development"
+          ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
+          : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
+      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.`;
+      toast.error(
+        detail
+          ? `${detail} ${instanceHint} ${redirectHint}`
+          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${instanceHint} ${redirectHint}`,
       );
       setPendingStrategy(null);
     }
@@ -548,7 +526,7 @@ function SocialAuthButtons({ mode }) {
         </p>
       ) : providers.length === 0 ? (
         <p className="py-2 text-center text-sm text-cyan-400/50">
-          No social sign-in providers configured in Clerk yet.
+          No social sign-in providers configured.
         </p>
       ) : (
         providers.map(({ label, strategy, Icon, isEnabled }) => (
@@ -797,6 +775,7 @@ function ClerkProviderWithRoutes({ children }) {
 const PUBLIC_PREFIXES = [
   "/sign-in",
   "/sign-up",
+  "/sso-callback",
   "/terms",
   "/privacy-policy",
   "/disclaimer",
@@ -993,6 +972,7 @@ const AuthenticatedApp = () => {
                 path="/sign-up/sso-callback"
                 element={<SsoCallbackPage />}
               />
+              <Route path="/sso-callback" element={<SsoCallbackPage />} />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
               <Route
