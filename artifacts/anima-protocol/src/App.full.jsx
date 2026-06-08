@@ -45,8 +45,10 @@ import {
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
-import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
-import { resolveClerkProxyUrl } from "@/lib/clerkProxy";
+import {
+  resolveClerkProxyUrl,
+  shouldUseClerkProxy,
+} from "@/lib/clerkProxy";
 import {
   clerkOAuthCallbackAbsolute,
   clerkOAuthRedirectPaths,
@@ -239,7 +241,8 @@ function isDevClerkKey(key) {
 
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
-const clerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
+const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
+const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -268,6 +271,12 @@ function stripBase(path) {
 
 if (!clerkPubKey) {
   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
+}
+
+if (clerkPubKey.startsWith("sk_")) {
+  throw new Error(
+    "VITE_CLERK_PUBLISHABLE_KEY must be a publishable key (pk_live_… or pk_test_…), not a secret key (sk_…).",
+  );
 }
 
 if (
@@ -517,15 +526,28 @@ function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
   return (
     <AuthFormShell mode="sign-in">
-      <SignIn
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-in…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-in is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignIn
+          routing="path"
+          path={`${basePath}/sign-in`}
+          signUpUrl={`${basePath}/sign-up`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -534,15 +556,28 @@ function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
   return (
     <AuthFormShell mode="sign-up">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-up…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-up is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -624,6 +659,18 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
+  const { isLoadingAuth, authStalled } = useAuth();
+
+  // Clerk <Show> renders nothing until the SDK loads. If Clerk stalls, fall back
+  // to the public landing so production never shows a blank screen.
+  if (isLoadingAuth && authStalled) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Landing />
+      </Suspense>
+    );
+  }
+
   return (
     <>
       <Show when="signed-in">
@@ -638,12 +685,42 @@ function HomeGate() {
   );
 }
 
+function ClerkStallRecovery({ useProxy, onToggleProxy }) {
+  const clerk = useClerk();
+  const toggledRef = useRef(false);
+
+  useEffect(() => {
+    if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
+
+    const timer = setTimeout(() => {
+      if (clerk.loaded || toggledRef.current) return;
+      toggledRef.current = true;
+      onToggleProxy(!useProxy);
+    }, 10_000);
+
+    return () => clearTimeout(timer);
+  }, [clerk.loaded, onToggleProxy, useProxy]);
+
+  return null;
+}
+
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
+  const [useProxy, setUseProxy] = useState(Boolean(initialClerkProxyUrl));
+  const [providerKey, setProviderKey] = useState(0);
+
+  const activeProxyUrl = useProxy ? resolveClerkProxyUrl(clerkPubKey) : "";
+
+  const handleToggleProxy = (nextUseProxy) => {
+    setUseProxy(nextUseProxy);
+    setProviderKey((key) => key + 1);
+  };
+
   return (
     <ClerkProvider
+      key={`clerk-${providerKey}-${useProxy ? "proxy" : "direct"}`}
       publishableKey={clerkPubKey}
-      {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}
+      {...(activeProxyUrl ? { proxyUrl: activeProxyUrl } : {})}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
@@ -666,6 +743,7 @@ function ClerkProviderWithRoutes({ children }) {
       routerPush={(to) => navigate(stripBase(to))}
       routerReplace={(to) => navigate(stripBase(to), { replace: true })}
     >
+      <ClerkStallRecovery useProxy={useProxy} onToggleProxy={handleToggleProxy} />
       <ClerkQueryClientCacheInvalidator />
       {children}
     </ClerkProvider>
@@ -685,6 +763,7 @@ const PUBLIC_PREFIXES = [
 const AuthenticatedApp = () => {
   const {
     isLoadingAuth,
+    authStalled,
     isLoadingPublicSettings,
     authError,
     navigateToLogin,
@@ -805,16 +884,26 @@ const AuthenticatedApp = () => {
   // never stack. The disclaimer fires onAccept on mount when already accepted,
   // so returning users surface the tutorial immediately (e.g. when replaying).
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
-  const [authWaitExpired, setAuthWaitExpired] = useState(false);
 
   useEffect(() => {
-    if (!isLoadingAuth) {
-      setAuthWaitExpired(false);
-      return;
-    }
-    const timer = setTimeout(() => setAuthWaitExpired(true), 15000);
-    return () => clearTimeout(timer);
-  }, [isLoadingAuth]);
+    if (!isLoadingAuth || !authStalled) return;
+    const onSignInScreen =
+      location.pathname === "/sign-in" ||
+      location.pathname === "/sign-up" ||
+      location.pathname.startsWith("/sign-in/") ||
+      location.pathname.startsWith("/sign-up/");
+    if (onSignInScreen) return;
+    toast.error("Sign-in is temporarily unavailable.", {
+      id: "anima-clerk-unavailable",
+      description:
+        "The app will load in guest mode. Fix CLERK_SECRET_KEY on Vercel (sk_live_*), then refresh.",
+      duration: Infinity,
+      action: {
+        label: "Retry",
+        onClick: () => window.location.reload(),
+      },
+    });
+  }, [isLoadingAuth, authStalled, location.pathname]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -825,7 +914,7 @@ const AuthenticatedApp = () => {
   }
 
   // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth && !authWaitExpired) {
+  if (isLoadingAuth && !authStalled) {
     return <PageLoader />;
   }
 
