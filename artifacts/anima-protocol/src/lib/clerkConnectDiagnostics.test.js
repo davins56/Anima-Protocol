@@ -7,6 +7,8 @@ import {
 // Production-shaped key with an accounts.dev host so production probes /api/__clerk.
 const LIVE_KEY =
   'pk_live_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ';
+const CUSTOM_DOMAIN_KEY =
+  'pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA'; // pragma: allowlist secret
 
 describe('probeClerkConnectivity', () => {
   beforeEach(() => {
@@ -71,7 +73,7 @@ describe('probeClerkConnectivity', () => {
             status: 200,
           });
         }
-        if (String(url).endsWith('/api/__clerk/v1/environment')) {
+        if (String(url).includes('/api/__clerk/v1/environment')) {
           return new Response(
             JSON.stringify({
               errors: [
@@ -96,6 +98,45 @@ describe('probeClerkConnectivity', () => {
     expect(hints).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalledWith(
       expect.stringContaining('/npm/@clerk/clerk-js@6/dist/clerk.browser.js'),
+      expect.anything(),
+    );
+  });
+
+  it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+          });
+        }
+        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: 'subdomain_not_allowed',
+                  message: 'Subdomain not allowed',
+                },
+              ],
+            }),
+            { status: 403 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
+
+    expect(hints).toEqual([
+      'Clerk is rejecting www.anima-protocol.com for the custom login domain. In Clerk Dashboard → Domains, add www.anima-protocol.com to the allowed subdomains for clerk.anima-protocol.com, then hard-refresh sign-in.',
+    ]);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=6.12.1',
+      ),
       expect.anything(),
     );
   });
