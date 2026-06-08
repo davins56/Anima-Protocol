@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { probeClerkConnectivity } from './clerkConnectDiagnostics';
+import {
+  isClerkProxyHealthy,
+  probeClerkConnectivity,
+} from './clerkConnectDiagnostics';
 
 // Development-shaped key so probes target /api/__clerk (not a custom Clerk domain).
 const LIVE_KEY =
@@ -57,5 +60,82 @@ describe('probeClerkConnectivity', () => {
       expect.stringContaining('/npm/@clerk/clerk-js@6/dist/clerk.browser.js'),
       expect.anything(),
     );
+  });
+
+  it('surfaces Clerk host mismatch from publishable key or proxy URL configuration', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+          });
+        }
+        if (String(url).endsWith('/api/__clerk/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: 'host_invalid',
+                  message: 'Invalid host',
+                },
+              ],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(LIVE_KEY);
+
+    expect(hints).toContain(
+      'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+    );
+    expect(hints).toHaveLength(1);
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/npm/@clerk/clerk-js@6/dist/clerk.browser.js'),
+      expect.anything(),
+    );
+  });
+});
+
+describe('isClerkProxyHealthy', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {
+      location: {
+        hostname: 'www.anima-protocol.com',
+        origin: 'https://www.anima-protocol.com',
+      },
+    });
+    vi.stubEnv('PROD', true);
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('VITE_CLERK_PROXY_URL', '');
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', LIVE_KEY);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('returns false when the Clerk proxy responds with 503', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 503 })),
+    );
+
+    await expect(isClerkProxyHealthy(LIVE_KEY)).resolves.toBe(false);
+  });
+
+  it('returns true when proxy is not used', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_example');
+
+    await expect(isClerkProxyHealthy('pk_test_example')).resolves.toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });

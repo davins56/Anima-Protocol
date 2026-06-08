@@ -5,7 +5,7 @@
     "NODE_ENV": "production"
   },
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @workspace/api-server run build && PORT=23660 BASE_PATH=/ pnpm --filter @workspace/anima-protocol run build",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$CLERK_PUBLISHABLE_KEY} pnpm --filter @workspace/anima-protocol run build",
   "outputDirectory": "artifacts/anima-protocol/dist/public",
   "functions": {
     "api/index.mjs": {

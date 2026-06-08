@@ -14,6 +14,25 @@ async function readProxyError(res) {
 }
 
 /**
+ * Quick health check for the same-origin Clerk proxy. When this returns false,
+ * ClerkProvider should skip proxyUrl so email/OAuth can use Clerk's API directly.
+ */
+export async function isClerkProxyHealthy(clerkPubKey) {
+  const proxyUrl = clerkProxyProbeBase(clerkPubKey);
+  if (!proxyUrl) return true;
+
+  try {
+    const res = await fetch(`${proxyUrl}/v1/environment`, {
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(8000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Probe API + Clerk proxy when Clerk JS fails to load. Returns human-readable
  * hints for the sign-in error UI.
  */
@@ -54,6 +73,13 @@ export async function probeClerkConnectivity(clerkPubKey) {
       if (proxyError?.error === 'clerk_proxy_invalid_secret') {
         hints.push(
           'Clerk proxy is misconfigured: Vercel Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
+        );
+        return hints;
+      } else if (
+        proxyError?.errors?.some((entry) => entry?.code === 'host_invalid')
+      ) {
+        hints.push(
+          'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
         );
         return hints;
       } else if (clerkRes.status === 503) {

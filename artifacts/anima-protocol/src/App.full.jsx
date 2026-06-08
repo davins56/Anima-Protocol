@@ -49,6 +49,13 @@ import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
 import {
   isVercelPreviewHost,
   resolveClerkProxyUrl,
+import {
+  isClerkProxyHealthy,
+  probeClerkConnectivity,
+} from "@/lib/clerkConnectDiagnostics";
+import {
+  resolveClerkProxyUrl,
+  shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
 import {
   clerkOAuthCallbackAbsolute,
@@ -242,7 +249,8 @@ function isDevClerkKey(key) {
 
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
-const clerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
+const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
+const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -271,6 +279,12 @@ function stripBase(path) {
 
 if (!clerkPubKey) {
   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
+}
+
+if (clerkPubKey.startsWith("sk_")) {
+  throw new Error(
+    "VITE_CLERK_PUBLISHABLE_KEY must be a publishable key (pk_live_… or pk_test_…), not a secret key (sk_…).",
+  );
 }
 
 if (
@@ -480,9 +494,14 @@ function SocialAuthButtons({ mode }) {
           Loading sign-in options…
         </p>
       ) : providers.length === 0 ? (
-        <p className="py-2 text-center text-sm text-cyan-400/50">
-          No social sign-in providers configured.
-        </p>
+        <div className="space-y-2 py-2 text-center text-sm text-cyan-400/50">
+          <p>Google and GitHub sign-in are not enabled in Clerk yet.</p>
+          <p className="text-xs leading-relaxed text-cyan-400/40">
+            Add OAuth credentials under Clerk → Production → SSO connections
+            (see docs/clerk-github-login.md). Email sign-in below still works
+            when Clerk connects.
+          </p>
+        </div>
       ) : (
         providers.map(({ label, strategy, Icon }) => (
           <button
@@ -503,10 +522,38 @@ function SocialAuthButtons({ mode }) {
   );
 }
 
+function ClerkLoginDiagnostics() {
+  const [hints, setHints] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await probeClerkConnectivity(clerkPubKey);
+      if (!cancelled) setHints(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (hints.length === 0) return null;
+
+  return (
+    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+      {hints.map((hint) => (
+        <p key={hint} className="mt-1 first:mt-0">
+          {hint}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function AuthFormShell({ mode, children }) {
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
+        <ClerkLoginDiagnostics />
         <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
           <SocialAuthButtons mode={mode} />
           <p className="mt-3 text-center text-xs text-cyan-400/45">
@@ -525,15 +572,28 @@ function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
   return (
     <AuthFormShell mode="sign-in">
-      <SignIn
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-in…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-in is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignIn
+          routing="path"
+          path={`${basePath}/sign-in`}
+          signUpUrl={`${basePath}/sign-up`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -542,15 +602,28 @@ function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
   return (
     <AuthFormShell mode="sign-up">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-up…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-up is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -632,6 +705,18 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
+  const { isLoadingAuth, authStalled } = useAuth();
+
+  // Clerk <Show> renders nothing until the SDK loads. If Clerk stalls, fall back
+  // to the public landing so production never shows a blank screen.
+  if (isLoadingAuth && authStalled) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Landing />
+      </Suspense>
+    );
+  }
+
   return (
     <>
       <Show when="signed-in">
@@ -646,12 +731,71 @@ function HomeGate() {
   );
 }
 
+function ClerkStallRecovery({ useProxy, onToggleProxy }) {
+  const clerk = useClerk();
+  const toggledRef = useRef(false);
+
+  useEffect(() => {
+    if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
+    // Already on direct Clerk — never flip back to a broken same-origin proxy.
+    if (!useProxy) return;
+
+    const timer = setTimeout(() => {
+      if (clerk.loaded || toggledRef.current) return;
+      toggledRef.current = true;
+      onToggleProxy(false);
+      onToggleProxy(!useProxy);
+    }, 10_000);
+
+    return () => clearTimeout(timer);
+  }, [clerk.loaded, onToggleProxy, useProxy]);
+
+  return null;
+}
+
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
+  const [useProxy, setUseProxy] = useState(null);
+  const [providerKey, setProviderKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!initialClerkProxyUrl) {
+        if (!cancelled) setUseProxy(false);
+        return;
+      }
+      const healthy = await isClerkProxyHealthy(clerkPubKey);
+      if (!cancelled) setUseProxy(healthy);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const activeProxyUrl =
+    useProxy === true ? resolveClerkProxyUrl(clerkPubKey) : "";
+  const [useProxy, setUseProxy] = useState(Boolean(initialClerkProxyUrl));
+  const [providerKey, setProviderKey] = useState(0);
+
+  const activeProxyUrl = useProxy ? resolveClerkProxyUrl(clerkPubKey) : "";
+
+  const handleToggleProxy = (nextUseProxy) => {
+    setUseProxy(nextUseProxy);
+    setProviderKey((key) => key + 1);
+  };
+
+  if (useProxy === null) {
+    return <PageLoader />;
+  }
+
   return (
     <ClerkProvider
+      key={`clerk-${providerKey}-${useProxy ? "proxy" : "direct"}`}
       publishableKey={clerkPubKey}
-      {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}
+      {...(activeProxyUrl ? { proxyUrl: activeProxyUrl } : {})}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
@@ -674,6 +818,7 @@ function ClerkProviderWithRoutes({ children }) {
       routerPush={(to) => navigate(stripBase(to))}
       routerReplace={(to) => navigate(stripBase(to), { replace: true })}
     >
+      <ClerkStallRecovery useProxy={useProxy} onToggleProxy={handleToggleProxy} />
       <ClerkQueryClientCacheInvalidator />
       {children}
     </ClerkProvider>
@@ -693,6 +838,7 @@ const PUBLIC_PREFIXES = [
 const AuthenticatedApp = () => {
   const {
     isLoadingAuth,
+    authStalled,
     isLoadingPublicSettings,
     authError,
     navigateToLogin,
@@ -813,16 +959,26 @@ const AuthenticatedApp = () => {
   // never stack. The disclaimer fires onAccept on mount when already accepted,
   // so returning users surface the tutorial immediately (e.g. when replaying).
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
-  const [authWaitExpired, setAuthWaitExpired] = useState(false);
 
   useEffect(() => {
-    if (!isLoadingAuth) {
-      setAuthWaitExpired(false);
-      return;
-    }
-    const timer = setTimeout(() => setAuthWaitExpired(true), 15000);
-    return () => clearTimeout(timer);
-  }, [isLoadingAuth]);
+    if (!isLoadingAuth || !authStalled) return;
+    const onSignInScreen =
+      location.pathname === "/sign-in" ||
+      location.pathname === "/sign-up" ||
+      location.pathname.startsWith("/sign-in/") ||
+      location.pathname.startsWith("/sign-up/");
+    if (onSignInScreen) return;
+    toast.error("Sign-in is temporarily unavailable.", {
+      id: "anima-clerk-unavailable",
+      description:
+        "The app will load in guest mode. Fix CLERK_SECRET_KEY on Vercel (sk_live_*), then refresh.",
+      duration: Infinity,
+      action: {
+        label: "Retry",
+        onClick: () => window.location.reload(),
+      },
+    });
+  }, [isLoadingAuth, authStalled, location.pathname]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -833,7 +989,7 @@ const AuthenticatedApp = () => {
   }
 
   // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth && !authWaitExpired) {
+  if (isLoadingAuth && !authStalled) {
     return <PageLoader />;
   }
 
