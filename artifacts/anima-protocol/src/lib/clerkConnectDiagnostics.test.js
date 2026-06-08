@@ -83,7 +83,7 @@ describe('probeClerkConnectivity', () => {
     const hints = await probeClerkConnectivity(LIVE_KEY);
 
     expect(hints).toContain(
-      'Clerk proxy host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+      'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
     );
     expect(hints).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalledWith(
