@@ -47,6 +47,10 @@ import {
 import { base44 } from "@/api/base44Client";
 import { probeClerkConnectivity } from "@/lib/clerkConnectDiagnostics";
 import { resolveClerkProxyUrl } from "@/lib/clerkProxy";
+import {
+  clerkOAuthCallbackAbsolute,
+  clerkOAuthRedirectPaths,
+} from "@/lib/clerkOAuthPaths";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -224,27 +228,6 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
-// Clerk Frontend API proxy — only when explicitly configured or for production
-// Clerk keys on same-origin hosts. Development keys (pk_test_*) break with the
-// proxy on custom domains (POST /api/__clerk/v1/client → 400 Origin mismatch).
-function configuredClerkProxyUrl() {
-  return typeof import.meta.env.VITE_CLERK_PROXY_URL === "string"
-    ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
-    : "";
-}
-
-function isSameOriginProductionHost() {
-  if (typeof window === "undefined" || !import.meta.env.PROD) return false;
-  const host = window.location.hostname.toLowerCase();
-  return (
-    host === "anima-protocol.com" ||
-    host === "www.anima-protocol.com" ||
-    host.endsWith(".anima-protocol.com") ||
-    host.endsWith(".replit.app") ||
-    host.endsWith(".vercel.app")
-  );
-}
-
 function isDevClerkKey(key) {
   const builtIn =
     typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
@@ -254,15 +237,9 @@ function isDevClerkKey(key) {
   return typeof key === "string" && key.startsWith("pk_test_");
 }
 
-function effectiveClerkProxyUrl() {
-  const configured = configuredClerkProxyUrl();
-  if (configured) return configured;
-  if (isDevClerkKey(clerkPubKey)) return "";
-  if (!isSameOriginProductionHost()) return "";
-  return `${window.location.origin}/api/__clerk`;
-}
-
-const clerkProxyUrl = effectiveClerkProxyUrl();
+// Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
+// absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
+const clerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
 const socialAuthProviders = [
@@ -282,21 +259,6 @@ const socialAuthProviders = [
     Icon: FaGithub,
   },
 ];
-
-function oauthCallbackPath(mode) {
-  const segment = mode === "sign-up" ? "sign-up" : "sign-in";
-  return `${basePath}/${segment}/sso-callback`;
-}
-
-function oauthRedirectUrl(path) {
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
-  }
-  return path;
-}
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -463,8 +425,16 @@ function SocialAuthButtons({ mode }) {
       return;
     }
     setPendingStrategy(strategy);
-    const redirectCallbackUrl = oauthRedirectUrl(oauthCallbackPath(mode));
-    const redirectUrl = oauthRedirectUrl(authRedirectCompleteUrl);
+    // Clerk requires relative same-origin paths — absolute URLs fail validation.
+    const { redirectCallbackUrl, redirectUrl } = clerkOAuthRedirectPaths(
+      basePath,
+      mode,
+    );
+    const redirectCallbackAbsolute = clerkOAuthCallbackAbsolute(
+      window.location.origin,
+      basePath,
+      mode,
+    );
     try {
       // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
       const { error } = await signIn.sso({
@@ -483,9 +453,9 @@ function SocialAuthButtons({ mode }) {
       const detail = formatClerkOAuthError(error);
       const instanceHint =
         clerkInstanceLabel() === "Development"
-          ? "Enable GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
-          : "Enable GitHub under Clerk Dashboard → Production → SSO connections (Development settings do not apply to pk_live_).";
-      const redirectHint = `Add ${redirectCallbackUrl} under Clerk → Paths → Redirect URLs.`;
+          ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
+          : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
+      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.`;
       toast.error(
         detail
           ? `${detail} ${instanceHint} ${redirectHint}`
@@ -706,6 +676,7 @@ function ClerkProviderWithRoutes({ children }) {
 const PUBLIC_PREFIXES = [
   "/sign-in",
   "/sign-up",
+  "/sso-callback",
   "/terms",
   "/privacy-policy",
   "/disclaimer",
@@ -902,6 +873,7 @@ const AuthenticatedApp = () => {
                 path="/sign-up/sso-callback"
                 element={<SsoCallbackPage />}
               />
+              <Route path="/sso-callback" element={<SsoCallbackPage />} />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
               <Route
