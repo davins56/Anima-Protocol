@@ -245,6 +245,8 @@ function isDevClerkKey(key) {
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
+const CLERK_SSO_DASHBOARD_URL =
+  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
 
 const socialAuthProviders = [
   {
@@ -411,17 +413,20 @@ function getEnabledOAuthStrategies(clerk) {
 
 function filterProvidersByEnvList(providers) {
   const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
-  if (typeof envList !== "string" || !envList.trim()) {
-    return providers;
+  if (typeof envList === "string" && envList.trim()) {
+    const allowed = new Set(
+      envList
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    return providers.filter((provider) =>
+      allowed.has(provider.strategy.toLowerCase()) ||
+      allowed.has(provider.strategy.replace(/^oauth_/, "").toLowerCase()),
+    );
   }
-  const allowed = new Set(
-    envList.split(",").map((entry) => entry.trim()).filter(Boolean),
-  );
-  return providers.filter((provider) => allowed.has(provider.strategy));
+  return providers;
 }
-
-const CLERK_SSO_DASHBOARD_URL =
-  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
 
 function clerkSsoSetupHint(providerName) {
   const instance = clerkInstanceLabel();
@@ -460,13 +465,15 @@ function SocialAuthButtons({ mode }) {
   }, [clerk, clerk.loaded]);
 
   const providers = useMemo(() => {
-    const list = filterProvidersByEnvList(socialAuthProviders);
     if (!clerk.loaded) return [];
-    if (isDevClerkKey(clerkPubKey)) {
-      return list.map((provider) => ({ ...provider, isEnabled: true }));
+    const configuredProviders = filterProvidersByEnvList(socialAuthProviders);
+    if (isDevClerkKey(clerkPubKey) || !Array.isArray(enabledStrategies)) {
+      return configuredProviders.map((provider) => ({
+        ...provider,
+        isEnabled: true,
+      }));
     }
-    if (!Array.isArray(enabledStrategies)) return [];
-    return list.map((provider) => ({
+    return configuredProviders.map((provider) => ({
       ...provider,
       isEnabled: enabledStrategies.includes(provider.strategy),
     }));
@@ -512,6 +519,10 @@ function SocialAuthButtons({ mode }) {
           ?.label ?? "That provider";
       const detail = formatClerkOAuthError(error);
       const shortName = providerShortName(strategy);
+      const instanceHint =
+        clerkInstanceLabel() === "Development"
+          ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
+          : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
       const previewNote = isVercelPreviewHost(window.location.hostname)
         ? " Vercel preview URLs change on each deploy — redeploy (or restart the API) so redirect URLs auto-register, or run pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects --preview-host=" +
           window.location.host +
@@ -520,8 +531,8 @@ function SocialAuthButtons({ mode }) {
       const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.${previewNote}`;
       toast.error(
         detail
-          ? `${detail} ${clerkSsoSetupHint(shortName)} ${redirectHint}`
-          : `${providerName} is not enabled for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)} ${redirectHint}`,
+          ? `${detail} ${instanceHint} ${redirectHint}`
+          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)} ${instanceHint} ${redirectHint}`,
       );
       setPendingStrategy(null);
     }
