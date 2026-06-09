@@ -1388,7 +1388,7 @@ const AuthenticatedApp = () => {
                     <Reflections />
                   </Suspense>
                 }
-              />git remote remove gitlab
+              />s
               <Route
                 path="/discoveries"
                 element={
@@ -1396,7 +1396,7 @@ const AuthenticatedApp = () => {
                     <DiscoveryQueue />
                   </Suspense>
                 }
-              /g
+              />
               <Route
                 path="/locationsmap"
                 element={

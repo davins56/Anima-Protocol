@@ -5,7 +5,7 @@ import __bannerUrl from 'node:url';
 globalThis.require = __bannerCrReq(import.meta.url);
 globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
-
+    
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -24084,284 +24084,6 @@ var require_main = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/object-assign@4.1.1/node_modules/object-assign/index.js
-var require_object_assign = __commonJS({
-  "../../node_modules/.pnpm/object-assign@4.1.1/node_modules/object-assign/index.js"(exports, module) {
-    "use strict";
-    var getOwnPropertySymbols = Object.getOwnPropertySymbols;
-    var hasOwnProperty = Object.prototype.hasOwnProperty;
-    var propIsEnumerable = Object.prototype.propertyIsEnumerable;
-    function toObject(val) {
-      if (val === null || val === void 0) {
-        throw new TypeError("Object.assign cannot be called with null or undefined");
-      }
-      return Object(val);
-    }
-    function shouldUseNative() {
-      try {
-        if (!Object.assign) {
-          return false;
-        }
-        var test1 = new String("abc");
-        test1[5] = "de";
-        if (Object.getOwnPropertyNames(test1)[0] === "5") {
-          return false;
-        }
-        var test2 = {};
-        for (var i2 = 0; i2 < 10; i2++) {
-          test2["_" + String.fromCharCode(i2)] = i2;
-        }
-        var order2 = Object.getOwnPropertyNames(test2).map(function(n2) {
-          return test2[n2];
-        });
-        if (order2.join("") !== "0123456789") {
-          return false;
-        }
-        var test3 = {};
-        "abcdefghijklmnopqrst".split("").forEach(function(letter) {
-          test3[letter] = letter;
-        });
-        if (Object.keys(Object.assign({}, test3)).join("") !== "abcdefghijklmnopqrst") {
-          return false;
-        }
-        return true;
-      } catch (err) {
-        return false;
-      }
-    }
-    module.exports = shouldUseNative() ? Object.assign : function(target, source) {
-      var from;
-      var to = toObject(target);
-      var symbols;
-      for (var s3 = 1; s3 < arguments.length; s3++) {
-        from = Object(arguments[s3]);
-        for (var key in from) {
-          if (hasOwnProperty.call(from, key)) {
-            to[key] = from[key];
-          }
-        }
-        if (getOwnPropertySymbols) {
-          symbols = getOwnPropertySymbols(from);
-          for (var i2 = 0; i2 < symbols.length; i2++) {
-            if (propIsEnumerable.call(from, symbols[i2])) {
-              to[symbols[i2]] = from[symbols[i2]];
-            }
-          }
-        }
-      }
-      return to;
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/cors@2.8.6/node_modules/cors/lib/index.js
-var require_lib3 = __commonJS({
-  "../../node_modules/.pnpm/cors@2.8.6/node_modules/cors/lib/index.js"(exports, module) {
-    (function() {
-      "use strict";
-      var assign = require_object_assign();
-      var vary = require_vary();
-      var defaults3 = {
-        origin: "*",
-        methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-        preflightContinue: false,
-        optionsSuccessStatus: 204
-      };
-      function isString(s3) {
-        return typeof s3 === "string" || s3 instanceof String;
-      }
-      function isOriginAllowed(origin, allowedOrigin) {
-        if (Array.isArray(allowedOrigin)) {
-          for (var i2 = 0; i2 < allowedOrigin.length; ++i2) {
-            if (isOriginAllowed(origin, allowedOrigin[i2])) {
-              return true;
-            }
-          }
-          return false;
-        } else if (isString(allowedOrigin)) {
-          return origin === allowedOrigin;
-        } else if (allowedOrigin instanceof RegExp) {
-          return allowedOrigin.test(origin);
-        } else {
-          return !!allowedOrigin;
-        }
-      }
-      function configureOrigin(options, req) {
-        var requestOrigin = req.headers.origin, headers = [], isAllowed;
-        if (!options.origin || options.origin === "*") {
-          headers.push([{
-            key: "Access-Control-Allow-Origin",
-            value: "*"
-          }]);
-        } else if (isString(options.origin)) {
-          headers.push([{
-            key: "Access-Control-Allow-Origin",
-            value: options.origin
-          }]);
-          headers.push([{
-            key: "Vary",
-            value: "Origin"
-          }]);
-        } else {
-          isAllowed = isOriginAllowed(requestOrigin, options.origin);
-          headers.push([{
-            key: "Access-Control-Allow-Origin",
-            value: isAllowed ? requestOrigin : false
-          }]);
-          headers.push([{
-            key: "Vary",
-            value: "Origin"
-          }]);
-        }
-        return headers;
-      }
-      function configureMethods(options) {
-        var methods = options.methods;
-        if (methods.join) {
-          methods = options.methods.join(",");
-        }
-        return {
-          key: "Access-Control-Allow-Methods",
-          value: methods
-        };
-      }
-      function configureCredentials(options) {
-        if (options.credentials === true) {
-          return {
-            key: "Access-Control-Allow-Credentials",
-            value: "true"
-          };
-        }
-        return null;
-      }
-      function configureAllowedHeaders(options, req) {
-        var allowedHeaders = options.allowedHeaders || options.headers;
-        var headers = [];
-        if (!allowedHeaders) {
-          allowedHeaders = req.headers["access-control-request-headers"];
-          headers.push([{
-            key: "Vary",
-            value: "Access-Control-Request-Headers"
-          }]);
-        } else if (allowedHeaders.join) {
-          allowedHeaders = allowedHeaders.join(",");
-        }
-        if (allowedHeaders && allowedHeaders.length) {
-          headers.push([{
-            key: "Access-Control-Allow-Headers",
-            value: allowedHeaders
-          }]);
-        }
-        return headers;
-      }
-      function configureExposedHeaders(options) {
-        var headers = options.exposedHeaders;
-        if (!headers) {
-          return null;
-        } else if (headers.join) {
-          headers = headers.join(",");
-        }
-        if (headers && headers.length) {
-          return {
-            key: "Access-Control-Expose-Headers",
-            value: headers
-          };
-        }
-        return null;
-      }
-      function configureMaxAge(options) {
-        var maxAge = (typeof options.maxAge === "number" || options.maxAge) && options.maxAge.toString();
-        if (maxAge && maxAge.length) {
-          return {
-            key: "Access-Control-Max-Age",
-            value: maxAge
-          };
-        }
-        return null;
-      }
-      function applyHeaders(headers, res) {
-        for (var i2 = 0, n2 = headers.length; i2 < n2; i2++) {
-          var header = headers[i2];
-          if (header) {
-            if (Array.isArray(header)) {
-              applyHeaders(header, res);
-            } else if (header.key === "Vary" && header.value) {
-              vary(res, header.value);
-            } else if (header.value) {
-              res.setHeader(header.key, header.value);
-            }
-          }
-        }
-      }
-      function cors2(options, req, res, next) {
-        var headers = [], method = req.method && req.method.toUpperCase && req.method.toUpperCase();
-        if (method === "OPTIONS") {
-          headers.push(configureOrigin(options, req));
-          headers.push(configureCredentials(options));
-          headers.push(configureMethods(options));
-          headers.push(configureAllowedHeaders(options, req));
-          headers.push(configureMaxAge(options));
-          headers.push(configureExposedHeaders(options));
-          applyHeaders(headers, res);
-          if (options.preflightContinue) {
-            next();
-          } else {
-            res.statusCode = options.optionsSuccessStatus;
-            res.setHeader("Content-Length", "0");
-            res.end();
-          }
-        } else {
-          headers.push(configureOrigin(options, req));
-          headers.push(configureCredentials(options));
-          headers.push(configureExposedHeaders(options));
-          applyHeaders(headers, res);
-          next();
-        }
-      }
-      function middlewareWrapper(o2) {
-        var optionsCallback = null;
-        if (typeof o2 === "function") {
-          optionsCallback = o2;
-        } else {
-          optionsCallback = function(req, cb) {
-            cb(null, o2);
-          };
-        }
-        return function corsMiddleware(req, res, next) {
-          optionsCallback(req, function(err, options) {
-            if (err) {
-              next(err);
-            } else {
-              var corsOptions = assign({}, defaults3, options);
-              var originCallback = null;
-              if (corsOptions.origin && typeof corsOptions.origin === "function") {
-                originCallback = corsOptions.origin;
-              } else if (corsOptions.origin) {
-                originCallback = function(origin, cb) {
-                  cb(null, corsOptions.origin);
-                };
-              }
-              if (originCallback) {
-                originCallback(req.headers.origin, function(err2, origin) {
-                  if (err2 || !origin) {
-                    next(err2);
-                  } else {
-                    corsOptions.origin = origin;
-                    cors2(corsOptions, req, res, next);
-                  }
-                });
-              } else {
-                next();
-              }
-            }
-          });
-        };
-      }
-      module.exports = middlewareWrapper;
-    })();
-  }
-});
-
 // ../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js
 var require_err_helpers = __commonJS({
   "../../node_modules/.pnpm/pino-std-serializers@7.1.0/node_modules/pino-std-serializers/lib/err-helpers.js"(exports, module) {
@@ -28664,6 +28386,284 @@ var require_pino = __commonJS({
     module.exports.version = version4;
     module.exports.default = pino2;
     module.exports.pino = pino2;
+  }
+});
+
+// ../../node_modules/.pnpm/object-assign@4.1.1/node_modules/object-assign/index.js
+var require_object_assign = __commonJS({
+  "../../node_modules/.pnpm/object-assign@4.1.1/node_modules/object-assign/index.js"(exports, module) {
+    "use strict";
+    var getOwnPropertySymbols = Object.getOwnPropertySymbols;
+    var hasOwnProperty = Object.prototype.hasOwnProperty;
+    var propIsEnumerable = Object.prototype.propertyIsEnumerable;
+    function toObject(val) {
+      if (val === null || val === void 0) {
+        throw new TypeError("Object.assign cannot be called with null or undefined");
+      }
+      return Object(val);
+    }
+    function shouldUseNative() {
+      try {
+        if (!Object.assign) {
+          return false;
+        }
+        var test1 = new String("abc");
+        test1[5] = "de";
+        if (Object.getOwnPropertyNames(test1)[0] === "5") {
+          return false;
+        }
+        var test2 = {};
+        for (var i2 = 0; i2 < 10; i2++) {
+          test2["_" + String.fromCharCode(i2)] = i2;
+        }
+        var order2 = Object.getOwnPropertyNames(test2).map(function(n2) {
+          return test2[n2];
+        });
+        if (order2.join("") !== "0123456789") {
+          return false;
+        }
+        var test3 = {};
+        "abcdefghijklmnopqrst".split("").forEach(function(letter) {
+          test3[letter] = letter;
+        });
+        if (Object.keys(Object.assign({}, test3)).join("") !== "abcdefghijklmnopqrst") {
+          return false;
+        }
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+    module.exports = shouldUseNative() ? Object.assign : function(target, source) {
+      var from;
+      var to = toObject(target);
+      var symbols;
+      for (var s3 = 1; s3 < arguments.length; s3++) {
+        from = Object(arguments[s3]);
+        for (var key in from) {
+          if (hasOwnProperty.call(from, key)) {
+            to[key] = from[key];
+          }
+        }
+        if (getOwnPropertySymbols) {
+          symbols = getOwnPropertySymbols(from);
+          for (var i2 = 0; i2 < symbols.length; i2++) {
+            if (propIsEnumerable.call(from, symbols[i2])) {
+              to[symbols[i2]] = from[symbols[i2]];
+            }
+          }
+        }
+      }
+      return to;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/cors@2.8.6/node_modules/cors/lib/index.js
+var require_lib3 = __commonJS({
+  "../../node_modules/.pnpm/cors@2.8.6/node_modules/cors/lib/index.js"(exports, module) {
+    (function() {
+      "use strict";
+      var assign = require_object_assign();
+      var vary = require_vary();
+      var defaults3 = {
+        origin: "*",
+        methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+        preflightContinue: false,
+        optionsSuccessStatus: 204
+      };
+      function isString(s3) {
+        return typeof s3 === "string" || s3 instanceof String;
+      }
+      function isOriginAllowed(origin, allowedOrigin) {
+        if (Array.isArray(allowedOrigin)) {
+          for (var i2 = 0; i2 < allowedOrigin.length; ++i2) {
+            if (isOriginAllowed(origin, allowedOrigin[i2])) {
+              return true;
+            }
+          }
+          return false;
+        } else if (isString(allowedOrigin)) {
+          return origin === allowedOrigin;
+        } else if (allowedOrigin instanceof RegExp) {
+          return allowedOrigin.test(origin);
+        } else {
+          return !!allowedOrigin;
+        }
+      }
+      function configureOrigin(options, req) {
+        var requestOrigin = req.headers.origin, headers = [], isAllowed;
+        if (!options.origin || options.origin === "*") {
+          headers.push([{
+            key: "Access-Control-Allow-Origin",
+            value: "*"
+          }]);
+        } else if (isString(options.origin)) {
+          headers.push([{
+            key: "Access-Control-Allow-Origin",
+            value: options.origin
+          }]);
+          headers.push([{
+            key: "Vary",
+            value: "Origin"
+          }]);
+        } else {
+          isAllowed = isOriginAllowed(requestOrigin, options.origin);
+          headers.push([{
+            key: "Access-Control-Allow-Origin",
+            value: isAllowed ? requestOrigin : false
+          }]);
+          headers.push([{
+            key: "Vary",
+            value: "Origin"
+          }]);
+        }
+        return headers;
+      }
+      function configureMethods(options) {
+        var methods = options.methods;
+        if (methods.join) {
+          methods = options.methods.join(",");
+        }
+        return {
+          key: "Access-Control-Allow-Methods",
+          value: methods
+        };
+      }
+      function configureCredentials(options) {
+        if (options.credentials === true) {
+          return {
+            key: "Access-Control-Allow-Credentials",
+            value: "true"
+          };
+        }
+        return null;
+      }
+      function configureAllowedHeaders(options, req) {
+        var allowedHeaders = options.allowedHeaders || options.headers;
+        var headers = [];
+        if (!allowedHeaders) {
+          allowedHeaders = req.headers["access-control-request-headers"];
+          headers.push([{
+            key: "Vary",
+            value: "Access-Control-Request-Headers"
+          }]);
+        } else if (allowedHeaders.join) {
+          allowedHeaders = allowedHeaders.join(",");
+        }
+        if (allowedHeaders && allowedHeaders.length) {
+          headers.push([{
+            key: "Access-Control-Allow-Headers",
+            value: allowedHeaders
+          }]);
+        }
+        return headers;
+      }
+      function configureExposedHeaders(options) {
+        var headers = options.exposedHeaders;
+        if (!headers) {
+          return null;
+        } else if (headers.join) {
+          headers = headers.join(",");
+        }
+        if (headers && headers.length) {
+          return {
+            key: "Access-Control-Expose-Headers",
+            value: headers
+          };
+        }
+        return null;
+      }
+      function configureMaxAge(options) {
+        var maxAge = (typeof options.maxAge === "number" || options.maxAge) && options.maxAge.toString();
+        if (maxAge && maxAge.length) {
+          return {
+            key: "Access-Control-Max-Age",
+            value: maxAge
+          };
+        }
+        return null;
+      }
+      function applyHeaders(headers, res) {
+        for (var i2 = 0, n2 = headers.length; i2 < n2; i2++) {
+          var header = headers[i2];
+          if (header) {
+            if (Array.isArray(header)) {
+              applyHeaders(header, res);
+            } else if (header.key === "Vary" && header.value) {
+              vary(res, header.value);
+            } else if (header.value) {
+              res.setHeader(header.key, header.value);
+            }
+          }
+        }
+      }
+      function cors2(options, req, res, next) {
+        var headers = [], method = req.method && req.method.toUpperCase && req.method.toUpperCase();
+        if (method === "OPTIONS") {
+          headers.push(configureOrigin(options, req));
+          headers.push(configureCredentials(options));
+          headers.push(configureMethods(options));
+          headers.push(configureAllowedHeaders(options, req));
+          headers.push(configureMaxAge(options));
+          headers.push(configureExposedHeaders(options));
+          applyHeaders(headers, res);
+          if (options.preflightContinue) {
+            next();
+          } else {
+            res.statusCode = options.optionsSuccessStatus;
+            res.setHeader("Content-Length", "0");
+            res.end();
+          }
+        } else {
+          headers.push(configureOrigin(options, req));
+          headers.push(configureCredentials(options));
+          headers.push(configureExposedHeaders(options));
+          applyHeaders(headers, res);
+          next();
+        }
+      }
+      function middlewareWrapper(o2) {
+        var optionsCallback = null;
+        if (typeof o2 === "function") {
+          optionsCallback = o2;
+        } else {
+          optionsCallback = function(req, cb) {
+            cb(null, o2);
+          };
+        }
+        return function corsMiddleware(req, res, next) {
+          optionsCallback(req, function(err, options) {
+            if (err) {
+              next(err);
+            } else {
+              var corsOptions = assign({}, defaults3, options);
+              var originCallback = null;
+              if (corsOptions.origin && typeof corsOptions.origin === "function") {
+                originCallback = corsOptions.origin;
+              } else if (corsOptions.origin) {
+                originCallback = function(origin, cb) {
+                  cb(null, corsOptions.origin);
+                };
+              }
+              if (originCallback) {
+                originCallback(req.headers.origin, function(err2, origin) {
+                  if (err2 || !origin) {
+                    next(err2);
+                  } else {
+                    corsOptions.origin = origin;
+                    cors2(corsOptions, req, res, next);
+                  }
+                });
+              } else {
+                next();
+              }
+            }
+          });
+        };
+      }
+      module.exports = middlewareWrapper;
+    })();
   }
 });
 
@@ -55924,6 +55924,89 @@ var repoRoot = path.resolve(
   override: true
 });
 
+// src/lib/logger.ts
+var import_pino = __toESM(require_pino(), 1);
+var usePrettyTransport = false;
+var logger = (0, import_pino.default)({
+  level: process.env.LOG_LEVEL ?? "info",
+  redact: [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers['set-cookie']"
+  ],
+  ...usePrettyTransport ? {
+    transport: {
+      target: "pino-pretty",
+      options: { colorize: true }
+    }
+  } : {}
+});
+
+// src/lib/ensureClerkPreviewRedirects.ts
+var SIGN_IN_CALLBACK = "/sign-in/sso-callback";
+var SIGN_UP_CALLBACK = "/sign-up/sso-callback";
+function previewOriginFromEnv() {
+  const raw = process.env.VERCEL_URL?.trim() || process.env.VERCEL_BRANCH_URL?.trim() || "";
+  if (!raw) return null;
+  const host = raw.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (!host.endsWith(".vercel.app")) return null;
+  return `https://${host}`;
+}
+function callbackUrls(origin) {
+  return [`${origin}${SIGN_IN_CALLBACK}`, `${origin}${SIGN_UP_CALLBACK}`];
+}
+async function listRedirectUrls(secretKey) {
+  const response = await fetch("https://api.clerk.com/v1/redirect_urls", {
+    headers: { Authorization: `Bearer ${secretKey}` }
+  });
+  if (!response.ok) {
+    throw new Error(`Clerk redirect_urls list failed (${response.status})`);
+  }
+  const body = await response.json();
+  const rows = Array.isArray(body) ? body : body.data ?? [];
+  return new Set(
+    rows.map((entry) => entry.url).filter((url3) => Boolean(url3))
+  );
+}
+async function addRedirectUrl(secretKey, url3) {
+  const response = await fetch("https://api.clerk.com/v1/redirect_urls", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ url: url3 })
+  });
+  if (response.ok) return "added";
+  const text2 = await response.text();
+  if (response.status === 422 && text2.includes("already exists")) {
+    return "exists";
+  }
+  throw new Error(`Clerk redirect_urls create failed (${response.status}): ${text2}`);
+}
+async function ensureClerkPreviewRedirects() {
+  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
+  const origin = previewOriginFromEnv();
+  if (!secretKey?.startsWith("sk_") || !origin) {
+    return;
+  }
+  try {
+    const existing = await listRedirectUrls(secretKey);
+    const missing = callbackUrls(origin).filter((url3) => !existing.has(url3));
+    if (missing.length === 0) {
+      logger.info({ origin }, "Clerk preview redirect URLs already registered");
+      return;
+    }
+    for (const url3 of missing) {
+      const result = await addRedirectUrl(secretKey, url3);
+      logger.info({ url: url3, result }, "Registered Clerk preview redirect URL");
+    }
+  } catch (err) {
+    logger.warn({ err, origin }, "Could not auto-register Clerk preview redirect URLs");
+  }
+}
+void ensureClerkPreviewRedirects();
+
 // src/app.ts
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
@@ -79532,7 +79615,7 @@ function buildAccountsBaseUrl(frontendApi) {
 
 // ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/logger-C6joC6-q.mjs
 var loggedMessages = /* @__PURE__ */ new Set();
-var logger = {
+var logger2 = {
   warnOnce: (msg) => {
     if (loggedMessages.has(msg)) return;
     loggedMessages.add(msg);
@@ -85868,7 +85951,7 @@ var authenticateRequest = (async (request, options) => {
         throw errors[0];
       }
       if (!data.azp) {
-        logger.warnOnce(
+        logger2.warnOnce(
           "Clerk: Session token from cookie is missing the azp claim. In a future version of Clerk, this token will be considered invalid. Please contact Clerk support if you see this warning."
         );
       }
@@ -103229,7 +103312,7 @@ var Bucket = class _Bucket extends ServiceObject {
      * metadata's `kms_key_name` value, if any.
      * @param {string} [options.userProject] The ID of the project which will be
      *     billed for the request.
-
+  
      * @param {CombineCallback} [callback] Callback function.
      * @returns {Promise<CombineResponse>}
      *
@@ -105598,7 +105681,7 @@ var Bucket = class _Bucket extends ServiceObject {
      * @param {boolean} [options.public] Make files public.
      * @param {string} [options.userProject] The ID of the project which will be
      *     billed for the request.
-
+  
      * @param {MakeAllFilesPublicPrivateCallback} callback Callback function.
      *
      * @return {Promise<MakeAllFilesPublicPrivateResponse>}
@@ -108563,24 +108646,6 @@ router10.get("/placeholder/:w/:h", (req, res) => {
 });
 var routes_default = router10;
 
-// src/lib/logger.ts
-var import_pino = __toESM(require_pino(), 1);
-var usePrettyTransport = false;
-var logger2 = (0, import_pino.default)({
-  level: process.env.LOG_LEVEL ?? "info",
-  redact: [
-    "req.headers.authorization",
-    "req.headers.cookie",
-    "res.headers['set-cookie']"
-  ],
-  ...usePrettyTransport ? {
-    transport: {
-      target: "pino-pretty",
-      options: { colorize: true }
-    }
-  } : {}
-});
-
 // src/middlewares/clerkProxyHosts.ts
 var CLERK_PROXY_PATH = "/api/__clerk";
 var KNOWN_PUBLIC_HOSTS = /* @__PURE__ */ new Set([
@@ -108803,7 +108868,7 @@ async function handleClerkProxyRequest(req, res, secretKey) {
     await proxyClerkWithFetch(req, res, secretKey);
   } catch (err) {
     const cause = err instanceof Error && "cause" in err && err.cause instanceof Error ? err.cause.message : void 0;
-    logger2.error(
+    logger.error(
       { err, url: req.url, originalUrl: req.originalUrl, cause },
       "Clerk proxy upstream fetch failed"
     );
@@ -108930,7 +108995,7 @@ function clerkMultiDomainMiddleware() {
 var app = (0, import_express17.default)();
 app.use(
   (0, import_pino_http.default)({
-    logger: logger2,
+    logger,
     serializers: {
       req(req) {
         return {
@@ -108956,7 +109021,7 @@ app.use(clerkMultiDomainMiddleware());
 app.use("/api", routes_default);
 app.use(
   (err, _req, res, _next) => {
-    logger2.error({ err }, "Unhandled API error");
+    logger.error({ err }, "Unhandled API error");
     if (!res.headersSent) {
       const message = err instanceof Error ? err.message : "Internal server error";
       const isConfig2 = message.includes("DATABASE_URL") || message.includes("CLERK_SECRET_KEY");
