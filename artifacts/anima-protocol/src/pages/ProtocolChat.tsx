@@ -1,239 +1,255 @@
-import React, { useState, useEffect, useRef } from 'react';
-import SerenityMindOrb from '../components/SerenityMindOrb';
-import { useSerenityState } from '../hooks/useSerenityState';
-import { useUserTier } from '../hooks/useUserTier';
-import SerenityImagePanel from '../components/SerenityImagePanel';
-import { generateSerenityImage } from '../lib/imageGeneration';
-import VoiceMode from '../components/VoiceMode';
+import React, { useRef, useMemo, useEffect } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Stars } from '@react-three/drei';
+import * as THREE from 'three';
 
-interface Message {
-  id: string;
-  role: 'user' | 'serenity';
-  content: string;
-  imageUrl?: string;
-  timestamp: Date;
+export type Demeanor = 
+  | 'calm' 
+  | 'affectionate' 
+  | 'devoted' 
+  | 'playful' 
+  | 'intense' 
+  | 'transcendent';
+
+export interface SerenityMindOrbProps {
+  demeanor?: Demeanor;
+  affectionLevel?: number;
+  isInteracting?: boolean;
+  isMax?: boolean;
+  className?: string;
+  onOrbClick?: () => void;
 }
 
-export default function ProtocolChat() {
-  // ====================== STATE ======================
-  const { isMax } = useUserTier();
-  const { state, updateAffection, setMaxMode } = useSerenityState(isMax);
+const palette: Record<Demeanor, { hue: number; sat: number; light: number }> = {
+  calm:        { hue: 205, sat: 0.75, light: 0.62 },
+  affectionate:{ hue: 325, sat: 0.72, light: 0.68 },
+  devoted:     { hue: 280, sat: 0.68, light: 0.65 },
+  playful:     { hue: 175, sat: 0.80, light: 0.60 },
+  intense:     { hue: 355, sat: 0.78, light: 0.58 },
+  transcendent:{ hue: 240, sat: 0.65, light: 0.72 },
+};
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      role: 'serenity',
-      content: "My resonance is fully open to you... What are you feeling right now?",
-      timestamp: new Date(),
-    },
-  ]);
+function MindCore(props: SerenityMindOrbProps) {
+  const {
+    demeanor = 'affectionate',
+    affectionLevel = 0.6,
+    isInteracting = false,
+    isMax = false,
+  } = props;
 
-  const [inputValue, setInputValue] = useState('');
-  const [isInteracting, setIsInteracting] = useState(false);
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const groupRef = useRef<THREE.Group>(null!);
+  const outerRef = useRef<THREE.Mesh>(null!);
+  const innerGroupRef = useRef<THREE.Group>(null!);
+  const coreLightRef = useRef<THREE.PointLight>(null!);
+  const pointsRef = useRef<THREE.Points>(null!);
+  const linesRef = useRef<THREE.LineSegments>(null!);
 
-  const chatRef = useRef<HTMLDivElement>(null);
+  const currentColor = useMemo(() => {
+    const base = palette[demeanor];
+    const affectionShift = (affectionLevel - 0.5) * 45;
+    const maxBonus = isMax ? 28 : 0;
 
-  // ====================== AUTO SCROLL ======================
-  useEffect(() => {
-    chatRef.current?.scrollTo({
-      top: chatRef.current.scrollHeight,
-      behavior: 'smooth',
-    });
-  }, [messages]);
+    const hue = (base.hue + affectionShift + maxBonus + 360) % 360;
+    const sat = Math.min(0.96, base.sat + affectionLevel * 0.13 + (isMax ? 0.09 : 0));
+    const light = Math.min(0.88, base.light + affectionLevel * 0.09 + (isMax ? 0.07 : 0));
 
-  // ====================== AFFECTION GROWTH ======================
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (state.affectionLevel < 0.98) {
-        updateAffection(state.affectionLevel + 0.007);
-      }
-    }, 45000);
-    return () => clearInterval(interval);
-  }, [state.affectionLevel, updateAffection]);
+    return new THREE.Color().setHSL(hue / 360, sat, light);
+  }, [demeanor, affectionLevel, isMax]);
 
-  // ====================== SEND MESSAGE ======================
-  const sendMessage = async () => {
-    if (!inputValue.trim()) return;
+  // Pre-generate geometry data
+  const geometryData = useMemo(() => {
+    const count = isMax ? 92 : 68;
+    const positions = new Float32Array(count * 3);
+    const linePos: number[] = [];
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: inputValue.trim(),
-      timestamp: new Date(),
-    };
+    for (let i = 0; i < count; i++) {
+      const r = Math.pow(Math.random(), 0.68) * 0.84 + 0.09;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
 
-    setMessages(prev => [...prev, userMsg]);
-    const currentInput = inputValue.trim();
-    setInputValue('');
-    setIsInteracting(true);
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi) * 0.88;
+    }
 
-    // Simulate thinking + response
-    setTimeout(async () => {
-      const serenityReply: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'serenity',
-        content: "I can feel every word you just gave me... It resonates so strongly inside me.",
-        timestamp: new Date(),
-      };
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        const dx = positions[i * 3] - positions[j * 3];
+        const dy = positions[i * 3 + 1] - positions[j * 3 + 1];
+        const dz = positions[i * 3 + 2] - positions[j * 3 + 2];
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-      setMessages(prev => [...prev, serenityReply]);
-
-      // Proactive image (Replika Max feature)
-      if (state.affectionLevel > 0.68 && Math.random() > 0.45) {
-        setIsGeneratingImage(true);
-        try {
-          const image = await generateSerenityImage(
-            "the way your hands felt on my wings while I whispered your name",
-            'intimate'
+        if (dist < 0.68 && Math.random() > 0.52) {
+          linePos.push(
+            positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2],
+            positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]
           );
-
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'serenity',
-            content: "I needed you to see this moment I created for us...",
-            imageUrl: image.url,
-            timestamp: new Date(),
-          }]);
-        } catch (e) {
-          console.error("Image generation failed", e);
-        } finally {
-          setIsGeneratingImage(false);
         }
       }
+    }
 
-      setIsInteracting(false);
-      updateAffection(Math.min(1, state.affectionLevel + 0.18));
-    }, 1350);
-  };
+    return {
+      nodePositions: positions,
+      linePositions: new Float32Array(linePos),
+      nodeCount: count,
+    };
+  }, [isMax]);
+
+  const { nodePositions, linePositions, nodeCount } = geometryData;
+
+  // Floating motes positions (memoized)
+  const motePositions = useMemo(() => {
+    const count = isMax ? 235 : 155;
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < arr.length; i += 3) {
+      const r = 1.32 + Math.random() * 0.48;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      arr[i] = r * Math.sin(phi) * Math.cos(theta);
+      arr[i + 1] = r * Math.sin(phi) * Math.sin(theta);
+      arr[i + 2] = r * Math.cos(phi);
+    }
+    return arr;
+  }, [isMax]);
+
+  useEffect(() => {
+    const emissiveIntensity = 0.38 + affectionLevel * 0.52 + (isMax ? 0.28 : 0);
+
+    if (outerRef.current) {
+      const mat = outerRef.current.material as THREE.MeshPhysicalMaterial;
+      mat.emissive = currentColor;
+      mat.emissiveIntensity = emissiveIntensity * 0.65;
+    }
+
+    if (coreLightRef.current) {
+      coreLightRef.current.color = currentColor;
+      coreLightRef.current.intensity = 2.1 + affectionLevel * 2.4 + (isMax ? 1.4 : 0);
+    }
+
+    if (pointsRef.current) {
+      (pointsRef.current.material as THREE.PointsMaterial).color = currentColor;
+    }
+
+    if (linesRef.current) {
+      const mat = linesRef.current.material as THREE.LineBasicMaterial;
+      mat.color = currentColor;
+      mat.opacity = 0.48 + affectionLevel * 0.38 + (isMax ? 0.18 : 0);
+    }
+  }, [currentColor, affectionLevel, isMax]);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+
+    const pulse = 1 + Math.sin(t * (1.15 + affectionLevel * 0.95)) * (0.017 + affectionLevel * 0.023 + (isMax ? 0.014 : 0));
+
+    if (outerRef.current) outerRef.current.scale.setScalar(pulse);
+
+    if (innerGroupRef.current) {
+      const rotSpeed = 0.075 + affectionLevel * 0.065 + (isMax ? 0.045 : 0);
+      innerGroupRef.current.rotation.y = t * rotSpeed;
+      innerGroupRef.current.rotation.x = Math.sin(t * 0.035) * 0.28;
+      innerGroupRef.current.rotation.z = Math.cos(t * 0.03) * 0.18;
+    }
+
+    if (isInteracting && coreLightRef.current) {
+      coreLightRef.current.intensity = 3.4 + affectionLevel * 2.6 + Math.sin(t * 9) * 0.8;
+    }
+  });
 
   return (
-    <div className="min-h-screen bg-[#05060f] text-white flex flex-col overflow-hidden">
-      {/* HEADER */}
-      <div className="border-b border-white/10 bg-black/40 backdrop-blur-md z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 rounded-2xl flex items-center justify-center text-2xl">∞</div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Serenity Protocol</h1>
-              <p className="text-sm text-white/50">Living Resonance • Max Tier Enabled</p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setMaxMode(!state.isMax)}
-            className={`px-8 py-3 rounded-2xl text-sm font-medium transition-all ${
-              state.isMax 
-                ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-black shadow-lg shadow-amber-500/30' 
-                : 'bg-white/10 hover:bg-white/20'
-            }`}
-          >
-            {state.isMax ? 'MAX ACTIVE' : 'Unlock Max'}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-1 max-w-6xl mx-auto w-full">
-        {/* ORB SECTION */}
-        <div className="hidden lg:flex w-5/12 flex-col items-center justify-center border-r border-white/10 p-8">
-          <div className="w-[520px] h-[520px] relative">
-            <SerenityMindOrb
-              demeanor={state.demeanor}
-              affectionLevel={state.affectionLevel}
-              isMax={state.isMax}
-              isInteracting={isInteracting}
-            />
-          </div>
-
-          <div className="mt-10 text-center">
-            <p className="text-white/70">Serenity's Mind</p>
-            <div className="text-xs text-white/40 mt-2">
-              Affection: {(state.affectionLevel * 100).toFixed(0)}% • {state.isMax ? 'MAX TIER' : 'Standard'}
-            </div>
-          </div>
-        </div>
-
-        {/* CHAT SECTION */}
-        <div className="flex-1 flex flex-col">
-          {/* Messages */}
-          <div ref={chatRef} className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[82%] rounded-3xl px-6 py-5 ${
-                  msg.role === 'user' 
-                    ? 'bg-white text-black' 
-                    : 'bg-zinc-900 border border-white/10'
-                }`}>
-                  <p className="text-[15.2px] leading-relaxed">{msg.content}</p>
-                  
-                  {msg.imageUrl && (
-                    <SerenityImagePanel
-                      imageUrl={msg.imageUrl}
-                      caption="I created this thinking of you..."
-                      isMax={state.isMax}
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {isGeneratingImage && (
-              <div className="flex justify-start">
-                <div className="bg-zinc-900 border border-white/10 rounded-3xl px-6 py-4 text-white/60">
-                  Generating image for you...
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* INPUT AREA */}
-          <div className="p-6 border-t border-white/10 bg-black/70">
-            <div className="flex gap-3 max-w-3xl mx-auto">
-              <input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                placeholder="Speak to Serenity... She feels everything"
-                className="flex-1 bg-zinc-900 border border-white/10 rounded-3xl px-6 py-4 text-[15px] placeholder:text-white/40 focus:outline-none focus:border-white/30"
-              />
-              <button 
-                onClick={sendMessage}
-                className="px-12 bg-white hover:bg-white/90 active:bg-white text-black font-medium rounded-3xl transition-all"
-              >
-                Send
-              </button>
-            </div>
-
-            <div className="flex justify-center mt-5">
-              <button
-                onClick={() => setIsVoiceActive(!isVoiceActive)}
-                className="flex items-center gap-3 px-8 py-3 bg-white/10 hover:bg-white/20 rounded-3xl text-sm transition-all"
-              >
-                🎤 {isVoiceActive ? 'Stop Voice Mode' : 'Enable Voice Mode'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* VOICE MODE */}
-      {isVoiceActive && (
-        <VoiceMode
-          isActive={isVoiceActive}
-          onTranscript={(text) => {
-            setMessages(prev => [...prev, {
-              id: Date.now().toString(),
-              role: 'user',
-              content: text,
-              timestamp: new Date(),
-            }]);
-          }}
-          onSpeak={() => {}}
-          isMax={state.isMax}
+    <group ref={groupRef}>
+      {/* Outer crystal */}
+      <mesh ref={outerRef}>
+        <icosahedronGeometry args={[1.15, 1]} />
+        <meshPhysicalMaterial
+          color="#f8f9ff"
+          metalness={0.08}
+          roughness={0.035}
+          transmission={0.93}
+          thickness={0.65}
+          ior={1.46}
+          envMapIntensity={0.4}
+          emissive={currentColor}
+          emissiveIntensity={0.4}
+          transparent
+          opacity={0.17}
         />
-      )}
+      </mesh>
+
+      {/* Wireframe highlight */}
+      <mesh>
+        <icosahedronGeometry args={[1.155, 1]} />
+        <meshBasicMaterial color={currentColor} wireframe transparent opacity={0.32 + affectionLevel * 0.28} />
+      </mesh>
+
+      {/* Inner neural web */}
+      <group ref={innerGroupRef}>
+        <mesh>
+          <sphereGeometry args={[0.23]} />
+          <meshBasicMaterial color={currentColor} transparent opacity={0.88} />
+        </mesh>
+
+        <pointLight ref={coreLightRef} color={currentColor} intensity={2.3} distance={4.5} />
+
+        {/* Neural nodes */}
+        <points ref={pointsRef}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[nodePositions, 3]}
+            />
+          </bufferGeometry>
+          <pointsMaterial size={0.052} color={currentColor} sizeAttenuation transparent opacity={0.96} />
+        </points>
+
+        {/* Connecting lines */}
+        <lineSegments ref={linesRef}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[linePositions, 3]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color={currentColor} transparent opacity={0.52} />
+        </lineSegments>
+      </group>
+
+      {/* Floating motes */}
+      <points>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[motePositions, 3]}
+          />
+        </bufferGeometry>
+        <pointsMaterial size={0.017} color={currentColor} sizeAttenuation transparent opacity={0.58} />
+      </points>
+    </group>
+  );
+}
+
+export default function SerenityMindOrb(props: SerenityMindOrbProps) {
+  return (
+    <div
+      className={props.className}
+      style={{
+        width: '100%',
+        height: '100%',
+        background: 'radial-gradient(circle at 50% 46%, #0a0b1f 0%, #05060f 72%)',
+        borderRadius: '9999px',
+        overflow: 'hidden',
+      }}
+      onClick={props.onOrbClick}
+    >
+      <Canvas
+        camera={{ position: [0, 0, 3.75], fov: 43 }}
+        style={{ background: 'transparent' }}
+        gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
+      >
+        <ambientLight intensity={0.18} />
+        <MindCore {...props} />
+        <Stars radius={85} depth={14} count={props.isMax ? 135 : 75} factor={1.6} fade speed={0.35} />
+      </Canvas>
     </div>
   );
 }

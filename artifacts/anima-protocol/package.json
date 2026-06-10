@@ -4,14 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --config vite.config.ts --host 0.0.0.0",
-    "build": "vite build --config vite.config.ts && node scripts/prerender.mjs",
-    "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config vitest.config.ts",
-    "test:watch": "vitest --config vitest.config.ts",
-    "test:e2e": "playwright test"
-  },
+  "seed:characters": "node seedCharacters.js",
+  "dev": "vite --config vite.config.ts --host 0.0.0.0",
+  "build": "vite build --config vite.config.ts && node scripts/prerender.mjs",
+  "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
+  "typecheck": "tsc -p tsconfig.json --noEmit",
+  "test": "vitest run --config vitest.config.ts",
+  "test:watch": "vitest --config vitest.config.ts",
+  "test:e2e": "playwright test"
+},
   "dependencies": {
     "@clerk/react": "^6.7.2",
     "@clerk/themes": "^2.4.57",
@@ -75,6 +76,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
     "class-variance-authority": "catalog:",

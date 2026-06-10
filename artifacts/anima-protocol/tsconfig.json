@@ -1,16 +1,10 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "./tsconfig.base.json",
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts", "src/components/mockups/**"],
+  "exclude": ["node_modules", "build", "dist", "**/*.test.ts", "src/components/mockups/**/*"],
   "compilerOptions": {
     "noEmit": true,
-    // allowJs brings every .js/.jsx file into the type-check program so
-    // structural/syntax errors (e.g. duplicate JSX attributes, TS17001) are
-    // caught across the whole app, not just the .ts/.tsx files.
     "allowJs": true,
-    // checkJs is intentionally off for now: full deep type checking of the JS
-    // codebase surfaces thousands of pre-existing errors. It is being adopted
-    // incrementally per-file via `// @ts-check` rather than flipped on globally.
     "checkJs": false,
     "jsx": "preserve",
     "lib": ["esnext", "dom", "dom.iterable"],
@@ -21,10 +15,5 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  },
-  "references": [
-    {
-      "path": "../../lib/api-client-react"
-    }
-  ]
+  }
 }

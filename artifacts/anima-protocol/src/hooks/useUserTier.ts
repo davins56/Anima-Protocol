@@ -1,4 +1,4 @@
-import { useUser } from '@clerk/react';   // ← Correct package name for your project
+import { useUser } from '@clerk/react';
 import { useEffect, useState } from 'react';
 
 export function useUserTier() {

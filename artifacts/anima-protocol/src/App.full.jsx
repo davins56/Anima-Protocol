@@ -1,4 +1,6 @@
 import { Toaster } from "@/components/ui/toaster";
+import ConsentBanner from "@/components/ConsentBanner";
+
 import { Toaster as SonnerToaster, toast } from "sonner";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
@@ -31,6 +33,7 @@ import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
@@ -856,18 +859,31 @@ function ClerkProviderWithRoutes({ children }) {
 
   useEffect(() => {
     let cancelled = false;
+    const fallbackTimer = setTimeout(() => {
+      if (cancelled) return;
+      // Safari (and some network conditions) can stall the proxy health check.
+      // Fail open to direct Clerk so the app never stays on the loader.
+      setUseProxy(false);
+    }, 12_000);
 
     (async () => {
-      if (!initialClerkProxyUrl) {
+      try {
+        if (!initialClerkProxyUrl) {
+          if (!cancelled) setUseProxy(false);
+          return;
+        }
+        const healthy = await isClerkProxyHealthy(clerkPubKey);
+        if (!cancelled) setUseProxy(healthy);
+      } catch {
         if (!cancelled) setUseProxy(false);
-        return;
+      } finally {
+        clearTimeout(fallbackTimer);
       }
-      const healthy = await isClerkProxyHealthy(clerkPubKey);
-      if (!cancelled) setUseProxy(healthy);
     })();
 
     return () => {
       cancelled = true;
+      clearTimeout(fallbackTimer);
     };
   }, []);
 
@@ -1388,7 +1404,7 @@ const AuthenticatedApp = () => {
                     <Reflections />
                   </Suspense>
                 }
-              />s
+              />
               <Route
                 path="/discoveries"
                 element={
@@ -1914,26 +1930,66 @@ const AuthenticatedApp = () => {
 
 function App() {
   useViewportHeight();
+
+  // Guard against rare “black screen” failure modes during auth/clerk
+  // initialization by always rendering a visible background + message while
+  // providers settle.
+  const [stallVisible, setStallVisible] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setStallVisible(false), 10_000);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>
-        <ClerkProviderWithRoutes>
-          <AuthProvider>
-            <ConfirmProvider>
-              <InAppBrowserWarning />
-              <TapTargetValidator />
-              <div
-                className="flex flex-col h-screen-safe"
-                style={{
-                  paddingTop: "env(safe-area-inset-top, 0px)",
-                  paddingBottom: "env(safe-area-inset-bottom, 0px)",
-                }}
-              >
-                <AuthenticatedApp />
+        {stallVisible && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-background"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="w-full max-w-md px-4">
+              <div className="rounded-md border border-primary/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-primary/50">
+                      Initializing
+                    </p>
+                    <p className="mt-2 text-sm text-primary/90">
+                      The app is still starting up. If this persists, check Clerk
+                      connectivity / console errors.
+                    </p>
+                  </div>
+                  <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-primary/40">
+                  Current environment: auth + routing providers are loading.
+                </p>
               </div>
-            </ConfirmProvider>
-          </AuthProvider>
-        </ClerkProviderWithRoutes>
+            </div>
+          </div>
+        )}
+
+        <ErrorBoundary resetKey={window.location?.pathname || "init"}>
+          <ClerkProviderWithRoutes>
+            <AuthProvider>
+              <ConfirmProvider>
+                <InAppBrowserWarning />
+                <TapTargetValidator />
+                <div
+                  className="flex flex-col h-screen-safe"
+                  style={{
+                    paddingTop: "env(safe-area-inset-top, 0px)",
+                    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+                  }}
+                >
+                  <AuthenticatedApp />
+                </div>
+              </ConfirmProvider>
+            </AuthProvider>
+          </ClerkProviderWithRoutes>
+        </ErrorBoundary>
         <ConsentBanner />
         <Toaster />
         <SonnerToaster
@@ -1955,3 +2011,4 @@ function App() {
 }
 
 export default App;
+
