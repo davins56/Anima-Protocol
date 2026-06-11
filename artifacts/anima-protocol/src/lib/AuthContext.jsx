@@ -163,21 +163,49 @@ export const AuthProvider = ({ children }) => {
     navigate('/sign-in');
   }, [navigate]);
 
-  // Clerk owns the session and the post-logout redirect. We always land
-  // signed-out users on the public landing page ("/"), never the bare
-  // sign-in screen.
-  const logout = useCallback(
-    async () => {
-      // Clear the Mixpanel identity so the next user on this device starts as a
-      // fresh anonymous session and is never merged with the previous user.
-      resetUser();
-      await base44.auth.logout();
+const logout = useCallback(() => {
+  // We wrap everything in an async IIFE so the outer function stays () => void
+  (async () => {
+    try {
+      console.log('Starting clean logout...');
+
+      if (typeof resetUser === 'function') {
+        resetUser();
+      }
+
+      if (base44?.auth?.logout) {
+        await base44.auth.logout().catch((err) =>
+          console.warn('base44 logout warning:', err)
+        );
+      }
+
       setUser(null);
       setAuthError(null);
-      await signOut({ redirectUrl: '/' });
-    },
-    [signOut],
-  );
+
+      if (typeof signOut === 'function') {
+        await signOut({ redirectUrl: '/' }).catch((err) =>
+          console.warn('Clerk signOut warning:', err)
+        );
+      }
+
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (e) {
+        console.warn('Storage clear warning:', e);
+      }
+
+      console.log('Logout completed successfully');
+    } catch (err) {
+      console.error('Logout error:', err);
+      setAuthError('Logout encountered an issue. Refreshing...');
+
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 800);
+    }
+  })();
+}, [signOut, resetUser]);
 
   const updateUserData = useCallback(async (data) => {
     const updated = await base44.auth.updateMyUserData(data);

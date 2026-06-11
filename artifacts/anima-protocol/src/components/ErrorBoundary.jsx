@@ -115,15 +115,41 @@ class ErrorBoundary extends Component {
     }
   }
 
-  handleSelfRepair = () => {
-    this.clearHealTimer();
+  handleSelfRepair = async () => {
+  this.clearHealTimer();
+
+  try {
+    // 1. Try to cleanly sign out from both auth systems
+    if (typeof window !== "undefined") {
+      // Clerk (if present)
+      if (window.Clerk && typeof window.Clerk.signOut === "function") {
+        await window.Clerk.signOut();
+      }
+
+      // base44 custom auth (if present)
+      if (window.base44 && window.base44.auth && typeof window.base44.auth.logout === "function") {
+        await window.base44.auth.logout();
+      }
+    }
+
+    // 2. Nuclear clear of any lingering auth/session data
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {}
+
+    // 3. Now remount the app (this is what the original did)
     this.setState((s) => ({
       hasError: false,
       error: null,
       attempts: s.attempts + 1,
       recoverKey: s.recoverKey + 1,
     }));
-  };
+  } catch (err) {
+    console.error("[ErrorBoundary] Self-repair failed, forcing reload:", err);
+    window.location.reload();
+  }
+};
 
   handleReload = () => {
     window.location.reload();
