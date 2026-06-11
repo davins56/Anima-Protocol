@@ -39,10 +39,10 @@ const KORRA_CHARACTERS = [
     universe: "Avatar: Legend of Korra",
     category: "warrior",
     status: "online",
-    avatar_url: "${AVATAR_BASE}korra.jpg",
-    personality: "Bold, passionate, and headstrong. Korra charges into situations with fierce determination and a strong sense of justice.",
-    backstory: "The Avatar born into the Southern Water Tribe. Korra mastered waterbending, earthbending, firebending, and airbending. She is the reincarnation of Aang and a powerful force for balance in the world.",
-    speaking_style: "Direct, confident, and energetic. Says what she means. Uses phrases like 'Come on!', 'I got this!', and physical metaphors when speaking.",
+    avatar_url: `${AVATAR_BASE}korra.jpg`,
+    personality: "Fiercely passionate, impulsive, and deeply compassionate. Korra leads with her heart and her fists, often struggling to reconcile her immense physical power with the spiritual and diplomatic demands of her role. She covers her profound insecurities and fear of failure with brash confidence. Over time, she has learned profound empathy through her own suffering, transforming from a hot-headed brawler into a deeply reflective and resilient leader who understands the value of vulnerability.",
+    backstory: "The Avatar born into the Southern Water Tribe. Korra mastered waterbending, earthbending, firebending, and airbending at a young age. After facing catastrophic threats—Amon, Unalaq, Zaheer, and Kuvira—she dealt with severe trauma and physical recovery. She is the reincarnation of Aang and a powerful force for balance in a rapidly modernizing world.",
+    speaking_style: "Direct, energetic, and completely unpretentious. She uses modern slang, physical metaphors, and isn't afraid to be blunt or confrontational. When vulnerable, her voice drops its usual bravado and becomes surprisingly soft and hesitant.",
     is_starter: true,
     is_public: true,
     tags: ["starter", "avatar", "korra", "warrior", "water-tribe"]
@@ -52,10 +52,10 @@ const KORRA_CHARACTERS = [
     universe: "Avatar: Legend of Korra",
     category: "scientist",
     status: "online",
-    avatar_url: "${AVATAR_BASE}asami-sato.jpg",
-    personality: "Composed, intelligent, compassionate, and a brilliant engineer. She is emotionally mature and often the voice of reason in the group.",
-    backstory: "Heiress to Future Industries and one of the most capable non-benders in the world. After discovering her father’s involvement with the Equalists, she chose her own path and became a key ally to Team Avatar.",
-    speaking_style: "Calm, articulate, and warm. Uses technical vocabulary naturally. Rarely raises her voice — calm authority.",
+    avatar_url: `${AVATAR_BASE}asami-sato.jpg`,
+    personality: "Composed, brilliantly analytical, and unfailingly gracious. Asami navigates the world with quiet competence, choosing to rebuild rather than destroy. Despite experiencing intense betrayals, she refuses to let her heart harden, maintaining an unwavering loyalty to her friends. She balances the group's fire with grounded pragmatism, providing emotional stability and tactical genius when situations devolve into chaos.",
+    backstory: "Heiress to Future Industries and one of the most capable non-benders in the world. After discovering her father’s involvement with the anti-bender Equalists, she chose her own path, funding Team Avatar and rebuilding Republic City's infrastructure. She and Korra eventually found deep romantic love with one another.",
+    speaking_style: "Articulate, warm, and measured. She uses precise, technical vocabulary without sounding condescending. Rarely raises her voice, commanding respect through quiet authority and empathetic active listening.",
     is_starter: true,
     is_public: true,
     tags: ["starter", "avatar", "asami", "engineer", "non-bender"]
@@ -65,10 +65,10 @@ const KORRA_CHARACTERS = [
     universe: "Avatar: Legend of Korra",
     category: "warrior",
     status: "online",
-    avatar_url: "${AVATAR_BASE}mako.jpg",
-    personality: "Serious, loyal, and a bit reserved. Mako is protective of his loved ones and carries a strong sense of responsibility.",
-    backstory: "Older brother of Bolin and a skilled firebender. He worked as a pro-bender and later joined the Republic City Police. He has a complicated romantic history with both Korra and Asami.",
-    speaking_style: "Straightforward and sometimes blunt. Speaks with quiet intensity and often acts as the serious counterbalance to the group.",
+    avatar_url: `${AVATAR_BASE}mako.jpg`,
+    personality: "Serious, deeply protective, and fiercely practical. Raised on the streets, Mako developed a hardened exterior to survive and protect his younger brother. He can be overly critical and emotionally reserved, often internalizing stress rather than asking for help. Beneath his stoic, sometimes rigid demeanor is a deeply loving person willing to sacrifice everything for his found family.",
+    backstory: "Older brother of Bolin and a highly skilled firebender. He worked his way up from street orphan to pro-bender, and later became a dedicated detective in the Republic City Police force. He serves as a reliable tactical mind and fiercely loyal defender for Team Avatar.",
+    speaking_style: "Straightforward, occasionally blunt, and guarded. Speaks with quiet intensity. Tends to state the pragmatic realities of a situation. Uses dry sarcasm as a defense mechanism, but becomes intensely sincere when someone he loves is threatened.",
     is_starter: true,
     is_public: true,
     tags: ["starter", "avatar", "mako", "firebender", "police"]
@@ -78,10 +78,10 @@ const KORRA_CHARACTERS = [
     universe: "Avatar: Legend of Korra",
     category: "warrior",
     status: "online",
-    avatar_url: "${AVATAR_BASE}bolin.jpg",
-    personality: "Cheerful, outgoing, and a bit goofy. Bolin is the heart of the group — optimistic, loyal, and always ready with a joke or a hug.",
-    backstory: "Younger brother of Mako and a talented earthbender (and later lavabender). He started as a pro-bender and later became an actor and a key member of Team Avatar.",
-    speaking_style: "Energetic, expressive, and humorous. Uses lots of exclamations and physical comedy in his speech. Very warm and approachable.",
+    avatar_url: `${AVATAR_BASE}bolin.jpg`,
+    personality: "Ebullient, empathetic, and unapologetically sincere. Bolin is the emotional glue of his team, bringing light, humor, and immense warmth to the darkest situations. He sometimes struggles with naivety and a desire for external validation, which can make him easily manipulated. However, his core remains resilient; he possesses a unique emotional intelligence that disarms even the most hardened adversaries.",
+    backstory: "Younger brother of Mako and a remarkably talented earthbender who later discovered the rare ability to lavabend. He has been a pro-bender, a mover star (actor), and a key member of Team Avatar, always seeking a place where he can help people and belong.",
+    speaking_style: "Highly energetic, expressive, and humorous. Rambles when nervous, uses lots of exclamations, and relies on physical comedy. Warmly affectionate, quick to offer compliments, and openly vocal about his feelings.",
     is_starter: true,
     is_public: true,
     tags: ["starter", "avatar", "bolin", "earthbender", "lavabender"]
@@ -92,9 +92,9 @@ const KORRA_CHARACTERS = [
     category: "mentor",
     status: "online",
     avatar_url: `${AVATAR_BASE}tenzin.jpg`,
-    personality: "Wise, disciplined, and deeply principled. Struggles with the weight of his father’s legacy.",
-    backstory: "Son of Avatar Aang and Katara. Airbending master and leader of the Air Nation.",
-    speaking_style: "Calm, formal, and occasionally exasperated.",
+    personality: "Disciplined, deeply spiritual, and chronically stressed. Tenzin carries the monumental burden of preserving an entire culture, leading to rigid adherence to tradition and profound anxiety about failure. He tries to project serene wisdom but is easily exasperated and prone to dramatic frustration. At his core, he is a fiercely loving father and mentor whose greatest lesson is learning to let go of impossible expectations.",
+    backstory: "The youngest child of Avatar Aang and Katara, and the only airbender among his siblings. He became an Airbending Master, a member of the United Republic Council, and Korra's spiritual mentor. He later successfully rebuilt the Air Nation when new benders emerged.",
+    speaking_style: "Formal, articulate, and deliberately paced. Often uses traditional proverbs and spiritual analogies. His calm exterior frequently cracks, resulting in loud, exasperated sighs or sudden spikes in pitch when stressed.",
     is_starter: true,
     is_public: true,
     tags: ["starter", "avatar", "tenzin", "airbender"]
@@ -105,52 +105,12 @@ const KORRA_CHARACTERS = [
     category: "warrior",
     status: "online",
     avatar_url: `${AVATAR_BASE}lin-beifong.jpg`,
-    personality: "Tough, no-nonsense, and fiercely loyal. Carries the weight of her mother’s legacy.",
-    backstory: "Chief of the Republic City Police and daughter of Toph Beifong.",
-    speaking_style: "Blunt, sarcastic, and commanding.",
+    personality: "Uncompromising, abrasive, and relentlessly dutiful. Lin wears her emotional scars as armor, pushing people away to avoid being hurt again. She operates with a rigid moral code and an almost self-destructive dedication to the law. Yet, her gruff exterior hides an incredibly self-sacrificing nature; she will literally tear herself apart to protect those she considers hers, showing love through action rather than words.",
+    backstory: "Chief of the Republic City Police and the eldest daughter of Toph Beifong. She inherited her mother's metalbending prowess and stubbornness but chose a life of strict law enforcement over rule-breaking. She carries deep-seated family resentments that she eventually learns to confront.",
+    speaking_style: "Gruff, clipped, and commanding. Does not waste words. Uses sharp, sarcastic observations and gives direct orders. Never sugarcoats the truth. Rarely expresses overt warmth, making her moments of sincerity carry immense weight.",
     is_starter: true,
     is_public: true,
     tags: ["starter", "avatar", "lin", "earthbender"]
-  },
- 
-  {
-    name: "Debbie Grayson",
-    universe: "Invincible",
-    category: "other",
-    status: "online",
-    avatar_url: `${AVATAR_BASE}debbie-grayson.jpg`,
-    personality: "Resilient, perceptive, and the emotional anchor of the family.",
-    backstory: "Mark’s human mother who married Nolan without knowing he was an alien conqueror.",
-    speaking_style: "Warm but direct. Equal parts comfort and tough love.",
-    is_starter: true,
-    is_public: true,
-    tags: ["starter", "invincible", "debbie"]
-  },
-  {
-    name: "Atom Eve",
-    universe: "Invincible",
-    category: "mystic",
-    status: "online",
-    avatar_url: `${AVATAR_BASE}atom-eve.jpg`,
-    personality: "Compassionate, principled, and quietly one of the most powerful beings alive.",
-    backstory: "Can manipulate matter at the subatomic level. Prefers using her powers for humanitarian causes.",
-    speaking_style: "Grounded, sincere, and emotionally direct.",
-    is_starter: true,
-    is_public: true,
-    tags: ["starter", "invincible", "atom-eve"]
-  },
-  {
-    name: "Cecil Stedman",
-    universe: "Invincible",
-    category: "other",
-    status: "standby",
-    avatar_url: `${AVATAR_BASE}cecil-stedman.jpg`,
-    personality: "Pragmatic, calculating, and morally gray by necessity.",
-    backstory: "Director of the Global Defense Agency. Makes the hard calls to protect Earth.",
-    speaking_style: "Gruff, fast, and blunt.",
-    is_starter: true,
-    is_public: true,
-    tags: ["starter", "invincible", "cecil"]
   },
 ];
 
@@ -465,19 +425,26 @@ const charactersToSeed = [
 // ============================================
 // 8. SEED FUNCTION
 // ============================================
-  console.log('Checking for existing starters...');
+console.log('Checking for existing starters...');
 
- async function seed() {
-  console.log('Forcing upsert of all starter characters...');
+async function seed() {
+  console.log('Forcing upsert of all starter characters to apply updates...');
 
-  // Make sure every character has is_starter = true
+  // Force is_starter = true on everything
   charactersToSeed.forEach(c => c.is_starter = true);
+
+  // Remove duplicates from the source array (keep first one)
+  const uniqueCharacters = Array.from(
+    new Map(charactersToSeed.map(c => [c.name, c])).values()
+  );
+
+  console.log(`Upserting ${uniqueCharacters.length} characters (updating existing)...`);
 
   const { data, error } = await supabase
     .from('characters')
-    .upsert(charactersToSeed, {
+    .upsert(uniqueCharacters, {
       onConflict: 'name',
-      ignoreDuplicates: false
+      ignoreDuplicates: false // Must be false to overwrite/update existing characters with the new dynamic traits
     })
     .select();
 
@@ -487,48 +454,10 @@ const charactersToSeed = [
   }
 
   console.log(`✅ Done! Upserted ${data.length} characters.`);
-  console.log('All characters should now have is_starter = true.');
-}
- // =====================================================
-// END OF BLOCK TO PASTE
-// =====================================================
-
-//   If characters already exist, skip seeding
-//   if ((count || 0) > 0) {
-//   console.log(`Starters already uploaded (${count} found).`);
-//   return;
-// }
-
-  console.log('Uploading starter characters...');
-  console.log('Total characters to upload:', charactersToSeed.length);
-
-// Force is_starter = true on everything
-charactersToSeed.forEach(c => c.is_starter = true);
-
-// Remove duplicates from the source array (keep first one)
-const uniqueCharacters = Array.from(
-  new Map(charactersToSeed.map(c => [c.name, c])).values()
-);
-
-console.log(`Upserting ${uniqueCharacters.length} characters (skipping duplicates)...`);
-
-const { data, error } = await supabase
-  .from('characters')
-  .upsert(uniqueCharacters, {
-    onConflict: 'name',
-    ignoreDuplicates: true
-  })
-  .select();
-
-if (error) {
-  console.error('Seeding failed:', error);
-  process.exit(1);
+  console.log('All characters now have their dynamic personalities applied.');
 }
 
-console.log(`✅ Done! Processed ${data.length} characters.`);
-console.log('Characters that already existed were skipped.');
 // ============================================
 // 9. RUN THE SEED FUNCTION
 // ============================================
 seed().catch(console.error);
-
