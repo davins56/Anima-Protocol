@@ -10,6 +10,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
+const MBTI_TYPES = [
+  "INTJ",
+  "INTP",
+  "ENTJ",
+  "ENTP",
+  "INFJ",
+  "INFP",
+  "ENFJ",
+  "ENFP",
+  "ISTJ",
+  "ISFJ",
+  "ESTJ",
+  "ESFJ",
+  "ISTP",
+  "ISFP",
+  "ESTP",
+  "ESFP",
+];
+
 const archetypeColors = {
   guardian: "text-cyan-400 border-cyan-400/30",
   muse: "text-pink-400 border-pink-400/30",
@@ -36,6 +55,7 @@ const defaultForm = {
   name: "",
   tagline: "",
   archetype: "guardian",
+  personality_type: "",
   personality: "",
   backstory: "",
   speaking_style: "",
@@ -83,6 +103,7 @@ export default function Animas() {
       name: anima.name || "",
       tagline: anima.tagline || "",
       archetype: anima.archetype || "guardian",
+      personality_type: anima.personality_type || anima.mbti || "",
       personality: anima.personality || "",
       backstory: anima.backstory || "",
       speaking_style: anima.speaking_style || "",
@@ -128,7 +149,9 @@ export default function Animas() {
     if (!form.name) return;
     setGenerating(true);
     const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `Create a rich, immersive AI companion named "${form.name}" with the archetype: ${form.archetype}.
+      prompt: `Create a rich, immersive AI companion named "${form.name}" with the archetype: ${form.archetype}.${
+        form.personality_type ? ` Myers-Briggs type: ${form.personality_type}.` : ""
+      }
 ${form.tagline ? `Tagline hint: ${form.tagline}` : ""}
 
 Return JSON with:
@@ -562,18 +585,35 @@ Return JSON with a single "${field}" string field.`,
               </button>
 
               {/* Personality */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Personality</label>
-                  {renderAssist("personality")}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">Myers-Briggs Type</label>
+                  <select
+                    value={form.personality_type}
+                    onChange={(e) => setForm((f) => ({ ...f, personality_type: e.target.value }))}
+                    className="w-full bg-black/60 border border-primary/20 text-primary/80 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors"
+                  >
+                    <option value="">Select a type</option>
+                    {MBTI_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <textarea
-                  value={form.personality}
-                  onChange={(e) => setForm((f) => ({ ...f, personality: e.target.value }))}
-                  placeholder="How do they think, feel, engage with the world?"
-                  rows={3}
-                  className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/15 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
-                />
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Personality</label>
+                    {renderAssist("personality")}
+                  </div>
+                  <textarea
+                    value={form.personality}
+                    onChange={(e) => setForm((f) => ({ ...f, personality: e.target.value }))}
+                    placeholder="How do they think, feel, engage with the world?"
+                    rows={3}
+                    className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/15 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
+                  />
+                </div>
               </div>
 
               {/* Backstory */}

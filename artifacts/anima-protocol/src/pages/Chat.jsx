@@ -1998,8 +1998,7 @@ Return JSON:
     };
 
   return (
-    <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>
-      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
+    <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
       {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
       <div className="hidden">
