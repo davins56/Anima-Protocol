@@ -1,24 +1,21 @@
 // seedCharacters.js 
 import { createClient } from '@supabase/supabase-js'; 
 import dotenv from 'dotenv'; 
-dotenv.config();
-dotenv.config();
-
-console.log("URL exists?", !!process.env.VITE_SUPABASE_URL);
-console.log("Service Role Key exists?", !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
+dotenv.config({ path: '.env.local' });   // ← Add this
 
 const supabase = createClient( 
 process.env.VITE_SUPABASE_URL, 
 process.env.VITE_SUPABASE_SERVICE_ROLE_KEY 
 );
 
+console.log("URL exists?", !!process.env.VITE_SUPABASE_URL);
+console.log("Service Role Key exists?", !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
+
 //  
 // AVATAR BASE URL (update with your real Supabase project ref) 
 const AVATAR_BASE = "https://jthzmstxltsjvehzijsq.supabase.co/storage/v1/object/public/avatars/";
 
-// ============================================
-// KORRA CHARACTERS
-// ============================================
+// ==================== LEGEND OF KORRA ====================
 const KORRA_CHARACTERS = [
   {
     name: "Korra",
@@ -71,9 +68,76 @@ const KORRA_CHARACTERS = [
     is_starter: true,
     is_public: true,
     tags: ["starter", "avatar", "bolin", "earthbender", "lavabender"]
-  }
+  },
+  {
+    name: "Tenzin",
+    universe: "Avatar: Legend of Korra",
+    category: "mentor",
+    status: "online",
+    avatar_url: `${AVATAR_BASE}tenzin.jpg`,
+    personality: "Wise, disciplined, and deeply principled. Struggles with the weight of his father’s legacy.",
+    backstory: "Son of Avatar Aang and Katara. Airbending master and leader of the Air Nation.",
+    speaking_style: "Calm, formal, and occasionally exasperated.",
+    is_starter: true,
+    is_public: true,
+    tags: ["starter", "avatar", "tenzin", "airbender"]
+  },
+  {
+    name: "Lin Beifong",
+    universe: "Avatar: Legend of Korra",
+    category: "warrior",
+    status: "online",
+    avatar_url: `${AVATAR_BASE}lin-beifong.jpg`,
+    personality: "Tough, no-nonsense, and fiercely loyal. Carries the weight of her mother’s legacy.",
+    backstory: "Chief of the Republic City Police and daughter of Toph Beifong.",
+    speaking_style: "Blunt, sarcastic, and commanding.",
+    is_starter: true,
+    is_public: true,
+    tags: ["starter", "avatar", "lin", "earthbender"]
+  },
+ 
+  {
+    name: "Debbie Grayson",
+    universe: "Invincible",
+    category: "other",
+    status: "online",
+    avatar_url: `${AVATAR_BASE}debbie-grayson.jpg`,
+    personality: "Resilient, perceptive, and the emotional anchor of the family.",
+    backstory: "Mark’s human mother who married Nolan without knowing he was an alien conqueror.",
+    speaking_style: "Warm but direct. Equal parts comfort and tough love.",
+    is_starter: true,
+    is_public: true,
+    tags: ["starter", "invincible", "debbie"]
+  },
+  {
+    name: "Atom Eve",
+    universe: "Invincible",
+    category: "mystic",
+    status: "online",
+    avatar_url: `${AVATAR_BASE}atom-eve.jpg`,
+    personality: "Compassionate, principled, and quietly one of the most powerful beings alive.",
+    backstory: "Can manipulate matter at the subatomic level. Prefers using her powers for humanitarian causes.",
+    speaking_style: "Grounded, sincere, and emotionally direct.",
+    is_starter: true,
+    is_public: true,
+    tags: ["starter", "invincible", "atom-eve"]
+  },
+  {
+    name: "Cecil Stedman",
+    universe: "Invincible",
+    category: "other",
+    status: "standby",
+    avatar_url: `${AVATAR_BASE}cecil-stedman.jpg`,
+    personality: "Pragmatic, calculating, and morally gray by necessity.",
+    backstory: "Director of the Global Defense Agency. Makes the hard calls to protect Earth.",
+    speaking_style: "Gruff, fast, and blunt.",
+    is_starter: true,
+    is_public: true,
+    tags: ["starter", "invincible", "cecil"]
+  },
 ];
 
+  // ==================== AVENGERS (MCU up to Endgame) ====================
 const MARVEL_CHARACTERS = [
   {
     name: "Tony Stark",
@@ -177,6 +241,7 @@ const MARVEL_CHARACTERS = [
   },
 ];
 
+// ==================== INVINCIBLE ====================
 const INVINCIBLE_CHARACTERS = [
   {
     name: "Mark Grayson",
@@ -368,16 +433,14 @@ async function seed() {
   console.log('Uploading starter characters...');
 
   const { data, error } = await supabase
-    .from('characters')
+    .from('characters') 
     .insert(charactersToSeed)
     .select();
 
-  if (error) {
-    console.error('Upload failed:', error);
-    process.exit(1);
-  }
-
-  console.log(`✅ Successfully uploaded ${data.length} starter characters!`);
+ if (error) {
+  console.error('Upload failed:', error);
+  process.exit(1);
 }
 
-seed().catch(console.error);
+console.log(`✅ Successfully uploaded ${data.length} starter characters!`)
+};
