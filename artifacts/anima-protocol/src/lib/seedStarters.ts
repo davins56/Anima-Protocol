@@ -1,34 +1,36 @@
-import { supabase } from './supabaseClient'; // your existing client (or create admin client for seeding)
-import { starterCharacters } from '../data/starterCharacters';
+import { supabase } from './supabaseClient'
+import { starterCharacters } from '../data/starterCharacters'
 
-export async function seedStarterCharacters() {
-  // Check if any starters already exist
+export async function seed() {
+  console.log('Checking for existing starters...')
+
   const { count, error: countError } = await supabase
     .from('characters')
     .select('*', { count: 'exact', head: true })
-    .eq('is_starter', true);
 
   if (countError) {
-    console.error('Seed check failed:', countError);
-    return { success: false, error: countError.message };
+    console.error('Count check failed:', countError)
+    process.exit(1)
   }
 
   if ((count || 0) > 0) {
-    console.log('Starter characters already seeded. Lattice stable.');
-    return { success: true, skipped: true, count };
+    console.log(`Table already has ${count} characters. Skipping seed.`)
+    return
   }
 
-  // Bulk insert (use service_role key in production Edge Function for reliability)
+  console.log('Uploading starter characters...')
+
   const { data, error } = await supabase
     .from('characters')
     .insert(starterCharacters)
-    .select();
+    .select()
 
   if (error) {
-    console.error('Seed insert failed:', error);
-    return { success: false, error: error.message };
+    console.error('Upload failed:', error)
+    process.exit(1)
   }
 
-  console.log(`Successfully seeded ${data?.length} starter characters.`);
-  return { success: true, seeded: data?.length, data };
+  console.log(`✅ Successfully uploaded ${data.length} starter characters!`)
 }
+
+seed().catch(console.error)
