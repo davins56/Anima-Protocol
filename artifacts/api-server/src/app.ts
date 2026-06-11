@@ -15,7 +15,8 @@ import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
 } from "./middlewares/clerkProxyMiddleware";
-import { clerkMultiDomainMiddleware } from "./middlewares/clerkMultiDomainMiddleware";
+import { clerkMiddleware } from "@clerk/express";
+
 
 const app: Express = express();
 
@@ -54,10 +55,13 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 // availability from auth configuration problems.
 app.use("/api", healthRouter);
 
-// Verify Clerk JWTs against www/apex and other known hosts (Vercel → Replit).
-app.use(clerkMultiDomainMiddleware());
+// Verify Clerk JWTs before hitting any protected routes.
+// This populates req.auth for @clerk/express helpers.
+app.use(clerkMiddleware());
+
 
 app.use("/api", router);
+
 
 // Prevent unhandled errors from wedging the Vercel function instance.
 app.use(

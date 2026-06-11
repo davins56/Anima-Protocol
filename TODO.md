@@ -1,15 +1,9 @@
-# TODO — AnimaOrb (Crystalline Neural Companion)
+- [ ] Inspect and modify backend Clerk middleware integration for protected store routes
+  - [ ] Update `artifacts/api-server/src/app.ts` to mount Clerk modern middleware (`clerkMiddleware()`)
+  - [ ] Update `artifacts/api-server/src/routes/store.ts` to use `ClerkExpressRequireAuth()` (or `req.auth`) instead of `getAuth(req)`
+- [ ] Adjust frontend Clerk token wiring to use `useAuth().getToken()`
+  - [ ] Locate where `setAuthTokenGetter()` is called
+  - [ ] Update it to call `getToken()` from `useAuth()`
+- [ ] Run build/typecheck/tests
+- [ ] Validate the Marvel “change series” → “Add 10” flow no longer returns the session error
 
-- [x] Install postprocessing deps in `artifacts/anima-protocol`
-- [x] Create `artifacts/anima-protocol/src/components/AnimaOrb.tsx`
-  - [x] Faceted crystalline shell
-  - [x] Inner neural web (points + line segments) with thinking mode
-  - [x] Add vibe-based color temperature mapping
-  - [x] Add resonanceLevel to densify/glow
-  - [x] Add performanceMode: fewer particles + disable bloom
-  - [x] Add bloom via @react-three/postprocessing
-- [x] Integrate into `artifacts/anima-protocol/src/pages/Chat.jsx`
-  - [x] Derive `isThinking` from `__thinking__` message marker
-  - [x] Derive vibe/intensity/resonanceLevel from existing state
-  - [x] Toggle performanceMode for mobile/tablet
-- [ ] Typecheck + run dev

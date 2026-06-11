@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
+import { ClerkExpressRequireAuth } from "@clerk/express";
+
+
 import {
   db,
   userEntities,
@@ -18,24 +20,26 @@ import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
 
 const router = Router();
 
-// Every store endpoint is per-user: derive the user id from the Clerk session
-// and reject anything unauthenticated. The user id is NEVER taken from the
-// request body — only from the verified session.
+// Every store endpoint is per-user: use modern Clerk Express auth.
+// (req.auth is populated by clerkMiddleware() / ClerkExpressRequireAuth())
 function requireUser(
-  req: Request,
+  req: Request & { auth?: { userId?: string | null } },
   res: Response,
   next: NextFunction,
 ): void {
-  const { userId } = getAuth(req);
+  const userId = req.auth?.userId ?? null;
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  (req as Request & { userId: string }).userId = userId;
+  (req as Request & { userId: string }).userId = String(userId);
   next();
 }
 
+router.use(ClerkExpressRequireAuth());
 router.use(requireUser);
+
+
 
 function getUserId(req: Request): string {
   return (req as Request & { userId: string }).userId;

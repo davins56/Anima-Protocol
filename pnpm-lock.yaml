@@ -89,6 +89,9 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
+      ripgrep:
+        specifier: ^0.3.1
+        version: 0.3.1
     devDependencies:
       drizzle-kit:
         specifier: ^0.31.10
@@ -4873,6 +4876,10 @@ packages:
   rgbcolor@1.0.1:
     resolution: {integrity: sha512-9aZLIrhRaD97sgVhtJOW6ckOEh6/GnvQtdVNfdZ6s67+3/XwLS9lBcQYzEEhYVeUowN7pRzMLsyGhK2i/xvWbw==}
     engines: {node: '>= 0.8.15'}
+
+  ripgrep@0.3.1:
+    resolution: {integrity: sha512-6bDtNIBh1qPviVIU685/4uv0Ap5t8eS4wiJhy/tR2LdIeIey9CVasENlGS+ul3HnTmGANIp7AjnfsztsRmALfQ==}
+    hasBin: true
 
   rollup@4.61.1:
     resolution: {integrity: sha512-I4KW6iuRpuu2uHBLraZ1wNZe0DP7lnRha+VJ9tNaYVaVgKhW0aI3h4RYnoRPeql0flHm/Co55b7snEDcOfOJrA==}
@@ -9721,6 +9728,8 @@ snapshots:
 
   rgbcolor@1.0.1:
     optional: true
+
+  ripgrep@0.3.1: {}
 
   rollup@4.61.1:
     dependencies:
