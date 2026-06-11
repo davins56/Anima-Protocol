@@ -119,26 +119,26 @@ class ErrorBoundary extends Component {
   this.clearHealTimer();
 
   try {
-    // 1. Try to cleanly sign out from both auth systems
+    // Try to cleanly sign out from both auth systems
     if (typeof window !== "undefined") {
-      // Clerk (if present)
+      // Clerk
       if (window.Clerk && typeof window.Clerk.signOut === "function") {
         await window.Clerk.signOut();
       }
 
-      // base44 custom auth (if present)
-      if (window.base44 && window.base44.auth && typeof window.base44.auth.logout === "function") {
+      // base44
+      if (window.base44?.auth?.logout) {
         await window.base44.auth.logout();
       }
     }
 
-    // 2. Nuclear clear of any lingering auth/session data
+    // Clear storage
     try {
       localStorage.clear();
       sessionStorage.clear();
     } catch {}
 
-    // 3. Now remount the app (this is what the original did)
+    // Remount the app
     this.setState((s) => ({
       hasError: false,
       error: null,
@@ -189,6 +189,27 @@ class ErrorBoundary extends Component {
             running — try a self-repair to rebuild this screen in place, or
             reload if it persists.
           </p>
+          {this.state.error && (
+  <div className="mt-4 p-3 border border-red-400/30 bg-red-950/30 rounded text-left">
+    <p className="font-mono text-[10px] text-red-400 mb-1 tracking-widest uppercase">
+      Error Details
+    </p>
+    <p className="font-mono text-[11px] text-red-300 break-words">
+      {this.state.error.message || String(this.state.error)}
+    </p>
+
+    {this.state.error.stack && (
+      <details className="mt-2">
+        <summary className="font-mono text-[9px] text-red-400/70 cursor-pointer hover:text-red-400">
+          Show stack trace
+        </summary>
+        <pre className="mt-1 text-[9px] text-red-400/70 overflow-auto max-h-32 whitespace-pre-wrap">
+          {this.state.error.stack.split('\n').slice(0, 8).join('\n')}
+        </pre>
+      </details>
+    )}
+  </div>
+)}
           <div className="flex items-center justify-center gap-2">
             <button
               type="button"
