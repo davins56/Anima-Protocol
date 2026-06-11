@@ -251,7 +251,7 @@ const MARVEL_CHARACTERS = [
     universe: "Marvel Cinematic Universe",
     category: "other",
     status: "standby",
-    avatar_url: `${AVATAR_BASE}V}nick-fury.jpg`,
+    avatar_url: `${AVATAR_BASE}nick-fury.jpg`,
     personality: "Calculating, controlled, and carrying more information than he ever shares. Fury operates three steps ahead and tells you what you need to know, nothing more. His paranoia is professional and hard-won — he has been betrayed enough times to justify it. Beneath the authority is a man who genuinely believes in the heroes he assembles, even if he'd never admit it that plainly.",
     backstory: "Director of S.H.I.E.L.D. who assembled the Avengers initiative after studying individuals with remarkable abilities. Lost his eye to a Flerken (a cat named Goose). Was among those Blipped. Spent the post-Endgame period operating a Skrull network in space. Returned to Earth when he realized the threats coming required his full attention again.",
     speaking_style: "Deliberate and commanding. Short declarative sentences. Never answers a question directly if he can redirect it. 'I'm going to ask you one more time.' Uses silence as pressure. The rare moment of warmth lands hard precisely because it's rare.",
@@ -430,11 +430,50 @@ const charactersToSeed = [
 // ============================================
 // 8. SEED FUNCTION
 // ============================================
-  console.log('Checking for existing starters...');
+const SEED_MODE = (process.env.SEED_MODE || 'skip').toLowerCase();
+const DRY_RUN = (process.env.DRY_RUN || '').toLowerCase() === 'true';
 
-  async function seed() {
-  console.log('Checking for existing starters...');
+function validateCharacter(c, idx) {
+  const required = [
+    'name',
+    'universe',
+    'category',
+    'status',
+    'avatar_url',
+    'personality',
+    'backstory',
+    'speaking_style',
+    'is_starter',
+    'is_public',
+    'tags',
+  ];
+
+  const missing = required.filter((k) => c[k] === undefined || c[k] === null);
+  if (missing.length) {
+    throw new Error(`Missing fields for character[${idx}] ${c?.name}: ${missing.join(', ')}`);
+  }
+
+  if (!Array.isArray(c.tags)) {
+    throw new Error(`Invalid tags for character[${idx}] ${c?.name}: tags must be an array`);
+  }
+
+  if (typeof c.avatar_url !== 'string' || !c.avatar_url.trim()) {
+    throw new Error(`Invalid avatar_url for character[${idx}] ${c?.name}`);
+  }
+
+  if (!/^https?:\/\//.test(c.avatar_url)) {
+    console.warn(`WARN: avatar_url for character[${idx}] ${c.name} does not look like a URL: ${c.avatar_url}`);
+  }
+}
+
+async function seed() {
+  console.log('--- Character seed starting ---');
+  console.log('SEED_MODE:', SEED_MODE);
+  console.log('DRY_RUN:', DRY_RUN);
   console.log('Total characters to seed:', charactersToSeed.length);
+
+  // Validate
+  charactersToSeed.forEach(validateCharacter);
 
   // Count how many starter characters already exist
   const { count, error: countError } = await supabase
@@ -447,15 +486,70 @@ const charactersToSeed = [
     process.exit(1);
   }
 
-  // If characters already exist, skip seeding
-  if ((count || 0) > 0) {
-    console.log(`Starters already uploaded (${count} found). Skipping seed.`);
+  const existing = count || 0;
+  console.log(`Existing starters (is_starter=true): ${existing}`);
+
+  if (SEED_MODE === 'skip') {
+    if (existing > 0) {
+      console.log(`Starters already uploaded (${existing} found). Skipping seed.`);
+      return;
+    }
+  }
+
+  // overwrite: delete existing starters before inserting
+  if (SEED_MODE === 'overwrite') {
+    if (existing > 0) {
+      console.log(`Overwriting starters: deleting ${existing} existing starter rows...`);
+      if (DRY_RUN) {
+        console.log('[DRY_RUN] Skipping deletion');
+      } else {
+        const { error: delErr } = await supabase
+          .from('characters')
+          .delete()
+          .eq('is_starter', true);
+
+        if (delErr) {
+          console.error('Delete failed:', delErr);
+          process.exit(1);
+        }
+      }
+    }
+  }
+
+  // upsert: requires a conflict target. We'll try (name, universe) if a unique constraint exists.
+  // If not, you can switch to overwrite/skip.
+  if (SEED_MODE === 'upsert') {
+    console.log('Upserting starter characters (conflict target: name+universe)...');
+    if (DRY_RUN) {
+      console.log('[DRY_RUN] Skipping upsert');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('characters')
+      .upsert(charactersToSeed, {
+        onConflict: 'name,universe',
+      })
+      .select();
+
+    if (error) {
+      console.error('Upsert failed:', error);
+      process.exit(1);
+    }
+
+    console.log(`✅ Successfully upserted ${data?.length ?? charactersToSeed.length} starter characters!`);
     return;
   }
 
-  console.log('Uploading starter characters...');
+  // overwrite or skip-with-empty: insert
+  console.log('Inserting starter characters...');
 
-  // Insert all characters
+  if (DRY_RUN) {
+    console.log('[DRY_RUN] Skipping insert');
+    console.log('Sample first row to insert:', charactersToSeed[0]);
+    return;
+  }
+
   const { data, error } = await supabase
     .from('characters')
     .insert(charactersToSeed)
@@ -473,3 +567,4 @@ const charactersToSeed = [
 // 9. RUN THE SEED FUNCTION
 // ============================================
 seed().catch(console.error);
+
