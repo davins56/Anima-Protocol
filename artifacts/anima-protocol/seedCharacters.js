@@ -1,19 +1,36 @@
-// seedCharacters.js 
+// ============================================
+// 1. IMPORTS
+// ============================================ 
 import { createClient } from '@supabase/supabase-js'; 
 import dotenv from 'dotenv'; 
+
+// ============================================
+// 2. LOAD ENVIRONMENT VARIABLES
+// ============================================
 dotenv.config({ path: '.env.local' });   // ← Add this
 
+// ============================================
+// 3. CREATE SUPABASE CLIENT
+// ============================================
 const supabase = createClient( 
 process.env.VITE_SUPABASE_URL, 
 process.env.VITE_SUPABASE_SERVICE_ROLE_KEY 
 );
 
+// ============================================
+// 4. DEBUG LOGS (Optional but helpful)
+// ============================================
 console.log("URL exists?", !!process.env.VITE_SUPABASE_URL);
 console.log("Service Role Key exists?", !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
 
-//  
-// AVATAR BASE URL (update with your real Supabase project ref) 
+// ============================================
+// 5. AVATAR BASE URL (for images in Supabase Storage)
+// ============================================
 const AVATAR_BASE = "https://jthzmstxltsjvehzijsq.supabase.co/storage/v1/object/public/avatars/";
+
+// ============================================
+// 6. CHARACTER ARRAYS (put all your groups here)
+// ============================================
 
 // ==================== LEGEND OF KORRA ====================
 const KORRA_CHARACTERS = [
@@ -398,10 +415,11 @@ const GUARDIANS_CHARACTERS = [
     backstory: "An empath raised in seclusion by Ego to help him sleep, kept ignorant of his true monstrous nature. After Ego's defeat she joined the Guardians, finding genuine friendship — and eventually learning that Peter Quill is her half-brother. She leaves to find her own path, having finally discovered she's allowed to want things.",
     speaking_style: "Soft, literal, and disarmingly blunt about feelings. Announces what others feel out loud ('You are sad!'). Childlike wonder and nervous giggles. Occasional startling honesty that stops a room. Warm and eager to please.",
   },
-];
+]; 
 
-//  
-// COMBINE ALL STARTERS 
+// ============================================
+// 7. COMBINE ALL CHARACTERS INTO ONE ARRAY
+// ============================================
 const charactersToSeed = [ 
 ...KORRA_CHARACTERS, 
 ...MARVEL_CHARACTERS, 
@@ -410,11 +428,15 @@ const charactersToSeed = [
 ];
 
 // ============================================
-// SEED FUNCTION
+// 8. SEED FUNCTION
 // ============================================
-async function seed() {
   console.log('Checking for existing starters...');
 
+  async function seed() {
+  console.log('Checking for existing starters...');
+  console.log('Total characters to seed:', charactersToSeed.length);
+
+  // Count how many starter characters already exist
   const { count, error: countError } = await supabase
     .from('characters')
     .select('*', { count: 'exact', head: true })
@@ -425,22 +447,29 @@ async function seed() {
     process.exit(1);
   }
 
+  // If characters already exist, skip seeding
   if ((count || 0) > 0) {
-    console.log(`Starters already uploaded (${count} found). Lattice stable.`);
+    console.log(`Starters already uploaded (${count} found). Skipping seed.`);
     return;
   }
 
   console.log('Uploading starter characters...');
 
+  // Insert all characters
   const { data, error } = await supabase
-    .from('characters') 
+    .from('characters')
     .insert(charactersToSeed)
     .select();
 
- if (error) {
-  console.error('Upload failed:', error);
-  process.exit(1);
+  if (error) {
+    console.error('Upload failed:', error);
+    process.exit(1);
+  }
+
+  console.log(`✅ Successfully uploaded ${data.length} starter characters!`);
 }
 
-console.log(`✅ Successfully uploaded ${data.length} starter characters!`)
-};
+// ============================================
+// 9. RUN THE SEED FUNCTION
+// ============================================
+seed().catch(console.error);
