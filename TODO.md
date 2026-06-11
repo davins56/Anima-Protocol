@@ -1,9 +1,11 @@
-- [ ] Inspect and modify backend Clerk middleware integration for protected store routes
-  - [ ] Update `artifacts/api-server/src/app.ts` to mount Clerk modern middleware (`clerkMiddleware()`)
-  - [ ] Update `artifacts/api-server/src/routes/store.ts` to use `ClerkExpressRequireAuth()` (or `req.auth`) instead of `getAuth(req)`
-- [ ] Adjust frontend Clerk token wiring to use `useAuth().getToken()`
-  - [ ] Locate where `setAuthTokenGetter()` is called
-  - [ ] Update it to call `getToken()` from `useAuth()`
-- [ ] Run build/typecheck/tests
-- [ ] Validate the Marvel “change series” → “Add 10” flow no longer returns the session error
+ dont want the creat# TODO
+
+## Implement: change my profile photo on the welcome screen
+
+- [ ] Inspect welcome screen code and identify what “profile photo” means in this UI (companion avatar vs user avatar)
+- [ ] Implement avatar upload/change UI on `artifacts/anima-protocol/src/components/chat/WelcomeScreen.jsx`
+- [ ] Reuse existing upload capability (`base44.integrations.Core.UploadFile`) or existing portrait uploader patterns
+- [ ] Persist the changed image to the correct entity field (for A: Anima avatar_url)
+- [ ] Ensure the welcome screen updates immediately and doesn’t break existing hover/edit behavior
+- [ ] Run lint/tests/build for the anima-protocol workspace and confirm no runtime errors
 

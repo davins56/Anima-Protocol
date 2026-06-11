@@ -233,6 +233,8 @@ export default function ChatWidgetsArea({
             <EmotionIndicator
               emotion={characterEmotions[characterId].emotion}
               intensity={characterEmotions[characterId].intensity}
+              level={characterEmotions[characterId].emotion_level || characterEmotions[characterId].level}
+              arousal={characterEmotions[characterId].arousal}
               trigger={characterEmotions[characterId].trigger}
               compact={false}
             />

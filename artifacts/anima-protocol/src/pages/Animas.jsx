@@ -42,6 +42,10 @@ const defaultForm = {
   avatar_url: "",
   status: "active",
   elevenlabs_voice_id: "",
+  emotion: "calm",
+  emotion_level: "Low",
+  intensity: 35,
+  arousal: 30,
 };
 
 export default function Animas() {
@@ -85,6 +89,10 @@ export default function Animas() {
       avatar_url: anima.avatar_url || "",
       status: anima.status || "active",
       elevenlabs_voice_id: anima.elevenlabs_voice_id || "",
+      emotion: anima.emotion || anima.primary_emotion || "calm",
+      emotion_level: anima.emotion_level || anima.level || "Low",
+      intensity: anima.intensity != null ? anima.intensity : 35,
+      arousal: anima.arousal != null ? anima.arousal : 30,
     });
     setShowForm(true);
   };

@@ -14,13 +14,24 @@ const emotionConfig = {
   desperate: { color: "from-red-600 to-red-500", icon: "😫", label: "Desperate" },
 };
 
+const normalizeMetric = (value) => {
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return 0;
+  if (numeric >= 0 && numeric <= 10) return Math.round(numeric * 10);
+  return Math.min(100, Math.max(0, numeric));
+};
+
 /**
- * @param {{ emotion?: keyof typeof emotionConfig, intensity?: number, trigger?: string | null, compact?: boolean }} props
+ * @param {{ emotion?: keyof typeof emotionConfig, intensity?: number, trigger?: string | null, compact?: boolean, level?: string | null, arousal?: number }} props
  */
-export default function EmotionIndicator({ emotion, intensity = 50, trigger = null, compact = false }) {
+export default function EmotionIndicator({ emotion, intensity = 50, trigger = null, compact = false, level = null, arousal = null }) {
   if (!emotion || !emotionConfig[emotion]) return null;
 
   const config = emotionConfig[emotion];
+  const normalizedIntensity = normalizeMetric(intensity);
+  const normalizedArousal = arousal != null ? normalizeMetric(arousal) : null;
+  const intensityLabel = Number(intensity) <= 10 ? `${Number(intensity)}/10` : `${normalizedIntensity}%`;
+  const arousalLabel = normalizedArousal != null ? `${normalizedArousal}%` : null;
 
   if (compact) {
     return (
@@ -33,11 +44,11 @@ export default function EmotionIndicator({ emotion, intensity = 50, trigger = nu
         <span className="font-mono text-[9px] text-primary/70 tracking-wider uppercase">
           {config.label}
         </span>
-        <div className="w-8 h-0.5 border border-primary/20 bg-primary/10">
+        <div className="w-8 h-0.5 border border-primary/20 bg-primary/10 overflow-hidden rounded-full">
           <motion.div
             className={`h-full bg-gradient-to-r ${config.color}`}
             initial={{ width: 0 }}
-            animate={{ width: `${intensity}%` }}
+            animate={{ width: `${normalizedIntensity}%` }}
             transition={{ duration: 0.6, ease: "easeOut" }}
           />
         </div>
@@ -62,17 +73,23 @@ export default function EmotionIndicator({ emotion, intensity = 50, trigger = nu
         </div>
       </div>
 
+      <div className="grid grid-cols-3 gap-2 mb-3 text-[8px] font-mono uppercase tracking-[0.2em] text-primary/50">
+        <div className="truncate">Type: {config.label}</div>
+        <div className="truncate">Level: {level || 'Balanced'}</div>
+        <div className="truncate">Arousal: {arousalLabel || '—'}</div>
+      </div>
+
       {/* Intensity bar */}
       <div className="space-y-1">
         <div className="flex items-center justify-between">
           <span className="text-[9px] font-mono text-primary/60">Intensity</span>
-          <span className="text-[9px] font-mono text-primary/40">{intensity}%</span>
+          <span className="text-[9px] font-mono text-primary/40">{intensityLabel}</span>
         </div>
         <div className="w-full h-1.5 border border-primary/20 bg-black/40 rounded-full overflow-hidden">
           <motion.div
             className={`h-full bg-gradient-to-r ${config.color}`}
             initial={{ width: 0 }}
-            animate={{ width: `${intensity}%` }}
+            animate={{ width: `${normalizedIntensity}%` }}
             transition={{ duration: 0.6, ease: "easeOut" }}
           />
         </div>

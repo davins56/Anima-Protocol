@@ -588,7 +588,9 @@ export default function Chat() {
         secondary: s.secondary_emotion,
         intensity: s.intensity,
         trigger: s.trigger,
-        actor: s.affected_by_actor
+        actor: s.affected_by_actor,
+        emotion_level: s.emotion_level || s.level || null,
+        arousal: s.arousal != null ? s.arousal : null,
       };
     });
     setCharacterEmotions(map);
