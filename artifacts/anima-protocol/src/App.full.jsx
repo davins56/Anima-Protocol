@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/toaster";
 import ConsentBanner from "@/components/ConsentBanner";
+import { usePageMeta, ROUTE_META } from "./lib/usePageMeta";
 
 import { Toaster as SonnerToaster, toast } from "sonner";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -669,7 +670,11 @@ function AuthFormShell({ mode, children }) {
 }
 
 function SignInPage() {
-  usePageMeta(ROUTE_META["/sign-in"]);
+  // Temporary bypass to fix crash
+  useEffect(() => {
+    document.title = "Sign In | Anima Protocol";
+  }, []);
+
   return (
     <AuthFormShell mode="sign-in">
       <ClerkLoading>
@@ -699,7 +704,11 @@ function SignInPage() {
 }
 
 function SignUpPage() {
-  usePageMeta(ROUTE_META["/sign-up"]);
+  // Temporary bypass to fix crash
+  useEffect(() => {
+    document.title = "Create Account | Anima Protocol";
+  }, []);
+
   return (
     <AuthFormShell mode="sign-up">
       <ClerkLoading>
@@ -727,7 +736,6 @@ function SignUpPage() {
     </AuthFormShell>
   );
 }
-
 function SsoCallbackPage() {
   const navigate = useNavigate();
 
