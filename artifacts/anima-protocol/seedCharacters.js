@@ -432,44 +432,67 @@ const charactersToSeed = [
 // ============================================
   console.log('Checking for existing starters...');
 
-  async function seed() {
-  console.log('Checking for existing starters...');
-  console.log('Total characters to seed:', charactersToSeed.length);
+ async function seed() {
+  console.log('Forcing upsert of all starter characters...');
 
-  // Count how many starter characters already exist
-  const { count, error: countError } = await supabase
-    .from('characters')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_starter', true);
+  // Make sure every character has is_starter = true
+  charactersToSeed.forEach(c => c.is_starter = true);
 
-  if (countError) {
-    console.error('Count check failed:', countError);
-    process.exit(1);
-  }
-
-  // If characters already exist, skip seeding
-  if ((count || 0) > 0) {
-    console.log(`Starters already uploaded (${count} found). Skipping seed.`);
-    return;
-  }
-
-  console.log('Uploading starter characters...');
-
-  // Insert all characters
   const { data, error } = await supabase
     .from('characters')
-    .insert(charactersToSeed)
+    .upsert(charactersToSeed, {
+      onConflict: 'name',
+      ignoreDuplicates: false
+    })
     .select();
 
   if (error) {
-    console.error('Upload failed:', error);
+    console.error('Seeding failed:', error);
     process.exit(1);
   }
 
-  console.log(`✅ Successfully uploaded ${data.length} starter characters!`);
+  console.log(`✅ Done! Upserted ${data.length} characters.`);
+  console.log('All characters should now have is_starter = true.');
+}
+ // =====================================================
+// END OF BLOCK TO PASTE
+// =====================================================
+
+//   If characters already exist, skip seeding
+//   if ((count || 0) > 0) {
+//   console.log(`Starters already uploaded (${count} found).`);
+//   return;
+// }
+
+  console.log('Uploading starter characters...');
+  console.log('Total characters to upload:', charactersToSeed.length);
+
+// Force is_starter = true on everything
+charactersToSeed.forEach(c => c.is_starter = true);
+
+// Remove duplicates from the source array (keep first one)
+const uniqueCharacters = Array.from(
+  new Map(charactersToSeed.map(c => [c.name, c])).values()
+);
+
+console.log(`Upserting ${uniqueCharacters.length} characters (skipping duplicates)...`);
+
+const { data, error } = await supabase
+  .from('characters')
+  .upsert(uniqueCharacters, {
+    onConflict: 'name',
+    ignoreDuplicates: true
+  })
+  .select();
+
+if (error) {
+  console.error('Seeding failed:', error);
+  process.exit(1);
 }
 
+console.log(`✅ Done! Processed ${data.length} characters.`);
+console.log('Characters that already existed were skipped.');
 // ============================================
 // 9. RUN THE SEED FUNCTION
 // ============================================
-seed().catch(console.error);
+seed().catch(console.error)
