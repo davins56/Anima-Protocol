@@ -60,6 +60,7 @@ const defaultForm = {
   backstory: "",
   speaking_style: "",
   avatar_url: "",
+  theme_color: "#00e5e5",
   status: "active",
   elevenlabs_voice_id: "",
   emotion: "calm",
@@ -108,6 +109,7 @@ export default function Animas() {
       backstory: anima.backstory || "",
       speaking_style: anima.speaking_style || "",
       avatar_url: anima.avatar_url || "",
+      theme_color: anima.theme_color || "#00e5e5",
       status: anima.status || "active",
       elevenlabs_voice_id: anima.elevenlabs_voice_id || "",
       emotion: anima.emotion || anima.primary_emotion || "calm",
@@ -412,7 +414,17 @@ Return JSON with a single "${field}" string field.`,
 
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <h3 className="font-mono text-sm text-primary tracking-wider uppercase">{anima.name}</h3>
+                    <div>
+                      <h3 className="font-mono text-sm text-primary tracking-wider uppercase">{anima.name}</h3>
+                      {anima.theme_color && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: anima.theme_color }} />
+                          <span className="text-[8px] font-mono uppercase tracking-[0.2em] text-primary/40">
+                            Accent color
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     <span className={`text-[9px] font-mono tracking-[0.2em] uppercase border px-1.5 py-0.5 flex-shrink-0 ${archetypeColors[anima.archetype] || "text-primary/40 border-primary/20"}`}>
                       {anima.archetype}
                     </span>
@@ -470,15 +482,19 @@ Return JSON with a single "${field}" string field.`,
       {/* Appearance Customizer */}
       {customizingAnima && (
         <AnimaCustomizer
-          anima={customizingAnima}
-          onClose={() => setCustomizingAnima(null)}
-          onSave={(newAvatarUrl) => {
-            setAnimas((prev) =>
-              prev.map((a) => a.id === customizingAnima.id ? { ...a, avatar_url: newAvatarUrl } : a)
-            );
-            setCustomizingAnima(null);
-          }}
-        />
+        anima={customizingAnima}
+        onClose={() => setCustomizingAnima(null)}
+        onSave={({ avatar_url, theme_color }) => {
+          setAnimas((prev) =>
+            prev.map((a) =>
+              a.id === customizingAnima.id
+                ? { ...a, avatar_url, theme_color }
+                : a
+            )
+          );
+          setCustomizingAnima(null);
+        }}
+      />
       )}
 
       {/* Form Modal */}
@@ -524,6 +540,15 @@ Return JSON with a single "${field}" string field.`,
                     onChange={(e) => setForm((f) => ({ ...f, avatar_url: e.target.value }))}
                     placeholder="Or paste image URL..."
                     className="w-full bg-black/60 border border-primary/15 text-primary/70 placeholder-primary/15 font-mono text-[10px] px-3 py-2 focus:outline-none focus:border-primary/40 transition-colors"
+                  />
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Accent</span>
+                  <input
+                    type="color"
+                    value={form.theme_color}
+                    onChange={(e) => setForm((f) => ({ ...f, theme_color: e.target.value }))}
+                    className="w-12 h-12 p-0 border border-primary/20 rounded"
                   />
                 </div>
               </div>

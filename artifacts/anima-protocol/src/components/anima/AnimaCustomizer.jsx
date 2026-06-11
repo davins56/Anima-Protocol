@@ -22,6 +22,7 @@ export default function AnimaCustomizer({ anima, onClose, onSave }) {
   });
   const [generating, setGenerating] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(anima.avatar_url || "");
+  const [themeColor, setThemeColor] = useState(anima.theme_color || "#00e5e5");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [activeFeature, setActiveFeature] = useState("hair");
@@ -67,16 +68,19 @@ export default function AnimaCustomizer({ anima, onClose, onSave }) {
 
   const handleSave = async () => {
     setSaving(true);
-    await base44.entities.Anima.update(anima.id, { avatar_url: previewUrl });
+    await base44.entities.Anima.update(anima.id, {
+      avatar_url: previewUrl,
+      theme_color: themeColor,
+    });
     setSaving(false);
     setSaved(true);
     setTimeout(() => {
-      onSave(previewUrl);
+      onSave({ avatar_url: previewUrl, theme_color: themeColor });
       onClose();
     }, 800);
   };
 
-  const hasChanges = previewUrl !== anima.avatar_url && previewUrl;
+  const hasChanges = (previewUrl !== anima.avatar_url && previewUrl) || themeColor !== (anima.theme_color || "#00e5e5");
   const hasPrompts = Object.values(prompts).some((v) => v.trim());
 
   return (

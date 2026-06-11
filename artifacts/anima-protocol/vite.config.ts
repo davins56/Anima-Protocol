@@ -17,30 +17,31 @@ const clerkPublishableKey =
   process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
   "";
 
-const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT ?? "5173";
 
 const port = parseInt(rawPort);
 
+// In CI/build environments (e.g. Vercel build) PORT is often not set.
+// We don't need a real listening port during bundling, only a valid number
+// for Vite's server/preview config to initialize.
 if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
+  console.warn(`[vite.config] Invalid PORT value "${rawPort}", falling back to 5173`);
+} 
 
-const basePath = process.env.BASE_PATH;
+const finalPort = Number.isNaN(port) || port <= 0 ? 5173 : port;
 
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
+const basePath = process.env.BASE_PATH ?? "/";
+
+// Build environments may not provide BASE_PATH; default to root.
+if (typeof basePath !== "string" || !basePath.trim()) {
+  console.warn("[vite.config] BASE_PATH missing/invalid, defaulting to '/'");
 }
+const normalizedBasePath = (basePath || "/").trim().replace(/\/$/, "") + "/";
+
 
 export default defineConfig({
-  base: basePath,
+  base: normalizedBasePath,
+
   ...(clerkPublishableKey
     ? {
         define: {
@@ -80,13 +81,35 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
+  optimizeDeps: {
+    include: [
+      "three",
+      "@react-three/fiber",
+      "@react-three/drei",
+      "@react-three/postprocessing",
+      "postprocessing",
+    ],
+    esbuildOptions: {
+      target: "esnext",
+    },
+  },
+  ssr: {
+    noExternal: [
+      "three",
+      "@react-three/fiber",
+      "@react-three/drei",
+      "@react-three/postprocessing",
+      "postprocessing",
+    ],
+  },
   root: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
   server: {
-    port,
+    port: finalPort,
+
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
@@ -106,7 +129,8 @@ export default defineConfig({
     },
   },
   preview: {
-    port,
+    port: finalPort,
+
     host: "0.0.0.0",
     allowedHosts: true,
   },

@@ -649,6 +649,77 @@ router.put("/profile", async (req, res) => {
   res.json(row.data as Record<string, unknown>);
 });
 
+// --- Saved/ongoing sessions in user profile --------------------------------
+// Stored inside user_profiles.data under `ongoing_sessions`.
+// This list is intended to preserve “conversation continuity” across reloads
+// and devices (without resetting the thread).
+function normalizeIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(String).filter(Boolean);
+}
+
+router.get("/profile/ongoing-sessions", async (req, res) => {
+  const userId = getUserId(req);
+  const [row] = await db
+    .select()
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+  const data = (row?.data ?? {}) as Record<string, unknown>;
+  const ids = normalizeIdList((data as Record<string, unknown>).ongoing_sessions);
+  res.json({ ongoing_sessions: ids });
+});
+
+router.put("/profile/ongoing-sessions", async (req, res) => {
+  const userId = getUserId(req);
+  const body = (req.body ?? {}) as { session_ids?: string[]; action?: string; session_id?: string };
+
+  // Support both payload styles:
+  //  - { session_ids: [...] }
+  //  - { action: 'add'|'remove', session_id: '...' }
+  const now = new Date();
+
+  const [existingRow] = await db
+    .select({ data: userProfiles.data })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  const existingData = ((existingRow?.data ?? {}) as Record<string, unknown>) || {};
+  const current = normalizeIdList(existingData.ongoing_sessions);
+
+  let next = current;
+
+  if (Array.isArray(body.session_ids)) {
+    next = normalizeIdList(body.session_ids);
+  } else if (body.action === "add" && body.session_id) {
+    const sid = String(body.session_id);
+    next = [sid, ...current.filter((x) => x !== sid)];
+  } else if (body.action === "remove" && body.session_id) {
+    const sid = String(body.session_id);
+    next = current.filter((x) => x !== sid);
+  }
+
+  // Cap to a reasonable size to keep profile payload small.
+  next = next.slice(0, 20);
+
+  const merged = {
+    ...existingData,
+    ongoing_sessions: next,
+  } as Record<string, unknown>;
+
+  await db
+    .insert(userProfiles)
+    .values({ userId, data: merged })
+    .onConflictDoUpdate({
+      target: userProfiles.userId,
+      set: { data: merged, updatedAt: now },
+    });
+
+  res.json({ ongoing_sessions: next });
+});
+
+
 // --- Chat messages (stored as individual rows) ------------------------------
 // Chat messages used to live as one big JSONB `messages` array on each
 // ChatSession record, so every append/edit rewrote the whole history and reads
