@@ -703,11 +703,39 @@ function SignInPage() {
   );
 }
 
+function SignInPage() {
+  usePageMeta(ROUTE_META["/sign-in"]);
+
+  return (
+    <AuthFormShell mode="sign-in">
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-in…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-in is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignIn
+          routing="path"
+          path={`${basePath}/sign-in`}
+          signUpUrl={`${basePath}/sign-up`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
+    </AuthFormShell>
+  );
+}
+
 function SignUpPage() {
-  // Temporary bypass to fix crash
-  useEffect(() => {
-    document.title = "Create Account | Anima Protocol";
-  }, []);
+  usePageMeta(ROUTE_META["/sign-up"]);
 
   return (
     <AuthFormShell mode="sign-up">
