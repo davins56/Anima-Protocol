@@ -67,7 +67,7 @@ app.use('/api/webhooks', clerkWebhookRouter);
 app.use("/api", router);
 
 
-/    // Error handling middleware
+    // Error handling middleware
     app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
       logger.error({ err }, "Unhandled API error");
       if (!res.headersSent) {
