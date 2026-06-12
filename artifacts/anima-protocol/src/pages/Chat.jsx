@@ -101,6 +101,7 @@ import { useDivergentPaths } from "@/hooks/useDivergentPaths";
 import GoToTopButton from "@/components/chat/GoToTopButton";
 import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
+import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 
 
 export default function Chat() {
@@ -1887,7 +1888,7 @@ Return JSON:
       // Trigger narrative analysis every 8 messages (reduced from 4)
       if (finalMessages.length % 8 === 0) setTimeout(() => analyzeNarrative(), 1000);
 
-      // Analyze character evolution (every 12 messages, reduced from 8)
+      // Analyze character evolution (every 12 messages)
       if (activeChar && activeSession.mode === "solo" && finalMessages.length > 5 && finalMessages.length % 12 === 0) {
         base44.functions.invoke("evolveCharacter", {
           character_id: activeChar.id,
@@ -1901,11 +1902,28 @@ Return JSON:
             ? `Current: ${characterEmotions[activeChar.id].emotion} (intensity: ${characterEmotions[activeChar.id].intensity}/10)`
             : "",
         }).then((res) => {
-          if (res?.data) {
-            setCharacterEvolutions((prev) => ({
-              ...prev,
-              [activeChar.id]: res.data,
-            }));
+          if (res?.data && res.data.evolved_personality) {
+            const evolution = res.data;
+            
+            // Auto-apply for Animas, require manual for other characters
+            if (activeChar._isAnima) {
+              let newPersonality = evolution.evolved_personality || activeChar.personality;
+              if (evolution.growth_areas?.length) newPersonality += `\nGrowth: ${evolution.growth_areas.join(', ')}`;
+              if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
+              if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
+              
+              base44.entities.Character.update(activeChar.id, {
+                personality: newPersonality,
+              });
+              toast.success(`${activeChar.name} has evolved based on your interactions.`);
+              // Update local state so it's reflected immediately
+              setCharacters(prev => prev.map(c => c.id === activeChar.id ? { ...c, personality: newPersonality } : c));
+            } else {
+              setCharacterEvolutions((prev) => ({
+                ...prev,
+                [activeChar.id]: evolution,
+              }));
+            }
           }
         }).catch(() => {});
       }
@@ -2221,6 +2239,8 @@ Return JSON:
                   onContinue={() => handleSendMessage("")}
                   isLoading={isLoading}
                   sessionMode={activeSession?.mode}
+                  activeCharacter={activeSession.mode === "solo" ? characters.find(c => c.id === activeSession.character_id) : null}
+                  onSend={handleSendMessage}
                 />
                 {activeSession.mode === "solo" && activeSession.character_id && (
                   <QuickActionChips
