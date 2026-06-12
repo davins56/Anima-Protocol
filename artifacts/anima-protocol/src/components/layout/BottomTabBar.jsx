@@ -153,7 +153,7 @@ export default function BottomTabBar() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 30, stiffness: 320 }}
-              className="fixed bottom-[52px] left-0 right-0 z-50 bg-[#090912] border-t border-primary/20 max-h-[65dvh] overflow-y-auto overscroll-contain"
+              className="fixed bottom-0 left-0 right-0 z-50 bg-[#090912] border-t border-primary/20 max-h-[80dvh] overflow-y-auto overscroll-contain"
               data-no-swipe
               data-scroll-preserve
               onTouchStartCapture={(e) => e.stopPropagation()}
@@ -171,7 +171,11 @@ export default function BottomTabBar() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-px bg-primary/5 p-px" data-no-swipe>
+              <div 
+                className="grid grid-cols-3 gap-px bg-primary/5 p-px" 
+                style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}
+                data-no-swipe
+              >
                 {ALL_MODULES.map(({ label, path, icon, signOut }) => {
                   const isActive = isTabActive(path, location.pathname);
                   return (
