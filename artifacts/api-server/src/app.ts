@@ -88,7 +88,7 @@ app.use(
       });
     }
   },
-});
+})
   // After creating the app and other middleware...
 
 // ✅ Correct Clerk setup for @clerk/express v2+
