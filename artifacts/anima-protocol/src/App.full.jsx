@@ -670,10 +670,13 @@ function AuthFormShell({ mode, children }) {
 }
 
 function SignInPage() {
+  usePageMeta(ROUTE_META["/sign-in"]);
+
   // Temporary bypass to fix crash
   useEffect(() => {
     document.title = "Sign In | Anima Protocol";
   }, []);
+
 
   return (
     <AuthFormShell mode="sign-in">
@@ -704,10 +707,7 @@ function SignInPage() {
 }
 
 function SignUpPage() {
-  // Temporary bypass to fix crash
-  useEffect(() => {
-    document.title = "Create Account | Anima Protocol";
-  }, []);
+  usePageMeta(ROUTE_META["/sign-up"]);
 
   return (
     <AuthFormShell mode="sign-up">

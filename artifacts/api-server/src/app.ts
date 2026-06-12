@@ -60,7 +60,9 @@ app.use("/api", healthRouter);
 // This populates req.auth for @clerk/express helpers.
 app.use(clerkMiddleware());
 
-app.use('/api/webhooks', clerkWebhookRouter)
+app.use('/api/webhooks', clerkWebhookRouter);
+
+// All other API routes are protected.
 
 app.use("/api", router);
 

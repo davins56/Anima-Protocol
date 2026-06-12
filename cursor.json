@@ -1,0 +1,18 @@
+{
+  "workspaceDirs": [
+    {
+      "path": "artifacts/anima-protocol",
+      "name": "anima-protocol (frontend)"
+    },
+    {
+      "path": "artifacts/api-server",
+      "name": "api-server"
+    },
+    {
+      "path": "lib",
+      "name": "shared lib"
+    }
+  ],
+  "rulesFile": ".cursorrules"
+}
+
