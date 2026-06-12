@@ -176,9 +176,14 @@ export default function ChatWidgetsArea({
                 character={sessionActiveChar}
                 evolution={characterEvolutions[sessionActiveChar.id]}
                 onApplyEvolution={(evolution) => {
+                  let newPersonality = evolution.evolved_personality || sessionActiveChar.personality;
+                  if (evolution.growth_areas?.length) newPersonality += `\nGrowth: ${evolution.growth_areas.join(', ')}`;
+                  if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
+                  if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
+                  
                   const updates = {
-                    personality: evolution.evolved_personality || sessionActiveChar.personality,
-                    speaking_style: evolution.speaking_style_evolution || sessionActiveChar.speaking_style,
+                    personality: newPersonality,
+                    speaking_style: sessionActiveChar.speaking_style,
                   };
                   base44.entities.Character.update(sessionActiveChar.id, updates);
                   setCharacterEvolutions(prev => {

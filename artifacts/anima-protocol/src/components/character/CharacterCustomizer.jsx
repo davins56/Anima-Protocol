@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader, Save, X } from "lucide-react";
 import { motion } from "framer-motion";
+import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
+import CustomAnimaVoiceStatus from "@/components/voice/CustomAnimaVoiceStatus";
 
 const CHARACTER_CATEGORIES = [
   "companion",
@@ -66,6 +68,16 @@ export default function CharacterCustomizer({ characterId, isAnima = false }) {
     }
   };
 
+  const onTestVoiceSend = async (userText) => {
+    const sysPrompt = `You are ${character.name}. ${character.personality || ''} ${character.speaking_style || ''}. Respond very briefly.`;
+    const res = await base44.integrations.Core.InvokeLLM({
+      prompt: `User says: "${userText}"`,
+      system_prompt: sysPrompt,
+      max_tokens: 60
+    });
+    return res?.text || "I have nothing to say.";
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -98,21 +110,29 @@ export default function CharacterCustomizer({ characterId, isAnima = false }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-lg text-primary tracking-widest uppercase">
+          <h2 className="font-mono text-lg text-primary tracking-widest uppercase flex items-center gap-3">
             Customize {form.name}
+            <CustomAnimaVoiceStatus characterId={characterId} />
           </h2>
           <p className="text-[9px] font-mono text-primary/50 mt-1">
             {isAnima ? "Anima" : "Character"} Customization
           </p>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 px-4 py-2 bg-green-900/30 border border-green-400/40 text-green-400 hover:bg-green-900/50 disabled:opacity-50 transition-all font-mono text-[9px] tracking-widest uppercase"
-        >
-          <Save className="w-3.5 h-3.5" />
-          {saving ? "Saving..." : "Save Changes"}
-        </button>
+        <div className="flex items-center gap-3">
+          <SpeakToAnimaButton
+            activeCharacter={character}
+            onSend={onTestVoiceSend}
+            buttonText="Test Voice"
+          />
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 bg-green-900/30 border border-green-400/40 text-green-400 hover:bg-green-900/50 disabled:opacity-50 transition-all font-mono text-[9px] tracking-widest uppercase"
+          >
+            <Save className="w-3.5 h-3.5" />
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
