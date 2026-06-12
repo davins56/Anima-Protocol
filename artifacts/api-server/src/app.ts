@@ -88,6 +88,15 @@ app.use(
       });
     }
   },
-);
+},
+  // After creating the app and other middleware...
 
-export default app;
+// ✅ Correct Clerk setup for @clerk/express v2+
+import { requireAuth } from '@clerk/express'
+
+// Apply Clerk middleware early (before routes)
+app.use(clerkMiddleware())
+
+// ... your other routes and middleware ...
+
+export default app
