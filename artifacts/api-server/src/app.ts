@@ -29,7 +29,7 @@ app.get('/api/health', (req, res) => {
 
 // Global error handler
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error({ err }, "Unhandled API error")
+  console.error("Unhandled API error", err)
   if (!res.headersSent) {
     const message = err instanceof Error ? err.message : "Internal server error"
     const isConfig = message.includes("DATABASE_URL") || message.includes("connection")
