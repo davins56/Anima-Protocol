@@ -10,6 +10,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import healthRouter from "./routes/health";
 import router from "./routes";
+import clerkWebhookRouter from './webhooks/clerk'
 import { logger } from "./lib/logger";
 import {
   CLERK_PROXY_PATH,
@@ -59,6 +60,7 @@ app.use("/api", healthRouter);
 // This populates req.auth for @clerk/express helpers.
 app.use(clerkMiddleware());
 
+app.use('/api/webhooks', clerkWebhookRouter)
 
 app.use("/api", router);
 
