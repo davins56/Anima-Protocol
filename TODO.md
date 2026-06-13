@@ -1,8 +1,5 @@
-# TODO - Uncensored Mode /raw implementation
+- [x] Load api-server .env at runtime (dotenv) in artifacts/api-server/src/index.ts
+- [x] Add fail-fast validation for required env vars: DATABASE_URL, CLERK_WEBHOOK_SECRET, CLERK_SECRET_KEY
+- [ ] Re-run / verify server starts and Clerk webhook + DB access work
 
-- [ ] Update `artifacts/api-server/src/lib/promptBuilder.ts` to accept `uncensoredMode` and include a tone/style override while preserving the highest-priority loyalty guardrail.
-- [ ] Update `artifacts/api-server/src/routes/chat.ts` to detect `/raw` and `/reset` in the incoming user message, set `uncensoredMode`, and strip the command tokens from the content passed to the prompt.
-- [ ] Add unit tests under `artifacts/api-server/test/` for prompt assembly with uncensoredMode.
-- [ ] (Optional) Update client message handling (if it strips commands) in `artifacts/anima-protocol/src/lib/*chat*`.
-- [ ] Run api-server tests.
 

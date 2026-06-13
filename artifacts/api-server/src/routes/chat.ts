@@ -27,6 +27,12 @@ import {
   type CharacterData,
 } from "../lib/promptBuilder";
 import {
+  incrementConversationCount,
+  maybeTriggerMilestoneEvolution,
+  loadEvolution,
+} from "../lib/evolutionEngine";
+
+import {
   initSynchroState,
   evolveSynchroFromUser,
   evolveSynchroFromCompanion,
@@ -443,6 +449,15 @@ router.post("/messages", async (req, res) => {
     loadMemories(userId, characterIds),
     readRecentStoreMessages(userId, sessionId, 24),
   ]);
+
+  const activeCharacterId = characterIds.length > 0 ? characterIds[0] : null;
+  const [activeEvolutionRow] = await Promise.all([
+    activeCharacterId
+      ? loadEvolution(String(activeCharacterId), userId)
+      : Promise.resolve(null),
+  ]);
+
+
   const distinctUniverses = new Set(
     characters.map((c) => c.universe).filter(Boolean).map(String),
   ).size;
@@ -476,7 +491,9 @@ router.post("/messages", async (req, res) => {
     content,
     isCrossover,
     synchroState,
+    evolutionDelta: activeEvolutionRow?.evolutionDelta,
   });
+
   const routed = routeModel(content, {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
@@ -599,6 +616,37 @@ router.post("/messages", async (req, res) => {
         userContent: content,
         assistantContent: fullResponse,
       });
+
+      // Milestone-based personality evolution MVP:
+      // - increments per-anima conversation counter
+      // - on milestone thresholds, generates an evolutionDelta JSON
+      //   and stores it for prompt injection.
+      //
+      // Note: this MVP uses a lightweight history summary based on the
+      // current turn to avoid expensive extra summarization calls.
+      if (characterIds.length > 0) {
+        const isVoidTurn = mode === "void" || Boolean(body.deep_mode);
+        const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(fullResponse, 520)}`;
+
+        for (const animaId of characterIds) {
+          const updated = await incrementConversationCount({
+            userId,
+            animaId,
+          });
+          const nextCount = Number(updated?.conversationCount ?? 0);
+
+          await maybeTriggerMilestoneEvolution({
+            userId,
+            animaId,
+            conversationCount: nextCount,
+            historySummary,
+            isVoidTurn,
+          });
+
+          // No need to reload evolutionDelta here; next turn will pick it up.
+
+        }
+      }
       // Evolve synchro from companion response and persist
       if (synchroState && fullResponse) {
         const evolved = evolveSynchroFromCompanion(synchroState, fullResponse);
