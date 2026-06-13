@@ -31,6 +31,14 @@ import {
   maybeTriggerMilestoneEvolution,
   loadEvolution,
 } from "../lib/evolutionEngine";
+import {
+  loadRelationshipState,
+  maybeTriggerRelationshipEvolution,
+} from "../lib/relationshipEngine";
+import {
+  loadArcState,
+  maybeTriggerNarrativeArc,
+} from "../lib/narrativeArcEngine";
 
 import {
   initSynchroState,
@@ -451,9 +459,15 @@ router.post("/messages", async (req, res) => {
   ]);
 
   const activeCharacterId = characterIds.length > 0 ? characterIds[0] : null;
-  const [activeEvolutionRow] = await Promise.all([
+  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
     activeCharacterId
       ? loadEvolution(String(activeCharacterId), userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadRelationshipState(String(activeCharacterId), userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadArcState(String(activeCharacterId), userId)
       : Promise.resolve(null),
   ]);
 
@@ -492,6 +506,8 @@ router.post("/messages", async (req, res) => {
     isCrossover,
     synchroState,
     evolutionDelta: activeEvolutionRow?.evolutionDelta,
+    relationshipState: activeRelationshipState,
+    arcState: activeArcState,
   });
 
   const routed = routeModel(content, {

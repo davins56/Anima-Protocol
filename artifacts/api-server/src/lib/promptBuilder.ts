@@ -31,6 +31,10 @@ import {
   synchroToMemoryConfig,
   synchroToPromptGuidance,
 } from "./synchroEngine";
+import type { RelationshipState } from "./relationshipEngine";
+import type { ArcState } from "./narrativeArcEngine";
+import { relationshipStateToPrompt, arcStateToPrompt } from "./arcAndBondPrompt";
+
 import {
   type CharacterData,
   extractVoiceAnchors,
@@ -54,11 +58,18 @@ export interface PromptBuilderParams {
   /** Client-provided system prompt override (e.g. from scenario or companion mode) */
   systemPrompt?: string;
 
+  /** Persistent relationship/bond state (relationship engine, A) */
+  relationshipState?: RelationshipState | null;
+
+  /** Persistent narrative arc state (narrative engine, B) */
+  arcState?: ArcState | null;
+
   /**
    * Optional milestone-based personality evolution delta.
    * Produced by evolutionEngine and injected into the system prompt.
    */
   evolutionDelta?: {
+
     version: number;
     appliedAt: string;
     milestone: number;
@@ -231,6 +242,8 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     isCrossover,
     uncensoredMode,
     synchroState,
+    relationshipState,
+    arcState,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -334,8 +347,21 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 `;
   }
 
+  // A. Relationship/bond state injection
+  let relationshipBlock = "";
+  if (relationshipState) {
+    relationshipBlock = relationshipStateToPrompt(relationshipState, mode);
+  }
+
+  // B. Narrative arc state injection
+  let arcBlock = "";
+  if (arcState) {
+    arcBlock = arcStateToPrompt(arcState, mode);
+  }
+
   // 4b. Evolution delta injection (milestone-based)
   let evolutionBlock = "";
+
   if (evolutionDelta && typeof evolutionDelta === "object") {
     const voidBias = typeof evolutionDelta.voidBias === "number" ? evolutionDelta.voidBias : 0;
 
@@ -362,7 +388,9 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     corePrompt,
     charDef ? `CHARACTER:\n${charDef}` : "",
     resonanceBlock,
+    relationshipBlock,
     evolutionBlock,
+    arcBlock,
     voiceBlock,
     crossoverBlock,
     memorySummary,
