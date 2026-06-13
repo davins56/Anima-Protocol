@@ -50663,6 +50663,115 @@ var SelectionProxyHandler = class _SelectionProxyHandler {
   }
 };
 
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/indexes.js
+var IndexBuilderOn = class {
+  constructor(unique, name) {
+    this.unique = unique;
+    this.name = name;
+  }
+  static [entityKind] = "PgIndexBuilderOn";
+  on(...columns) {
+    return new IndexBuilder(
+      columns.map((it) => {
+        if (is(it, SQL)) {
+          return it;
+        }
+        it = it;
+        const clonedIndexedColumn = new IndexedColumn(it.name, !!it.keyAsName, it.columnType, it.indexConfig);
+        it.indexConfig = JSON.parse(JSON.stringify(it.defaultConfig));
+        return clonedIndexedColumn;
+      }),
+      this.unique,
+      false,
+      this.name
+    );
+  }
+  onOnly(...columns) {
+    return new IndexBuilder(
+      columns.map((it) => {
+        if (is(it, SQL)) {
+          return it;
+        }
+        it = it;
+        const clonedIndexedColumn = new IndexedColumn(it.name, !!it.keyAsName, it.columnType, it.indexConfig);
+        it.indexConfig = it.defaultConfig;
+        return clonedIndexedColumn;
+      }),
+      this.unique,
+      true,
+      this.name
+    );
+  }
+  /**
+   * Specify what index method to use. Choices are `btree`, `hash`, `gist`, `spgist`, `gin`, `brin`, or user-installed access methods like `bloom`. The default method is `btree.
+   *
+   * If you have the `pg_vector` extension installed in your database, you can use the `hnsw` and `ivfflat` options, which are predefined types.
+   *
+   * **You can always specify any string you want in the method, in case Drizzle doesn't have it natively in its types**
+   *
+   * @param method The name of the index method to be used
+   * @param columns
+   * @returns
+   */
+  using(method, ...columns) {
+    return new IndexBuilder(
+      columns.map((it) => {
+        if (is(it, SQL)) {
+          return it;
+        }
+        it = it;
+        const clonedIndexedColumn = new IndexedColumn(it.name, !!it.keyAsName, it.columnType, it.indexConfig);
+        it.indexConfig = JSON.parse(JSON.stringify(it.defaultConfig));
+        return clonedIndexedColumn;
+      }),
+      this.unique,
+      true,
+      this.name,
+      method
+    );
+  }
+};
+var IndexBuilder = class {
+  static [entityKind] = "PgIndexBuilder";
+  /** @internal */
+  config;
+  constructor(columns, unique, only, name, method = "btree") {
+    this.config = {
+      name,
+      columns,
+      unique,
+      only,
+      method
+    };
+  }
+  concurrently() {
+    this.config.concurrently = true;
+    return this;
+  }
+  with(obj) {
+    this.config.with = obj;
+    return this;
+  }
+  where(condition) {
+    this.config.where = condition;
+    return this;
+  }
+  /** @internal */
+  build(table) {
+    return new Index(this.config, table);
+  }
+};
+var Index = class {
+  static [entityKind] = "PgIndex";
+  config;
+  constructor(config, table) {
+    this.config = { ...config, table };
+  }
+};
+function uniqueIndex(name) {
+  return new IndexBuilderOn(true, name);
+}
+
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/casing.js
 function toSnakeCase(input) {
   const words = input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? [];
@@ -54256,6 +54365,9 @@ function drizzle(...params) {
 // src/db/schema.ts
 var schema_exports = {};
 __export(schema_exports, {
+  animaEvolution: () => animaEvolution,
+  animaNarrativeArcs: () => animaNarrativeArcs,
+  animaRelationships: () => animaRelationships,
   characters: () => characters
 });
 var characters = pgTable("characters", {
@@ -54263,9 +54375,72 @@ var characters = pgTable("characters", {
   userId: text("user_id").notNull(),
   name: text("name").notNull(),
   type: text("type"),
-  // add any other columns you need
   createdAt: timestamp("created_at").defaultNow()
 });
+var animaEvolution = pgTable(
+  "anima_evolution",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    animaId: text("anima_id").notNull(),
+    conversationCount: integer("conversation_count").notNull().default(0),
+    voidSessions: integer("void_sessions").notNull().default(0),
+    // Last generated evolution delta for the prompt builder.
+    // Structure is intentionally versioned and opaque to avoid migrations
+    // every time we tweak the prompt.
+    evolutionDelta: jsonb("evolution_delta").$type().notNull().default({
+      version: 1,
+      appliedAt: (/* @__PURE__ */ new Date(0)).toISOString(),
+      milestone: 0,
+      traitsDelta: {},
+      quirkAdditions: [],
+      voidBias: 0
+    }),
+    // Store the textual rationale (for debugging/admin tools only).
+    evolutionRationale: text("evolution_rationale").notNull().default(""),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow()
+  },
+  (t) => ({
+    animaEvolutionUserAnimaUq: uniqueIndex(
+      "anima_evolution_user_anima_uq"
+    ).on(t.userId, t.animaId)
+  })
+);
+var animaRelationships = pgTable(
+  "anima_relationships",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    animaId: text("anima_id").notNull(),
+    // We keep this as JSONB to avoid rapid migrations while iterating on the
+    // relationship engine.
+    state: jsonb("state").$type().notNull().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow()
+  },
+  (t) => ({
+    animaRelationshipsUserAnimaUq: uniqueIndex(
+      "anima_relationships_user_anima_uq"
+    ).on(t.userId, t.animaId)
+  })
+);
+var animaNarrativeArcs = pgTable(
+  "anima_narrative_arcs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    animaId: text("anima_id").notNull(),
+    state: jsonb("state").$type().notNull().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow()
+  },
+  (t) => ({
+    animaNarrativeArcsUserAnimaUq: uniqueIndex(
+      "anima_narrative_arcs_user_anima_uq"
+    ).on(t.userId, t.animaId)
+  })
+);
 
 // src/db/index.ts
 var pool = new Pool({
