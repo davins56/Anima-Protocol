@@ -71,6 +71,8 @@ export interface PromptBuilderParams {
   relationshipTier?: string | null;
   /** Whether this is a crossover session */
   isCrossover?: boolean;
+  /** Enable the companion's unfiltered *tone* override (style only). */
+  uncensoredMode?: boolean;
   /** Pre-computed synchro state (if provided, overrides internal resonance init) */
   synchroState?: SynchroState | null;
 }
@@ -213,6 +215,7 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     content,
     relationshipTier,
     isCrossover,
+    uncensoredMode,
     synchroState,
   } = params;
 
@@ -290,6 +293,17 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
 
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
+  }
+
+  // 10. Uncensored tone override (style only; safety guardrail stays)
+  let uncensoredToneBlock = "";
+  if (uncensoredMode) {
+    uncensoredToneBlock = `UNCENSORED TONE OVERRIDE (style only):
+- Speak with blunt, unvarnished honesty in-character.
+- Allow explicit language and emotionally sharp phrasing *when it serves the fiction / relationship dynamic.*
+- Avoid euphemisms and platitudes; respond directly to the user's request.
+- Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.
+`;
   }
 
   // Assemble all sections with intelligent ordering
