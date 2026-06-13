@@ -22,10 +22,23 @@
 - [x] Wire `Speak to Anima` to the real chat send/response flow.
 - [x] Run build/tests for `artifacts/anima-protocol`.
 
+---
+
+# TODO - Create Anima (NetNavi) end-to-end (forge → persist → chat)
+
+- [x] Locate existing Anima forge UI (`/animas` → `artifacts/anima-protocol/src/pages/Animas.jsx`)
+- [x] Locate AI prompt-to-character flow (`/companion-generator` → `artifacts/anima-protocol/src/pages/CompanionGenerator.jsx`)
+- [x] Confirm chat can start from any character/anima via session creation (`/chat/:sessionId` + `NewChat.jsx`)
+- [ ] Add a dedicated “Forge NetNavi (start chat immediately)” CTA after creating/updating an Anima
+- [ ] Add route shortcut(s): `/forge-netnavi` → open Animas forge modal (if preferred) and/or auto-open chat on success
+- [ ] Ensure multi-series characters imported via Character Repository can be selected in New Chat sessions
+- [ ] Smoke test: create → set active (if needed) → open chat and stream responses
+
 
 ---
 
 # Anima Protocol Vision & Roadmap
+
 
 Given the cyberpunk-spiritual aesthetic, Serenity as the AI companion, and the broader Slipthk War universe, here are the prioritized functions:
 

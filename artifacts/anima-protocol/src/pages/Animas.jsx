@@ -499,8 +499,9 @@ Return JSON with a single "${field}" string field.`,
 
       {/* Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-none flex flex-col overflow-hidden sm:overflow-auto bg-background border border-primary/30 hud-corner glow-border">
+
             <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20">
               <div>
                 <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase">
