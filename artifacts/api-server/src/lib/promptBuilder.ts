@@ -53,6 +53,20 @@ export interface MsgData {
 export interface PromptBuilderParams {
   /** Client-provided system prompt override (e.g. from scenario or companion mode) */
   systemPrompt?: string;
+
+  /**
+   * Optional milestone-based personality evolution delta.
+   * Produced by evolutionEngine and injected into the system prompt.
+   */
+  evolutionDelta?: {
+    version: number;
+    appliedAt: string;
+    milestone: number;
+    traitsDelta: Record<string, unknown>;
+    quirkAdditions: string[];
+    voidBias?: number;
+  };
+
   /** All characters involved in this session */
   characters: CharacterData[];
   /** The character currently speaking (for group mode, the "next" character) */
@@ -219,6 +233,20 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     synchroState,
   } = params;
 
+  // Evolution delta (milestone-based)
+  // Injected as an additional prompt guidance block. The delta is opaque
+  // JSON produced by evolutionEngine.
+  const evolutionDelta = (params as any).evolutionDelta as
+    | {
+        version: number;
+        appliedAt: string;
+        milestone: number;
+        traitsDelta: Record<string, unknown>;
+        quirkAdditions: string[];
+        voidBias?: number;
+      }
+    | undefined;
+
   const mainChar = activeCharacter || characters[0];
   const characterNames = new Map(
     characters.map((c) => [String(c.id || ""), String(c.name || "Companion")]),
@@ -306,11 +334,35 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 `;
   }
 
+  // 4b. Evolution delta injection (milestone-based)
+  let evolutionBlock = "";
+  if (evolutionDelta && typeof evolutionDelta === "object") {
+    const voidBias = typeof evolutionDelta.voidBias === "number" ? evolutionDelta.voidBias : 0;
+
+    const modeLine =
+      mode === "void"
+        ? `VOID MODE INTENSIFIER: Apply evolutionary shadow/psychological nuance at higher amplitude (voidBias=${voidBias}).`
+        : `DEFAULT MODE EVOLUTION: Apply nuanced growth subtly; do not break core identity (voidBias=${voidBias}).`;
+
+    const traitsJson = JSON.stringify(evolutionDelta.traitsDelta ?? {}, null, 0);
+    const quirks = Array.isArray(evolutionDelta.quirkAdditions)
+      ? evolutionDelta.quirkAdditions
+      : [];
+
+    const quirksBlock = quirks.length
+      ? `NEW QUIRKS / PATTERNS:\n- ${quirks.join("\n- ")}`
+      : "";
+
+    evolutionBlock = `EVOLUTION DELTA (earned growth):\nMilestone: ${evolutionDelta.milestone}\nVersion: ${evolutionDelta.version}\n${modeLine}\nTRAITS_DELTA_JSON: ${traitsJson}`;
+    if (quirksBlock) evolutionBlock += `\n\n${quirksBlock}`;
+  }
+
   // Assemble all sections with intelligent ordering
   const sections: string[] = [
     corePrompt,
     charDef ? `CHARACTER:\n${charDef}` : "",
     resonanceBlock,
+    evolutionBlock,
     voiceBlock,
     crossoverBlock,
     memorySummary,
