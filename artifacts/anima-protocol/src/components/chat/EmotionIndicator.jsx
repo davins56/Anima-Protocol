@@ -1,6 +1,12 @@
 // @ts-check
 import { motion } from "framer-motion";
 
+/**
+ * @typedef {{ color: string; icon: string; label: string }} EmotionConfig
+ * @typedef {{ [K in Emotion]: EmotionConfig }} EmotionConfigMap
+ */
+
+/** @type {EmotionConfigMap} */
 const emotionConfig = {
   joyful: { color: "from-green-500 to-green-400", icon: "😊", label: "Joyful" },
   calm: { color: "from-blue-500 to-blue-400", icon: "😌", label: "Calm" },
@@ -14,6 +20,15 @@ const emotionConfig = {
   desperate: { color: "from-red-600 to-red-500", icon: "😫", label: "Desperate" },
 };
 
+/**
+ * @typedef {'joyful'|'calm'|'sad'|'angry'|'afraid'|'disgusted'|'surprised'|'hopeful'|'conflicted'|'desperate'} Emotion
+ */
+
+/**
+ * Normalize a metric to a percentage 0-100.
+ * @param {number|string|null|undefined} value
+ * @returns {number}
+ */
 const normalizeMetric = (value) => {
   const numeric = Number(value);
   if (Number.isNaN(numeric)) return 0;
@@ -22,15 +37,36 @@ const normalizeMetric = (value) => {
 };
 
 /**
- * @param {{ emotion?: keyof typeof emotionConfig, intensity?: number, trigger?: string | null, compact?: boolean, level?: string | null, arousal?: number }} props
+ * @typedef {{
+ *   emotion?: Emotion;
+ *   intensity?: number | string | null;
+ *   trigger?: string | null;
+ *   compact?: boolean;
+ *   level?: string | null;
+ *   arousal?: number | string | null;
+ * }} EmotionIndicatorProps
  */
-export default function EmotionIndicator({ emotion, intensity = 50, trigger = null, compact = false, level = null, arousal = null }) {
+
+/**
+ * @param {EmotionIndicatorProps} props
+ */
+export default function EmotionIndicator({ 
+  emotion, 
+  intensity = 50, 
+  trigger = null, 
+  compact = false, 
+  level = null, 
+  arousal = null 
+}) {
   if (!emotion || !emotionConfig[emotion]) return null;
 
+  /** @type {EmotionConfig} */
   const config = emotionConfig[emotion];
   const normalizedIntensity = normalizeMetric(intensity);
   const normalizedArousal = arousal != null ? normalizeMetric(arousal) : null;
-  const intensityLabel = Number(intensity) <= 10 ? `${Number(intensity)}/10` : `${normalizedIntensity}%`;
+  const intensityLabel = Number(intensity) <= 10 
+    ? `${Number(intensity)}/10` 
+    : `${normalizedIntensity}%`;
   const arousalLabel = normalizedArousal != null ? `${normalizedArousal}%` : null;
 
   if (compact) {
