@@ -1,7 +1,5 @@
-// src/components/mockups/SerenityMain.tsx
 import React from 'react';
-import ChatLayoutWrapper from '../chat/ChatLayoutWrapper';
-import { motion } from 'framer-motion';
+import ChatLayoutWrapper from '../chat/ChatLayoutWrapper';   // ← Fixed: no extra dots/spaces
 
 export default function SerenityMain(): React.ReactElement {
   return (
