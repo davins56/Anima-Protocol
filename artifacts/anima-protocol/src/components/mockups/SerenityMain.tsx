@@ -1,11 +1,11 @@
-// src/components/mockups/SerenityMain.tsx  (or whatever the welcome file is named)
+// src/components/mockups/SerenityMain.tsx
 import React from 'react';
-import ChatLayoutWrapper from '../../chat/ChatLayoutWrapper';
+import ChatLayoutWrapper from '../chat/ChatLayoutWrapper';
+import { motion } from 'framer-motion';
 
-export default function SerenityMain() {
+export default function SerenityMain(): React.ReactElement {
   return (
     <ChatLayoutWrapper>
-      {/* Your existing welcome content goes here — paste it inside if you want to keep it */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center">
           <div className="text-8xl mb-8">🌌</div>
