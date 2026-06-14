@@ -2,25 +2,30 @@ import type { ReactNode } from "react";
 
 import QuestTrackerSidebar from "@/components/quests/QuestTrackerSidebar";
 
+type Message = {
+  id?: string;
+  content: string;
+  role: "user" | "assistant" | "system";
+  created_at?: string | Date;
+};
+
 type ActiveSession = {
   id: string;
   character_id: string;
-  messages: unknown[];
+  messages: Message[];
 };
 
-/**
- * @param {{ activeSession?: ActiveSession; children?: ReactNode }} props
- */
+type ChatLayoutWrapperProps = {
+  activeSession?: ActiveSession;
+  children?: ReactNode;
+};
+
 export default function ChatLayoutWrapper({
   activeSession,
   children,
-}: {
-  activeSession?: ActiveSession;
-  children?: ReactNode;
-}) {
+}: ChatLayoutWrapperProps) {
   return (
     <div className="flex w-full h-full overflow-hidden relative">
-      {/* Quest Tracker Sidebar - Desktop Only */}
       {activeSession && (
         <div className="hidden lg:block">
           <QuestTrackerSidebar
@@ -33,9 +38,7 @@ export default function ChatLayoutWrapper({
         </div>
       )}
 
-      {/* Main Content */}
       <div className="flex-1 overflow-hidden">{children}</div>
     </div>
   );
 }
-
