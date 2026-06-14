@@ -12,3 +12,12 @@ router.get("/healthz", (_req, res) => {
 });
 
 export default router;
+export * from "./admin";
+export * from "./characterImage";
+export * from "./chat";
+export * from "./elevenlabs";
+export * from "./openai";
+export * from "./store";
+export * from "./storage";
+
+//# sourceMappingURL=health.js.map
