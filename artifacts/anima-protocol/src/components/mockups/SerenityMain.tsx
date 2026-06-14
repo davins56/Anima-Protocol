@@ -1,7 +1,7 @@
-import React from 'react';
-import ChatLayoutWrapper from '../chat/ChatLayoutWrapper';   // ← Fixed: no extra dots/spaces
+import * as React from 'react';
+import ChatLayoutWrapper from '../chat/ChatLayoutWrapper'; // Fixed: no extra dots/spaces
 
-export default function SerenityMain(): React.ReactElement {
+export default function SerenityMain() {
   return (
     <ChatLayoutWrapper>
       <div className="flex-1 flex items-center justify-center p-8">
