@@ -31,6 +31,7 @@
 - [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by two flows (check-in page vs in-chat ritual) with divergent fields; filter by the field you need; list() no-limit = full history.
 - [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].
 - [pnpm packageManager pin hang](pnpm-version-pin-hang.md) — root pin `pnpm@X` ≠ env pnpm → every local pnpm cmd + workflow hangs on self-switch; fix = `.npmrc manage-package-manager-versions=false`, keep the pin.
+- [api-server boot env vs local dev](anima-apiserver-boot-env.md) — unconditional requireEnv(CLERK_WEBHOOK_SECRET) crashes dev api-server → "characters don't load" (dead /api/store); gate on NODE_ENV==='production'; vercel.ts has no boot requireEnv.
 - [Anima auto-update PWA](anima-pwa-autoupdate.md) — vite-plugin-pwa autoUpdate; precache ONLY hashed assets + navigateFallback:null because prerender rewrites HTML post-build (precaching HTML serves a stale shell).
 - [Anima page scroll contract](anima-page-scroll-contract.md) — page roots must be `flex-1 min-h-0 (+overflow-y-auto)`, NEVER `*-screen`/`*-[100dvh]`; wrapper already pads for the fixed tab bar.
 - [Anima onboarding gate](anima-onboarding-gate.md) — Serenity is the (unseeded) guide not a companion; SignedInHome gates "/" on Anima existence (mount-only → needs onComplete to flip, fails open to home).

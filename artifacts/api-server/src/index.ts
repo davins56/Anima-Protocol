@@ -21,8 +21,21 @@ function requireEnv(name: string): string {
 
 // Fail-fast so misconfiguration is obvious.
 requireEnv("DATABASE_URL");
-requireEnv("CLERK_WEBHOOK_SECRET");
 requireEnv("CLERK_SECRET_KEY");
+
+// CLERK_WEBHOOK_SECRET is only consumed by the /api/webhooks/clerk svix
+// verification route, which is exercised in production where Clerk delivers
+// webhooks. It is genuinely required there, but never needed for local
+// development (no webhooks are delivered) — so requiring it at boot would
+// needlessly stop the dev server from serving /api/store. Fail-fast in
+// production; warn-and-continue otherwise.
+if (process.env.NODE_ENV === "production") {
+  requireEnv("CLERK_WEBHOOK_SECRET");
+} else if (!process.env.CLERK_WEBHOOK_SECRET?.trim()) {
+  logger.warn(
+    "CLERK_WEBHOOK_SECRET is not set; the Clerk webhook route will reject requests. This is expected in local development.",
+  );
+}
 
 const rawPort = process.env.API_PORT ?? process.env.PORT;
 
