@@ -7,6 +7,7 @@
 - [Anima avatar storage](anima-avatar-storage.md) — Anima created with no avatar_url; user photos must be downscaled to small JPEG data URLs (no object storage; localStorage quota).
 - [Anima avatar object storage](anima-avatar-object-storage.md) — portraits now stored as real files via presigned-PUT; serve publicly (img tags); store root-relative path; re-edit needs data: URL.
 - [Anima Clerk auth bridge](anima-clerk-auth.md) — Clerk owns identity/session, base44 localStorage holds profile; HomeGate at "/", signed-out→Landing; showChrome gates header/tabs/disclaimer.
+- [Anima auth token bridge contract](anima-auth-token-bridge.md) — setAuthTokenGetter takes the token-getter DIRECTLY (not a setState); a `()=>async()=>{}` double-arrow stringifies the fn into the Bearer header → breaks all writes + starter seeding.
 - [Anima cross-device live sync](anima-cross-device-sync.md) — /store/revision token + 15s/focus poller drops caches & fires `anima:store-changed`; self-write suppression must NOT advance baseline.
 - [Anima SSE push hardening](anima-sse-hardening.md) — SSE client must collapse CRLF→LF before `\n\n` split; watchdog > 2× server heartbeat; `anima:sync-mode` event; registry is process-local.
 - [Anima AI image edit](anima-image-edit.md) — inline base64 image routes need raised express.json limit (default 100KB too small); backend only accepts data: URLs so gate buttons accordingly.

@@ -48,7 +48,7 @@ export const AuthProvider = ({ children }) => {
       clearAuthTokenGetter();
       return;
     }
-    setAuthTokenGetter(() => async () => {
+    setAuthTokenGetter(async () => {
       try {
         const token = await getToken();
         if (token) return token;
