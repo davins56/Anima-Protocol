@@ -9,12 +9,14 @@ const {
   bulkImport,
   restoreData,
   notifyStoreChanged,
+  waitForStoreAuth,
   seedCharactersIfNeeded,
   resetSeedLock,
 } = vi.hoisted(() => ({
   bulkImport: vi.fn(),
   restoreData: vi.fn(),
   notifyStoreChanged: vi.fn(),
+  waitForStoreAuth: vi.fn().mockResolvedValue("token"),
   seedCharactersIfNeeded: vi.fn(),
   resetSeedLock: vi.fn(),
 }));
@@ -23,6 +25,7 @@ vi.mock("@/api/base44Client", () => ({
   bulkImport,
   restoreData,
   notifyStoreChanged,
+  waitForStoreAuth,
 }));
 vi.mock("@/lib/seedCharacters", () => ({ seedCharactersIfNeeded, resetSeedLock }));
 
@@ -48,6 +51,7 @@ beforeEach(() => {
   bulkImport.mockReset().mockResolvedValue({ imported: true, count: 1 });
   restoreData.mockReset().mockResolvedValue({ restored: true, mode: "merge", count: 1 });
   notifyStoreChanged.mockReset();
+  waitForStoreAuth.mockReset().mockResolvedValue("token");
   seedCharactersIfNeeded.mockReset().mockResolvedValue(undefined);
   resetSeedLock.mockReset();
 });
@@ -77,7 +81,9 @@ describe("first sign-in migration", () => {
     // Identity fields are stripped; only non-identity profile data migrates.
     expect(payload.profile).toEqual({ selected_mode: "story" });
     expect(localStorage.getItem(MIGRATION_KEY)).toBe("1");
+    expect(waitForStoreAuth).toHaveBeenCalledTimes(1);
     expect(seedCharactersIfNeeded).toHaveBeenCalledTimes(1);
+    expect(notifyStoreChanged).toHaveBeenCalledTimes(1);
     // A confirmed import reports "migrated" so the UI can clear any notice.
     expect(outcome).toBe("migrated");
   });
@@ -248,7 +254,8 @@ describe("first sign-in migration", () => {
     // The merged records must surface immediately: fire the store-changed
     // signal so any mounted lists (characters, stories, chat) refetch live
     // without a manual page refresh.
-    expect(notifyStoreChanged).toHaveBeenCalledTimes(1);
+    // Once after starter seeding during bootstrap, again after the user merge.
+    expect(notifyStoreChanged).toHaveBeenCalledTimes(2);
   });
 
   it("declining the merge marks done without touching the account", async () => {

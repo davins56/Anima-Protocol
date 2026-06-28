@@ -1,19 +1,21 @@
 import { Router, type IRouter } from "express";
-import healthRouter from "./health";
 import openaiRouter from "./openai/index";
 import openaiFunctionsRouter from "./openai/functions";
 import elevenLabsRouter from "./elevenlabs";
 import characterImageRouter from "./characterImage";
 import storeRouter from "./store";
 import storageRouter from "./storage";
+import chatRouter from "./chat";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
-router.use(healthRouter);
+router.use("/admin", adminRouter);
 router.use("/openai", openaiRouter);
 router.use("/openai", openaiFunctionsRouter);
 router.use(elevenLabsRouter);
 router.use(characterImageRouter);
+router.use("/chat", chatRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
 

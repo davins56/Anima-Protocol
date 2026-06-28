@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # AGENTS.md
 
 ## Cursor Cloud specific instructions
@@ -7,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`.
 
-The frontend calls same-origin `/api/*` (see `animaApi.js`, `base44Client.js`). There is **no Vite dev proxy** for the API — locally you need a reverse proxy (nginx on port 3000 is preconfigured in this VM) or run on Replit where path routing handles `/` vs `/api`.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server as a single self-contained `api/index.mjs` bundle (copied from `dist/vercel.mjs` by the `api-server` build; rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. Do not add `api/server.mjs` to `vercel.json` `functions` — only `api/index.mjs` is a valid Serverless Function entry. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
 
 ### Node.js
 
@@ -34,7 +33,15 @@ PostgreSQL 16 is installed with a dev database:
 
 Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 
-### Required secrets (full stack)
+### Environment file
+
+Copy the template and fill in your keys:
+
+```bash
+cp .env.example .env
+```
+
+The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`api-server`** load it on startup. Optional per-package overrides: `artifacts/anima-protocol/.env`, `artifacts/api-server/.env`.
 
 | Variable | Used by |
 |----------|---------|
@@ -42,14 +49,44 @@ Start cluster if needed: `sudo pg_ctlcluster 16 main start`
 | `OPENAI_API_KEY` | API (import-time check) |
 | `PORT` | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend `/`, mockup `/__mockup` |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) — must match `CLERK_PUBLISHABLE_KEY`; Vite build also reads `CLERK_PUBLISHABLE_KEY` if `VITE_` is unset |
 | `CLERK_PUBLISHABLE_KEY` | API `clerkMiddleware` |
 | `CLERK_SECRET_KEY` | API session verification |
-| `VITE_CLERK_PROXY_URL` | Frontend (empty string in dev) |
+| `VITE_CLERK_PROXY_URL` | Explicit proxy URL, or `none` / `false` / `off` to disable all proxying. When unset, `pk_live_` auto-proxies through `/api/__clerk` on `anima-protocol.com` **unless** the publishable key decodes to a Clerk **custom domain** (e.g. `clerk.anima-protocol.com`) — then the browser talks to that host directly |
+| `VITE_MIXPANEL_TOKEN` | Frontend analytics |
+
+**Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** from the **same** Clerk Production app (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`). This deployment uses Clerk **custom domain** (`clerk.anima-protocol.com` CNAME) — leave `VITE_CLERK_PROXY_URL` empty; the frontend detects the custom domain from the publishable key and **does not** route through `/api/__clerk` on `www.anima-protocol.com`. Verify `curl https://www.anima-protocol.com/api/healthz` and `curl https://clerk.anima-protocol.com/v1/environment` return 200 after deploy. Register OAuth redirect URLs (`…/sign-in/sso-callback`, `…/sign-up/sso-callback`) in Clerk → Paths. Redeploy **without build cache** after any env change. `/api/__clerk` proxy mode is only for hosts without a Clerk custom domain (e.g. some `*.vercel.app` previews if you enable Clerk proxy in the dashboard).
+
+**Local dev with `pk_live_`:** run **api-server on 8080** and the Vite app on 23660 — the frontend auto-proxies Clerk through `http://localhost:23660/api/__clerk` so the dashboard proxy URL (`www.anima-protocol.com/api/__clerk`) matches. For simpler local auth, use **`pk_test_`** keys from the Clerk Development instance instead.
+
+**Development keys on custom domain:** when Vercel uses **`pk_test_` / `sk_test_`**, the browser skips the Clerk proxy and mints **Development** session tokens. The API must verify with the same dev publishable key from `CLERK_PUBLISHABLE_KEY`. A mismatch surfaces as **401** on `/api/store` and “Session not recognized by the server” in the UI. Build-time `pk_test_` / `pk_live_` keys are used as-is (not rewritten via `publishableKeyFromHost`).
 
 Without valid **Clerk** keys, API routes under `/api` return Clerk errors (middleware runs before handlers). The main app also fails to load Clerk JS until real keys are configured.
 
+Sign-in shows custom Google / Apple / GitHub buttons above `<SignIn>` / `<SignUp>` (only providers Clerk reports as enabled; optional `VITE_CLERK_OAUTH_STRATEGIES` filter). OAuth uses Clerk v6 `signIn.sso()` with `/sign-in/sso-callback` and `/sign-up/sso-callback` (`HandleSSOCallback`). Enable each provider under Clerk Dashboard → Configure → SSO connections for the **same instance** as your publishable key (`pk_test_` = Development tab; `pk_live_` = Production tab). Creating the GitHub repo or signing into Clerk with GitHub does **not** enable GitHub for app users — add **GitHub** under SSO connections explicitly. Verify setup:
+
+```bash
+pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
+```
+
+`VITE_CLERK_PUBLISHABLE_KEY` must be set at **build** time on Vercel (not only `CLERK_PUBLISHABLE_KEY` for the API).
+
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
+
+### Account data migration (ops)
+
+Characters and all progress are scoped by **Clerk `user_id`** in Postgres (`user_entities`), not email. To copy data between two accounts (e.g. `davins56@hotmail.com` → `davins56@gmail.com`):
+
+```bash
+export DATABASE_URL=... CLERK_SECRET_KEY=...
+pnpm --filter @workspace/scripts run migrate:account -- \
+  --from davins56@hotmail.com --to davins56@gmail.com --dry-run
+# remove --dry-run to apply
+```
+
+Or after deploy, set `ADMIN_MIGRATION_SECRET` on Vercel and POST to `/api/admin/migrate-user-data` with `Authorization: Bearer <secret>`.
+
+User-driven alternative: sign in as source → Settings → Export → sign in as target → Restore (merge).
 
 ### Lint / test / build
 
@@ -61,7 +98,8 @@ No ESLint script at repo root. Validation workflows from `.replit`:
 | Unit tests (no DB/API) | `pnpm --filter @workspace/anima-protocol run test` |
 | Build API | `pnpm --filter @workspace/api-server run build` |
 | Build frontend | `PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=... pnpm --filter @workspace/anima-protocol run build` |
-| Root `pnpm run build` | Also builds mockup-sandbox — needs `PORT` + `BASE_PATH` for that package |
+| Root `pnpm run build` | Deployment build: API bundle + frontend |
+| Full workspace build | `pnpm run build:all` (typecheck + every package build; needs `PORT` + `BASE_PATH` for mockup-sandbox) |
 
 ### Running services (tmux)
 
@@ -104,8 +142,8 @@ Reload: `sudo nginx -s reload`
 - Vite configs for frontend and mockup **require** `PORT` and `BASE_PATH` at config load time.
 - API `dev` script rebuilds on each start (`build` then `start`).
 - pnpm may warn about ignored build scripts for `@clerk/shared`; add to `onlyBuiltDependencies` in `pnpm-workspace.yaml` if Clerk misbehaves after install.
-=======
-# Analytics Tracking — Mixpanel
+
+## Analytics Tracking — Mixpanel
 
 This project uses **Mixpanel** for all product analytics. Mixpanel is the single source of truth for event tracking, user identification, and behavioral data. Do not introduce any other analytics tools, SDKs, or tracking libraries without explicit instruction from a user.
 
@@ -196,6 +234,7 @@ All new events must follow these conventions.
 | `sign_up_completed` | First profile load for a brand-new account | `sign_up_method`, `platform` | `src/lib/AuthContext.jsx` |
 | `message_sent` | User sends a message in a chat session (**value moment** — `is_crossover` flags multi-universe scenes) | `session_mode`, `character_count`, `is_crossover`, `is_continue`, `has_attachment` | `src/pages/Chat.jsx` |
 | `character_created` | A new companion is created from an AI prompt | `creation_method`, `universe`, `category` | `src/pages/CompanionGenerator.jsx` |
+| `crossover_session_started` | User starts a multi-universe group session | `character_count`, `universe_count` | `src/pages/Chat.jsx` |
 | `subscription_upgrade_started` | User starts a premium checkout (intent, not completion) | `tier`, `purchase_type`, `from_tier` | `src/pages/PremiumPlans.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
@@ -231,4 +270,3 @@ track("event_name", {
 - **Do not hardcode the project token** — it lives in `VITE_MIXPANEL_TOKEN`.
 - **Do not skip `resetUser()` on logout.**
 - **Do not call `identifyUser()` before the user is authenticated.**
->>>>>>> d22f08a (Add Mixpanel analytics with consent gating to Anima Protocol)

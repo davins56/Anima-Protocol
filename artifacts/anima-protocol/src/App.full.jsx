@@ -1,4 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
+import ConsentBanner from "@/components/ConsentBanner";
+import { usePageMeta, ROUTE_META } from "./lib/usePageMeta";
+
 import { Toaster as SonnerToaster, toast } from "sonner";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
@@ -9,21 +12,30 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { ClerkProvider, SignIn, SignUp, Show, useClerk } from "@clerk/react";
+import {
+  ClerkFailed,
+  ClerkLoaded,
+  ClerkLoading,
+  ClerkProvider,
+  HandleSSOCallback,
+  SignIn,
+  SignUp,
+  Show,
+  useClerk,
+  useSignIn,
+} from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
-import { Suspense, lazy, useRef, useEffect, useState } from "react";
+import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
+import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
-import { ConfirmProvider } from "@/lib/ConfirmDialog";
-import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
-import ConsentBanner from "@/components/ConsentBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import UserNotRegisteredError from "@/components/UserNotRegisteredError";
+import { ConfirmProvider } from "@/lib/ConfirmDialog";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
 import { useKeyboardAvoidance } from "@/hooks/useKeyboardAvoidance";
@@ -33,6 +45,19 @@ import {
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
+import {
+  isClerkProxyHealthy,
+  probeClerkConnectivity,
+} from "@/lib/clerkConnectDiagnostics";
+import {
+  isVercelPreviewHost,
+  resolveClerkProxyUrl,
+  shouldUseClerkProxy,
+} from "@/lib/clerkProxy";
+import {
+  clerkOAuthCallbackAbsolute,
+  clerkOAuthRedirectPaths,
+} from "@/lib/clerkOAuthPaths";
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
@@ -188,12 +213,62 @@ const PageLoader = () => (
 // from the clerk-auth skill; only the router glue is adapted to react-router.
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const clerkPubKey = publishableKeyFromHost(
+const viteClerkPublishableKey =
+  typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
+    ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY.trim()
+    : "";
+
+/**
+ * Use the build-time publishable key when set (pk_test_ or pk_live_). Only fall
+ * back to host-derived keys when no env key is configured.
+ */
+function resolveFrontendClerkPublishableKey(hostname, envKey) {
+  if (envKey.startsWith("pk_test_") || envKey.startsWith("pk_live_")) {
+    return envKey;
+  }
+
+  return publishableKeyFromHost(hostname, envKey || undefined);
+}
+
+const clerkPubKey = resolveFrontendClerkPublishableKey(
   window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+  viteClerkPublishableKey,
 );
 
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+function isDevClerkKey(key) {
+  const builtIn =
+    typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
+      ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+      : "";
+  if (builtIn.startsWith("pk_test_")) return true;
+  return typeof key === "string" && key.startsWith("pk_test_");
+}
+
+// Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
+// absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
+const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
+const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
+const authRedirectCompleteUrl = basePath || "/";
+const CLERK_SSO_DASHBOARD_URL =
+  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
+
+const socialAuthProviders = [
+  {
+    label: "Continue with Google",
+    strategy: "oauth_google",
+    Icon: FaGoogle,
+  },
+  {
+    label: "Continue with Apple",
+    strategy: "oauth_apple",
+    Icon: FaApple,
+  },
+  {
+    label: "Continue with GitHub",
+    strategy: "oauth_github",
+    Icon: FaGithub,
+  },
+];
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -203,6 +278,22 @@ function stripBase(path) {
 
 if (!clerkPubKey) {
   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
+}
+
+if (clerkPubKey.startsWith("sk_")) {
+  throw new Error(
+    "VITE_CLERK_PUBLISHABLE_KEY must be a publishable key (pk_live_… or pk_test_…), not a secret key (sk_…).",
+  );
+}
+
+if (
+  import.meta.env.PROD &&
+  (clerkPubKey.includes("placeholder") || !viteClerkPublishableKey)
+) {
+  console.error(
+    "[Anima] VITE_CLERK_PUBLISHABLE_KEY must be set at build time on Vercel. " +
+      "GitHub sign-in will fail without the real pk_test_ or pk_live_ key.",
+  );
 }
 
 const clerkAppearance = {
@@ -270,30 +361,411 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
-function SignInPage() {
-  usePageMeta(ROUTE_META["/sign-in"]);
+function formatClerkOAuthError(error) {
+  if (error?.errors?.length) {
+    return error.errors
+      .map((entry) => entry.longMessage || entry.message)
+      .filter(Boolean)
+      .join(" ");
+  }
+  return error?.longMessage || error?.message || "";
+}
+
+function clerkInstanceLabel() {
+  if (typeof clerkPubKey !== "string") return "Clerk";
+  return clerkPubKey.startsWith("pk_test_") ? "Development" : "Production";
+}
+
+function clerkInstanceSlug() {
+  if (typeof clerkPubKey !== "string") return null;
+  const match = clerkPubKey.match(/^pk_(?:test|live)_(.+)$/);
+  if (!match) return null;
+  try {
+    const decoded = atob(match[1]);
+    return decoded.split(".")[0]?.replace(/\$$/, "") ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function providerShortName(strategy) {
+  return strategy.replace(/^oauth_/, "").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function getEnabledOAuthStrategies(clerk) {
+  const environment =
+    clerk?.__internal_environment ?? clerk?.environment ?? null;
+  const strategies =
+    environment?.userSettings?.authenticatableSocialStrategies ?? null;
+  if (Array.isArray(strategies) && strategies.length > 0) {
+    return strategies;
+  }
+
+  const social = environment?.userSettings?.social;
+  if (social && typeof social === "object") {
+    const fromSocial = Object.values(social)
+      .filter((provider) => provider?.enabled)
+      .map((provider) => provider.strategy)
+      .filter(Boolean);
+    if (fromSocial.length > 0) {
+      return fromSocial;
+    }
+  }
+
+  return null;
+}
+
+function filterProvidersByEnvList(providers) {
+  const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
+  if (typeof envList === "string" && envList.trim()) {
+    const allowed = new Set(
+      envList
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    return providers.filter((provider) =>
+      allowed.has(provider.strategy.toLowerCase()) ||
+      allowed.has(provider.strategy.replace(/^oauth_/, "").toLowerCase()),
+    );
+  }
+  return providers;
+}
+
+function clerkSsoSetupHint(providerName) {
+  const instance = clerkInstanceLabel();
+  const slug = clerkInstanceSlug();
+  const instanceNote = slug ? ` (${slug})` : "";
+  if (instance === "Development") {
+    return (
+      `Enable ${providerName} in Clerk Dashboard → Development${instanceNote} → ` +
+      "SSO connections → Add connection → For all users → " +
+      `${providerName}. Leave “Use custom credentials” OFF.`
+    );
+  }
+  return (
+    `Enable ${providerName} in Clerk Dashboard → Production${instanceNote} → ` +
+    "SSO connections with custom OAuth credentials, Proxy URL " +
+    "https://www.anima-protocol.com/api/__clerk, and sign-in/sso-callback redirect URLs."
+  );
+}
+
+function SocialAuthButtons({ mode }) {
+  const clerk = useClerk();
+  const { signIn, fetchStatus } = useSignIn();
+  const [pendingStrategy, setPendingStrategy] = useState(null);
+  const [enabledStrategies, setEnabledStrategies] = useState(null);
+
+  useEffect(() => {
+    if (!clerk.loaded) {
+      setEnabledStrategies(null);
+      return;
+    }
+    const syncStrategies = () => {
+      setEnabledStrategies(getEnabledOAuthStrategies(clerk));
+    };
+    syncStrategies();
+    return clerk.addListener(syncStrategies);
+  }, [clerk, clerk.loaded]);
+
+  const providers = useMemo(() => {
+    if (!clerk.loaded) return [];
+    const configuredProviders = filterProvidersByEnvList(socialAuthProviders);
+    if (isDevClerkKey(clerkPubKey) || !Array.isArray(enabledStrategies)) {
+      return configuredProviders.map((provider) => ({
+        ...provider,
+        isEnabled: true,
+      }));
+    }
+    return configuredProviders.map((provider) => ({
+      ...provider,
+      isEnabled: enabledStrategies.includes(provider.strategy),
+    }));
+  }, [clerk.loaded, enabledStrategies]);
+
+  const missingProviderNames = useMemo(
+    () =>
+      providers
+        .filter((provider) => !provider.isEnabled)
+        .map((provider) => providerShortName(provider.strategy)),
+    [providers],
+  );
+
+  const handleOAuth = async (strategy) => {
+    if (!clerk.loaded || fetchStatus === "fetching") {
+      return;
+    }
+    setPendingStrategy(strategy);
+    // Clerk requires relative same-origin paths — absolute URLs fail validation.
+    const { redirectCallbackUrl, redirectUrl } = clerkOAuthRedirectPaths(
+      basePath,
+      mode,
+    );
+    const redirectCallbackAbsolute = clerkOAuthCallbackAbsolute(
+      window.location.origin,
+      basePath,
+      mode,
+    );
+    try {
+      // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
+      const { error } = await signIn.sso({
+        strategy,
+        redirectCallbackUrl,
+        redirectUrl,
+      });
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error("OAuth redirect failed", error);
+      const providerName =
+        socialAuthProviders.find((provider) => provider.strategy === strategy)
+          ?.label ?? "That provider";
+      const detail = formatClerkOAuthError(error);
+      const shortName = providerShortName(strategy);
+      const instanceHint =
+        clerkInstanceLabel() === "Development"
+          ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
+          : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
+      const previewNote = isVercelPreviewHost(window.location.hostname)
+        ? " Vercel preview URLs change on each deploy — redeploy (or restart the API) so redirect URLs auto-register, or run pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects --preview-host=" +
+          window.location.host +
+          "."
+        : "";
+      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.${previewNote}`;
+      toast.error(
+        detail
+          ? `${detail} ${instanceHint} ${redirectHint}`
+          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)} ${instanceHint} ${redirectHint}`,
+      );
+      setPendingStrategy(null);
+    }
+  };
+
+  return (
+    <div className="w-full space-y-2">
+      {!clerk.loaded ? (
+        <p className="py-2 text-center text-sm text-cyan-400/50">
+          Loading sign-in options…
+        </p>
+      ) : providers.length === 0 ? (
+        <div className="space-y-2 py-2 text-center text-sm text-cyan-400/50">
+          <p>Google and GitHub sign-in are not enabled in Clerk yet.</p>
+          <p className="text-xs leading-relaxed text-cyan-400/40">
+            Add OAuth credentials under Clerk → Production → SSO connections
+            (see docs/clerk-github-login.md). Email sign-in below still works
+            when Clerk connects.
+          </p>
+        </div>
+      ) : (
+        providers.map(({ label, strategy, Icon, isEnabled }) => (
+          <button
+            key={strategy}
+            type="button"
+            disabled={
+              isEnabled &&
+              (Boolean(pendingStrategy) || fetchStatus === "fetching")
+            }
+            title={
+              isEnabled
+                ? undefined
+                : clerkSsoSetupHint(providerShortName(strategy))
+            }
+            onClick={() => {
+              if (!isEnabled) {
+                toast.error(clerkSsoSetupHint(providerShortName(strategy)));
+                return;
+              }
+              handleOAuth(strategy);
+            }}
+            className={`flex h-10 w-full items-center justify-center gap-2 rounded border px-4 text-sm font-semibold transition ${
+              isEnabled
+                ? "border-cyan-400/30 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+                : "cursor-pointer border-amber-400/20 bg-amber-400/5 text-amber-200/70 hover:bg-amber-400/10"
+            }`}
+          >
+            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="text-left">
+              {pendingStrategy === strategy
+                ? "Redirecting..."
+                : isEnabled
+                  ? label
+                  : `${label} (not set up in Clerk)`}
+            </span>
+          </button>
+        ))
+      )}
+      {missingProviderNames.length > 0 ? (
+        <div className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
+          <p>
+            Only{" "}
+            {providers
+              .filter((provider) => provider.isEnabled)
+              .map((provider) => providerShortName(provider.strategy))
+              .join(", ") || "email"}{" "}
+            is active in Clerk {clerkInstanceLabel()}
+            {clerkInstanceSlug() ? ` (${clerkInstanceSlug()})` : ""}. To enable{" "}
+            {missingProviderNames.join(" and ")}: Clerk Dashboard →{" "}
+            {clerkInstanceLabel()} → SSO connections → Add connection → For all
+            users.
+          </p>
+          <a
+            href={CLERK_SSO_DASHBOARD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-block text-cyan-300 underline hover:text-cyan-200"
+          >
+            Open Clerk SSO settings
+          </a>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ClerkLoginDiagnostics() {
+  const [hints, setHints] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await probeClerkConnectivity(clerkPubKey);
+      if (!cancelled) setHints(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (hints.length === 0) return null;
+
+  return (
+    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+      {hints.map((hint) => (
+        <p key={hint} className="mt-1 first:mt-0">
+          {hint}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function AuthFormShell({ mode, children }) {
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
-      <SignIn
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-        fallbackRedirectUrl={basePath || "/"}
-      />
+      <div className="w-[420px] max-w-full space-y-3">
+        <ClerkLoginDiagnostics />
+        <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
+          <SocialAuthButtons mode={mode} />
+          <p className="mt-3 text-center text-xs text-cyan-400/45">
+            {mode === "sign-in"
+              ? "Use GitHub if that is how you created your account. You can also sign in with email below."
+              : "Or continue with email below."}
+          </p>
+        </div>
+        {children}
+      </div>
     </div>
+  );
+}
+
+function SignInPage() {
+  usePageMeta(ROUTE_META["/sign-in"]);
+
+  // Temporary bypass to fix crash
+  useEffect(() => {
+    document.title = "Sign In | Anima Protocol";
+  }, []);
+
+
+  return (
+    <AuthFormShell mode="sign-in">
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-in…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-in is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignIn
+          routing="path"
+          path={`${basePath}/sign-in`}
+          signUpUrl={`${basePath}/sign-up`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
+    </AuthFormShell>
   );
 }
 
 function SignUpPage() {
   usePageMeta(ROUTE_META["/sign-up"]);
+
+  return (
+    <AuthFormShell mode="sign-up">
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-up…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-up is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
+    </AuthFormShell>
+  );
+}
+function SsoCallbackPage() {
+  const navigate = useNavigate();
+
+  const navigateAfterAuth = ({ session, decorateUrl }) => {
+    if (session?.currentTask) {
+      const destination = decorateUrl(`/${session.currentTask.key}`);
+      if (destination.startsWith("http")) {
+        window.location.href = destination;
+      } else {
+        navigate(stripBase(destination));
+      }
+      return;
+    }
+
+    const destination = decorateUrl(authRedirectCompleteUrl);
+    if (destination.startsWith("http")) {
+      window.location.href = destination;
+    } else {
+      navigate(stripBase(destination));
+    }
+  };
+
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        fallbackRedirectUrl={basePath || "/"}
+      <HandleSSOCallback
+        navigateToApp={navigateAfterAuth}
+        navigateToSignIn={() => navigate(`${basePath}/sign-in`)}
+        navigateToSignUp={() => navigate(`${basePath}/sign-up`)}
       />
+      <div id="clerk-captcha" />
     </div>
   );
 }
@@ -306,6 +778,9 @@ function SignedInHome() {
 
   useEffect(() => {
     let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setState("home");
+    }, 12000);
     (async () => {
       try {
         const animas = await base44.entities.Anima.list("-created_date", 1);
@@ -314,10 +789,13 @@ function SignedInHome() {
         }
       } catch {
         if (!cancelled) setState("home");
+      } finally {
+        clearTimeout(timeout);
       }
     })();
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
     };
   }, []);
 
@@ -335,6 +813,18 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
+  const { isLoadingAuth, authStalled } = useAuth();
+
+  // Clerk <Show> renders nothing until the SDK loads. If Clerk stalls, fall back
+  // to the public landing so production never shows a blank screen.
+  if (isLoadingAuth && authStalled) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Landing />
+      </Suspense>
+    );
+  }
+
   return (
     <>
       <Show when="signed-in">
@@ -349,15 +839,84 @@ function HomeGate() {
   );
 }
 
+function ClerkStallRecovery({ useProxy, onToggleProxy }) {
+  const clerk = useClerk();
+  const toggledRef = useRef(false);
+
+  useEffect(() => {
+    if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
+    // Already on direct Clerk — never flip back to a broken same-origin proxy.
+    if (!useProxy) return;
+
+    const timer = setTimeout(() => {
+      if (clerk.loaded || toggledRef.current) return;
+      toggledRef.current = true;
+      onToggleProxy(false);
+    }, 10_000);
+
+    return () => clearTimeout(timer);
+  }, [clerk.loaded, onToggleProxy, useProxy]);
+
+  return null;
+}
+
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
+  const [useProxy, setUseProxy] = useState(null);
+  const [providerKey, setProviderKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fallbackTimer = setTimeout(() => {
+      if (cancelled) return;
+      // Safari (and some network conditions) can stall the proxy health check.
+      // Fail open to direct Clerk so the app never stays on the loader.
+      setUseProxy(false);
+    }, 12_000);
+
+    (async () => {
+      try {
+        if (!initialClerkProxyUrl) {
+          if (!cancelled) setUseProxy(false);
+          return;
+        }
+        const healthy = await isClerkProxyHealthy(clerkPubKey);
+        if (!cancelled) setUseProxy(healthy);
+      } catch {
+        if (!cancelled) setUseProxy(false);
+      } finally {
+        clearTimeout(fallbackTimer);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(fallbackTimer);
+    };
+  }, []);
+
+  const activeProxyUrl =
+    useProxy === true ? resolveClerkProxyUrl(clerkPubKey) : "";
+
+  const handleToggleProxy = (nextUseProxy) => {
+    setUseProxy(nextUseProxy);
+    setProviderKey((key) => key + 1);
+  };
+
+  if (useProxy === null) {
+    return <PageLoader />;
+  }
+
   return (
     <ClerkProvider
+      key={`clerk-${providerKey}-${useProxy ? "proxy" : "direct"}`}
       publishableKey={clerkPubKey}
-      proxyUrl={clerkProxyUrl}
+      {...(activeProxyUrl ? { proxyUrl: activeProxyUrl } : {})}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
+      signInFallbackRedirectUrl={authRedirectCompleteUrl}
+      signUpFallbackRedirectUrl={authRedirectCompleteUrl}
       localization={{
         signIn: {
           start: {
@@ -375,6 +934,7 @@ function ClerkProviderWithRoutes({ children }) {
       routerPush={(to) => navigate(stripBase(to))}
       routerReplace={(to) => navigate(stripBase(to), { replace: true })}
     >
+      <ClerkStallRecovery useProxy={useProxy} onToggleProxy={handleToggleProxy} />
       <ClerkQueryClientCacheInvalidator />
       {children}
     </ClerkProvider>
@@ -385,6 +945,7 @@ function ClerkProviderWithRoutes({ children }) {
 const PUBLIC_PREFIXES = [
   "/sign-in",
   "/sign-up",
+  "/sso-callback",
   "/terms",
   "/privacy-policy",
   "/disclaimer",
@@ -393,6 +954,7 @@ const PUBLIC_PREFIXES = [
 const AuthenticatedApp = () => {
   const {
     isLoadingAuth,
+    authStalled,
     isLoadingPublicSettings,
     authError,
     navigateToLogin,
@@ -509,27 +1071,30 @@ const AuthenticatedApp = () => {
     onSwipeLeft: handleSwipeLeft,
     excludeSelector: "input, textarea, [data-no-swipe]",
   });
-  // ── EMERGENCY CHARACTER RESTORE ─────────────────────
-  useEffect(() => {
-    if (isAuthenticated && user?.id) {
-      console.log("🔄 Emergency local data restore...");
-
-      mergeLeftoverLocalData()
-        .then(() => {
-          toast.success("✅ Characters restored!", {
-            description: "Refresh the Characters page if needed.",
-            duration: 6000,
-          });
-        })
-        .catch((err) => {
-          console.error("Restore failed:", err);
-        });
-    }
-  }, [isAuthenticated, user?.id]);
   // Gate the first-run tutorial behind the AI disclaimer so the two modals
   // never stack. The disclaimer fires onAccept on mount when already accepted,
   // so returning users surface the tutorial immediately (e.g. when replaying).
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+
+  useEffect(() => {
+    if (!isLoadingAuth || !authStalled) return;
+    const onSignInScreen =
+      location.pathname === "/sign-in" ||
+      location.pathname === "/sign-up" ||
+      location.pathname.startsWith("/sign-in/") ||
+      location.pathname.startsWith("/sign-up/");
+    if (onSignInScreen) return;
+    toast.error("Sign-in is temporarily unavailable.", {
+      id: "anima-clerk-unavailable",
+      description:
+        "The app will load in guest mode. Fix CLERK_SECRET_KEY on Vercel (sk_live_*), then refresh.",
+      duration: Infinity,
+      action: {
+        label: "Retry",
+        onClick: () => window.location.reload(),
+      },
+    });
+  }, [isLoadingAuth, authStalled, location.pathname]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -540,7 +1105,7 @@ const AuthenticatedApp = () => {
   }
 
   // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth) {
+  if (isLoadingAuth && !authStalled) {
     return <PageLoader />;
   }
 
@@ -580,8 +1145,21 @@ const AuthenticatedApp = () => {
             <Routes location={location}>
               {/* Root: signed-out -> Landing, signed-in -> MainHome */}
               <Route path="/" element={<HomeGate />} />
+              <Route
+                path="/sign-in/sso-callback"
+                element={<SsoCallbackPage />}
+              />
+              <Route
+                path="/sign-up/sso-callback"
+                element={<SsoCallbackPage />}
+              />
+              <Route path="/sso-callback" element={<SsoCallbackPage />} />
               <Route path="/sign-in/*" element={<SignInPage />} />
               <Route path="/sign-up/*" element={<SignUpPage />} />
+              <Route
+                path="/sso-callback/*"
+                element={<Navigate to="/sign-in/sso-callback" replace />}
+              />
               <Route path="/landing" element={<Navigate to="/" replace />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route
@@ -846,7 +1424,8 @@ const AuthenticatedApp = () => {
               <Route
                 path="/locationsmap"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <Suspense fallba
+                  ßck={<PageLoader />}>
                     <LocationsMap />
                   </Suspense>
                 }
@@ -1359,26 +1938,66 @@ const AuthenticatedApp = () => {
 
 function App() {
   useViewportHeight();
+
+  // Guard against rare “black screen” failure modes during auth/clerk
+  // initialization by always rendering a visible background + message while
+  // providers settle.
+  const [stallVisible, setStallVisible] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setStallVisible(false), 10_000);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>
-        <ClerkProviderWithRoutes>
-          <AuthProvider>
-            <ConfirmProvider>
-              <InAppBrowserWarning />
-              <TapTargetValidator />
-              <div
-                className="flex flex-col h-screen-safe"
-                style={{
-                  paddingTop: "env(safe-area-inset-top, 0px)",
-                  paddingBottom: "env(safe-area-inset-bottom, 0px)",
-                }}
-              >
-                <AuthenticatedApp />
+        {stallVisible && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-background"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="w-full max-w-md px-4">
+              <div className="rounded-md border border-primary/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-primary/50">
+                      Initializing
+                    </p>
+                    <p className="mt-2 text-sm text-primary/90">
+                      The app is still starting up. If this persists, check Clerk
+                      connectivity / console errors.
+                    </p>
+                  </div>
+                  <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-primary/40">
+                  Current environment: auth + routing providers are loading.
+                </p>
               </div>
-            </ConfirmProvider>
-          </AuthProvider>
-        </ClerkProviderWithRoutes>
+            </div>
+          </div>
+        )}
+
+        <ErrorBoundary resetKey={window.location?.pathname || "init"}>
+          <ClerkProviderWithRoutes>
+            <AuthProvider>
+              <ConfirmProvider>
+                <InAppBrowserWarning />
+                <TapTargetValidator />
+                <div
+                  className="flex flex-col h-screen-safe"
+                  style={{
+                    paddingTop: "env(safe-area-inset-top, 0px)",
+                    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+                  }}
+                >
+                  <AuthenticatedApp />
+                </div>
+              </ConfirmProvider>
+            </AuthProvider>
+          </ClerkProviderWithRoutes>
+        </ErrorBoundary>
         <ConsentBanner />
         <Toaster />
         <SonnerToaster
@@ -1400,3 +2019,4 @@ function App() {
 }
 
 export default App;
+

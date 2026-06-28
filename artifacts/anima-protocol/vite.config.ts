@@ -3,35 +3,61 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+<<<<<<< HEAD
 import { VitePWA } from "vite-plugin-pwa";
+=======
+import { config as loadEnv } from "dotenv";
+>>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
 
-const rawPort = process.env.PORT;
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+loadEnv({ path: path.join(repoRoot, ".env") });
+loadEnv({ path: path.join(import.meta.dirname, ".env"), override: true });
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+// Vite only exposes VITE_* to the client. On Vercel, CLERK_PUBLISHABLE_KEY is
+// often set without the VITE_ prefix — mirror it so production builds embed the
+// correct Clerk instance (avoids host-derived pk_live_ + missing GitHub SSO).
+const clerkPublishableKey =
+  process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ||
+  process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
+  "";
 
-const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT ?? "5173";
 
+const port = parseInt(rawPort);
+
+// In CI/build environments (e.g. Vercel build) PORT is often not set.
+// We don't need a real listening port during bundling, only a valid number
+// for Vite's server/preview config to initialize.
 if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
+  console.warn(`[vite.config] Invalid PORT value "${rawPort}", falling back to 5173`);
+} 
 
-const basePath = process.env.BASE_PATH;
+const finalPort = Number.isNaN(port) || port <= 0 ? 5173 : port;
 
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
+const basePath = process.env.BASE_PATH ?? "/";
+
+// Build environments may not provide BASE_PATH; default to root.
+if (typeof basePath !== "string" || !basePath.trim()) {
+  console.warn("[vite.config] BASE_PATH missing/invalid, defaulting to '/'");
 }
+const normalizedBasePath = (basePath || "/").trim().replace(/\/$/, "") + "/";
+
 
 export default defineConfig({
-  base: basePath,
+  base: normalizedBasePath,
+
+  ...(clerkPublishableKey
+    ? {
+        define: {
+          "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY":
+            JSON.stringify(clerkPublishableKey),
+        },
+      }
+    : {}),
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
+<<<<<<< HEAD
     runtimeErrorOverlay(),
     // Auto-updating service worker. Once installed, every new deploy is picked
     // up automatically: the regenerated precache manifest triggers a SW update,
@@ -72,6 +98,10 @@ export default defineConfig({
         skipWaiting: true,
       },
     }),
+=======
+    // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
+    ...(process.env.REPL_ID !== undefined ? [runtimeErrorOverlay()] : []),
+>>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -98,13 +128,35 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
+  optimizeDeps: {
+    include: [
+      "three",
+      "@react-three/fiber",
+      "@react-three/drei",
+      "@react-three/postprocessing",
+      "postprocessing",
+    ],
+    esbuildOptions: {
+      target: "esnext",
+    },
+  },
+  ssr: {
+    noExternal: [
+      "three",
+      "@react-three/fiber",
+      "@react-three/drei",
+      "@react-three/postprocessing",
+      "postprocessing",
+    ],
+  },
   root: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
   server: {
-    port,
+    port: finalPort,
+
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
@@ -124,7 +176,8 @@ export default defineConfig({
     },
   },
   preview: {
-    port,
+    port: finalPort,
+
     host: "0.0.0.0",
     allowedHosts: true,
   },

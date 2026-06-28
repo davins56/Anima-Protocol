@@ -2,7 +2,7 @@ import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
 import { track } from "@/lib/analytics";
-import { Wand2, Copy, Check, AlertCircle, Loader } from "lucide-react";
+import { Wand2, Copy, Check, AlertCircle, Loader, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
@@ -13,6 +13,32 @@ export default function CompanionGenerator() {
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [resonanceSettings, setResonanceSettings] = useState({
+    tone: "intimate",
+    intensity: 60,
+    memory_depth: "balanced",
+    crossover_preference: "open",
+  });
+
+  const buildSystemPrompt = (data) => {
+    const name = data?.name?.trim() || "this companion";
+    const universe = data?.universe ? ` from ${data.universe}` : "";
+    return [
+      `You are ${name}${universe}.`,
+      data?.personality ? `Personality: ${data.personality}` : "",
+      data?.backstory ? `Backstory: ${data.backstory}` : "",
+      data?.speaking_style ? `Voice: ${data.speaking_style}` : "",
+      "Stay fully in character. Preserve your own agency, emotional continuity, boundaries, and relationship memory across sessions.",
+    ].filter(Boolean).join("\n\n");
+  };
+
+  const avatarSeedFor = (data) =>
+    [
+      data?.name,
+      data?.universe,
+      data?.category,
+      data?.tagline,
+    ].filter(Boolean).join(" | ").toLowerCase();
 
   const handleGenerate = async () => {
     if (prompt.trim().length < 2) {
@@ -30,7 +56,12 @@ export default function CompanionGenerator() {
       });
 
       if (result?.success && result.companion) {
-        setCompanion(result.companion);
+        const nextCompanion = {
+          ...result.companion,
+          system_prompt: result.companion.system_prompt || buildSystemPrompt(result.companion),
+          avatar_seed: result.companion.avatar_seed || avatarSeedFor(result.companion),
+        };
+        setCompanion(nextCompanion);
       } else {
         setError(result?.error || "Failed to generate companion");
       }
@@ -62,6 +93,12 @@ export default function CompanionGenerator() {
         category: companion.category || "",
         tagline: companion.tagline || "",
         traits: companion.traits || "",
+        system_prompt: companion.system_prompt || buildSystemPrompt(companion),
+        avatar_seed: companion.avatar_seed || avatarSeedFor(companion),
+        resonance_settings: resonanceSettings,
+        memory_depth: resonanceSettings.memory_depth,
+        crossover_preference: resonanceSettings.crossover_preference,
+        creation_method: "ai_prompt",
         status: "online",
         is_default: false,
       });
@@ -245,6 +282,78 @@ export default function CompanionGenerator() {
                     value={companion.traits}
                     onChange={(v) => updateField("traits", v)}
                   />
+                  <Field
+                    label="System Prompt"
+                    value={companion.system_prompt}
+                    onChange={(v) => updateField("system_prompt", v)}
+                    multiline
+                  />
+                  <Field
+                    label="Avatar Seed"
+                    value={companion.avatar_seed}
+                    onChange={(v) => updateField("avatar_seed", v)}
+                  />
+
+                  <div className="border border-primary/15 bg-primary/5 rounded p-3 space-y-3">
+                    <div className="flex items-center gap-2 text-primary/70">
+                      <SlidersHorizontal className="w-4 h-4" />
+                      <p className="text-[9px] font-mono tracking-widest uppercase">
+                        Resonance Settings
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <SelectField
+                        label="Tone"
+                        value={resonanceSettings.tone}
+                        onChange={(tone) => setResonanceSettings((prev) => ({ ...prev, tone }))}
+                        options={[
+                          ["intimate", "Intimate"],
+                          ["grounded", "Grounded"],
+                          ["playful", "Playful"],
+                          ["mythic", "Mythic"],
+                        ]}
+                      />
+                      <SelectField
+                        label="Memory Depth"
+                        value={resonanceSettings.memory_depth}
+                        onChange={(memory_depth) => setResonanceSettings((prev) => ({ ...prev, memory_depth }))}
+                        options={[
+                          ["light", "Light"],
+                          ["balanced", "Balanced"],
+                          ["deep", "Deep"],
+                        ]}
+                      />
+                      <SelectField
+                        label="Crossover"
+                        value={resonanceSettings.crossover_preference}
+                        onChange={(crossover_preference) => setResonanceSettings((prev) => ({ ...prev, crossover_preference }))}
+                        options={[
+                          ["open", "Open"],
+                          ["selective", "Selective"],
+                          ["solo_first", "Solo First"],
+                        ]}
+                      />
+                      <div>
+                        <label className="block text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
+                          Intensity
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={resonanceSettings.intensity}
+                          onChange={(e) => setResonanceSettings((prev) => ({
+                            ...prev,
+                            intensity: Number(e.target.value),
+                          }))}
+                          className="w-full accent-primary"
+                        />
+                        <p className="text-[8px] font-mono text-primary/50 mt-1">
+                          {resonanceSettings.intensity}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -321,6 +430,27 @@ function Field({ label, value, onChange, multiline = false }) {
           className="w-full bg-black/40 border border-primary/30 text-primary/90 font-mono text-[10px] p-2 rounded focus:outline-none focus:border-primary/60 focus:bg-primary/5 transition-all"
         />
       )}
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className="block text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
+        {label}
+      </label>
+      <select
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-black/40 border border-primary/30 text-primary/90 font-mono text-[10px] p-2 rounded focus:outline-none focus:border-primary/60 focus:bg-primary/5 transition-all"
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

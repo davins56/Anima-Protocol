@@ -10,55 +10,107 @@
 
 import { animaApi } from './animaApi';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
+import { apiUrl } from '@/lib/apiOrigin';
+import {
+  authHeaders,
+  clearAuthTokenGetter,
+  getToken,
+  setAuthTokenGetter,
+  waitForStoreAuth,
+} from './authBridge';
 
-const STORE_BASE = `${window.location.origin}/api/store`;
+const STORE_BASE = () => apiUrl('/store');
 
-// --- Clerk token bridge -----------------------------------------------------
-// The non-React client cannot read the Clerk session directly. AuthContext
-// registers a token getter here (see setAuthTokenGetter) so every request can
-// attach the user's Clerk session token. Calls are gated until a getter exists.
-let tokenGetter = null;
-let resolveReady;
-const readyPromise = new Promise((r) => {
-  resolveReady = r;
-});
+export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
 
-export function setAuthTokenGetter(fn) {
-  tokenGetter = fn;
-  if (fn) resolveReady();
-}
+const STORE_FETCH_TIMEOUT_MS = 15000;
 
-async function getToken() {
-  if (!tokenGetter) await readyPromise;
+async function storeFetch(path, options = {}) {
+  const token = await getToken();
+  if (!token) {
+    const err = new Error(
+      'Not signed in — your session may have expired. Sign out and sign in again, then retry.',
+    );
+    err.status = 401;
+    throw err;
+  }
+
+  const timeoutSignal =
+    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+      ? AbortSignal.timeout(STORE_FETCH_TIMEOUT_MS)
+      : undefined;
+  const userSignal = options.signal;
+  let signal = timeoutSignal;
+  if (userSignal && timeoutSignal) {
+    signal = AbortSignal.any([userSignal, timeoutSignal]);
+  } else if (userSignal) {
+    signal = userSignal;
+  }
+
+  const makeRequest = async (retryOptions = {}) => {
+    const headers = await authHeaders(options.headers, retryOptions);
+    return await fetch(`${STORE_BASE()}${path}`, {
+      ...options,
+      headers,
+      credentials: 'same-origin',
+      signal,
+    });
+  };
+
+  let res;
   try {
-    return tokenGetter ? await tokenGetter() : null;
-  } catch {
-    return null;
+    res = await makeRequest();
+    if (res.status === 401) {
+      const retried = await makeRequest({ skipCache: true });
+      if (retried.status !== 401) {
+        return retried;
+      }
+      res = retried;
+    }
+    return res;
+  } catch (err) {
+    if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
+      const timeoutErr = new Error(
+        'The server took too long to respond. Check your connection or try again in a moment.',
+      );
+      timeoutErr.code = 'timeout';
+      throw timeoutErr;
+    }
+    throw err;
   }
 }
 
-async function authHeaders(extra) {
-  const token = await getToken();
-  const headers = { 'Content-Type': 'application/json', ...extra };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
+// Parse a failed store response into a human-readable message. Non-JSON bodies
+// (e.g. an HTML 404 from a frontend-only deploy) must not surface as a blank
+// error string in the UI.
+async function parseStoreErrorResponse(res) {
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    return json.error || res.statusText || `HTTP ${res.status}`;
+  } catch {
+    if (res.status === 404) {
+      return 'Character store API not found — the backend may not be running or /api is not proxied to it.';
+    }
+    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 120);
+    return snippet || res.statusText || `HTTP ${res.status}`;
+  }
 }
 
-async function storeFetch(path, options = {}) {
-  const headers = await authHeaders(options.headers);
-  return fetch(`${STORE_BASE}${path}`, { ...options, headers });
+function storeError(res, message) {
+  const e = new Error(message);
+  e.status = res.status;
+  return e;
 }
 
 // AI photo edit. Sends a base64 image data URL + a text prompt to the
 // api-server (gpt-image-1 edit) and returns the transformed image as a data
 // URL. Used by the home-page "add photo" AI edit feature.
-const API_BASE = `${window.location.origin}/api`;
-
 export async function editImage({ image, prompt, signal }) {
   const headers = await authHeaders();
   let res;
   try {
-    res = await fetch(`${API_BASE}/openai/image-edit`, {
+    res = await fetch(apiUrl('/openai/image-edit'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ image, prompt }),
@@ -110,7 +162,7 @@ function readFileAsDataUrl(file) {
 // Upload an image blob via a presigned PUT and return the served object path.
 async function uploadBlob(blob) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/storage/uploads/request-url`, {
+  const res = await fetch(apiUrl('/storage/uploads/request-url'), {
     method: 'POST',
     headers,
     body: JSON.stringify({ contentType: blob.type, size: blob.size }),
@@ -443,8 +495,8 @@ async function connectSse() {
   const controller = new AbortController();
   sseController = controller;
   try {
-    const res = await fetch(`${STORE_BASE}${SSE_PATH}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+    const res = await fetch(`${STORE_BASE()}${SSE_PATH}`, {
+      headers: await authHeaders({ Accept: 'text/event-stream' }),
       signal: controller.signal,
     });
     if (!res.ok || !res.body) {
@@ -633,10 +685,11 @@ async function queryEntity(entityName, opts) {
     const res = await storeFetch(
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
     );
+    // Never cache auth failures as an empty roster — that made bootstrap/repair
+    // think seeding succeeded when the store was never reachable.
     if (res.status === 401) return [];
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
+      throw storeError(res, await parseStoreErrorResponse(res));
     }
     const data = await res.json();
     listCache.set(key, { value: data, expiry: Date.now() + LIST_TTL });
@@ -658,8 +711,13 @@ async function queryEntity(entityName, opts) {
 // ~50 places that read `session.messages` and the handful that write it keep
 // working unchanged, while appends stay O(1) and reads can page.
 async function throwErr(res) {
-  const err = await res.json().catch(() => ({ error: res.statusText }));
-  throw new Error(err.error || res.statusText);
+  if (res.status === 401) {
+    throw storeError(
+      res,
+      'Session not recognized by the server — sign out, sign back in, and try again.',
+    );
+  }
+  throw storeError(res, await parseStoreErrorResponse(res));
 }
 
 // Read a session's messages, ascending (chronological) seq. With no limit this
@@ -812,10 +870,7 @@ function entityStore(entityName) {
         method: 'POST',
         body: JSON.stringify(data || {}),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || res.statusText);
-      }
+      if (!res.ok) await throwErr(res);
       bumpVersion(entityName);
       return res.json();
     },
@@ -825,10 +880,21 @@ function entityStore(entityName) {
         `/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`,
         { method: 'PUT', body: JSON.stringify(data || {}) },
       );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || res.statusText);
-      }
+      if (!res.ok) await throwErr(res);
+      bumpVersion(entityName);
+      return res.json();
+    },
+
+    // Upsert many records with client-provided ids (starter seed/repair).
+    async bulkUpsert(dataArray) {
+      const res = await storeFetch(
+        `/${encodeURIComponent(entityName)}/bulk-upsert`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ items: dataArray || [] }),
+        },
+      );
+      if (!res.ok) await throwErr(res);
       bumpVersion(entityName);
       return res.json();
     },
@@ -921,16 +987,27 @@ const PROFILE_DEFAULTS = {
   selected_mode: 'companion',
 };
 
+const ADMIN_EMAILS = new Set([
+  'davins56@gmail.com',
+  ...(import.meta.env.VITE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+]);
+
 let currentIdentity = null; // { id, email, full_name } from Clerk
 let profileCache = null; // server profile data
 let profileExpiry = 0;
 const PROFILE_TTL = 2000;
 
 function mergedUser(profileData) {
+  const email = currentIdentity?.email?.toLowerCase?.() || '';
+  const adminRole = ADMIN_EMAILS.has(email) ? { role: 'admin' } : {};
   return {
     ...PROFILE_DEFAULTS,
     created_date: new Date().toISOString(),
     ...(profileData || {}),
+    ...adminRole,
     ...(currentIdentity || {}),
   };
 }
@@ -1104,10 +1181,10 @@ export const base44 = {
           const payload = fnName === 'invoke' ? data : nameOrData;
           try {
             const res = await fetch(
-              `${window.location.origin}/api/openai/invoke/${realName}`,
+              apiUrl(`/openai/invoke/${realName}`),
               {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await authHeaders(),
                 body: JSON.stringify(payload || {}),
               },
             );

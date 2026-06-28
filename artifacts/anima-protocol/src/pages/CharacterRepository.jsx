@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import PullToRefreshContainer from "@/components/mobile/PullToRefreshContainer";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 export default function CharacterRepository() {
   const confirm = useConfirm();
@@ -20,7 +21,13 @@ export default function CharacterRepository() {
   const [swipeOffset, setSwipeOffset] = useState({});
 
   useEffect(() => {
-    loadRepository();
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadRepository();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadRepository = async () => {

@@ -36,6 +36,7 @@ export interface EntityStore {
   update(id: string, data: Record<string, unknown>): Promise<any>;
   delete(id: string): Promise<void>;
   bulkCreate(dataArray: Record<string, unknown>[]): Promise<any>;
+  bulkUpsert(dataArray: Record<string, unknown>[]): Promise<{ count: number; items: any[] }>;
   filter(
     filters?: Record<string, unknown>,
     sort?: string,
@@ -106,12 +107,15 @@ export interface Base44Client {
 export declare function setAuthTokenGetter(
   fn: (() => Promise<string | null>) | null,
 ): void;
+export declare function clearAuthTokenGetter(): void;
 export declare function clearStoreCache(): void;
 export declare function bulkImport(payload?: Record<string, unknown>): Promise<any>;
 export declare function restoreData(
   payload?: Record<string, unknown>,
   mode?: "merge" | "replace",
 ): Promise<any>;
+export declare function waitForStoreAuth(timeoutMs?: number): Promise<string>;
+export declare function notifyStoreChanged(): void;
 
 export declare const base44: Base44Client;
 
