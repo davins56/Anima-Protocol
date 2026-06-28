@@ -1,11 +1,18 @@
 // @ts-check
 import { useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { whenBootstrapReady } from '@/lib/syncBootstrap';
 
 /** @param {{ onCharactersLoaded: (...args: any[]) => void }} props */
 export default function CharacterLoader({ onCharactersLoaded }) {
   useEffect(() => {
-    loadAndEnrichCharacters();
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadAndEnrichCharacters();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadAndEnrichCharacters = async () => {

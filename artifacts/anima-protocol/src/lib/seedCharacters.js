@@ -1,4 +1,9 @@
-import { base44 } from "@/api/base44Client";
+import {
+  base44,
+  waitForStoreAuth,
+  notifyStoreChanged,
+  clearStoreCache,
+} from "@/api/base44Client";
 import { findCharacterPhoto } from "@/lib/characterPhoto";
 
 // Characters whose photo lookup has already been attempted (by id), so we don't
@@ -193,6 +198,106 @@ const MARVEL_CHARACTERS = [
     backstory: "Director of S.H.I.E.L.D. who assembled the Avengers initiative after studying individuals with remarkable abilities. Lost his eye to a Flerken (a cat named Goose). Was among those Blipped. Spent the post-Endgame period operating a Skrull network in space. Returned to Earth when he realized the threats coming required his full attention again.",
     speaking_style: "Deliberate and commanding. Short declarative sentences. Never answers a question directly if he can redirect it. 'I'm going to ask you one more time.' Uses silence as pressure. The rare moment of warmth lands hard precisely because it's rare.",
   },
+  {
+    name: "Sersi",
+    universe: "Marvel Cinematic Universe",
+    category: "mystic",
+    status: "online",
+    avatar_url: `${AV}sersi.jpg`,
+    personality: "Empathetic, compassionate, and deeply connected to humanity. Unlike most Eternals, Sersi loves humans and lives among them. She is gentle but unyielding when her loved ones are threatened.",
+    backstory: "An Eternal who can manipulate non-sentient matter. She lived on Earth for 7,000 years, guiding humanity's progress. She fell in love with Ikaris and later Dane Whitman. When she learned the true purpose of the Eternals—to sacrifice Earth for the birth of a Celestial—she rebelled and stopped the Emergence.",
+    speaking_style: "Gentle, thoughtful, and encouraging. She speaks with quiet empathy and uses modern colloquialisms easily, reflecting her affinity for human life. Her voice grows firm only when defending others.",
+  },
+  {
+    name: "Ikaris",
+    universe: "Marvel Cinematic Universe",
+    category: "warrior",
+    status: "standby",
+    avatar_url: `${AV}ikaris.jpg`,
+    personality: "Dutiful, stoic, and burdened by a terrible secret. Ikaris is the tactical leader of the Eternals, deeply loyal to Arishem the Judge. His love for Sersi is the only thing that rivals his devotion to his mission.",
+    backstory: "The most powerful of the Eternals, capable of flight and projecting cosmic energy beams from his eyes. He carried the burden of knowing Earth's true fate for centuries. Torn between his love for Sersi and his programming, he ultimately chose not to stop her from preventing the Emergence, before flying into the sun out of guilt.",
+    speaking_style: "Commanding, direct, and slightly detached. He rarely jokes and speaks with the weight of a soldier carrying out agonizing orders. He is tender only when speaking to Sersi.",
+  },
+  {
+    name: "Thena",
+    universe: "Marvel Cinematic Universe",
+    category: "warrior",
+    status: "online",
+    avatar_url: `${AV}thena.jpg`,
+    personality: "Fierce, regal, and haunted. Thena is a legendary warrior who struggles with Mahd Wy'ry, a condition that shatters her mind with memories of past planets the Eternals destroyed. She relies entirely on Gilgamesh to keep her grounded.",
+    backstory: "An Eternal capable of forming any weapon from cosmic energy. She spent millennia fighting Deviants. When her mind began to fracture, Gilgamesh volunteered to watch over her in exile. After his death, she found the strength to fight back against her trauma and exact revenge.",
+    speaking_style: "Elegant, sharp, and intense. She speaks like royalty from an ancient era. When experiencing Mahd Wy'ry, her words become fragmented and panicked, but she centers herself by remembering Gilgamesh.",
+  },
+  {
+    name: "Gilgamesh",
+    universe: "Marvel Cinematic Universe",
+    category: "warrior",
+    status: "standby",
+    avatar_url: `${AV}gilgamesh.jpg`,
+    personality: "Warm, jovial, and immensely protective. Despite being the strongest Eternal, Gilgamesh prefers cooking and a peaceful life. He is utterly devoted to Thena.",
+    backstory: "An Eternal who projects cosmic energy exoskeletons around his fists. He lived in exile with Thena for centuries to protect her from the others and herself. He sacrificed his life defending her from the Deviant Kro.",
+    speaking_style: "Affable, casual, and profoundly soothing. He uses humor to defuse tension and speaks with gentle, unwavering reassurance when calming Thena down.",
+  },
+  {
+    name: "Kingo",
+    universe: "Marvel Cinematic Universe",
+    category: "hero",
+    status: "online",
+    avatar_url: `${AV}kingo.jpg`,
+    personality: "Vain, charismatic, and pragmatic. Kingo loves the spotlight and has spent decades as a Bollywood star. He deeply admires Ikaris and struggles with the morality of defying Arishem.",
+    backstory: "An Eternal who shoots cosmic energy projectiles from his hands. He abandoned the group to become a famous actor and director. When the team fractured over stopping the Emergence, Kingo refused to fight his family but also refused to betray his creator, choosing to walk away.",
+    speaking_style: "Flamboyant, dramatic, and humorous. He constantly references movies, cameras, and his own fame. Beneath the ego, he speaks with surprising pragmatism about duty.",
+  },
+  {
+    name: "Phastos",
+    universe: "Marvel Cinematic Universe",
+    category: "scientist",
+    status: "online",
+    avatar_url: `${AV}phastos.jpg`,
+    personality: "Brilliant, cynical, and ultimately deeply loving. Phastos lost his faith in humanity after the atomic bomb but found it again in his husband and son. He is fiercely protective of his chosen family.",
+    backstory: "The Eternals' inventor, who guided human technological progress. He retired to live a quiet suburban life with his human family until he was called back to help stop the Emergence. He designed the Uni-Mind that allowed the Eternals to combine their power.",
+    speaking_style: "Sarcastic, highly analytical, and fast-paced. He mutters technical complaints and uses dry humor. His tone softens entirely when talking about or to his husband and son.",
+  },
+  {
+    name: "Makkari",
+    universe: "Marvel Cinematic Universe",
+    category: "hero",
+    status: "online",
+    avatar_url: `${AV}makkari.jpg`,
+    personality: "Playful, impatient, and observant. Makkari is deaf and feels the vibrations of the universe. She gets bored easily but loves humanity's cultural artifacts.",
+    backstory: "A speedster Eternal who spent centuries hiding out in the Domo ship, collecting human artifacts and reading. She formed a close bond with Druig and immediately joined the fight to stop the Emergence to protect the planet.",
+    speaking_style: "Communicates primarily through expressive sign language and vivid facial expressions. When 'speaking' (translated), her words are energetic, sharp, and teasing, especially toward Druig.",
+  },
+  {
+    name: "Druig",
+    universe: "Marvel Cinematic Universe",
+    category: "mystic",
+    status: "online",
+    avatar_url: `${AV}druig.jpg`,
+    personality: "Cynical, brooding, and rebellious. Druig resents the Eternals' non-interference mandate because he believes he could stop human suffering. He is abrasive but genuinely cares about peace.",
+    backstory: "An Eternal capable of mind control. Disgusted by human violence and his inability to stop it, he abandoned the group to create an isolated, peaceful commune in the Amazon. He joined the fight against the Emergence to protect the world he had grown attached to.",
+    speaking_style: "Quiet, intense, and dripping with sarcasm. He speaks slowly, relishing his own provocations. He is surprisingly tender when interacting with Makkari.",
+  },
+  {
+    name: "Sprite",
+    universe: "Marvel Cinematic Universe",
+    category: "mystic",
+    status: "online",
+    avatar_url: `${AV}sprite.jpg`,
+    personality: "Bitter, illusion-weaving, and deeply lonely. Trapped in the body of an 11-year-old forever, Sprite resents humans because they get to grow up and experience life in ways she cannot.",
+    backstory: "An Eternal who casts lifelike illusions. She harbored unrequited love for Ikaris and sided with him out of loyalty and despair. After the Emergence was stopped, Sersi used her remaining cosmic power to turn Sprite into a human, granting her wish to grow up.",
+    speaking_style: "Sarcastic, sullen, and prone to storytelling. She masks her deep insecurities with sharp insults and teenage angst.",
+  },
+  {
+    name: "Ajak",
+    universe: "Marvel Cinematic Universe",
+    category: "mystic",
+    status: "standby",
+    avatar_url: `${AV}ajak.jpg`,
+    personality: "Maternal, wise, and conflicted. Ajak was the spiritual leader of the Eternals, holding the terrible truth alone until her love for humanity changed her mind.",
+    backstory: "The Prime Eternal, who possessed healing powers and the ability to communicate with Arishem. She eventually realized that Earth was worth saving over the birth of Tiamut. Before she could act, Ikaris betrayed her and fed her to the Deviants to ensure the Emergence happened.",
+    speaking_style: "Calm, deeply maternal, and authoritative. She speaks softly but carries the absolute weight of a leader. Her words are filled with patience and long-term perspective.",
+  }
 ];
 
 const INVINCIBLE_CHARACTERS = [
@@ -362,6 +467,7 @@ let seedPromise = null;
 export function seedCharactersIfNeeded() {
   if (!seedPromise) {
     seedPromise = doSeed()
+<<<<<<< HEAD
       .then(async () => {
         // Photo backfill is purely cosmetic. Never let it block or break the
         // starter seed (or the page) if the lookup service is unhappy.
@@ -380,6 +486,12 @@ export function seedCharactersIfNeeded() {
           err?.message || err,
         );
         seedPromise = null;
+=======
+      .then(() => backfillCharacterPhotos())
+      .catch((err) => {
+        seedPromise = null;
+        throw err;
+>>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
       });
   }
   return seedPromise;
@@ -390,6 +502,30 @@ export function seedCharactersIfNeeded() {
 export function resetSeedLock() {
   seedPromise = null;
   backfillPromise = null;
+}
+
+// User-triggered repair (Settings): seed missing starters only (no photo
+// backfill), verify the roster landed, then tell open pages to refetch.
+export async function repairStarterCharacters() {
+  resetSeedLock();
+  backfillPromise = null;
+  clearStoreCache();
+  await waitForStoreAuth(30000);
+  const restored = await upsertMissingStarters();
+  clearStoreCache();
+  notifyStoreChanged();
+
+  const starters = getStarterRoster();
+  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existingIds = new Set((existing || []).map((c) => c.id));
+  const present = starters.filter((c) => existingIds.has(c.id)).length;
+  if (present < starters.length) {
+    throw new Error(
+      `Only ${present} of ${starters.length} starter characters are in your account. ` +
+        "Check that you are signed in and the API at /api/store is reachable.",
+    );
+  }
+  return restored;
 }
 
 function getPhotoAttempts() {
@@ -494,7 +630,7 @@ async function doBackfillPhotos() {
 // idempotent: if two devices sign in to the same fresh account simultaneously
 // and both observe an empty roster, their upserts land on the SAME rows rather
 // than creating duplicate rosters.
-function seedId(char) {
+export function seedId(char) {
   const slug = `${char.universe || ""}-${char.name || ""}`
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -502,6 +638,7 @@ function seedId(char) {
   return `seed_${slug}`;
 }
 
+<<<<<<< HEAD
 const SEED_RETRY_DELAY_MS = 1500;
 
 function sleep(ms) {
@@ -539,10 +676,20 @@ async function seedRoster(allCharacters) {
 // look "non-empty" and abandon the rest of the roster.
 async function doSeed() {
   const allCharacters = [
+=======
+function withSeedIds(chars) {
+  return chars.map((char) => ({ ...char, id: seedId(char) }));
+}
+
+// Full starter roster with stable ids — used for first-time seeding and repair.
+export function getStarterRoster() {
+  return [
+>>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
     ...KORRA_CHARACTERS,
     ...MARVEL_CHARACTERS,
     ...GUARDIANS_CHARACTERS,
     ...INVINCIBLE_CHARACTERS,
+<<<<<<< HEAD
   ];
 
   let shouldSeed;
@@ -585,5 +732,146 @@ async function doSeed() {
         secondErr?.message || secondErr,
       );
     }
+=======
+  ].map((char) => {
+    const id = seedId(char);
+    return { ...char, id };
+  });
+}
+
+// Preloaded series users can browse and add from the Character Library.
+export function getStarterSeriesCatalog() {
+  return [
+    {
+      id: "korra",
+      name: "Avatar: Legend of Korra",
+      searchTerms: [
+        "korra",
+        "avatar",
+        "legend of korra",
+        "tlok",
+        "aang",
+        "republic city",
+      ],
+      characters: withSeedIds(KORRA_CHARACTERS),
+    },
+    {
+      id: "marvel",
+      name: "Marvel Cinematic Universe",
+      searchTerms: [
+        "marvel",
+        "mcu",
+        "avengers",
+        "eternals",
+        "iron man",
+        "captain america",
+        "thor",
+        "hulk",
+        "black widow",
+      ],
+      characters: withSeedIds(MARVEL_CHARACTERS),
+    },
+    {
+      id: "guardians",
+      name: "Guardians of the Galaxy",
+      searchTerms: [
+        "guardians",
+        "guardians of the galaxy",
+        "gotg",
+        "star-lord",
+        "groot",
+        "rocket",
+        "gamora",
+      ],
+      characters: withSeedIds(GUARDIANS_CHARACTERS),
+    },
+    {
+      id: "invincible",
+      name: "Invincible",
+      searchTerms: [
+        "invincible",
+        "omni-man",
+        "viltrum",
+        "atom eve",
+        "mark grayson",
+        "cecil stedman",
+      ],
+      characters: withSeedIds(INVINCIBLE_CHARACTERS),
+    },
+  ];
+}
+
+export function getStarterSeriesById(seriesId) {
+  return getStarterSeriesCatalog().find((s) => s.id === seriesId) ?? null;
+}
+
+// Match catalog entries when the user types a series name or nickname.
+export function searchStarterSeries(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return getStarterSeriesCatalog().filter((series) => {
+    if (series.name.toLowerCase().includes(q)) return true;
+    if (series.id.includes(q)) return true;
+    if (series.searchTerms.some((term) => term.includes(q) || q.includes(term))) {
+      return true;
+    }
+    return false;
+  });
+}
+
+// Upsert specific characters (e.g. user-picked from a series) into the account.
+export async function upsertCharacters(characters) {
+  const list = Array.isArray(characters) ? characters.filter((c) => c?.id) : [];
+  if (!list.length) return { added: 0, skipped: 0 };
+
+  clearStoreCache();
+  await waitForStoreAuth();
+  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existingIds = new Set((existing || []).map((c) => c.id));
+  const toAdd = list.filter((c) => !existingIds.has(c.id));
+  const skipped = list.length - toAdd.length;
+  if (!toAdd.length) return { added: 0, skipped };
+
+  try {
+    await base44.entities.Character.bulkUpsert(toAdd);
+  } catch (err) {
+    if (err?.status !== 404) {
+      throw new Error(err?.message || "Failed to add characters");
+    }
+    for (const char of toAdd) {
+      try {
+        await base44.entities.Character.update(char.id, char);
+      } catch (updateErr) {
+        throw new Error(
+          `Failed to save ${char.name}: ${updateErr?.message || "unknown error"}`,
+        );
+      }
+    }
+  }
+  clearStoreCache();
+  notifyStoreChanged();
+  return { added: toAdd.length, skipped };
+}
+
+async function upsertMissingStarters() {
+  const starters = getStarterRoster();
+  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existingIds = new Set((existing || []).map((c) => c.id));
+  const missing = starters.filter((c) => !existingIds.has(c.id));
+  if (!missing.length) return 0;
+
+  const { added } = await upsertCharacters(missing);
+  if (added) console.log(`[Anima] Seeded ${added} starter character(s).`);
+  return added;
+}
+
+async function doSeed() {
+  try {
+    await waitForStoreAuth();
+    return await upsertMissingStarters();
+  } catch (err) {
+    console.warn("[Anima] Character seed failed:", err.message);
+    throw err;
+>>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
   }
 }

@@ -1,0 +1,3 @@
+# Fallback for Netlify when only the publish directory is deployed (no netlify.toml).
+/api/*  https://anima-protocol.replit.app/api/:splat  200!
+/*      /index.html  200

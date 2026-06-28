@@ -1,3 +1,4 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;--> statement-breakpoint
 CREATE TABLE "conversations" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,

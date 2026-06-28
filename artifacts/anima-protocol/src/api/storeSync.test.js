@@ -97,6 +97,7 @@ describe('store sync lifecycle', () => {
 describe('store sync push transport hardening', () => {
   let revisionFetches;
   let eventsConnects;
+  let eventUrls;
   let currentStream;
 
   // A controllable mock of a fetch streaming body. read() resolves as chunks
@@ -148,12 +149,14 @@ describe('store sync push transport hardening', () => {
     vi.useFakeTimers();
     revisionFetches = 0;
     eventsConnects = 0;
+    eventUrls = [];
     currentStream = null;
     setAuthTokenGetter(() => 'test-token');
     global.fetch = vi.fn((url, options) => {
       const u = String(url);
       if (u.includes('/events')) {
         eventsConnects += 1;
+        eventUrls.push(u);
         const stream = makeStream(options?.signal);
         currentStream = stream;
         return Promise.resolve({ ok: true, status: 200, body: stream });
@@ -179,6 +182,8 @@ describe('store sync push transport hardening', () => {
   it('parses change blocks separated by \\r\\n\\r\\n (proxy newline normalization)', async () => {
     startStoreSync();
     await tick();
+    expect(new URL(eventUrls[0]).pathname).toBe('/api/store/events');
+    expect(eventUrls[0]).not.toContain('STORE_BASE');
     const before = revisionFetches;
 
     // Deliver a change event using CRLF line endings, as a normalizing proxy

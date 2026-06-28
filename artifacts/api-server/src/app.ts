@@ -1,61 +1,44 @@
-import express, { type Express } from "express";
-import cors from "cors";
-import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
-import { publishableKeyFromHost } from "@clerk/shared/keys";
-import router from "./routes";
-import { logger } from "./lib/logger";
-import {
-  CLERK_PROXY_PATH,
-  clerkProxyMiddleware,
-  getClerkProxyHost,
-} from "./middlewares/clerkProxyMiddleware";
+import express, { Request, Response, NextFunction } from 'express'
+import { clerkMiddleware } from '@clerk/express'
 
-const app: Express = express();
+// Import webhook router
+import clerkWebhookRouter from './webhooks/clerk'
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
-    },
-  }),
-);
+const app = express()
 
-// Clerk Frontend API proxy — must be mounted before body parsers because it
-// streams raw request bytes. Only active in production.
-app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
+// Body parsing middleware
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
-app.use(cors({ credentials: true, origin: true }));
-// Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,
-// which posts the source image inline). The image-edit route enforces its own
-// 20MB byte cap on the decoded buffer.
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+// Clerk middleware - must be early
+app.use(clerkMiddleware())
 
-// Resolve the publishable key from the incoming request host so the same
-// server can serve multiple Clerk custom domains. Falls back to
-// CLERK_PUBLISHABLE_KEY when the host doesn't map to a custom domain.
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
-);
+// Webhook route (raw body handled inside the router)
+app.use('/api/webhooks', clerkWebhookRouter)
 
-app.use("/api", router);
+// ====================== PUBLIC ROUTES ======================
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
 
-export default app;
+// ====================== PROTECTED ROUTES ======================
+// Add your real app routes here
+
+// Protected route example
+// app.get('/api/protected', requireAuth(), (req, res) => { ... })
+
+// Global error handler
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("Unhandled API error", err)
+  if (!res.headersSent) {
+    const message = err instanceof Error ? err.message : "Internal server error"
+    const isConfig = message.includes("DATABASE_URL") || message.includes("connection")
+    res.status(isConfig ? 503 : 500).json({
+      error: isConfig
+        ? "API is misconfigured on the server. Check environment variables."
+        : "Internal server error",
+    })
+  }
+})
+
+export default app

@@ -226,6 +226,31 @@ describe("one-time migration import gate", () => {
   });
 });
 
+describe("bulk upsert (client-provided ids)", () => {
+  it("creates new records and updates existing ones in one request", async () => {
+    const U = user("bulk_upsert");
+    await call(U, "PUT", "/Character/seed_korra", {
+      id: "seed_korra",
+      name: "Old Korra",
+    });
+
+    const res = await call(U, "POST", "/Character/bulk-upsert", {
+      items: [
+        { id: "seed_korra", name: "Korra", universe: "Avatar" },
+        { id: "seed_asami", name: "Asami", universe: "Avatar" },
+      ],
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.count).toBe(2);
+    expect(res.json.items).toHaveLength(2);
+
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    const byId = new Map(chars.map((c) => [c.id, c]));
+    expect(byId.get("seed_korra")?.name).toBe("Korra");
+    expect(byId.get("seed_asami")?.name).toBe("Asami");
+  });
+});
+
 describe("restore into a non-empty account (merge vs replace)", () => {
   it("merge upserts the backup over existing data and keeps untouched records", async () => {
     const U = user("restore_merge");

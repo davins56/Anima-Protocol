@@ -6,6 +6,7 @@ import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
 import { useTimelineBranching } from "@/hooks/useTimelineBranching";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -45,7 +46,13 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         setLoading(false);
       }
     };
-    loadData();
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadData();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredCharacters = characters.filter((c) => {
@@ -62,6 +69,12 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     g.name.toLowerCase().includes(search.toLowerCase()) ||
     (g.description || "").toLowerCase().includes(search.toLowerCase())
   );
+
+  const selectedCharacters = characters.filter((c) => selected.includes(c.id));
+  const selectedUniverses = Array.from(
+    new Set(selectedCharacters.map((c) => c.universe).filter(Boolean)),
+  );
+  const isCrossover = mode === "group" && selectedUniverses.length >= 2;
 
   const toggleSelect = (id, isGroup = false) => {
     if (isGroup) {
@@ -101,8 +114,20 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     
     // Prepare session data
     const sessionData = mode === "solo"
-      ? { mode, character_id: selected[0], opening_scene: openingScene.trim() || undefined }
-      : { mode, group_character_ids: selected, opening_scene: openingScene.trim() || undefined };
+      ? {
+          mode,
+          character_id: selected[0],
+          opening_scene: openingScene.trim() || undefined,
+        }
+      : {
+          mode,
+          group_character_ids: selected,
+          selected_character_names: selectedCharacters.map((c) => c.name),
+          crossover_universes: selectedUniverses,
+          is_crossover: isCrossover,
+          shared_memory: [],
+          opening_scene: openingScene.trim() || undefined,
+        };
     
     // Call onCreate callback which creates the session
     onCreate(sessionData);
@@ -315,6 +340,30 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         {/* Opening Scene Input */}
         {view === "characters" && selected.length > 0 && (
           <div className="px-4 py-3 border-t border-primary/10 bg-black/20">
+            {mode === "group" && (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className={`text-[8px] font-mono tracking-widest uppercase border rounded px-2 py-1 ${
+                  isCrossover
+                    ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-300"
+                    : "border-primary/20 bg-primary/5 text-primary/40"
+                }`}>
+                  {isCrossover ? "Crossover Ready" : "Single Universe"}
+                </span>
+                {selectedUniverses.slice(0, 4).map((universe) => (
+                  <span
+                    key={universe}
+                    className="text-[8px] font-mono tracking-widest uppercase border border-primary/15 bg-black/40 text-primary/50 rounded px-2 py-1"
+                  >
+                    {universe}
+                  </span>
+                ))}
+                {selectedUniverses.length > 4 && (
+                  <span className="text-[8px] font-mono tracking-widest uppercase text-primary/30">
+                    +{selectedUniverses.length - 4}
+                  </span>
+                )}
+              </div>
+            )}
             <label className="block font-mono text-[9px] text-primary/40 tracking-widest uppercase mb-1.5">
               Opening Scene <span className="text-primary/20">(optional)</span>
             </label>

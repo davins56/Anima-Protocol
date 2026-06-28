@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { animaApi } from "@/api/animaApi";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -99,6 +101,7 @@ import { useDivergentPaths } from "@/hooks/useDivergentPaths";
 import GoToTopButton from "@/components/chat/GoToTopButton";
 import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
+import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 
 
 export default function Chat() {
@@ -281,20 +284,27 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    loadSessions();
-    loadCharacters();
-    // Preload ElevenLabs voices in background
-    base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
-    base44.auth.me().then((me) => {
-      if (me?.settings?.chat_bg_theme) setBgTheme(me.settings.chat_bg_theme);
-      if (me?.settings?.chat_bg_image) setBgImage(me.settings.chat_bg_image);
-      setActiveAspects((prev) => (prev.length ? prev : [me?.selected_mode || "serenity"]));
-    }).catch(() => {});
-    // Auto-open new session modal when navigated from dashboard "New Chat"
-    if (location.state?.openNew) {
-      setShowModal(true);
-      navigate(location.pathname, { replace: true, state: {} });
-    }
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (cancelled) return;
+      loadSessions();
+      loadCharacters();
+      // Preload ElevenLabs voices in background
+      base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
+      base44.auth.me().then((me) => {
+        if (me?.settings?.chat_bg_theme) setBgTheme(me.settings.chat_bg_theme);
+        if (me?.settings?.chat_bg_image) setBgImage(me.settings.chat_bg_image);
+        setActiveAspects((prev) => (prev.length ? prev : [me?.selected_mode || "serenity"]));
+      }).catch(() => {});
+      // Auto-open new session modal when navigated from dashboard "New Chat"
+      if (location.state?.openNew) {
+        setShowModal(true);
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -579,7 +589,9 @@ export default function Chat() {
         secondary: s.secondary_emotion,
         intensity: s.intensity,
         trigger: s.trigger,
-        actor: s.affected_by_actor
+        actor: s.affected_by_actor,
+        emotion_level: s.emotion_level || s.level || null,
+        arousal: s.arousal != null ? s.arousal : null,
       };
     });
     setCharacterEmotions(map);
@@ -608,6 +620,7 @@ export default function Chat() {
   );
 
   const syncFromRemote = useCallback(() => {
+    loadCharacters();
     handleRemoteSync({
       isLoading,
       loadSessions,
@@ -659,13 +672,32 @@ export default function Chat() {
       initialMessages = [narratorMessage];
     }
 
+    const selectedGroupChars = m === "group" && group_character_ids?.length
+      ? characters.filter((c) => group_character_ids.includes(c.id))
+      : [];
+    const crossoverUniverses = Array.from(
+      new Set(selectedGroupChars.map((c) => c.universe).filter(Boolean)),
+    );
+    const isCrossoverSession = m === "group" && crossoverUniverses.length >= 2;
+
     const newSession = await base44.entities.ChatSession.create({
       mode: m,
       character_id: character_id || null,
       group_character_ids: group_character_ids || [],
+      selected_character_names: selectedGroupChars.map((c) => c.name),
+      crossover_universes: crossoverUniverses,
+      is_crossover: isCrossoverSession,
+      shared_memory: [],
       title,
       messages: initialMessages,
     });
+
+    if (isCrossoverSession) {
+      track("crossover_session_started", {
+        character_count: selectedGroupChars.length,
+        universe_count: crossoverUniverses.length,
+      });
+    }
 
     // Update session with initial messages if they exist
     if (initialMessages.length > 0) {
@@ -709,6 +741,17 @@ export default function Chat() {
     if (!activeSession) return;
     setChoices([]);
     await handleSendMessage(`${choice.text}`);
+  };
+
+  const handleNarratorExposition = async () => {
+    if (!activeSession) return;
+
+    // In group mode, we let the next speaker continue while adding narrator-style exposition.
+    // In solo mode, we still route through the same chat completion; the prompt contains
+    // explicit narrator instructions so the model adds exposition in-story.
+    await handleSendMessage(
+      "(NARRATOR) Continue the story with exposition: expand on what is happening, why it matters, and the underlying context. Keep it vivid, immersive, and in the current tone."
+    );
   };
 
   const handleGeneratePortrait = async (charName, personality, emotion, intensity, existingUrl) => {
@@ -1283,13 +1326,19 @@ ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional 
           ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
-        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
-        
-        // Semi-sentient speaker selection: ask the AI who would most naturally speak next
-        const recentSpeakers = updatedMessages.slice(-6)
-          .filter(m => m.role === "assistant" && m.character_name !== "Narrator" && m.character_name !== "__typing__")
-          .map(m => m.character_name);
-        const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
+      const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+
+      // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
+      // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
+      const recentSpeakers = updatedMessages.slice(-6)
+        .filter(m => m.role === "assistant" && m.character_name !== "Narrator" && m.character_name !== "__typing__")
+        .map(m => m.character_name);
+      const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
+
+      const shouldOutOfTurn =
+        Math.random() < 0.35 && // 35% per request
+        groupChars.length >= 2 &&
+        !isContinue;
         
         const charSummaries = groupChars.map(c =>
           `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
@@ -1354,17 +1403,47 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           traitModifiers = shiftRes?.data?.trait_modifiers || '';
         } catch (_) { /* silently ignore — enhancement, not a requirement */ }
 
-        prompt = buildGroupPrompt({ nextChar, allCharSheets, loreCtxGroup, conversationHistory, adultInstruction, lengthGuide, traitModifiers, userProfileContext });
+        // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
+        // We still select a valid character, but we may interrupt the usual pacing.
+        let finalNextChar = nextChar;
+        if (shouldOutOfTurn) {
+          const recentMentioned = updatedMessages
+            .slice(-10)
+            .map(m => m.character_name)
+            .filter(Boolean);
+          const preferred = groupChars
+            .filter(c => c.name !== nextChar?.name)
+            .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
+
+          // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
+          const recentSpeakerSet = new Set(recentSpeakers);
+          const leastRecent = groupChars.find(c => !recentSpeakerSet.has(c.name) && c.name !== nextChar?.name);
+
+          finalNextChar = preferred[0] || leastRecent || groupChars.find(c => c.name !== nextChar?.name) || nextChar;
+        }
+
+        // Keep the ref in sync for later Serenity auto-address handling etc.
+        currentGroupSpeakerRef.current = finalNextChar;
+
+        // Add explicit allowance for interruption/out-of-turn to the prompt.
+        const interruptionClause = shouldOutOfTurn
+          ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
+          : "";
+
+        prompt = buildGroupPrompt({
+          nextChar: finalNextChar,
+          allCharSheets,
+          loreCtxGroup,
+          conversationHistory,
+          adultInstruction,
+          lengthGuide,
+          traitModifiers,
+          userProfileContext,
+          interruptionClause,
+        });
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${loyaltyGuardrailClause()}`;
       }
-
-      const result = await base44.integrations.Core.InvokeLLM({ 
-        prompt,
-        add_context_from_internet: needsWebSearch,
-        model: needsWebSearch ? "gemini_3_flash" : undefined,
-        deepMode: !!activeSession.deep_mode,
-      });
 
       let charName = "Serenity";
       let activeChar = null;
@@ -1375,6 +1454,29 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         activeChar = currentGroupSpeakerRef.current;
         charName = activeChar?.name || "Character";
       }
+
+      const resultPayload = await animaApi.chat.completeMessage({
+        sessionId: activeSession.id,
+        content,
+        characterId: activeSession.character_id,
+        characterIds: activeSession.mode === "group"
+          ? activeSession.group_character_ids || []
+          : activeSession.character_id
+            ? [activeSession.character_id]
+            : [],
+        assistantCharacterId: activeChar?.id || activeSession.character_id || null,
+        assistantCharacterName: charName,
+        mode: activeSession.mode || "solo",
+        systemPrompt: prompt,
+        deepMode: !!activeSession.deep_mode || needsWebSearch,
+        persist: false,
+        metadata: {
+          has_attachment: attachments.length > 0,
+          is_continue: isContinue,
+          source: "chat_page",
+        },
+      });
+      const result = resultPayload.content;
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
@@ -1842,7 +1944,7 @@ Return JSON:
       // Trigger narrative analysis every 8 messages (reduced from 4)
       if (finalMessages.length % 8 === 0) setTimeout(() => analyzeNarrative(), 1000);
 
-      // Analyze character evolution (every 12 messages, reduced from 8)
+      // Analyze character evolution (every 12 messages)
       if (activeChar && activeSession.mode === "solo" && finalMessages.length > 5 && finalMessages.length % 12 === 0) {
         base44.functions.invoke("evolveCharacter", {
           character_id: activeChar.id,
@@ -1856,11 +1958,28 @@ Return JSON:
             ? `Current: ${characterEmotions[activeChar.id].emotion} (intensity: ${characterEmotions[activeChar.id].intensity}/10)`
             : "",
         }).then((res) => {
-          if (res?.data) {
-            setCharacterEvolutions((prev) => ({
-              ...prev,
-              [activeChar.id]: res.data,
-            }));
+          if (res?.data && res.data.evolved_personality) {
+            const evolution = res.data;
+            
+            // Auto-apply for Animas, require manual for other characters
+            if (activeChar._isAnima) {
+              let newPersonality = evolution.evolved_personality || activeChar.personality;
+              if (evolution.growth_areas?.length) newPersonality += `\nGrowth: ${evolution.growth_areas.join(', ')}`;
+              if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
+              if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
+              
+              base44.entities.Character.update(activeChar.id, {
+                personality: newPersonality,
+              });
+              toast.success(`${activeChar.name} has evolved based on your interactions.`);
+              // Update local state so it's reflected immediately
+              setCharacters(prev => prev.map(c => c.id === activeChar.id ? { ...c, personality: newPersonality } : c));
+            } else {
+              setCharacterEvolutions((prev) => ({
+                ...prev,
+                [activeChar.id]: evolution,
+              }));
+            }
           }
         }).catch(() => {});
       }
@@ -1897,8 +2016,7 @@ Return JSON:
     };
 
   return (
-    <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>
-      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
+    <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
       {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
       <div className="hidden">
@@ -2085,6 +2203,23 @@ Return JSON:
                 setGeneratedContent={setGeneratedContent}
                 setWorldEvent={setWorldEvent}
               />
+
+              {/* World widget area add-on (inside scrollable message feed) */}
+              <div className="w-full" aria-live="polite">
+                {activeSession?.mode === "solo" && activeSession?.character_id && (
+                  <div className="px-3 py-2 border border-primary/10 bg-black/35 backdrop-blur-sm rounded-lg">
+                    <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-primary/40">Thread Signal</div>
+                    <div className="mt-1 flex items-center justify-between gap-3">
+                      <span className="font-mono text-[11px] text-primary/75">
+                        Resonance: {Math.round(resonance.value)}%
+                      </span>
+                      <span className="font-mono text-[11px] text-primary/50">
+                        Mood: {currentMood}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
               {(!activeSession.messages || activeSession.messages.length === 0) && (
                 <div className="text-center py-8">
                   <p className="font-mono text-[9px] sm:text-xs text-primary/25 tracking-[0.3em] uppercase">
@@ -2154,11 +2289,14 @@ Return JSON:
 
               {/* Voice Chat & Chat Input */}
               <div className="space-y-2">
-                <ChatInputControls
+<ChatInputControls
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
+                  onNarratorExposition={handleNarratorExposition}
                   isLoading={isLoading}
                   sessionMode={activeSession?.mode}
+                  activeCharacter={activeSession.mode === "solo" ? characters.find(c => c.id === activeSession.character_id) : null}
+                  onSend={handleSendMessage}
                 />
                 {activeSession.mode === "solo" && activeSession.character_id && (
                   <QuickActionChips

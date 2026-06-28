@@ -12,6 +12,7 @@ import { openPhotoEditor } from "@/lib/avatarPhoto";
 import { useAnimaPresence } from "@/hooks/useAnimaPresence";
 import SerenityPresence from "@/components/anima/SerenityPresence";
 import { formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 const GREETINGS = [
   "Connection established. The weave hums with your arrival.",
@@ -176,7 +177,17 @@ export default function MainHome() {
 
   useEffect(() => {
     setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
-    loadHomeData();
+    let cancelled = false;
+    const loadingTimeout = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 12000);
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadHomeData();
+    });
+    return () => {
+      cancelled = true;
+      clearTimeout(loadingTimeout);
+    };
   }, [loadHomeData]);
 
   // Live cross-device sync: refetch when another device changes our data.

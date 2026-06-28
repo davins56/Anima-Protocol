@@ -7,15 +7,10 @@ import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage"
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-// Limit the presigned-URL endpoint (the only abusable write path here). Scoped
-// to its own path so it never drains the shared IP budget for other /api routes.
+// Limit the presigned-URL endpoint
 router.use("/storage/uploads/request-url", rateLimit);
 
 // POST /storage/uploads/request-url
-// Returns a presigned PUT URL plus the canonical object path to store. The
-// client uploads the file bytes DIRECTLY to the presigned URL (not here) and
-// then persists objectPath. Requires a signed-in user to prevent anonymous
-// abuse of the upload pipeline.
 router.post(
   "/storage/uploads/request-url",
   async (req: Request, res: Response) => {
@@ -41,13 +36,12 @@ router.post(
       const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
       res.json({ uploadURL, objectPath });
     } catch (error) {
-      req.log.error({ err: error }, "Error generating upload URL");
+      console.error("Error generating upload URL:", error);   // ← Fixed
       res.status(500).json({ error: "Failed to generate upload URL" });
     }
   },
 );
 
-// Stream a fetch Response (from GCS) back through Express.
 function pipeDownload(
   res: Response,
   response: Awaited<ReturnType<ObjectStorageService["downloadObject"]>>,
@@ -63,9 +57,6 @@ function pipeDownload(
 }
 
 // GET /storage/objects/*path
-// Serves user-uploaded object entities. Avatars are referenced from plain <img>
-// tags (which cannot send auth headers), so these are served publicly — there
-// is no sensitive content here, only character portraits the user chose.
 router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   try {
     const raw = (req.params as Record<string, string | string[]>).path;
@@ -79,14 +70,12 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
       res.status(404).json({ error: "Object not found" });
       return;
     }
-    req.log.error({ err: error }, "Error serving object");
+    console.error("Error serving object:", error);   // ← Fixed
     res.status(500).json({ error: "Failed to serve object" });
   }
 });
 
 // GET /storage/public-objects/*filePath
-// Serves app/website assets from PUBLIC_OBJECT_SEARCH_PATHS (uploaded via the
-// Object Storage tool pane). Unconditionally public.
 router.get(
   "/storage/public-objects/*filePath",
   async (req: Request, res: Response) => {
@@ -101,7 +90,7 @@ router.get(
       const response = await objectStorageService.downloadObject(file);
       pipeDownload(res, response);
     } catch (error) {
-      req.log.error({ err: error }, "Error serving public object");
+      console.error("Error serving public object:", error);   // ← Fixed
       res.status(500).json({ error: "Failed to serve public object" });
     }
   },

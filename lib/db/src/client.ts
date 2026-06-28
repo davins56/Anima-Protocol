@@ -1,15 +1,11 @@
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
 
 const { Pool } = pg;
 
-const rawUrl = process.env.DATABASE_URL;
-if (!rawUrl) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
-}
+type DbSchema = typeof schema;
+type Db = NodePgDatabase<DbSchema>;
 
 // Resolve SSL behaviour from the URL's `sslmode`, then strip `sslmode` from the
 // connection string so node-postgres' own parser does not re-apply it.
@@ -45,7 +41,38 @@ function resolveDbConfig(url: string): {
   return { connectionString, ssl };
 }
 
-const { connectionString, ssl } = resolveDbConfig(rawUrl);
+let poolInstance: pg.Pool | null = null;
+let dbInstance: Db | null = null;
 
-export const pool = new Pool({ connectionString, ssl });
-export const db = drizzle(pool, { schema });
+export function getPool(): pg.Pool {
+  if (poolInstance) return poolInstance;
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) {
+    throw new Error(
+      "DATABASE_URL must be set. Did you forget to provision a database?",
+    );
+  }
+  const { connectionString, ssl } = resolveDbConfig(rawUrl);
+  poolInstance = new Pool({ connectionString, ssl });
+  return poolInstance;
+}
+
+function getDb(): Db {
+  if (dbInstance) return dbInstance;
+  dbInstance = drizzle(getPool(), { schema });
+  return dbInstance;
+}
+
+function proxyBind<T extends object>(target: () => T): T {
+  return new Proxy({} as T, {
+    get(_obj, prop, receiver) {
+      const value = Reflect.get(target(), prop, receiver);
+      return typeof value === "function"
+        ? (value as (...args: unknown[]) => unknown).bind(target())
+        : value;
+    },
+  });
+}
+
+export const pool = proxyBind(getPool);
+export const db = proxyBind(getDb);

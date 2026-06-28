@@ -4,7 +4,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { MessageSquare, Users } from "lucide-react";
 import titleBg from "@/assets/title-bg.webp";
+import serenityPortrait from "@/assets/serenity-portrait.webp";
 import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
+
+const SERENITY_DEFAULT = {
+  name: "Serenity",
+  tagline: "Keeper of Tranquility",
+  avatar: serenityPortrait,
+};
 
 // 1. "ALIVE" GREETING ENGINE - Cyber-Mythic Phrases
 const GREETINGS = [
@@ -50,11 +57,8 @@ export default function Landing() {
   const animRef = useRef<number | null>(null);
 
   // State
-  const [animaData, setAnimaData] = useState({ 
-    name: "Serenity", 
-    tagline: "Keeper of Tranquility", 
-    avatar: "" 
-  });
+  const [animaData, setAnimaData] = useState(SERENITY_DEFAULT);
+  const [usingCustomAvatar, setUsingCustomAvatar] = useState(false);
   const [userName, setUserName] = useState("Dàvīn");
   const [welcomePhrase, setWelcomePhrase] = useState("");
   const [openSection, setOpenSection] = useState<string | null>(null);
@@ -72,13 +76,15 @@ export default function Landing() {
 
         const animas = await base44.entities.Anima.list("-created_date", 100);
         if (animas && animas.length > 0) {
-          // Find the anima assigned to the current user, or default to the first one
-          let userAnima = animas.find(a => a.assigned_user === me?.email) || animas[0];
+          const userAnima =
+            animas.find((a) => a.assigned_user === me?.email) || animas[0];
+          const customAvatar = userAnima.avatar_url?.trim();
           setAnimaData({
-            name: userAnima.name || "Serenity",
-            tagline: userAnima.tagline || "Neural Health Monitor",
-            avatar: userAnima.avatar_url || ""
+            name: userAnima.name || SERENITY_DEFAULT.name,
+            tagline: userAnima.tagline || SERENITY_DEFAULT.tagline,
+            avatar: customAvatar || SERENITY_DEFAULT.avatar,
           });
+          setUsingCustomAvatar(Boolean(customAvatar));
         }
         // Set a random greeting from the list
         setWelcomePhrase(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
@@ -158,10 +164,14 @@ export default function Landing() {
       >
         {/* Avatar with L-Brackets */}
         <div className="w-24 h-24 mb-6 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)]">
-          <img 
-            src={animaData.avatar || "/api/placeholder/150/150"} 
-            alt="Anima"
-            className="w-full h-full object-cover grayscale brightness-75 hover:grayscale-0 transition-all duration-700"
+          <img
+            src={animaData.avatar}
+            alt={animaData.name}
+            className={`w-full h-full object-cover object-top transition-all duration-700 ${
+              usingCustomAvatar
+                ? "brightness-95"
+                : "grayscale brightness-75 hover:grayscale-0"
+            }`}
           />
           {/* Corner Brackets */}
           <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />

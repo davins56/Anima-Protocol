@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import NewSessionModal from "@/components/chat/NewSessionModal";
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
+import CharacterStoryChooser from "@/components/stories/CharacterStoryChooser";
 import { Plus, ChevronLeft } from "lucide-react";
 
 function timeAgo(dateStr) {
@@ -25,6 +26,7 @@ export default function NewChat() {
   const [creating, setCreating] = useState(false);
   const [showModeSelect, setShowModeSelect] = useState(false);
   const [showStory, setShowStory] = useState(false);
+  const [showCharStory, setShowCharStory] = useState(false);
 
   useEffect(() => {
     base44.entities.ChatSession.list("-updated_date", 50)
@@ -92,6 +94,15 @@ export default function NewChat() {
         <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         <p className="font-mono text-xs text-primary/50 tracking-widest uppercase">Initializing session...</p>
       </div>
+    );
+  }
+
+  if (showCharStory) {
+    return (
+      <CharacterStoryChooser
+        onClose={() => setShowCharStory(false)}
+        onCreateSession={(session) => navigate(`/chat/${session.id}`)}
+      />
     );
   }
 
@@ -165,12 +176,22 @@ export default function NewChat() {
           </button>
           <button
             onClick={() => setShowStory(true)}
-            className="flex items-center gap-5 p-5 bg-[#090912] hover:bg-primary/5 transition-all text-left"
+            className="flex items-center gap-5 p-5 bg-[#090912] hover:bg-primary/5 transition-all text-left border-b border-primary/10"
           >
             <span className="w-10 h-10 flex items-center justify-center border border-primary/20 text-primary/60 font-mono text-lg">✦</span>
             <div>
               <div className="font-mono text-sm tracking-[0.2em] uppercase text-primary">Story</div>
               <div className="text-primary/40 text-[11px] mt-0.5 font-mono">Drop a character into a series scene</div>
+            </div>
+          </button>
+          <button
+            onClick={() => setShowCharStory(true)}
+            className="flex items-center gap-5 p-5 bg-[#090912] hover:bg-primary/5 transition-all text-left"
+          >
+            <span className="w-10 h-10 flex items-center justify-center border border-primary/20 text-primary/60 font-mono text-lg">⎆</span>
+            <div>
+              <div className="font-mono text-sm tracking-[0.2em] uppercase text-primary">Enter Their Story</div>
+              <div className="text-primary/40 text-[11px] mt-0.5 font-mono">Insert yourself into a character's world</div>
             </div>
           </button>
         </div>

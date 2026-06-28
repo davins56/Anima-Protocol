@@ -40,6 +40,17 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
     return colors[emotion] || "text-primary/60";
   };
 
+  const getEmotionPercent = (value) => {
+    if (value == null) return 0;
+    const numeric = Number(value);
+    if (Number.isNaN(numeric)) return 0;
+    return numeric <= 10 ? numeric * 10 : Math.min(100, Math.max(0, numeric));
+  };
+
+  const emotionIntensityPct = getEmotionPercent(primaryEmotion?.intensity);
+  const emotionArousalPct = primaryEmotion?.arousal != null ? getEmotionPercent(primaryEmotion.arousal) : null;
+  const emotionArousalLabel = emotionArousalPct != null ? `${emotionArousalPct}%` : null;
+
   return (
     <div className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-3 bg-transparent">
       <button
@@ -94,15 +105,29 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
             </span>
           </div>
           {!isGroup && primaryEmotion && (
-            <div className="hidden md:flex items-center gap-1 text-[8px] sm:text-[9px] font-mono">
-              <span className="text-primary/50 tracking-widest">Feeling:</span>
-              <span className={`tracking-widest uppercase ${getEmotionColor(primaryEmotion.emotion)}`}>
-                {primaryEmotion.emotion}
-              </span>
-              <div className="w-6 h-0.5 border border-primary/20 bg-primary/10">
-                <div 
+            <div className="hidden md:flex items-center gap-2 text-[8px] sm:text-[9px] font-mono">
+              <div className="flex items-center gap-1">
+                <span className="text-primary/50 tracking-widest">Feeling:</span>
+                <span className={`tracking-widest uppercase ${getEmotionColor(primaryEmotion.emotion)}`}>
+                  {primaryEmotion.emotion}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-primary/50 tracking-widest">Level:</span>
+                <span className="uppercase tracking-widest text-primary/70">
+                  {primaryEmotion.emotion_level || primaryEmotion.level || 'Balanced'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-primary/50 tracking-widest">Arousal:</span>
+                <span className="uppercase tracking-widest text-primary/70">
+                  {emotionArousalLabel || '—'}
+                </span>
+              </div>
+              <div className="w-12 h-0.5 border border-primary/20 bg-primary/10">
+                <div
                   className="h-full bg-primary/60 transition-all"
-                  style={{ width: `${primaryEmotion.intensity}%` }}
+                  style={{ width: `${emotionIntensityPct}%` }}
                 />
               </div>
             </div>
