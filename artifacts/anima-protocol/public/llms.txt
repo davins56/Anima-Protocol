@@ -14,6 +14,7 @@ https://anima-protocol.app
 - Terms of Service: https://anima-protocol.app/terms
 - Privacy Policy: https://anima-protocol.app/privacy-policy
 - Disclaimer: https://anima-protocol.app/disclaimer
+- Community Guidelines: https://anima-protocol.app/community-guidelines.html
 - Sitemap: https://anima-protocol.app/sitemap.xml
 
 ## Site Summary
