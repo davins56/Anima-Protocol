@@ -3,11 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
-<<<<<<< HEAD
 import { VitePWA } from "vite-plugin-pwa";
-=======
 import { config as loadEnv } from "dotenv";
->>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 loadEnv({ path: path.join(repoRoot, ".env") });
@@ -57,8 +54,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
-<<<<<<< HEAD
-    runtimeErrorOverlay(),
+    // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
+    ...(process.env.REPL_ID !== undefined ? [runtimeErrorOverlay()] : []),
     // Auto-updating service worker. Once installed, every new deploy is picked
     // up automatically: the regenerated precache manifest triggers a SW update,
     // which skips waiting, claims open clients, and reloads them onto the fresh
@@ -98,10 +95,6 @@ export default defineConfig({
         skipWaiting: true,
       },
     }),
-=======
-    // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
-    ...(process.env.REPL_ID !== undefined ? [runtimeErrorOverlay()] : []),
->>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
