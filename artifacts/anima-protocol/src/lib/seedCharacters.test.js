@@ -9,12 +9,19 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("@/api/base44Client", () => {
   const store = new Map();
   let updateCalls = 0;
+  // Failure injection: the update() whose 1-based call index === failAtCall
+  // throws before writing, simulating the store dropping out partway through a
+  // seeding pass (so earlier rows in that pass are already written).
+  let failAtCall = -1;
   const Character = {
     async list() {
       return [...store.values()].map((r) => ({ ...r }));
     },
     async update(id, data) {
       updateCalls += 1;
+      if (updateCalls === failAtCall) {
+        throw new Error("store unavailable");
+      }
       const existing = store.get(id) || { id };
       const rec = { ...existing, ...data, id };
       store.set(id, rec);
@@ -25,9 +32,13 @@ vi.mock("@/api/base44Client", () => {
     entities: new Proxy({}, { get: () => Character }),
     __store: store,
     __stats: () => ({ updateCalls }),
+    __failUpdateAt: (n) => {
+      failAtCall = n;
+    },
     __reset: () => {
       store.clear();
       updateCalls = 0;
+      failAtCall = -1;
     },
   };
   return { base44, default: base44 };
@@ -77,6 +88,23 @@ describe("starter roster seeding", () => {
     const rosterSize = chars.length;
     // Exactly one seeding pass ran: one update() per character, not two.
     expect(base44.__stats().updateCalls).toBe(rosterSize);
+  });
+
+  it("recovers a full roster when the first seed pass fails partway", async () => {
+    // First pass writes 3 rows, then the 4th write fails (store drops out
+    // mid-pass). doSeed() retries the whole upsert pass, which re-updates the
+    // first 3 (idempotent) and creates the rest.
+    base44.__failUpdateAt(4);
+
+    await seedCharactersIfNeeded();
+
+    const chars = await base44.entities.Character.list();
+    // Every starter is present despite the mid-pass failure...
+    const seeded = chars.filter((c) => c.id.startsWith("seed_"));
+    expect(seeded.length).toBeGreaterThan(3);
+    // ...and there are no duplicate rows (deterministic seed_ ids converge).
+    const ids = seeded.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("does not seed when the account already has characters", async () => {

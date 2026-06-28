@@ -360,7 +360,28 @@ const GUARDIANS_CHARACTERS = [
 let seedPromise = null;
 
 export function seedCharactersIfNeeded() {
-  if (!seedPromise) seedPromise = doSeed().then(() => backfillCharacterPhotos());
+  if (!seedPromise) {
+    seedPromise = doSeed()
+      .then(async () => {
+        // Photo backfill is purely cosmetic. Never let it block or break the
+        // starter seed (or the page) if the lookup service is unhappy.
+        try {
+          await backfillCharacterPhotos();
+        } catch (err) {
+          console.warn("[Anima] Photo backfill skipped:", err?.message || err);
+        }
+      })
+      .catch((err) => {
+        // Final safety net. This promise is awaited during account bootstrap,
+        // so it must never reject — a failed seed must never white-screen the
+        // app. Clearing the lock lets the next visit try seeding again.
+        console.warn(
+          "[Anima] Background seed failed safely:",
+          err?.message || err,
+        );
+        seedPromise = null;
+      });
+  }
   return seedPromise;
 }
 
@@ -481,25 +502,88 @@ function seedId(char) {
   return `seed_${slug}`;
 }
 
-async function doSeed() {
-  try {
-    const existing = await base44.entities.Character.list("-created_date", 1);
-    if (existing && existing.length > 0) return;
+const SEED_RETRY_DELAY_MS = 1500;
 
-    const allCharacters = [
-      ...KORRA_CHARACTERS,
-      ...MARVEL_CHARACTERS,
-      ...GUARDIANS_CHARACTERS,
-      ...INVINCIBLE_CHARACTERS,
-    ];
-    // Upsert by deterministic id so concurrent seeds converge instead of
-    // duplicating (PUT /:entity/:id is an upsert on the server).
-    for (const char of allCharacters) {
-      const id = seedId(char);
-      await base44.entities.Character.update(id, { ...char, id });
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Is this a brand-new account that should receive the starter roster? Only
+// empty accounts are seeded; accounts with their own/migrated characters are
+// left untouched. THROWS if the roster can't be read (e.g. auth not ready) so
+// the caller can retry rather than wrongly assuming "empty" and double-seeding.
+async function accountIsEmpty() {
+  const existing = await base44.entities.Character.list("-created_date", 1);
+  return !(existing && existing.length > 0);
+}
+
+// Upsert the full starter roster by deterministic seed_ id. Idempotent: safe to
+// re-run after a partial pass — already-created rows are updated in place and
+// missing ones are created, never duplicated. THROWS on a transient failure so
+// doSeed() can retry. (PUT /:entity/:id is an upsert on the server.)
+async function seedRoster(allCharacters) {
+  for (const char of allCharacters) {
+    const id = seedId(char);
+    await base44.entities.Character.update(id, { ...char, id });
+  }
+}
+
+// Seed the starter roster for a brand-new account, retrying once after a short
+// delay if the store is momentarily unavailable (e.g. the auth token isn't
+// ready on first paint). Never throws: the app must load even when the
+// character store is unreachable.
+//
+// The "is this a new account?" gate is evaluated ONCE, before any writes. The
+// upsert pass is then retried independently — re-checking emptiness between
+// retries would let a partial first pass (some rows written, then a failure)
+// look "non-empty" and abandon the rest of the roster.
+async function doSeed() {
+  const allCharacters = [
+    ...KORRA_CHARACTERS,
+    ...MARVEL_CHARACTERS,
+    ...GUARDIANS_CHARACTERS,
+    ...INVINCIBLE_CHARACTERS,
+  ];
+
+  let shouldSeed;
+  try {
+    shouldSeed = await accountIsEmpty();
+  } catch (firstErr) {
+    console.warn(
+      "[Anima] Could not read character roster, retrying once:",
+      firstErr?.message || firstErr,
+    );
+    try {
+      await sleep(SEED_RETRY_DELAY_MS);
+      shouldSeed = await accountIsEmpty();
+    } catch (secondErr) {
+      console.warn(
+        "[Anima] Character store unavailable after retry. App will continue:",
+        secondErr?.message || secondErr,
+      );
+      return;
     }
+  }
+
+  if (!shouldSeed) return;
+
+  try {
+    await seedRoster(allCharacters);
     console.log(`[Anima] Seeded ${allCharacters.length} characters.`);
-  } catch (err) {
-    console.warn("[Anima] Character seed failed:", err.message);
+  } catch (firstErr) {
+    console.warn(
+      "[Anima] Character seed first attempt failed, retrying once:",
+      firstErr?.message || firstErr,
+    );
+    try {
+      await sleep(SEED_RETRY_DELAY_MS);
+      await seedRoster(allCharacters);
+      console.log(`[Anima] Seeded ${allCharacters.length} characters.`);
+    } catch (secondErr) {
+      console.warn(
+        "[Anima] Character seed failed after retry. App will continue:",
+        secondErr?.message || secondErr,
+      );
+    }
   }
 }
