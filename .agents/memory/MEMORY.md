@@ -30,6 +30,7 @@
 - [Anima identity systems](anima-identity-systems.md) — soulprint/resonance/evolution/dream all live on schemaless Anima; resonance accrues client-side in Chat (resonanceRef vs stale closure); useAnimaPresence lockRef stops last_visit write-loop.
 - [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by two flows (check-in page vs in-chat ritual) with divergent fields; filter by the field you need; list() no-limit = full history.
 - [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].
+- [Anima auto-update PWA](anima-pwa-autoupdate.md) — vite-plugin-pwa autoUpdate; precache ONLY hashed assets + navigateFallback:null because prerender rewrites HTML post-build (precaching HTML serves a stale shell).
 - [Anima page scroll contract](anima-page-scroll-contract.md) — page roots must be `flex-1 min-h-0 (+overflow-y-auto)`, NEVER `*-screen`/`*-[100dvh]`; wrapper already pads for the fixed tab bar.
 - [Anima onboarding gate](anima-onboarding-gate.md) — Serenity is the (unseeded) guide not a companion; SignedInHome gates "/" on Anima existence (mount-only → needs onComplete to flip, fails open to home).
 - [Anima auto-gen entity dedupe](anima-autogen-dedupe.md) — client ref + read-then-create dedupe is best-effort only (base44 has no unique constraint); always guard the first-entry case with lastCount>0.
