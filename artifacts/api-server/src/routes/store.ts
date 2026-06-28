@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ClerkExpressRequireAuth } from "@clerk/express";
+import { getAuth } from "@clerk/express";
 
 
 import {
@@ -20,14 +20,15 @@ import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
 
 const router = Router();
 
-// Every store endpoint is per-user: use modern Clerk Express auth.
-// (req.auth is populated by clerkMiddleware() / ClerkExpressRequireAuth())
+// Every store endpoint is per-user: use modern Clerk Express auth. getAuth(req)
+// reads the session populated by the global clerkMiddleware() mounted in app.ts
+// (consistent with the chat/openai/storage routers).
 function requireUser(
-  req: Request & { auth?: { userId?: string | null } },
+  req: Request,
   res: Response,
   next: NextFunction,
 ): void {
-  const userId = req.auth?.userId ?? null;
+  const { userId } = getAuth(req);
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -36,7 +37,6 @@ function requireUser(
   next();
 }
 
-router.use(ClerkExpressRequireAuth());
 router.use(requireUser);
 
 
