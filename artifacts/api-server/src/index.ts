@@ -23,17 +23,15 @@ function requireEnv(name: string): string {
 requireEnv("DATABASE_URL");
 requireEnv("CLERK_SECRET_KEY");
 
-// CLERK_WEBHOOK_SECRET is only consumed by the /api/webhooks/clerk svix
-// verification route, which is exercised in production where Clerk delivers
-// webhooks. It is genuinely required there, but never needed for local
-// development (no webhooks are delivered) — so requiring it at boot would
-// needlessly stop the dev server from serving /api/store. Fail-fast in
-// production; warn-and-continue otherwise.
-if (process.env.NODE_ENV === "production") {
-  requireEnv("CLERK_WEBHOOK_SECRET");
-} else if (!process.env.CLERK_WEBHOOK_SECRET?.trim()) {
+// CLERK_WEBHOOK_SECRET is only consumed by the optional /api/webhooks/clerk svix
+// verification route. It is NOT provisioned in this project's environments
+// (development or production) and the app functions without it, so requiring it
+// at boot would needlessly crash the server — which in production fails the
+// deploy startup probe (/api/healthz) and blocks publishing. Warn if absent; the
+// webhook route degrades gracefully (returns 503) when the secret is missing.
+if (!process.env.CLERK_WEBHOOK_SECRET?.trim()) {
   logger.warn(
-    "CLERK_WEBHOOK_SECRET is not set; the Clerk webhook route will reject requests. This is expected in local development.",
+    "CLERK_WEBHOOK_SECRET is not set; the Clerk webhook route (/api/webhooks/clerk) will return 503. This is expected unless Clerk webhooks have been configured.",
   );
 }
 

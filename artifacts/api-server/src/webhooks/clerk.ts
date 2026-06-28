@@ -5,9 +5,16 @@ import { db } from '../db'
 import { characters } from '../db/schema'
 const router = express.Router()
 
-const CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET!
+const CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
 
 router.post('/clerk', express.raw({ type: 'application/json' }), async (req, res) => {
+  // The webhook secret is optional/unconfigured in this project. Degrade
+  // gracefully instead of constructing a Webhook with an undefined secret (which
+  // would throw and surface as a 500).
+  if (!CLERK_WEBHOOK_SECRET) {
+    return res.status(503).json({ error: 'Webhook not configured' })
+  }
+
   const svixId = req.headers['svix-id'] as string
   const svixTimestamp = req.headers['svix-timestamp'] as string
   const svixSignature = req.headers['svix-signature'] as string
@@ -49,13 +56,13 @@ router.post('/clerk', express.raw({ type: 'application/json' }), async (req, res
         console.log(`✅ Characters seeded for new user: ${userId}`)
       }
 
-      res.status(200).json({ success: true })
+      return res.status(200).json({ success: true })
     } catch (error) {
       console.error('Seeding failed:', error)
-      res.status(500).json({ error: 'Seeding failed' })
+      return res.status(500).json({ error: 'Seeding failed' })
     }
   } else {
-    res.status(200).json({ received: true })
+    return res.status(200).json({ received: true })
   }
 })
 
