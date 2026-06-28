@@ -19,7 +19,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -695,7 +699,7 @@ var require_depd = __commonJS({
   "../../node_modules/.pnpm/depd@2.0.0/node_modules/depd/index.js"(exports, module) {
     var relative = __require("path").relative;
     module.exports = depd;
-    var basePath33 = process.cwd();
+    var basePath36 = process.cwd();
     function containsNamespace(str, namespace) {
       var vals = str.split(/[ ,]+/);
       var ns = String(namespace).toLowerCase();
@@ -885,7 +889,7 @@ var require_depd = __commonJS({
       return formatted;
     }
     function formatLocation(callSite) {
-      return relative(basePath33, callSite[0]) + ":" + callSite[1] + ":" + callSite[2];
+      return relative(basePath36, callSite[0]) + ":" + callSite[1] + ":" + callSite[2];
     }
     function getStack() {
       var limit = Error.stackTraceLimit;
@@ -5639,133 +5643,106 @@ var require_on_finished = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/content-type@2.0.0/node_modules/content-type/dist/index.js
-var require_dist = __commonJS({
-  "../../node_modules/.pnpm/content-type@2.0.0/node_modules/content-type/dist/index.js"(exports) {
+// ../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js
+var require_content_type = __commonJS({
+  "../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js"(exports) {
     "use strict";
-    Object.defineProperty(exports, "__esModule", { value: true });
+    var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
+    var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
+    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
+    var QUOTE_REGEXP = /([\\"])/g;
+    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
     exports.format = format;
     exports.parse = parse2;
-    var TEXT_REGEXP = /^[\u0009\u0020-\u007e\u0080-\u00ff]*$/;
-    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-    var QUOTE_REGEXP = /[\\"]/g;
-    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-    var NullObject = /* @__PURE__ */ (() => {
-      const C = function() {
-      };
-      C.prototype = /* @__PURE__ */ Object.create(null);
-      return C;
-    })();
     function format(obj) {
-      const { type, parameters } = obj;
+      if (!obj || typeof obj !== "object") {
+        throw new TypeError("argument obj is required");
+      }
+      var parameters = obj.parameters;
+      var type = obj.type;
       if (!type || !TYPE_REGEXP.test(type)) {
-        throw new TypeError(`Invalid type: ${type}`);
+        throw new TypeError("invalid type");
       }
-      let result = type;
-      if (parameters) {
-        for (const param of Object.keys(parameters)) {
+      var string = type;
+      if (parameters && typeof parameters === "object") {
+        var param;
+        var params = Object.keys(parameters).sort();
+        for (var i = 0; i < params.length; i++) {
+          param = params[i];
           if (!TOKEN_REGEXP.test(param)) {
-            throw new TypeError(`Invalid parameter name: ${param}`);
+            throw new TypeError("invalid parameter name");
           }
-          result += `; ${param}=${qstring(parameters[param])}`;
+          string += "; " + param + "=" + qstring(parameters[param]);
         }
       }
-      return result;
+      return string;
     }
-    function parse2(header, options) {
-      const len = header.length;
-      let index = skipOWS(header, 0, len);
-      const valueStart = index;
-      index = skipValue(header, index, len);
-      const valueEnd = trailingOWS(header, valueStart, index);
-      const type = header.slice(valueStart, valueEnd).toLowerCase();
-      const parameters = options?.parameters === false ? new NullObject() : parseParameters(header, index, len);
-      return { type, parameters };
-    }
-    var SP = 32;
-    var HTAB = 9;
-    var SEMI = 59;
-    var EQ = 61;
-    var DQUOTE = 34;
-    var BSLASH = 92;
-    function parseParameters(header, index, len) {
-      const parameters = new NullObject();
-      parameter: while (index < len) {
-        index = skipOWS(header, index + 1, len);
-        const keyStart = index;
-        while (index < len) {
-          const code = header.charCodeAt(index);
-          if (code === SEMI)
-            continue parameter;
-          if (code === EQ) {
-            const keyEnd = trailingOWS(header, keyStart, index);
-            const key = header.slice(keyStart, keyEnd).toLowerCase();
-            index = skipOWS(header, index + 1, len);
-            if (index < len && header.charCodeAt(index) === DQUOTE) {
-              index++;
-              let value = "";
-              while (index < len) {
-                const code2 = header.charCodeAt(index++);
-                if (code2 === DQUOTE) {
-                  index = skipValue(header, index, len);
-                  if (parameters[key] === void 0)
-                    parameters[key] = value;
-                  break;
-                }
-                if (code2 === BSLASH && index < len) {
-                  value += header[index++];
-                  continue;
-                }
-                value += String.fromCharCode(code2);
-              }
-              continue parameter;
-            }
-            const valueStart = index;
-            index = skipValue(header, index, len);
-            if (parameters[key] === void 0) {
-              const valueEnd = trailingOWS(header, valueStart, index);
-              parameters[key] = header.slice(valueStart, valueEnd);
-            }
-            continue parameter;
+    function parse2(string) {
+      if (!string) {
+        throw new TypeError("argument string is required");
+      }
+      var header = typeof string === "object" ? getcontenttype(string) : string;
+      if (typeof header !== "string") {
+        throw new TypeError("argument string is required to be a string");
+      }
+      var index = header.indexOf(";");
+      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+      if (!TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid media type");
+      }
+      var obj = new ContentType(type.toLowerCase());
+      if (index !== -1) {
+        var key;
+        var match2;
+        var value;
+        PARAM_REGEXP.lastIndex = index;
+        while (match2 = PARAM_REGEXP.exec(header)) {
+          if (match2.index !== index) {
+            throw new TypeError("invalid parameter format");
           }
-          index++;
+          index += match2[0].length;
+          key = match2[1].toLowerCase();
+          value = match2[2];
+          if (value.charCodeAt(0) === 34) {
+            value = value.slice(1, -1);
+            if (value.indexOf("\\") !== -1) {
+              value = value.replace(QESC_REGEXP, "$1");
+            }
+          }
+          obj.parameters[key] = value;
+        }
+        if (index !== header.length) {
+          throw new TypeError("invalid parameter format");
         }
       }
-      return parameters;
+      return obj;
     }
-    function skipValue(str, index, len) {
-      while (index < len) {
-        const char2 = str.charCodeAt(index);
-        if (char2 === SEMI)
-          break;
-        index++;
+    function getcontenttype(obj) {
+      var header;
+      if (typeof obj.getHeader === "function") {
+        header = obj.getHeader("content-type");
+      } else if (typeof obj.headers === "object") {
+        header = obj.headers && obj.headers["content-type"];
       }
-      return index;
-    }
-    function skipOWS(header, index, len) {
-      while (index < len) {
-        const char2 = header.charCodeAt(index);
-        if (char2 !== SP && char2 !== HTAB)
-          break;
-        index++;
+      if (typeof header !== "string") {
+        throw new TypeError("content-type header is missing from object");
       }
-      return index;
+      return header;
     }
-    function trailingOWS(header, start, end) {
-      while (end > start) {
-        const char2 = header.charCodeAt(end - 1);
-        if (char2 !== SP && char2 !== HTAB)
-          break;
-        end--;
-      }
-      return end;
-    }
-    function qstring(str) {
-      if (TOKEN_REGEXP.test(str))
+    function qstring(val) {
+      var str = String(val);
+      if (TOKEN_REGEXP.test(str)) {
         return str;
-      if (TEXT_REGEXP.test(str))
-        return `"${str.replace(QUOTE_REGEXP, "\\$&")}"`;
-      throw new TypeError(`Invalid parameter value: ${str}`);
+      }
+      if (str.length > 0 && !TEXT_REGEXP.test(str)) {
+        throw new TypeError("invalid parameter value");
+      }
+      return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
+    }
+    function ContentType(type) {
+      this.parameters = /* @__PURE__ */ Object.create(null);
+      this.type = type;
     }
   }
 });
@@ -15345,11 +15322,11 @@ var require_media_typer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/type-is@2.1.0/node_modules/type-is/index.js
+// ../../node_modules/.pnpm/type-is@2.0.1/node_modules/type-is/index.js
 var require_type_is = __commonJS({
-  "../../node_modules/.pnpm/type-is@2.1.0/node_modules/type-is/index.js"(exports, module) {
+  "../../node_modules/.pnpm/type-is@2.0.1/node_modules/type-is/index.js"(exports, module) {
     "use strict";
-    var contentType = require_dist();
+    var contentType = require_content_type();
     var mime = require_mime_types();
     var typer = require_media_typer();
     module.exports = typeofrequest;
@@ -15358,12 +15335,9 @@ var require_type_is = __commonJS({
     module.exports.normalize = normalize;
     module.exports.match = mimeMatch;
     function typeis(value, types_) {
-      if (value && typeof value === "object") {
-        value = value.headers["content-type"];
-      }
       var i;
       var types3 = types_;
-      var val = normalizeType(value);
+      var val = tryNormalizeType(value);
       if (!val) {
         return false;
       }
@@ -15429,113 +15403,15 @@ var require_type_is = __commonJS({
       return true;
     }
     function normalizeType(value) {
-      if (!value) return null;
-      var type = contentType.parse(value, { parameters: false }).type;
+      var type = contentType.parse(value).type;
       return typer.test(type) ? type : null;
     }
-  }
-});
-
-// ../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js
-var require_content_type = __commonJS({
-  "../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js"(exports) {
-    "use strict";
-    var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
-    var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
-    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-    var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
-    var QUOTE_REGEXP = /([\\"])/g;
-    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-    exports.format = format;
-    exports.parse = parse2;
-    function format(obj) {
-      if (!obj || typeof obj !== "object") {
-        throw new TypeError("argument obj is required");
+    function tryNormalizeType(value) {
+      try {
+        return value ? normalizeType(value) : null;
+      } catch (err) {
+        return null;
       }
-      var parameters = obj.parameters;
-      var type = obj.type;
-      if (!type || !TYPE_REGEXP.test(type)) {
-        throw new TypeError("invalid type");
-      }
-      var string = type;
-      if (parameters && typeof parameters === "object") {
-        var param;
-        var params = Object.keys(parameters).sort();
-        for (var i = 0; i < params.length; i++) {
-          param = params[i];
-          if (!TOKEN_REGEXP.test(param)) {
-            throw new TypeError("invalid parameter name");
-          }
-          string += "; " + param + "=" + qstring(parameters[param]);
-        }
-      }
-      return string;
-    }
-    function parse2(string) {
-      if (!string) {
-        throw new TypeError("argument string is required");
-      }
-      var header = typeof string === "object" ? getcontenttype(string) : string;
-      if (typeof header !== "string") {
-        throw new TypeError("argument string is required to be a string");
-      }
-      var index = header.indexOf(";");
-      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
-      if (!TYPE_REGEXP.test(type)) {
-        throw new TypeError("invalid media type");
-      }
-      var obj = new ContentType(type.toLowerCase());
-      if (index !== -1) {
-        var key;
-        var match2;
-        var value;
-        PARAM_REGEXP.lastIndex = index;
-        while (match2 = PARAM_REGEXP.exec(header)) {
-          if (match2.index !== index) {
-            throw new TypeError("invalid parameter format");
-          }
-          index += match2[0].length;
-          key = match2[1].toLowerCase();
-          value = match2[2];
-          if (value.charCodeAt(0) === 34) {
-            value = value.slice(1, -1);
-            if (value.indexOf("\\") !== -1) {
-              value = value.replace(QESC_REGEXP, "$1");
-            }
-          }
-          obj.parameters[key] = value;
-        }
-        if (index !== header.length) {
-          throw new TypeError("invalid parameter format");
-        }
-      }
-      return obj;
-    }
-    function getcontenttype(obj) {
-      var header;
-      if (typeof obj.getHeader === "function") {
-        header = obj.getHeader("content-type");
-      } else if (typeof obj.headers === "object") {
-        header = obj.headers && obj.headers["content-type"];
-      }
-      if (typeof header !== "string") {
-        throw new TypeError("content-type header is missing from object");
-      }
-      return header;
-    }
-    function qstring(val) {
-      var str = String(val);
-      if (TOKEN_REGEXP.test(str)) {
-        return str;
-      }
-      if (str.length > 0 && !TEXT_REGEXP.test(str)) {
-        throw new TypeError("invalid parameter value");
-      }
-      return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
-    }
-    function ContentType(type) {
-      this.parameters = /* @__PURE__ */ Object.create(null);
-      this.type = type;
     }
   }
 });
@@ -16509,9 +16385,9 @@ var require_side_channel_list = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/es-object-atoms@1.1.2/node_modules/es-object-atoms/index.js
+// ../../node_modules/.pnpm/es-object-atoms@1.1.1/node_modules/es-object-atoms/index.js
 var require_es_object_atoms = __commonJS({
-  "../../node_modules/.pnpm/es-object-atoms@1.1.2/node_modules/es-object-atoms/index.js"(exports, module) {
+  "../../node_modules/.pnpm/es-object-atoms@1.1.1/node_modules/es-object-atoms/index.js"(exports, module) {
     "use strict";
     module.exports = Object;
   }
@@ -16962,9 +16838,9 @@ var require_get_proto = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/hasown@2.0.4/node_modules/hasown/index.js
+// ../../node_modules/.pnpm/hasown@2.0.3/node_modules/hasown/index.js
 var require_hasown = __commonJS({
-  "../../node_modules/.pnpm/hasown@2.0.4/node_modules/hasown/index.js"(exports, module) {
+  "../../node_modules/.pnpm/hasown@2.0.3/node_modules/hasown/index.js"(exports, module) {
     "use strict";
     var call = Function.prototype.call;
     var $hasOwn = Object.prototype.hasOwnProperty;
@@ -19998,7 +19874,7 @@ var require_is_promise = __commonJS({
 });
 
 // ../../node_modules/.pnpm/path-to-regexp@8.4.2/node_modules/path-to-regexp/dist/index.js
-var require_dist2 = __commonJS({
+var require_dist = __commonJS({
   "../../node_modules/.pnpm/path-to-regexp@8.4.2/node_modules/path-to-regexp/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -20371,7 +20247,7 @@ var require_layer = __commonJS({
   "../../node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js"(exports, module) {
     "use strict";
     var isPromise = require_is_promise();
-    var pathRegexp = require_dist2();
+    var pathRegexp = require_dist();
     var debug = require_src()("router:layer");
     var deprecate = require_depd()("router");
     var TRAILING_SLASH_REGEXP = /\/+$/;
@@ -22655,7 +22531,7 @@ var require_send = __commonJS({
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.end(doc);
     };
-    SendStream.prototype.hasTrailingSlash = function hasTrailingSlash2() {
+    SendStream.prototype.hasTrailingSlash = function hasTrailingSlash() {
       return this.path[this.path.length - 1] === "/";
     };
     SendStream.prototype.isConditionalGET = function isConditionalGET() {
@@ -23761,9 +23637,9 @@ var require_express2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationIn.js
 var require_applicationIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationInSerializer = void 0;
@@ -23790,9 +23666,9 @@ var require_applicationIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationOut.js
 var require_applicationOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationOutSerializer = void 0;
@@ -23825,9 +23701,9 @@ var require_applicationOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationPatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationPatch.js
 var require_applicationPatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationPatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationPatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationPatchSerializer = void 0;
@@ -23854,9 +23730,9 @@ var require_applicationPatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseApplicationOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseApplicationOut.js
 var require_listResponseApplicationOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseApplicationOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseApplicationOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseApplicationOutSerializer = void 0;
@@ -23882,9 +23758,9 @@ var require_listResponseApplicationOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/util.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/util.js
 var require_util = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/util.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/util.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApiException = void 0;
@@ -23904,9 +23780,9 @@ Headers: ${JSON.stringify(headers)}`);
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/request.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/request.js
 var require_request2 = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/request.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/request.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -23938,7 +23814,7 @@ var require_request2 = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixRequest = exports.HttpMethod = exports.LIB_VERSION = void 0;
     var util_1 = require_util();
-    exports.LIB_VERSION = "1.95.2";
+    exports.LIB_VERSION = "1.96.1";
     function getUserAgent() {
       var fields = [`svix-libs/${exports.LIB_VERSION}/javascript`];
       if (process !== void 0) {
@@ -24091,9 +23967,9 @@ var require_request2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/application.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/application.js
 var require_application2 = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/application.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/application.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -24197,9 +24073,9 @@ var require_application2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/apiTokenOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/apiTokenOut.js
 var require_apiTokenOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/apiTokenOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/apiTokenOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApiTokenOutSerializer = void 0;
@@ -24228,9 +24104,9 @@ var require_apiTokenOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appPortalCapability.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalCapability.js
 var require_appPortalCapability = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appPortalCapability.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalCapability.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppPortalCapabilitySerializer = exports.AppPortalCapability = void 0;
@@ -24254,9 +24130,9 @@ var require_appPortalCapability = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appPortalAccessIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessIn.js
 var require_appPortalAccessIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appPortalAccessIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppPortalAccessInSerializer = void 0;
@@ -24289,9 +24165,9 @@ var require_appPortalAccessIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appPortalAccessOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessOut.js
 var require_appPortalAccessOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appPortalAccessOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppPortalAccessOutSerializer = void 0;
@@ -24312,9 +24188,9 @@ var require_appPortalAccessOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationTokenExpireIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationTokenExpireIn.js
 var require_applicationTokenExpireIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/applicationTokenExpireIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationTokenExpireIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationTokenExpireInSerializer = void 0;
@@ -24335,9 +24211,9 @@ var require_applicationTokenExpireIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rotatePollerTokenIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotatePollerTokenIn.js
 var require_rotatePollerTokenIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rotatePollerTokenIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotatePollerTokenIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RotatePollerTokenInSerializer = void 0;
@@ -24358,9 +24234,9 @@ var require_rotatePollerTokenIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamPortalAccessIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPortalAccessIn.js
 var require_streamPortalAccessIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamPortalAccessIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPortalAccessIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamPortalAccessInSerializer = void 0;
@@ -24383,9 +24259,9 @@ var require_streamPortalAccessIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamTokenExpireIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamTokenExpireIn.js
 var require_streamTokenExpireIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamTokenExpireIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamTokenExpireIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamTokenExpireInSerializer = void 0;
@@ -24406,9 +24282,9 @@ var require_streamTokenExpireIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/dashboardAccessOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/dashboardAccessOut.js
 var require_dashboardAccessOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/dashboardAccessOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/dashboardAccessOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DashboardAccessOutSerializer = void 0;
@@ -24429,9 +24305,9 @@ var require_dashboardAccessOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/authentication.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/authentication.js
 var require_authentication = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/authentication.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/authentication.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -24554,9 +24430,9 @@ var require_authentication = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/backgroundTaskStatus.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskStatus.js
 var require_backgroundTaskStatus = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/backgroundTaskStatus.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskStatus.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BackgroundTaskStatusSerializer = exports.BackgroundTaskStatus = void 0;
@@ -24577,9 +24453,9 @@ var require_backgroundTaskStatus = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/backgroundTaskType.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskType.js
 var require_backgroundTaskType = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/backgroundTaskType.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskType.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BackgroundTaskTypeSerializer = exports.BackgroundTaskType = void 0;
@@ -24605,9 +24481,9 @@ var require_backgroundTaskType = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/backgroundTaskOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskOut.js
 var require_backgroundTaskOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/backgroundTaskOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BackgroundTaskOutSerializer = void 0;
@@ -24636,9 +24512,9 @@ var require_backgroundTaskOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js
 var require_listResponseBackgroundTaskOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseBackgroundTaskOutSerializer = void 0;
@@ -24664,9 +24540,9 @@ var require_listResponseBackgroundTaskOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/backgroundTask.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/backgroundTask.js
 var require_backgroundTask = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/backgroundTask.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/backgroundTask.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -24732,9 +24608,9 @@ var require_backgroundTask = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorKind.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorKind.js
 var require_connectorKind = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorKind.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorKind.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorKindSerializer = exports.ConnectorKind = void 0;
@@ -24770,9 +24646,9 @@ var require_connectorKind = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorProduct.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorProduct.js
 var require_connectorProduct = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorProduct.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorProduct.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorProductSerializer = exports.ConnectorProduct = void 0;
@@ -24792,9 +24668,9 @@ var require_connectorProduct = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorIn.js
 var require_connectorIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorInSerializer = void 0;
@@ -24833,9 +24709,9 @@ var require_connectorIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorOut.js
 var require_connectorOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorOutSerializer = void 0;
@@ -24884,9 +24760,9 @@ var require_connectorOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorPatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorPatch.js
 var require_connectorPatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorPatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorPatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorPatchSerializer = void 0;
@@ -24920,9 +24796,9 @@ var require_connectorPatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorUpdate.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorUpdate.js
 var require_connectorUpdate = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/connectorUpdate.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorUpdate.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorUpdateSerializer = void 0;
@@ -24956,9 +24832,9 @@ var require_connectorUpdate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseConnectorOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseConnectorOut.js
 var require_listResponseConnectorOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseConnectorOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseConnectorOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseConnectorOutSerializer = void 0;
@@ -24984,9 +24860,9 @@ var require_listResponseConnectorOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/connector.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/connector.js
 var require_connector = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/connector.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/connector.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -25082,9 +24958,9 @@ var require_connector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageStatus.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatus.js
 var require_messageStatus = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageStatus.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatus.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageStatusSerializer = exports.MessageStatus = void 0;
@@ -25107,9 +24983,9 @@ var require_messageStatus = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/statusCodeClass.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/statusCodeClass.js
 var require_statusCodeClass = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/statusCodeClass.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/statusCodeClass.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StatusCodeClassSerializer = exports.StatusCodeClass = void 0;
@@ -25133,9 +25009,9 @@ var require_statusCodeClass = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/bulkReplayIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bulkReplayIn.js
 var require_bulkReplayIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/bulkReplayIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bulkReplayIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BulkReplayInSerializer = void 0;
@@ -25168,9 +25044,9 @@ var require_bulkReplayIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointHeadersIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersIn.js
 var require_endpointHeadersIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointHeadersIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointHeadersInSerializer = void 0;
@@ -25189,9 +25065,9 @@ var require_endpointHeadersIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointHeadersOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersOut.js
 var require_endpointHeadersOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointHeadersOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointHeadersOutSerializer = void 0;
@@ -25212,9 +25088,9 @@ var require_endpointHeadersOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointHeadersPatchIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersPatchIn.js
 var require_endpointHeadersPatchIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointHeadersPatchIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersPatchIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointHeadersPatchInSerializer = void 0;
@@ -25235,9 +25111,9 @@ var require_endpointHeadersPatchIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointIn.js
 var require_endpointIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointInSerializer = void 0;
@@ -25278,9 +25154,9 @@ var require_endpointIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointOut.js
 var require_endpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointOutSerializer = void 0;
@@ -25323,9 +25199,9 @@ var require_endpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointPatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointPatch.js
 var require_endpointPatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointPatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointPatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointPatchSerializer = void 0;
@@ -25364,9 +25240,9 @@ var require_endpointPatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointSecretOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretOut.js
 var require_endpointSecretOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointSecretOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointSecretOutSerializer = void 0;
@@ -25385,9 +25261,9 @@ var require_endpointSecretOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointSecretRotateIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretRotateIn.js
 var require_endpointSecretRotateIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointSecretRotateIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretRotateIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointSecretRotateInSerializer = void 0;
@@ -25406,9 +25282,9 @@ var require_endpointSecretRotateIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointStats.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointStats.js
 var require_endpointStats = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointStats.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointStats.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointStatsSerializer = void 0;
@@ -25435,9 +25311,9 @@ var require_endpointStats = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointTransformationIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationIn.js
 var require_endpointTransformationIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointTransformationIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointTransformationInSerializer = void 0;
@@ -25458,9 +25334,9 @@ var require_endpointTransformationIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointTransformationOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationOut.js
 var require_endpointTransformationOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointTransformationOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointTransformationOutSerializer = void 0;
@@ -25485,9 +25361,9 @@ var require_endpointTransformationOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointTransformationPatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationPatch.js
 var require_endpointTransformationPatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointTransformationPatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationPatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointTransformationPatchSerializer = void 0;
@@ -25510,9 +25386,9 @@ var require_endpointTransformationPatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointUpdate.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointUpdate.js
 var require_endpointUpdate = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointUpdate.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointUpdate.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointUpdateSerializer = void 0;
@@ -25549,9 +25425,9 @@ var require_endpointUpdate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventExampleIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventExampleIn.js
 var require_eventExampleIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventExampleIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventExampleIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventExampleInSerializer = void 0;
@@ -25572,9 +25448,9 @@ var require_eventExampleIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointOut.js
 var require_listResponseEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseEndpointOutSerializer = void 0;
@@ -25600,9 +25476,9 @@ var require_listResponseEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageOut.js
 var require_messageOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageOutSerializer = void 0;
@@ -25635,9 +25511,9 @@ var require_messageOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/recoverIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverIn.js
 var require_recoverIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/recoverIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RecoverInSerializer = void 0;
@@ -25658,9 +25534,9 @@ var require_recoverIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/recoverOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverOut.js
 var require_recoverOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/recoverOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RecoverOutSerializer = void 0;
@@ -25687,9 +25563,9 @@ var require_recoverOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/replayIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayIn.js
 var require_replayIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/replayIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ReplayInSerializer = void 0;
@@ -25710,9 +25586,9 @@ var require_replayIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/replayOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayOut.js
 var require_replayOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/replayOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ReplayOutSerializer = void 0;
@@ -25739,9 +25615,9 @@ var require_replayOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/endpoint.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/endpoint.js
 var require_endpoint = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/endpoint.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/endpoint.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -25986,9 +25862,9 @@ var require_endpoint = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeIn.js
 var require_eventTypeIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeInSerializer = void 0;
@@ -26021,9 +25897,9 @@ var require_eventTypeIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/environmentIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentIn.js
 var require_environmentIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/environmentIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EnvironmentInSerializer = void 0;
@@ -26050,9 +25926,9 @@ var require_environmentIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeOut.js
 var require_eventTypeOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeOutSerializer = void 0;
@@ -26089,9 +25965,9 @@ var require_eventTypeOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/environmentOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentOut.js
 var require_environmentOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/environmentOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EnvironmentOutSerializer = void 0;
@@ -26120,9 +25996,9 @@ var require_environmentOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/environment.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/environment.js
 var require_environment = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/environment.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/environment.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -26180,9 +26056,9 @@ var require_environment = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js
 var require_eventTypeImportOpenApiIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeImportOpenApiInSerializer = void 0;
@@ -26207,9 +26083,9 @@ var require_eventTypeImportOpenApiIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeFromOpenApi.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeFromOpenApi.js
 var require_eventTypeFromOpenApi = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeFromOpenApi.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeFromOpenApi.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeFromOpenApiSerializer = void 0;
@@ -26240,9 +26116,9 @@ var require_eventTypeFromOpenApi = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js
 var require_eventTypeImportOpenApiOutData = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeImportOpenApiOutDataSerializer = void 0;
@@ -26266,9 +26142,9 @@ var require_eventTypeImportOpenApiOutData = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js
 var require_eventTypeImportOpenApiOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeImportOpenApiOutSerializer = void 0;
@@ -26288,9 +26164,9 @@ var require_eventTypeImportOpenApiOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypePatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypePatch.js
 var require_eventTypePatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypePatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypePatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypePatchSerializer = void 0;
@@ -26321,9 +26197,9 @@ var require_eventTypePatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeUpdate.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeUpdate.js
 var require_eventTypeUpdate = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventTypeUpdate.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeUpdate.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeUpdateSerializer = void 0;
@@ -26354,9 +26230,9 @@ var require_eventTypeUpdate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseEventTypeOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEventTypeOut.js
 var require_listResponseEventTypeOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseEventTypeOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEventTypeOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseEventTypeOutSerializer = void 0;
@@ -26382,9 +26258,9 @@ var require_listResponseEventTypeOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/eventType.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/eventType.js
 var require_eventType = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/eventType.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/eventType.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -26494,9 +26370,9 @@ var require_eventType = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/health.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/health.js
 var require_health = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/health.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/health.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -26543,9 +26419,9 @@ var require_health = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js
 var require_ingestSourceConsumerPortalAccessIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestSourceConsumerPortalAccessInSerializer = void 0;
@@ -26566,9 +26442,9 @@ var require_ingestSourceConsumerPortalAccessIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointHeadersIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersIn.js
 var require_ingestEndpointHeadersIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointHeadersIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointHeadersInSerializer = void 0;
@@ -26587,9 +26463,9 @@ var require_ingestEndpointHeadersIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointHeadersOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersOut.js
 var require_ingestEndpointHeadersOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointHeadersOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointHeadersOutSerializer = void 0;
@@ -26610,9 +26486,9 @@ var require_ingestEndpointHeadersOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointIn.js
 var require_ingestEndpointIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointInSerializer = void 0;
@@ -26643,9 +26519,9 @@ var require_ingestEndpointIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointOut.js
 var require_ingestEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointOutSerializer = void 0;
@@ -26680,9 +26556,9 @@ var require_ingestEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointSecretIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretIn.js
 var require_ingestEndpointSecretIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointSecretIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointSecretInSerializer = void 0;
@@ -26701,9 +26577,9 @@ var require_ingestEndpointSecretIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointSecretOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretOut.js
 var require_ingestEndpointSecretOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointSecretOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointSecretOutSerializer = void 0;
@@ -26722,9 +26598,9 @@ var require_ingestEndpointSecretOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointTransformationOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationOut.js
 var require_ingestEndpointTransformationOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointTransformationOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointTransformationOutSerializer = void 0;
@@ -26745,9 +26621,9 @@ var require_ingestEndpointTransformationOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js
 var require_ingestEndpointTransformationPatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointTransformationPatchSerializer = void 0;
@@ -26768,9 +26644,9 @@ var require_ingestEndpointTransformationPatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointUpdate.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointUpdate.js
 var require_ingestEndpointUpdate = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestEndpointUpdate.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointUpdate.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointUpdateSerializer = void 0;
@@ -26799,9 +26675,9 @@ var require_ingestEndpointUpdate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseIngestEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestEndpointOut.js
 var require_listResponseIngestEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseIngestEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseIngestEndpointOutSerializer = void 0;
@@ -26827,9 +26703,9 @@ var require_listResponseIngestEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/ingestEndpoint.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestEndpoint.js
 var require_ingestEndpoint = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/ingestEndpoint.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestEndpoint.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -26978,9 +26854,9 @@ var require_ingestEndpoint = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/adobeSignConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfig.js
 var require_adobeSignConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/adobeSignConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AdobeSignConfigSerializer = void 0;
@@ -26999,9 +26875,9 @@ var require_adobeSignConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/airwallexConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfig.js
 var require_airwallexConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/airwallexConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AirwallexConfigSerializer = void 0;
@@ -27020,9 +26896,9 @@ var require_airwallexConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/checkbookConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfig.js
 var require_checkbookConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/checkbookConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CheckbookConfigSerializer = void 0;
@@ -27041,9 +26917,9 @@ var require_checkbookConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/cronConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/cronConfig.js
 var require_cronConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/cronConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/cronConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CronConfigSerializer = void 0;
@@ -27066,9 +26942,9 @@ var require_cronConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/docusignConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfig.js
 var require_docusignConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/docusignConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DocusignConfigSerializer = void 0;
@@ -27087,9 +26963,9 @@ var require_docusignConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/easypostConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfig.js
 var require_easypostConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/easypostConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EasypostConfigSerializer = void 0;
@@ -27108,9 +26984,9 @@ var require_easypostConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/githubConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfig.js
 var require_githubConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/githubConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GithubConfigSerializer = void 0;
@@ -27129,9 +27005,9 @@ var require_githubConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/hubspotConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfig.js
 var require_hubspotConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/hubspotConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HubspotConfigSerializer = void 0;
@@ -27150,9 +27026,9 @@ var require_hubspotConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/metaConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfig.js
 var require_metaConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/metaConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MetaConfigSerializer = void 0;
@@ -27173,9 +27049,9 @@ var require_metaConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/orumIoConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfig.js
 var require_orumIoConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/orumIoConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OrumIoConfigSerializer = void 0;
@@ -27194,9 +27070,9 @@ var require_orumIoConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pandaDocConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfig.js
 var require_pandaDocConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pandaDocConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PandaDocConfigSerializer = void 0;
@@ -27215,9 +27091,9 @@ var require_pandaDocConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/portIoConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfig.js
 var require_portIoConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/portIoConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PortIoConfigSerializer = void 0;
@@ -27236,9 +27112,9 @@ var require_portIoConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rutterConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfig.js
 var require_rutterConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rutterConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RutterConfigSerializer = void 0;
@@ -27257,9 +27133,9 @@ var require_rutterConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/segmentConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfig.js
 var require_segmentConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/segmentConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SegmentConfigSerializer = void 0;
@@ -27278,9 +27154,9 @@ var require_segmentConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/shopifyConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfig.js
 var require_shopifyConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/shopifyConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ShopifyConfigSerializer = void 0;
@@ -27299,9 +27175,9 @@ var require_shopifyConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/slackConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfig.js
 var require_slackConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/slackConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SlackConfigSerializer = void 0;
@@ -27320,9 +27196,9 @@ var require_slackConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/stripeConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfig.js
 var require_stripeConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/stripeConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StripeConfigSerializer = void 0;
@@ -27341,9 +27217,9 @@ var require_stripeConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/svixConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfig.js
 var require_svixConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/svixConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixConfigSerializer = void 0;
@@ -27362,9 +27238,9 @@ var require_svixConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/tailscaleConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfig.js
 var require_tailscaleConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/tailscaleConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TailscaleConfigSerializer = void 0;
@@ -27385,9 +27261,9 @@ var require_tailscaleConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/telnyxConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfig.js
 var require_telnyxConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/telnyxConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TelnyxConfigSerializer = void 0;
@@ -27406,9 +27282,9 @@ var require_telnyxConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vapiConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfig.js
 var require_vapiConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vapiConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VapiConfigSerializer = void 0;
@@ -27427,9 +27303,9 @@ var require_vapiConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/veriffConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfig.js
 var require_veriffConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/veriffConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VeriffConfigSerializer = void 0;
@@ -27448,9 +27324,9 @@ var require_veriffConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vgsConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfig.js
 var require_vgsConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vgsConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VgsConfigSerializer = void 0;
@@ -27469,9 +27345,9 @@ var require_vgsConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/zoomConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfig.js
 var require_zoomConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/zoomConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ZoomConfigSerializer = void 0;
@@ -27490,9 +27366,9 @@ var require_zoomConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestSourceIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceIn.js
 var require_ingestSourceIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestSourceIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestSourceInSerializer = void 0;
@@ -27758,9 +27634,9 @@ var require_ingestSourceIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/adobeSignConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfigOut.js
 var require_adobeSignConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/adobeSignConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AdobeSignConfigOutSerializer = void 0;
@@ -27775,9 +27651,9 @@ var require_adobeSignConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/airwallexConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfigOut.js
 var require_airwallexConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/airwallexConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AirwallexConfigOutSerializer = void 0;
@@ -27792,9 +27668,9 @@ var require_airwallexConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/checkbookConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfigOut.js
 var require_checkbookConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/checkbookConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CheckbookConfigOutSerializer = void 0;
@@ -27809,9 +27685,9 @@ var require_checkbookConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/docusignConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfigOut.js
 var require_docusignConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/docusignConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DocusignConfigOutSerializer = void 0;
@@ -27826,9 +27702,9 @@ var require_docusignConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/easypostConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfigOut.js
 var require_easypostConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/easypostConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EasypostConfigOutSerializer = void 0;
@@ -27843,9 +27719,9 @@ var require_easypostConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/githubConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfigOut.js
 var require_githubConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/githubConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GithubConfigOutSerializer = void 0;
@@ -27860,9 +27736,9 @@ var require_githubConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/hubspotConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfigOut.js
 var require_hubspotConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/hubspotConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HubspotConfigOutSerializer = void 0;
@@ -27877,9 +27753,9 @@ var require_hubspotConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/metaConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfigOut.js
 var require_metaConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/metaConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MetaConfigOutSerializer = void 0;
@@ -27894,9 +27770,9 @@ var require_metaConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/orumIoConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfigOut.js
 var require_orumIoConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/orumIoConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OrumIoConfigOutSerializer = void 0;
@@ -27915,9 +27791,9 @@ var require_orumIoConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pandaDocConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfigOut.js
 var require_pandaDocConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pandaDocConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PandaDocConfigOutSerializer = void 0;
@@ -27932,9 +27808,9 @@ var require_pandaDocConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/portIoConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfigOut.js
 var require_portIoConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/portIoConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PortIoConfigOutSerializer = void 0;
@@ -27949,9 +27825,9 @@ var require_portIoConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rutterConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfigOut.js
 var require_rutterConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rutterConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RutterConfigOutSerializer = void 0;
@@ -27966,9 +27842,9 @@ var require_rutterConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/segmentConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfigOut.js
 var require_segmentConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/segmentConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SegmentConfigOutSerializer = void 0;
@@ -27983,9 +27859,9 @@ var require_segmentConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/shopifyConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfigOut.js
 var require_shopifyConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/shopifyConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ShopifyConfigOutSerializer = void 0;
@@ -28000,9 +27876,9 @@ var require_shopifyConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/slackConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfigOut.js
 var require_slackConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/slackConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SlackConfigOutSerializer = void 0;
@@ -28017,9 +27893,9 @@ var require_slackConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/stripeConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfigOut.js
 var require_stripeConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/stripeConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StripeConfigOutSerializer = void 0;
@@ -28034,9 +27910,9 @@ var require_stripeConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/svixConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfigOut.js
 var require_svixConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/svixConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixConfigOutSerializer = void 0;
@@ -28051,9 +27927,9 @@ var require_svixConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/tailscaleConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfigOut.js
 var require_tailscaleConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/tailscaleConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TailscaleConfigOutSerializer = void 0;
@@ -28068,9 +27944,9 @@ var require_tailscaleConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/telnyxConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfigOut.js
 var require_telnyxConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/telnyxConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TelnyxConfigOutSerializer = void 0;
@@ -28089,9 +27965,9 @@ var require_telnyxConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vapiConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfigOut.js
 var require_vapiConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vapiConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VapiConfigOutSerializer = void 0;
@@ -28106,9 +27982,9 @@ var require_vapiConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/veriffConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfigOut.js
 var require_veriffConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/veriffConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VeriffConfigOutSerializer = void 0;
@@ -28123,9 +27999,9 @@ var require_veriffConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vgsConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfigOut.js
 var require_vgsConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/vgsConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VgsConfigOutSerializer = void 0;
@@ -28140,9 +28016,9 @@ var require_vgsConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/zoomConfigOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfigOut.js
 var require_zoomConfigOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/zoomConfigOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfigOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ZoomConfigOutSerializer = void 0;
@@ -28157,9 +28033,9 @@ var require_zoomConfigOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestSourceOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceOut.js
 var require_ingestSourceOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ingestSourceOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestSourceOutSerializer = void 0;
@@ -28433,9 +28309,9 @@ var require_ingestSourceOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseIngestSourceOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestSourceOut.js
 var require_listResponseIngestSourceOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseIngestSourceOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestSourceOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseIngestSourceOutSerializer = void 0;
@@ -28461,9 +28337,9 @@ var require_listResponseIngestSourceOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rotateTokenOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotateTokenOut.js
 var require_rotateTokenOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rotateTokenOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotateTokenOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RotateTokenOutSerializer = void 0;
@@ -28482,9 +28358,9 @@ var require_rotateTokenOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/ingestSource.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestSource.js
 var require_ingestSource = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/ingestSource.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestSource.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -28578,9 +28454,9 @@ var require_ingestSource = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/ingest.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingest.js
 var require_ingest = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/ingest.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingest.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -28640,9 +28516,9 @@ var require_ingest = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationIn.js
 var require_integrationIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationInSerializer = void 0;
@@ -28663,9 +28539,9 @@ var require_integrationIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationKeyOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationKeyOut.js
 var require_integrationKeyOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationKeyOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationKeyOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationKeyOutSerializer = void 0;
@@ -28684,9 +28560,9 @@ var require_integrationKeyOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationOut.js
 var require_integrationOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationOutSerializer = void 0;
@@ -28713,9 +28589,9 @@ var require_integrationOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationUpdate.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationUpdate.js
 var require_integrationUpdate = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/integrationUpdate.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationUpdate.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationUpdateSerializer = void 0;
@@ -28736,9 +28612,9 @@ var require_integrationUpdate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseIntegrationOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIntegrationOut.js
 var require_listResponseIntegrationOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseIntegrationOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIntegrationOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseIntegrationOutSerializer = void 0;
@@ -28764,9 +28640,9 @@ var require_listResponseIntegrationOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/integration.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/integration.js
 var require_integration = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/integration.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/integration.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -28875,9 +28751,9 @@ var require_integration = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/expungeAllContentsOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/expungeAllContentsOut.js
 var require_expungeAllContentsOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/expungeAllContentsOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/expungeAllContentsOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ExpungeAllContentsOutSerializer = void 0;
@@ -28904,9 +28780,9 @@ var require_expungeAllContentsOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseMessageOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageOut.js
 var require_listResponseMessageOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseMessageOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseMessageOutSerializer = void 0;
@@ -28932,9 +28808,9 @@ var require_listResponseMessageOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messagePrecheckIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckIn.js
 var require_messagePrecheckIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messagePrecheckIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessagePrecheckInSerializer = void 0;
@@ -28955,9 +28831,9 @@ var require_messagePrecheckIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messagePrecheckOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckOut.js
 var require_messagePrecheckOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messagePrecheckOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessagePrecheckOutSerializer = void 0;
@@ -28976,9 +28852,9 @@ var require_messagePrecheckOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js
 var require_pollingEndpointConsumerSeekIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointConsumerSeekInSerializer = void 0;
@@ -28997,9 +28873,9 @@ var require_pollingEndpointConsumerSeekIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js
 var require_pollingEndpointConsumerSeekOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointConsumerSeekOutSerializer = void 0;
@@ -29018,9 +28894,9 @@ var require_pollingEndpointConsumerSeekOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointMessageOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointMessageOut.js
 var require_pollingEndpointMessageOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointMessageOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointMessageOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointMessageOutSerializer = void 0;
@@ -29055,9 +28931,9 @@ var require_pollingEndpointMessageOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointOut.js
 var require_pollingEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/pollingEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointOutSerializer = void 0;
@@ -29081,9 +28957,9 @@ var require_pollingEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/messagePoller.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messagePoller.js
 var require_messagePoller = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/messagePoller.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messagePoller.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -29166,9 +29042,9 @@ var require_messagePoller = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageIn.js
 var require_messageIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageInSerializer = void 0;
@@ -29206,9 +29082,9 @@ var require_messageIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/message.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/message.js
 var require_message = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/message.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/message.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -29341,9 +29217,9 @@ var require_message = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/emptyResponse.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/emptyResponse.js
 var require_emptyResponse = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/emptyResponse.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/emptyResponse.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EmptyResponseSerializer = void 0;
@@ -29358,9 +29234,9 @@ var require_emptyResponse = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageStatusText.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatusText.js
 var require_messageStatusText = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageStatusText.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatusText.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageStatusTextSerializer = exports.MessageStatusText = void 0;
@@ -29383,9 +29259,9 @@ var require_messageStatusText = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointMessageOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointMessageOut.js
 var require_endpointMessageOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointMessageOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointMessageOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointMessageOutSerializer = void 0;
@@ -29426,9 +29302,9 @@ var require_endpointMessageOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseEndpointMessageOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointMessageOut.js
 var require_listResponseEndpointMessageOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseEndpointMessageOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointMessageOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseEndpointMessageOutSerializer = void 0;
@@ -29454,9 +29330,9 @@ var require_listResponseEndpointMessageOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageAttemptTriggerType.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptTriggerType.js
 var require_messageAttemptTriggerType = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageAttemptTriggerType.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptTriggerType.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageAttemptTriggerTypeSerializer = exports.MessageAttemptTriggerType = void 0;
@@ -29476,9 +29352,9 @@ var require_messageAttemptTriggerType = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageAttemptOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptOut.js
 var require_messageAttemptOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageAttemptOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageAttemptOutSerializer = void 0;
@@ -29523,9 +29399,9 @@ var require_messageAttemptOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseMessageAttemptOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageAttemptOut.js
 var require_listResponseMessageAttemptOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseMessageAttemptOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageAttemptOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseMessageAttemptOutSerializer = void 0;
@@ -29551,9 +29427,9 @@ var require_listResponseMessageAttemptOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageEndpointOut.js
 var require_messageEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/messageEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageEndpointOutSerializer = void 0;
@@ -29602,9 +29478,9 @@ var require_messageEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseMessageEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageEndpointOut.js
 var require_listResponseMessageEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseMessageEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseMessageEndpointOutSerializer = void 0;
@@ -29630,9 +29506,9 @@ var require_listResponseMessageEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/messageAttempt.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messageAttempt.js
 var require_messageAttempt = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/messageAttempt.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messageAttempt.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -29789,9 +29665,9 @@ var require_messageAttempt = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointOut.js
 var require_operationalWebhookEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointOutSerializer = void 0;
@@ -29830,9 +29706,9 @@ var require_operationalWebhookEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js
 var require_listResponseOperationalWebhookEndpointOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseOperationalWebhookEndpointOutSerializer = void 0;
@@ -29858,9 +29734,9 @@ var require_listResponseOperationalWebhookEndpointOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js
 var require_operationalWebhookEndpointHeadersIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointHeadersInSerializer = void 0;
@@ -29879,9 +29755,9 @@ var require_operationalWebhookEndpointHeadersIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js
 var require_operationalWebhookEndpointHeadersOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointHeadersOutSerializer = void 0;
@@ -29902,9 +29778,9 @@ var require_operationalWebhookEndpointHeadersOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointIn.js
 var require_operationalWebhookEndpointIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointInSerializer = void 0;
@@ -29939,9 +29815,9 @@ var require_operationalWebhookEndpointIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js
 var require_operationalWebhookEndpointSecretIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointSecretInSerializer = void 0;
@@ -29960,9 +29836,9 @@ var require_operationalWebhookEndpointSecretIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js
 var require_operationalWebhookEndpointSecretOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointSecretOutSerializer = void 0;
@@ -29981,9 +29857,9 @@ var require_operationalWebhookEndpointSecretOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js
 var require_operationalWebhookEndpointUpdate = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointUpdateSerializer = void 0;
@@ -30016,9 +29892,9 @@ var require_operationalWebhookEndpointUpdate = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/operationalWebhookEndpoint.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhookEndpoint.js
 var require_operationalWebhookEndpoint = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/operationalWebhookEndpoint.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhookEndpoint.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -30139,9 +30015,9 @@ var require_operationalWebhookEndpoint = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/operationalWebhook.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhook.js
 var require_operationalWebhook = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/operationalWebhook.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhook.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhook = void 0;
@@ -30158,9 +30034,9 @@ var require_operationalWebhook = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/aggregateEventTypesOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/aggregateEventTypesOut.js
 var require_aggregateEventTypesOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/aggregateEventTypesOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/aggregateEventTypesOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AggregateEventTypesOutSerializer = void 0;
@@ -30187,9 +30063,9 @@ var require_aggregateEventTypesOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appUsageStatsIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsIn.js
 var require_appUsageStatsIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appUsageStatsIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppUsageStatsInSerializer = void 0;
@@ -30212,9 +30088,9 @@ var require_appUsageStatsIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appUsageStatsOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsOut.js
 var require_appUsageStatsOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/appUsageStatsOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppUsageStatsOutSerializer = void 0;
@@ -30243,9 +30119,9 @@ var require_appUsageStatsOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/statistics.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/statistics.js
 var require_statistics = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/statistics.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/statistics.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -30303,9 +30179,9 @@ var require_statistics = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js
 var require_httpSinkHeadersPatchIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HttpSinkHeadersPatchInSerializer = void 0;
@@ -30324,9 +30200,9 @@ var require_httpSinkHeadersPatchIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkTransformationOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformationOut.js
 var require_sinkTransformationOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkTransformationOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformationOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkTransformationOutSerializer = void 0;
@@ -30347,9 +30223,9 @@ var require_sinkTransformationOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamEventTypeOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeOut.js
 var require_streamEventTypeOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamEventTypeOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamEventTypeOutSerializer = void 0;
@@ -30380,9 +30256,9 @@ var require_streamEventTypeOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js
 var require_listResponseStreamEventTypeOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseStreamEventTypeOutSerializer = void 0;
@@ -30408,9 +30284,9 @@ var require_listResponseStreamEventTypeOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamEventTypeIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeIn.js
 var require_streamEventTypeIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamEventTypeIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamEventTypeInSerializer = void 0;
@@ -30437,9 +30313,9 @@ var require_streamEventTypeIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamEventTypePatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypePatch.js
 var require_streamEventTypePatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamEventTypePatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypePatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamEventTypePatchSerializer = void 0;
@@ -30449,8 +30325,7 @@ var require_streamEventTypePatch = __commonJS({
           archived: object["archived"],
           deprecated: object["deprecated"],
           description: object["description"],
-          featureFlags: object["featureFlags"],
-          name: object["name"]
+          featureFlags: object["featureFlags"]
         };
       },
       _toJsonObject(self) {
@@ -30458,17 +30333,16 @@ var require_streamEventTypePatch = __commonJS({
           archived: self.archived,
           deprecated: self.deprecated,
           description: self.description,
-          featureFlags: self.featureFlags,
-          name: self.name
+          featureFlags: self.featureFlags
         };
       }
     };
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingEventType.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEventType.js
 var require_streamingEventType = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingEventType.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEventType.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -30566,9 +30440,9 @@ var require_streamingEventType = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventIn.js
 var require_eventIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventInSerializer = void 0;
@@ -30589,9 +30463,9 @@ var require_eventIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamIn.js
 var require_streamIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamInSerializer = void 0;
@@ -30614,9 +30488,9 @@ var require_streamIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/createStreamEventsIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsIn.js
 var require_createStreamEventsIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/createStreamEventsIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CreateStreamEventsInSerializer = void 0;
@@ -30639,9 +30513,9 @@ var require_createStreamEventsIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/createStreamEventsOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsOut.js
 var require_createStreamEventsOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/createStreamEventsOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CreateStreamEventsOutSerializer = void 0;
@@ -30656,9 +30530,9 @@ var require_createStreamEventsOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventOut.js
 var require_eventOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventOutSerializer = void 0;
@@ -30681,9 +30555,9 @@ var require_eventOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventStreamOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventStreamOut.js
 var require_eventStreamOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventStreamOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventStreamOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventStreamOutSerializer = void 0;
@@ -30707,9 +30581,9 @@ var require_eventStreamOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingEvents.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEvents.js
 var require_streamingEvents = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingEvents.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEvents.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -30775,9 +30649,9 @@ var require_streamingEvents = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/azureBlobStorageConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStorageConfig.js
 var require_azureBlobStorageConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/azureBlobStorageConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStorageConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AzureBlobStorageConfigSerializer = void 0;
@@ -30800,9 +30674,9 @@ var require_azureBlobStorageConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/bigQueryConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryConfig.js
 var require_bigQueryConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/bigQueryConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BigQueryConfigSerializer = void 0;
@@ -30827,9 +30701,9 @@ var require_bigQueryConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/clickhouseConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhouseConfig.js
 var require_clickhouseConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/clickhouseConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhouseConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ClickhouseConfigSerializer = void 0;
@@ -30856,9 +30730,9 @@ var require_clickhouseConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventBridgeConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgeConfig.js
 var require_eventBridgeConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventBridgeConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgeConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventBridgeConfigSerializer = void 0;
@@ -30885,9 +30759,9 @@ var require_eventBridgeConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudPubSubConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubConfig.js
 var require_googleCloudPubSubConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudPubSubConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudPubSubConfigSerializer = void 0;
@@ -30910,9 +30784,9 @@ var require_googleCloudPubSubConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudStorageConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStorageConfig.js
 var require_googleCloudStorageConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudStorageConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStorageConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudStorageConfigSerializer = void 0;
@@ -30933,9 +30807,9 @@ var require_googleCloudStorageConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rabbitMqConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqConfig.js
 var require_rabbitMqConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rabbitMqConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RabbitMqConfigSerializer = void 0;
@@ -30956,9 +30830,9 @@ var require_rabbitMqConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/redshiftConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftConfig.js
 var require_redshiftConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/redshiftConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RedshiftConfigSerializer = void 0;
@@ -30993,9 +30867,9 @@ var require_redshiftConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/s3Config.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/s3Config.js
 var require_s3Config = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/s3Config.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/s3Config.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.S3ConfigSerializer = void 0;
@@ -31022,9 +30896,9 @@ var require_s3Config = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkHttpConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkHttpConfig.js
 var require_sinkHttpConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkHttpConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkHttpConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkHttpConfigSerializer = void 0;
@@ -31047,9 +30921,9 @@ var require_sinkHttpConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkOtelV1Config.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkOtelV1Config.js
 var require_sinkOtelV1Config = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkOtelV1Config.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkOtelV1Config.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkOtelV1ConfigSerializer = void 0;
@@ -31070,9 +30944,9 @@ var require_sinkOtelV1Config = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkStatus.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatus.js
 var require_sinkStatus = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkStatus.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatus.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkStatusSerializer = exports.SinkStatus = void 0;
@@ -31094,9 +30968,9 @@ var require_sinkStatus = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snowflakeConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakeConfig.js
 var require_snowflakeConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snowflakeConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakeConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnowflakeConfigSerializer = void 0;
@@ -31125,9 +30999,9 @@ var require_snowflakeConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snsConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsConfig.js
 var require_snsConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snsConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnsConfigSerializer = void 0;
@@ -31154,9 +31028,9 @@ var require_snsConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sqsConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsConfig.js
 var require_sqsConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sqsConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SqsConfigSerializer = void 0;
@@ -31183,9 +31057,9 @@ var require_sqsConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamSinkOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkOut.js
 var require_streamSinkOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamSinkOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamSinkOutSerializer = void 0;
@@ -31330,9 +31204,9 @@ var require_streamSinkOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseStreamSinkOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamSinkOut.js
 var require_listResponseStreamSinkOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseStreamSinkOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamSinkOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseStreamSinkOutSerializer = void 0;
@@ -31358,9 +31232,9 @@ var require_listResponseStreamSinkOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkSecretOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkSecretOut.js
 var require_sinkSecretOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkSecretOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkSecretOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkSecretOutSerializer = void 0;
@@ -31379,9 +31253,9 @@ var require_sinkSecretOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkTransformIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformIn.js
 var require_sinkTransformIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkTransformIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkTransformInSerializer = void 0;
@@ -31400,9 +31274,9 @@ var require_sinkTransformIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkStatusIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatusIn.js
 var require_sinkStatusIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sinkStatusIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatusIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkStatusInSerializer = exports.SinkStatusIn = void 0;
@@ -31422,9 +31296,9 @@ var require_sinkStatusIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamSinkIn.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkIn.js
 var require_streamSinkIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamSinkIn.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkIn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamSinkInSerializer = void 0;
@@ -31557,9 +31431,9 @@ var require_streamSinkIn = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/amazonS3PatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/amazonS3PatchConfig.js
 var require_amazonS3PatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/amazonS3PatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/amazonS3PatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AmazonS3PatchConfigSerializer = void 0;
@@ -31586,9 +31460,9 @@ var require_amazonS3PatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js
 var require_azureBlobStoragePatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AzureBlobStoragePatchConfigSerializer = void 0;
@@ -31611,9 +31485,9 @@ var require_azureBlobStoragePatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/bigQueryPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryPatchConfig.js
 var require_bigQueryPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/bigQueryPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BigQueryPatchConfigSerializer = void 0;
@@ -31638,9 +31512,9 @@ var require_bigQueryPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/clickhousePatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhousePatchConfig.js
 var require_clickhousePatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/clickhousePatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhousePatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ClickhousePatchConfigSerializer = void 0;
@@ -31667,9 +31541,9 @@ var require_clickhousePatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventBridgePatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgePatchConfig.js
 var require_eventBridgePatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/eventBridgePatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgePatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventBridgePatchConfigSerializer = void 0;
@@ -31696,9 +31570,9 @@ var require_eventBridgePatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js
 var require_googleCloudPubSubPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudPubSubPatchConfigSerializer = void 0;
@@ -31721,9 +31595,9 @@ var require_googleCloudPubSubPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js
 var require_googleCloudStoragePatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudStoragePatchConfigSerializer = void 0;
@@ -31744,9 +31618,9 @@ var require_googleCloudStoragePatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/httpPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpPatchConfig.js
 var require_httpPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/httpPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HttpPatchConfigSerializer = void 0;
@@ -31765,9 +31639,9 @@ var require_httpPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/otelTracingPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/otelTracingPatchConfig.js
 var require_otelTracingPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/otelTracingPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/otelTracingPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OtelTracingPatchConfigSerializer = void 0;
@@ -31786,9 +31660,9 @@ var require_otelTracingPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rabbitMqPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqPatchConfig.js
 var require_rabbitMqPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/rabbitMqPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RabbitMqPatchConfigSerializer = void 0;
@@ -31809,9 +31683,9 @@ var require_rabbitMqPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/redshiftPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftPatchConfig.js
 var require_redshiftPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/redshiftPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RedshiftPatchConfigSerializer = void 0;
@@ -31840,9 +31714,9 @@ var require_redshiftPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snowflakePatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakePatchConfig.js
 var require_snowflakePatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snowflakePatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakePatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnowflakePatchConfigSerializer = void 0;
@@ -31871,9 +31745,9 @@ var require_snowflakePatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snsPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsPatchConfig.js
 var require_snsPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/snsPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnsPatchConfigSerializer = void 0;
@@ -31900,9 +31774,9 @@ var require_snsPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sqsPatchConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsPatchConfig.js
 var require_sqsPatchConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/sqsPatchConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsPatchConfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SqsPatchConfigSerializer = void 0;
@@ -31929,9 +31803,9 @@ var require_sqsPatchConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamSinkPatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkPatch.js
 var require_streamSinkPatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamSinkPatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkPatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamSinkPatchSerializer = void 0;
@@ -32064,9 +31938,9 @@ var require_streamSinkPatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingSink.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingSink.js
 var require_streamingSink = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingSink.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingSink.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -32197,9 +32071,9 @@ var require_streamingSink = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamOut.js
 var require_streamOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamOutSerializer = void 0;
@@ -32228,9 +32102,9 @@ var require_streamOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseStreamOut.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamOut.js
 var require_listResponseStreamOut = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/listResponseStreamOut.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamOut.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseStreamOutSerializer = void 0;
@@ -32256,9 +32130,9 @@ var require_listResponseStreamOut = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamPatch.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPatch.js
 var require_streamPatch = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/streamPatch.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPatch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamPatchSerializer = void 0;
@@ -32281,9 +32155,9 @@ var require_streamPatch = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingStream.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingStream.js
 var require_streamingStream = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streamingStream.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingStream.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -32377,9 +32251,9 @@ var require_streamingStream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streaming.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streaming.js
 var require_streaming = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api/streaming.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streaming.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -32464,9 +32338,9 @@ var require_streaming = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/HttpErrors.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/HttpErrors.js
 var require_HttpErrors = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/HttpErrors.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/HttpErrors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HTTPValidationError = exports.ValidationError = exports.HttpErrorOut = void 0;
@@ -33212,7 +33086,7 @@ var require_sha256 = __commonJS({
 });
 
 // ../../node_modules/.pnpm/standardwebhooks@1.0.0/node_modules/standardwebhooks/dist/index.js
-var require_dist4 = __commonJS({
+var require_dist3 = __commonJS({
   "../../node_modules/.pnpm/standardwebhooks@1.0.0/node_modules/standardwebhooks/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -33318,14 +33192,14 @@ var require_dist4 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/webhook.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/webhook.js
 var require_webhook = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/webhook.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/webhook.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Webhook = exports.WebhookVerificationError = void 0;
-    var standardwebhooks_1 = require_dist4();
-    var standardwebhooks_2 = require_dist4();
+    var standardwebhooks_1 = require_dist3();
+    var standardwebhooks_2 = require_dist3();
     Object.defineProperty(exports, "WebhookVerificationError", { enumerable: true, get: function() {
       return standardwebhooks_2.WebhookVerificationError;
     } });
@@ -33352,9 +33226,9 @@ var require_webhook = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointDisabledTrigger.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointDisabledTrigger.js
 var require_endpointDisabledTrigger = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/endpointDisabledTrigger.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointDisabledTrigger.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointDisabledTriggerSerializer = exports.EndpointDisabledTrigger = void 0;
@@ -33374,9 +33248,9 @@ var require_endpointDisabledTrigger = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ordering.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ordering.js
 var require_ordering = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/ordering.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ordering.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OrderingSerializer = exports.Ordering = void 0;
@@ -33396,9 +33270,9 @@ var require_ordering = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/index.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/index.js
 var require_models = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/index.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StatusCodeClass = exports.SinkStatusIn = exports.SinkStatus = exports.Ordering = exports.MessageStatusText = exports.MessageStatus = exports.MessageAttemptTriggerType = exports.EndpointDisabledTrigger = exports.ConnectorProduct = exports.ConnectorKind = exports.BackgroundTaskType = exports.BackgroundTaskStatus = exports.AppPortalCapability = void 0;
@@ -33457,13 +33331,13 @@ var require_models = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api_internal/index.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/index.js
 var require_api_internal = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api_internal/index.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixInternal = void 0;
-    var __1 = require_dist5();
+    var __1 = require_dist4();
     var SvixInternal = class extends __1.Svix {
       getRequestCtx() {
         return this.requestCtx;
@@ -33473,31 +33347,116 @@ var require_api_internal = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/subscribeIn.js
-var require_subscribeIn = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/models/subscribeIn.js"(exports) {
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkInCommon.js
+var require_sinkInCommon = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkInCommon.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.SubscribeInSerializer = void 0;
-    var endpointIn_1 = require_endpointIn();
-    exports.SubscribeInSerializer = {
+    exports.SinkInCommonSerializer = void 0;
+    exports.SinkInCommonSerializer = {
       _fromJsonObject(object) {
         return {
-          endpoint: endpointIn_1.EndpointInSerializer._fromJsonObject(object["endpoint"])
+          channels: object["channels"],
+          description: object["description"],
+          disabled: object["disabled"],
+          filterTypes: object["filterTypes"],
+          metadata: object["metadata"],
+          rateLimit: object["rateLimit"],
+          secret: object["secret"],
+          throttleRate: object["throttleRate"],
+          uid: object["uid"]
         };
       },
       _toJsonObject(self) {
         return {
-          endpoint: endpointIn_1.EndpointInSerializer._toJsonObject(self.endpoint)
+          channels: self.channels,
+          description: self.description,
+          disabled: self.disabled,
+          filterTypes: self.filterTypes,
+          metadata: self.metadata,
+          rateLimit: self.rateLimit,
+          secret: self.secret,
+          throttleRate: self.throttleRate,
+          uid: self.uid
         };
       }
     };
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api_internal/endpointAutoConfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/autoConfigSinkType.js
+var require_autoConfigSinkType = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/autoConfigSinkType.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.AutoConfigSinkTypeSerializer = void 0;
+    var endpointIn_1 = require_endpointIn();
+    var sinkInCommon_1 = require_sinkInCommon();
+    exports.AutoConfigSinkTypeSerializer = {
+      _fromJsonObject(object) {
+        const type = object["type"];
+        function getConfig(type2) {
+          switch (type2) {
+            case "poller":
+              return sinkInCommon_1.SinkInCommonSerializer._fromJsonObject(object["config"]);
+            case "http":
+              return endpointIn_1.EndpointInSerializer._fromJsonObject(object["config"]);
+            default:
+              throw new Error(`Unexpected type: ${type2}`);
+          }
+        }
+        return {
+          type,
+          config: getConfig(type)
+        };
+      },
+      _toJsonObject(self) {
+        let config;
+        switch (self.type) {
+          case "poller":
+            config = sinkInCommon_1.SinkInCommonSerializer._toJsonObject(self.config);
+            break;
+          case "http":
+            config = endpointIn_1.EndpointInSerializer._toJsonObject(self.config);
+            break;
+        }
+        return {
+          type: self.type,
+          config
+        };
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/subscribeIn.js
+var require_subscribeIn = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/subscribeIn.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.SubscribeInSerializer = void 0;
+    var autoConfigSinkType_1 = require_autoConfigSinkType();
+    var endpointIn_1 = require_endpointIn();
+    exports.SubscribeInSerializer = {
+      _fromJsonObject(object) {
+        return {
+          endpoint: object["endpoint"] != null ? endpointIn_1.EndpointInSerializer._fromJsonObject(object["endpoint"]) : void 0,
+          sink: object["sink"] != null ? autoConfigSinkType_1.AutoConfigSinkTypeSerializer._fromJsonObject(object["sink"]) : void 0
+        };
+      },
+      _toJsonObject(self) {
+        return {
+          endpoint: self.endpoint != null ? endpointIn_1.EndpointInSerializer._toJsonObject(self.endpoint) : void 0,
+          sink: self.sink != null ? autoConfigSinkType_1.AutoConfigSinkTypeSerializer._toJsonObject(self.sink) : void 0
+        };
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpointAutoConfig.js
 var require_endpointAutoConfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api_internal/endpointAutoConfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpointAutoConfig.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -33549,9 +33508,9 @@ var require_endpointAutoConfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api_internal/endpoint.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpoint.js
 var require_endpoint2 = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/api_internal/endpoint.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpoint.js"(exports) {
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
       function adopt(value) {
@@ -33606,12 +33565,12 @@ var require_endpoint2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/autoconfig.js
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfig.js
 var require_autoconfig = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/autoconfig.js"(exports) {
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfig.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.AutoConfig = exports.AutoConfigError = void 0;
+    exports.AutoConfig = exports.decodeAutoconfigTokenV1 = exports.isAutoConfigTokenContentV1 = exports.AutoConfigError = void 0;
     var api_internal_1 = require_api_internal();
     var endpoint_1 = require_endpoint2();
     var webhook_1 = require_webhook();
@@ -33630,6 +33589,7 @@ var require_autoconfig = __commonJS({
       const { aid, eid, surl, esec, tok } = value;
       return typeof aid === "string" && typeof eid === "string" && typeof surl === "string" && typeof esec === "string" && typeof tok === "string";
     }
+    exports.isAutoConfigTokenContentV1 = isAutoConfigTokenContentV1;
     function decodeAutoconfigTokenV1(token) {
       if (!token.startsWith(AUTOCONFIG_TOKEN_PREFIX_V1)) {
         throw new AutoConfigError();
@@ -33652,6 +33612,7 @@ var require_autoconfig = __commonJS({
       }
       return parsed;
     }
+    exports.decodeAutoconfigTokenV1 = decodeAutoconfigTokenV1;
     var AutoConfig = class {
       constructor(token, endpoint) {
         const content = decodeAutoconfigTokenV1(token);
@@ -33681,9 +33642,203 @@ var require_autoconfig = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/index.js
-var require_dist5 = __commonJS({
-  "../../node_modules/.pnpm/svix@1.95.2/node_modules/svix/dist/index.js"(exports) {
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2CommitIn.js
+var require_pollerV2CommitIn = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2CommitIn.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.PollerV2CommitInSerializer = void 0;
+    exports.PollerV2CommitInSerializer = {
+      _fromJsonObject(object) {
+        return {
+          offset: object["offset"]
+        };
+      },
+      _toJsonObject(self) {
+        return {
+          offset: self.offset
+        };
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2MessageOut.js
+var require_pollerV2MessageOut = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2MessageOut.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.PollerV2MessageOutSerializer = void 0;
+    exports.PollerV2MessageOutSerializer = {
+      _fromJsonObject(object) {
+        return {
+          channels: object["channels"],
+          deliverAt: object["deliverAt"] ? new Date(object["deliverAt"]) : null,
+          eventId: object["eventId"],
+          eventType: object["eventType"],
+          headers: object["headers"],
+          id: object["id"],
+          offset: object["offset"],
+          payload: object["payload"],
+          tags: object["tags"],
+          timestamp: new Date(object["timestamp"])
+        };
+      },
+      _toJsonObject(self) {
+        return {
+          channels: self.channels,
+          deliverAt: self.deliverAt,
+          eventId: self.eventId,
+          eventType: self.eventType,
+          headers: self.headers,
+          id: self.id,
+          offset: self.offset,
+          payload: self.payload,
+          tags: self.tags,
+          timestamp: self.timestamp
+        };
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2PollOut.js
+var require_pollerV2PollOut = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2PollOut.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.PollerV2PollOutSerializer = void 0;
+    var pollerV2MessageOut_1 = require_pollerV2MessageOut();
+    exports.PollerV2PollOutSerializer = {
+      _fromJsonObject(object) {
+        return {
+          data: object["data"].map((item) => pollerV2MessageOut_1.PollerV2MessageOutSerializer._fromJsonObject(item)),
+          done: object["done"]
+        };
+      },
+      _toJsonObject(self) {
+        return {
+          data: self.data.map((item) => pollerV2MessageOut_1.PollerV2MessageOutSerializer._toJsonObject(item)),
+          done: self.done
+        };
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/messagePollerv2.js
+var require_messagePollerv2 = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/messagePollerv2.js"(exports) {
+    "use strict";
+    var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P2, generator) {
+      function adopt(value) {
+        return value instanceof P2 ? value : new P2(function(resolve) {
+          resolve(value);
+        });
+      }
+      return new (P2 || (P2 = Promise))(function(resolve, reject) {
+        function fulfilled(value) {
+          try {
+            step(generator.next(value));
+          } catch (e) {
+            reject(e);
+          }
+        }
+        function rejected(value) {
+          try {
+            step(generator["throw"](value));
+          } catch (e) {
+            reject(e);
+          }
+        }
+        function step(result) {
+          result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+        }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+      });
+    };
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.MessagePollerv2 = void 0;
+    var pollerV2CommitIn_1 = require_pollerV2CommitIn();
+    var pollerV2PollOut_1 = require_pollerV2PollOut();
+    var request_1 = require_request2();
+    var MessagePollerv2 = class {
+      constructor(requestCtx) {
+        this.requestCtx = requestCtx;
+      }
+      consumerPoll(appId, sinkId, consumerId, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+          const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/polling-endpoint/{sink_id}/consumer/{consumer_id}");
+          request.setPathParam("app_id", appId);
+          request.setPathParam("sink_id", sinkId);
+          request.setPathParam("consumer_id", consumerId);
+          request.setQueryParams({
+            limit: options === null || options === void 0 ? void 0 : options.limit,
+            lease_duration_ms: options === null || options === void 0 ? void 0 : options.leaseDurationMs,
+            starting_position: options === null || options === void 0 ? void 0 : options.startingPosition
+          });
+          return yield request.send(this.requestCtx, pollerV2PollOut_1.PollerV2PollOutSerializer._fromJsonObject);
+        });
+      }
+      consumerCommit(appId, sinkId, consumerId, pollerV2CommitIn, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+          const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/polling-endpoint/{sink_id}/consumer/{consumer_id}/commit");
+          request.setPathParam("app_id", appId);
+          request.setPathParam("sink_id", sinkId);
+          request.setPathParam("consumer_id", consumerId);
+          request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
+          request.setBody(pollerV2CommitIn_1.PollerV2CommitInSerializer._toJsonObject(pollerV2CommitIn));
+          return yield request.sendNoResponseBody(this.requestCtx);
+        });
+      }
+    };
+    exports.MessagePollerv2 = MessagePollerv2;
+  }
+});
+
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfigConsumer.js
+var require_autoconfigConsumer = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfigConsumer.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.AutoConfigConsumer = void 0;
+    var api_internal_1 = require_api_internal();
+    var endpoint_1 = require_endpoint2();
+    var messagePollerv2_1 = require_messagePollerv2();
+    var autoconfig_1 = require_autoconfig();
+    var AutoConfigConsumer = class {
+      constructor(token, sinkIn) {
+        const content = (0, autoconfig_1.decodeAutoconfigTokenV1)(token);
+        this.appId = content.aid;
+        this.sinkId = content.eid;
+        this.sinkIn = sinkIn;
+        const svix = new api_internal_1.SvixInternal(content.tok, { serverUrl: content.surl });
+        this.requestCtx = svix.getRequestCtx();
+      }
+      subscribe() {
+        return new endpoint_1.Endpoint(this.requestCtx).auto_config.update(this.appId, this.sinkId, {
+          sink: {
+            type: "poller",
+            config: this.sinkIn
+          }
+        });
+      }
+      receive(consumerId, options) {
+        return new messagePollerv2_1.MessagePollerv2(this.requestCtx).consumerPoll(this.appId, this.sinkId, consumerId, options);
+      }
+      commit(consumerId, offset, options) {
+        return new messagePollerv2_1.MessagePollerv2(this.requestCtx).consumerCommit(this.appId, this.sinkId, consumerId, {
+          offset
+        }, options);
+      }
+    };
+    exports.AutoConfigConsumer = AutoConfigConsumer;
+  }
+});
+
+// ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/index.js
+var require_dist4 = __commonJS({
+  "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -33702,7 +33857,7 @@ var require_dist5 = __commonJS({
       for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports2, p)) __createBinding(exports2, m, p);
     };
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.Svix = exports.messageInRaw = exports.ValidationError = exports.HttpErrorOut = exports.HTTPValidationError = exports.ApiException = void 0;
+    exports.AutoConfigConsumer = exports.AutoConfigError = exports.AutoConfig = exports.Svix = exports.messageInRaw = exports.ValidationError = exports.HttpErrorOut = exports.HTTPValidationError = exports.ApiException = void 0;
     var application_1 = require_application2();
     var authentication_1 = require_authentication();
     var backgroundTask_1 = require_backgroundTask();
@@ -33828,7 +33983,17 @@ var require_dist5 = __commonJS({
       }
     };
     exports.Svix = Svix;
-    __exportStar(require_autoconfig(), exports);
+    var autoconfig_1 = require_autoconfig();
+    Object.defineProperty(exports, "AutoConfig", { enumerable: true, get: function() {
+      return autoconfig_1.AutoConfig;
+    } });
+    Object.defineProperty(exports, "AutoConfigError", { enumerable: true, get: function() {
+      return autoconfig_1.AutoConfigError;
+    } });
+    var autoconfigConsumer_1 = require_autoconfigConsumer();
+    Object.defineProperty(exports, "AutoConfigConsumer", { enumerable: true, get: function() {
+      return autoconfigConsumer_1.AutoConfigConsumer;
+    } });
   }
 });
 
@@ -34764,9 +34929,9 @@ var require_pg_types = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/defaults.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/defaults.js
 var require_defaults = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/defaults.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/defaults.js"(exports, module) {
     "use strict";
     var user;
     try {
@@ -34802,6 +34967,8 @@ var require_defaults = __commonJS({
       idleTimeoutMillis: 3e4,
       client_encoding: "",
       ssl: false,
+      // SSL negotiation style: 'postgres' (traditional SSLRequest) or 'direct'
+      sslnegotiation: void 0,
       application_name: void 0,
       fallback_application_name: void 0,
       options: void 0,
@@ -34831,9 +34998,9 @@ var require_defaults = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/utils.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/utils.js
 var require_utils4 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/utils.js"(exports, module) {
     "use strict";
     var defaults2 = require_defaults();
     var { isDate } = __require("util/types");
@@ -34979,9 +35146,9 @@ var require_utils4 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/utils.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/crypto/utils.js
 var require_utils5 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/crypto/utils.js"(exports, module) {
     var nodeCrypto = __require("crypto");
     module.exports = {
       postgresMd5PasswordHash,
@@ -35030,9 +35197,9 @@ var require_utils5 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/cert-signatures.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/crypto/cert-signatures.js
 var require_cert_signatures = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/cert-signatures.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/crypto/cert-signatures.js"(exports, module) {
     function x509Error(msg, cert) {
       return new Error("SASL channel binding: " + msg + " when parsing public certificate " + cert.toString("base64"));
     }
@@ -35143,9 +35310,9 @@ var require_cert_signatures = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/sasl.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/crypto/sasl.js
 var require_sasl = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
     var crypto2 = require_utils5();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
@@ -35328,9 +35495,9 @@ var require_sasl = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/type-overrides.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/type-overrides.js
 var require_type_overrides = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/type-overrides.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/type-overrides.js"(exports, module) {
     "use strict";
     var types3 = require_pg_types();
     function TypeOverrides2(userTypes) {
@@ -35363,9 +35530,9 @@ var require_type_overrides = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-connection-string@2.13.0/node_modules/pg-connection-string/index.js
+// ../../node_modules/.pnpm/pg-connection-string@2.14.0/node_modules/pg-connection-string/index.js
 var require_pg_connection_string = __commonJS({
-  "../../node_modules/.pnpm/pg-connection-string@2.13.0/node_modules/pg-connection-string/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg-connection-string@2.14.0/node_modules/pg-connection-string/index.js"(exports, module) {
     "use strict";
     function parse2(str, options = {}) {
       if (str.charAt(0) === "/") {
@@ -35419,6 +35586,9 @@ var require_pg_connection_string = __commonJS({
       }
       if (config.sslcert || config.sslkey || config.sslrootcert || config.sslmode) {
         config.ssl = {};
+      }
+      if (config.sslnegotiation === "direct" && config.ssl === void 0) {
+        config.ssl = true;
       }
       const fs = config.sslcert || config.sslkey || config.sslrootcert ? __require("fs") : null;
       if (config.sslcert) {
@@ -35548,9 +35718,9 @@ See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode de
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection-parameters.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/connection-parameters.js
 var require_connection_parameters = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection-parameters.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/connection-parameters.js"(exports, module) {
     "use strict";
     var dns = __require("dns");
     var defaults2 = require_defaults();
@@ -35625,6 +35795,15 @@ var require_connection_parameters = __commonJS({
             enumerable: false
           });
         }
+        this.sslnegotiation = val("sslnegotiation", config, "PGSSLNEGOTIATION");
+        if (this.sslnegotiation !== void 0 && this.sslnegotiation !== "postgres" && this.sslnegotiation !== "direct") {
+          throw new Error(
+            `Invalid sslnegotiation value: "${this.sslnegotiation}". Valid values are "postgres" and "direct".`
+          );
+        }
+        if (this.sslnegotiation === "direct" && !this.ssl) {
+          throw new Error("sslnegotiation=direct requires SSL to be enabled");
+        }
         this.client_encoding = val("client_encoding", config);
         this.replication = val("replication", config);
         this.isDomainSocket = !(this.host || "").indexOf("/");
@@ -35663,6 +35842,7 @@ var require_connection_parameters = __commonJS({
         add(params, ssl, "sslkey");
         add(params, ssl, "sslcert");
         add(params, ssl, "sslrootcert");
+        add(params, this, "sslnegotiation");
         if (this.database) {
           params.push("dbname=" + quoteParamValue(this.database));
         }
@@ -35689,9 +35869,9 @@ var require_connection_parameters = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/result.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/result.js
 var require_result = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/result.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/result.js"(exports, module) {
     "use strict";
     var types3 = require_pg_types();
     var matchRegexp = /^([A-Za-z]+)(?: (\d+))?(?: (\d+))?/;
@@ -35780,9 +35960,9 @@ var require_result = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/query.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/query.js
 var require_query = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/query.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/query.js"(exports, module) {
     "use strict";
     var { EventEmitter } = __require("events");
     var Result2 = require_result();
@@ -35958,6 +36138,8 @@ var require_query = __commonJS({
             valueMapper: utils.prepareValue
           });
         } catch (err) {
+          connection.close({ type: "S", name: this.name });
+          connection.sync();
           this.handleError(err, connection);
           return;
         }
@@ -35977,9 +36159,9 @@ var require_query = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/messages.js
+// ../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/messages.js
 var require_messages = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/messages.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/messages.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NoticeMessage = exports.DataRowMessage = exports.CommandCompleteMessage = exports.ReadyForQueryMessage = exports.NotificationResponseMessage = exports.BackendKeyDataMessage = exports.AuthenticationMD5Password = exports.ParameterStatusMessage = exports.ParameterDescriptionMessage = exports.RowDescriptionMessage = exports.Field = exports.CopyResponse = exports.CopyDataMessage = exports.DatabaseError = exports.copyDone = exports.emptyQuery = exports.replicationStart = exports.portalSuspended = exports.noData = exports.closeComplete = exports.bindComplete = exports.parseComplete = void 0;
@@ -36142,9 +36324,9 @@ var require_messages = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-writer.js
+// ../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/buffer-writer.js
 var require_buffer_writer = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-writer.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/buffer-writer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Writer = void 0;
@@ -36197,6 +36379,25 @@ var require_buffer_writer = __commonJS({
         this.offset += len;
         return this;
       }
+      // Write an Int32 byte-length prefix immediately followed by the string's UTF-8
+      // bytes. Postgres' Bind wire format prefixes every parameter with its length,
+      // and doing it in one method computes Buffer.byteLength ONCE — the previous
+      // `addInt32(Buffer.byteLength(s)).addString(s)` pairing scanned the string
+      // three times (byteLength for the prefix, byteLength again inside addString,
+      // then the encode), which is costly for large text parameters.
+      addInt32PrefixedString(string) {
+        const len = Buffer.byteLength(string);
+        this.ensure(4 + len);
+        const buffer = this.buffer;
+        let offset = this.offset;
+        buffer[offset++] = len >>> 24 & 255;
+        buffer[offset++] = len >>> 16 & 255;
+        buffer[offset++] = len >>> 8 & 255;
+        buffer[offset++] = len >>> 0 & 255;
+        buffer.write(string, offset, "utf-8");
+        this.offset = offset + len;
+        return this;
+      }
       add(otherBuffer) {
         this.ensure(otherBuffer.length);
         otherBuffer.copy(this.buffer, this.offset);
@@ -36218,14 +36419,18 @@ var require_buffer_writer = __commonJS({
         this.buffer = Buffer.allocUnsafe(this.size);
         return result;
       }
+      clear() {
+        this.offset = 5;
+        this.headerPosition = 0;
+      }
     };
     exports.Writer = Writer;
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/serializer.js
+// ../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/serializer.js
 var require_serializer = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/serializer.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/serializer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.serialize = void 0;
@@ -36254,7 +36459,7 @@ var require_serializer = __commonJS({
       );
     };
     var sendSASLInitialResponseMessage = function(mechanism, initialResponse) {
-      writer.addCString(mechanism).addInt32(Buffer.byteLength(initialResponse)).addString(initialResponse);
+      writer.addCString(mechanism).addInt32PrefixedString(initialResponse);
       return writer.flush(
         112
         /* code.startup */
@@ -36313,8 +36518,7 @@ var require_serializer = __commonJS({
             0
             /* ParamType.STRING */
           );
-          paramWriter.addInt32(Buffer.byteLength(mappedVal));
-          paramWriter.addString(mappedVal);
+          paramWriter.addInt32PrefixedString(mappedVal);
         }
       }
     };
@@ -36326,7 +36530,13 @@ var require_serializer = __commonJS({
       const len = values.length;
       writer.addCString(portal).addCString(statement);
       writer.addInt16(len);
-      writeValues(values, config.valueMapper);
+      try {
+        writeValues(values, config.valueMapper);
+      } catch (err) {
+        writer.clear();
+        paramWriter.clear();
+        throw err;
+      }
       writer.addInt16(len);
       writer.add(paramWriter.flush());
       writer.addInt16(1);
@@ -36440,9 +36650,9 @@ var require_serializer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-reader.js
+// ../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/buffer-reader.js
 var require_buffer_reader = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/buffer-reader.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/buffer-reader.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BufferReader = void 0;
@@ -36484,7 +36694,7 @@ var require_buffer_reader = __commonJS({
       cstring() {
         const start = this.offset;
         let end = start;
-        while (this.buffer[end++] !== 0) {
+        while (this.buffer[end++]) {
         }
         this.offset = end;
         return this.buffer.toString(this.encoding, start, end - 1);
@@ -36499,9 +36709,9 @@ var require_buffer_reader = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/parser.js
+// ../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/parser.js
 var require_parser = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/parser.js"(exports) {
+  "../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/parser.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Parser = void 0;
@@ -36806,12 +37016,13 @@ var require_parser = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/index.js
-var require_dist6 = __commonJS({
-  "../../node_modules/.pnpm/pg-protocol@1.14.0/node_modules/pg-protocol/dist/index.js"(exports) {
+// ../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/index.js
+var require_dist5 = __commonJS({
+  "../../node_modules/.pnpm/pg-protocol@1.15.0/node_modules/pg-protocol/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.DatabaseError = exports.serialize = exports.parse = void 0;
+    exports.DatabaseError = exports.serialize = void 0;
+    exports.parse = parse2;
     var messages_1 = require_messages();
     Object.defineProperty(exports, "DatabaseError", { enumerable: true, get: function() {
       return messages_1.DatabaseError;
@@ -36826,7 +37037,6 @@ var require_dist6 = __commonJS({
       stream.on("data", (buffer) => parser.parse(buffer, callback));
       return new Promise((resolve) => stream.on("end", () => resolve()));
     }
-    exports.parse = parse2;
   }
 });
 
@@ -36839,9 +37049,9 @@ var require_empty = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/stream.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/stream.js
 var require_stream = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/stream.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/stream.js"(exports, module) {
     var { getStream, getSecureStream } = getStreamFuncs();
     module.exports = {
       /**
@@ -36905,13 +37115,14 @@ var require_stream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/connection.js
 var require_connection = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/connection.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/connection.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events").EventEmitter;
-    var { parse: parse2, serialize } = require_dist6();
-    var { getStream, getSecureStream } = require_stream();
+    var { parse: parse2, serialize } = require_dist5();
+    var stream = require_stream();
+    var { getStream } = stream;
     var flushBuffer = serialize.flush();
     var syncBuffer = serialize.sync();
     var endBuffer = serialize.end();
@@ -36927,6 +37138,7 @@ var require_connection = __commonJS({
         this._keepAliveInitialDelayMillis = config.keepAliveInitialDelayMillis;
         this.parsedStatements = {};
         this.ssl = config.ssl || false;
+        this.sslNegotiation = config.sslNegotiation || "postgres";
         this._ending = false;
         this._emitMessage = false;
         const self = this;
@@ -36960,6 +37172,11 @@ var require_connection = __commonJS({
         if (!this.ssl) {
           return this.attachListeners(this.stream);
         }
+        if (this.sslNegotiation === "direct") {
+          return this.stream.once("connect", function() {
+            self.upgradeToSSL(host, reportStreamError);
+          });
+        }
         this.stream.once("data", function(buffer) {
           const responseCode = buffer.toString("utf8");
           switch (responseCode) {
@@ -36972,31 +37189,38 @@ var require_connection = __commonJS({
               self.stream.end();
               return self.emit("error", new Error("There was an error establishing an SSL connection"));
           }
-          const options = {
-            socket: self.stream
-          };
-          if (self.ssl !== true) {
-            Object.assign(options, self.ssl);
-            if ("key" in self.ssl) {
-              options.key = self.ssl.key;
-            }
-          }
-          const net = __require("net");
-          if (net.isIP && net.isIP(host) === 0) {
-            options.servername = host;
-          }
-          try {
-            self.stream = getSecureStream(options);
-          } catch (err) {
-            return self.emit("error", err);
-          }
-          self.attachListeners(self.stream);
-          self.stream.on("error", reportStreamError);
-          self.emit("sslconnect");
+          self.upgradeToSSL(host, reportStreamError);
         });
       }
-      attachListeners(stream) {
-        parse2(stream, (msg) => {
+      upgradeToSSL(host, reportStreamError) {
+        const self = this;
+        const options = {
+          socket: self.stream
+        };
+        if (self.ssl !== true) {
+          Object.assign(options, self.ssl);
+          if ("key" in self.ssl) {
+            options.key = self.ssl.key;
+          }
+        }
+        if (self.sslNegotiation === "direct") {
+          options.ALPNProtocols = ["postgresql"];
+        }
+        const net = __require("net");
+        if (net.isIP && net.isIP(host) === 0) {
+          options.servername = host;
+        }
+        try {
+          self.stream = stream.getSecureStream(options);
+        } catch (err) {
+          return self.emit("error", err);
+        }
+        self.attachListeners(self.stream);
+        self.stream.on("error", reportStreamError);
+        self.emit("sslconnect");
+      }
+      attachListeners(stream2) {
+        parse2(stream2, (msg) => {
           const eventName = msg.name === "error" ? "errorMessage" : msg.name;
           if (this._emitMessage) {
             this.emit("message", msg);
@@ -37381,9 +37605,9 @@ var require_lib3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/client.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/client.js
 var require_client = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/client.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/client.js"(exports, module) {
     var EventEmitter = __require("events").EventEmitter;
     var utils = require_utils4();
     var nodeUtils = __require("util");
@@ -37463,6 +37687,7 @@ var require_client = __commonJS({
         this.connection = c.connection || new Connection2({
           stream: c.stream,
           ssl: this.connectionParameters.ssl,
+          sslNegotiation: this.connectionParameters.sslnegotiation,
           keepAlive: c.keepAlive || false,
           keepAliveInitialDelayMillis: c.keepAliveInitialDelayMillis || 0,
           encoding: this.connectionParameters.client_encoding || "utf8"
@@ -37472,6 +37697,7 @@ var require_client = __commonJS({
         this.processID = null;
         this.secretKey = null;
         this.ssl = this.connectionParameters.ssl || false;
+        this.sslNegotiation = this.connectionParameters.sslnegotiation || "postgres";
         if (this.ssl && this.ssl.key) {
           Object.defineProperty(this.ssl, "key", {
             enumerable: false
@@ -37532,7 +37758,9 @@ var require_client = __commonJS({
         }
         con.on("connect", function() {
           if (self.ssl) {
-            con.requestSsl();
+            if (self.sslNegotiation !== "direct") {
+              con.requestSsl();
+            }
           } else {
             con.startup(self.getStartupConf());
           }
@@ -38019,9 +38247,9 @@ var require_client = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.21.0/node_modules/pg-pool/index.js
+// ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.22.0/node_modules/pg-pool/index.js
 var require_pg_pool = __commonJS({
-  "../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.21.0/node_modules/pg-pool/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.22.0/node_modules/pg-pool/index.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events").EventEmitter;
     var NOOP = function() {
@@ -38445,9 +38673,9 @@ var require_pg_pool = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/query.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/native/query.js
 var require_query2 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/query.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/native/query.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events").EventEmitter;
     var util = __require("util");
@@ -38586,9 +38814,9 @@ var require_query2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/client.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/native/client.js
 var require_client2 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/client.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/native/client.js"(exports, module) {
     var nodeUtils = __require("util");
     var Native;
     try {
@@ -38845,17 +39073,17 @@ var require_client2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/index.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/native/index.js
 var require_native = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/native/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/native/index.js"(exports, module) {
     "use strict";
     module.exports = require_client2();
   }
 });
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/index.js
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/index.js
 var require_lib4 = __commonJS({
-  "../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/lib/index.js"(exports, module) {
+  "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/index.js"(exports, module) {
     "use strict";
     var Client3 = require_client();
     var defaults2 = require_defaults();
@@ -38864,7 +39092,7 @@ var require_lib4 = __commonJS({
     var utils = require_utils4();
     var Pool3 = require_pg_pool();
     var TypeOverrides2 = require_type_overrides();
-    var { DatabaseError: DatabaseError2 } = require_dist6();
+    var { DatabaseError: DatabaseError2 } = require_dist5();
     var { escapeIdentifier: escapeIdentifier2, escapeLiteral: escapeLiteral2 } = require_utils4();
     var poolFactory = (Client4) => {
       return class BoundPool extends Pool3 {
@@ -38922,7 +39150,7 @@ var require_lib4 = __commonJS({
 // src/app.ts
 var import_express2 = __toESM(require_express2(), 1);
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/underscore-CPJSkOtE.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/underscore.mjs
 function snakeToCamel(str) {
   return str ? str.replace(/([-_][a-z])/g, (match2) => match2.toUpperCase().replace(/-|_/, "")) : "";
 }
@@ -38965,8 +39193,14 @@ function isTruthy(value) {
   return false;
 }
 
-// ../../node_modules/.pnpm/@clerk+express@2.1.23_express@5.2.1/node_modules/@clerk/express/dist/chunk-2VERGOLI.mjs
+// ../../node_modules/.pnpm/@clerk+express@2.1.32_express@5.2.1/node_modules/@clerk/express/dist/utils-CWske222.mjs
 import { Readable } from "stream";
+var clerkAuthBrand = /* @__PURE__ */ Symbol.for("@clerk/express.auth");
+var brandRequestAuth = (authHandler) => Object.assign(authHandler, { [clerkAuthBrand]: true });
+var requestHasAuthObject = (req) => {
+  const auth = req.auth;
+  return typeof auth === "function" && auth[clerkAuthBrand] === true;
+};
 var loadClientEnv = () => {
   return {
     publishableKey: process.env.CLERK_PUBLISHABLE_KEY || "",
@@ -38990,7 +39224,7 @@ var loadApiEnv = () => {
     jwtKey: process.env.CLERK_JWT_KEY || "",
     sdkMetadata: {
       name: "@clerk/express",
-      version: "2.1.23",
+      version: "2.1.32",
       environment: "production"
     },
     telemetry: {
@@ -39011,24 +39245,25 @@ var incomingMessageToRequest = (req) => {
 var requestToProxyRequest = (req) => {
   const headers = new Headers();
   Object.entries(req.headers).forEach(([key, value]) => {
-    if (value) {
-      headers.set(key, Array.isArray(value) ? value.join(", ") : value);
-    }
+    if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
   });
   const protocol = req.protocol || (req.secure ? "https" : "http");
   const host = req.get("host") || "localhost";
   const url = new URL(req.originalUrl || req.url, `${protocol}://${host}`);
-  const hasBody = ["POST", "PUT", "PATCH"].includes(req.method);
+  const hasBody = [
+    "POST",
+    "PUT",
+    "PATCH"
+  ].includes(req.method);
   return new Request(url.toString(), {
     method: req.method,
     headers,
     body: hasBody ? Readable.toWeb(req) : void 0,
-    // @ts-expect-error - duplex required for streaming bodies but not in all TS definitions
     duplex: hasBody ? "half" : void 0
   });
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/runtimeEnvironment-DHuMF-tN.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/runtimeEnvironment-CTVGzENl.mjs
 var automatedEnvironmentVariables = [
   "CI",
   "CONTINUOUS_INTEGRATION",
@@ -39062,7 +39297,7 @@ var isProductionEnvironment = () => {
   return false;
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/deprecated-D89ptCyg.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/deprecated.mjs
 var displayedWarnings = /* @__PURE__ */ new Set();
 var deprecated = (fnName, warning, key) => {
   const hideWarning = isTestEnvironment() || isProductionEnvironment();
@@ -39073,7 +39308,7 @@ var deprecated = (fnName, warning, key) => {
 ${warning}`);
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/constants-BVchI2jn.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/constants.mjs
 var LEGACY_DEV_INSTANCE_SUFFIXES = [
   ".lcl.dev",
   ".lclstage.dev",
@@ -39107,21 +39342,21 @@ var STAGING_FAPI_URL = "https://frontend-api.clerkstage.dev";
 var PROD_FAPI_URL = "https://frontend-api.clerk.dev";
 var DEFAULT_PROXY_PATH = "/__clerk";
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/isomorphicAtob-C1KQ5FtS.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/isomorphicAtob.mjs
 var isomorphicAtob = (data) => {
   if (typeof atob !== "undefined" && typeof atob === "function") return atob(data);
   else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data, "base64").toString();
   return data;
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/isomorphicBtoa-BBBfp_jr.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/isomorphicBtoa.mjs
 var isomorphicBtoa = (data) => {
   if (typeof btoa !== "undefined" && typeof btoa === "function") return btoa(data);
   else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data).toString("base64");
   return data;
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/keys-jlv3GIE3.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/keys.mjs
 var PUBLISHABLE_KEY_LIVE_PREFIX = "pk_live_";
 var PUBLISHABLE_KEY_TEST_PREFIX = "pk_test_";
 function isValidDecodedPublishableKey(decoded) {
@@ -39171,16 +39406,24 @@ function isPublishableKey(key = "") {
 }
 function createDevOrStagingUrlCache() {
   const devOrStagingUrlCache = /* @__PURE__ */ new Map();
-  return { isDevOrStagingUrl: (url) => {
-    if (!url) return false;
-    const hostname = typeof url === "string" ? url : url.hostname;
-    let res = devOrStagingUrlCache.get(hostname);
-    if (res === void 0) {
-      res = DEV_OR_STAGING_SUFFIXES.some((s2) => hostname.endsWith(s2));
-      devOrStagingUrlCache.set(hostname, res);
+  return {
+    /**
+    * Checks if a URL is a development or staging environment.
+    *
+    * @param url - The URL to check (string or URL object).
+    * @returns `true` if the URL is a development or staging environment, `false` otherwise.
+    */
+    isDevOrStagingUrl: (url) => {
+      if (!url) return false;
+      const hostname = typeof url === "string" ? url : url.hostname;
+      let res = devOrStagingUrlCache.get(hostname);
+      if (res === void 0) {
+        res = DEV_OR_STAGING_SUFFIXES.some((s2) => hostname.endsWith(s2));
+        devOrStagingUrlCache.set(hostname, res);
+      }
+      return res;
     }
-    return res;
-  } };
+  };
 }
 function isProductionFromPublishableKey(apiKey) {
   return apiKey.startsWith("live_") || apiKey.startsWith("pk_live_");
@@ -39197,7 +39440,7 @@ var getSuffixedCookieName = (cookieName, cookieSuffix) => {
   return `${cookieName}_${cookieSuffix}`;
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/retry-NrE3SkPj.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/retry.mjs
 var defaultOptions = {
   initialDelay: 125,
   maxDelayBetweenRetries: 0,
@@ -39248,7 +39491,7 @@ var retry = async (callback, options = {}) => {
   }
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/url-BwZwnCsF.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/url.mjs
 function isLegacyDevAccountPortalOrigin(host) {
   return LEGACY_DEV_INSTANCE_SUFFIXES.some((legacyDevSuffix) => {
     return host.startsWith("accounts.") && host.endsWith(legacyDevSuffix);
@@ -39260,7 +39503,7 @@ function isCurrentDevAccountPortalOrigin(host) {
   });
 }
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/clerkRuntimeError-EpUpwIcY.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/clerkRuntimeError-DlesLWqO.mjs
 function createErrorTypeGuard(ErrorClass) {
   function typeGuard(error) {
     const target = error ?? this;
@@ -39325,7 +39568,7 @@ var ClerkRuntimeError = class ClerkRuntimeError2 extends ClerkError {
 };
 var isClerkRuntimeError = createErrorTypeGuard(ClerkRuntimeError);
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/error-DAG0ASPV.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/error-uYOdvTDm.mjs
 var ClerkAPIError = class {
   static kind = "ClerkAPIError";
   code;
@@ -39344,7 +39587,9 @@ var ClerkAPIError = class {
         identifiers: json2.meta?.identifiers,
         zxcvbn: json2.meta?.zxcvbn,
         plan: json2.meta?.plan,
-        isPlanUpgradePossible: json2.meta?.is_plan_upgrade_possible
+        isPlanUpgradePossible: json2.meta?.is_plan_upgrade_possible,
+        seatsQuantityToAdd: json2.meta?.seats_quantity_to_add,
+        seatsQuantity: json2.meta?.seats_quantity
       }
     };
     this.code = parsedError.code;
@@ -39414,12 +39659,12 @@ function buildErrorThrower({ packageName, customMessages }) {
     ...customMessages
   };
   return {
-    setPackageName({ packageName: packageName$1 }) {
-      if (typeof packageName$1 === "string") pkg = packageName$1;
+    setPackageName({ packageName: packageName2 }) {
+      if (typeof packageName2 === "string") pkg = packageName2;
       return this;
     },
-    setMessages({ customMessages: customMessages$1 }) {
-      Object.assign(messages, customMessages$1 || {});
+    setMessages({ customMessages: customMessages2 }) {
+      Object.assign(messages, customMessages2 || {});
       return this;
     },
     throwInvalidPublishableKeyError(params) {
@@ -39443,11 +39688,11 @@ function buildErrorThrower({ packageName, customMessages }) {
   };
 }
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/chunk-YBVFDYDR.mjs
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-YBVFDYDR.mjs
 var errorThrower = buildErrorThrower({ packageName: "@clerk/backend" });
 var { isDevOrStagingUrl } = createDevOrStagingUrlCache();
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/chunk-RZ7A7F6X.mjs
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-RZ7A7F6X.mjs
 var TokenVerificationErrorCode = {
   InvalidSecretKey: "clerk_key_invalid"
 };
@@ -39520,10 +39765,10 @@ var _MachineTokenVerificationError = class _MachineTokenVerificationError2 exten
 _MachineTokenVerificationError.kind = "MachineTokenVerificationError";
 var MachineTokenVerificationError = _MachineTokenVerificationError;
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/runtime/node/crypto.mjs
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/runtime/node/crypto.mjs
 import { webcrypto } from "node:crypto";
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/chunk-J2CDX2WG.mjs
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-7E7A3JZN.mjs
 var globalFetch = fetch.bind(globalThis);
 var runtime = {
   crypto: webcrypto,
@@ -39798,7 +40043,12 @@ async function hasValidSignature(jwt, key) {
   const algorithm = getCryptoAlgorithm(header.alg);
   try {
     const cryptoKey = await importKey(key, algorithm, "verify");
-    const verified = await runtime.crypto.subtle.verify(algorithm.name, cryptoKey, signature, data);
+    const verified = await runtime.crypto.subtle.verify(
+      algorithm.name,
+      cryptoKey,
+      signature,
+      data
+    );
     return { data: verified };
   } catch (error) {
     return {
@@ -39892,7 +40142,7 @@ async function verifyJwt(token, options) {
   return { data: payload };
 }
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/chunk-TOROEX6P.mjs
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-TOROEX6P.mjs
 var __create2 = Object.create;
 var __defProp2 = Object.defineProperty;
 var __getOwnPropDesc2 = Object.getOwnPropertyDescriptor;
@@ -39927,15 +40177,19 @@ var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/buildAccountsBaseUrl.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/buildAccountsBaseUrl.mjs
 function buildAccountsBaseUrl(frontendApi) {
   if (!frontendApi) return "";
   return `https://${frontendApi.replace(/clerk\.accountsstage\./, "accountsstage.").replace(/clerk\.accounts\.|clerk\./, "accounts.")}`;
 }
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/logger-C6joC6-q.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/logger.mjs
 var loggedMessages = /* @__PURE__ */ new Set();
 var logger = {
+  /**
+  * A custom logger that ensures messages are logged only once.
+  * Reduces noise and duplicated messages when logs are in a hot codepath.
+  */
   warnOnce: (msg) => {
     if (loggedMessages.has(msg)) return;
     loggedMessages.add(msg);
@@ -39948,7 +40202,7 @@ var logger = {
   }
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/proxy-6sFESt4u.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/proxy.mjs
 function isValidProxyUrl(key) {
   if (!key) return true;
   return isHttpOrHttps(key) || isProxyUrlRelative(key);
@@ -39983,7 +40237,7 @@ function getAutoProxyUrlFromEnvironment({ publishableKey, hasDomain = false, has
   return AUTO_PROXY_PATH;
 }
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/authorization-D10DwNv6.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/authorization.mjs
 var TYPES_TO_OBJECTS = {
   strict_mfa: {
     afterMinutes: 10,
@@ -40108,9 +40362,9 @@ var splitByScope = (fea) => {
 };
 var validateReverificationConfig = (config) => {
   if (!config) return false;
-  const convertConfigToObject = (config$1) => {
-    if (typeof config$1 === "string") return TYPES_TO_OBJECTS[config$1];
-    return config$1;
+  const convertConfigToObject = (config2) => {
+    if (typeof config2 === "string") return TYPES_TO_OBJECTS[config2];
+    return config2;
   };
   const isValidStringValue = typeof config === "string" && isValidVerificationType(config);
   const isValidObjectValue = typeof config === "object" && isValidLevel(config.level) && isValidMaxAge(config.afterMinutes);
@@ -40153,7 +40407,7 @@ var createCheckAuthorization = (options) => {
   };
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/jwtPayloadParser.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/jwtPayloadParser.mjs
 var parsePermissions = ({ per, fpm }) => {
   if (!per || !fpm) return {
     permissions: [],
@@ -40223,7 +40477,7 @@ var __experimental_JWTPayloadToAuthObjectProperties = (claims) => {
   };
 };
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/pathToRegexp-CNkSDpje.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/pathToRegexp-C-7qTA7_.mjs
 function _(r) {
   for (var n = [], e = 0; e < r.length; ) {
     var a = r[e];
@@ -40460,8 +40714,8 @@ ${e.message}`);
   }
 }
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/chunk-H3NCOZAT.mjs
-var require_dist3 = __commonJS2({
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-7KNTREEZ.mjs
+var require_dist2 = __commonJS2({
   "../../node_modules/.pnpm/cookie@1.1.1/node_modules/cookie/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -40710,9 +40964,9 @@ var require_dist3 = __commonJS2({
 });
 var API_URL = "https://api.clerk.com";
 var API_VERSION = "v1";
-var USER_AGENT = `${"@clerk/backend"}@${"3.5.0"}`;
+var USER_AGENT = `${"@clerk/backend"}@${"3.8.4"}`;
 var MAX_CACHE_LAST_UPDATED_AT_SECONDS = 5 * 60;
-var SUPPORTED_BAPI_VERSION = "2025-11-10";
+var SUPPORTED_BAPI_VERSION = "2026-05-12";
 var Attributes = {
   AuthToken: "__clerkAuthToken",
   AuthSignature: "__clerkAuthSignature",
@@ -40841,7 +41095,7 @@ var AuthenticateContext = class {
     }
   }
   /**
-   * Retrieves the session token from either the cookie or the header.
+   * Gets the session token from either the cookie or the header.
    *
    * @returns {string | undefined} The session token if available, otherwise undefined.
    */
@@ -41634,9 +41888,12 @@ var IdPOAuthAccessToken = class _IdPOAuthAccessToken {
       false,
       null,
       payload.exp * 1e3 <= Date.now() - clockSkewInMs,
-      payload.exp,
-      payload.iat,
-      payload.iat
+      payload.exp * 1e3,
+      // milliseconds: expiration, converted from JWT exp claim
+      payload.iat * 1e3,
+      // milliseconds: createdAt, converted from JWT iat claim
+      payload.iat * 1e3
+      // milliseconds: updatedAt, no JWT equivalent, defaults to iat
     );
   }
 };
@@ -42128,10 +42385,33 @@ var OrganizationAPI = class extends AbstractAPI {
   }
   async updateOrganization(organizationId, params) {
     this.requireId(organizationId);
+    const { publicMetadata, privateMetadata, ...rest } = params;
+    const hasMetadata = publicMetadata !== void 0 || privateMetadata !== void 0;
+    const hasRest = Object.keys(rest).length > 0;
+    if (hasMetadata) {
+      deprecated(
+        "updateOrganization(organizationId, { publicMetadata | privateMetadata })",
+        "Use updateOrganizationMetadata for partial updates (merge) or replaceOrganizationMetadata for full replacement."
+      );
+    }
+    if (!hasMetadata) {
+      return this.request({
+        method: "PATCH",
+        path: joinPaths(basePath19, organizationId),
+        bodyParams: rest
+      });
+    }
+    if (hasRest) {
+      await this.request({
+        method: "PATCH",
+        path: joinPaths(basePath19, organizationId),
+        bodyParams: rest
+      });
+    }
     return this.request({
-      method: "PATCH",
-      path: joinPaths(basePath19, organizationId),
-      bodyParams: params
+      method: "PUT",
+      path: joinPaths(basePath19, organizationId, "metadata"),
+      bodyParams: { publicMetadata, privateMetadata }
     });
   }
   async updateOrganizationLogo(organizationId, params) {
@@ -42158,6 +42438,19 @@ var OrganizationAPI = class extends AbstractAPI {
     this.requireId(organizationId);
     return this.request({
       method: "PATCH",
+      path: joinPaths(basePath19, organizationId, "metadata"),
+      bodyParams: params
+    });
+  }
+  /**
+   * Replace an organization's metadata. Supplied fields are overwritten in full;
+   * fields omitted from `params` are left unchanged. Prefer
+   * `updateOrganizationMetadata` for partial updates with deep-merge semantics.
+   */
+  async replaceOrganizationMetadata(organizationId, params) {
+    this.requireId(organizationId);
+    return this.request({
+      method: "PUT",
       path: joinPaths(basePath19, organizationId, "metadata"),
       bodyParams: params
     });
@@ -42303,12 +42596,110 @@ var OrganizationAPI = class extends AbstractAPI {
     });
   }
 };
-var basePath20 = "/oauth_applications";
+var basePath20 = "/organization_permissions";
+var OrganizationPermissionAPI = class extends AbstractAPI {
+  async getOrganizationPermissionList(params = {}) {
+    return this.request({
+      method: "GET",
+      path: basePath20,
+      queryParams: params
+    });
+  }
+  async getOrganizationPermission(permissionId) {
+    this.requireId(permissionId);
+    return this.request({
+      method: "GET",
+      path: joinPaths(basePath20, permissionId)
+    });
+  }
+  async createOrganizationPermission(params) {
+    return this.request({
+      method: "POST",
+      path: basePath20,
+      bodyParams: params
+    });
+  }
+  async updateOrganizationPermission(params) {
+    const { permissionId, ...bodyParams } = params;
+    this.requireId(permissionId);
+    return this.request({
+      method: "PATCH",
+      path: joinPaths(basePath20, permissionId),
+      bodyParams
+    });
+  }
+  async deleteOrganizationPermission(permissionId) {
+    this.requireId(permissionId);
+    return this.request({
+      method: "DELETE",
+      path: joinPaths(basePath20, permissionId)
+    });
+  }
+};
+var basePath21 = "/organization_roles";
+var OrganizationRoleAPI = class extends AbstractAPI {
+  async getOrganizationRoleList(params = {}) {
+    return this.request({
+      method: "GET",
+      path: basePath21,
+      queryParams: params
+    });
+  }
+  async getOrganizationRole(organizationRoleId) {
+    this.requireId(organizationRoleId);
+    return this.request({
+      method: "GET",
+      path: joinPaths(basePath21, organizationRoleId)
+    });
+  }
+  async createOrganizationRole(params) {
+    return this.request({
+      method: "POST",
+      path: basePath21,
+      bodyParams: params
+    });
+  }
+  async updateOrganizationRole(params) {
+    const { organizationRoleId, ...bodyParams } = params;
+    this.requireId(organizationRoleId);
+    return this.request({
+      method: "PATCH",
+      path: joinPaths(basePath21, organizationRoleId),
+      bodyParams
+    });
+  }
+  async deleteOrganizationRole(organizationRoleId) {
+    this.requireId(organizationRoleId);
+    return this.request({
+      method: "DELETE",
+      path: joinPaths(basePath21, organizationRoleId)
+    });
+  }
+  async assignPermissionToOrganizationRole(params) {
+    const { organizationRoleId, permissionId } = params;
+    this.requireId(organizationRoleId);
+    this.requireId(permissionId);
+    return this.request({
+      method: "POST",
+      path: joinPaths(basePath21, organizationRoleId, "permissions", permissionId)
+    });
+  }
+  async removePermissionFromOrganizationRole(params) {
+    const { organizationRoleId, permissionId } = params;
+    this.requireId(organizationRoleId);
+    this.requireId(permissionId);
+    return this.request({
+      method: "DELETE",
+      path: joinPaths(basePath21, organizationRoleId, "permissions", permissionId)
+    });
+  }
+};
+var basePath22 = "/oauth_applications";
 var OAuthApplicationsApi = class extends AbstractAPI {
   async list(params = {}) {
     return this.request({
       method: "GET",
-      path: basePath20,
+      path: basePath22,
       queryParams: params
     });
   }
@@ -42316,13 +42707,13 @@ var OAuthApplicationsApi = class extends AbstractAPI {
     this.requireId(oauthApplicationId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath20, oauthApplicationId)
+      path: joinPaths(basePath22, oauthApplicationId)
     });
   }
   async create(params) {
     return this.request({
       method: "POST",
-      path: basePath20,
+      path: basePath22,
       bodyParams: params
     });
   }
@@ -42331,7 +42722,7 @@ var OAuthApplicationsApi = class extends AbstractAPI {
     this.requireId(oauthApplicationId);
     return this.request({
       method: "PATCH",
-      path: joinPaths(basePath20, oauthApplicationId),
+      path: joinPaths(basePath22, oauthApplicationId),
       bodyParams
     });
   }
@@ -42339,30 +42730,30 @@ var OAuthApplicationsApi = class extends AbstractAPI {
     this.requireId(oauthApplicationId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath20, oauthApplicationId)
+      path: joinPaths(basePath22, oauthApplicationId)
     });
   }
   async rotateSecret(oauthApplicationId) {
     this.requireId(oauthApplicationId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath20, oauthApplicationId, "rotate_secret")
+      path: joinPaths(basePath22, oauthApplicationId, "rotate_secret")
     });
   }
 };
-var basePath21 = "/phone_numbers";
+var basePath23 = "/phone_numbers";
 var PhoneNumberAPI = class extends AbstractAPI {
   async getPhoneNumber(phoneNumberId) {
     this.requireId(phoneNumberId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath21, phoneNumberId)
+      path: joinPaths(basePath23, phoneNumberId)
     });
   }
   async createPhoneNumber(params) {
     return this.request({
       method: "POST",
-      path: basePath21,
+      path: basePath23,
       bodyParams: params
     });
   }
@@ -42370,7 +42761,7 @@ var PhoneNumberAPI = class extends AbstractAPI {
     this.requireId(phoneNumberId);
     return this.request({
       method: "PATCH",
-      path: joinPaths(basePath21, phoneNumberId),
+      path: joinPaths(basePath23, phoneNumberId),
       bodyParams: params
     });
   }
@@ -42378,26 +42769,26 @@ var PhoneNumberAPI = class extends AbstractAPI {
     this.requireId(phoneNumberId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath21, phoneNumberId)
+      path: joinPaths(basePath23, phoneNumberId)
     });
   }
 };
-var basePath22 = "/proxy_checks";
+var basePath24 = "/proxy_checks";
 var ProxyCheckAPI = class extends AbstractAPI {
   async verify(params) {
     return this.request({
       method: "POST",
-      path: basePath22,
+      path: basePath24,
       bodyParams: params
     });
   }
 };
-var basePath23 = "/redirect_urls";
+var basePath25 = "/redirect_urls";
 var RedirectUrlAPI = class extends AbstractAPI {
   async getRedirectUrlList() {
     return this.request({
       method: "GET",
-      path: basePath23,
+      path: basePath25,
       queryParams: { paginated: true }
     });
   }
@@ -42405,13 +42796,13 @@ var RedirectUrlAPI = class extends AbstractAPI {
     this.requireId(redirectUrlId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath23, redirectUrlId)
+      path: joinPaths(basePath25, redirectUrlId)
     });
   }
   async createRedirectUrl(params) {
     return this.request({
       method: "POST",
-      path: basePath23,
+      path: basePath25,
       bodyParams: params
     });
   }
@@ -42419,23 +42810,83 @@ var RedirectUrlAPI = class extends AbstractAPI {
     this.requireId(redirectUrlId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath23, redirectUrlId)
+      path: joinPaths(basePath25, redirectUrlId)
     });
   }
 };
-var basePath24 = "/saml_connections";
+var basePath26 = "/role_sets";
+var RoleSetAPI = class extends AbstractAPI {
+  async getRoleSetList(params = {}) {
+    return this.request({
+      method: "GET",
+      path: basePath26,
+      queryParams: params
+    });
+  }
+  async getRoleSet(roleSetKeyOrId) {
+    this.requireId(roleSetKeyOrId);
+    return this.request({
+      method: "GET",
+      path: joinPaths(basePath26, roleSetKeyOrId)
+    });
+  }
+  async createRoleSet(params) {
+    return this.request({
+      method: "POST",
+      path: basePath26,
+      bodyParams: params
+    });
+  }
+  async updateRoleSet(params) {
+    const { roleSetKeyOrId, ...bodyParams } = params;
+    this.requireId(roleSetKeyOrId);
+    return this.request({
+      method: "PATCH",
+      path: joinPaths(basePath26, roleSetKeyOrId),
+      bodyParams
+    });
+  }
+  async addRolesToRoleSet(params) {
+    const { roleSetKeyOrId, ...bodyParams } = params;
+    this.requireId(roleSetKeyOrId);
+    return this.request({
+      method: "POST",
+      path: joinPaths(basePath26, roleSetKeyOrId, "roles"),
+      bodyParams
+    });
+  }
+  async replaceRoleInRoleSet(params) {
+    const { roleSetKeyOrId, ...bodyParams } = params;
+    this.requireId(roleSetKeyOrId);
+    return this.request({
+      method: "POST",
+      path: joinPaths(basePath26, roleSetKeyOrId, "roles", "replace"),
+      bodyParams
+    });
+  }
+  async replaceRoleSet(params) {
+    const { roleSetKeyOrId, ...bodyParams } = params;
+    this.requireId(roleSetKeyOrId);
+    return this.request({
+      method: "POST",
+      path: joinPaths(basePath26, roleSetKeyOrId, "replace"),
+      bodyParams
+    });
+  }
+};
+var basePath27 = "/saml_connections";
 var SamlConnectionAPI = class extends AbstractAPI {
   async getSamlConnectionList(params = {}) {
     return this.request({
       method: "GET",
-      path: basePath24,
+      path: basePath27,
       queryParams: params
     });
   }
   async createSamlConnection(params) {
     return this.request({
       method: "POST",
-      path: basePath24,
+      path: basePath27,
       bodyParams: params,
       options: {
         deepSnakecaseBodyParamKeys: true
@@ -42446,14 +42897,14 @@ var SamlConnectionAPI = class extends AbstractAPI {
     this.requireId(samlConnectionId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath24, samlConnectionId)
+      path: joinPaths(basePath27, samlConnectionId)
     });
   }
   async updateSamlConnection(samlConnectionId, params = {}) {
     this.requireId(samlConnectionId);
     return this.request({
       method: "PATCH",
-      path: joinPaths(basePath24, samlConnectionId),
+      path: joinPaths(basePath27, samlConnectionId),
       bodyParams: params,
       options: {
         deepSnakecaseBodyParamKeys: true
@@ -42464,16 +42915,16 @@ var SamlConnectionAPI = class extends AbstractAPI {
     this.requireId(samlConnectionId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath24, samlConnectionId)
+      path: joinPaths(basePath27, samlConnectionId)
     });
   }
 };
-var basePath25 = "/sessions";
+var basePath28 = "/sessions";
 var SessionAPI = class extends AbstractAPI {
   async getSessionList(params = {}) {
     return this.request({
       method: "GET",
-      path: basePath25,
+      path: basePath28,
       queryParams: { ...params, paginated: true }
     });
   }
@@ -42481,13 +42932,13 @@ var SessionAPI = class extends AbstractAPI {
     this.requireId(sessionId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath25, sessionId)
+      path: joinPaths(basePath28, sessionId)
     });
   }
   async createSession(params) {
     return this.request({
       method: "POST",
-      path: basePath25,
+      path: basePath28,
       bodyParams: params
     });
   }
@@ -42495,23 +42946,23 @@ var SessionAPI = class extends AbstractAPI {
     this.requireId(sessionId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath25, sessionId, "revoke")
+      path: joinPaths(basePath28, sessionId, "revoke")
     });
   }
   async verifySession(sessionId, token) {
     this.requireId(sessionId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath25, sessionId, "verify"),
+      path: joinPaths(basePath28, sessionId, "verify"),
       bodyParams: { token }
     });
   }
   /**
-   * Retrieves a session token or generates a JWT using a specified template.
+   * Gets a session token or generates a JWT using a specified template.
    *
    * @param sessionId - The ID of the session for which to generate the token
-   * @param template - Optional name of the JWT template configured in the Clerk Dashboard.
-   * @param expiresInSeconds - Optional expiration time for the token in seconds.
+   * @param template - The name of the JWT template configured in the Clerk Dashboard.
+   * @param expiresInSeconds - The expiration time for the token in seconds.
    *   If not provided, uses the default expiration.
    *
    * @returns A promise that resolves to the generated token
@@ -42520,7 +42971,7 @@ var SessionAPI = class extends AbstractAPI {
    */
   async getToken(sessionId, template, expiresInSeconds) {
     this.requireId(sessionId);
-    const path = template ? joinPaths(basePath25, sessionId, "tokens", template) : joinPaths(basePath25, sessionId, "tokens");
+    const path = template ? joinPaths(basePath28, sessionId, "tokens", template) : joinPaths(basePath28, sessionId, "tokens");
     const requestOptions = {
       method: "POST",
       path
@@ -42535,18 +42986,18 @@ var SessionAPI = class extends AbstractAPI {
     const { suffixed_cookies, ...restParams } = params;
     return this.request({
       method: "POST",
-      path: joinPaths(basePath25, sessionId, "refresh"),
+      path: joinPaths(basePath28, sessionId, "refresh"),
       bodyParams: restParams,
       queryParams: { suffixed_cookies }
     });
   }
 };
-var basePath26 = "/sign_in_tokens";
+var basePath29 = "/sign_in_tokens";
 var SignInTokenAPI = class extends AbstractAPI {
   async createSignInToken(params) {
     return this.request({
       method: "POST",
-      path: basePath26,
+      path: basePath29,
       bodyParams: params
     });
   }
@@ -42554,45 +43005,45 @@ var SignInTokenAPI = class extends AbstractAPI {
     this.requireId(signInTokenId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath26, signInTokenId, "revoke")
+      path: joinPaths(basePath29, signInTokenId, "revoke")
     });
   }
 };
-var basePath27 = "/sign_ups";
+var basePath30 = "/sign_ups";
 var SignUpAPI = class extends AbstractAPI {
   async get(signUpAttemptId) {
     this.requireId(signUpAttemptId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath27, signUpAttemptId)
+      path: joinPaths(basePath30, signUpAttemptId)
     });
   }
   async update(params) {
     const { signUpAttemptId, ...bodyParams } = params;
     return this.request({
       method: "PATCH",
-      path: joinPaths(basePath27, signUpAttemptId),
+      path: joinPaths(basePath30, signUpAttemptId),
       bodyParams
     });
   }
 };
-var basePath28 = "/testing_tokens";
+var basePath31 = "/testing_tokens";
 var TestingTokenAPI = class extends AbstractAPI {
   async createTestingToken() {
     return this.request({
       method: "POST",
-      path: basePath28
+      path: basePath31
     });
   }
 };
-var basePath29 = "/users";
+var basePath32 = "/users";
 var UserAPI = class extends AbstractAPI {
   async getUserList(params = {}) {
     const { limit, offset, orderBy, ...userCountParams } = params;
     const [data, totalCount] = await Promise.all([
       this.request({
         method: "GET",
-        path: basePath29,
+        path: basePath32,
         queryParams: params
       }),
       this.getCount(userCountParams)
@@ -42603,29 +43054,52 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath29, userId)
+      path: joinPaths(basePath32, userId)
     });
   }
   async createUser(params) {
     return this.request({
       method: "POST",
-      path: basePath29,
+      path: basePath32,
       bodyParams: params
     });
   }
   async updateUser(userId, params = {}) {
     this.requireId(userId);
+    const { publicMetadata, privateMetadata, unsafeMetadata, ...rest } = params;
+    const hasMetadata = publicMetadata !== void 0 || privateMetadata !== void 0 || unsafeMetadata !== void 0;
+    const hasRest = Object.keys(rest).length > 0;
+    if (hasMetadata) {
+      deprecated(
+        "updateUser(userId, { publicMetadata | privateMetadata | unsafeMetadata })",
+        "Use updateUserMetadata for partial updates (merge) or replaceUserMetadata for full replacement."
+      );
+    }
+    if (!hasMetadata) {
+      return this.request({
+        method: "PATCH",
+        path: joinPaths(basePath32, userId),
+        bodyParams: rest
+      });
+    }
+    if (hasRest) {
+      await this.request({
+        method: "PATCH",
+        path: joinPaths(basePath32, userId),
+        bodyParams: rest
+      });
+    }
     return this.request({
-      method: "PATCH",
-      path: joinPaths(basePath29, userId),
-      bodyParams: params
+      method: "PUT",
+      path: joinPaths(basePath32, userId, "metadata"),
+      bodyParams: { publicMetadata, privateMetadata, unsafeMetadata }
     });
   }
   async replaceUserEmailAddress(userId, params) {
     this.requireId(userId);
     return this.request({
       method: "PUT",
-      path: joinPaths(basePath29, userId, "email_address"),
+      path: joinPaths(basePath32, userId, "email_address"),
       bodyParams: params
     });
   }
@@ -42633,7 +43107,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "PUT",
-      path: joinPaths(basePath29, userId, "phone_number"),
+      path: joinPaths(basePath32, userId, "phone_number"),
       bodyParams: params
     });
   }
@@ -42643,7 +43117,7 @@ var UserAPI = class extends AbstractAPI {
     formData.append("file", params?.file);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "profile_image"),
+      path: joinPaths(basePath32, userId, "profile_image"),
       formData
     });
   }
@@ -42651,7 +43125,20 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "PATCH",
-      path: joinPaths(basePath29, userId, "metadata"),
+      path: joinPaths(basePath32, userId, "metadata"),
+      bodyParams: params
+    });
+  }
+  /**
+   * Replace a user's metadata. Supplied fields are overwritten in full; fields
+   * omitted from `params` are left unchanged. Prefer `updateUserMetadata` for
+   * partial updates with deep-merge semantics.
+   */
+  async replaceUserMetadata(userId, params) {
+    this.requireId(userId);
+    return this.request({
+      method: "PUT",
+      path: joinPaths(basePath32, userId, "metadata"),
       bodyParams: params
     });
   }
@@ -42659,13 +43146,13 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, userId)
+      path: joinPaths(basePath32, userId)
     });
   }
   async getCount(params = {}) {
     return this.request({
       method: "GET",
-      path: joinPaths(basePath29, "count"),
+      path: joinPaths(basePath32, "count"),
       queryParams: params
     });
   }
@@ -42681,7 +43168,7 @@ var UserAPI = class extends AbstractAPI {
     }
     return this.request({
       method: "GET",
-      path: joinPaths(basePath29, userId, "oauth_access_tokens", _provider),
+      path: joinPaths(basePath32, userId, "oauth_access_tokens", _provider),
       queryParams: { paginated: true }
     });
   }
@@ -42689,7 +43176,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, userId, "mfa")
+      path: joinPaths(basePath32, userId, "mfa")
     });
   }
   async getOrganizationMembershipList(params) {
@@ -42697,7 +43184,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath29, userId, "organization_memberships"),
+      path: joinPaths(basePath32, userId, "organization_memberships"),
       queryParams: { limit, offset }
     });
   }
@@ -42706,7 +43193,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "GET",
-      path: joinPaths(basePath29, userId, "organization_invitations"),
+      path: joinPaths(basePath32, userId, "organization_invitations"),
       queryParams
     });
   }
@@ -42715,7 +43202,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "verify_password"),
+      path: joinPaths(basePath32, userId, "verify_password"),
       bodyParams: { password }
     });
   }
@@ -42724,7 +43211,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "verify_totp"),
+      path: joinPaths(basePath32, userId, "verify_totp"),
       bodyParams: { code }
     });
   }
@@ -42732,35 +43219,35 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "ban")
+      path: joinPaths(basePath32, userId, "ban")
     });
   }
   async unbanUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "unban")
+      path: joinPaths(basePath32, userId, "unban")
     });
   }
   async lockUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "lock")
+      path: joinPaths(basePath32, userId, "lock")
     });
   }
   async unlockUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "unlock")
+      path: joinPaths(basePath32, userId, "unlock")
     });
   }
   async deleteUserProfileImage(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, userId, "profile_image")
+      path: joinPaths(basePath32, userId, "profile_image")
     });
   }
   async deleteUserPasskey(params) {
@@ -42768,7 +43255,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(params.passkeyIdentificationId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, params.userId, "passkeys", params.passkeyIdentificationId)
+      path: joinPaths(basePath32, params.userId, "passkeys", params.passkeyIdentificationId)
     });
   }
   async deleteUserWeb3Wallet(params) {
@@ -42776,7 +43263,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(params.web3WalletIdentificationId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, params.userId, "web3_wallets", params.web3WalletIdentificationId)
+      path: joinPaths(basePath32, params.userId, "web3_wallets", params.web3WalletIdentificationId)
     });
   }
   async deleteUserExternalAccount(params) {
@@ -42784,21 +43271,21 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(params.externalAccountId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, params.userId, "external_accounts", params.externalAccountId)
+      path: joinPaths(basePath32, params.userId, "external_accounts", params.externalAccountId)
     });
   }
   async deleteUserBackupCodes(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, userId, "backup_code")
+      path: joinPaths(basePath32, userId, "backup_code")
     });
   }
   async deleteUserTOTP(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath29, userId, "totp")
+      path: joinPaths(basePath32, userId, "totp")
     });
   }
   async setPasswordCompromised(userId, params = {
@@ -42807,7 +43294,7 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "password", "set_compromised"),
+      path: joinPaths(basePath32, userId, "password", "set_compromised"),
       bodyParams: params
     });
   }
@@ -42815,11 +43302,11 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath29, userId, "password", "unset_compromised")
+      path: joinPaths(basePath32, userId, "password", "unset_compromised")
     });
   }
 };
-var basePath30 = "/waitlist_entries";
+var basePath33 = "/waitlist_entries";
 var WaitlistEntryAPI = class extends AbstractAPI {
   /**
    * List waitlist entries.
@@ -42828,7 +43315,7 @@ var WaitlistEntryAPI = class extends AbstractAPI {
   async list(params = {}) {
     return this.request({
       method: "GET",
-      path: basePath30,
+      path: basePath33,
       queryParams: params
     });
   }
@@ -42839,7 +43326,7 @@ var WaitlistEntryAPI = class extends AbstractAPI {
   async create(params) {
     return this.request({
       method: "POST",
-      path: basePath30,
+      path: basePath33,
       bodyParams: params
     });
   }
@@ -42850,7 +43337,7 @@ var WaitlistEntryAPI = class extends AbstractAPI {
   async createBulk(params) {
     return this.request({
       method: "POST",
-      path: joinPaths(basePath30, "bulk"),
+      path: joinPaths(basePath33, "bulk"),
       bodyParams: params
     });
   }
@@ -42863,7 +43350,7 @@ var WaitlistEntryAPI = class extends AbstractAPI {
     this.requireId(id);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath30, id, "invite"),
+      path: joinPaths(basePath33, id, "invite"),
       bodyParams: params
     });
   }
@@ -42875,7 +43362,7 @@ var WaitlistEntryAPI = class extends AbstractAPI {
     this.requireId(id);
     return this.request({
       method: "POST",
-      path: joinPaths(basePath30, id, "reject")
+      path: joinPaths(basePath33, id, "reject")
     });
   }
   /**
@@ -42886,32 +43373,32 @@ var WaitlistEntryAPI = class extends AbstractAPI {
     this.requireId(id);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath30, id)
+      path: joinPaths(basePath33, id)
     });
   }
 };
-var basePath31 = "/webhooks";
+var basePath34 = "/webhooks";
 var WebhookAPI = class extends AbstractAPI {
   async createSvixApp() {
     return this.request({
       method: "POST",
-      path: joinPaths(basePath31, "svix")
+      path: joinPaths(basePath34, "svix")
     });
   }
   async generateSvixAuthURL() {
     return this.request({
       method: "POST",
-      path: joinPaths(basePath31, "svix_url")
+      path: joinPaths(basePath34, "svix_url")
     });
   }
   async deleteSvixApp() {
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath31, "svix")
+      path: joinPaths(basePath34, "svix")
     });
   }
 };
-var basePath32 = "/billing";
+var basePath35 = "/billing";
 var organizationBasePath = "/organizations";
 var userBasePath = "/users";
 var BillingAPI = class extends AbstractAPI {
@@ -42921,7 +43408,7 @@ var BillingAPI = class extends AbstractAPI {
   async getPlanList(params) {
     return this.request({
       method: "GET",
-      path: joinPaths(basePath32, "plans"),
+      path: joinPaths(basePath35, "plans"),
       queryParams: params
     });
   }
@@ -42932,7 +43419,7 @@ var BillingAPI = class extends AbstractAPI {
     this.requireId(subscriptionItemId);
     return this.request({
       method: "DELETE",
-      path: joinPaths(basePath32, "subscription_items", subscriptionItemId),
+      path: joinPaths(basePath35, "subscription_items", subscriptionItemId),
       queryParams: params
     });
   }
@@ -44261,6 +44748,19 @@ var OrganizationSettings = class _OrganizationSettings {
     );
   }
 };
+var Permission = class _Permission {
+  constructor(id, name, key, description, createdAt, updatedAt) {
+    this.id = id;
+    this.name = name;
+    this.key = key;
+    this.description = description;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+  }
+  static fromJSON(data) {
+    return new _Permission(data.id, data.name, data.key, data.description, data.created_at, data.updated_at);
+  }
+};
 var PhoneNumber = class _PhoneNumber {
   constructor(id, phoneNumber, reservedForSecondFactor, defaultSecondFactor, verification, linkedTo) {
     this.id = id;
@@ -44312,6 +44812,118 @@ var RedirectUrl = class _RedirectUrl {
   }
   static fromJSON(data) {
     return new _RedirectUrl(data.id, data.url, data.created_at, data.updated_at);
+  }
+};
+var Role = class _Role {
+  constructor(id, name, key, description, permissions, isCreatorEligible, createdAt, updatedAt) {
+    this.id = id;
+    this.name = name;
+    this.key = key;
+    this.description = description;
+    this.permissions = permissions;
+    this.isCreatorEligible = isCreatorEligible;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+  }
+  static fromJSON(data) {
+    return new _Role(
+      data.id,
+      data.name,
+      data.key,
+      data.description,
+      (data.permissions ?? []).map((permission) => Permission.fromJSON(permission)),
+      data.is_creator_eligible,
+      data.created_at,
+      data.updated_at
+    );
+  }
+};
+var RoleSetItem = class _RoleSetItem {
+  constructor(id, name, key, description, createdAt, updatedAt, membersCount, hasMembers) {
+    this.id = id;
+    this.name = name;
+    this.key = key;
+    this.description = description;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+    this.membersCount = membersCount;
+    this.hasMembers = hasMembers;
+  }
+  static fromJSON(data) {
+    return new _RoleSetItem(
+      data.id,
+      data.name,
+      data.key,
+      data.description,
+      data.created_at,
+      data.updated_at,
+      data.members_count,
+      data.has_members
+    );
+  }
+};
+var RoleSetMigration = class _RoleSetMigration {
+  constructor(id, organizationId, instanceId, sourceRoleSetId, destRoleSetId, triggerType, status, migratedMembers, mappings, createdAt, updatedAt, startedAt, completedAt) {
+    this.id = id;
+    this.organizationId = organizationId;
+    this.instanceId = instanceId;
+    this.sourceRoleSetId = sourceRoleSetId;
+    this.destRoleSetId = destRoleSetId;
+    this.triggerType = triggerType;
+    this.status = status;
+    this.migratedMembers = migratedMembers;
+    this.mappings = mappings;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+    this.startedAt = startedAt;
+    this.completedAt = completedAt;
+  }
+  static fromJSON(data) {
+    return new _RoleSetMigration(
+      data.id,
+      data.organization_id,
+      data.instance_id,
+      data.source_role_set_id,
+      data.dest_role_set_id,
+      data.trigger_type,
+      data.status,
+      data.migrated_members,
+      data.mappings,
+      data.created_at,
+      data.updated_at,
+      data.started_at,
+      data.completed_at
+    );
+  }
+};
+var RoleSet = class _RoleSet {
+  constructor(id, name, key, description, roles, defaultRole, creatorRole, type, roleSetMigration, createdAt, updatedAt) {
+    this.id = id;
+    this.name = name;
+    this.key = key;
+    this.description = description;
+    this.roles = roles;
+    this.defaultRole = defaultRole;
+    this.creatorRole = creatorRole;
+    this.type = type;
+    this.roleSetMigration = roleSetMigration;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+  }
+  static fromJSON(data) {
+    return new _RoleSet(
+      data.id,
+      data.name,
+      data.key,
+      data.description,
+      (data.roles ?? []).map((role) => RoleSetItem.fromJSON(role)),
+      data.default_role ? RoleSetItem.fromJSON(data.default_role) : null,
+      data.creator_role ? RoleSetItem.fromJSON(data.creator_role) : null,
+      data.type,
+      data.role_set_migration ? RoleSetMigration.fromJSON(data.role_set_migration) : null,
+      data.created_at,
+      data.updated_at
+    );
   }
 };
 var SamlConnection = class _SamlConnection {
@@ -44723,12 +45335,18 @@ function jsonToObject(item) {
       return OrganizationMembership.fromJSON(item);
     case ObjectType.OrganizationSettings:
       return OrganizationSettings.fromJSON(item);
+    case ObjectType.Permission:
+      return Permission.fromJSON(item);
     case ObjectType.PhoneNumber:
       return PhoneNumber.fromJSON(item);
     case ObjectType.ProxyCheck:
       return ProxyCheck.fromJSON(item);
     case ObjectType.RedirectUrl:
       return RedirectUrl.fromJSON(item);
+    case ObjectType.Role:
+      return Role.fromJSON(item);
+    case ObjectType.RoleSet:
+      return RoleSet.fromJSON(item);
     case ObjectType.EnterpriseConnection:
       return EnterpriseConnection.fromJSON(item);
     case ObjectType.SamlConnection:
@@ -44968,9 +45586,12 @@ function createBackendApiClient(options) {
     ),
     oauthApplications: new OAuthApplicationsApi(request),
     organizations: new OrganizationAPI(request),
+    organizationPermissions: new OrganizationPermissionAPI(request),
+    organizationRoles: new OrganizationRoleAPI(request),
     phoneNumbers: new PhoneNumberAPI(request),
     proxyChecks: new ProxyCheckAPI(request),
     redirectUrls: new RedirectUrlAPI(request),
+    roleSets: new RoleSetAPI(request),
     sessions: new SessionAPI(request),
     signInTokens: new SignInTokenAPI(request),
     signUps: new SignUpAPI(request),
@@ -44989,6 +45610,12 @@ var createDebug = (data) => {
     const res = { ...data };
     res.secretKey = (res.secretKey || "").substring(0, 7);
     res.jwtKey = (res.jwtKey || "").substring(0, 7);
+    res.sessionToken = (res.sessionToken || "").substring(0, 7);
+    res.tokenInHeader = (res.tokenInHeader || "").substring(0, 7);
+    res.sessionTokenInCookie = (res.sessionTokenInCookie || "").substring(0, 7);
+    res.refreshTokenInCookie = (res.refreshTokenInCookie || "").substring(0, 7);
+    res.devBrowserToken = (res.devBrowserToken || "").substring(0, 7);
+    res.handshakeToken = (res.handshakeToken || "").substring(0, 7);
     return { ...res };
   };
 };
@@ -45307,7 +45934,7 @@ var withDebugHeaders = (requestState) => {
   requestState.headers = headers;
   return requestState;
 };
-var import_cookie = __toESM2(require_dist3());
+var import_cookie = __toESM2(require_dist2());
 var ClerkUrl = class extends URL {
   isCrossOrigin(other) {
     return this.origin !== new URL(other.toString()).origin;
@@ -45506,7 +46133,7 @@ async function verifyMachineAuthToken(token, options) {
         ]
       };
     }
-    if (decodedResult.payload.sub.startsWith(M2M_SUBJECT_PREFIX)) {
+    if (typeof decodedResult.payload.sub === "string" && decodedResult.payload.sub.startsWith(M2M_SUBJECT_PREFIX)) {
       return verifyM2MJwt(token, decodedResult, options);
     }
     if (OAUTH_ACCESS_TOKEN_TYPES.includes(decodedResult.header.typ)) {
@@ -46506,7 +47133,7 @@ function createAuthenticateRequest(params) {
   };
 }
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/chunk-P263NW7Z.mjs
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-P263NW7Z.mjs
 function withLegacyReturn(cb) {
   return async (...args) => {
     const { data, errors } = await cb(...args);
@@ -46517,7 +47144,7 @@ function withLegacyReturn(cb) {
   };
 }
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/telemetry-DmiY4LSf.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/telemetry-9C6N5ppw.mjs
 var PROCESS_FLAG = /* @__PURE__ */ Symbol.for("@clerk/shared.telemetryNoticeShown");
 var NOTICE_LINES = [
   "Attention: Clerk collects telemetry data from its SDKs when connected to development instances.",
@@ -46682,7 +47309,8 @@ var TelemetryCollector = class {
     const parsedKey = parsePublishableKey(options.publishableKey);
     if (parsedKey) this.#metadata.instanceType = parsedKey.instanceType;
     if (options.secretKey) this.#metadata.secretKey = options.secretKey.substring(0, 16);
-    this.#eventThrottler = new TelemetryEventThrottler(LocalStorageThrottlerCache.isSupported() ? new LocalStorageThrottlerCache() : new InMemoryThrottlerCache());
+    const cache2 = LocalStorageThrottlerCache.isSupported() ? new LocalStorageThrottlerCache() : new InMemoryThrottlerCache();
+    this.#eventThrottler = new TelemetryEventThrottler(cache2);
     maybeShowTelemetryNotice({ skip: !this.isEnabled });
   }
   get isEnabled() {
@@ -46877,7 +47505,7 @@ var TelemetryCollector = class {
   }
 };
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/index.mjs
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/index.mjs
 var verifyToken2 = withLegacyReturn(verifyToken);
 function createClerkClient(options) {
   const opts = { ...options };
@@ -46897,7 +47525,10 @@ function createClerkClient(options) {
   };
 }
 
-// ../../node_modules/.pnpm/@clerk+backend@3.5.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/backend/dist/proxy.mjs
+// ../../node_modules/.pnpm/@clerk+express@2.1.32_express@5.2.1/node_modules/@clerk/express/dist/index.mjs
+import { Readable as Readable2 } from "stream";
+
+// ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/proxy.mjs
 var HOP_BY_HOP_HEADERS = /* @__PURE__ */ new Set([
   "connection",
   "keep-alive",
@@ -47079,26 +47710,27 @@ async function clerkFrontendApiProxy(request, options) {
   }
 }
 
-// ../../node_modules/.pnpm/@clerk+shared@4.15.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/_chunks/handleValueOrFn-xqbU450o.mjs
+// ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/handleValueOrFn-CKEDuW4I.mjs
 function handleValueOrFn(value, url, defaultValue) {
   if (typeof value === "function") return value(url);
   if (typeof value !== "undefined") return value;
   if (typeof defaultValue !== "undefined") return defaultValue;
 }
 
-// ../../node_modules/.pnpm/@clerk+express@2.1.23_express@5.2.1/node_modules/@clerk/express/dist/index.mjs
-import { Readable as Readable2 } from "stream";
+// ../../node_modules/.pnpm/@clerk+express@2.1.32_express@5.2.1/node_modules/@clerk/express/dist/index.mjs
 var clerkClientSingleton = {};
 var clerkClient = new Proxy(clerkClientSingleton, {
   get(_target, property) {
-    if (property in clerkClientSingleton) {
-      return clerkClientSingleton[property];
-    }
-    const env = { ...loadApiEnv(), ...loadClientEnv() };
-    const client = createClerkClient({ ...env, userAgent: `${"@clerk/express"}@${"2.1.23"}` });
-    if (env.secretKey) {
-      clerkClientSingleton = client;
-    }
+    if (property in clerkClientSingleton) return clerkClientSingleton[property];
+    const env = {
+      ...loadApiEnv(),
+      ...loadClientEnv()
+    };
+    const client = createClerkClient({
+      ...env,
+      userAgent: `@clerk/express@2.1.32`
+    });
+    if (env.secretKey) clerkClientSingleton = client;
     return client[property];
   },
   set() {
@@ -47111,37 +47743,21 @@ Invalid signInUrl. A satellite application requires a signInUrl for development 
 Check if signInUrl is missing from your configuration or if it is not an absolute URL.`;
 var authenticateRequest2 = (opts) => {
   const { clerkClient: clerkClient2, request, options } = opts;
-  const {
-    clerkClient: _clerkClient,
-    debug: _debug,
-    frontendApiProxy: _frontendApiProxy,
-    isSatellite: isSatelliteInput,
-    domain: domainInput,
-    signInUrl: signInUrlInput,
-    proxyUrl: proxyUrlInput,
-    secretKey: secretKeyInput,
-    machineSecretKey: machineSecretKeyInput,
-    publishableKey: publishableKeyInput,
-    ...restOptions
-  } = options || {};
+  const { clerkClient: _clerkClient, debug: _debug, frontendApiProxy: _frontendApiProxy, isSatellite: isSatelliteInput, domain: domainInput, signInUrl: signInUrlInput, proxyUrl: proxyUrlInput, secretKey: secretKeyInput, machineSecretKey: machineSecretKeyInput, publishableKey: publishableKeyInput, ...restOptions } = options || {};
   const clerkRequest = createClerkRequest(incomingMessageToRequest(request));
-  const env = { ...loadApiEnv(), ...loadClientEnv() };
+  const env = {
+    ...loadApiEnv(),
+    ...loadClientEnv()
+  };
   const secretKey = secretKeyInput || env.secretKey;
   const machineSecretKey = machineSecretKeyInput || env.machineSecretKey;
   const publishableKey = publishableKeyInput || env.publishableKey;
   const isSatellite = handleValueOrFn(isSatelliteInput, clerkRequest.clerkUrl, env.isSatellite);
   const domain = handleValueOrFn(domainInput, clerkRequest.clerkUrl) || env.domain;
   const signInUrl = signInUrlInput || env.signInUrl;
-  const proxyUrl = absoluteProxyUrl(
-    handleValueOrFn(proxyUrlInput, clerkRequest.clerkUrl, env.proxyUrl),
-    clerkRequest.clerkUrl.toString()
-  );
-  if (isSatellite && !proxyUrl && !domain) {
-    throw new Error(satelliteAndMissingProxyUrlAndDomain);
-  }
-  if (isSatellite && !isHttpOrHttps(signInUrl) && isDevelopmentFromSecretKey(secretKey || "")) {
-    throw new Error(satelliteAndMissingSignInUrl);
-  }
+  const proxyUrl = absoluteProxyUrl(handleValueOrFn(proxyUrlInput, clerkRequest.clerkUrl, env.proxyUrl), clerkRequest.clerkUrl.toString());
+  if (isSatellite && !proxyUrl && !domain) throw new Error(satelliteAndMissingProxyUrlAndDomain);
+  if (isSatellite && !isHttpOrHttps(signInUrl) && isDevelopmentFromSecretKey(secretKey || "")) throw new Error(satelliteAndMissingSignInUrl);
   return clerkClient2.authenticateRequest(clerkRequest, {
     ...restOptions,
     secretKey,
@@ -47154,38 +47770,28 @@ var authenticateRequest2 = (opts) => {
   });
 };
 var setResponseHeaders = (requestState, res) => {
-  if (requestState.headers) {
-    requestState.headers.forEach((value, key) => res.appendHeader(key, value));
-  }
+  if (requestState.headers) requestState.headers.forEach((value, key) => res.appendHeader(key, value));
   return setResponseForHandshake(requestState, res);
 };
 var setResponseForHandshake = (requestState, res) => {
-  const hasLocationHeader = requestState.headers.get("location");
-  if (hasLocationHeader) {
+  if (requestState.headers.get("location")) {
     res.status(307).end();
     return;
   }
-  if (requestState.status === AuthStatus.Handshake) {
-    return new Error("Clerk: unexpected handshake without redirect");
-  }
-  return;
+  if (requestState.status === AuthStatus.Handshake) return /* @__PURE__ */ new Error("Clerk: unexpected handshake without redirect");
 };
 var absoluteProxyUrl = (relativeOrAbsoluteUrl, baseUrl) => {
-  if (!relativeOrAbsoluteUrl || !isValidProxyUrl(relativeOrAbsoluteUrl) || !isProxyUrlRelative(relativeOrAbsoluteUrl)) {
-    return relativeOrAbsoluteUrl;
-  }
+  if (!relativeOrAbsoluteUrl || !isValidProxyUrl(relativeOrAbsoluteUrl) || !isProxyUrlRelative(relativeOrAbsoluteUrl)) return relativeOrAbsoluteUrl;
   return new URL(relativeOrAbsoluteUrl, baseUrl).toString();
 };
 var resolveDefaultClerkClient = (options) => {
-  if (!options.apiUrl && !options.apiVersion) {
-    return clerkClient;
-  }
-  const env = { ...loadApiEnv(), ...loadClientEnv() };
+  if (!options.apiUrl && !options.apiVersion) return clerkClient;
   return createClerkClient({
-    ...env,
+    ...loadApiEnv(),
+    ...loadClientEnv(),
     ...options.apiUrl ? { apiUrl: options.apiUrl } : {},
     ...options.apiVersion ? { apiVersion: options.apiVersion } : {},
-    userAgent: `${"@clerk/express"}@${"2.1.23"}`
+    userAgent: `@clerk/express@2.1.32`
   });
 };
 var authenticateAndDecorateRequest = (options = {}) => {
@@ -47193,18 +47799,18 @@ var authenticateAndDecorateRequest = (options = {}) => {
   const frontendApiProxy = options.frontendApiProxy;
   const proxyPath = stripTrailingSlashes(frontendApiProxy?.path ?? DEFAULT_PROXY_PATH) || DEFAULT_PROXY_PATH;
   const middleware = async (request, response, next) => {
-    if (request.auth) {
-      return next();
-    }
-    const env = { ...loadApiEnv(), ...loadClientEnv() };
+    if (requestHasAuthObject(request)) return next();
+    if ("auth" in request) logger.warnOnce("Clerk: another middleware has already set `req.auth` on this request. Clerk authentication will run anyway and overwrite it. To use another auth library alongside Clerk, configure it to store its state on a different request property.");
+    const env = {
+      ...loadApiEnv(),
+      ...loadClientEnv()
+    };
     const publishableKey = options.publishableKey || env.publishableKey;
     const secretKey = options.secretKey || env.secretKey;
     if (frontendApiProxy) {
       const requestUrl = new URL(request.originalUrl || request.url, `http://${request.headers.host}`);
-      const isEnabled = typeof frontendApiProxy.enabled === "function" ? frontendApiProxy.enabled(requestUrl) : frontendApiProxy.enabled;
-      if (isEnabled && (requestUrl.pathname === proxyPath || requestUrl.pathname.startsWith(proxyPath + "/"))) {
-        const proxyRequest = requestToProxyRequest(request);
-        const proxyResponse = await clerkFrontendApiProxy(proxyRequest, {
+      if ((typeof frontendApiProxy.enabled === "function" ? frontendApiProxy.enabled(requestUrl) : frontendApiProxy.enabled) && (requestUrl.pathname === proxyPath || requestUrl.pathname.startsWith(proxyPath + "/"))) {
+        const proxyResponse = await clerkFrontendApiProxy(requestToProxyRequest(request), {
           proxyPath,
           publishableKey,
           secretKey
@@ -47215,34 +47821,26 @@ var authenticateAndDecorateRequest = (options = {}) => {
         });
         if (proxyResponse.body) {
           const reader = proxyResponse.body.getReader();
-          const stream = new Readable2({
-            async read() {
-              try {
-                const { done, value } = await reader.read();
-                if (done) {
-                  this.push(null);
-                } else {
-                  this.push(Buffer.from(value));
-                }
-              } catch (error) {
-                this.destroy(error instanceof Error ? error : new Error(String(error)));
-              }
+          new Readable2({ async read() {
+            try {
+              const { done, value } = await reader.read();
+              if (done) this.push(null);
+              else this.push(Buffer.from(value));
+            } catch (error) {
+              this.destroy(error instanceof Error ? error : new Error(String(error)));
             }
-          });
-          stream.pipe(response);
-        } else {
-          response.end();
-        }
+          } }).pipe(response);
+        } else response.end();
         return;
       }
     }
     let resolvedOptions = options;
     if (frontendApiProxy && !options.proxyUrl) {
       const requestUrl = new URL(request.originalUrl || request.url, `http://${request.headers.host}`);
-      const isProxyEnabled = typeof frontendApiProxy.enabled === "function" ? frontendApiProxy.enabled(requestUrl) : frontendApiProxy.enabled;
-      if (isProxyEnabled) {
-        resolvedOptions = { ...options, proxyUrl: proxyPath };
-      }
+      if (typeof frontendApiProxy.enabled === "function" ? frontendApiProxy.enabled(requestUrl) : frontendApiProxy.enabled) resolvedOptions = {
+        ...options,
+        proxyUrl: proxyPath
+      };
     }
     try {
       const requestState = await authenticateRequest2({
@@ -47251,13 +47849,9 @@ var authenticateAndDecorateRequest = (options = {}) => {
         options: resolvedOptions
       });
       const err = setResponseHeaders(requestState, response);
-      if (err) {
-        return next(err);
-      }
-      if (response.writableEnded) {
-        return;
-      }
-      const auth = (opts) => requestState.toAuth(opts);
+      if (err) return next(err);
+      if (response.writableEnded) return;
+      const auth = brandRequestAuth((opts) => requestState.toAuth(opts));
       Object.assign(request, { auth });
       next();
     } catch (err) {
@@ -47278,12 +47872,10 @@ var clerkMiddleware = (options = {}) => {
   }
   return async (request, response, next) => {
     try {
-      const resolvedOptions = await options(request);
-      const handler = authenticateAndDecorateRequest({
-        ...resolvedOptions,
+      authenticateAndDecorateRequest({
+        ...await options(request),
         acceptsToken: "any"
-      });
-      handler(request, response, next);
+      })(request, response, next);
     } catch (err) {
       next(err);
     }
@@ -47292,9 +47884,9 @@ var clerkMiddleware = (options = {}) => {
 
 // src/webhooks/clerk.ts
 var import_express = __toESM(require_express2(), 1);
-var import_svix = __toESM(require_dist5(), 1);
+var import_svix = __toESM(require_dist4(), 1);
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/entity.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/entity.js
 var entityKind = /* @__PURE__ */ Symbol.for("drizzle:entityKind");
 function is(value, type) {
   if (!value || typeof value !== "object") {
@@ -47320,7 +47912,7 @@ function is(value, type) {
   return false;
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/column.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/column.js
 var Column = class {
   constructor(table, config) {
     this.table = table;
@@ -47371,7 +47963,7 @@ var Column = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/column-builder.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/column-builder.js
 var ColumnBuilder = class {
   static [entityKind] = "ColumnBuilder";
   config;
@@ -47474,10 +48066,10 @@ var ColumnBuilder = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/table.utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/table.utils.js
 var TableName = /* @__PURE__ */ Symbol.for("drizzle:Name");
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/foreign-keys.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/foreign-keys.js
 var ForeignKeyBuilder = class {
   static [entityKind] = "PgForeignKeyBuilder";
   /** @internal */
@@ -47534,12 +48126,12 @@ var ForeignKey = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/tracing-utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/tracing-utils.js
 function iife(fn, ...args) {
   return fn(...args);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/unique-constraint.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/unique-constraint.js
 function uniqueKeyName(table, columns) {
   return `${table[TableName]}_${columns.join("_")}_unique`;
 }
@@ -47589,7 +48181,7 @@ var UniqueConstraint = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/utils/array.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/utils/array.js
 function parsePgArrayValue(arrayString, startFrom, inQuotes) {
   for (let i = startFrom; i < arrayString.length; i++) {
     const char2 = arrayString[i];
@@ -47665,7 +48257,7 @@ function makePgArray(array) {
   }).join(",")}}`;
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/common.js
 var PgColumnBuilder = class extends ColumnBuilder {
   foreignKeyConfigs = [];
   static [entityKind] = "PgColumnBuilder";
@@ -47849,7 +48441,7 @@ var PgArray = class _PgArray extends PgColumn {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/enum.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/enum.js
 var PgEnumObjectColumnBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgEnumObjectColumnBuilder";
   constructor(name, enumInstance) {
@@ -47907,7 +48499,7 @@ var PgEnumColumn = class extends PgColumn {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/subquery.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/subquery.js
 var Subquery = class {
   static [entityKind] = "Subquery";
   constructor(sql2, fields, alias, isWith = false, usedTables = []) {
@@ -47928,10 +48520,10 @@ var WithSubquery = class extends Subquery {
   static [entityKind] = "WithSubquery";
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/version.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/version.js
 var version = "0.45.2";
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/tracing.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/tracing.js
 var otel;
 var rawTracer;
 var tracer = {
@@ -47966,10 +48558,10 @@ var tracer = {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/view-common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/view-common.js
 var ViewBaseConfig = /* @__PURE__ */ Symbol.for("drizzle:ViewBaseConfig");
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/table.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/table.js
 var Schema = /* @__PURE__ */ Symbol.for("drizzle:Schema");
 var Columns = /* @__PURE__ */ Symbol.for("drizzle:Columns");
 var ExtraConfigColumns = /* @__PURE__ */ Symbol.for("drizzle:ExtraConfigColumns");
@@ -48031,7 +48623,7 @@ function getTableUniqueName(table) {
   return `${table[Schema] ?? "public"}.${table[TableName]}`;
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/sql/sql.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/sql/sql.js
 var FakePrimitiveParam = class {
   static [entityKind] = "FakePrimitiveParam";
 };
@@ -48425,7 +49017,7 @@ Subquery.prototype.getSQL = function() {
   return new SQL([this]);
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/alias.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/alias.js
 var ColumnAliasProxyHandler = class {
   constructor(table) {
     this.table = table;
@@ -48521,7 +49113,7 @@ function mapColumnsInSQLToAlias(query, alias) {
   }));
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/errors.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/errors.js
 var DrizzleError = class extends Error {
   static [entityKind] = "DrizzleError";
   constructor({ message, cause }) {
@@ -48548,7 +49140,7 @@ var TransactionRollbackError = class extends DrizzleError {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/logger.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/logger.js
 var ConsoleLogWriter = class {
   static [entityKind] = "ConsoleLogWriter";
   write(message) {
@@ -48579,7 +49171,7 @@ var NoopLogger = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/query-promise.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/query-promise.js
 var QueryPromise = class {
   static [entityKind] = "QueryPromise";
   [Symbol.toStringTag] = "QueryPromise";
@@ -48603,7 +49195,7 @@ var QueryPromise = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/utils.js
 function mapResultRow(columns, row, joinsNotNullableMap) {
   const nullifyMap = {};
   const result = columns.reduce(
@@ -48754,7 +49346,7 @@ function isConfig(data) {
 }
 var textDecoder = typeof TextDecoder === "undefined" ? null : new TextDecoder();
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/int.common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/int.common.js
 var PgIntColumnBaseBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgIntColumnBaseBuilder";
   generatedAlwaysAsIdentity(sequence) {
@@ -48793,7 +49385,7 @@ var PgIntColumnBaseBuilder = class extends PgColumnBuilder {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/bigint.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/bigint.js
 var PgBigInt53Builder = class extends PgIntColumnBaseBuilder {
   static [entityKind] = "PgBigInt53Builder";
   constructor(name) {
@@ -48847,7 +49439,7 @@ function bigint(a, b) {
   return new PgBigInt64Builder(name);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/bigserial.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/bigserial.js
 var PgBigSerial53Builder = class extends PgColumnBuilder {
   static [entityKind] = "PgBigSerial53Builder";
   constructor(name) {
@@ -48907,7 +49499,7 @@ function bigserial(a, b) {
   return new PgBigSerial64Builder(name);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/boolean.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/boolean.js
 var PgBooleanBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgBooleanBuilder";
   constructor(name) {
@@ -48928,7 +49520,7 @@ function boolean(name) {
   return new PgBooleanBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/char.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/char.js
 var PgCharBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgCharBuilder";
   constructor(name, config) {
@@ -48957,7 +49549,7 @@ function char(a, b = {}) {
   return new PgCharBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/cidr.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/cidr.js
 var PgCidrBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgCidrBuilder";
   constructor(name) {
@@ -48978,7 +49570,7 @@ function cidr(name) {
   return new PgCidrBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/custom.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/custom.js
 var PgCustomColumnBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgCustomColumnBuilder";
   constructor(name, fieldConfig, customTypeParams) {
@@ -49022,7 +49614,7 @@ function customType(customTypeParams) {
   };
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/date.common.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/date.common.js
 var PgDateColumnBaseBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgDateColumnBaseBuilder";
   defaultNow() {
@@ -49030,7 +49622,7 @@ var PgDateColumnBaseBuilder = class extends PgColumnBuilder {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/date.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/date.js
 var PgDateBuilder = class extends PgDateColumnBaseBuilder {
   static [entityKind] = "PgDateBuilder";
   constructor(name) {
@@ -49085,7 +49677,7 @@ function date(a, b) {
   return new PgDateStringBuilder(name);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/double-precision.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/double-precision.js
 var PgDoublePrecisionBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgDoublePrecisionBuilder";
   constructor(name) {
@@ -49115,7 +49707,7 @@ function doublePrecision(name) {
   return new PgDoublePrecisionBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/inet.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/inet.js
 var PgInetBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgInetBuilder";
   constructor(name) {
@@ -49136,7 +49728,7 @@ function inet(name) {
   return new PgInetBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/integer.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/integer.js
 var PgIntegerBuilder = class extends PgIntColumnBaseBuilder {
   static [entityKind] = "PgIntegerBuilder";
   constructor(name) {
@@ -49163,7 +49755,7 @@ function integer(name) {
   return new PgIntegerBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/interval.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/interval.js
 var PgIntervalBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgIntervalBuilder";
   constructor(name, intervalConfig) {
@@ -49190,7 +49782,7 @@ function interval(a, b = {}) {
   return new PgIntervalBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/json.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/json.js
 var PgJsonBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgJsonBuilder";
   constructor(name) {
@@ -49227,7 +49819,7 @@ function json(name) {
   return new PgJsonBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/jsonb.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/jsonb.js
 var PgJsonbBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgJsonbBuilder";
   constructor(name) {
@@ -49264,7 +49856,7 @@ function jsonb(name) {
   return new PgJsonbBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/line.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/line.js
 var PgLineBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgLineBuilder";
   constructor(name) {
@@ -49325,7 +49917,7 @@ function line(a, b) {
   return new PgLineABCBuilder(name);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/macaddr.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/macaddr.js
 var PgMacaddrBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgMacaddrBuilder";
   constructor(name) {
@@ -49346,7 +49938,7 @@ function macaddr(name) {
   return new PgMacaddrBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/macaddr8.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/macaddr8.js
 var PgMacaddr8Builder = class extends PgColumnBuilder {
   static [entityKind] = "PgMacaddr8Builder";
   constructor(name) {
@@ -49367,7 +49959,7 @@ function macaddr8(name) {
   return new PgMacaddr8Builder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/numeric.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/numeric.js
 var PgNumericBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgNumericBuilder";
   constructor(name, precision, scale) {
@@ -49484,7 +50076,7 @@ function numeric(a, b) {
   return mode === "number" ? new PgNumericNumberBuilder(name, config?.precision, config?.scale) : mode === "bigint" ? new PgNumericBigIntBuilder(name, config?.precision, config?.scale) : new PgNumericBuilder(name, config?.precision, config?.scale);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/point.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/point.js
 var PgPointTupleBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgPointTupleBuilder";
   constructor(name) {
@@ -49551,7 +50143,7 @@ function point(a, b) {
   return new PgPointObjectBuilder(name);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js
 function hexToBytes(hex) {
   const bytes = [];
   for (let c = 0; c < hex.length; c += 2) {
@@ -49590,7 +50182,7 @@ function parseEWKB(hex) {
   throw new Error("Unsupported geometry type");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js
 var PgGeometryBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgGeometryBuilder";
   constructor(name) {
@@ -49650,7 +50242,7 @@ function geometry(a, b) {
   return new PgGeometryObjectBuilder(name);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/real.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/real.js
 var PgRealBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgRealBuilder";
   constructor(name, length) {
@@ -49681,7 +50273,7 @@ function real(name) {
   return new PgRealBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/serial.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/serial.js
 var PgSerialBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgSerialBuilder";
   constructor(name) {
@@ -49704,7 +50296,7 @@ function serial(name) {
   return new PgSerialBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/smallint.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/smallint.js
 var PgSmallIntBuilder = class extends PgIntColumnBaseBuilder {
   static [entityKind] = "PgSmallIntBuilder";
   constructor(name) {
@@ -49731,7 +50323,7 @@ function smallint(name) {
   return new PgSmallIntBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/smallserial.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/smallserial.js
 var PgSmallSerialBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgSmallSerialBuilder";
   constructor(name) {
@@ -49757,7 +50349,7 @@ function smallserial(name) {
   return new PgSmallSerialBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/text.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/text.js
 var PgTextBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgTextBuilder";
   constructor(name, config) {
@@ -49781,7 +50373,7 @@ function text(a, b = {}) {
   return new PgTextBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/time.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/time.js
 var PgTimeBuilder = class extends PgDateColumnBaseBuilder {
   constructor(name, withTimezone, precision) {
     super(name, "string", "PgTime");
@@ -49815,7 +50407,7 @@ function time(a, b = {}) {
   return new PgTimeBuilder(name, config.withTimezone ?? false, config.precision);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/timestamp.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/timestamp.js
 var PgTimestampBuilder = class extends PgDateColumnBaseBuilder {
   static [entityKind] = "PgTimestampBuilder";
   constructor(name, withTimezone, precision) {
@@ -49896,7 +50488,7 @@ function timestamp(a, b = {}) {
   return new PgTimestampBuilder(name, config?.withTimezone ?? false, config?.precision);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/uuid.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/uuid.js
 var PgUUIDBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgUUIDBuilder";
   constructor(name) {
@@ -49923,7 +50515,7 @@ function uuid(name) {
   return new PgUUIDBuilder(name ?? "");
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/varchar.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/varchar.js
 var PgVarcharBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgVarcharBuilder";
   constructor(name, config) {
@@ -49952,7 +50544,7 @@ function varchar(a, b = {}) {
   return new PgVarcharBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js
 var PgBinaryVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgBinaryVectorBuilder";
   constructor(name, config) {
@@ -49979,7 +50571,7 @@ function bit(a, b) {
   return new PgBinaryVectorBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js
 var PgHalfVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgHalfVectorBuilder";
   constructor(name, config) {
@@ -50012,7 +50604,7 @@ function halfvec(a, b) {
   return new PgHalfVectorBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js
 var PgSparseVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgSparseVectorBuilder";
   constructor(name, config) {
@@ -50039,7 +50631,7 @@ function sparsevec(a, b) {
   return new PgSparseVectorBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js
 var PgVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgVectorBuilder";
   constructor(name, config) {
@@ -50072,7 +50664,7 @@ function vector(a, b) {
   return new PgVectorBuilder(name, config);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/all.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/columns/all.js
 function getPgColumnBuilders() {
   return {
     bigint,
@@ -50110,7 +50702,7 @@ function getPgColumnBuilders() {
   };
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/table.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/table.js
 var InlineForeignKeys = /* @__PURE__ */ Symbol.for("drizzle:PgInlineForeignKeys");
 var EnableRLS = /* @__PURE__ */ Symbol.for("drizzle:EnableRLS");
 var PgTable = class extends Table {
@@ -50166,7 +50758,7 @@ var pgTable = (name, columns, extraConfig) => {
   return pgTableWithSchema(name, columns, extraConfig, void 0);
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/primary-keys.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/primary-keys.js
 var PrimaryKeyBuilder = class {
   static [entityKind] = "PgPrimaryKeyBuilder";
   /** @internal */
@@ -50196,7 +50788,7 @@ var PrimaryKey = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/sql/expressions/conditions.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/sql/expressions/conditions.js
 function bindIfParam(value, column) {
   if (isDriverValueEncoder(column) && !isSQLWrapper(value) && !is(value, Param) && !is(value, Placeholder) && !is(value, Column) && !is(value, Table) && !is(value, View)) {
     return new Param(value, column);
@@ -50311,7 +50903,7 @@ function notIlike(column, value) {
   return sql`${column} not ilike ${value}`;
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/sql/expressions/select.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/sql/expressions/select.js
 function asc(column) {
   return sql`${column} asc`;
 }
@@ -50319,7 +50911,7 @@ function desc(column) {
   return sql`${column} desc`;
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/relations.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/relations.js
 var Relation = class {
   constructor(sourceTable, referencedTable, relationName) {
     this.sourceTable = sourceTable;
@@ -50580,7 +51172,7 @@ function mapRelationalRow(tablesConfig, tableConfig, row, buildQueryResultSelect
   return result;
 }
 
-// ../../node_modules/.pnpm/pg@8.21.0/node_modules/pg/esm/index.mjs
+// ../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib4(), 1);
 var Client2 = import_lib.default.Client;
 var Pool = import_lib.default.Pool;
@@ -50595,7 +51187,7 @@ var TypeOverrides = import_lib.default.TypeOverrides;
 var defaults = import_lib.default.defaults;
 var esm_default = import_lib.default;
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/selection-proxy.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/selection-proxy.js
 var SelectionProxyHandler = class _SelectionProxyHandler {
   static [entityKind] = "SelectionProxyHandler";
   config;
@@ -50663,7 +51255,7 @@ var SelectionProxyHandler = class _SelectionProxyHandler {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/indexes.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/indexes.js
 var IndexBuilderOn = class {
   constructor(unique, name) {
     this.unique = unique;
@@ -50772,7 +51364,7 @@ function uniqueIndex(name) {
   return new IndexBuilderOn(true, name);
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/casing.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/casing.js
 function toSnakeCase(input) {
   const words = input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? [];
   return words.map((word) => word.toLowerCase()).join("_");
@@ -50824,12 +51416,12 @@ var CasingCache = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/view-base.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/view-base.js
 var PgViewBase = class extends View {
   static [entityKind] = "PgViewBase";
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/dialect.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/dialect.js
 var PgDialect = class {
   static [entityKind] = "PgDialect";
   /** @internal */
@@ -51934,7 +52526,7 @@ var PgDialect = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/query-builders/query-builder.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/query-builders/query-builder.js
 var TypedQueryBuilder = class {
   static [entityKind] = "TypedQueryBuilder";
   /** @internal */
@@ -51943,7 +52535,7 @@ var TypedQueryBuilder = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/select.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/select.js
 var PgSelectBuilder = class {
   static [entityKind] = "PgSelectBuilder";
   fields;
@@ -52759,7 +53351,7 @@ var intersectAll = createSetOperator("intersect", true);
 var except = createSetOperator("except", false);
 var exceptAll = createSetOperator("except", true);
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js
 var QueryBuilder = class {
   static [entityKind] = "PgQueryBuilder";
   dialect;
@@ -52846,7 +53438,7 @@ var QueryBuilder = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/utils.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/utils.js
 function extractUsedTable(table) {
   if (is(table, PgTable)) {
     return [table[Schema] ? `${table[Schema]}.${table[Table.Symbol.BaseName]}` : table[Table.Symbol.BaseName]];
@@ -52860,7 +53452,7 @@ function extractUsedTable(table) {
   return [];
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/delete.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/delete.js
 var PgDeleteBase = class extends QueryPromise {
   constructor(table, session, dialect, withList) {
     super();
@@ -52956,7 +53548,7 @@ var PgDeleteBase = class extends QueryPromise {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/insert.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/insert.js
 var PgInsertBuilder = class {
   constructor(table, session, dialect, withList, overridingSystemValue_) {
     this.table = table;
@@ -53149,7 +53741,7 @@ var PgInsertBase = class extends QueryPromise {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js
 var PgRefreshMaterializedView = class extends QueryPromise {
   constructor(view, session, dialect) {
     super();
@@ -53203,7 +53795,7 @@ var PgRefreshMaterializedView = class extends QueryPromise {
   };
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/update.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/update.js
 var PgUpdateBuilder = class {
   constructor(table, session, dialect, withList) {
     this.table = table;
@@ -53415,7 +54007,7 @@ var PgUpdateBase = class extends QueryPromise {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/count.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/count.js
 var PgCountBuilder = class _PgCountBuilder extends SQL {
   constructor(params) {
     super(_PgCountBuilder.buildEmbeddedCount(params.source, params.filters).queryChunks);
@@ -53466,7 +54058,7 @@ var PgCountBuilder = class _PgCountBuilder extends SQL {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/query.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/query.js
 var RelationalQueryBuilder = class {
   constructor(fullSchema, schema, tableNamesMap, table, tableConfig, dialect, session) {
     this.fullSchema = fullSchema;
@@ -53579,7 +54171,7 @@ var PgRelationalQuery = class extends QueryPromise {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/raw.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/query-builders/raw.js
 var PgRaw = class extends QueryPromise {
   constructor(execute, sql2, query, mapBatchResult) {
     super();
@@ -53608,7 +54200,7 @@ var PgRaw = class extends QueryPromise {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/db.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/db.js
 var PgDatabase = class {
   constructor(dialect, session, schema) {
     this.dialect = dialect;
@@ -53887,7 +54479,7 @@ var PgDatabase = class {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/cache/core/cache.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/cache/core/cache.js
 var Cache = class {
   static [entityKind] = "Cache";
 };
@@ -53914,7 +54506,7 @@ async function hashQuery(sql2, params) {
   return hashHex;
 }
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/session.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/session.js
 var PgPreparedQuery = class {
   constructor(query, cache2, queryMetadata, cacheConfig) {
     this.query = query;
@@ -54074,7 +54666,7 @@ var PgTransaction = class extends PgDatabase {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/session.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/session.js
 var { Pool: Pool2, types: types2 } = esm_default;
 var NodePgPreparedQuery = class extends PgPreparedQuery {
   constructor(client, queryString, params, logger2, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
@@ -54290,7 +54882,7 @@ var NodePgTransaction = class _NodePgTransaction extends PgTransaction {
   }
 };
 
-// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.21.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/driver.js
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/driver.js
 var NodePgDriver = class {
   constructor(client, dialect, options = {}) {
     this.client = client;
@@ -54605,7 +55197,6 @@ on-finished/index.js:
    * MIT Licensed
    *)
 
-content-type/dist/index.js:
 content-type/index.js:
   (*!
    * content-type

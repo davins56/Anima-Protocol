@@ -1,54 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-<<<<<<< HEAD
-// Seeding the starter roster is async and is triggered from a React effect that
-// StrictMode double-invokes in dev. The module-level promise lock in
-// seedCharactersIfNeeded() must guarantee the roster is seeded at most once per
-// load even under concurrent calls. We back base44 with an in-memory store whose
-// update() upserts by id (mirroring the real server PUT), and stub the photo
-// lookup so seeding never hits the network.
-vi.mock("@/api/base44Client", () => {
-  const store = new Map();
-  let updateCalls = 0;
-  // Failure injection: the update() whose 1-based call index === failAtCall
-  // throws before writing, simulating the store dropping out partway through a
-  // seeding pass (so earlier rows in that pass are already written).
-  let failAtCall = -1;
-  const Character = {
-    async list() {
-      return [...store.values()].map((r) => ({ ...r }));
-    },
-    async update(id, data) {
-      updateCalls += 1;
-      if (updateCalls === failAtCall) {
-        throw new Error("store unavailable");
-      }
-      const existing = store.get(id) || { id };
-      const rec = { ...existing, ...data, id };
-      store.set(id, rec);
-      return { ...rec };
-    },
-  };
-  const base44 = {
-    entities: new Proxy({}, { get: () => Character }),
-    __store: store,
-    __stats: () => ({ updateCalls }),
-    __failUpdateAt: (n) => {
-      failAtCall = n;
-    },
-    __reset: () => {
-      store.clear();
-      updateCalls = 0;
-      failAtCall = -1;
-    },
-  };
-  return { base44, default: base44 };
-});
-
-// No network during seeding: every character resolves to "no photo found".
-vi.mock("@/lib/characterPhoto", () => ({
-  findCharacterPhoto: vi.fn().mockResolvedValue(null),
-=======
 const {
   waitForStoreAuth,
   characterList,
@@ -63,7 +14,6 @@ const {
   characterBulkUpsert: vi.fn(),
   clearStoreCache: vi.fn(),
   notifyStoreChanged: vi.fn(),
->>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
 }));
 
 vi.mock("@/api/base44Client", () => ({
@@ -116,37 +66,12 @@ describe("seedCharactersIfNeeded", () => {
 
     await seedCharactersIfNeeded();
 
-<<<<<<< HEAD
-  it("recovers a full roster when the first seed pass fails partway", async () => {
-    // First pass writes 3 rows, then the 4th write fails (store drops out
-    // mid-pass). doSeed() retries the whole upsert pass, which re-updates the
-    // first 3 (idempotent) and creates the rest.
-    base44.__failUpdateAt(4);
-
-    await seedCharactersIfNeeded();
-
-    const chars = await base44.entities.Character.list();
-    // Every starter is present despite the mid-pass failure...
-    const seeded = chars.filter((c) => c.id.startsWith("seed_"));
-    expect(seeded.length).toBeGreaterThan(3);
-    // ...and there are no duplicate rows (deterministic seed_ ids converge).
-    const ids = seeded.map((c) => c.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it("does not seed when the account already has characters", async () => {
-    await base44.entities.Character.update("existing_1", {
-      id: "existing_1",
-      name: "Pre-existing",
-      avatar_url: "x",
-=======
     expect(characterBulkUpsert).toHaveBeenCalledTimes(1);
     expect(characterBulkUpsert.mock.calls[0][0].length).toBeGreaterThan(20);
     expect(characterBulkUpsert.mock.calls[0][0][0]).toMatchObject({
       id: expect.stringMatching(/^seed_/),
       name: expect.any(String),
       universe: expect.any(String),
->>>>>>> ba87202e28205b931889038d30e8e7abed2ff7e5
     });
     expect(characterUpdate).not.toHaveBeenCalled();
   });

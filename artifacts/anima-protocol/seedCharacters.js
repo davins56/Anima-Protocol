@@ -525,7 +525,6 @@ const charactersToSeed = [
 // ============================================
 // 8. SEED FUNCTION
 // ============================================
-<<<<<<< HEAD
 const SEED_MODE = (process.env.SEED_MODE || 'skip').toLowerCase();
 const DRY_RUN = (process.env.DRY_RUN || '').toLowerCase() === 'true';
 
@@ -576,22 +575,12 @@ async function seed() {
     .from('characters')
     .select('*', { count: 'exact', head: true })
     .eq('is_starter', true);
-=======
-console.log('Checking for existing starters...');
-
-async function seed() {
-  console.log('Forcing upsert of all starter characters to apply updates...');
-
-  // Force is_starter = true on everything
-  charactersToSeed.forEach(c => c.is_starter = true);
->>>>>>> dfaa41c848504fdf8198bdfcd2eaafb15238a3cb
 
   // Remove duplicates from the source array (keep first one)
   const uniqueCharacters = Array.from(
     new Map(charactersToSeed.map(c => [c.name, c])).values()
   );
 
-<<<<<<< HEAD
   const existing = count || 0;
   console.log(`Existing starters (is_starter=true): ${existing}`);
 
@@ -656,10 +645,6 @@ async function seed() {
     return;
   }
 
-=======
-  console.log(`Upserting ${uniqueCharacters.length} characters (updating existing)...`);
-
->>>>>>> dfaa41c848504fdf8198bdfcd2eaafb15238a3cb
   const { data, error } = await supabase
     .from('characters')
     .upsert(uniqueCharacters, {
@@ -681,7 +666,4 @@ async function seed() {
 // 9. RUN THE SEED FUNCTION
 // ============================================
 seed().catch(console.error);
-<<<<<<< HEAD
 
-=======
->>>>>>> dfaa41c848504fdf8198bdfcd2eaafb15238a3cb
