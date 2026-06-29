@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ChevronLeft, Check } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { CANONICAL_STORIES } from "@/lib/canonicalStories";
 import StoryPointSelector from "./StoryPointSelector";
 import { motion, AnimatePresence } from "framer-motion";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { useStoreSync } from "@/lib/useStoreSync";
 
 export default function StoryCharacterChooser({
   onClose,
@@ -35,13 +37,8 @@ export default function StoryCharacterChooser({
     });
   };
 
-  useEffect(() => {
-    if (step === "character") {
-      loadCharacters();
-    }
-  }, [step]);
-
-  const loadCharacters = async () => {
+  const loadCharacters = useCallback(async () => {
+    setLoading(true);
     try {
       const [chars, animas] = await Promise.all([
         base44.entities.Character.list("-created_date", 500),
@@ -56,8 +53,25 @@ export default function StoryCharacterChooser({
       setCharacters([...animaAsChars, ...(chars || [])]);
     } catch (err) {
       console.error("Error loading characters:", err);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (step !== "character") return;
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadCharacters();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, loadCharacters]);
+
+  useStoreSync(() => {
+    if (step === "character") loadCharacters();
+  });
 
   // Show all of the user's characters and Animas — any of them can be dropped
   // into any series' scene. (The canonical character names in each story almost
