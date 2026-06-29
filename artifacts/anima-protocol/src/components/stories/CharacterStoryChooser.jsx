@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { ChevronLeft, BookOpen, User, Sparkles } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { motion, AnimatePresence } from "framer-motion";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { useStoreSync } from "@/lib/useStoreSync";
 
 /**
  * Build insertion points from a character's metadata so the user can drop
@@ -66,11 +68,8 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadCharacters();
-  }, []);
-
-  const loadCharacters = async () => {
+  const loadCharacters = useCallback(async () => {
+    setLoading(true);
     try {
       const [chars, animas] = await Promise.all([
         base44.entities.Character.list("-created_date", 500),
@@ -85,8 +84,22 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
       setCharacters([...animaAsChars, ...(chars || [])]);
     } catch (err) {
       console.error("Error loading characters:", err);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadCharacters();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCharacters]);
+
+  useStoreSync(loadCharacters);
 
   const filteredCharacters = useMemo(() => {
     const term = search.toLowerCase();

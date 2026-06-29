@@ -467,7 +467,14 @@ let seedPromise = null;
 export function seedCharactersIfNeeded() {
   if (!seedPromise) {
     seedPromise = doSeed()
-      .then(() => backfillCharacterPhotos())
+      .then((added) => {
+        // Photo lookup can take minutes across the full roster. Run it in the
+        // background so bootstrap and character pickers are not blocked on it.
+        backfillCharacterPhotos().catch((err) => {
+          console.warn("[Anima] Character photo backfill skipped:", err.message);
+        });
+        return added;
+      })
       .catch((err) => {
         seedPromise = null;
         throw err;
