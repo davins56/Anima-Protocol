@@ -7,6 +7,7 @@ const {
   characterBulkUpsert,
   clearStoreCache,
   notifyStoreChanged,
+  findCharacterPhoto,
 } = vi.hoisted(() => ({
   waitForStoreAuth: vi.fn().mockResolvedValue("token"),
   characterList: vi.fn(),
@@ -14,6 +15,7 @@ const {
   characterBulkUpsert: vi.fn(),
   clearStoreCache: vi.fn(),
   notifyStoreChanged: vi.fn(),
+  findCharacterPhoto: vi.fn(),
 }));
 
 vi.mock("@/api/base44Client", () => ({
@@ -32,7 +34,7 @@ vi.mock("@/api/base44Client", () => ({
 }));
 
 vi.mock("@/lib/characterPhoto", () => ({
-  findCharacterPhoto: vi.fn(),
+  findCharacterPhoto,
 }));
 
 beforeEach(() => {
@@ -43,6 +45,7 @@ beforeEach(() => {
   clearStoreCache.mockReset();
   notifyStoreChanged.mockReset();
   waitForStoreAuth.mockReset().mockResolvedValue("token");
+  findCharacterPhoto.mockReset().mockResolvedValue(null);
 });
 
 async function loadSeedModule() {
@@ -119,6 +122,25 @@ describe("seedCharactersIfNeeded", () => {
     await seedCharactersIfNeeded();
 
     expect(characterUpdate.mock.calls.length).toBeGreaterThan(20);
+  });
+
+  it("resolves after seeding without waiting for photo backfill", async () => {
+    characterList
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: "seed_test-hero", name: "Test Hero", avatar_url: "" },
+      ]);
+    findCharacterPhoto.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(null), 500)),
+    );
+    const { seedCharactersIfNeeded } = await loadSeedModule();
+
+    const started = Date.now();
+    await seedCharactersIfNeeded();
+    const elapsed = Date.now() - started;
+
+    expect(characterBulkUpsert).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeLessThan(200);
   });
 });
 

@@ -10,6 +10,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
+const MBTI_TYPES = [
+  "INTJ",
+  "INTP",
+  "ENTJ",
+  "ENTP",
+  "INFJ",
+  "INFP",
+  "ENFJ",
+  "ENFP",
+  "ISTJ",
+  "ISFJ",
+  "ESTJ",
+  "ESFJ",
+  "ISTP",
+  "ISFP",
+  "ESTP",
+  "ESFP",
+];
+
 const archetypeColors = {
   guardian: "text-cyan-400 border-cyan-400/30",
   muse: "text-pink-400 border-pink-400/30",
@@ -36,12 +55,18 @@ const defaultForm = {
   name: "",
   tagline: "",
   archetype: "guardian",
+  personality_type: "",
   personality: "",
   backstory: "",
   speaking_style: "",
   avatar_url: "",
+  theme_color: "#00e5e5",
   status: "active",
   elevenlabs_voice_id: "",
+  emotion: "calm",
+  emotion_level: "Low",
+  intensity: 35,
+  arousal: 30,
 };
 
 export default function Animas() {
@@ -79,12 +104,18 @@ export default function Animas() {
       name: anima.name || "",
       tagline: anima.tagline || "",
       archetype: anima.archetype || "guardian",
+      personality_type: anima.personality_type || anima.mbti || "",
       personality: anima.personality || "",
       backstory: anima.backstory || "",
       speaking_style: anima.speaking_style || "",
       avatar_url: anima.avatar_url || "",
+      theme_color: anima.theme_color || "#00e5e5",
       status: anima.status || "active",
       elevenlabs_voice_id: anima.elevenlabs_voice_id || "",
+      emotion: anima.emotion || anima.primary_emotion || "calm",
+      emotion_level: anima.emotion_level || anima.level || "Low",
+      intensity: anima.intensity != null ? anima.intensity : 35,
+      arousal: anima.arousal != null ? anima.arousal : 30,
     });
     setShowForm(true);
   };
@@ -120,7 +151,9 @@ export default function Animas() {
     if (!form.name) return;
     setGenerating(true);
     const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `Create a rich, immersive AI companion named "${form.name}" with the archetype: ${form.archetype}.
+      prompt: `Create a rich, immersive AI companion named "${form.name}" with the archetype: ${form.archetype}.${
+        form.personality_type ? ` Myers-Briggs type: ${form.personality_type}.` : ""
+      }
 ${form.tagline ? `Tagline hint: ${form.tagline}` : ""}
 
 Return JSON with:
@@ -381,7 +414,17 @@ Return JSON with a single "${field}" string field.`,
 
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <h3 className="font-mono text-sm text-primary tracking-wider uppercase">{anima.name}</h3>
+                    <div>
+                      <h3 className="font-mono text-sm text-primary tracking-wider uppercase">{anima.name}</h3>
+                      {anima.theme_color && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: anima.theme_color }} />
+                          <span className="text-[8px] font-mono uppercase tracking-[0.2em] text-primary/40">
+                            Accent color
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     <span className={`text-[9px] font-mono tracking-[0.2em] uppercase border px-1.5 py-0.5 flex-shrink-0 ${archetypeColors[anima.archetype] || "text-primary/40 border-primary/20"}`}>
                       {anima.archetype}
                     </span>
@@ -439,21 +482,26 @@ Return JSON with a single "${field}" string field.`,
       {/* Appearance Customizer */}
       {customizingAnima && (
         <AnimaCustomizer
-          anima={customizingAnima}
-          onClose={() => setCustomizingAnima(null)}
-          onSave={(newAvatarUrl) => {
-            setAnimas((prev) =>
-              prev.map((a) => a.id === customizingAnima.id ? { ...a, avatar_url: newAvatarUrl } : a)
-            );
-            setCustomizingAnima(null);
-          }}
-        />
+        anima={customizingAnima}
+        onClose={() => setCustomizingAnima(null)}
+        onSave={({ avatar_url, theme_color }) => {
+          setAnimas((prev) =>
+            prev.map((a) =>
+              a.id === customizingAnima.id
+                ? { ...a, avatar_url, theme_color }
+                : a
+            )
+          );
+          setCustomizingAnima(null);
+        }}
+      />
       )}
 
       {/* Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-none flex flex-col overflow-hidden sm:overflow-auto bg-background border border-primary/30 hud-corner glow-border">
+
             <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20">
               <div>
                 <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase">
@@ -493,6 +541,15 @@ Return JSON with a single "${field}" string field.`,
                     onChange={(e) => setForm((f) => ({ ...f, avatar_url: e.target.value }))}
                     placeholder="Or paste image URL..."
                     className="w-full bg-black/60 border border-primary/15 text-primary/70 placeholder-primary/15 font-mono text-[10px] px-3 py-2 focus:outline-none focus:border-primary/40 transition-colors"
+                  />
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Accent</span>
+                  <input
+                    type="color"
+                    value={form.theme_color}
+                    onChange={(e) => setForm((f) => ({ ...f, theme_color: e.target.value }))}
+                    className="w-12 h-12 p-0 border border-primary/20 rounded"
                   />
                 </div>
               </div>
@@ -554,18 +611,35 @@ Return JSON with a single "${field}" string field.`,
               </button>
 
               {/* Personality */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Personality</label>
-                  {renderAssist("personality")}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">Myers-Briggs Type</label>
+                  <select
+                    value={form.personality_type}
+                    onChange={(e) => setForm((f) => ({ ...f, personality_type: e.target.value }))}
+                    className="w-full bg-black/60 border border-primary/20 text-primary/80 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors"
+                  >
+                    <option value="">Select a type</option>
+                    {MBTI_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <textarea
-                  value={form.personality}
-                  onChange={(e) => setForm((f) => ({ ...f, personality: e.target.value }))}
-                  placeholder="How do they think, feel, engage with the world?"
-                  rows={3}
-                  className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/15 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
-                />
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Personality</label>
+                    {renderAssist("personality")}
+                  </div>
+                  <textarea
+                    value={form.personality}
+                    onChange={(e) => setForm((f) => ({ ...f, personality: e.target.value }))}
+                    placeholder="How do they think, feel, engage with the world?"
+                    rows={3}
+                    className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/15 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
+                  />
+                </div>
               </div>
 
               {/* Backstory */}

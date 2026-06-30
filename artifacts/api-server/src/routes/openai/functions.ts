@@ -585,10 +585,15 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "evolveCharacter":
       case "trackCharacterEvolution":
       case "analyzeCharacterForBehavior": {
-        result = await llm(
-          "Describe how this character has evolved based on recent events in 1-2 sentences.",
+        const raw = await llm(
+          "You are a narrative behavioral analyst. Describe how this character has evolved based on recent events. Return a JSON object with: { evolved_personality: string, growth_areas: string[], updated_motivations: string[], new_vulnerabilities: string[] }. Output ONLY valid JSON.",
           JSON.stringify(data)
         );
+        try {
+          result = { data: JSON.parse(raw) };
+        } catch {
+          result = { data: null };
+        }
         break;
       }
 

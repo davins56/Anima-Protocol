@@ -7,6 +7,7 @@
 - [Anima avatar storage](anima-avatar-storage.md) — Anima created with no avatar_url; user photos must be downscaled to small JPEG data URLs (no object storage; localStorage quota).
 - [Anima avatar object storage](anima-avatar-object-storage.md) — portraits now stored as real files via presigned-PUT; serve publicly (img tags); store root-relative path; re-edit needs data: URL.
 - [Anima Clerk auth bridge](anima-clerk-auth.md) — Clerk owns identity/session, base44 localStorage holds profile; HomeGate at "/", signed-out→Landing; showChrome gates header/tabs/disclaimer.
+- [Anima auth token bridge contract](anima-auth-token-bridge.md) — setAuthTokenGetter takes the token-getter DIRECTLY (not a setState); a `()=>async()=>{}` double-arrow stringifies the fn into the Bearer header → breaks all writes + starter seeding.
 - [Anima cross-device live sync](anima-cross-device-sync.md) — /store/revision token + 15s/focus poller drops caches & fires `anima:store-changed`; self-write suppression must NOT advance baseline.
 - [Anima SSE push hardening](anima-sse-hardening.md) — SSE client must collapse CRLF→LF before `\n\n` split; watchdog > 2× server heartbeat; `anima:sync-mode` event; registry is process-local.
 - [Anima AI image edit](anima-image-edit.md) — inline base64 image routes need raised express.json limit (default 100KB too small); backend only accepts data: URLs so gate buttons accordingly.
@@ -30,6 +31,9 @@
 - [Anima identity systems](anima-identity-systems.md) — soulprint/resonance/evolution/dream all live on schemaless Anima; resonance accrues client-side in Chat (resonanceRef vs stale closure); useAnimaPresence lockRef stops last_visit write-loop.
 - [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by two flows (check-in page vs in-chat ritual) with divergent fields; filter by the field you need; list() no-limit = full history.
 - [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].
+- [api-server boot env & route-mounting regression](anima-apiserver-boot-env.md) — never hard-require optional env (CLERK_WEBHOOK_SECRET→503); keep app.ts whole (gutting broke /api/healthz probe); use getAuth(req) per @clerk/express v2.
+- [pnpm packageManager pin hang](pnpm-version-pin-hang.md) — root pin `pnpm@X` ≠ env pnpm → every local pnpm cmd + workflow hangs on self-switch; fix = `.npmrc manage-package-manager-versions=false`, keep the pin.
+- [Anima auto-update PWA](anima-pwa-autoupdate.md) — vite-plugin-pwa autoUpdate; precache ONLY hashed assets + navigateFallback:null because prerender rewrites HTML post-build (precaching HTML serves a stale shell).
 - [Anima page scroll contract](anima-page-scroll-contract.md) — page roots must be `flex-1 min-h-0 (+overflow-y-auto)`, NEVER `*-screen`/`*-[100dvh]`; wrapper already pads for the fixed tab bar.
 - [Anima onboarding gate](anima-onboarding-gate.md) — Serenity is the (unseeded) guide not a companion; SignedInHome gates "/" on Anima existence (mount-only → needs onComplete to flip, fails open to home).
 - [Anima auto-gen entity dedupe](anima-autogen-dedupe.md) — client ref + read-then-create dedupe is best-effort only (base44 has no unique constraint); always guard the first-entry case with lastCount>0.

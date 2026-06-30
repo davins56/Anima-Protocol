@@ -39,6 +39,20 @@ re-open never mints a second crystal for an already-crystalized session. The loc
 is per-runtime, so two separate devices/processes are still a residual gap — that
 needs a server-side (user_email, session_id) uniqueness guard, not a client lock.
 
+## Crash-safe seeding must not violate the "empty-account-only" rule
+
+Starter seeding targets **only brand-new EMPTY accounts** — a returning user who
+has their own/migrated characters (and even deleted all starters) must be left
+untouched. When making the seeder fail-soft + retryable, do NOT re-check
+emptiness between retry attempts: decide "is this account empty?" **once, before
+any writes**, then retry the idempotent upsert pass (keyed by deterministic
+`seed_` id). **Why:** if the first pass writes some rows then fails mid-loop, a
+retry that re-checks emptiness sees those rows, thinks the account is "non-empty",
+and abandons the rest of the roster → permanently partial starter set. **How to
+apply:** `seedCharactersIfNeeded()` must never reject (it's awaited in
+`syncBootstrap.run()`), and photo backfill must stay non-fatal — a failed
+seed/backfill must never white-screen the app.
+
 ## Server-side crystal uniqueness (cross-device source of truth)
 
 Client locks are per-runtime, so two devices/tabs (separate processes) could

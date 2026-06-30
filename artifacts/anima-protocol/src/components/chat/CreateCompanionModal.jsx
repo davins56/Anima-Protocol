@@ -41,6 +41,10 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         avatar_url: "https://serenity-sm2kts5ggj.replit.app/serenity-default.jpg", // Default avatar
         personality: `You are ${name}, a ${archetype.toLowerCase()} companion. ${tagline || "You provide guidance and support."}`,
         speaking_style: "Warm, thoughtful, and personable",
+        emotion: "calm",
+        emotion_level: "Low",
+        intensity: 35,
+        arousal: 30,
       });
 
       setStep("done");

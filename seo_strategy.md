@@ -1,10 +1,10 @@
 # SEO Strategy
 
 ## In scope
-- Public landing and marketing experience at `/` and `/landing`
+- Public landing experience at `/`
 - Public authentication entry points at `/sign-in/*` and `/sign-up/*`
 - Public legal/shareable pages at `/terms`, `/privacy-policy`, and `/disclaimer`
-- Static crawl assets in `artifacts/anima-protocol/public/` such as `robots.txt`, `sitemap.xml`, icons, manifest, and any SEO-relevant static HTML files
+- Static crawl assets in `artifacts/anima-protocol/public/` such as `robots.txt`, `sitemap.xml`, icons, manifest, `llms.txt`, and any SEO-relevant standalone documents
 
 ## Out of scope
 - Authenticated application routes and dashboards (all non-public routes in `artifacts/anima-protocol/src/App.full.jsx`)
@@ -25,5 +25,5 @@
 
 ## Notes from scans
 - Build-time prerendering in `artifacts/anima-protocol/scripts/prerender.mjs` is part of the intended SEO strategy for the public marketing, auth, and legal routes.
-- `/` is the preferred homepage URL. Alternate aliases such as `/landing` and `/login` should not be promoted in sitemaps or user-facing navigation.
-- Any standalone HTML file placed in `artifacts/anima-protocol/public/` is treated as a first-class crawlable URL and should either join the canonical route/metadata flow or be removed/noindexed.
+- `/` is the only intended canonical homepage URL. `/landing` and `/login` should be treated as legacy aliases that redirect to `/`, not as independent indexable pages.
+- Any standalone file placed in `artifacts/anima-protocol/public/` is treated as a first-class public URL and should either join the canonical route/metadata/sitemap flow or be removed or noindexed.
