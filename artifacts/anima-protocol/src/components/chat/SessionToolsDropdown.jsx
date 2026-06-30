@@ -111,7 +111,7 @@ export default function SessionToolsDropdown({
             </div>
 
             {/* Panel body */}
-            <div className="max-h-80 overflow-y-auto p-3">
+            <div className="max-h-80 overflow-y-auto p-3 pb-8">
               {activePanel === "quests" && (
                 <PersistentQuestLog sessionId={sessionId} characterId={characterId} />
               )}

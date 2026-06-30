@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { base44 } from "@/api/base44Client";
@@ -7,6 +7,7 @@ import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowse
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
 import { useTimelineBranching } from "@/hooks/useTimelineBranching";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { useStoreSync } from "@/lib/useStoreSync";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -21,31 +22,33 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [canonSeed, setCanonSeed] = useState(null); // { story, insertions } from the universe browser
   const [openingScene, setOpeningScene] = useState("");
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [chars, grps, animas] = await Promise.all([
+        base44.entities.Character.list("-created_date", 500),
+        base44.entities.CharacterGroup.list("-created_date", 100),
+        base44.entities.Anima.list("-created_date", 100),
+      ]);
+      // Merge animas into character list with a flag so we can distinguish them
+      const animaAsChars = (animas || []).map((a) => ({
+        ...a,
+        _isAnima: true,
+        category: a.archetype || "guardian",
+        universe: "Anima",
+      }));
+      setCharacters([...animaAsChars, ...(chars || [])]);
+      setGroups(grps || []);
+    } catch (err) {
+      console.error('Error loading characters:', err);
+      setCharacters([]);
+      setGroups([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [chars, grps, animas] = await Promise.all([
-          base44.entities.Character.list("-created_date", 500),
-          base44.entities.CharacterGroup.list("-created_date", 100),
-          base44.entities.Anima.list("-created_date", 100),
-        ]);
-        // Merge animas into character list with a flag so we can distinguish them
-        const animaAsChars = (animas || []).map((a) => ({
-          ...a,
-          _isAnima: true,
-          category: a.archetype || "guardian",
-          universe: "Anima",
-        }));
-        setCharacters([...animaAsChars, ...(chars || [])]);
-        setGroups(grps || []);
-      } catch (err) {
-        console.error('Error loading characters:', err);
-        setCharacters([]);
-        setGroups([]);
-      } finally {
-        setLoading(false);
-      }
-    };
     let cancelled = false;
     whenBootstrapReady().then(() => {
       if (!cancelled) loadData();
@@ -53,7 +56,10 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadData]);
+
+  // Refetch when starter seeding or another device updates the roster.
+  useStoreSync(loadData);
 
   const filteredCharacters = characters.filter((c) => {
     const searchLower = search.toLowerCase().trim();

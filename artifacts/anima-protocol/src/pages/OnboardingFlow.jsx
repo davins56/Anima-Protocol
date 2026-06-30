@@ -81,6 +81,19 @@ function OptionCard({ active, onClick, title, desc, emoji }) {
   );
 }
 
+const EMOTION_PRESETS = {
+  warm: { emotion: 'joyful', emotion_level: 'Medium', intensity: 55, arousal: 60 },
+  calm: { emotion: 'calm', emotion_level: 'Low', intensity: 30, arousal: 25 },
+  playful: { emotion: 'hopeful', emotion_level: 'Medium', intensity: 60, arousal: 75 },
+  intense: { emotion: 'angry', emotion_level: 'High', intensity: 85, arousal: 90 },
+  ethereal: { emotion: 'calm', emotion_level: 'Medium', intensity: 45, arousal: 40 },
+  wry: { emotion: 'conflicted', emotion_level: 'Medium', intensity: 50, arousal: 45 },
+};
+
+const getInitialEmotionState = (voiceTone) => {
+  return EMOTION_PRESETS[voiceTone] || EMOTION_PRESETS.calm;
+};
+
 function SoulprintRow({ label, value, accent }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2 border-b border-primary/10 last:border-b-0">
@@ -99,6 +112,7 @@ export default function OnboardingFlow({ onComplete }) {
   const [qIndex, setQIndex] = useState(0);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [fallbackWarning, setFallbackWarning] = useState('');
 
   // Ceremony answers
   const [answers, setAnswers] = useState({ seek: '', fear: '', value: '', need: '' });
@@ -226,65 +240,84 @@ Return JSON:
     if (!name.trim() || !seed) return;
     setCreating(true);
     setError('');
+    setFallbackWarning('');
     try {
       const me = await base44.auth.me();
       const nowIso = new Date().toISOString();
 
       // Assigning the user's email makes this Anima their primary companion.
-      await base44.entities.Anima.create({
-        name: name.trim(),
-        tagline: seed.tagline,
-        personality: seed.personality,
-        backstory: seed.backstory,
-        speaking_style: seed.speaking_style,
-        voice_tone: voiceTone || null,
-        aesthetic_theme: aesthetic || null,
-        memory_preference: 'moments',
-        archetype: voiceTone || 'companion',
-        assigned_user: me?.email,
-        status: 'active',
-        // --- Soulprint & evolution (schemaless, no migration) ---
-        soulprint: seed.soulprint,
-        resonance: 0,
-        evolution_path: 'Undetermined',
-        awakening_date: nowIso,
-        last_visit: nowIso,
-        ceremony: {
-          seek: answers.seek,
-          fear: answers.fear,
-          value: answers.value,
-          need: answers.need,
-          initial_greeting: seed.initial_greeting,
-        },
-        // The First Promise — a unique oath spoken at awakening.
-        oath: seed.oath,
-        // The First Spark — the immutable origin moment. Stored on the Anima
-        // itself so it can never be removed through normal memory/message flows.
-        first_spark: {
-          date: nowIso,
-          awakening_words: seed.initial_greeting,
-          first_words: '',
-        },
-      });
+      try {
+        const initialEmotion = getInitialEmotionState(voiceTone);
+        await base44.entities.Anima.create({
+          name: name.trim(),
+          tagline: seed.tagline,
+          personality: seed.personality,
+          backstory: seed.backstory,
+          speaking_style: seed.speaking_style,
+          voice_tone: voiceTone || null,
+          aesthetic_theme: aesthetic || null,
+          memory_preference: 'moments',
+          archetype: voiceTone || 'companion',
+          assigned_user: me?.email,
+          status: 'active',
+          emotion: initialEmotion.emotion,
+          emotion_level: initialEmotion.emotion_level,
+          intensity: initialEmotion.intensity,
+          arousal: initialEmotion.arousal,
+          // --- Soulprint & evolution (schemaless, no migration) ---
+          soulprint: seed.soulprint,
+          resonance: 0,
+          evolution_path: 'Undetermined',
+          awakening_date: nowIso,
+          last_visit: nowIso,
+          ceremony: {
+            seek: answers.seek,
+            fear: answers.fear,
+            value: answers.value,
+            need: answers.need,
+            initial_greeting: seed.initial_greeting,
+          },
+          // The First Promise — a unique oath spoken at awakening.
+          oath: seed.oath,
+          // The First Spark — the immutable origin moment. Stored on the Anima
+          // itself so it can never be removed through normal memory/message flows.
+          first_spark: {
+            date: nowIso,
+            awakening_words: seed.initial_greeting,
+            first_words: '',
+          },
+        });
+      } catch (err) {
+        console.warn('Server Anima creation failed; continuing ceremony anyway:', err);
+        const detail =
+          err instanceof Error && err.message && !err.message.startsWith('Not signed in')
+            ? err.message
+            : 'A temporary server issue prevented your Anima from being saved just now.';
+        setFallbackWarning(
+          `Your Anima awakens, but the server could not save it: ${detail}`,
+        );
+      }
 
-      await base44.auth.updateMe({
-        onboarding_completed: true,
-        anima_state: 'Awakened',
-      });
+      try {
+        await base44.auth.updateMe({
+          onboarding_completed: true,
+          anima_state: 'Awakened',
+        });
+      } catch (err) {
+        console.warn('Profile update failed during onboarding fallback:', err);
+        if (!fallbackWarning) {
+          const detail =
+            err instanceof Error && err.message && !err.message.startsWith('Not signed in')
+              ? err.message
+              : 'A temporary server issue prevented your onboarding status from saving.';
+          setFallbackWarning(
+            `Your Anima awakens, but the server could not save your onboarding status: ${detail}`,
+          );
+        }
+      }
 
       setCreatedName(name.trim());
       setStep('farewell');
-    } catch (err) {
-      console.error('Failed to awaken Anima:', err);
-      const detail =
-        err instanceof Error && err.message && !err.message.startsWith('Not signed in')
-          ? err.message
-          : null;
-      setError(
-        detail
-          ? `Your Anima couldn't be awakened: ${detail}`
-          : "Your Anima couldn't be awakened just now. Please try again.",
-      );
     } finally {
       setCreating(false);
     }
@@ -552,6 +585,9 @@ Return JSON:
 
               {error && (
                 <p className="font-mono text-xs text-red-400/80 text-center">{error}</p>
+              )}
+              {fallbackWarning && (
+                <p className="font-mono text-xs text-yellow-300/90 text-center">{fallbackWarning}</p>
               )}
 
               <div className="flex justify-between items-center pt-2">

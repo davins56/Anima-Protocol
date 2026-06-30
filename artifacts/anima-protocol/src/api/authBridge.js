@@ -9,10 +9,10 @@ export function clearAuthTokenGetter() {
   tokenGetter = null;
 }
 
-export async function getToken() {
+export async function getToken(options = {}) {
   if (!tokenGetter) return null;
   try {
-    return await tokenGetter();
+    return await tokenGetter(options);
   } catch {
     return null;
   }
@@ -37,8 +37,8 @@ export function publicOriginHeaders() {
   };
 }
 
-export async function authHeaders(extra) {
-  const token = await getToken();
+export async function authHeaders(extra, options = {}) {
+  const token = await getToken(options);
   const headers = {
     'Content-Type': 'application/json',
     ...publicOriginHeaders(),

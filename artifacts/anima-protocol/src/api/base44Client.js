@@ -34,7 +34,7 @@ async function storeFetch(path, options = {}) {
     err.status = 401;
     throw err;
   }
-  const headers = await authHeaders(options.headers);
+
   const timeoutSignal =
     typeof AbortSignal !== 'undefined' && AbortSignal.timeout
       ? AbortSignal.timeout(STORE_FETCH_TIMEOUT_MS)
@@ -46,13 +46,28 @@ async function storeFetch(path, options = {}) {
   } else if (userSignal) {
     signal = userSignal;
   }
-  try {
+
+  const makeRequest = async (retryOptions = {}) => {
+    const headers = await authHeaders(options.headers, retryOptions);
     return await fetch(`${STORE_BASE()}${path}`, {
       ...options,
       headers,
       credentials: 'same-origin',
       signal,
     });
+  };
+
+  let res;
+  try {
+    res = await makeRequest();
+    if (res.status === 401) {
+      const retried = await makeRequest({ skipCache: true });
+      if (retried.status !== 401) {
+        return retried;
+      }
+      res = retried;
+    }
+    return res;
   } catch (err) {
     if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
       const timeoutErr = new Error(

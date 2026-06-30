@@ -12,18 +12,17 @@
   PORT = "23660"
   BASE_PATH = "/"
   VITE_CLERK_PROXY_URL = ""
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+  VITE_CLERK_PUBLISHABLE_KEY = ""
 
 [context.deploy-preview.environment]
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+  VITE_CLERK_PUBLISHABLE_KEY = ""
 
-[context.branch-deploy.environment]
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
-
+[context.branch-deploy.environment
+  VITE_CLERK_PUBLISHABLE_KEY = ""
 [context.production.environment]
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+  VITE_CLERK_PUBLISHABLE_KEY = ""
 
-[[redirects]]
+[[redirects]"""
   from = "/api/*"
   to = "https://anima-protocol.replit.app/api/:splat"
   status = 200
