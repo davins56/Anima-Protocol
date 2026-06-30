@@ -132,7 +132,7 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
                 </button>
               </div>
 
-              <div className="max-h-96 overflow-y-auto p-2 space-y-1">
+              <div className="max-h-96 overflow-y-auto p-2 space-y-1 pb-12">
                 {menuItems.map((item) => (
                   <Link
                     key={item.path}

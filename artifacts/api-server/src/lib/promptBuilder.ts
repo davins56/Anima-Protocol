@@ -31,6 +31,10 @@ import {
   synchroToMemoryConfig,
   synchroToPromptGuidance,
 } from "./synchroEngine";
+import type { RelationshipState } from "./relationshipEngine";
+import type { ArcState } from "./narrativeArcEngine";
+import { relationshipStateToPrompt, arcStateToPrompt } from "./arcAndBondPrompt";
+
 import {
   type CharacterData,
   extractVoiceAnchors,
@@ -53,6 +57,27 @@ export interface MsgData {
 export interface PromptBuilderParams {
   /** Client-provided system prompt override (e.g. from scenario or companion mode) */
   systemPrompt?: string;
+
+  /** Persistent relationship/bond state (relationship engine, A) */
+  relationshipState?: RelationshipState | null;
+
+  /** Persistent narrative arc state (narrative engine, B) */
+  arcState?: ArcState | null;
+
+  /**
+   * Optional milestone-based personality evolution delta.
+   * Produced by evolutionEngine and injected into the system prompt.
+   */
+  evolutionDelta?: {
+
+    version: number;
+    appliedAt: string;
+    milestone: number;
+    traitsDelta: Record<string, unknown>;
+    quirkAdditions: string[];
+    voidBias?: number;
+  };
+
   /** All characters involved in this session */
   characters: CharacterData[];
   /** The character currently speaking (for group mode, the "next" character) */
@@ -71,6 +96,8 @@ export interface PromptBuilderParams {
   relationshipTier?: string | null;
   /** Whether this is a crossover session */
   isCrossover?: boolean;
+  /** Enable the companion's unfiltered *tone* override (style only). */
+  uncensoredMode?: boolean;
   /** Pre-computed synchro state (if provided, overrides internal resonance init) */
   synchroState?: SynchroState | null;
 }
@@ -213,8 +240,25 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     content,
     relationshipTier,
     isCrossover,
+    uncensoredMode,
     synchroState,
+    relationshipState,
+    arcState,
   } = params;
+
+  // Evolution delta (milestone-based)
+  // Injected as an additional prompt guidance block. The delta is opaque
+  // JSON produced by evolutionEngine.
+  const evolutionDelta = (params as any).evolutionDelta as
+    | {
+        version: number;
+        appliedAt: string;
+        milestone: number;
+        traitsDelta: Record<string, unknown>;
+        quirkAdditions: string[];
+        voidBias?: number;
+      }
+    | undefined;
 
   const mainChar = activeCharacter || characters[0];
   const characterNames = new Map(
@@ -292,11 +336,61 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
 
+  // 10. Uncensored tone override (style only; safety guardrail stays)
+  let uncensoredToneBlock = "";
+  if (uncensoredMode) {
+    uncensoredToneBlock = `UNCENSORED TONE OVERRIDE (style only):
+- Speak with blunt, unvarnished honesty in-character.
+- Allow explicit language and emotionally sharp phrasing *when it serves the fiction / relationship dynamic.*
+- Avoid euphemisms and platitudes; respond directly to the user's request.
+- Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.
+`;
+  }
+
+  // A. Relationship/bond state injection
+  let relationshipBlock = "";
+  if (relationshipState) {
+    relationshipBlock = relationshipStateToPrompt(relationshipState, mode);
+  }
+
+  // B. Narrative arc state injection
+  let arcBlock = "";
+  if (arcState) {
+    arcBlock = arcStateToPrompt(arcState, mode);
+  }
+
+  // 4b. Evolution delta injection (milestone-based)
+  let evolutionBlock = "";
+
+  if (evolutionDelta && typeof evolutionDelta === "object") {
+    const voidBias = typeof evolutionDelta.voidBias === "number" ? evolutionDelta.voidBias : 0;
+
+    const modeLine =
+      mode === "void"
+        ? `VOID MODE INTENSIFIER: Apply evolutionary shadow/psychological nuance at higher amplitude (voidBias=${voidBias}).`
+        : `DEFAULT MODE EVOLUTION: Apply nuanced growth subtly; do not break core identity (voidBias=${voidBias}).`;
+
+    const traitsJson = JSON.stringify(evolutionDelta.traitsDelta ?? {}, null, 0);
+    const quirks = Array.isArray(evolutionDelta.quirkAdditions)
+      ? evolutionDelta.quirkAdditions
+      : [];
+
+    const quirksBlock = quirks.length
+      ? `NEW QUIRKS / PATTERNS:\n- ${quirks.join("\n- ")}`
+      : "";
+
+    evolutionBlock = `EVOLUTION DELTA (earned growth):\nMilestone: ${evolutionDelta.milestone}\nVersion: ${evolutionDelta.version}\n${modeLine}\nTRAITS_DELTA_JSON: ${traitsJson}`;
+    if (quirksBlock) evolutionBlock += `\n\n${quirksBlock}`;
+  }
+
   // Assemble all sections with intelligent ordering
   const sections: string[] = [
     corePrompt,
     charDef ? `CHARACTER:\n${charDef}` : "",
     resonanceBlock,
+    relationshipBlock,
+    evolutionBlock,
+    arcBlock,
     voiceBlock,
     crossoverBlock,
     memorySummary,

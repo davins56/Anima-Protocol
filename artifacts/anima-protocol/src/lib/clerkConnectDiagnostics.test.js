@@ -9,6 +9,11 @@ const LIVE_KEY =
   'pk_live_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ';
 const CUSTOM_DOMAIN_KEY =
   'pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA'; // pragma: allowlist secret
+// Production-shaped key for a non-custom Clerk host, so probes target /api/__clerk.
+const PROXY_LIVE_KEY =
+  'pk_live_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ'; // pragma: allowlist secret
+const DEV_KEY =
+  'pk_test_Y2xlcmsuZGV2LmNsZXJrLmFjY291bnRzLmRldiQ'; // pragma: allowlist secret
 
 describe('probeClerkConnectivity', () => {
   beforeEach(() => {
@@ -21,7 +26,7 @@ describe('probeClerkConnectivity', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('DEV', false);
     vi.stubEnv('VITE_CLERK_PROXY_URL', '');
-    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', LIVE_KEY);
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', PROXY_LIVE_KEY);
   });
 
   afterEach(() => {
@@ -52,7 +57,7 @@ describe('probeClerkConnectivity', () => {
       }),
     );
 
-    const hints = await probeClerkConnectivity(LIVE_KEY);
+    const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
 
     expect(hints).toContain(
       'Clerk proxy is misconfigured: Vercel Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
@@ -90,7 +95,7 @@ describe('probeClerkConnectivity', () => {
       }),
     );
 
-    const hints = await probeClerkConnectivity(LIVE_KEY);
+    const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
 
     expect(hints).toContain(
       'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
@@ -153,7 +158,7 @@ describe('isClerkProxyHealthy', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('DEV', false);
     vi.stubEnv('VITE_CLERK_PROXY_URL', '');
-    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', LIVE_KEY);
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', PROXY_LIVE_KEY);
   });
 
   afterEach(() => {
@@ -168,14 +173,14 @@ describe('isClerkProxyHealthy', () => {
       vi.fn(async () => new Response('', { status: 503 })),
     );
 
-    await expect(isClerkProxyHealthy(LIVE_KEY)).resolves.toBe(false);
+    await expect(isClerkProxyHealthy(PROXY_LIVE_KEY)).resolves.toBe(false);
   });
 
   it('returns true when proxy is not used', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_example');
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', DEV_KEY);
 
-    await expect(isClerkProxyHealthy('pk_test_example')).resolves.toBe(true);
+    await expect(isClerkProxyHealthy(DEV_KEY)).resolves.toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
