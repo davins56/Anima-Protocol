@@ -5,6 +5,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import FileExplorer from "@/components/codespace/FileExplorer";
 import CodeEditor from "@/components/codespace/CodeEditor";
 import PreviewPane from "@/components/codespace/PreviewPane";
@@ -135,12 +136,18 @@ export default function Codespace() {
     }
   }, []);
 
-  useEffect(() => {
-    loadProject();
+  const loadCharacters = useCallback(() => {
     base44.entities.Character.list("-updated_date", 100)
       .then((cs) => setCharacters(cs || []))
       .catch(() => setCharacters([]));
-  }, [loadProject]);
+  }, []);
+
+  useEffect(() => {
+    loadProject();
+    whenBootstrapReady().then(() => loadCharacters());
+  }, [loadProject, loadCharacters]);
+
+  useStoreSync(loadCharacters);
 
   // Default the companion to the first available character.
   useEffect(() => {

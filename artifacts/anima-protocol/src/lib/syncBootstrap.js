@@ -4,6 +4,11 @@ import {
   notifyStoreChanged,
   waitForStoreAuth,
 } from "@/api/base44Client";
+import {
+  beginBootstrap,
+  endBootstrap,
+  resetBootstrapState,
+} from "@/lib/bootstrapState";
 import { seedCharactersIfNeeded, resetSeedLock } from "@/lib/seedCharacters";
 
 // One-time migration of the browser's pre-sync localStorage data up to the
@@ -30,11 +35,18 @@ export function bootstrapUserData(userId) {
   }
   bootstrappedUserId = userId;
   resetSeedLock();
-  bootstrapPromise = run().catch((err) => {
-    bootstrapPromise = null;
-    bootstrappedUserId = null;
-    throw err;
-  });
+  resetBootstrapState();
+  bootstrapPromise = run()
+    .catch((err) => {
+      bootstrapPromise = null;
+      bootstrappedUserId = null;
+      resetBootstrapState();
+      throw err;
+    })
+    .finally(() => {
+      endBootstrap();
+    });
+  beginBootstrap(bootstrapPromise);
   return bootstrapPromise;
 }
 
