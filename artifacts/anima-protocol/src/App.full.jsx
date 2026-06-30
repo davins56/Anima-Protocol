@@ -417,6 +417,18 @@ function getEnabledOAuthStrategies(clerk) {
 
 function filterProvidersByEnvList(providers) {
   const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
+  if (typeof envList !== "string" || !envList.trim()) {
+    return providers;
+  }
+
+  const allowed = new Set(
+    envList.split(",").map((entry) => entry.trim()).filter(Boolean),
+  );
+  return providers.filter((provider) => allowed.has(provider.strategy));
+}
+
+const CLERK_SSO_DASHBOARD_URL =
+  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
   if (typeof envList === "string" && envList.trim()) {
     const allowed = new Set(
       envList
