@@ -1,11 +1,9 @@
-// src/components/mockups/SerenityMain.tsx  (or whatever the welcome file is named)
-import React from 'react';
-import ChatLayoutWrapper from '../../chat/ChatLayoutWrapper';
+import * as React from 'react';
+import ChatLayoutWrapper from '../chat/ChatLayoutWrapper'; // Fixed: no extra dots/spaces
 
 export default function SerenityMain() {
   return (
     <ChatLayoutWrapper>
-      {/* Your existing welcome content goes here — paste it inside if you want to keep it */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center">
           <div className="text-8xl mb-8">🌌</div>

@@ -18,13 +18,18 @@
     "typescript": "~5.9.3"
   },
   "pnpm": {
-    "overrides": {
-      "qs@6.15.1": "6.15.2"
+    "overrides": { 
+            "qs@6.15.1": "6.15.2",
+      "esbuild": "^0.28.1",
+      "uuid": "^11.1.1"
     }
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "@types/node": "catalog:",
     "dotenv": "^17.4.2",
     "drizzle-orm": "catalog:",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9",
+    "ripgrep": "^0.3.1"
   }
 }

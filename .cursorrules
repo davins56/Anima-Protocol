@@ -1,0 +1,36 @@
+# Cursor rules for Anima-Protocol monorepo
+
+## Scope
+You are working in a monorepo:
+- frontend: artifacts/anima-protocol
+- api server: artifacts/api-server
+- shared packages/libs: lib/*
+
+## Code style
+- Prefer existing patterns and utilities in the repo.
+- Keep changes minimal and localized.
+- Use TypeScript where the target file is TS/TSX; otherwise preserve JS where it already exists.
+
+## Voice / Speak-to-Anima integration
+- Any "Speak to Anima" UI wiring must pass through the existing components/hooks:
+  - components/chat/SpeakToAnimaFunctionality.jsx
+  - components/anima/SpeakToAnimaButton.jsx
+  - hooks/useSpeakToAnima.js
+  - components/voice/speakToAnima.js
+- Do not hardcode ElevenLabs API keys in client code.
+- If a server endpoint is required, implement it under artifacts/api-server and call it from the client.
+
+## Testing
+- If you modify frontend logic, run:
+  - pnpm -C artifacts/anima-protocol test
+  - pnpm -C artifacts/anima-protocol typecheck
+- If you modify api server logic, run:
+  - pnpm -C artifacts/api-server test
+  - pnpm -C artifacts/api-server typecheck
+- If you make integration changes, run top-level build:
+  - pnpm build
+
+## Git hygiene
+- Do not remove existing functionality.
+- Ensure formatting/linting does not break.
+
