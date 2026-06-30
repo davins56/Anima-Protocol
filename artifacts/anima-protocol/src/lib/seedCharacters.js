@@ -502,7 +502,9 @@ export async function repairStarterCharacters() {
   notifyStoreChanged();
 
   const starters = getStarterRoster();
-  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existing = await base44.entities.Character.list("-created_date", 5000, {
+    _bootstrapInternal: true,
+  });
   const existingIds = new Set((existing || []).map((c) => c.id));
   const present = starters.filter((c) => existingIds.has(c.id)).length;
   if (present < starters.length) {
@@ -572,7 +574,9 @@ const BACKFILL_BATCH = 30;
 
 async function doBackfillPhotos() {
   try {
-    const all = await base44.entities.Character.list("-created_date", 1000);
+    const all = await base44.entities.Character.list("-created_date", 1000, {
+      _bootstrapInternal: true,
+    });
     const attempts = getPhotoAttempts();
     const pending = (all || []).filter(
       (c) => c?.id && photoNeedsLookup(c.avatar_url) && !attempts.has(c.id)
@@ -728,7 +732,9 @@ export async function upsertCharacters(characters) {
 
   clearStoreCache();
   await waitForStoreAuth();
-  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existing = await base44.entities.Character.list("-created_date", 5000, {
+    _bootstrapInternal: true,
+  });
   const existingIds = new Set((existing || []).map((c) => c.id));
   const toAdd = list.filter((c) => !existingIds.has(c.id));
   const skipped = list.length - toAdd.length;
@@ -757,7 +763,9 @@ export async function upsertCharacters(characters) {
 
 async function upsertMissingStarters() {
   const starters = getStarterRoster();
-  const existing = await base44.entities.Character.list("-created_date", 5000);
+  const existing = await base44.entities.Character.list("-created_date", 5000, {
+    _bootstrapInternal: true,
+  });
   const existingIds = new Set((existing || []).map((c) => c.id));
   const missing = starters.filter((c) => !existingIds.has(c.id));
   if (!missing.length) return 0;
