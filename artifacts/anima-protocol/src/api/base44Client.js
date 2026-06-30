@@ -12,6 +12,10 @@ import { animaApi } from './animaApi';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
 import { apiUrl } from '@/lib/apiOrigin';
 import {
+  ensureBootstrapComplete,
+  isBootstrapSettled,
+} from '@/lib/bootstrapState';
+import {
   authHeaders,
   clearAuthTokenGetter,
   getToken,
@@ -670,7 +674,15 @@ async function countEntity(entityName, { filters, search } = {}) {
   return data && typeof data.count === 'number' ? data.count : 0;
 }
 
+const ROSTER_ENTITIES = new Set(['Character', 'Anima']);
+
 async function queryEntity(entityName, opts) {
+  // Wait for starter seeding before UI reads the roster. Bootstrap-internal
+  // reads pass `_bootstrapInternal` so they do not await the in-flight promise.
+  if (ROSTER_ENTITIES.has(entityName) && !opts?._bootstrapInternal) {
+    await ensureBootstrapComplete();
+  }
+
   const qs = buildQuery(opts);
   const key = `${entityName}|v${verOf(entityName)}|${qs}`;
 
@@ -692,7 +704,16 @@ async function queryEntity(entityName, opts) {
       throw storeError(res, await parseStoreErrorResponse(res));
     }
     const data = await res.json();
-    listCache.set(key, { value: data, expiry: Date.now() + LIST_TTL });
+    // Don't cache an empty roster while bootstrap may still be seeding — pages
+    // that fetched too early would otherwise keep [] for the TTL window.
+    const skipEmptyRosterCache =
+      ROSTER_ENTITIES.has(entityName) &&
+      !isBootstrapSettled() &&
+      Array.isArray(data) &&
+      data.length === 0;
+    if (!skipEmptyRosterCache) {
+      listCache.set(key, { value: data, expiry: Date.now() + LIST_TTL });
+    }
     return data;
   })();
 
@@ -834,12 +855,25 @@ function entityStore(entityName) {
           offset,
           filters: optFilters,
           search,
+          _bootstrapInternal: opts?._bootstrapInternal,
         });
       }
       if (sortOrFilters && typeof sortOrFilters === 'object') {
-        return queryEntity(entityName, { filters: sortOrFilters, limit, offset, search });
+        return queryEntity(entityName, {
+          filters: sortOrFilters,
+          limit,
+          offset,
+          search,
+          _bootstrapInternal: opts?._bootstrapInternal,
+        });
       }
-      return queryEntity(entityName, { limit, offset, filters: optFilters, search });
+      return queryEntity(entityName, {
+        limit,
+        offset,
+        filters: optFilters,
+        search,
+        _bootstrapInternal: opts?._bootstrapInternal,
+      });
     },
 
     // Grand total matching optional { filters, search } — same scoping as
