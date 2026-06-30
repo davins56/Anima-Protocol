@@ -1,21 +1,12 @@
 // @ts-check
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { whenBootstrapReady } from '@/lib/syncBootstrap';
+import { useStoreSync } from '@/lib/useStoreSync';
 
 /** @param {{ onCharactersLoaded: (...args: any[]) => void }} props */
 export default function CharacterLoader({ onCharactersLoaded }) {
-  useEffect(() => {
-    let cancelled = false;
-    whenBootstrapReady().then(() => {
-      if (!cancelled) loadAndEnrichCharacters();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const loadAndEnrichCharacters = async () => {
+  const loadAndEnrichCharacters = useCallback(async () => {
     try {
       const [chars, animas] = await Promise.all([
         base44.entities.Character.list("-created_date", 500),
@@ -50,7 +41,19 @@ export default function CharacterLoader({ onCharactersLoaded }) {
       console.error('Error loading characters:', err);
       onCharactersLoaded([]);
     }
-  };
+  }, [onCharactersLoaded]);
+
+  useEffect(() => {
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadAndEnrichCharacters();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadAndEnrichCharacters]);
+
+  useStoreSync(loadAndEnrichCharacters);
 
   return null;
 }
