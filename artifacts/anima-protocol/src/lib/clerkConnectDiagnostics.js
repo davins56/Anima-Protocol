@@ -3,7 +3,11 @@ import {
   clerkJsScriptProbeUrl,
   clerkProxyProbeBase,
   publishableKeyUsesCustomDomain,
+  resolveClerkProxyUrl,
 } from '@/lib/clerkProxy';
+
+const CLERK_ENVIRONMENT_PROBE_PATH =
+  '/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=6.12.1';
 
 async function readProxyError(res) {
   try {
@@ -18,11 +22,15 @@ async function readProxyError(res) {
  * ClerkProvider should skip proxyUrl so email/OAuth can use Clerk's API directly.
  */
 export async function isClerkProxyHealthy(clerkPubKey) {
-  const proxyUrl = clerkProxyProbeBase(clerkPubKey);
+  const proxyUrl = resolveClerkProxyUrl(clerkPubKey);
   if (!proxyUrl) return true;
+  const proxyBase =
+    proxyUrl.startsWith('/') && typeof window !== 'undefined'
+      ? `${window.location.origin}${proxyUrl.replace(/\/$/, '')}`
+      : proxyUrl.replace(/\/$/, '');
 
   try {
-    const res = await fetch(`${proxyUrl}/v1/environment`, {
+    const res = await fetch(`${proxyBase}/v1/environment`, {
       credentials: 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
@@ -63,7 +71,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
   }
 
   try {
-    const clerkRes = await fetch(`${proxyUrl}/v1/environment`, {
+    const clerkRes = await fetch(`${proxyUrl}${CLERK_ENVIRONMENT_PROBE_PATH}`, {
       credentials: usesCustomDomain ? 'omit' : 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
@@ -80,6 +88,16 @@ export async function probeClerkConnectivity(clerkPubKey) {
       ) {
         hints.push(
           'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+        );
+        return hints;
+      } else if (
+        usesCustomDomain &&
+        proxyError?.errors?.some(
+          (entry) => entry?.code === 'subdomain_not_allowed',
+        )
+      ) {
+        hints.push(
+          'Clerk is rejecting www.anima-protocol.com for the custom login domain. In Clerk Dashboard → Domains, add www.anima-protocol.com to the allowed subdomains for clerk.anima-protocol.com, then hard-refresh sign-in.',
         );
         return hints;
       } else if (clerkRes.status === 503) {
