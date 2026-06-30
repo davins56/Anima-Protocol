@@ -744,7 +744,12 @@ export async function upsertCharacters(characters) {
     await base44.entities.Character.bulkUpsert(toAdd);
   } catch (err) {
     if (err?.status !== 404) {
-      throw new Error(err?.message || "Failed to add characters");
+      const detail =
+        err?.message ||
+        (err?.status === 500
+          ? "Server error while saving characters. Try again in a moment."
+          : "Failed to add characters");
+      throw new Error(detail);
     }
     for (const char of toAdd) {
       try {
