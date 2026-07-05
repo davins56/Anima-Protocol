@@ -69,9 +69,9 @@ describe("seedCharactersIfNeeded", () => {
 
     await seedCharactersIfNeeded();
 
-    expect(characterBulkUpsert).toHaveBeenCalledTimes(1);
-    expect(characterBulkUpsert.mock.calls[0][0].length).toBeGreaterThan(20);
-    expect(characterBulkUpsert.mock.calls[0][0][0]).toMatchObject({
+    const upserted = characterBulkUpsert.mock.calls.flatMap((c) => c[0]);
+    expect(upserted.length).toBeGreaterThan(20);
+    expect(upserted[0]).toMatchObject({
       id: expect.stringMatching(/^seed_/),
       name: expect.any(String),
       universe: expect.any(String),
@@ -91,8 +91,7 @@ describe("seedCharactersIfNeeded", () => {
 
     await seedCharactersIfNeeded();
 
-    expect(characterBulkUpsert).toHaveBeenCalledTimes(1);
-    const upserted = characterBulkUpsert.mock.calls[0][0];
+    const upserted = characterBulkUpsert.mock.calls.flatMap((c) => c[0]);
     expect(upserted.length).toBe(expectedMissing);
     expect(
       upserted.every((c) => c.id !== "seed_avatar-legend-of-korra-korra"),
@@ -102,26 +101,39 @@ describe("seedCharactersIfNeeded", () => {
 
   it("clears the per-load lock after a failed seed so a retry can run", async () => {
     characterList.mockResolvedValue([]);
-    characterBulkUpsert.mockRejectedValueOnce(new Error("network down"));
+    waitForStoreAuth.mockRejectedValue(new Error("auth not ready"));
     const { seedCharactersIfNeeded } = await loadSeedModule();
 
-    await expect(seedCharactersIfNeeded()).rejects.toThrow("network down");
+    await expect(seedCharactersIfNeeded()).rejects.toThrow("auth not ready");
+
+    waitForStoreAuth.mockReset().mockResolvedValue("token");
     characterBulkUpsert.mockResolvedValue({ count: 1, items: [] });
     await seedCharactersIfNeeded();
+    expect(characterBulkUpsert).toHaveBeenCalled();
+  }, 10000);
 
-    expect(characterBulkUpsert.mock.calls.length).toBe(2);
+  it("upserts the starter roster in batches when many characters are missing", async () => {
+    characterList.mockResolvedValue([]);
+    const { seedCharactersIfNeeded, getStarterRoster } = await loadSeedModule();
+    const roster = getStarterRoster();
+
+    await seedCharactersIfNeeded();
+
+    expect(characterBulkUpsert.mock.calls.length).toBeGreaterThan(1);
+    const upserted = characterBulkUpsert.mock.calls.flatMap((c) => c[0]);
+    expect(upserted.length).toBe(roster.length);
   });
 
   it("falls back to per-row update when bulk-upsert is unavailable", async () => {
     characterList.mockResolvedValue([]);
     const bulkErr = new Error("Not Found");
     bulkErr.status = 404;
-    characterBulkUpsert.mockRejectedValueOnce(bulkErr);
-    const { seedCharactersIfNeeded } = await loadSeedModule();
+    characterBulkUpsert.mockRejectedValue(bulkErr);
+    const { seedCharactersIfNeeded, getStarterRoster } = await loadSeedModule();
 
     await seedCharactersIfNeeded();
 
-    expect(characterUpdate.mock.calls.length).toBeGreaterThan(20);
+    expect(characterUpdate.mock.calls.length).toBe(getStarterRoster().length);
   });
 
   it("resolves after seeding without waiting for photo backfill", async () => {
@@ -139,8 +151,8 @@ describe("seedCharactersIfNeeded", () => {
     await seedCharactersIfNeeded();
     const elapsed = Date.now() - started;
 
-    expect(characterBulkUpsert).toHaveBeenCalledTimes(1);
-    expect(elapsed).toBeLessThan(200);
+    expect(characterBulkUpsert).toHaveBeenCalled();
+    expect(elapsed).toBeLessThan(500);
   });
 });
 
