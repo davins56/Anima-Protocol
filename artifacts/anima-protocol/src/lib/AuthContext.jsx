@@ -24,6 +24,7 @@ import {
   track,
 } from '@/lib/analytics';
 import { bootstrapUserData } from '@/lib/syncBootstrap';
+import { retryStarterSeed } from '@/lib/seedCharacters';
 
 const AuthContext = createContext();
 
@@ -124,6 +125,18 @@ export const AuthProvider = ({ children }) => {
           if (!cancelled) {
             setUser(profile);
             setAuthError(null);
+          }
+
+          // If bootstrap seeded before Clerk auth was ready, the roster can still
+          // be empty after profile load. Retry once now that the session is live.
+          try {
+            const chars = await base44.entities.Character.list('-created_date', 5);
+            if (!chars?.length) {
+              await retryStarterSeed();
+              notifyStoreChanged();
+            }
+          } catch (seedErr) {
+            console.warn('[Anima] Starter character retry skipped:', seedErr);
           }
         } catch (err) {
           console.warn('Failed to load profile:', err);
