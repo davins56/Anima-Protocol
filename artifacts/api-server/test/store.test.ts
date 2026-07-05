@@ -249,6 +249,36 @@ describe("bulk upsert (client-provided ids)", () => {
     expect(byId.get("seed_korra")?.name).toBe("Korra");
     expect(byId.get("seed_asami")?.name).toBe("Asami");
   });
+
+  it("upserts a full starter-series-sized batch in one request", async () => {
+    const U = user("bulk_series");
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      id: `seed_marvel-cinematic-universe-hero-${i}`,
+      name: `Hero ${i}`,
+      universe: "Marvel Cinematic Universe",
+      category: "hero",
+      status: "online",
+      avatar_url: "/seed-avatars/hero.jpg",
+      personality: "Bold and passionate. ".repeat(40),
+      backstory: "A long backstory. ".repeat(60),
+      speaking_style: "Direct and confident. ".repeat(20),
+    }));
+
+    const res = await call(U, "POST", "/Character/bulk-upsert", { items });
+    expect(res.status).toBe(200);
+    expect(res.json.count).toBe(20);
+
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    expect(chars).toHaveLength(20);
+  });
+
+  it("rejects a non-array items body", async () => {
+    const U = user("bulk_bad_body");
+    const res = await call(U, "POST", "/Character/bulk-upsert", {
+      items: "not-an-array",
+    });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("restore into a non-empty account (merge vs replace)", () => {

@@ -17,6 +17,7 @@ import {
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -28,7 +29,14 @@ function requireUser(
   res: Response,
   next: NextFunction,
 ): void {
-  const { userId } = getAuth(req);
+  let userId: string | null = null;
+  try {
+    userId = getAuth(req).userId;
+  } catch (err) {
+    logger.warn({ err }, "Clerk getAuth failed in store requireUser");
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -333,15 +341,27 @@ async function upsertEntity(
 ): Promise<void> {
   await db
     .insert(userEntities)
-    .values({ userId, entityName, entityId, data })
+    .values({ userId, entityName, entityId, data: stripUndefined(data) })
     .onConflictDoUpdate({
       target: [
         userEntities.userId,
         userEntities.entityName,
         userEntities.entityId,
       ],
-      set: { data, updatedAt: new Date() },
+      set: { data: stripUndefined(data), updatedAt: new Date() },
     });
+}
+
+// node-postgres JSON serialization rejects `undefined` property values; strip
+// them so client-provided character blobs cannot 500 the bulk-upsert path.
+function stripUndefined(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
 }
 
 // --- Bulk import (one-time local -> server migration) -----------------------
@@ -1024,43 +1044,84 @@ router.post("/messages/replace", async (req, res) => {
 router.post("/:entity/bulk-upsert", async (req, res) => {
   const userId = getUserId(req);
   const { entity } = req.params;
-  const items = (req.body?.items ?? []) as Record<string, unknown>[];
-  const now = new Date().toISOString();
-  const upserted: Record<string, unknown>[] = [];
-
-  for (const data of items) {
-    const id =
-      typeof data.id === "string" && data.id.trim() ? data.id.trim() : makeId();
-
-    const [existing] = await db
-      .select()
-      .from(userEntities)
-      .where(
-        and(
-          eq(userEntities.userId, userId),
-          eq(userEntities.entityName, entity),
-          eq(userEntities.entityId, id),
-        ),
-      )
-      .limit(1);
-
-    let record: Record<string, unknown>;
-    if (existing) {
-      const prev = existing.data as Record<string, unknown>;
-      record = { ...prev, ...data, id, updated_date: now };
-    } else {
-      record = {
-        id,
-        created_date: now,
-        updated_date: now,
-        ...data,
-      };
-    }
-    await upsertEntity(userId, entity, id, record);
-    upserted.push(record);
+  const rawItems = req.body?.items;
+  if (!Array.isArray(rawItems)) {
+    res.status(400).json({ error: "items must be an array" });
+    return;
+  }
+  const items = rawItems as Record<string, unknown>[];
+  if (items.length === 0) {
+    res.json({ count: 0, items: [] });
+    return;
+  }
+  if (items.length > 250) {
+    res.status(400).json({ error: "Too many items (max 250 per request)" });
+    return;
   }
 
-  res.json({ count: upserted.length, items: upserted });
+  const now = new Date().toISOString();
+  const ids = items.map((data) =>
+    typeof data.id === "string" && data.id.trim() ? data.id.trim() : makeId(),
+  );
+
+  try {
+    const upserted = await db.transaction(async (tx) => {
+      const existingRows = await tx
+        .select()
+        .from(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, entity),
+            inArray(userEntities.entityId, ids),
+          ),
+        );
+      const existingById = new Map(
+        existingRows.map((row) => [
+          row.entityId,
+          row.data as Record<string, unknown>,
+        ]),
+      );
+
+      const records: Record<string, unknown>[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const data = items[i];
+        const id = ids[i];
+        const prev = existingById.get(id);
+        const record = stripUndefined(
+          prev
+            ? { ...prev, ...data, id, updated_date: now }
+            : { id, created_date: now, updated_date: now, ...data },
+        );
+        await tx
+          .insert(userEntities)
+          .values({
+            userId,
+            entityName: entity,
+            entityId: id,
+            data: record,
+          })
+          .onConflictDoUpdate({
+            target: [
+              userEntities.userId,
+              userEntities.entityName,
+              userEntities.entityId,
+            ],
+            set: { data: record, updatedAt: new Date() },
+          });
+        records.push(record);
+      }
+      return records;
+    });
+
+    res.json({ count: upserted.length, items: upserted });
+  } catch (err) {
+    logger.error(
+      { err, entity, userId, itemCount: items.length },
+      "bulk-upsert failed",
+    );
+    throw err;
+  }
 });
 
 // --- Bulk create ------------------------------------------------------------
