@@ -116805,7 +116805,14 @@ var characterImage_default = router6;
 var import_express9 = __toESM(require_express2(), 1);
 var router7 = (0, import_express9.Router)();
 function requireUser(req, res, next) {
-  const { userId } = getAuth(req);
+  let userId = null;
+  try {
+    userId = getAuth(req).userId;
+  } catch (err) {
+    logger2.warn({ err }, "Clerk getAuth failed in store requireUser");
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -116969,14 +116976,21 @@ async function listEntities(userId, entityName, filters, sort, limit2, offset, s
   return rows.map((r2) => r2.data);
 }
 async function upsertEntity(userId, entityName, entityId, data) {
-  await db2.insert(userEntities).values({ userId, entityName, entityId, data }).onConflictDoUpdate({
+  await db2.insert(userEntities).values({ userId, entityName, entityId, data: stripUndefined(data) }).onConflictDoUpdate({
     target: [
       userEntities.userId,
       userEntities.entityName,
       userEntities.entityId
     ],
-    set: { data, updatedAt: /* @__PURE__ */ new Date() }
+    set: { data: stripUndefined(data), updatedAt: /* @__PURE__ */ new Date() }
   });
+}
+function stripUndefined(data) {
+  const out = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== void 0) out[key] = value;
+  }
+  return out;
 }
 router7.post("/import", async (req, res) => {
   const userId = getUserId(req);
@@ -117380,34 +117394,72 @@ router7.post("/messages/replace", async (req, res) => {
 router7.post("/:entity/bulk-upsert", async (req, res) => {
   const userId = getUserId(req);
   const { entity } = req.params;
-  const items = req.body?.items ?? [];
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const upserted = [];
-  for (const data of items) {
-    const id = typeof data.id === "string" && data.id.trim() ? data.id.trim() : makeId();
-    const [existing] = await db2.select().from(userEntities).where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, entity),
-        eq(userEntities.entityId, id)
-      )
-    ).limit(1);
-    let record2;
-    if (existing) {
-      const prev = existing.data;
-      record2 = { ...prev, ...data, id, updated_date: now };
-    } else {
-      record2 = {
-        id,
-        created_date: now,
-        updated_date: now,
-        ...data
-      };
-    }
-    await upsertEntity(userId, entity, id, record2);
-    upserted.push(record2);
+  const rawItems = req.body?.items;
+  if (!Array.isArray(rawItems)) {
+    res.status(400).json({ error: "items must be an array" });
+    return;
   }
-  res.json({ count: upserted.length, items: upserted });
+  const items = rawItems;
+  if (items.length === 0) {
+    res.json({ count: 0, items: [] });
+    return;
+  }
+  if (items.length > 250) {
+    res.status(400).json({ error: "Too many items (max 250 per request)" });
+    return;
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const ids = items.map(
+    (data) => typeof data.id === "string" && data.id.trim() ? data.id.trim() : makeId()
+  );
+  try {
+    const upserted = await db2.transaction(async (tx) => {
+      const existingRows = await tx.select().from(userEntities).where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, entity),
+          inArray(userEntities.entityId, ids)
+        )
+      );
+      const existingById = new Map(
+        existingRows.map((row) => [
+          row.entityId,
+          row.data
+        ])
+      );
+      const records = [];
+      for (let i2 = 0; i2 < items.length; i2++) {
+        const data = items[i2];
+        const id = ids[i2];
+        const prev = existingById.get(id);
+        const record2 = stripUndefined(
+          prev ? { ...prev, ...data, id, updated_date: now } : { id, created_date: now, updated_date: now, ...data }
+        );
+        await tx.insert(userEntities).values({
+          userId,
+          entityName: entity,
+          entityId: id,
+          data: record2
+        }).onConflictDoUpdate({
+          target: [
+            userEntities.userId,
+            userEntities.entityName,
+            userEntities.entityId
+          ],
+          set: { data: record2, updatedAt: /* @__PURE__ */ new Date() }
+        });
+        records.push(record2);
+      }
+      return records;
+    });
+    res.json({ count: upserted.length, items: upserted });
+  } catch (err) {
+    logger2.error(
+      { err, entity, userId, itemCount: items.length },
+      "bulk-upsert failed"
+    );
+    throw err;
+  }
 });
 router7.post("/:entity/bulk", async (req, res) => {
   const userId = getUserId(req);
