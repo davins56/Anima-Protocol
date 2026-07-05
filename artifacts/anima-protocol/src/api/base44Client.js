@@ -698,8 +698,17 @@ async function queryEntity(entityName, opts) {
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
     );
     // Never cache auth failures as an empty roster — that made bootstrap/repair
-    // think seeding succeeded when the store was never reachable.
-    if (res.status === 401) return [];
+    // think seeding succeeded when the store was never reachable. After bootstrap
+    // settles, surface 401 so the UI can prompt re-sign-in instead of "0 indexed".
+    if (res.status === 401) {
+      if (ROSTER_ENTITIES.has(entityName) && isBootstrapSettled()) {
+        throw storeError(
+          res,
+          'Session not recognized by the server — sign out, sign back in, and try again.',
+        );
+      }
+      return [];
+    }
     if (!res.ok) {
       throw storeError(res, await parseStoreErrorResponse(res));
     }
