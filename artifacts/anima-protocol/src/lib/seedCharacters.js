@@ -726,6 +726,35 @@ export function searchStarterSeries(query) {
 }
 
 // Upsert specific characters (e.g. user-picked from a series) into the account.
+const UPSERT_BATCH_SIZE = 15;
+
+async function bulkUpsertCharactersBatched(chars) {
+  for (let i = 0; i < chars.length; i += UPSERT_BATCH_SIZE) {
+    const batch = chars.slice(i, i + UPSERT_BATCH_SIZE);
+    try {
+      await base44.entities.Character.bulkUpsert(batch);
+    } catch (err) {
+      if (err?.status !== 404) {
+        const detail =
+          err?.message ||
+          (err?.status === 500
+            ? "Server error while saving characters. Try again in a moment."
+            : "Failed to add characters");
+        throw new Error(detail);
+      }
+      for (const char of batch) {
+        try {
+          await base44.entities.Character.update(char.id, char);
+        } catch (updateErr) {
+          throw new Error(
+            `Failed to save ${char.name}: ${updateErr?.message || "unknown error"}`,
+          );
+        }
+      }
+    }
+  }
+}
+
 export async function upsertCharacters(characters) {
   const list = Array.isArray(characters) ? characters.filter((c) => c?.id) : [];
   if (!list.length) return { added: 0, skipped: 0 };
@@ -740,22 +769,7 @@ export async function upsertCharacters(characters) {
   const skipped = list.length - toAdd.length;
   if (!toAdd.length) return { added: 0, skipped };
 
-  try {
-    await base44.entities.Character.bulkUpsert(toAdd);
-  } catch (err) {
-    if (err?.status !== 404) {
-      throw new Error(err?.message || "Failed to add characters");
-    }
-    for (const char of toAdd) {
-      try {
-        await base44.entities.Character.update(char.id, char);
-      } catch (updateErr) {
-        throw new Error(
-          `Failed to save ${char.name}: ${updateErr?.message || "unknown error"}`,
-        );
-      }
-    }
-  }
+  await bulkUpsertCharactersBatched(toAdd);
   clearStoreCache();
   notifyStoreChanged();
   return { added: toAdd.length, skipped };
@@ -776,11 +790,30 @@ async function upsertMissingStarters() {
 }
 
 async function doSeed() {
-  try {
-    await waitForStoreAuth();
-    return await upsertMissingStarters();
-  } catch (err) {
-    console.warn("[Anima] Character seed failed:", err.message);
-    throw err;
+  const retryDelaysMs = [0, 500, 1500];
+  let lastErr;
+  for (let attempt = 0; attempt < retryDelaysMs.length; attempt += 1) {
+    if (retryDelaysMs[attempt]) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+    }
+    try {
+      await waitForStoreAuth(30000);
+      return await upsertMissingStarters();
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `[Anima] Character seed attempt ${attempt + 1}/${retryDelaysMs.length} failed:`,
+        err.message,
+      );
+    }
   }
+  throw lastErr;
+}
+
+// Retry starter seeding after sign-in when bootstrap ran before Clerk auth was
+// ready, or when an earlier bulk-upsert failed transiently.
+export async function retryStarterSeed() {
+  resetSeedLock();
+  clearStoreCache();
+  return seedCharactersIfNeeded();
 }
