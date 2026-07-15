@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { retryStarterSeed } from "@/lib/seedCharacters";
+import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
@@ -65,21 +67,42 @@ export default function Characters() {
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [showSeriesModal, setShowSeriesModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   const existingCharacterIds = useMemo(
     () => new Set(characters.map((c) => c.id)),
     [characters],
   );
 
-  const loadCharacters = async () => {
-    const data = await base44.entities.Character.list("-created_date", 100);
-    setCharacters(data);
+  const loadCharacters = async ({ retrySeed = false } = {}) => {
+    setLoadError(null);
+    try {
+      let data = await base44.entities.Character.list("-created_date", 100);
+      if (!data?.length && retrySeed) {
+        setSeeding(true);
+        try {
+          await retryStarterSeed();
+          notifyStoreChanged();
+          data = await base44.entities.Character.list("-created_date", 100);
+        } finally {
+          setSeeding(false);
+        }
+      }
+      setCharacters(data || []);
+    } catch (err) {
+      setLoadError(err?.message || "Could not load characters.");
+      setCharacters([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     let cancelled = false;
     whenBootstrapReady().then(() => {
-      if (!cancelled) loadCharacters();
+      if (!cancelled) loadCharacters({ retrySeed: true });
     });
     return () => {
       cancelled = true;
@@ -290,7 +313,9 @@ export default function Characters() {
                 // Character Library
               </h1>
               <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-                {characters.length} entities indexed
+                {loading || seeding
+                  ? "syncing roster..."
+                  : `${characters.length} entities indexed`}
               </p>
             </div>
           </div>
@@ -332,7 +357,30 @@ export default function Characters() {
 
       <div className="flex-1 overflow-y-auto p-6" style={{ WebkitOverflowScrolling: 'touch', overflowY: 'scroll' }}>
         <div className="max-w-6xl mx-auto space-y-6">
-          {characters.length === 0 ? (
+          {loading || seeding ? (
+            <div className="text-center py-24">
+              <Loader className="w-8 h-8 text-primary/40 animate-spin mx-auto mb-4" />
+              <p className="font-mono text-primary/30 text-sm tracking-[0.3em] uppercase">
+                {seeding ? "Indexing starter characters..." : "Loading character library..."}
+              </p>
+            </div>
+          ) : loadError ? (
+            <div className="text-center py-24">
+              <p className="font-mono text-destructive/80 text-sm tracking-wider mb-4 max-w-md mx-auto">
+                {loadError}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  loadCharacters({ retrySeed: true });
+                }}
+                className="px-8 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
+              >
+                Retry
+              </button>
+            </div>
+          ) : characters.length === 0 ? (
             <div className="text-center py-24">
               <p className="font-mono text-primary/20 text-sm tracking-[0.3em] uppercase mb-2">
                 No characters indexed
