@@ -78,6 +78,7 @@ export default function Characters() {
 
   const loadCharacters = async ({ retrySeed = false } = {}) => {
     setLoadError(null);
+    setLoading(true);
     try {
       let data = await base44.entities.Character.list("-created_date", 100);
       if (!data?.length && retrySeed) {
@@ -636,7 +637,9 @@ export default function Characters() {
         open={showSeriesModal}
         existingIds={existingCharacterIds}
         onClose={() => setShowSeriesModal(false)}
-        onAdded={loadCharacters}
+        onAdded={async () => {
+          await loadCharacters();
+        }}
       />
 
       {/* Delete All Confirmation Modal */}
