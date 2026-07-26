@@ -81,8 +81,8 @@ export default function AddSeriesCharactersModal({ open, existingIds, onClose, o
             (skipped ? ` (${skipped} already in library)` : "") +
             ".",
         );
-        onAdded?.();
       }
+      await onAdded?.();
     } catch (err) {
       setError(err?.message || "Could not add characters.");
     } finally {
@@ -264,6 +264,11 @@ export default function AddSeriesCharactersModal({ open, existingIds, onClose, o
         </div>
 
         <div className="p-6 border-t border-primary/20 space-y-2">
+          {adding && (
+            <p className="text-[10px] font-mono text-primary/60 tracking-[0.25em] uppercase">
+              Preparing your library...
+            </p>
+          )}
           {error && (
             <p className="text-[10px] font-mono text-destructive/80">{error}</p>
           )}

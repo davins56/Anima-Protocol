@@ -422,26 +422,15 @@ function filterProvidersByEnvList(providers) {
   }
 
   const allowed = new Set(
-    envList.split(",").map((entry) => entry.trim()).filter(Boolean),
+    envList
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean),
   );
-  return providers.filter((provider) => allowed.has(provider.strategy));
-}
-
-const CLERK_SSO_DASHBOARD_URL =
-  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
-  if (typeof envList === "string" && envList.trim()) {
-    const allowed = new Set(
-      envList
-        .split(",")
-        .map((entry) => entry.trim().toLowerCase())
-        .filter(Boolean),
-    );
-    return providers.filter((provider) =>
-      allowed.has(provider.strategy.toLowerCase()) ||
-      allowed.has(provider.strategy.replace(/^oauth_/, "").toLowerCase()),
-    );
-  }
-  return providers;
+  return providers.filter((provider) =>
+    allowed.has(provider.strategy.toLowerCase()) ||
+    allowed.has(provider.strategy.replace(/^oauth_/, "").toLowerCase()),
+  );
 }
 
 function clerkSsoSetupHint(providerName) {
