@@ -69781,8 +69781,68 @@ var logger = (0, import_pino.default)({
   } : {}
 });
 
+// ../../node_modules/.pnpm/@clerk+shared@4.14.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/constants-Bta24VLk.mjs
+var LEGACY_DEV_INSTANCE_SUFFIXES = [
+  ".lcl.dev",
+  ".lclstage.dev",
+  ".lclclerk.com"
+];
+
+// ../../node_modules/.pnpm/@clerk+shared@4.14.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/isomorphicAtob-CoF80qYz.mjs
+var isomorphicAtob = (data) => {
+  if (typeof atob !== "undefined" && typeof atob === "function") return atob(data);
+  else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data, "base64").toString();
+  return data;
+};
+
+// ../../node_modules/.pnpm/@clerk+shared@4.14.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/isomorphicBtoa-DWmLcIHi.mjs
+var isomorphicBtoa = (data) => {
+  if (typeof btoa !== "undefined" && typeof btoa === "function") return btoa(data);
+  else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data).toString("base64");
+  return data;
+};
+
+// ../../node_modules/.pnpm/@clerk+shared@4.14.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/runtime/keys-ChIG_Ewf.mjs
+var PUBLISHABLE_KEY_LIVE_PREFIX = "pk_live_";
+var PUBLISHABLE_KEY_TEST_PREFIX = "pk_test_";
+var PUBLISHABLE_FRONTEND_API_DEV_REGEX = /^(([a-z]+)-){2}([0-9]{1,2})\.clerk\.accounts([a-z.]*)(dev|com)$/i;
+function buildPublishableKey(frontendApi) {
+  return `${PUBLISHABLE_FRONTEND_API_DEV_REGEX.test(frontendApi) || frontendApi.startsWith("clerk.") && LEGACY_DEV_INSTANCE_SUFFIXES.some((s3) => frontendApi.endsWith(s3)) ? PUBLISHABLE_KEY_TEST_PREFIX : PUBLISHABLE_KEY_LIVE_PREFIX}${isomorphicBtoa(`${frontendApi}$`).replace(/=+$/, "")}`;
+}
+function publishableKeyFromHost(host, fallbackKey) {
+  if (fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)) return fallbackKey;
+  const hostname2 = host.toLowerCase().replace(/:\d+$/, "");
+  if (!hostname2) throw new Error("Host must not be empty.");
+  return buildPublishableKey(`clerk.${hostname2}`);
+}
+function isValidDecodedPublishableKey(decoded) {
+  if (!decoded.endsWith("$")) return false;
+  const withoutTrailing = decoded.slice(0, -1);
+  if (withoutTrailing.includes("$")) return false;
+  return withoutTrailing.includes(".");
+}
+function isPublishableKey(key = "") {
+  try {
+    if (!(key.startsWith(PUBLISHABLE_KEY_LIVE_PREFIX) || key.startsWith(PUBLISHABLE_KEY_TEST_PREFIX))) return false;
+    const parts = key.split("_");
+    if (parts.length !== 3) return false;
+    const encodedPart = parts[2];
+    if (!encodedPart) return false;
+    return isValidDecodedPublishableKey(isomorphicAtob(encodedPart));
+  } catch {
+    return false;
+  }
+}
+function isDevelopmentFromPublishableKey(apiKey) {
+  return apiKey.startsWith("test_") || apiKey.startsWith("pk_test_");
+}
+function isProductionFromPublishableKey(apiKey) {
+  return apiKey.startsWith("live_") || apiKey.startsWith("pk_live_");
+}
+
 // src/middlewares/clerkProxyHosts.ts
 var CLERK_PROXY_PATH = "/api/__clerk";
+var ANIMA_APEX_HOST = "anima-protocol.com";
 var KNOWN_PUBLIC_HOSTS = /* @__PURE__ */ new Set([
   "www.anima-protocol.com",
   "anima-protocol.com",
@@ -69816,6 +69876,44 @@ function canonicalClerkProxyHeaderHost(host) {
     return "www.anima-protocol.com";
   }
   return host?.split(",")[0]?.trim() || "";
+}
+function isAnimaProductionHost(hostname2) {
+  const host = normalizeHostname(hostname2);
+  return host === ANIMA_APEX_HOST || host === `www.${ANIMA_APEX_HOST}` || host.endsWith(`.${ANIMA_APEX_HOST}`);
+}
+function resolveClerkPublishableKey(host, fallbackKey) {
+  const hostname2 = normalizeHostname(host);
+  if (fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)) {
+    return fallbackKey;
+  }
+  if (fallbackKey?.startsWith("pk_live_") && isLocalDevHost(hostname2)) {
+    return fallbackKey;
+  }
+  if (fallbackKey && isPublishableKey(fallbackKey) && isProductionFromPublishableKey(fallbackKey) && (KNOWN_PUBLIC_HOSTS.has(hostname2) || isAnimaProductionHost(hostname2))) {
+    return fallbackKey;
+  }
+  if (!hostname2 || isAnimaProductionHost(hostname2)) {
+    return publishableKeyFromHost(ANIMA_APEX_HOST, fallbackKey);
+  }
+  return publishableKeyFromHost(hostname2, fallbackKey);
+}
+function resolveRuntimePublishableKey(req) {
+  const envKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  if (isPublishableKey(envKey)) {
+    return envKey;
+  }
+  const host = getClerkProxyHost(req) || "";
+  try {
+    const resolved = resolveClerkPublishableKey(host, void 0);
+    if (isPublishableKey(resolved)) return resolved;
+  } catch {
+  }
+  try {
+    const apexKey = publishableKeyFromHost(ANIMA_APEX_HOST);
+    if (isPublishableKey(apexKey)) return apexKey;
+  } catch {
+  }
+  return void 0;
 }
 function getClerkProxyHost(req) {
   const originHost = hostFromUrl(
@@ -70235,9 +70333,9 @@ var isomorphicBtoa2 = (data) => {
 };
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/keys.mjs
-var PUBLISHABLE_KEY_LIVE_PREFIX = "pk_live_";
-var PUBLISHABLE_KEY_TEST_PREFIX = "pk_test_";
-function isValidDecodedPublishableKey(decoded) {
+var PUBLISHABLE_KEY_LIVE_PREFIX2 = "pk_live_";
+var PUBLISHABLE_KEY_TEST_PREFIX2 = "pk_test_";
+function isValidDecodedPublishableKey2(decoded) {
   if (!decoded.endsWith("$")) return false;
   const withoutTrailing = decoded.slice(0, -1);
   if (withoutTrailing.includes("$")) return false;
@@ -70250,7 +70348,7 @@ function parsePublishableKey2(key, options = {}) {
     if (options.fatal && !isPublishableKey2(key)) throw new Error("Publishable key not valid.");
     return null;
   }
-  const instanceType = key.startsWith(PUBLISHABLE_KEY_LIVE_PREFIX) ? "production" : "development";
+  const instanceType = key.startsWith(PUBLISHABLE_KEY_LIVE_PREFIX2) ? "production" : "development";
   let decodedFrontendApi;
   try {
     decodedFrontendApi = isomorphicAtob2(key.split("_")[2]);
@@ -70258,7 +70356,7 @@ function parsePublishableKey2(key, options = {}) {
     if (options.fatal) throw new Error("Publishable key not valid: Failed to decode key.");
     return null;
   }
-  if (!isValidDecodedPublishableKey(decodedFrontendApi)) {
+  if (!isValidDecodedPublishableKey2(decodedFrontendApi)) {
     if (options.fatal) throw new Error("Publishable key not valid: Decoded key has invalid format.");
     return null;
   }
@@ -70272,12 +70370,12 @@ function parsePublishableKey2(key, options = {}) {
 }
 function isPublishableKey2(key = "") {
   try {
-    if (!(key.startsWith(PUBLISHABLE_KEY_LIVE_PREFIX) || key.startsWith(PUBLISHABLE_KEY_TEST_PREFIX))) return false;
+    if (!(key.startsWith(PUBLISHABLE_KEY_LIVE_PREFIX2) || key.startsWith(PUBLISHABLE_KEY_TEST_PREFIX2))) return false;
     const parts = key.split("_");
     if (parts.length !== 3) return false;
     const encodedPart = parts[2];
     if (!encodedPart) return false;
-    return isValidDecodedPublishableKey(isomorphicAtob2(encodedPart));
+    return isValidDecodedPublishableKey2(isomorphicAtob2(encodedPart));
   } catch {
     return false;
   }
@@ -78835,7 +78933,10 @@ function isClerkConfigError(err) {
   return /Publishable key/i.test(message) || /CLERK_PUBLISHABLE_KEY/i.test(message) || /CLERK_SECRET_KEY/i.test(message) || /secret key/i.test(message) || /publishable key is missing/i.test(message);
 }
 function safeClerkMiddleware() {
-  const inner = clerkMiddleware();
+  const inner = clerkMiddleware((req) => {
+    const publishableKey = resolveRuntimePublishableKey(req);
+    return publishableKey ? { publishableKey } : {};
+  });
   return (req, res, next) => {
     const continueAsSignedOut = (err) => {
       if (isClerkConfigError(err)) {
