@@ -546,10 +546,10 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                      Enables explicit, lewd, and sexual roleplay content. By enabling this you confirm you are 18 years of age or older.
+                      Enables explicit, lewd, and sexual roleplay. Characters may escalate when the scene or your engagement goes there. By enabling this you confirm you are 18 years of age or older.
                     </p>
                     {prefs.adult_content_enabled && (
-                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — explicit content permitted</p>
+                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — explicit content escalates with the scene</p>
                     )}
                   </div>
                   <button
