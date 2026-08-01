@@ -5,12 +5,16 @@ const {
   animaList,
   notifyStoreChanged,
   retryStarterSeed,
+  getStarterRoster,
   whenBootstrapReady,
 } = vi.hoisted(() => ({
   characterList: vi.fn(),
   animaList: vi.fn(),
   notifyStoreChanged: vi.fn(),
   retryStarterSeed: vi.fn(),
+  getStarterRoster: vi.fn(() => [
+    { id: "seed_avatar-legend-of-korra-korra", name: "Korra", universe: "Avatar: Legend of Korra" },
+  ]),
   whenBootstrapReady: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -26,6 +30,7 @@ vi.mock("@/api/base44Client", () => ({
 
 vi.mock("@/lib/seedCharacters", () => ({
   retryStarterSeed,
+  getStarterRoster,
 }));
 
 vi.mock("@/lib/syncBootstrap", () => ({
@@ -42,6 +47,7 @@ beforeEach(() => {
   animaList.mockReset().mockResolvedValue([]);
   notifyStoreChanged.mockReset();
   retryStarterSeed.mockReset();
+  getStarterRoster.mockClear();
   whenBootstrapReady.mockReset().mockResolvedValue(undefined);
 });
 
@@ -104,5 +110,34 @@ describe("loadRosterCharacters", () => {
       _isAnima: true,
       universe: "Anima",
     });
+  });
+
+  it("falls back to bundled starters when store DB is down after seed retry", async () => {
+    const err = Object.assign(new Error("Database unavailable"), { status: 503 });
+    characterList.mockRejectedValue(err);
+    retryStarterSeed.mockRejectedValue(err);
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: true });
+
+    expect(result.usingBundledSeed).toBe(true);
+    expect(result.error).toBe(err);
+    expect(result.characters.length).toBeGreaterThan(0);
+    expect(result.characters[0]._bundled).toBe(true);
+    expect(getStarterRoster).toHaveBeenCalled();
+  });
+
+  it("does not use bundled fallback for auth errors", async () => {
+    characterList.mockResolvedValue([]);
+    retryStarterSeed.mockRejectedValue(
+      Object.assign(new Error("Store auth token not available"), { status: 401 }),
+    );
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: true });
+
+    expect(result.usingBundledSeed).toBe(false);
+    expect(result.characters).toEqual([]);
+    expect(result.error?.message).toMatch(/auth token/i);
   });
 });
