@@ -52,5 +52,17 @@ describe("app health checks", () => {
       error: expect.any(String),
     });
   });
+
+  it("exposes a public database readiness probe", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/db`);
+    // Local CI has a real DATABASE_URL → 200; a dead URL would be 503 with
+    // target metadata. Either way the probe must not 404/500.
+    expect([200, 503]).toContain(response.status);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      status: expect.stringMatching(/^(ok|error)$/),
+      target: expect.objectContaining({ configured: true }),
+    });
+  });
 });
 
