@@ -342,18 +342,18 @@ export default function MainHome() {
           <p className="text-[9px] tracking-[0.3em] text-cyan-800 mt-2 uppercase">// AI COMPANION SYSTEM</p>
         </motion.div>
 
-        {/* Greeting box — tap to customise the active Anima */}
+        {/* Greeting box — tap to customise the look of the active Anima */}
         <motion.button
           type="button"
           onClick={() =>
             navigate(
               anima?.id
-                ? `/customize?tab=animas&character=${anima.id}`
-                : "/customize?tab=animas",
+                ? `/customise-anima?anima=${anima.id}`
+                : "/customise-anima",
             )
           }
           aria-label={`Customise ${anima?.name || "your Anima"}`}
-          title={`Customise ${anima?.name || "your Anima"}`}
+          title={`Customise the look of ${anima?.name || "your Anima"}`}
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
@@ -372,9 +372,9 @@ export default function MainHome() {
           </div>
           <div className="absolute top-4 right-4 flex items-center gap-1.5">
             <span className="font-mono text-[7px] tracking-widest uppercase text-cyan-900 group-hover:text-cyan-400/70 transition-colors">
-              Customise
+              Customise Anima
             </span>
-            <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
+            <Wand2 className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
           </div>
         </motion.button>
 
@@ -650,6 +650,18 @@ export default function MainHome() {
               desc={lastCheckIn ? "Captured today" : "Record state"}
               highlight={!lastCheckIn}
               onClick={() => navigate("/check-in")}
+            />
+            <QuickAction
+              icon={Wand2}
+              label="Customise Anima"
+              desc="Shape their look"
+              onClick={() =>
+                navigate(
+                  anima?.id
+                    ? `/customise-anima?anima=${anima.id}`
+                    : "/customise-anima",
+                )
+              }
             />
             <QuickAction icon={UserCircle} label="Profile" desc="About you" onClick={() => navigate("/profile")} />
             <QuickAction icon={BookOpen} label="Journal" desc="Your entries" onClick={() => navigate("/journals")} />
