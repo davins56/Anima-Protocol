@@ -8,6 +8,7 @@ import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
 import { useTimelineBranching } from "@/hooks/useTimelineBranching";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
+import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -17,33 +18,31 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
   const [view, setView] = useState("characters"); // "characters", "templates", "stories", "canonical"
   const [showStoryChooser, setShowStoryChooser] = useState(false);
   const [canonSeed, setCanonSeed] = useState(null); // { story, insertions } from the universe browser
   const [openingScene, setOpeningScene] = useState("");
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ retrySeed = false } = {}) => {
     setLoading(true);
+    if (retrySeed) setSeeding(true);
     try {
-      const [chars, grps, animas] = await Promise.all([
-        base44.entities.Character.list("-created_date", 500),
+      const [{ characters: roster }, grps] = await Promise.all([
+        loadRosterCharacters({
+          retrySeed,
+          waitBootstrap: false,
+        }),
         base44.entities.CharacterGroup.list("-created_date", 100),
-        base44.entities.Anima.list("-created_date", 100),
       ]);
-      // Merge animas into character list with a flag so we can distinguish them
-      const animaAsChars = (animas || []).map((a) => ({
-        ...a,
-        _isAnima: true,
-        category: a.archetype || "guardian",
-        universe: "Anima",
-      }));
-      setCharacters([...animaAsChars, ...(chars || [])]);
+      setCharacters(roster);
       setGroups(grps || []);
     } catch (err) {
       console.error('Error loading characters:', err);
       setCharacters([]);
       setGroups([]);
     } finally {
+      setSeeding(false);
       setLoading(false);
     }
   }, []);
@@ -51,7 +50,9 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   useEffect(() => {
     let cancelled = false;
     whenBootstrapReady().then(() => {
-      if (!cancelled) loadData();
+      // Retry starter seed if the roster is still empty so New Session can
+      // offer preloaded characters immediately after sign-in.
+      if (!cancelled) loadData({ retrySeed: true });
     });
     return () => {
       cancelled = true;
@@ -59,7 +60,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   }, [loadData]);
 
   // Refetch when starter seeding or another device updates the roster.
-  useStoreSync(loadData);
+  useStoreSync(() => loadData({ retrySeed: false }));
 
   const filteredCharacters = characters.filter((c) => {
     const searchLower = search.toLowerCase().trim();
@@ -255,11 +256,18 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
             />
           ) : loading ? (
             <div className="text-center py-12 font-mono text-primary/30 text-sm tracking-widest uppercase animate-pulse">
-              Loading characters...
+              {seeding ? "Indexing starter characters..." : "Loading characters..."}
             </div>
           ) : filteredCharacters.length === 0 && filteredGroups.length === 0 ? (
             <div className="text-center py-12">
               <p className="font-mono text-primary/30 text-sm tracking-widest uppercase mb-4">No results found</p>
+              <button
+                type="button"
+                onClick={() => loadData({ retrySeed: true })}
+                className="font-mono text-xs text-primary/70 hover:text-primary underline tracking-widest uppercase transition-colors mb-3 block mx-auto"
+              >
+                Retry loading starters
+              </button>
               <a href="/characters" className="font-mono text-xs text-primary/50 hover:text-primary underline tracking-widest uppercase transition-colors">
                 + Create a character
               </a>
