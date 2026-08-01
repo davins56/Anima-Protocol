@@ -40,7 +40,9 @@ export async function syncActiveMessages({ sessionId, activeSessionRef, setActiv
   // streaming reply are in flight — signal a retry instead.
   const hasPending = (cur.messages || []).some(
     (m) =>
-      m.character_name === "__typing__" || m.character_name === "__thinking__",
+      m.character_name === "__typing__" ||
+      m.character_name === "__thinking__" ||
+      m.is_streaming === true,
   );
   if (hasPending) return false;
   setActiveSession((prev) =>
