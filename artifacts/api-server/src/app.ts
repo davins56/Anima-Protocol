@@ -15,6 +15,7 @@ import clerkWebhookRouter from "./webhooks/clerk";
 import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { classifyDbError } from "./lib/dbErrors";
 
 const app: Express = express();
 
@@ -57,12 +58,20 @@ app.use(
     if (!res.headersSent) {
       const message =
         err instanceof Error ? err.message : "Internal server error";
+      const dbInfo = classifyDbError(err);
       const isConfig =
         message.includes("DATABASE_URL") ||
         message.includes("CLERK_SECRET_KEY") ||
         message.includes("CLERK_PUBLISHABLE_KEY") ||
         /Publishable key/i.test(message) ||
         message.includes("connection");
+      if (dbInfo.isDbError) {
+        res.status(503).json({
+          error: dbInfo.safeMessage,
+          code: dbInfo.code ?? "database_unavailable",
+        });
+        return;
+      }
       res.status(isConfig ? 503 : 500).json({
         error: isConfig
           ? "API is misconfigured on the server. Check environment variables."
