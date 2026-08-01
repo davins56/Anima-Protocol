@@ -4,7 +4,12 @@ import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
-import { autoAssignCharacterPhoto, photoNeedsLookup } from "@/lib/seedCharacters";
+import {
+  autoAssignCharacterPhoto,
+  getStarterRoster,
+  photoNeedsLookup,
+  retryStarterSeed,
+} from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
 import { Link } from "react-router-dom";
@@ -13,9 +18,16 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
-import { retryStarterSeed } from "@/lib/seedCharacters";
 import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
+
+/** True when /api/store failed because Postgres is down / unreachable. */
+function isStoreDatabaseError(err) {
+  const status = err?.status;
+  if (status === 503) return true;
+  const msg = String(err?.message || "");
+  return /database|postgres|unavailable|unreachable|connection/i.test(msg);
+}
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -70,6 +82,9 @@ export default function Characters() {
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  // When the account store (Postgres) is unreachable, show the bundled starter
+  // roster from src/lib/seedCharacters.js so the library is still browsable.
+  const [usingBundledSeed, setUsingBundledSeed] = useState(false);
 
   const existingCharacterIds = useMemo(
     () => new Set(characters.map((c) => c.id)),
@@ -78,6 +93,7 @@ export default function Characters() {
 
   const loadCharacters = async ({ retrySeed = false } = {}) => {
     setLoadError(null);
+    setUsingBundledSeed(false);
     setLoading(true);
     try {
       let data = await base44.entities.Character.list("-created_date", 100);
@@ -93,8 +109,21 @@ export default function Characters() {
       }
       setCharacters(data || []);
     } catch (err) {
-      setLoadError(err?.message || "Could not load characters.");
-      setCharacters([]);
+      const message = err?.message || "Could not load characters.";
+      if (isStoreDatabaseError(err)) {
+        // seedCharacters.js (package root) seeds Supabase and is NOT read by the
+        // UI. The live roster is src/lib/seedCharacters.js → /api/store → Postgres.
+        // When Postgres is down, surface that bundled roster so the list is not empty.
+        const bundled = getStarterRoster();
+        setCharacters(bundled);
+        setUsingBundledSeed(true);
+        setLoadError(
+          `${message}. Showing the bundled starter roster (${bundled.length}) — not saved to your account until the database is reachable.`,
+        );
+      } else {
+        setLoadError(message);
+        setCharacters([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -316,7 +345,9 @@ export default function Characters() {
               <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
                 {loading || seeding
                   ? "syncing roster..."
-                  : `${characters.length} entities indexed`}
+                  : usingBundledSeed
+                    ? `${characters.length} bundled starters (offline)`
+                    : `${characters.length} entities indexed`}
               </p>
             </div>
           </div>
@@ -365,7 +396,7 @@ export default function Characters() {
                 {seeding ? "Indexing starter characters..." : "Loading character library..."}
               </p>
             </div>
-          ) : loadError ? (
+          ) : loadError && !usingBundledSeed ? (
             <div className="text-center py-24">
               <p className="font-mono text-destructive/80 text-sm tracking-wider mb-4 max-w-md mx-auto">
                 {loadError}
@@ -407,6 +438,24 @@ export default function Characters() {
             </div>
           ) : (
             <>
+            {usingBundledSeed && (
+              <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="font-mono text-destructive/90 text-xs tracking-wider leading-relaxed max-w-2xl">
+                  {loadError ||
+                    "Account database unreachable. Showing bundled starters from src/lib/seedCharacters.js — edits will not save until the store is back."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoading(true);
+                    loadCharacters({ retrySeed: true });
+                  }}
+                  className="shrink-0 px-5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
+                >
+                  Retry sync
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {characters.map((char) => (
               <div
