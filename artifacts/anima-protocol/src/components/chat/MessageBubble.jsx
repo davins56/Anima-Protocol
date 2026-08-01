@@ -50,6 +50,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const isUser = message.role === "user";
   const isTyping = message.character_name === "__typing__";
   const isThinking = message.character_name === "__thinking__";
+  const isStreaming = message.is_streaming === true;
   const time = message.timestamp ? format(new Date(message.timestamp), "HH:mm") : "";
 
   const avatarUrl = !isUser && character?.avatar_url;
@@ -134,7 +135,15 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           ) : !isUser && loreEntries.length > 0 ? (
            <LoreTextWithKeywords content={message.content} loreEntries={loreEntries} />
           ) : (
-           renderMessageWithActions(message.content)
+           <>
+             {renderMessageWithActions(message.content)}
+             {isStreaming && (
+               <span
+                 className="inline-block w-[0.45em] h-[1em] ml-0.5 align-[-0.1em] bg-primary/55 animate-pulse"
+                 aria-hidden="true"
+               />
+             )}
+           </>
            )}
 
            {/* Media attachments */}
@@ -167,7 +176,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
            )}
 
            {/* Rewind button */}
-          {canRewind && onRewind && !isTyping && !isEditing && (
+          {canRewind && onRewind && !isTyping && !isStreaming && !isEditing && (
             <button
               onClick={onRewind}
               className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 opacity-0 group-hover:opacity-100 transition-opacity w-4 sm:w-5 h-4 sm:h-5 bg-black/90 border border-primary/40 text-primary/50 hover:text-primary flex items-center justify-center"
@@ -176,7 +185,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
               <RotateCcw className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
             </button>
           )}
-          {!isUser && !isTyping && character?.id && !isEditing && (
+          {!isUser && !isTyping && !isStreaming && character?.id && !isEditing && (
             <div className="absolute -bottom-1.5 -right-1.5 sm:-bottom-2 sm:-right-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <EmotionalVoiceSynthesis
                 content={message.content}
@@ -190,7 +199,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
         </div>
 
         {/* Action bar — edit, delete, regenerate */}
-        {!isTyping && !isThinking && !isEditing && (
+        {!isTyping && !isThinking && !isStreaming && !isEditing && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
             {isUser && onEditMessage && (
               <button
@@ -222,7 +231,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           </div>
         )}
 
-        {time && !isTyping && !isThinking && (
+        {time && !isTyping && !isThinking && !isStreaming && (
           <span className="text-[7px] sm:text-[9px] font-mono text-primary/20 tracking-widest">{time}</span>
         )}
       </div>

@@ -33,7 +33,10 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.15.1",
     "tailwindcss-animate": "^1.0.7",
-    "three": "^0.184.0"
+    "three":"^0.184.0",
+    "@react-three/drei":"^10.7.7",
+    "@react-three/fiber":"^9.6.1",
+    "@react-three/postprocessing":"^3.0.4"
   },
   "devDependencies": {
     "@clerk/backend": "^3.4.14",
