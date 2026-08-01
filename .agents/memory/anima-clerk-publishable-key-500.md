@@ -27,3 +27,9 @@ curl -s -o /dev/null -w "%{http_code}" https://www.anima-protocol.com/api/store/
 `CLERK_PUBLISHABLE_KEY` and `VITE_CLERK_PUBLISHABLE_KEY` must be the same valid key from
 the same Clerk instance as `CLERK_SECRET_KEY`. A blocked Vercel account will keep an old
 broken deploy live even after the code fix merges.
+
+**Custom domain fallback:** Production FAPI is `clerk.anima-protocol.com` (apex-derived
+`pk_live_`). If `CLERK_PUBLISHABLE_KEY` is missing/invalid, `safeClerkMiddleware` derives
+that apex key via `resolveRuntimePublishableKey` so store routes return **401** instead of
+**503**. Do not use `publishableKeyFromHost("www.anima-protocol.com")` — that yields the
+wrong `clerk.www.*` host.

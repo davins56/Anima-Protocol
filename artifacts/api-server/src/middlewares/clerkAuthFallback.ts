@@ -1,6 +1,7 @@
 import type { Request, RequestHandler, Response, NextFunction } from "express";
 import { clerkMiddleware } from "@clerk/express";
 import { logger } from "../lib/logger";
+import { resolveRuntimePublishableKey } from "./clerkProxyHosts";
 
 /**
  * Brand attached to `req.auth` by @clerk/express. Presence of a plain `auth`
@@ -62,11 +63,15 @@ export function isClerkConfigError(err: unknown): boolean {
  * Wraps clerkMiddleware so a bad/missing CLERK_PUBLISHABLE_KEY (or other Clerk
  * boot-time failures) cannot turn every /api/store request into a 500.
  *
- * - Config errors → 503 with a clear misconfiguration message
+ * - Invalid/missing publishable key → derive from host (anima custom domain)
+ * - Remaining config errors → 503 with a clear misconfiguration message
  * - Other auth failures → signed-out auth; route guards return 401
  */
 export function safeClerkMiddleware(): RequestHandler {
-  const inner = clerkMiddleware();
+  const inner = clerkMiddleware((req) => {
+    const publishableKey = resolveRuntimePublishableKey(req);
+    return publishableKey ? { publishableKey } : {};
+  });
 
   return (req: Request, res: Response, next: NextFunction) => {
     const continueAsSignedOut = (err: unknown) => {

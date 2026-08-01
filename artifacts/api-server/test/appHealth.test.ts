@@ -43,10 +43,13 @@ describe("app health checks", () => {
   it("does not 500 Character store reads when Clerk publishable key is invalid", async () => {
     const response = await fetch(`${baseUrl}/api/store/Character`);
 
-    // Misconfigured Clerk must surface as 503 (config), never opaque 500.
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toEqual({
-      error: "API is misconfigured on the server. Check environment variables.",
+    // Invalid CLERK_PUBLISHABLE_KEY is recovered via host-derived key, so the
+    // request reaches requireUser as signed-out (401) instead of crashing (500)
+    // or hard-failing config (503).
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.any(String),
     });
   });
 });

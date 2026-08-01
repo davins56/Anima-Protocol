@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { publishableKeyFromHost } from "@clerk/shared/keys";
 import {
   canonicalClerkProxyHeaderHost,
   getClerkAuthHostCandidates,
   getClerkProxyHost,
   resolveClerkPublishableKey,
+  resolveRuntimePublishableKey,
 } from "../src/middlewares/clerkProxyMiddleware";
 
 describe("getClerkProxyHost", () => {
@@ -120,18 +122,55 @@ describe("resolveClerkPublishableKey", () => {
     );
   });
 
-  it("uses host-based key for production custom domains", () => {
-    const prodKey =
-      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
-    const key = resolveClerkPublishableKey("www.anima-protocol.com", prodKey);
-    expect(key.startsWith("pk_")).toBe(true);
+  it("keeps the custom-domain pk_live_ key on www (not clerk.www.*)", () => {
+    const prodKey = publishableKeyFromHost("anima-protocol.com");
+    expect(resolveClerkPublishableKey("www.anima-protocol.com", prodKey)).toBe(
+      prodKey,
+    );
+    expect(resolveClerkPublishableKey("anima-protocol.com", undefined)).toBe(
+      prodKey,
+    );
   });
 
   it("uses the live fallback on localhost for local dev proxy", () => {
-    const prodKey =
-      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
+    const prodKey = publishableKeyFromHost("anima-protocol.com");
     expect(resolveClerkPublishableKey("127.0.0.1:23660", prodKey)).toBe(
       prodKey,
     );
   });
 });
+
+describe("resolveRuntimePublishableKey", () => {
+  const apexKey = publishableKeyFromHost("anima-protocol.com");
+
+  it("uses a valid CLERK_PUBLISHABLE_KEY from the environment", () => {
+    const prev = process.env.CLERK_PUBLISHABLE_KEY;
+    process.env.CLERK_PUBLISHABLE_KEY = apexKey;
+    try {
+      expect(
+        resolveRuntimePublishableKey({
+          headers: { host: "www.anima-protocol.com" },
+        }),
+      ).toBe(apexKey);
+    } finally {
+      if (prev === undefined) delete process.env.CLERK_PUBLISHABLE_KEY;
+      else process.env.CLERK_PUBLISHABLE_KEY = prev;
+    }
+  });
+
+  it("derives the custom-domain key when env publishable key is invalid", () => {
+    const prev = process.env.CLERK_PUBLISHABLE_KEY;
+    process.env.CLERK_PUBLISHABLE_KEY = "not-a-valid-clerk-key";
+    try {
+      expect(
+        resolveRuntimePublishableKey({
+          headers: { host: "www.anima-protocol.com" },
+        }),
+      ).toBe(apexKey);
+    } finally {
+      if (prev === undefined) delete process.env.CLERK_PUBLISHABLE_KEY;
+      else process.env.CLERK_PUBLISHABLE_KEY = prev;
+    }
+  });
+});
+
