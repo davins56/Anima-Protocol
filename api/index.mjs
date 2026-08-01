@@ -69760,8 +69760,273 @@ var require_lib9 = __commonJS({
 });
 
 // src/app.ts
-var import_express17 = __toESM(require_express2(), 1);
+var import_express18 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
+
+// src/lib/logger.ts
+var import_pino = __toESM(require_pino(), 1);
+var usePrettyTransport = false;
+var logger = (0, import_pino.default)({
+  level: process.env.LOG_LEVEL ?? "info",
+  redact: [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers['set-cookie']"
+  ],
+  ...usePrettyTransport ? {
+    transport: {
+      target: "pino-pretty",
+      options: { colorize: true }
+    }
+  } : {}
+});
+
+// src/middlewares/clerkProxyHosts.ts
+var CLERK_PROXY_PATH = "/api/__clerk";
+var KNOWN_PUBLIC_HOSTS = /* @__PURE__ */ new Set([
+  "www.anima-protocol.com",
+  "anima-protocol.com",
+  "anima-protocol.replit.app"
+]);
+function hostFromUrl(value) {
+  if (!value) return void 0;
+  try {
+    return new URL(value).host;
+  } catch {
+    return void 0;
+  }
+}
+function headerValue(value) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.split(",")[0]?.trim() || void 0;
+}
+function normalizeHostname(host) {
+  return (host ?? "").toLowerCase().replace(/:\d+$/, "");
+}
+function isLocalDevHost(hostname2) {
+  if (!hostname2) return true;
+  return hostname2 === "localhost" || hostname2.endsWith(".localhost") || hostname2.startsWith("127.0.0.1");
+}
+function isBackendProxyHost(hostname2) {
+  return hostname2.endsWith(".replit.app") || hostname2.endsWith(".replit.dev") || hostname2.endsWith(".repl.co");
+}
+function canonicalClerkProxyHeaderHost(host) {
+  const normalized = normalizeHostname(host);
+  if (normalized === "anima-protocol.com" || normalized === "www.anima-protocol.com") {
+    return "www.anima-protocol.com";
+  }
+  return host?.split(",")[0]?.trim() || "";
+}
+function getClerkProxyHost(req) {
+  const originHost = hostFromUrl(
+    typeof req.headers.origin === "string" ? req.headers.origin : void 0
+  );
+  const refererHost = hostFromUrl(
+    typeof req.headers.referer === "string" ? req.headers.referer : void 0
+  );
+  const forwarded = headerValue(req.headers["x-forwarded-host"]);
+  if (forwarded && !isBackendProxyHost(normalizeHostname(forwarded))) {
+    return forwarded;
+  }
+  if (forwarded && !originHost && !refererHost) {
+    return forwarded;
+  }
+  const publicHost = headerValue(req.headers["x-anima-public-host"]);
+  if (publicHost) {
+    const normalized = normalizeHostname(publicHost);
+    if (KNOWN_PUBLIC_HOSTS.has(normalized)) {
+      return publicHost;
+    }
+    if (normalized === normalizeHostname(originHost) || normalized === normalizeHostname(refererHost)) {
+      return publicHost;
+    }
+  }
+  if (originHost) return originHost;
+  if (refererHost) return refererHost;
+  if (forwarded) return forwarded;
+  const hostHeader = headerValue(req.headers.host);
+  if (hostHeader && !isBackendProxyHost(normalizeHostname(hostHeader))) {
+    return hostHeader;
+  }
+  return hostHeader;
+}
+
+// src/middlewares/clerkProxyFetch.ts
+var CLERK_FAPI = "https://frontend-api.clerk.dev";
+var PRODUCTION_PROXY_HOST = "www.anima-protocol.com";
+var UPSTREAM_TIMEOUT_MS = 25e3;
+var FORWARD_REQUEST_HEADERS = [
+  "accept",
+  "accept-language",
+  "content-type",
+  "user-agent",
+  "cookie",
+  "referer"
+];
+var HOP_BY_HOP_HEADERS = /* @__PURE__ */ new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+  "host"
+]);
+function normalizeHostname2(host) {
+  return (host ?? "").toLowerCase().replace(/:\d+$/, "");
+}
+function resolveClerkUpstreamPath(req) {
+  const url3 = req.url || "";
+  if (url3.startsWith("/v1/") || url3.startsWith("/v1") || url3.startsWith("/npm/")) {
+    return url3;
+  }
+  const original = req.originalUrl || "";
+  const marker = CLERK_PROXY_PATH;
+  const markerIndex = original.indexOf(marker);
+  if (markerIndex >= 0) {
+    const suffix = original.slice(markerIndex + marker.length);
+    return suffix.startsWith("/") ? suffix : `/${suffix}`;
+  }
+  return url3 || "/v1/environment";
+}
+function resolveClerkUpstreamUrl(requestUrl) {
+  const path2 = requestUrl?.startsWith("/") ? requestUrl : `/${requestUrl ?? ""}`;
+  return new URL(path2, CLERK_FAPI);
+}
+function productionProxyHostFallback() {
+  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  return publishableKey.startsWith("pk_live_") ? PRODUCTION_PROXY_HOST : "";
+}
+function buildClerkProxyHeaderValues(req, secretKey) {
+  const requestHost = normalizeHostname2(getClerkProxyHost(req) || "");
+  const usePublicProxy = isLocalDevHost(requestHost) && process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_");
+  const protocol = usePublicProxy ? "https" : req.headers["x-forwarded-proto"] || "https";
+  const host = (usePublicProxy ? PRODUCTION_PROXY_HOST : canonicalClerkProxyHeaderHost(getClerkProxyHost(req))) || productionProxyHostFallback() || requestHost;
+  const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}/`;
+  const origin = host ? `${protocol}://${host}` : "";
+  return { proxyUrl, origin, host };
+}
+function clientIpFromHeaders(headers) {
+  const xff = headers["x-forwarded-for"];
+  return (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim() || (typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"] : "") || "";
+}
+function buildClerkUpstreamHeaders(req, secretKey) {
+  const { proxyUrl, origin } = buildClerkProxyHeaderValues(req, secretKey);
+  const headers = new Headers();
+  for (const name of FORWARD_REQUEST_HEADERS) {
+    const value = req.headers[name];
+    if (value === void 0) continue;
+    if (Array.isArray(value)) {
+      for (const entry of value) headers.append(name, entry);
+    } else {
+      headers.set(name, value);
+    }
+  }
+  headers.set("Clerk-Proxy-Url", proxyUrl);
+  headers.set("Clerk-Secret-Key", secretKey.trim());
+  if (origin) {
+    headers.set("Origin", origin);
+  }
+  const clientIp = clientIpFromHeaders(req.headers);
+  if (clientIp) {
+    headers.set("X-Forwarded-For", clientIp);
+  }
+  return headers;
+}
+function upstreamAbortSignal() {
+  if (typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  return controller.signal;
+}
+async function readRequestBody(req) {
+  if (req.method === "GET" || req.method === "HEAD") return void 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  if (chunks.length === 0) return void 0;
+  return Buffer.concat(chunks);
+}
+function forwardResponseHeaders(upstream, res) {
+  upstream.headers.forEach((value, name) => {
+    const lower = name.toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(lower)) return;
+    res.setHeader(name, value);
+  });
+}
+async function proxyClerkWithFetch(req, res, secretKey, fetchImpl = fetch) {
+  const upstreamPath = resolveClerkUpstreamPath(req);
+  const upstreamUrl = resolveClerkUpstreamUrl(upstreamPath);
+  const headers = buildClerkUpstreamHeaders(req, secretKey);
+  const body = await readRequestBody(req);
+  const method = req.method?.toUpperCase() || "GET";
+  const upstream = await fetchImpl(upstreamUrl, {
+    method,
+    headers,
+    body: body ? new Uint8Array(body) : void 0,
+    redirect: "manual",
+    signal: upstreamAbortSignal()
+  });
+  res.statusCode = upstream.status;
+  forwardResponseHeaders(upstream, res);
+  const payload = Buffer.from(await upstream.arrayBuffer());
+  res.end(payload);
+}
+async function handleClerkProxyRequest(req, res, secretKey) {
+  try {
+    await proxyClerkWithFetch(req, res, secretKey);
+  } catch (err) {
+    const cause = err instanceof Error && "cause" in err && err.cause instanceof Error ? err.cause.message : void 0;
+    logger.error(
+      { err, url: req.url, originalUrl: req.originalUrl, cause },
+      "Clerk proxy upstream fetch failed"
+    );
+    if (!res.headersSent) {
+      res.statusCode = 502;
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          error: "clerk_proxy_upstream_failed",
+          message: err instanceof Error ? cause ? `${err.message}: ${cause}` : err.message : "Could not reach Clerk Frontend API"
+        })
+      );
+    }
+  }
+}
+
+// src/middlewares/clerkProxyMiddleware.ts
+function clerkProxyEnabled() {
+  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  if (true) return true;
+  return publishableKey.startsWith("pk_live_");
+}
+function clerkProxyMiddleware() {
+  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
+  if (!clerkProxyEnabled() || !secretKey) {
+    return (_req, res) => {
+      res.status(503).json({
+        error: "clerk_proxy_unavailable",
+        message: "Clerk proxy is not configured. Set CLERK_SECRET_KEY (and CLERK_PUBLISHABLE_KEY) on the server."
+      });
+    };
+  }
+  if (!secretKey.startsWith("sk_")) {
+    return (_req, res) => {
+      res.status(503).json({
+        error: "clerk_proxy_invalid_secret",
+        message: "CLERK_SECRET_KEY must be a secret key (sk_live_\u2026 or sk_test_\u2026), not a publishable key."
+      });
+    };
+  }
+  return (req, res) => {
+    void handleClerkProxyRequest(req, res, secretKey);
+  };
+}
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/underscore.mjs
 function snakeToCamel(str2) {
@@ -69922,7 +70187,7 @@ ${warning}`);
 };
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/constants.mjs
-var LEGACY_DEV_INSTANCE_SUFFIXES = [
+var LEGACY_DEV_INSTANCE_SUFFIXES2 = [
   ".lcl.dev",
   ".lclstage.dev",
   ".lclclerk.com"
@@ -69932,7 +70197,7 @@ var CURRENT_DEV_INSTANCE_SUFFIXES = [
   ".accountsstage.dev",
   ".accounts.lclclerk.com"
 ];
-var DEV_OR_STAGING_SUFFIXES = [
+var DEV_OR_STAGING_SUFFIXES2 = [
   ".lcl.dev",
   ".stg.dev",
   ".lclstage.dev",
@@ -69956,14 +70221,14 @@ var PROD_FAPI_URL = "https://frontend-api.clerk.dev";
 var DEFAULT_PROXY_PATH = "/__clerk";
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/isomorphicAtob.mjs
-var isomorphicAtob = (data) => {
+var isomorphicAtob2 = (data) => {
   if (typeof atob !== "undefined" && typeof atob === "function") return atob(data);
   else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data, "base64").toString();
   return data;
 };
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/isomorphicBtoa.mjs
-var isomorphicBtoa = (data) => {
+var isomorphicBtoa2 = (data) => {
   if (typeof btoa !== "undefined" && typeof btoa === "function") return btoa(data);
   else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data).toString("base64");
   return data;
@@ -69978,17 +70243,17 @@ function isValidDecodedPublishableKey(decoded) {
   if (withoutTrailing.includes("$")) return false;
   return withoutTrailing.includes(".");
 }
-function parsePublishableKey(key, options = {}) {
+function parsePublishableKey2(key, options = {}) {
   key = key || "";
-  if (!key || !isPublishableKey(key)) {
+  if (!key || !isPublishableKey2(key)) {
     if (options.fatal && !key) throw new Error("Publishable key is missing. Ensure that your publishable key is correctly configured. Double-check your environment configuration for your keys, or access them here: https://dashboard.clerk.com/last-active?path=api-keys");
-    if (options.fatal && !isPublishableKey(key)) throw new Error("Publishable key not valid.");
+    if (options.fatal && !isPublishableKey2(key)) throw new Error("Publishable key not valid.");
     return null;
   }
   const instanceType = key.startsWith(PUBLISHABLE_KEY_LIVE_PREFIX) ? "production" : "development";
   let decodedFrontendApi;
   try {
-    decodedFrontendApi = isomorphicAtob(key.split("_")[2]);
+    decodedFrontendApi = isomorphicAtob2(key.split("_")[2]);
   } catch {
     if (options.fatal) throw new Error("Publishable key not valid: Failed to decode key.");
     return null;
@@ -70005,19 +70270,19 @@ function parsePublishableKey(key, options = {}) {
     frontendApi
   };
 }
-function isPublishableKey(key = "") {
+function isPublishableKey2(key = "") {
   try {
     if (!(key.startsWith(PUBLISHABLE_KEY_LIVE_PREFIX) || key.startsWith(PUBLISHABLE_KEY_TEST_PREFIX))) return false;
     const parts = key.split("_");
     if (parts.length !== 3) return false;
     const encodedPart = parts[2];
     if (!encodedPart) return false;
-    return isValidDecodedPublishableKey(isomorphicAtob(encodedPart));
+    return isValidDecodedPublishableKey(isomorphicAtob2(encodedPart));
   } catch {
     return false;
   }
 }
-function createDevOrStagingUrlCache() {
+function createDevOrStagingUrlCache2() {
   const devOrStagingUrlCache = /* @__PURE__ */ new Map();
   return {
     /**
@@ -70031,25 +70296,25 @@ function createDevOrStagingUrlCache() {
       const hostname2 = typeof url3 === "string" ? url3 : url3.hostname;
       let res = devOrStagingUrlCache.get(hostname2);
       if (res === void 0) {
-        res = DEV_OR_STAGING_SUFFIXES.some((s3) => hostname2.endsWith(s3));
+        res = DEV_OR_STAGING_SUFFIXES2.some((s3) => hostname2.endsWith(s3));
         devOrStagingUrlCache.set(hostname2, res);
       }
       return res;
     }
   };
 }
-function isProductionFromPublishableKey(apiKey) {
+function isProductionFromPublishableKey2(apiKey) {
   return apiKey.startsWith("live_") || apiKey.startsWith("pk_live_");
 }
-function isDevelopmentFromSecretKey(apiKey) {
+function isDevelopmentFromSecretKey2(apiKey) {
   return apiKey.startsWith("test_") || apiKey.startsWith("sk_test_");
 }
-async function getCookieSuffix(publishableKey, subtle = globalThis.crypto.subtle) {
+async function getCookieSuffix2(publishableKey, subtle = globalThis.crypto.subtle) {
   const data = new TextEncoder().encode(publishableKey);
   const digest = await subtle.digest("sha-1", data);
-  return isomorphicBtoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/gi, "-").replace(/\//gi, "_").substring(0, 8);
+  return isomorphicBtoa2(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/gi, "-").replace(/\//gi, "_").substring(0, 8);
 }
-var getSuffixedCookieName = (cookieName, cookieSuffix) => {
+var getSuffixedCookieName2 = (cookieName, cookieSuffix) => {
   return `${cookieName}_${cookieSuffix}`;
 };
 
@@ -70106,7 +70371,7 @@ var retry = async (callback, options = {}) => {
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/url.mjs
 function isLegacyDevAccountPortalOrigin(host) {
-  return LEGACY_DEV_INSTANCE_SUFFIXES.some((legacyDevSuffix) => {
+  return LEGACY_DEV_INSTANCE_SUFFIXES2.some((legacyDevSuffix) => {
     return host.startsWith("accounts.") && host.endsWith(legacyDevSuffix);
   });
 }
@@ -70303,7 +70568,7 @@ function buildErrorThrower({ packageName, customMessages }) {
 
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-YBVFDYDR.mjs
 var errorThrower = buildErrorThrower({ packageName: "@clerk/backend" });
-var { isDevOrStagingUrl } = createDevOrStagingUrlCache();
+var { isDevOrStagingUrl } = createDevOrStagingUrlCache2();
 
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-RZ7A7F6X.mjs
 var TokenVerificationErrorCode = {
@@ -70632,7 +70897,7 @@ var assertIssuedAtClaim = (iat, clockSkewInMs) => {
 };
 function pemToBuffer(secret) {
   const trimmed = secret.replace(/-----BEGIN.*?-----/g, "").replace(/-----END.*?-----/g, "").replace(/\s/g, "");
-  const decoded = isomorphicAtob(trimmed);
+  const decoded = isomorphicAtob2(trimmed);
   const buffer = new ArrayBuffer(decoded.length);
   const bufView = new Uint8Array(buffer);
   for (let i2 = 0, strLen = decoded.length; i2 < strLen; i2++) {
@@ -70798,7 +71063,7 @@ function buildAccountsBaseUrl(frontendApi) {
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/logger.mjs
 var loggedMessages = /* @__PURE__ */ new Set();
-var logger = {
+var logger2 = {
   /**
   * A custom logger that ensures messages are logged only once.
   * Reduces noise and duplicated messages when logs are in a hot codepath.
@@ -70834,7 +71099,7 @@ function shouldAutoProxy(hostname2) {
 function getDefaultEnvironment() {
   return typeof process !== "undefined" && process.env ? process.env : {};
 }
-function normalizeHostname(hostnameOrUrl) {
+function normalizeHostname3(hostnameOrUrl) {
   if (hostnameOrUrl.startsWith("http://") || hostnameOrUrl.startsWith("https://")) try {
     return new URL(hostnameOrUrl).hostname;
   } catch {
@@ -70843,10 +71108,10 @@ function normalizeHostname(hostnameOrUrl) {
   return hostnameOrUrl.split("/")[0] || "";
 }
 function getAutoProxyUrlFromEnvironment({ publishableKey, hasDomain = false, hasProxyUrl = false, environment = getDefaultEnvironment() }) {
-  if (hasProxyUrl || hasDomain || !isProductionFromPublishableKey(publishableKey)) return "";
+  if (hasProxyUrl || hasDomain || !isProductionFromPublishableKey2(publishableKey)) return "";
   if (environment.VERCEL_TARGET_ENV !== "production") return "";
   const vercelProductionHostname = environment.VERCEL_PROJECT_PRODUCTION_URL;
-  if (!vercelProductionHostname || !shouldAutoProxy(normalizeHostname(vercelProductionHostname))) return "";
+  if (!vercelProductionHostname || !shouldAutoProxy(normalizeHostname3(vercelProductionHostname))) return "";
   return AUTO_PROXY_PATH;
 }
 
@@ -71672,7 +71937,7 @@ function assertValidSecretKey(val) {
   }
 }
 function assertValidPublishableKey(val) {
-  parsePublishableKey(val, { fatal: true });
+  parsePublishableKey2(val, { fatal: true });
 }
 var TokenType = {
   SessionToken: "session_token",
@@ -71812,13 +72077,13 @@ var AuthenticateContext = class {
     if (resolvedProxyUrl?.startsWith("/")) {
       resolvedProxyUrl = `${this.clerkRequest.clerkUrl.origin}${resolvedProxyUrl}`;
     }
-    const originalPk = parsePublishableKey(this.publishableKey, {
+    const originalPk = parsePublishableKey2(this.publishableKey, {
       fatal: true,
       domain: options.domain,
       isSatellite: options.isSatellite
     });
     this.originalFrontendApi = originalPk.frontendApi;
-    const pk = parsePublishableKey(this.publishableKey, {
+    const pk = parsePublishableKey2(this.publishableKey, {
       fatal: true,
       proxyUrl: resolvedProxyUrl,
       domain: options.domain,
@@ -71860,7 +72125,7 @@ var AuthenticateContext = class {
     return this.clerkRequest.cookies.get(name) || void 0;
   }
   getSuffixedCookie(name) {
-    return this.getCookie(getSuffixedCookieName(name, this.cookieSuffix)) || void 0;
+    return this.getCookie(getSuffixedCookieName2(name, this.cookieSuffix)) || void 0;
   }
   getSuffixedOrUnSuffixedCookie(cookieName) {
     if (this.usesSuffixedCookies()) {
@@ -71904,7 +72169,7 @@ var AuthenticateContext = class {
   }
 };
 var createAuthenticateContext = async (clerkRequest, options) => {
-  const cookieSuffix = options.publishableKey ? await getCookieSuffix(options.publishableKey, runtime.crypto.subtle) : "";
+  const cookieSuffix = options.publishableKey ? await getCookieSuffix2(options.publishableKey, runtime.crypto.subtle) : "";
   return new AuthenticateContext(cookieSuffix, clerkRequest, options);
 };
 var SEPARATOR = "/";
@@ -77136,7 +77401,7 @@ var RefreshTokenErrorReason = {
   UnexpectedBAPIError: "unexpected-bapi-error"
 };
 function assertSignInUrlExists(signInUrl, key) {
-  if (!signInUrl && isDevelopmentFromSecretKey(key)) {
+  if (!signInUrl && isDevelopmentFromSecretKey2(key)) {
     throw new Error(`Missing signInUrl. Pass a signInUrl for dev instances if an app is satellite`);
   }
 }
@@ -77521,7 +77786,7 @@ var authenticateRequest = (async (request, options) => {
         throw errors[0];
       }
       if (!data.azp) {
-        logger.warnOnce(
+        logger2.warnOnce(
           "Clerk: Session token from cookie is missing the azp claim. In a future version of Clerk, this token will be considered invalid. Please contact Clerk support if you see this warning."
         );
       }
@@ -77943,7 +78208,7 @@ var TelemetryCollector = class {
     this.#metadata.sdk = options.sdk;
     this.#metadata.sdkVersion = options.sdkVersion;
     this.#metadata.publishableKey = options.publishableKey ?? "";
-    const parsedKey = parsePublishableKey(options.publishableKey);
+    const parsedKey = parsePublishableKey2(options.publishableKey);
     if (parsedKey) this.#metadata.instanceType = parsedKey.instanceType;
     if (options.secretKey) this.#metadata.secretKey = options.secretKey.substring(0, 16);
     const cache2 = LocalStorageThrottlerCache.isSupported() ? new LocalStorageThrottlerCache() : new InMemoryThrottlerCache();
@@ -78166,7 +78431,7 @@ function createClerkClient(options) {
 import { Readable as Readable2 } from "stream";
 
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/proxy.mjs
-var HOP_BY_HOP_HEADERS = /* @__PURE__ */ new Set([
+var HOP_BY_HOP_HEADERS2 = /* @__PURE__ */ new Set([
   "connection",
   "keep-alive",
   "proxy-authenticate",
@@ -78187,8 +78452,8 @@ function getDynamicHopByHopHeaders(headers) {
 }
 var RESPONSE_HEADERS_TO_STRIP = /* @__PURE__ */ new Set(["content-encoding", "content-length"]);
 function fapiUrlFromPublishableKey(publishableKey) {
-  const frontendApi = parsePublishableKey(publishableKey)?.frontendApi;
-  if (frontendApi?.startsWith("clerk.") && LEGACY_DEV_INSTANCE_SUFFIXES.some((suffix) => frontendApi?.endsWith(suffix))) {
+  const frontendApi = parsePublishableKey2(publishableKey)?.frontendApi;
+  if (frontendApi?.startsWith("clerk.") && LEGACY_DEV_INSTANCE_SUFFIXES2.some((suffix) => frontendApi?.endsWith(suffix))) {
     return PROD_FAPI_URL;
   }
   if (LOCAL_ENV_SUFFIXES.some((suffix) => frontendApi?.endsWith(suffix))) {
@@ -78277,7 +78542,7 @@ async function clerkFrontendApiProxy(request, options) {
   const dynamicHopByHop = getDynamicHopByHopHeaders(request.headers);
   request.headers.forEach((value, key) => {
     const lower = key.toLowerCase();
-    if (!HOP_BY_HOP_HEADERS.has(lower) && !dynamicHopByHop.has(lower)) {
+    if (!HOP_BY_HOP_HEADERS2.has(lower) && !dynamicHopByHop.has(lower)) {
       headers.set(key, value);
     }
   });
@@ -78313,7 +78578,7 @@ async function clerkFrontendApiProxy(request, options) {
     const responseHeaders = new Headers();
     response.headers.forEach((value, key) => {
       const lower = key.toLowerCase();
-      if (!HOP_BY_HOP_HEADERS.has(lower) && !RESPONSE_HEADERS_TO_STRIP.has(lower) && !responseDynamicHopByHop.has(lower)) {
+      if (!HOP_BY_HOP_HEADERS2.has(lower) && !RESPONSE_HEADERS_TO_STRIP.has(lower) && !responseDynamicHopByHop.has(lower)) {
         if (lower === "set-cookie") {
           responseHeaders.append(key, value);
         } else {
@@ -78410,7 +78675,7 @@ var authenticateRequest2 = (opts) => {
   const signInUrl = signInUrlInput || env.signInUrl;
   const proxyUrl = absoluteProxyUrl(handleValueOrFn(proxyUrlInput, clerkRequest.clerkUrl, env.proxyUrl), clerkRequest.clerkUrl.toString());
   if (isSatellite && !proxyUrl && !domain2) throw new Error(satelliteAndMissingProxyUrlAndDomain);
-  if (isSatellite && !isHttpOrHttps(signInUrl) && isDevelopmentFromSecretKey(secretKey || "")) throw new Error(satelliteAndMissingSignInUrl);
+  if (isSatellite && !isHttpOrHttps(signInUrl) && isDevelopmentFromSecretKey2(secretKey || "")) throw new Error(satelliteAndMissingSignInUrl);
   return clerkClient3.authenticateRequest(clerkRequest, {
     ...restOptions,
     secretKey,
@@ -78453,7 +78718,7 @@ var authenticateAndDecorateRequest = (options = {}) => {
   const proxyPath = stripTrailingSlashes(frontendApiProxy?.path ?? DEFAULT_PROXY_PATH) || DEFAULT_PROXY_PATH;
   const middleware = async (request, response, next) => {
     if (requestHasAuthObject(request)) return next();
-    if ("auth" in request) logger.warnOnce("Clerk: another middleware has already set `req.auth` on this request. Clerk authentication will run anyway and overwrite it. To use another auth library alongside Clerk, configure it to store its state on a different request property.");
+    if ("auth" in request) logger2.warnOnce("Clerk: another middleware has already set `req.auth` on this request. Clerk authentication will run anyway and overwrite it. To use another auth library alongside Clerk, configure it to store its state on a different request property.");
     const env = {
       ...loadApiEnv(),
       ...loadClientEnv()
@@ -78542,273 +78807,72 @@ var getAuth = ((req, options) => {
   });
 });
 
-// src/lib/logger.ts
-var import_pino = __toESM(require_pino(), 1);
-var usePrettyTransport = false;
-var logger2 = (0, import_pino.default)({
-  level: process.env.LOG_LEVEL ?? "info",
-  redact: [
-    "req.headers.authorization",
-    "req.headers.cookie",
-    "res.headers['set-cookie']"
-  ],
-  ...usePrettyTransport ? {
-    transport: {
-      target: "pino-pretty",
-      options: { colorize: true }
-    }
-  } : {}
-});
-
-// src/middlewares/clerkProxyHosts.ts
-var CLERK_PROXY_PATH = "/api/__clerk";
-var KNOWN_PUBLIC_HOSTS = /* @__PURE__ */ new Set([
-  "www.anima-protocol.com",
-  "anima-protocol.com",
-  "anima-protocol.replit.app"
-]);
-function hostFromUrl(value) {
-  if (!value) return void 0;
-  try {
-    return new URL(value).host;
-  } catch {
-    return void 0;
-  }
+// src/middlewares/clerkAuthFallback.ts
+var CLERK_AUTH_BRAND = /* @__PURE__ */ Symbol.for("@clerk/express.auth");
+function makeSignedOutAuth() {
+  return {
+    userId: null,
+    sessionId: null,
+    sessionClaims: null,
+    orgId: null,
+    orgRole: null,
+    orgSlug: null,
+    orgPermissions: null,
+    factorVerificationAge: null,
+    getToken: async () => null,
+    has: () => false,
+    debug: () => ({})
+  };
 }
-function headerValue(value) {
-  const raw = Array.isArray(value) ? value[0] : value;
-  return raw?.split(",")[0]?.trim() || void 0;
-}
-function normalizeHostname2(host) {
-  return (host ?? "").toLowerCase().replace(/:\d+$/, "");
-}
-function isLocalDevHost(hostname2) {
-  if (!hostname2) return true;
-  return hostname2 === "localhost" || hostname2.endsWith(".localhost") || hostname2.startsWith("127.0.0.1");
-}
-function isBackendProxyHost(hostname2) {
-  return hostname2.endsWith(".replit.app") || hostname2.endsWith(".replit.dev") || hostname2.endsWith(".repl.co");
-}
-function canonicalClerkProxyHeaderHost(host) {
-  const normalized = normalizeHostname2(host);
-  if (normalized === "anima-protocol.com" || normalized === "www.anima-protocol.com") {
-    return "www.anima-protocol.com";
-  }
-  return host?.split(",")[0]?.trim() || "";
-}
-function getClerkProxyHost(req) {
-  const originHost = hostFromUrl(
-    typeof req.headers.origin === "string" ? req.headers.origin : void 0
-  );
-  const refererHost = hostFromUrl(
-    typeof req.headers.referer === "string" ? req.headers.referer : void 0
-  );
-  const forwarded = headerValue(req.headers["x-forwarded-host"]);
-  if (forwarded && !isBackendProxyHost(normalizeHostname2(forwarded))) {
-    return forwarded;
-  }
-  if (forwarded && !originHost && !refererHost) {
-    return forwarded;
-  }
-  const publicHost = headerValue(req.headers["x-anima-public-host"]);
-  if (publicHost) {
-    const normalized = normalizeHostname2(publicHost);
-    if (KNOWN_PUBLIC_HOSTS.has(normalized)) {
-      return publicHost;
-    }
-    if (normalized === normalizeHostname2(originHost) || normalized === normalizeHostname2(refererHost)) {
-      return publicHost;
-    }
-  }
-  if (originHost) return originHost;
-  if (refererHost) return refererHost;
-  if (forwarded) return forwarded;
-  const hostHeader = headerValue(req.headers.host);
-  if (hostHeader && !isBackendProxyHost(normalizeHostname2(hostHeader))) {
-    return hostHeader;
-  }
-  return hostHeader;
-}
-
-// src/middlewares/clerkProxyFetch.ts
-var CLERK_FAPI = "https://frontend-api.clerk.dev";
-var PRODUCTION_PROXY_HOST = "www.anima-protocol.com";
-var UPSTREAM_TIMEOUT_MS = 25e3;
-var FORWARD_REQUEST_HEADERS = [
-  "accept",
-  "accept-language",
-  "content-type",
-  "user-agent",
-  "cookie",
-  "referer"
-];
-var HOP_BY_HOP_HEADERS2 = /* @__PURE__ */ new Set([
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailers",
-  "transfer-encoding",
-  "upgrade",
-  "host"
-]);
-function normalizeHostname3(host) {
-  return (host ?? "").toLowerCase().replace(/:\d+$/, "");
-}
-function resolveClerkUpstreamPath(req) {
-  const url3 = req.url || "";
-  if (url3.startsWith("/v1/") || url3.startsWith("/v1") || url3.startsWith("/npm/")) {
-    return url3;
-  }
-  const original = req.originalUrl || "";
-  const marker = CLERK_PROXY_PATH;
-  const markerIndex = original.indexOf(marker);
-  if (markerIndex >= 0) {
-    const suffix = original.slice(markerIndex + marker.length);
-    return suffix.startsWith("/") ? suffix : `/${suffix}`;
-  }
-  return url3 || "/v1/environment";
-}
-function resolveClerkUpstreamUrl(requestUrl) {
-  const path2 = requestUrl?.startsWith("/") ? requestUrl : `/${requestUrl ?? ""}`;
-  return new URL(path2, CLERK_FAPI);
-}
-function productionProxyHostFallback() {
-  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
-  return publishableKey.startsWith("pk_live_") ? PRODUCTION_PROXY_HOST : "";
-}
-function buildClerkProxyHeaderValues(req, secretKey) {
-  const requestHost = normalizeHostname3(getClerkProxyHost(req) || "");
-  const usePublicProxy = isLocalDevHost(requestHost) && process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_");
-  const protocol = usePublicProxy ? "https" : req.headers["x-forwarded-proto"] || "https";
-  const host = (usePublicProxy ? PRODUCTION_PROXY_HOST : canonicalClerkProxyHeaderHost(getClerkProxyHost(req))) || productionProxyHostFallback() || requestHost;
-  const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}/`;
-  const origin = host ? `${protocol}://${host}` : "";
-  return { proxyUrl, origin, host };
-}
-function clientIpFromHeaders(headers) {
-  const xff = headers["x-forwarded-for"];
-  return (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim() || (typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"] : "") || "";
-}
-function buildClerkUpstreamHeaders(req, secretKey) {
-  const { proxyUrl, origin } = buildClerkProxyHeaderValues(req, secretKey);
-  const headers = new Headers();
-  for (const name of FORWARD_REQUEST_HEADERS) {
-    const value = req.headers[name];
-    if (value === void 0) continue;
-    if (Array.isArray(value)) {
-      for (const entry of value) headers.append(name, entry);
-    } else {
-      headers.set(name, value);
-    }
-  }
-  headers.set("Clerk-Proxy-Url", proxyUrl);
-  headers.set("Clerk-Secret-Key", secretKey.trim());
-  if (origin) {
-    headers.set("Origin", origin);
-  }
-  const clientIp = clientIpFromHeaders(req.headers);
-  if (clientIp) {
-    headers.set("X-Forwarded-For", clientIp);
-  }
-  return headers;
-}
-function upstreamAbortSignal() {
-  if (typeof AbortSignal.timeout === "function") {
-    return AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-  }
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-  return controller.signal;
-}
-async function readRequestBody(req) {
-  if (req.method === "GET" || req.method === "HEAD") return void 0;
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  if (chunks.length === 0) return void 0;
-  return Buffer.concat(chunks);
-}
-function forwardResponseHeaders(upstream, res) {
-  upstream.headers.forEach((value, name) => {
-    const lower = name.toLowerCase();
-    if (HOP_BY_HOP_HEADERS2.has(lower)) return;
-    res.setHeader(name, value);
+function attachSignedOutAuth(req) {
+  const authHandler = Object.assign(() => makeSignedOutAuth(), {
+    [CLERK_AUTH_BRAND]: true
   });
+  Object.assign(req, { auth: authHandler });
 }
-async function proxyClerkWithFetch(req, res, secretKey, fetchImpl = fetch) {
-  const upstreamPath = resolveClerkUpstreamPath(req);
-  const upstreamUrl = resolveClerkUpstreamUrl(upstreamPath);
-  const headers = buildClerkUpstreamHeaders(req, secretKey);
-  const body = await readRequestBody(req);
-  const method = req.method?.toUpperCase() || "GET";
-  const upstream = await fetchImpl(upstreamUrl, {
-    method,
-    headers,
-    body: body ? new Uint8Array(body) : void 0,
-    redirect: "manual",
-    signal: upstreamAbortSignal()
-  });
-  res.statusCode = upstream.status;
-  forwardResponseHeaders(upstream, res);
-  const payload = Buffer.from(await upstream.arrayBuffer());
-  res.end(payload);
+function isClerkConfigError(err) {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return /Publishable key/i.test(message) || /CLERK_PUBLISHABLE_KEY/i.test(message) || /CLERK_SECRET_KEY/i.test(message) || /secret key/i.test(message) || /publishable key is missing/i.test(message);
 }
-async function handleClerkProxyRequest(req, res, secretKey) {
-  try {
-    await proxyClerkWithFetch(req, res, secretKey);
-  } catch (err) {
-    const cause = err instanceof Error && "cause" in err && err.cause instanceof Error ? err.cause.message : void 0;
-    logger2.error(
-      { err, url: req.url, originalUrl: req.originalUrl, cause },
-      "Clerk proxy upstream fetch failed"
-    );
-    if (!res.headersSent) {
-      res.statusCode = 502;
-      res.setHeader("content-type", "application/json");
-      res.end(
-        JSON.stringify({
-          error: "clerk_proxy_upstream_failed",
-          message: err instanceof Error ? cause ? `${err.message}: ${cause}` : err.message : "Could not reach Clerk Frontend API"
-        })
+function safeClerkMiddleware() {
+  const inner = clerkMiddleware();
+  return (req, res, next) => {
+    const continueAsSignedOut = (err) => {
+      if (isClerkConfigError(err)) {
+        logger.error(
+          { err },
+          "Clerk auth is misconfigured (check CLERK_PUBLISHABLE_KEY / CLERK_SECRET_KEY)"
+        );
+        if (!res.headersSent) {
+          res.status(503).json({
+            error: "API is misconfigured on the server. Check environment variables."
+          });
+        }
+        return;
+      }
+      logger.warn(
+        { err },
+        "Clerk middleware failed; treating request as signed-out"
       );
+      attachSignedOutAuth(req);
+      next();
+    };
+    try {
+      inner(req, res, (err) => {
+        if (err != null) {
+          continueAsSignedOut(err);
+          return;
+        }
+        next();
+      });
+    } catch (err) {
+      continueAsSignedOut(err);
     }
-  }
-}
-
-// src/middlewares/clerkProxyMiddleware.ts
-function clerkProxyEnabled() {
-  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
-  if (true) return true;
-  return publishableKey.startsWith("pk_live_");
-}
-function clerkProxyMiddleware() {
-  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
-  if (!clerkProxyEnabled() || !secretKey) {
-    return (_req, res) => {
-      res.status(503).json({
-        error: "clerk_proxy_unavailable",
-        message: "Clerk proxy is not configured. Set CLERK_SECRET_KEY (and CLERK_PUBLISHABLE_KEY) on the server."
-      });
-    };
-  }
-  if (!secretKey.startsWith("sk_")) {
-    return (_req, res) => {
-      res.status(503).json({
-        error: "clerk_proxy_invalid_secret",
-        message: "CLERK_SECRET_KEY must be a secret key (sk_live_\u2026 or sk_test_\u2026), not a publishable key."
-      });
-    };
-  }
-  return (req, res) => {
-    void handleClerkProxyRequest(req, res, secretKey);
   };
 }
 
 // src/webhooks/clerk.ts
-var import_express = __toESM(require_express2(), 1);
+var import_express2 = __toESM(require_express2(), 1);
 var import_svix = __toESM(require_dist4(), 1);
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/entity.js
@@ -85966,9 +86030,9 @@ var pool = new Pool({
 var db = drizzle(pool, { schema: schema_exports });
 
 // src/webhooks/clerk.ts
-var router = import_express.default.Router();
+var router = import_express2.default.Router();
 var CLERK_WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
-router.post("/clerk", import_express.default.raw({ type: "application/json" }), async (req, res) => {
+router.post("/clerk", import_express2.default.raw({ type: "application/json" }), async (req, res) => {
   if (!CLERK_WEBHOOK_SECRET) {
     return res.status(503).json({ error: "Webhook not configured" });
   }
@@ -86030,7 +86094,7 @@ async function seedDefaultCharacters(userId) {
 var clerk_default = router;
 
 // src/routes/health.ts
-var import_express2 = __toESM(require_express2(), 1);
+var import_express3 = __toESM(require_express2(), 1);
 
 // ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/util.js
 var util;
@@ -89914,7 +89978,7 @@ var HealthCheckResponse = objectType({
 });
 
 // src/routes/health.ts
-var router2 = (0, import_express2.Router)();
+var router2 = (0, import_express3.Router)();
 if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
 if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
 router2.get("/healthz", (_req, res) => {
@@ -89924,10 +89988,10 @@ router2.get("/healthz", (_req, res) => {
 var health_default = router2;
 
 // src/routes/index.ts
-var import_express16 = __toESM(require_express2(), 1);
+var import_express17 = __toESM(require_express2(), 1);
 
 // src/routes/openai/index.ts
-var import_express3 = __toESM(require_express2(), 1);
+var import_express4 = __toESM(require_express2(), 1);
 
 // ../../lib/db/src/schema/index.ts
 var schema_exports2 = {};
@@ -115611,7 +115675,7 @@ function getOpenAIClient() {
 }
 
 // src/routes/openai/index.ts
-var router3 = (0, import_express3.Router)();
+var router3 = (0, import_express4.Router)();
 router3.use(rateLimit);
 router3.get("/conversations", async (req, res) => {
   const { userId } = getAuth(req);
@@ -115756,7 +115820,7 @@ router3.post("/conversations/:id/messages", async (req, res) => {
 var openai_default2 = router3;
 
 // src/routes/openai/functions.ts
-var import_express5 = __toESM(require_express2(), 1);
+var import_express6 = __toESM(require_express2(), 1);
 
 // src/lib/storeEvents.ts
 var clients = /* @__PURE__ */ new Map();
@@ -115788,7 +115852,7 @@ function notifyUser(userId) {
 }
 
 // src/routes/openai/functions.ts
-var router4 = (0, import_express5.Router)();
+var router4 = (0, import_express6.Router)();
 router4.use(rateLimit);
 router4.use((req, res, next) => {
   const { userId } = getAuth(req);
@@ -116631,8 +116695,8 @@ router4.post("/image-edit", async (req, res) => {
 var functions_default = router4;
 
 // src/routes/elevenlabs.ts
-var import_express7 = __toESM(require_express2(), 1);
-var router5 = (0, import_express7.Router)();
+var import_express8 = __toESM(require_express2(), 1);
+var router5 = (0, import_express8.Router)();
 router5.use(["/tts", "/voices"], rateLimit);
 var DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 var EMOTION_TUNE = {
@@ -116742,8 +116806,8 @@ router5.post("/tts", async (req, res) => {
 var elevenlabs_default = router5;
 
 // src/routes/characterImage.ts
-var import_express8 = __toESM(require_express2(), 1);
-var router6 = (0, import_express8.Router)();
+var import_express9 = __toESM(require_express2(), 1);
+var router6 = (0, import_express9.Router)();
 router6.use("/character-image", rateLimit);
 var WIKI_HEADERS = { "User-Agent": "AnimaProtocol/1.0 (character portrait lookup)" };
 async function wikiSearchTitle(query) {
@@ -116802,14 +116866,14 @@ router6.get("/character-image", async (req, res) => {
 var characterImage_default = router6;
 
 // src/routes/store.ts
-var import_express9 = __toESM(require_express2(), 1);
-var router7 = (0, import_express9.Router)();
+var import_express10 = __toESM(require_express2(), 1);
+var router7 = (0, import_express10.Router)();
 function requireUser(req, res, next) {
   let userId = null;
   try {
     userId = getAuth(req).userId;
   } catch (err) {
-    logger2.warn({ err }, "Clerk getAuth failed in store requireUser");
+    logger.warn({ err }, "Clerk getAuth failed in store requireUser");
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -117454,7 +117518,7 @@ router7.post("/:entity/bulk-upsert", async (req, res) => {
     });
     res.json({ count: upserted.length, items: upserted });
   } catch (err) {
-    logger2.error(
+    logger.error(
       { err, entity, userId, itemCount: items.length },
       "bulk-upsert failed"
     );
@@ -117615,7 +117679,7 @@ router7.delete("/:entity/:id", async (req, res) => {
 var store_default = router7;
 
 // src/routes/storage.ts
-var import_express11 = __toESM(require_express2(), 1);
+var import_express12 = __toESM(require_express2(), 1);
 import { Readable as Readable8 } from "stream";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/service.js
@@ -129408,7 +129472,7 @@ async function signObjectURL({
 }
 
 // src/routes/storage.ts
-var router8 = (0, import_express11.Router)();
+var router8 = (0, import_express12.Router)();
 var objectStorageService = new ObjectStorageService();
 router8.use("/storage/uploads/request-url", rateLimit);
 router8.post(
@@ -129484,7 +129548,7 @@ router8.get(
 var storage_default = router8;
 
 // src/routes/chat.ts
-var import_express13 = __toESM(require_express2(), 1);
+var import_express14 = __toESM(require_express2(), 1);
 
 // src/lib/memoryRetrieval.ts
 var TYPE_SIGNALS = {
@@ -130426,7 +130490,7 @@ async function loadArcState(animaId, userId) {
 }
 
 // src/routes/chat.ts
-var router9 = (0, import_express13.Router)();
+var router9 = (0, import_express14.Router)();
 router9.use(rateLimit);
 function requireUser2(req, res) {
   const { userId } = getAuth(req);
@@ -130927,8 +130991,8 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
 var chat_default = router9;
 
 // src/routes/admin.ts
-var import_express15 = __toESM(require_express2(), 1);
-var router10 = (0, import_express15.Router)();
+var import_express16 = __toESM(require_express2(), 1);
+var router10 = (0, import_express16.Router)();
 function requireMigrationSecret(req, res, next) {
   const configured = process.env.ADMIN_MIGRATION_SECRET?.trim();
   if (!configured) {
@@ -130975,7 +131039,7 @@ router10.post(
 var admin_default = router10;
 
 // src/routes/index.ts
-var router11 = (0, import_express16.Router)();
+var router11 = (0, import_express17.Router)();
 router11.use("/admin", admin_default);
 router11.use("/openai", openai_default2);
 router11.use("/openai", functions_default);
@@ -130994,24 +131058,24 @@ router11.get("/placeholder/:w/:h", (req, res) => {
 var routes_default = router11;
 
 // src/app.ts
-var app = (0, import_express17.default)();
+var app = (0, import_express18.default)();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
-app.use(import_express17.default.json({ limit: "25mb" }));
-app.use(import_express17.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express18.default.json({ limit: "25mb" }));
+app.use(import_express18.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use("/api", health_default);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
 });
-app.use(clerkMiddleware());
+app.use(safeClerkMiddleware());
 app.use("/api", routes_default);
 app.use(
   (err, _req, res, _next) => {
-    logger2.error({ err }, "Unhandled API error");
+    logger.error({ err }, "Unhandled API error");
     if (!res.headersSent) {
       const message = err instanceof Error ? err.message : "Internal server error";
-      const isConfig3 = message.includes("DATABASE_URL") || message.includes("CLERK_SECRET_KEY") || message.includes("connection");
+      const isConfig3 = message.includes("DATABASE_URL") || message.includes("CLERK_SECRET_KEY") || message.includes("CLERK_PUBLISHABLE_KEY") || /Publishable key/i.test(message) || message.includes("connection");
       res.status(isConfig3 ? 503 : 500).json({
         error: isConfig3 ? "API is misconfigured on the server. Check environment variables." : "Internal server error"
       });
