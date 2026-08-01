@@ -52,6 +52,17 @@ async function loadSeedModule() {
   return import("@/lib/seedCharacters");
 }
 
+describe("getStarterRoster", () => {
+  it("returns a non-empty bundled roster the Characters page can show offline", async () => {
+    const { getStarterRoster } = await loadSeedModule();
+    const roster = getStarterRoster();
+    expect(roster.length).toBeGreaterThan(20);
+    expect(roster.every((c) => c.id?.startsWith("seed_") && c.name && c.universe)).toBe(
+      true,
+    );
+  });
+});
+
 describe("seedCharactersIfNeeded", () => {
   it("skips seeding when the full starter roster is already present", async () => {
     const { seedCharactersIfNeeded, getStarterRoster } = await loadSeedModule();
