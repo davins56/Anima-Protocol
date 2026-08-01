@@ -9,6 +9,7 @@ import { useTimelineBranching } from "@/hooks/useTimelineBranching";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import { upsertCharacters } from "@/lib/seedCharacters";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -19,6 +20,9 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [usingBundledSeed, setUsingBundledSeed] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [view, setView] = useState("characters"); // "characters", "templates", "stories", "canonical"
   const [showStoryChooser, setShowStoryChooser] = useState(false);
   const [canonSeed, setCanonSeed] = useState(null); // { story, insertions } from the universe browser
@@ -27,20 +31,45 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const loadData = useCallback(async ({ retrySeed = false } = {}) => {
     setLoading(true);
     if (retrySeed) setSeeding(true);
+    setLoadError(null);
     try {
-      const [{ characters: roster }, grps] = await Promise.all([
-        loadRosterCharacters({
-          retrySeed,
-          waitBootstrap: false,
-        }),
-        base44.entities.CharacterGroup.list("-created_date", 100),
-      ]);
-      setCharacters(roster);
+      // Load roster and groups independently — a CharacterGroup failure must not
+      // wipe a successful character roster (Promise.all rejection used to).
+      const rosterResult = await loadRosterCharacters({
+        retrySeed,
+        waitBootstrap: false,
+      });
+      let grps = [];
+      try {
+        grps = await base44.entities.CharacterGroup.list("-created_date", 100);
+      } catch (groupErr) {
+        console.warn(
+          "[Anima] CharacterGroup list failed:",
+          groupErr?.message || groupErr,
+        );
+        grps = [];
+      }
+      setCharacters(rosterResult?.characters || []);
       setGroups(grps || []);
+      setUsingBundledSeed(!!rosterResult?.usingBundledSeed);
+      if (rosterResult?.error && !rosterResult?.characters?.length) {
+        setLoadError(
+          rosterResult.error.message ||
+            "Could not load characters. Sign in again or try later.",
+        );
+      } else if (rosterResult?.usingBundledSeed) {
+        setLoadError(
+          `${rosterResult.error?.message || "Character store unavailable"}. Showing bundled starters — they are saved to your account when you start a chat (requires a working database).`,
+        );
+      } else {
+        setLoadError(null);
+      }
     } catch (err) {
       console.error('Error loading characters:', err);
       setCharacters([]);
       setGroups([]);
+      setUsingBundledSeed(false);
+      setLoadError(err?.message || "Could not load characters.");
     } finally {
       setSeeding(false);
       setLoading(false);
@@ -117,8 +146,34 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   };
 
   const handleCreate = async () => {
-    if (selected.length === 0) return;
-    
+    if (selected.length === 0 || creating) return;
+
+    // Bundled starters are not in Postgres yet — upsert before chat so the
+    // session can resolve character ids from the store.
+    const bundledSelected = selectedCharacters.filter((c) => c._bundled);
+    if (bundledSelected.length) {
+      setCreating(true);
+      try {
+        await upsertCharacters(
+          bundledSelected.map(({ _bundled, ...rest }) => rest),
+        );
+        setCharacters((prev) =>
+          prev.map((c) => (c._bundled ? { ...c, _bundled: false } : c)),
+        );
+        setUsingBundledSeed(false);
+        setLoadError(null);
+      } catch (err) {
+        setLoadError(
+          err?.message ||
+            "Could not save starter characters to your account. Check that you are signed in and the database is reachable.",
+        );
+        setCreating(false);
+        return;
+      } finally {
+        setCreating(false);
+      }
+    }
+
     // Prepare session data
     const sessionData = mode === "solo"
       ? {
@@ -261,6 +316,11 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           ) : filteredCharacters.length === 0 && filteredGroups.length === 0 ? (
             <div className="text-center py-12">
               <p className="font-mono text-primary/30 text-sm tracking-widest uppercase mb-4">No results found</p>
+              {loadError && (
+                <p className="font-mono text-[10px] text-amber-400/80 max-w-md mx-auto mb-4 leading-relaxed">
+                  {loadError}
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => loadData({ retrySeed: true })}
@@ -274,6 +334,11 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
             </div>
           ) : (
             <div className="space-y-4">
+              {loadError && usingBundledSeed && (
+                <p className="font-mono text-[10px] text-amber-400/80 leading-relaxed border border-amber-400/20 bg-amber-400/5 px-3 py-2">
+                  {loadError}
+                </p>
+              )}
               {filteredGroups.length > 0 && mode === "group" && (
                 <div>
                   <p className="text-[9px] font-mono text-primary/40 tracking-widest uppercase mb-2">Quick Add Group</p>
@@ -446,10 +511,10 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
              {view === "characters" && (
                <button
                  onClick={handleCreate}
-                 disabled={selected.length === 0}
+                 disabled={selected.length === 0 || creating}
                  className="px-3 sm:px-6 py-1.5 sm:py-2 bg-primary/10 border border-primary/50 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-[9px] sm:text-xs tracking-widest uppercase transition-all hud-corner glow-border whitespace-nowrap"
                >
-                 Init
+                 {creating ? "Saving…" : "Init"}
                </button>
              )}
            </div>
