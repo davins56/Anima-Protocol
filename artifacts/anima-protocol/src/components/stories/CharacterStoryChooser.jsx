@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { motion, AnimatePresence } from "framer-motion";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
+import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
 
 /**
  * Build insertion points from a character's metadata so the user can drop
@@ -68,20 +69,14 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const loadCharacters = useCallback(async () => {
+  const loadCharacters = useCallback(async ({ retrySeed = false } = {}) => {
     setLoading(true);
     try {
-      const [chars, animas] = await Promise.all([
-        base44.entities.Character.list("-created_date", 500),
-        base44.entities.Anima.list("-created_date", 100),
-      ]);
-      const animaAsChars = (animas || []).map((a) => ({
-        ...a,
-        _isAnima: true,
-        category: a.archetype || "guardian",
-        universe: "Anima",
-      }));
-      setCharacters([...animaAsChars, ...(chars || [])]);
+      const { characters: roster } = await loadRosterCharacters({
+        retrySeed,
+        waitBootstrap: false,
+      });
+      setCharacters(roster);
     } catch (err) {
       console.error("Error loading characters:", err);
     } finally {
@@ -92,14 +87,14 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
   useEffect(() => {
     let cancelled = false;
     whenBootstrapReady().then(() => {
-      if (!cancelled) loadCharacters();
+      if (!cancelled) loadCharacters({ retrySeed: true });
     });
     return () => {
       cancelled = true;
     };
   }, [loadCharacters]);
 
-  useStoreSync(loadCharacters);
+  useStoreSync(() => loadCharacters({ retrySeed: false }));
 
   const filteredCharacters = useMemo(() => {
     const term = search.toLowerCase();
