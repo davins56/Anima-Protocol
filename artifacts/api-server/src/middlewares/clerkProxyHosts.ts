@@ -1,10 +1,15 @@
 import {
   isDevelopmentFromPublishableKey,
+  isPublishableKey,
+  isProductionFromPublishableKey,
   publishableKeyFromHost,
 } from "@clerk/shared/keys";
 import type { IncomingHttpHeaders } from "http";
 
 export const CLERK_PROXY_PATH = "/api/__clerk";
+
+/** Apex host — Clerk custom domain FAPI is clerk.anima-protocol.com. */
+export const ANIMA_APEX_HOST = "anima-protocol.com";
 
 /** Public hosts that mint Clerk sessions for this product (apex + www). */
 export const KNOWN_PUBLIC_HOSTS = new Set([
@@ -62,6 +67,23 @@ export function canonicalClerkProxyHeaderHost(host: string | undefined): string 
   return host?.split(",")[0]?.trim() || "";
 }
 
+export function isAnimaProductionHost(hostname: string): boolean {
+  const host = normalizeHostname(hostname);
+  return (
+    host === ANIMA_APEX_HOST ||
+    host === `www.${ANIMA_APEX_HOST}` ||
+    host.endsWith(`.${ANIMA_APEX_HOST}`)
+  );
+}
+
+/**
+ * Publishable key for JWT/cookie verification.
+ *
+ * Production uses a Clerk **custom domain** (`clerk.anima-protocol.com`).
+ * `publishableKeyFromHost("www.anima-protocol.com")` incorrectly yields
+ * `clerk.www.anima-protocol.com`, so anima public hosts must keep an explicit
+ * `pk_live_` fallback (or derive from the apex host).
+ */
 export function resolveClerkPublishableKey(
   host: string | undefined,
   fallbackKey: string | undefined,
@@ -73,7 +95,48 @@ export function resolveClerkPublishableKey(
   if (fallbackKey?.startsWith("pk_live_") && isLocalDevHost(hostname)) {
     return fallbackKey;
   }
+  if (
+    fallbackKey &&
+    isPublishableKey(fallbackKey) &&
+    isProductionFromPublishableKey(fallbackKey) &&
+    (KNOWN_PUBLIC_HOSTS.has(hostname) || isAnimaProductionHost(hostname))
+  ) {
+    return fallbackKey;
+  }
+  if (!hostname || isAnimaProductionHost(hostname)) {
+    return publishableKeyFromHost(ANIMA_APEX_HOST, fallbackKey);
+  }
   return publishableKeyFromHost(hostname, fallbackKey);
+}
+
+/**
+ * Runtime key for `clerkMiddleware`. Prefer a valid env key; otherwise derive
+ * a syntactically valid key so a missing/corrupt `CLERK_PUBLISHABLE_KEY` cannot
+ * 503 every authenticated route on production.
+ */
+export function resolveRuntimePublishableKey(req: {
+  headers: IncomingHttpHeaders;
+}): string | undefined {
+  const envKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  if (isPublishableKey(envKey)) {
+    return envKey;
+  }
+
+  const host = getClerkProxyHost(req) || "";
+  try {
+    const resolved = resolveClerkPublishableKey(host, undefined);
+    if (isPublishableKey(resolved)) return resolved;
+  } catch {
+    // Host empty / unparseable — try apex custom-domain key below.
+  }
+
+  try {
+    const apexKey = publishableKeyFromHost(ANIMA_APEX_HOST);
+    if (isPublishableKey(apexKey)) return apexKey;
+  } catch {
+    // ignore
+  }
+  return undefined;
 }
 
 export function getClerkProxyHost(req: {

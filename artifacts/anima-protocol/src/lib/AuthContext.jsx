@@ -23,7 +23,8 @@ import {
   resetUser,
   track,
 } from '@/lib/analytics';
-import { bootstrapUserData } from '@/lib/syncBootstrap';
+import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
+import { retryStarterSeed } from '@/lib/seedCharacters';
 
 const AuthContext = createContext();
 
@@ -59,6 +60,30 @@ export const AuthProvider = ({ children }) => {
       }
     });
   }, [getToken, isSignedIn]);
+
+  // Retry starter seeding once the session token is live, independent of whether
+  // profile load succeeds — an empty roster after bootstrap usually means seeding
+  // ran before auth was ready or bulk-upsert failed transiently.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !clerkUser) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await whenBootstrapReady();
+        if (cancelled) return;
+        const chars = await base44.entities.Character.list('-created_date', 5);
+        if (!chars?.length) {
+          await retryStarterSeed();
+          notifyStoreChanged();
+        }
+      } catch (err) {
+        console.warn('[Anima] Starter character seed retry failed:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, clerkUser?.id]);
 
   // Poll for cross-device changes only while signed in; stop on sign-out so we
   // never hit the per-user store endpoint without a session.
