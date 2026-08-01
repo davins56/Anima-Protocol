@@ -109089,9 +109089,29 @@ var SENSITIVE = /postgresql:\/\/[^\s"'\\]+|postgres:\/\/[^\s"'\\]+|password=[^\s
 function scrub(message) {
   return message.replace(SENSITIVE, "[redacted]").slice(0, 300);
 }
+function collectErrorSignals(err) {
+  const messages2 = [];
+  const codes = [];
+  const seen = /* @__PURE__ */ new Set();
+  let current = err;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current instanceof Error) {
+      messages2.push(current.message);
+    } else if (typeof current === "string") {
+      messages2.push(current);
+    }
+    if (current && typeof current === "object" && "code" in current) {
+      const c2 = String(current.code ?? "");
+      if (c2) codes.push(c2);
+    }
+    current = current && typeof current === "object" && "cause" in current ? current.cause : void 0;
+  }
+  return { message: messages2.join("\n"), code: codes[0] || "" };
+}
 function classifyDbError(err) {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  const code = err && typeof err === "object" && "code" in err ? String(err.code ?? "") : "";
+  const { message, code } = collectErrorSignals(err);
   const looksLikeDb = code.startsWith("28") || // invalid auth
   code.startsWith("3D") || // invalid catalog
   code.startsWith("42") || // syntax / missing relation
@@ -109121,6 +109141,8 @@ function classifyDbError(err) {
 }
 function databaseTargetHint(rawUrl = process.env.DATABASE_URL) {
   if (!rawUrl?.trim()) return { configured: false };
+  const sslmodeMatch = rawUrl.match(/[?&]sslmode=([^&]*)/i);
+  const sslmode = sslmodeMatch ? decodeURIComponent(sslmodeMatch[1]) : null;
   try {
     const parsed = new URL(rawUrl.replace(/^postgres(ql)?:/i, "http:"));
     return {
@@ -109129,10 +109151,23 @@ function databaseTargetHint(rawUrl = process.env.DATABASE_URL) {
       host: parsed.hostname || void 0,
       port: parsed.port || void 0,
       database: parsed.pathname.replace(/^\//, "") || void 0,
-      sslmode: parsed.searchParams.get("sslmode")
+      sslmode: parsed.searchParams.get("sslmode") ?? sslmode
     };
   } catch {
-    return { configured: true };
+    const hostMatch = rawUrl.match(
+      /^postgres(?:ql)?:\/\/(?:[^/@]+@)?(\[[^\]]+\]|[^/:?]+)(?::(\d+))?/i
+    );
+    const dbMatch = rawUrl.match(
+      /^postgres(?:ql)?:\/\/[^/]+\/([^?]+)/i
+    );
+    return {
+      configured: true,
+      protocol: /^postgres:\/\//i.test(rawUrl) ? "postgres" : "postgresql",
+      host: hostMatch?.[1]?.replace(/^\[|\]$/g, "") || void 0,
+      port: hostMatch?.[2] || void 0,
+      database: dbMatch?.[1] ? decodeURIComponent(dbMatch[1]) : void 0,
+      sslmode
+    };
   }
 }
 
