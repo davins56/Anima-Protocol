@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
 import { animaApi } from "@/api/animaApi";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -289,7 +290,9 @@ export default function Chat() {
     whenBootstrapReady().then(() => {
       if (cancelled) return;
       loadSessions();
-      loadCharacters();
+      // Seed retry ensures preloaded starters are in memory for session create
+      // and prompt building even if bootstrap seeding raced auth.
+      loadCharacters({ retrySeed: true });
       // Preload ElevenLabs voices in background
       base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
       base44.auth.me().then((me) => {
@@ -521,28 +524,56 @@ export default function Chat() {
     [queryClient],
   );
 
-  const loadCharacters = async () => {
-    const [chars, animas] = await Promise.all([
-      base44.entities.Character.list("-created_date", 500),
-      base44.entities.Anima.list("-created_date", 100),
-    ]);
-    
-    // Use characters as-is without trait generation
-    const enhancedChars = chars || [];
-    
-    const animaAsChars = (animas || []).map((a) => ({
-      ...a,
-      _isAnima: true,
-      category: a.archetype || "guardian",
-      universe: "Anima",
-    }));
+  const loadCharacters = async ({ retrySeed = false } = {}) => {
+    const { characters: roster, animaAsChars } = await loadRosterCharacters({
+      retrySeed,
+      waitBootstrap: false,
+    });
+
     // Find Serenity anima specifically to use as the ambient companion
-    const serenityAnima = animaAsChars.find((a) => a.name?.toLowerCase() === "serenity") || null;
+    const serenityAnima =
+      animaAsChars.find((a) => a.name?.toLowerCase() === "serenity") || null;
     setSerenity(serenityAnima);
-    setCharacters([...animaAsChars, ...enhancedChars]);
-    
+    setCharacters(roster);
+
     // Auto-assign voice profiles in background (non-blocking)
     base44.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
+  };
+
+  // Resolve a roster character by id, fetching from the store when Chat's
+  // in-memory list hasn't caught up yet (common right after starter seeding).
+  const resolveCharacterById = async (id, roster = characters) => {
+    if (!id) return null;
+    const local = roster.find((c) => c.id === id);
+    if (local) return local;
+    try {
+      const [charMatches, animaMatches] = await Promise.all([
+        base44.entities.Character.filter({ id }, undefined, 1),
+        base44.entities.Anima.filter({ id }, undefined, 1),
+      ]);
+      if (charMatches?.[0]) {
+        const char = charMatches[0];
+        setCharacters((prev) =>
+          prev.some((c) => c.id === char.id) ? prev : [...prev, char],
+        );
+        return char;
+      }
+      if (animaMatches?.[0]) {
+        const anima = {
+          ...animaMatches[0],
+          _isAnima: true,
+          category: animaMatches[0].archetype || "guardian",
+          universe: "Anima",
+        };
+        setCharacters((prev) =>
+          prev.some((c) => c.id === anima.id) ? prev : [...prev, anima],
+        );
+        return anima;
+      }
+    } catch (err) {
+      console.warn("[Anima] Character resolve failed:", err?.message || err);
+    }
+    return null;
   };
 
   const loadSession = async (id) => {
@@ -638,7 +669,7 @@ export default function Chat() {
   );
 
   const syncFromRemote = useCallback(() => {
-    loadCharacters();
+    loadCharacters({ retrySeed: false });
     handleRemoteSync({
       isLoading,
       loadSessions,
@@ -673,10 +704,14 @@ export default function Chat() {
     let initialMessages = [];
     
     if (m === "solo" && character_id) {
-      const char = characters.find((c) => c.id === character_id);
+      const char = await resolveCharacterById(character_id);
       title = char ? `${char.name}` : "New Session";
     } else if (m === "group" && group_character_ids?.length) {
-      const chars = characters.filter((c) => group_character_ids.includes(c.id));
+      const chars = (
+        await Promise.all(
+          group_character_ids.map((id) => resolveCharacterById(id)),
+        )
+      ).filter(Boolean);
       title = chars.slice(0, 2).map((c) => c.name).join(", ") + (chars.length > 2 ? ` +${chars.length - 2}` : "");
       
       // Create initial narrator message for group sessions
@@ -691,7 +726,11 @@ export default function Chat() {
     }
 
     const selectedGroupChars = m === "group" && group_character_ids?.length
-      ? characters.filter((c) => group_character_ids.includes(c.id))
+      ? (
+          await Promise.all(
+            group_character_ids.map((id) => resolveCharacterById(id)),
+          )
+        ).filter(Boolean)
       : [];
     const crossoverUniverses = Array.from(
       new Set(selectedGroupChars.map((c) => c.universe).filter(Boolean)),
@@ -1025,7 +1064,7 @@ export default function Chat() {
       let locationContext = "";
       
       if (activeSession.mode === "solo" && activeSession.character_id) {
-        const char = characters.find((c) => c.id === activeSession.character_id);
+        const char = await resolveCharacterById(activeSession.character_id);
         if (char) {
           charContext = `You are ${char.name}${char.universe ? ` from ${char.universe}` : ""}.
 
@@ -1053,7 +1092,11 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
           }
         }
       } else if (activeSession.mode === "group" && activeSession.group_character_ids?.length) {
-        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+        const groupChars = (
+          await Promise.all(
+            activeSession.group_character_ids.map((id) => resolveCharacterById(id)),
+          )
+        ).filter(Boolean);
         const charDescriptions = groupChars
           .map((c) => `[${c.name}${c.universe ? ` | ${c.universe}` : ""}]\nPersonality: ${c.personality || "See their unique traits"}\nSpeaking Style: ${c.speaking_style || "Distinct voice"}\n`)
           .join("\n");
@@ -1193,7 +1236,7 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
 
       let prompt;
       if (activeSession.mode === "solo" && activeSession.character_id) {
-        const char = characters.find((c) => c.id === activeSession.character_id);
+        const char = await resolveCharacterById(activeSession.character_id);
         if (char) {
           // Apply archetype personality instruction
           const archetypePrompts = {
@@ -1457,8 +1500,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       let charName = "Serenity";
       let activeChar = null;
       if (activeSession.mode === "solo" && activeSession.character_id) {
-        activeChar = characters.find((c) => c.id === activeSession.character_id);
-        charName = activeChar?.name || "Serenity";
+        activeChar = await resolveCharacterById(activeSession.character_id);
+        charName = activeChar?.name || "Character";
       } else if (activeSession.mode === "group") {
         activeChar = currentGroupSpeakerRef.current;
         charName = activeChar?.name || "Character";
