@@ -5,12 +5,12 @@ import express, {
   type NextFunction,
 } from "express";
 import cors from "cors";
-import { clerkMiddleware } from "@clerk/express";
 
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
 } from "./middlewares/clerkProxyMiddleware";
+import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
 import clerkWebhookRouter from "./webhooks/clerk";
 import healthRouter from "./routes/health";
 import router from "./routes";
@@ -42,8 +42,9 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Verify Clerk JWTs before hitting any protected routes; populates req.auth for
-// the @clerk/express helpers used downstream.
-app.use(clerkMiddleware());
+// the @clerk/express helpers used downstream. Wrapped so a bad/missing
+// CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
+app.use(safeClerkMiddleware());
 
 // Application API routes (store, chat, openai, storage, admin, character image,
 // elevenlabs, placeholder image).
@@ -59,6 +60,8 @@ app.use(
       const isConfig =
         message.includes("DATABASE_URL") ||
         message.includes("CLERK_SECRET_KEY") ||
+        message.includes("CLERK_PUBLISHABLE_KEY") ||
+        /Publishable key/i.test(message) ||
         message.includes("connection");
       res.status(isConfig ? 503 : 500).json({
         error: isConfig
