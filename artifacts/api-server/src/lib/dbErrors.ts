@@ -16,12 +16,34 @@ function scrub(message: string): string {
   return message.replace(SENSITIVE, "[redacted]").slice(0, 300);
 }
 
+/** Walk Error.cause / nested driver errors so drizzle wrappers still expose ENOTFOUND etc. */
+function collectErrorSignals(err: unknown): { message: string; code: string } {
+  const messages: string[] = [];
+  const codes: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current instanceof Error) {
+      messages.push(current.message);
+    } else if (typeof current === "string") {
+      messages.push(current);
+    }
+    if (current && typeof current === "object" && "code" in current) {
+      const c = String((current as { code?: unknown }).code ?? "");
+      if (c) codes.push(c);
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return { message: messages.join("\n"), code: codes[0] || "" };
+}
+
 export function classifyDbError(err: unknown): DbErrorInfo {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  const code =
-    err && typeof err === "object" && "code" in err
-      ? String((err as { code?: unknown }).code ?? "")
-      : "";
+  const { message, code } = collectErrorSignals(err);
 
   const looksLikeDb =
     code.startsWith("28") || // invalid auth
@@ -88,6 +110,12 @@ export function databaseTargetHint(
   sslmode?: string | null;
 } {
   if (!rawUrl?.trim()) return { configured: false };
+
+  const sslmodeMatch = rawUrl.match(/[?&]sslmode=([^&]*)/i);
+  const sslmode = sslmodeMatch
+    ? decodeURIComponent(sslmodeMatch[1])
+    : null;
+
   try {
     const parsed = new URL(rawUrl.replace(/^postgres(ql)?:/i, "http:"));
     return {
@@ -96,9 +124,23 @@ export function databaseTargetHint(
       host: parsed.hostname || undefined,
       port: parsed.port || undefined,
       database: parsed.pathname.replace(/^\//, "") || undefined,
-      sslmode: parsed.searchParams.get("sslmode"),
+      sslmode: parsed.searchParams.get("sslmode") ?? sslmode,
     };
   } catch {
-    return { configured: true };
+    // Passwords with unencoded @/# break URL(); fall back to a credential-free regex.
+    const hostMatch = rawUrl.match(
+      /^postgres(?:ql)?:\/\/(?:[^/@]+@)?(\[[^\]]+\]|[^/:?]+)(?::(\d+))?/i,
+    );
+    const dbMatch = rawUrl.match(
+      /^postgres(?:ql)?:\/\/[^/]+\/([^?]+)/i,
+    );
+    return {
+      configured: true,
+      protocol: /^postgres:\/\//i.test(rawUrl) ? "postgres" : "postgresql",
+      host: hostMatch?.[1]?.replace(/^\[|\]$/g, "") || undefined,
+      port: hostMatch?.[2] || undefined,
+      database: dbMatch?.[1] ? decodeURIComponent(dbMatch[1]) : undefined,
+      sslmode,
+    };
   }
 }

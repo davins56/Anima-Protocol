@@ -22,6 +22,20 @@ describe("classifyDbError", () => {
     });
   });
 
+  it("unwraps ENOTFOUND from Error.cause under a drizzle Failed query wrapper", () => {
+    const cause = Object.assign(
+      new Error("getaddrinfo ENOTFOUND db.example.com"),
+      { code: "ENOTFOUND" },
+    );
+    const wrapped = new Error("Failed query: select 1\nparams:");
+    (wrapped as Error & { cause?: unknown }).cause = cause;
+    expect(classifyDbError(wrapped)).toMatchObject({
+      isDbError: true,
+      safeMessage: "Database host unreachable",
+      code: "ENOTFOUND",
+    });
+  });
+
   it("does not treat unrelated errors as database failures", () => {
     expect(classifyDbError(new Error("Publishable key not valid."))).toEqual({
       isDbError: false,
@@ -32,7 +46,7 @@ describe("classifyDbError", () => {
   it("redacts connection strings from messages used as fallbacks", () => {
     const info = classifyDbError(
       new Error(
-        "password authentication failed for user \"x\" postgresql://u:p@host/db",
+        'password authentication failed for user "x" postgresql://u:p@host/db',
       ),
     );
     expect(info.isDbError).toBe(true);
@@ -50,6 +64,20 @@ describe("databaseTargetHint", () => {
     ).toEqual({
       configured: true,
       protocol: "postgresql",
+      host: "db.example.com",
+      port: "5432",
+      database: "anima_dev",
+      sslmode: "require",
+    });
+  });
+
+  it("extracts host via regex when the password breaks URL()", () => {
+    expect(
+      databaseTargetHint(
+        "postgresql://anima:p@ss=word@db.example.com:5432/anima_dev?sslmode=require",
+      ),
+    ).toMatchObject({
+      configured: true,
       host: "db.example.com",
       port: "5432",
       database: "anima_dev",
