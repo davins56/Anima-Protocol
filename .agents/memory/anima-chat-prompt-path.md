@@ -23,6 +23,12 @@ length, persona), edit `Chat.jsx handleSendMessage`. The content-rating toggle l
 section) and is injected as the `adultInstruction` block — keep ON (permit explicit) and
 OFF (enforce safe/non-explicit) branches in sync across every prompt variant.
 
+**Adult Mode escalation:** When `adult_content_enabled` is on, prompts must allow lewd/
+explicit dialogue to increase when the situation presents itself or the user engages it.
+Do not append unconditional “never explicit / never anatomical” resonance or attunement
+clauses while Adult Mode is on — those silently override `adultInstruction`. Lewdity/
+sexuality guides must also not force “family-friendly” under Adult Mode.
+
 **User profile injection:** The account-default "about me" lives at
 `user.settings.user_profile` (edited on the `/profile` page, `pages/UserProfile.jsx`).
 In `handleSendMessage` it's formatted ONCE into `userProfileContext` (a delimited

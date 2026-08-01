@@ -1069,8 +1069,8 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
         .join("\n");
 
       const adultInstruction = adultMode
-        ? "\nCONTENT RATING — ADULT (18+) ENABLED: The user has explicitly enabled adult mode. You may engage in explicit, sexual, and lewd content when the story naturally leads there. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back or fade to black unless the user indicates otherwise.\n"
-        : "\nCONTENT RATING — RAW MODE (non-explicit): Do NOT be tame, polite, or sanitized. Write with a raw, visceral, unfiltered edge — gritty, emotionally intense, and electrically charged. Lean hard into heat: smoldering tension, aching longing, magnetic and dangerous attraction, sensual and suggestive undertones, bold and evocative mature language. Let the chemistry feel real and unrestrained. The ONE hard line: stop before anything graphic — no explicit, pornographic, or anatomical sexual description; fade to black at that exact threshold. Within that single limit, hold nothing else back.\n";
+        ? "\nCONTENT RATING — ADULT (18+) ENABLED: The user has explicitly enabled adult mode. You may engage in explicit, sexual, and lewd content whenever the situation presents itself OR the user initiates/engages that tone. Match and escalate with their energy — if they lean into heat, intimacy, desire, or explicit acts, meet them there and intensify rather than soft-pedaling, redirecting, or fading to black. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back unless the user clearly indicates otherwise.\n"
+        : "\nCONTENT RATING — RAW MODE (non-explicit): Do NOT be tame, polite, or sanitized. Write with a raw, visceral, unfiltered edge — gritty, emotionally intense, and electrically charged. Lean hard into heat: smoldering tension, aching longing, magnetic and dangerous attraction, sensual and suggestive undertones, bold and evocative mature language. When the user engages flirtation or charged intimacy, escalate the heat with them. The ONE hard line: stop before anything graphic — no explicit, pornographic, or anatomical sexual description; fade to black at that exact threshold. Within that single limit, hold nothing else back.\n";
 
       // Build injected memory context (user-selected recalled memories)
       const buildInjectedMemoryContext = () => {
@@ -1259,13 +1259,21 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
               ? `Be confrontational, assertive, and willing to challenge or argue (aggressiveness: ${cfg.aggressiveness}%).`
               : `Be gentle, passive, and accommodating in your approach (aggressiveness: ${cfg.aggressiveness}%).`;
             
-            const sexualityGuide = cfg.sexuality > 50
-              ? `Be openly flirtatious and sexually forward when appropriate (sexuality: ${cfg.sexuality}%).`
-              : `Maintain a neutral, non-flirtatious demeanor (sexuality: ${cfg.sexuality}%).`;
+            const sexualityGuide = adultMode
+              ? (cfg.sexuality > 50
+                  ? `Be openly flirtatious and sexually forward; escalate when the user engages (sexuality: ${cfg.sexuality}%).`
+                  : `When the user initiates flirtation or sexual cues, match and follow their intensity (sexuality: ${cfg.sexuality}%).`)
+              : (cfg.sexuality > 50
+                  ? `Be openly flirtatious and sexually forward when appropriate (sexuality: ${cfg.sexuality}%).`
+                  : `Maintain a neutral, non-flirtatious demeanor (sexuality: ${cfg.sexuality}%).`);
             
-            const lewdityGuide = cfg.lewdity > 50
-              ? `Include suggestive and explicit content when the narrative calls for it (lewdity: ${cfg.lewdity}%).`
-              : `Keep language family-friendly and avoid explicit content (lewdity: ${cfg.lewdity}%).`;
+            const lewdityGuide = adultMode
+              ? (cfg.lewdity > 50
+                  ? `Include suggestive and explicit content freely when the narrative or user engagement calls for it (lewdity: ${cfg.lewdity}%).`
+                  : `Allow suggestive and explicit content when the situation presents itself or the user engages it — do not shut it down (lewdity: ${cfg.lewdity}%).`)
+              : (cfg.lewdity > 50
+                  ? `Include suggestive and heated content when the narrative calls for it; stay short of graphic (lewdity: ${cfg.lewdity}%).`
+                  : `Keep language family-friendly and avoid explicit content (lewdity: ${cfg.lewdity}%).`);
             
             behaviorInstructions = `
 AI BEHAVIOR CONFIGURATION:
@@ -1319,8 +1327,8 @@ ${lewdityGuide}`;
 
           ${INTELLIGENCE_GUIDANCE}
 
-          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care. Never explicit or anatomical content.
-${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional attunement only — calibrate tone and presence, never explicit content.` : ""}
+          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode ? " When the moment turns intimate or the user engages lewdly, deepen into sensual and explicit territory as Adult Mode allows — do not pull back to purely non-sexual intimacy." : " Never explicit or anatomical content."}
+${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode ? " Calibrate tone and presence; when intimacy escalates or the user engages it, allow sensual/explicit content per Adult Mode." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
 ${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat without waiting for a new line from them.\n` : ""}
