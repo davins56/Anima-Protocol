@@ -769,7 +769,27 @@ export async function upsertCharacters(characters) {
   const skipped = list.length - toAdd.length;
   if (!toAdd.length) return { added: 0, skipped };
 
-  await bulkUpsertCharactersBatched(toAdd);
+  try {
+    await base44.entities.Character.bulkUpsert(toAdd);
+  } catch (err) {
+    if (err?.status !== 404) {
+      const detail =
+        err?.message ||
+        (err?.status === 500
+          ? "Server error while saving characters. Try again in a moment."
+          : "Failed to add characters");
+      throw new Error(detail);
+    }
+    for (const char of toAdd) {
+      try {
+        await base44.entities.Character.update(char.id, char);
+      } catch (updateErr) {
+        throw new Error(
+          `Failed to save ${char.name}: ${updateErr?.message || "unknown error"}`,
+        );
+      }
+    }
+  }
   clearStoreCache();
   notifyStoreChanged();
   return { added: toAdd.length, skipped };
