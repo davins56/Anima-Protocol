@@ -52,14 +52,17 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       setCharacters(rosterResult?.characters || []);
       setGroups(grps || []);
       setUsingBundledSeed(!!rosterResult?.usingBundledSeed);
-      if (rosterResult?.error && !rosterResult?.characters?.length) {
+      if (rosterResult?.usingBundledSeed) {
+        const reason = rosterResult.error?.message;
+        setLoadError(
+          reason
+            ? `${reason}. Showing starter characters — starting a chat saves them to your account.`
+            : "Showing starter characters — starting a chat saves them to your account.",
+        );
+      } else if (rosterResult?.error && !rosterResult?.characters?.length) {
         setLoadError(
           rosterResult.error.message ||
             "Could not load characters. Sign in again or try later.",
-        );
-      } else if (rosterResult?.usingBundledSeed) {
-        setLoadError(
-          `${rosterResult.error?.message || "Character store unavailable"}. Showing bundled starters — they are saved to your account when you start a chat (requires a working database).`,
         );
       } else {
         setLoadError(null);

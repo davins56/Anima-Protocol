@@ -3,7 +3,11 @@
 // when the roster is still empty — same recovery path Characters.jsx uses so
 // preloaded starters are available to chat after sign-in.
 
-import { base44, notifyStoreChanged } from "@/api/base44Client";
+import {
+  base44,
+  notifyStoreChanged,
+  waitForStoreAuth,
+} from "@/api/base44Client";
 import { getStarterRoster, retryStarterSeed } from "@/lib/seedCharacters";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
@@ -24,9 +28,13 @@ export function isStoreDatabaseError(err) {
   return /database|postgres|unavailable|unreachable|connection/i.test(msg);
 }
 
+function bundledStarterRoster() {
+  return getStarterRoster().map((c) => ({ ...c, _bundled: true }));
+}
+
 /**
  * Load Character + Anima rows for chat pickers.
- * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean }} [opts]
+ * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean, allowBundledFallback?: boolean }} [opts]
  * @returns {Promise<{ characters: object[], rawCharacters: object[], animas: object[], animaAsChars: object[], error: Error|null, usingBundledSeed: boolean }>}
  */
 export async function loadRosterCharacters({
@@ -34,9 +42,26 @@ export async function loadRosterCharacters({
   characterLimit = 500,
   animaLimit = 100,
   waitBootstrap = true,
+  // Chat pickers should never look permanently empty — fall back to the
+  // bundled starter roster when the store/seed path cannot populate one.
+  allowBundledFallback = true,
 } = {}) {
   if (waitBootstrap) {
     await whenBootstrapReady();
+  }
+
+  // Character.list returns [] (no throw) when the Clerk token getter is not
+  // ready yet — wait briefly so we don't treat "auth still loading" as an
+  // empty account.
+  let authError = null;
+  try {
+    await waitForStoreAuth(15000);
+  } catch (err) {
+    authError = err;
+    console.warn(
+      "[Anima] Store auth not ready for roster load:",
+      err?.message || err,
+    );
   }
 
   let rawCharacters = [];
@@ -79,13 +104,17 @@ export async function loadRosterCharacters({
     animas = [];
   }
 
-  const storeError = listError || seedError;
+  const storeError = listError || seedError || authError;
   let usingBundledSeed = false;
-  // When Postgres is down, surface the same bundled starter roster Characters.jsx
-  // uses so New Session is not a permanent empty state. Rows are marked
-  // `_bundled` — callers must upsert before creating a chat session.
-  if (!rawCharacters.length && isStoreDatabaseError(storeError)) {
-    rawCharacters = getStarterRoster().map((c) => ({ ...c, _bundled: true }));
+  // After a seed retry (or when the store is unreachable), never leave the
+  // Select Character screen blank — show bundled starters. Rows are marked
+  // `_bundled`; NewSessionModal upserts them before creating a session.
+  const shouldUseBundled =
+    allowBundledFallback &&
+    !rawCharacters.length &&
+    (retrySeed || isStoreDatabaseError(storeError) || !!authError);
+  if (shouldUseBundled) {
+    rawCharacters = bundledStarterRoster();
     usingBundledSeed = true;
   }
 
