@@ -16,6 +16,7 @@ export function buildGroupPrompt({
   lengthGuide,
   traitModifiers = '',
   userProfileContext = '',
+  interruptionClause = '',
 }) {
   return `You are ${nextChar.name} in an immersive collaborative story. You have your own distinct voice, goals, and emotional truth.${adultInstruction}
 
@@ -36,6 +37,7 @@ CRITICAL INSTRUCTIONS:
 5. Keep it brief and natural. One short paragraph or 1-2 sentences is perfect.
 6. Do NOT include dialogue or narration for other characters — only ${nextChar.name} speaks.
 7. ONLY use asterisks (*) for physical actions or movements. Do NOT use them for emphasis or other formatting.
+${interruptionClause}
 
 OUTPUT FORMAT:
 **${nextChar.name}:** [Your authentic response, grounded in ${nextChar.name}'s character. *One action if needed* — keep speech clean and plain.]
