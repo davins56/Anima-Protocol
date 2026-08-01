@@ -90,6 +90,10 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
   it.each([
     ["__thinking__", thinkingBubble],
     ["__typing__", typingBubble],
+    [
+      "streaming reply",
+      { role: "assistant", character_name: "Serenity", content: "Hel", is_streaming: true },
+    ],
   ])(
     "never clobbers a thread with an optimistic %s bubble and asks to retry",
     async (_label, bubble) => {

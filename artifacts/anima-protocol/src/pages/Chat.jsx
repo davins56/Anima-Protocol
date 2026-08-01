@@ -88,6 +88,7 @@ import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
+import { streamChatReply } from "@/lib/streamChatReply";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
@@ -317,16 +318,24 @@ export default function Chat() {
 
   const lastMessageCountRef = useRef(0);
   useEffect(() => {
-    const currentCount = activeSession?.messages?.length || 0;
-    if (currentCount > lastMessageCountRef.current) {
-      setTimeout(() => {
+    const messages = activeSession?.messages || [];
+    const currentCount = messages.length;
+    const last = messages[currentCount - 1];
+    const isLiveBubble =
+      last?.is_streaming === true ||
+      last?.character_name === "__typing__" ||
+      last?.character_name === "__thinking__";
+    // Scroll on new messages, and keep pace while a reply is streaming in.
+    if (currentCount > lastMessageCountRef.current || isLiveBubble) {
+      const behavior = last?.is_streaming ? "auto" : "smooth";
+      requestAnimationFrame(() => {
         const container = scrollContainerRef.current;
         if (container) {
-          container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+          container.scrollTo({ top: container.scrollHeight, behavior });
         } else {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          messagesEndRef.current?.scrollIntoView({ behavior });
         }
-      }, 50);
+      });
     }
     lastMessageCountRef.current = currentCount;
   }, [activeSession?.messages]);
@@ -362,7 +371,12 @@ export default function Chat() {
     emotionalTTS.stop();
 
     const fullStoryText = activeSession.messages
-      .filter(msg => msg.character_name !== "__typing__" && msg.type !== "event")
+      .filter(msg =>
+        msg.character_name !== "__typing__" &&
+        msg.character_name !== "__thinking__" &&
+        !msg.is_streaming &&
+        msg.type !== "event"
+      )
       .map(msg => {
         const speaker = msg.role === "user" ? "You" : (msg.character_name || "Narrator");
         return `${speaker}: ${msg.content}`;
@@ -426,7 +440,11 @@ export default function Chat() {
     const msgs = activeSession?.messages || [];
     if (msgs.length > lastMsgCountRef.current) {
       const latest = msgs[msgs.length - 1];
-      if (latest && latest.role === "assistant" && latest.character_name !== "__typing__") {
+      const isLivePlaceholder =
+        latest?.character_name === "__typing__" ||
+        latest?.character_name === "__thinking__" ||
+        latest?.is_streaming === true;
+      if (latest && latest.role === "assistant" && !isLivePlaceholder) {
         // Auto-speak — prefer native TTS when inside WKWebView
         speakMessageNative(latest.content, latest.character_name);
         // Extract current location from message
@@ -910,9 +928,10 @@ export default function Chat() {
     const content = messageData.text || "";
     const attachments = messageData.attachments || [];
 
-    // Allow empty content in group mode — acts as "continue story" with the next speaker
+    // Empty content = "continue" — keep the scene moving without a new user line.
+    // Works in solo (character takes the next beat) and group (next speaker).
     const isContinue = !content.trim() && !attachments.length;
-    if (isContinue && activeSession.mode !== "group") return;
+    if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") return;
 
     setPendingMessage(content || "");
     setIsLoading(true);
@@ -955,20 +974,10 @@ export default function Chat() {
       has_attachment: attachments.length > 0,
     });
 
-    // Show "thinking" indicator first, then transition to typing after a brief pause
+    // Show thinking immediately while we build context / call the model.
+    // No artificial pause — tokens replace this as soon as they arrive.
     const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
     setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
-
-    // Thinking pause: 600–1400ms to simulate the character processing
-    const thinkDelay = 600 + Math.random() * 800;
-    await new Promise(resolve => setTimeout(resolve, thinkDelay));
-
-    // Transition to typing indicator
-    const typingMsg = { role: "assistant", content: "...", character_name: "__typing__", timestamp: new Date().toISOString() };
-    setActiveSession((prev) => ({
-      ...prev,
-      messages: [...(prev.messages || []).filter(m => m.character_name !== "__thinking__"), typingMsg]
-    }));
 
     try {
       // Get user settings for response length
@@ -1133,12 +1142,6 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
         };
         return `\nRELATIONSHIP STATUS (hidden from player — embody this, don't announce it): Tier "${rel.tier}" (score ${rel.score}/100). ${tierGuides[rel.tier] || ""}\n`;
       };
-
-      // In group mode, add a natural thinking delay before AI responds
-      if (activeSession.mode === "group" && !isContinue) {
-        const thinkingDelay = 800 + Math.random() * 700; // 800-1500ms
-        await new Promise(resolve => setTimeout(resolve, thinkingDelay));
-      }
 
       // Determine dynamic message length based on conversation topic & flow
       const getTopicDepth = (userMsg) => {
@@ -1320,7 +1323,7 @@ ${lewdityGuide}`;
 ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional attunement only — calibrate tone and presence, never explicit content.` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
-
+${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat without waiting for a new line from them.\n` : ""}
           If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}
 
           ${loyaltyGuardrailClause()}`;
@@ -1331,7 +1334,13 @@ ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional 
       // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
       // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
       const recentSpeakers = updatedMessages.slice(-6)
-        .filter(m => m.role === "assistant" && m.character_name !== "Narrator" && m.character_name !== "__typing__")
+        .filter(m =>
+          m.role === "assistant" &&
+          m.character_name !== "Narrator" &&
+          m.character_name !== "__typing__" &&
+          m.character_name !== "__thinking__" &&
+          !m.is_streaming
+        )
         .map(m => m.character_name);
       const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
 
@@ -1455,40 +1464,63 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         charName = activeChar?.name || "Character";
       }
 
-      const resultPayload = await animaApi.chat.completeMessage({
-        sessionId: activeSession.id,
-        content,
-        characterId: activeSession.character_id,
-        characterIds: activeSession.mode === "group"
-          ? activeSession.group_character_ids || []
-          : activeSession.character_id
-            ? [activeSession.character_id]
-            : [],
-        assistantCharacterId: activeChar?.id || activeSession.character_id || null,
-        assistantCharacterName: charName,
-        mode: activeSession.mode || "solo",
-        systemPrompt: prompt,
-        deepMode: !!activeSession.deep_mode || needsWebSearch,
-        persist: false,
-        metadata: {
-          has_attachment: attachments.length > 0,
-          is_continue: isContinue,
-          source: "chat_page",
-        },
-      });
-      const result = resultPayload.content;
+      // Stream tokens into the open bubble as they arrive — no post-buffer delay.
+      // Thinking indicator stays until the first delta, then the live reply grows.
+      const streamTs = new Date().toISOString();
+      const showStreamingPartial = (accumulated) => {
+        const streamingMsg = {
+          role: "assistant",
+          content: accumulated,
+          character_name: charName,
+          timestamp: streamTs,
+          is_streaming: true,
+        };
+        setActiveSession((prev) => ({
+          ...prev,
+          messages: [...updatedMessages, streamingMsg],
+        }));
+      };
+
+      // Brief typing affordance while waiting on first token (real network/model latency).
+      setActiveSession((prev) => ({
+        ...prev,
+        messages: [
+          ...updatedMessages,
+          { role: "assistant", content: "...", character_name: "__typing__", timestamp: streamTs },
+        ],
+      }));
+
+      const resultPayload = await streamChatReply(
+        animaApi.chat.sendMessage({
+          sessionId: activeSession.id,
+          content: isContinue
+            ? `Continue as ${charName}. Make real decisions based on who you are.`
+            : content,
+          characterId: activeSession.character_id,
+          characterIds: activeSession.mode === "group"
+            ? activeSession.group_character_ids || []
+            : activeSession.character_id
+              ? [activeSession.character_id]
+              : [],
+          assistantCharacterId: activeChar?.id || activeSession.character_id || null,
+          assistantCharacterName: charName,
+          mode: activeSession.mode || "solo",
+          systemPrompt: prompt,
+          deepMode: !!activeSession.deep_mode || needsWebSearch,
+          persist: false,
+          metadata: {
+            has_attachment: attachments.length > 0,
+            is_continue: isContinue,
+            source: "chat_page",
+          },
+        }),
+        { onDelta: showStreamingPartial },
+      );
+      const result = resultPayload.content || "";
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
       const strippedResult = result.replace(eventTagRegex, "").trim();
-
-      // Variable typing rhythm — pace the reveal like a real person typing,
-      // scaling with length and adding the occasional longer pause so it never
-      // feels like instant AI output. The __typing__ indicator stays up meanwhile.
-      const typeChars = (strippedResult || result || "").length;
-      let typeDelay = Math.min(2600, Math.max(400, typeChars * 11)) + Math.random() * 350;
-      if (Math.random() < 0.15) typeDelay += 700 + Math.random() * 900;
-      await new Promise((resolve) => setTimeout(resolve, typeDelay));
 
       const eventMessages = [];
       let match;
@@ -2002,10 +2034,15 @@ Return JSON:
       }
     } catch (err) {
       console.error(err);
-      // Remove typing/thinking indicators on error
+      // Remove typing/thinking/streaming indicators on error
       setActiveSession((prev) => ({
         ...prev,
-        messages: (prev.messages || []).filter((m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__"),
+        messages: (prev.messages || []).filter(
+          (m) =>
+            m.character_name !== "__typing__" &&
+            m.character_name !== "__thinking__" &&
+            !m.is_streaming,
+        ),
       }));
     }
 
@@ -2327,7 +2364,7 @@ Return JSON:
                   onSend={handleSendMessage}
                   isLoading={isLoading}
                   disabled={false}
-                  allowEmpty={activeSession?.mode === "group"}
+                  allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                 />
               </div>
             </div>
@@ -2515,7 +2552,7 @@ Return JSON:
                 (m) =>
                   m.character_name !== "__typing__" &&
                   m.character_name !== "__thinking__" &&
-                  m.type !== "event"
+                  m.type !== "event",
               );
               const last = msgs[msgs.length - 1];
               if (!last) return null;
