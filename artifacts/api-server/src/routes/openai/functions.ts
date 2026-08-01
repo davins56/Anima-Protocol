@@ -1105,4 +1105,33 @@ router.post("/image-edit", async (req, res) => {
   }
 });
 
+// AI image generation from a text prompt (gpt-image-1). Used by Customise Anima
+// / Appearance Forge when creating a look from scratch (no source portrait).
+// Auth is enforced by the router-level middleware above.
+router.post("/image-generate", async (req, res) => {
+  const { prompt } = req.body as { prompt?: string };
+
+  if (typeof prompt !== "string" || !prompt.trim()) {
+    res.status(400).json({ error: "A generation prompt is required." });
+    return;
+  }
+
+  try {
+    const result = await getOpenAIClient().images.generate({
+      model: "gpt-image-1",
+      prompt: prompt.trim().slice(0, 1000),
+      size: "1024x1024",
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    if (!b64) {
+      res.status(502).json({ error: "No image was returned." });
+      return;
+    }
+    res.json({ image: `data:image/png;base64,${b64}` });
+  } catch (err) {
+    const mapped = mapImageEditError(err);
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+  }
+});
+
 export default router;
