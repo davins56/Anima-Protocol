@@ -60,10 +60,12 @@ import {
   clerkOAuthRedirectPaths,
 } from "@/lib/clerkOAuthPaths";
 
+// Title screen is eager so cold opens paint Landing immediately (no spinner).
+import Landing from "./pages/Landing";
+
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
 const Codespace = lazy(() => import("./pages/Codespace"));
-const Landing = lazy(() => import("./pages/Landing"));
 const MainHome = lazy(() => import("./pages/MainHome"));
 const NewChat = lazy(() => import("./pages/NewChat"));
 
@@ -827,16 +829,12 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
-  const { isLoadingAuth, authStalled } = useAuth();
+  const { isLoadingAuth } = useAuth();
 
-  // Clerk <Show> renders nothing until the SDK loads. If Clerk stalls, fall back
-  // to the public landing so production never shows a blank screen.
-  if (isLoadingAuth && authStalled) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <Landing />
-      </Suspense>
-    );
+  // Clerk <Show> renders nothing until the SDK loads. Show the title screen
+  // immediately so cold starts never sit on a blank/initialising spinner.
+  if (isLoadingAuth) {
+    return <Landing />;
   }
 
   return (
@@ -845,9 +843,7 @@ function HomeGate() {
         <SignedInHome />
       </Show>
       <Show when="signed-out">
-        <Suspense fallback={<PageLoader />}>
-          <Landing />
-        </Suspense>
+        <Landing />
       </Show>
     </>
   );
@@ -876,7 +872,11 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-  const [useProxy, setUseProxy] = useState(null);
+  // Skip the null/health-check wait when no proxy is configured so Clerk and
+  // the title screen mount on the first paint.
+  const [useProxy, setUseProxy] = useState(() =>
+    initialClerkProxyUrl ? null : false,
+  );
   const [providerKey, setProviderKey] = useState(0);
 
   useEffect(() => {
@@ -917,8 +917,10 @@ function ClerkProviderWithRoutes({ children }) {
     setProviderKey((key) => key + 1);
   };
 
+  // While the proxy health check runs, paint the title screen instead of a
+  // spinner so cold opens go straight to Landing.
   if (useProxy === null) {
-    return <PageLoader />;
+    return <Landing />;
   }
 
   return (
@@ -1118,17 +1120,20 @@ const AuthenticatedApp = () => {
     }
   }
 
-  // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth && !authStalled) {
-    return <PageLoader />;
-  }
-
   // Gate protected routes: signed-out users are sent to the public Landing.
   const pathname = location.pathname;
   const isPublicPath =
     pathname === "/" ||
     PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  if (!isAuthenticated && !isPublicPath) {
+
+  // While Clerk boots, render public routes (especially `/` → title screen)
+  // immediately. Protected routes still wait on a short loader; if auth stalls,
+  // send guests to the title screen instead of a blank/protected view.
+  if (isLoadingAuth && !authStalled) {
+    if (!isPublicPath) {
+      return <PageLoader />;
+    }
+  } else if (!isAuthenticated && !isPublicPath) {
     return <Navigate to="/" replace />;
   }
 
@@ -1438,8 +1443,7 @@ const AuthenticatedApp = () => {
               <Route
                 path="/locationsmap"
                 element={
-                  <Suspense fallba
-                  ßck={<PageLoader />}>
+                  <Suspense fallback={<PageLoader />}>
                     <LocationsMap />
                   </Suspense>
                 }
@@ -1961,46 +1965,9 @@ const AuthenticatedApp = () => {
 function App() {
   useViewportHeight();
 
-  // Guard against rare “black screen” failure modes during auth/clerk
-  // initialization by always rendering a visible background + message while
-  // providers settle.
-  const [stallVisible, setStallVisible] = useState(true);
-  useEffect(() => {
-    const t = setTimeout(() => setStallVisible(false), 10_000);
-    return () => clearTimeout(t);
-  }, []);
-
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>
-        {stallVisible && (
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-background"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="w-full max-w-md px-4">
-              <div className="rounded-md border border-primary/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-primary/50">
-                      Initializing
-                    </p>
-                    <p className="mt-2 text-sm text-primary/90">
-                      The app is still starting up. If this persists, check Clerk
-                      connectivity / console errors.
-                    </p>
-                  </div>
-                  <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-                </div>
-                <p className="mt-3 text-xs leading-relaxed text-primary/40">
-                  Current environment: auth + routing providers are loading.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
         <ErrorBoundary resetKey={window.location?.pathname || "init"}>
           <ClerkProviderWithRoutes>
             <AuthProvider>
