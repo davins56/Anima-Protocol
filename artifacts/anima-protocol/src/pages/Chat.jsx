@@ -16,6 +16,7 @@ import {
   syncFromRemote as handleRemoteSync,
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
+import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -1804,10 +1805,15 @@ ${loyaltyGuardrailClause()}`;
             character_name: "Serenity",
             timestamp: new Date().toISOString(),
           };
-          const withSerenity = [...finalMessages, serenityMsg];
-          await base44.entities.ChatSession.update(activeSession.id, { messages: withSerenity });
-          setActiveSession((prev) => ({ ...prev, messages: withSerenity }));
-          speakMessage(serenityMsg.content, "Serenity");
+          // Append only — never ChatSession.update({ messages }) with a stale
+          // finalMessages snapshot (replaceMessages would delete newer turns).
+          const stored = await appendAmbientMessage({
+            appendMessage: base44.messages.append,
+            sessionId: activeSession.id,
+            message: serenityMsg,
+            setActiveSession,
+          });
+          speakMessage(stored.content, "Serenity");
         }).catch(() => {});
       }
 
@@ -1872,15 +1878,14 @@ ${loyaltyGuardrailClause()}`;
                 timestamp: new Date().toISOString(),
               };
 
-              setActiveSession((prev) => ({
-                ...prev,
-                messages: [...(prev.messages || []), interactionMsg],
-              }));
-
-              setTimeout(() => {
-                const updated = [...finalMessages, interactionMsg];
-                base44.entities.ChatSession.update(activeSession.id, { messages: updated }).catch(() => {});
-              }, 500);
+              // Append only — a replace against stale finalMessages would wipe
+              // any messages the user sent while this background job ran.
+              appendAmbientMessage({
+                appendMessage: base44.messages.append,
+                sessionId: activeSession.id,
+                message: interactionMsg,
+                setActiveSession,
+              }).catch(() => {});
             }
           }).catch(() => {});
         }, 1500);
@@ -2074,7 +2079,10 @@ Return JSON:
               if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
               if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
               
-              base44.entities.Character.update(activeChar.id, {
+              // Must update Anima — Character.update upserts a thin Character
+              // row with the same id that shadows the real Anima in chat.ts
+              // loadCharacters (Character preferred over Anima).
+              base44.entities.Anima.update(activeChar.id, {
                 personality: newPersonality,
               });
               toast.success(`${activeChar.name} has evolved based on your interactions.`);
