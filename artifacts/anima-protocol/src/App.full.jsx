@@ -462,7 +462,10 @@ function clerkSsoSetupHint(providerName) {
   return (
     `Enable ${providerName} in Clerk Dashboard → Production${instanceNote} → ` +
     "SSO connections with custom OAuth credentials. " +
-    `${clerkProviderOAuthHint()} Also register /sign-in/sso-callback under Clerk → Paths → Redirect URLs.`
+    `${clerkProviderOAuthHint()} ` +
+    "Google Error 400 redirect_uri_mismatch means that URI is missing in Google Cloud. " +
+    "Apple invalid_request with an empty client_id means Apple credentials are missing in Clerk. " +
+    "Also register /sign-in/sso-callback under Clerk → Paths → Redirect URLs."
   );
 }
 
