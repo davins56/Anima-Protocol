@@ -88,6 +88,19 @@ export function clerkFrontendApiProbeBase(clerkPubKey) {
 }
 
 /**
+ * OAuth provider callback URL (Google / GitHub / Apple), not the app SSO path.
+ *
+ * With a Clerk custom domain this is `https://clerk…/v1/oauth_callback`.
+ * That exact URI must be allowlisted in each provider's OAuth app settings.
+ * Do NOT use `/sign-in/sso-callback` there — that is only Clerk → app.
+ */
+export function clerkProviderOAuthCallbackUrl(clerkPubKey) {
+  const host = decodeClerkFrontendHost(clerkPubKey);
+  if (!host) return '';
+  return `https://${host}/v1/oauth_callback`;
+}
+
+/**
  * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
  */
 export function animaProductionClerkProxyUrl() {
