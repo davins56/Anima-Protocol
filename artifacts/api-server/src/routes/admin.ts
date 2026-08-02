@@ -1,5 +1,10 @@
 import { Router, type Request, type Response } from "express";
-import { migrateUserData } from "@workspace/db";
+import {
+  ensureSchema,
+  inspectSchema,
+  migrateUserData,
+  resetEnsureSchemaLatch,
+} from "@workspace/db";
 
 const router = Router();
 
@@ -61,6 +66,31 @@ router.post(
       const message =
         error instanceof Error ? error.message : "Migration failed";
       res.status(400).json({ error: message });
+    }
+  },
+);
+
+/**
+ * Force-apply the idempotent store schema (same DDL as POST /api/healthz/schema).
+ * Clears the process latch so a prior failed ensure can be retried.
+ */
+router.post(
+  "/ensure-schema",
+  requireMigrationSecret,
+  async (_req: Request, res: Response) => {
+    try {
+      resetEnsureSchemaLatch();
+      const before = await inspectSchema();
+      const ensured = await ensureSchema();
+      res.status(ensured.ok ? 200 : 503).json({
+        status: ensured.ok ? "ok" : "error",
+        before,
+        ensured,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Schema ensure failed";
+      res.status(500).json({ error: message });
     }
   },
 );

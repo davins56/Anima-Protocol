@@ -1,6 +1,10 @@
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
-import { getPool } from "@workspace/db";
+import {
+  ensureSchemaOnce,
+  getPool,
+  inspectSchema,
+} from "@workspace/db";
 import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
 
 const router: IRouter = Router();
@@ -17,15 +21,42 @@ router.get("/healthz", (_req, res) => {
  * Readiness probe that actually opens a Postgres connection.
  * Public (no Clerk) so operators can diagnose "Internal server error" on
  * /api/store/* without a session — /healthz alone only checks env presence.
+ *
+ * Also reports whether required tables exist. Connectivity can be fine while
+ * the schema is missing (typical after pointing DATABASE_URL at a fresh
+ * Supabase project) — that surfaces as "Database schema is missing or out of
+ * date" on Character / ChatSession store calls.
  */
 router.get("/healthz/db", async (_req, res) => {
   const target = databaseTargetHint();
   try {
     const result = await getPool().query("select 1::int as ok");
-    res.json({
-      status: "ok",
+    let schema: Awaited<ReturnType<typeof inspectSchema>> | undefined;
+    try {
+      schema = await inspectSchema();
+    } catch (schemaErr) {
+      const info = classifyDbError(schemaErr);
+      res.status(503).json({
+        status: "error",
+        db: true,
+        ok: result.rows?.[0]?.ok === 1,
+        schema: { ok: false, error: info.safeMessage, code: info.code },
+        target,
+      });
+      return;
+    }
+
+    const healthy = schema.ok;
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "error",
       db: true,
       ok: result.rows?.[0]?.ok === 1,
+      schema: {
+        ok: schema.ok,
+        missingTables: schema.missingTables,
+        presentTables: schema.presentTables,
+        hasPgTrgm: schema.hasPgTrgm,
+      },
       target,
     });
   } catch (err) {
@@ -33,6 +64,55 @@ router.get("/healthz/db", async (_req, res) => {
     res.status(503).json({
       status: "error",
       db: false,
+      error: info.safeMessage,
+      code: info.code,
+      target,
+    });
+  }
+});
+
+/**
+ * Public schema probe + optional self-heal.
+ * - GET  → inspect only
+ * - POST → run idempotent ensureSchemaOnce() (CREATE IF NOT EXISTS)
+ *
+ * Safe to expose: DDL is IF NOT EXISTS only, no data mutation, no secrets
+ * returned. Lets production recover from a blank Supabase without needing
+ * drizzle-kit credentials on an operator laptop.
+ */
+router.get("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const schema = await inspectSchema();
+    res.status(schema.ok ? 200 : 503).json({
+      status: schema.ok ? "ok" : "error",
+      schema,
+      target,
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      error: info.safeMessage,
+      code: info.code,
+      target,
+    });
+  }
+});
+
+router.post("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const result = await ensureSchemaOnce();
+    res.status(result.ok ? 200 : 503).json({
+      status: result.ok ? "ok" : "error",
+      ensured: result,
+      target,
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
       error: info.safeMessage,
       code: info.code,
       target,

@@ -105033,6 +105033,277 @@ async function migrateUserData(options) {
   };
 }
 
+// ../../lib/db/src/ensure-schema.ts
+var REQUIRED_TABLES = [
+  "user_entities",
+  "user_profiles",
+  "conversations",
+  "messages",
+  "chat_sessions",
+  "chat_messages",
+  "companion_memories"
+];
+async function listPresentTables(db3, names) {
+  const { rows } = await db3.query(
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = current_schema()
+       AND table_type = 'BASE TABLE'
+       AND table_name = ANY($1::text[])`,
+    [names]
+  );
+  return new Set(rows.map((r2) => r2.table_name));
+}
+async function hasPgTrgmExtension(db3) {
+  const { rows } = await db3.query(
+    `SELECT EXISTS(
+       SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'
+     ) AS exists`
+  );
+  return Boolean(rows[0]?.exists);
+}
+async function inspectSchema(db3 = getPool()) {
+  const present = await listPresentTables(db3, REQUIRED_TABLES);
+  const presentTables = REQUIRED_TABLES.filter((t2) => present.has(t2));
+  const missingTables = REQUIRED_TABLES.filter((t2) => !present.has(t2));
+  const hasPgTrgm = await hasPgTrgmExtension(db3);
+  return {
+    ok: missingTables.length === 0,
+    missingTables,
+    presentTables,
+    hasPgTrgm
+  };
+}
+async function ensureSchema(db3 = getPool()) {
+  const before = await inspectSchema(db3);
+  const errors = [];
+  const createdTables = [];
+  const run = async (sql3, label) => {
+    try {
+      await db3.query(sql3);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push(`${label}: ${message.slice(0, 240)}`);
+    }
+  };
+  await run(
+    `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
+    "extension:pg_trgm"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "conversations" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL DEFAULT '',
+      "title" text DEFAULT 'New conversation' NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:conversations"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "messages" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "conversation_id" integer NOT NULL,
+      "role" text NOT NULL,
+      "content" text NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:messages"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "user_entities" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "entity_name" text NOT NULL,
+      "entity_id" text NOT NULL,
+      "data" jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:user_entities"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "user_profiles" (
+      "user_id" text PRIMARY KEY NOT NULL,
+      "data" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:user_profiles"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "chat_sessions" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "title" text DEFAULT 'New session' NOT NULL,
+      "mode" text DEFAULT 'solo' NOT NULL,
+      "character_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "is_crossover" boolean DEFAULT false NOT NULL,
+      "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:chat_sessions"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "chat_messages" (
+      "id" text PRIMARY KEY NOT NULL,
+      "session_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "role" text NOT NULL,
+      "content" text NOT NULL,
+      "character_id" text,
+      "character_name" text,
+      "is_crossover" boolean DEFAULT false NOT NULL,
+      "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:chat_messages"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "companion_memories" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "character_id" text NOT NULL,
+      "summary" text DEFAULT '' NOT NULL,
+      "facts" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "emotional_state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "resonance_notes" text DEFAULT '' NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:companion_memories"
+  );
+  await run(
+    `ALTER TABLE "conversations" ALTER COLUMN "user_id" SET DEFAULT ''`,
+    "alter:conversations.user_id_default"
+  );
+  await run(
+    `DO $$ BEGIN
+       ALTER TABLE "messages"
+         ADD CONSTRAINT "messages_conversation_id_conversations_id_fk"
+         FOREIGN KEY ("conversation_id")
+         REFERENCES "conversations"("id")
+         ON DELETE no action ON UPDATE no action;
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_table THEN NULL;
+     END $$`,
+    "fk:messages_conversation_id"
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "user_entities_user_entity_id_uq"
+       ON "user_entities" USING btree ("user_id","entity_name","entity_id")`,
+    "index:user_entities_user_entity_id_uq"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "user_entities_user_entity_idx"
+       ON "user_entities" USING btree ("user_id","entity_name")`,
+    "index:user_entities_user_entity_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "user_entities_created_idx"
+       ON "user_entities" USING btree (
+         "user_id",
+         "entity_name",
+         (case when (data ->> 'created_date') ~ '^-?[0-9]+([.][0-9]+)?$'
+           then (data ->> 'created_date')::numeric end) desc nulls last,
+         ((data ->> 'created_date') collate "C") desc nulls last
+       )`,
+    "index:user_entities_created_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "user_entities_updated_idx"
+       ON "user_entities" USING btree (
+         "user_id",
+         "entity_name",
+         (case when (data ->> 'updated_date') ~ '^-?[0-9]+([.][0-9]+)?$'
+           then (data ->> 'updated_date')::numeric end) desc nulls last,
+         ((data ->> 'updated_date') collate "C") desc nulls last
+       )`,
+    "index:user_entities_updated_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "user_entities_session_seq_idx"
+       ON "user_entities" USING btree (
+         "user_id",
+         "entity_name",
+         (data ->> 'session_id'),
+         ((data ->> 'seq')::numeric)
+       )`,
+    "index:user_entities_session_seq_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "user_entities_title_trgm_idx"
+       ON "user_entities" USING gin ((data ->> 'title') gin_trgm_ops)`,
+    "index:user_entities_title_trgm_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "chat_messages_session_idx"
+       ON "chat_messages" USING btree ("user_id","session_id","created_at")`,
+    "index:chat_messages_session_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "chat_messages_character_idx"
+       ON "chat_messages" USING btree ("user_id","character_id")`,
+    "index:chat_messages_character_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "chat_sessions_user_idx"
+       ON "chat_sessions" USING btree ("user_id")`,
+    "index:chat_sessions_user_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "chat_sessions_updated_idx"
+       ON "chat_sessions" USING btree ("user_id","updated_at")`,
+    "index:chat_sessions_updated_idx"
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "companion_memories_user_character_uq"
+       ON "companion_memories" USING btree ("user_id","character_id")`,
+    "index:companion_memories_user_character_uq"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "companion_memories_user_idx"
+       ON "companion_memories" USING btree ("user_id")`,
+    "index:companion_memories_user_idx"
+  );
+  const after = await inspectSchema(db3);
+  for (const table of after.presentTables) {
+    if (before.missingTables.includes(table)) {
+      createdTables.push(table);
+    }
+  }
+  return {
+    ok: after.ok,
+    missingBefore: before.missingTables,
+    createdTables,
+    hasPgTrgm: after.hasPgTrgm,
+    errors
+  };
+}
+var ensureOnce = null;
+function ensureSchemaOnce(db3 = getPool()) {
+  if (!ensureOnce) {
+    ensureOnce = ensureSchema(db3).then(
+      (result) => {
+        if (!result.ok) {
+          ensureOnce = null;
+        }
+        return result;
+      },
+      (err) => {
+        ensureOnce = null;
+        throw err;
+      }
+    );
+  }
+  return ensureOnce;
+}
+function resetEnsureSchemaLatch() {
+  ensureOnce = null;
+}
+
 // src/db/schema.ts
 var schema_exports2 = {};
 __export(schema_exports2, {
@@ -109183,10 +109454,31 @@ router2.get("/healthz/db", async (_req, res) => {
   const target = databaseTargetHint();
   try {
     const result = await getPool().query("select 1::int as ok");
-    res.json({
-      status: "ok",
+    let schema;
+    try {
+      schema = await inspectSchema();
+    } catch (schemaErr) {
+      const info = classifyDbError(schemaErr);
+      res.status(503).json({
+        status: "error",
+        db: true,
+        ok: result.rows?.[0]?.ok === 1,
+        schema: { ok: false, error: info.safeMessage, code: info.code },
+        target
+      });
+      return;
+    }
+    const healthy = schema.ok;
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "error",
       db: true,
       ok: result.rows?.[0]?.ok === 1,
+      schema: {
+        ok: schema.ok,
+        missingTables: schema.missingTables,
+        presentTables: schema.presentTables,
+        hasPgTrgm: schema.hasPgTrgm
+      },
       target
     });
   } catch (err) {
@@ -109194,6 +109486,44 @@ router2.get("/healthz/db", async (_req, res) => {
     res.status(503).json({
       status: "error",
       db: false,
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+router2.get("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const schema = await inspectSchema();
+    res.status(schema.ok ? 200 : 503).json({
+      status: schema.ok ? "ok" : "error",
+      schema,
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+router2.post("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const result = await ensureSchemaOnce();
+    res.status(result.ok ? 200 : 503).json({
+      status: result.ok ? "ok" : "error",
+      ensured: result,
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
       error: info.safeMessage,
       code: info.code,
       target
@@ -117115,6 +117445,30 @@ function requireUser(req, res, next) {
   next();
 }
 router7.use(requireUser);
+async function ensureSchemaMiddleware(_req, _res, next) {
+  try {
+    const result = await ensureSchemaOnce();
+    if (!result.ok) {
+      logger.error(
+        {
+          missingBefore: result.missingBefore,
+          createdTables: result.createdTables,
+          errors: result.errors
+        },
+        "Store schema ensure left required tables missing"
+      );
+    } else if (result.createdTables.length > 0) {
+      logger.info(
+        { createdTables: result.createdTables },
+        "Store schema ensure created missing tables"
+      );
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+router7.use(ensureSchemaMiddleware);
 function getUserId(req) {
   return req.userId;
 }
@@ -130722,6 +131076,14 @@ async function loadArcState(animaId, userId) {
 // src/routes/chat.ts
 var router9 = (0, import_express14.Router)();
 router9.use(rateLimit);
+router9.use(async (_req, _res, next) => {
+  try {
+    await ensureSchemaOnce();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 function requireUser2(req, res) {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -131263,6 +131625,25 @@ router10.post(
     } catch (error40) {
       const message = error40 instanceof Error ? error40.message : "Migration failed";
       res.status(400).json({ error: message });
+    }
+  }
+);
+router10.post(
+  "/ensure-schema",
+  requireMigrationSecret,
+  async (_req, res) => {
+    try {
+      resetEnsureSchemaLatch();
+      const before = await inspectSchema();
+      const ensured = await ensureSchema();
+      res.status(ensured.ok ? 200 : 503).json({
+        status: ensured.ok ? "ok" : "error",
+        before,
+        ensured
+      });
+    } catch (error40) {
+      const message = error40 instanceof Error ? error40.message : "Schema ensure failed";
+      res.status(500).json({ error: message });
     }
   }
 );
