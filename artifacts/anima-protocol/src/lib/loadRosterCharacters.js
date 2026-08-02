@@ -3,8 +3,12 @@
 // when the roster is still empty — same recovery path Characters.jsx uses so
 // preloaded starters are available to chat after sign-in.
 
-import { base44, notifyStoreChanged } from "@/api/base44Client";
-import { retryStarterSeed } from "@/lib/seedCharacters";
+import {
+  base44,
+  notifyStoreChanged,
+  waitForStoreAuth,
+} from "@/api/base44Client";
+import { getStarterRoster, retryStarterSeed } from "@/lib/seedCharacters";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 function asAnimaChars(animas) {
@@ -16,41 +20,81 @@ function asAnimaChars(animas) {
   }));
 }
 
+/** True when /api/store failed because Postgres is down / unreachable. */
+export function isStoreDatabaseError(err) {
+  const status = err?.status;
+  if (status === 503) return true;
+  const msg = String(err?.message || "");
+  return /database|postgres|unavailable|unreachable|connection/i.test(msg);
+}
+
+/** Bundled starter roster for chat pickers (not yet confirmed in the account store). */
+export function getBundledStarterRoster() {
+  return getStarterRoster().map((c) => ({ ...c, _bundled: true }));
+}
+
 /**
  * Load Character + Anima rows for chat pickers.
- * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean }} [opts]
- * @returns {Promise<{ characters: object[], rawCharacters: object[], animas: object[], animaAsChars: object[] }>}
+ * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean, allowBundledFallback?: boolean, notifyOnSeed?: boolean }} [opts]
+ * @returns {Promise<{ characters: object[], rawCharacters: object[], animas: object[], animaAsChars: object[], error: Error|null, usingBundledSeed: boolean }>}
  */
 export async function loadRosterCharacters({
   retrySeed = true,
   characterLimit = 500,
   animaLimit = 100,
   waitBootstrap = true,
+  // Chat pickers should never look permanently empty — fall back to the
+  // bundled starter roster when the store/seed path cannot populate one.
+  allowBundledFallback = true,
+  // notifyStoreChanged re-enters useStoreSync loaders; only notify when the
+  // seed actually wrote rows (upsertCharacters already notifies on write).
+  notifyOnSeed = false,
 } = {}) {
   if (waitBootstrap) {
     await whenBootstrapReady();
   }
 
+  // Character.list returns [] (no throw) when the Clerk token getter is not
+  // ready yet — wait briefly so we don't treat "auth still loading" as an
+  // empty account.
+  let authError = null;
+  try {
+    await waitForStoreAuth(15000);
+  } catch (err) {
+    authError = err;
+    console.warn(
+      "[Anima] Store auth not ready for roster load:",
+      err?.message || err,
+    );
+  }
+
   let rawCharacters = [];
+  let listError = null;
   try {
     rawCharacters =
       (await base44.entities.Character.list("-created_date", characterLimit)) ||
       [];
   } catch (err) {
+    listError = err;
     console.warn("[Anima] Character roster load failed:", err?.message || err);
     rawCharacters = [];
   }
 
+  let seedError = null;
+  let seededCount = 0;
   if (!rawCharacters.length && retrySeed) {
     try {
-      await retryStarterSeed();
-      notifyStoreChanged();
+      seededCount = (await retryStarterSeed()) || 0;
+      if (notifyOnSeed && seededCount > 0) {
+        notifyStoreChanged();
+      }
       rawCharacters =
         (await base44.entities.Character.list(
           "-created_date",
           characterLimit,
         )) || [];
     } catch (err) {
+      seedError = err;
       console.warn(
         "[Anima] Starter seed retry during roster load failed:",
         err?.message || err,
@@ -67,11 +111,23 @@ export async function loadRosterCharacters({
     animas = [];
   }
 
+  const storeError = listError || seedError || authError;
+  let usingBundledSeed = false;
+  // Any empty store result for a chat picker must surface starters — including
+  // useStoreSync refetches with retrySeed:false, which previously wiped the
+  // bundled list and left Select Character on "NO RESULTS FOUND".
+  if (allowBundledFallback && !rawCharacters.length) {
+    rawCharacters = getBundledStarterRoster();
+    usingBundledSeed = true;
+  }
+
   const animaAsChars = asAnimaChars(animas);
   return {
     characters: [...animaAsChars, ...rawCharacters],
     rawCharacters,
     animas,
     animaAsChars,
+    error: storeError,
+    usingBundledSeed,
   };
 }
