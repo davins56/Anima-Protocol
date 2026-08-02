@@ -114,10 +114,12 @@ function main() {
 The app seeds these into each new account via /api/store (Postgres).
 It does NOT read package-root seedCharacters.js or Supabase.
 
-If Characters shows "Database unavailable" / 0 entities:
+If Characters shows "Database unavailable" / schema missing:
   1. curl -sS https://www.anima-protocol.com/api/healthz/db
-  2. Fix Vercel Production DATABASE_URL so the host resolves
-  3. Redeploy, sign in, open Characters (or Settings → repair starters)
+  2. curl -sS https://www.anima-protocol.com/api/healthz/schema
+  3. If schema.ok is false: curl -X POST https://www.anima-protocol.com/api/healthz/schema
+  4. Or fix Vercel DATABASE_URL / run pnpm --filter @workspace/db run push
+  5. Redeploy if needed, sign in, open Characters (or Settings → repair starters)
 
 Edit the roster in: src/lib/seedCharacters.js
 `);

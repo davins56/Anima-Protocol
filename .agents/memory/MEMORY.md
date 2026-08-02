@@ -27,6 +27,7 @@
 - [Anima cross-device sync e2e test](anima-e2e-sync-test.md) — committed Playwright spec; programmatic clerk.signIn bypasses CAPTCHA; NEVER mutate document.documentElement in addInitScript (empties the page).
 - [Anima prod DB SSL outage](anima-prod-ssl-outage.md) — pg-connection-string now treats sslmode=require as verify-full → prod-only all-query 500s; fix: set Pool ssl explicitly (disable→false else rejectUnauthorized:false), needs redeploy.
 - [Character store DB 500](anima-store-db-500.md) — after Clerk fixes, authenticated `/api/store/*` 500s mean Postgres is down/unreachable; use `/api/healthz/db`; don't re-encode DATABASE_URL via URL.toString().
+- [Schema missing / out of date](anima-schema-missing.md) — `db:true` but store 503 schema-missing; `POST /api/healthz/schema` or store self-heal via `ensureSchemaOnce`.
 - [Seed file vs store](anima-seed-vs-store.md) — package-root `seedCharacters.js` was Supabase-only; live roster is `src/lib/seedCharacters.js` → `/api/store` → Postgres; Characters falls back to bundled starters on DB 503.
 - [Anima Codespace run gate & sandbox](anima-codespace.md) — high-severity scan HARD-blocks run (never executes); iframe no allow-same-origin; sync guarded by dirty/busy/running.
 - [Anima story mode](anima-story-mode.md) — self-insert canonical-scene chat; NOT a distinct session.mode (creates mode:"solo"); NewChat selector "Story" button just opens StoryCharacterChooser.
