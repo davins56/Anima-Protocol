@@ -63,6 +63,36 @@ describe("app health checks", () => {
       status: expect.stringMatching(/^(ok|error)$/),
       target: expect.objectContaining({ configured: true }),
     });
+    if (response.status === 200) {
+      expect(body.schema).toMatchObject({
+        ok: true,
+        missingTables: [],
+      });
+    }
+  });
+
+  it("exposes a public schema probe that can self-heal via POST", async () => {
+    const getRes = await fetch(`${baseUrl}/api/healthz/schema`);
+    expect([200, 503]).toContain(getRes.status);
+    const getBody = await getRes.json();
+    expect(getBody).toMatchObject({
+      status: expect.stringMatching(/^(ok|error)$/),
+      target: expect.objectContaining({ configured: true }),
+    });
+
+    const postRes = await fetch(`${baseUrl}/api/healthz/schema`, {
+      method: "POST",
+    });
+    expect([200, 503]).toContain(postRes.status);
+    const postBody = await postRes.json();
+    expect(postBody).toMatchObject({
+      status: expect.stringMatching(/^(ok|error)$/),
+      ensured: expect.objectContaining({
+        ok: expect.any(Boolean),
+        missingBefore: expect.any(Array),
+        createdTables: expect.any(Array),
+      }),
+    });
   });
 });
 

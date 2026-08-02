@@ -89,3 +89,17 @@ describe("databaseTargetHint", () => {
     expect(databaseTargetHint("")).toEqual({ configured: false });
   });
 });
+
+describe("classifyDbError schema signals", () => {
+  it("maps undefined_table / does not exist to schema-missing message", () => {
+    const err = Object.assign(
+      new Error('relation "user_entities" does not exist'),
+      { code: "42P01" },
+    );
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      safeMessage: "Database schema is missing or out of date",
+      code: "42P01",
+    });
+  });
+});
