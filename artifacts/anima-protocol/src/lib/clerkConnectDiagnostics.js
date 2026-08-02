@@ -121,7 +121,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
           `Clerk proxy upstream failed (${clerkRes.status}). Redeploy the latest API build — the server now proxies Clerk via fetch on Vercel. Also confirm CLERK_SECRET_KEY is your Production sk_live_ key.`,
         );
       } else {
-        const detail = clerkErrorDetail(proxyError);
+        const detail = clerkErrorDetail(proxyError).replace(/[.]+$/, '');
         hints.push(
           usesCustomDomain
             ? `Clerk custom domain failed (${clerkRes.status}) at ${proxyUrl}${detail ? `: ${detail}` : ''}. Confirm clerk.anima-protocol.com is verified in Clerk → Domains and DNS CNAMEs to frontend-api.clerk.services.`
