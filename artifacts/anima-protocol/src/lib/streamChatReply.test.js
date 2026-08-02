@@ -54,4 +54,18 @@ describe("streamChatReply", () => {
       streamChatReply(fromEvents([{ error: "boom" }])),
     ).rejects.toThrow("boom");
   });
+
+  it("attaches partialContent when an error arrives after tokens", async () => {
+    let caught;
+    try {
+      await streamChatReply(
+        fromEvents([{ content: "Hel" }, { content: "lo" }, { error: "cut" }]),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught.message).toBe("cut");
+    expect(caught.partialContent).toBe("Hello");
+  });
 });

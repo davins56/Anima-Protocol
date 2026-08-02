@@ -90,6 +90,7 @@ import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_MET
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
+import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
@@ -960,7 +961,7 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (message) => {
-    if (!activeSession) return;
+    if (!activeSession || isLoading) return;
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
@@ -979,6 +980,11 @@ export default function Chat() {
     // read again when parsing the response into per-aspect bubbles.
     let isMultiAspect = false;
     let multiAspectChars = [];
+    // Hoisted for the catch path: keep painted tokens + correct speaker label
+    // when a turn fails after the stream has started.
+    let streamedSoFar = "";
+    let replySpeakerName = "Character";
+    let userMessagePersisted = false;
 
     // In "continue" mode, skip adding a user message — just advance the speaker
     const userMessage = { role: "user", content, timestamp: new Date().toISOString() };
@@ -1537,11 +1543,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         activeChar = currentGroupSpeakerRef.current;
         charName = activeChar?.name || "Character";
       }
+      replySpeakerName = charName;
 
       // Stream tokens into the open bubble as they arrive — no post-buffer delay.
       // Thinking indicator stays until the first delta, then the live reply grows.
       const streamTs = new Date().toISOString();
       const showStreamingPartial = (accumulated) => {
+        streamedSoFar = accumulated;
         const streamingMsg = {
           role: "assistant",
           content: accumulated,
@@ -1618,8 +1626,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // In group mode, parse multi-character **Name:** format into separate bubbles
       let newAiMessages;
       if (activeSession.mode === "group") {
+        const groupIdsForParse = activeSession.group_character_ids || [];
         const groupCharsForParse = characters.filter((c) =>
-          activeSession.group_character_ids.includes(c.id)
+          groupIdsForParse.includes(c.id)
         );
         newAiMessages = parseGroupResponse(strippedResult, groupCharsForParse, charName);
       } else if (isMultiAspect && multiAspectChars.length > 1) {
@@ -1647,7 +1656,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       ];
       const storedNew = [];
       for (const m of newMessages) {
-        storedNew.push(await base44.messages.append(activeSession.id, m));
+        const stored = await base44.messages.append(activeSession.id, m);
+        if (m.role === "user") userMessagePersisted = true;
+        storedNew.push(stored);
       }
 
       // Session metadata only — NEVER the messages array (those are rows now).
@@ -1843,7 +1854,9 @@ ${loyaltyGuardrailClause()}`;
 
       if (shouldGenerateGroupInteraction) {
         groupInteractionCheckRef.current = 0;
-        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+        const groupChars = characters.filter((c) =>
+          (activeSession.group_character_ids || []).includes(c.id),
+        );
         
         setTimeout(() => {
           base44.functions.invoke("generateGroupInteraction", {
@@ -2108,16 +2121,49 @@ Return JSON:
       }
     } catch (err) {
       console.error(err);
-      // Remove typing/thinking/streaming indicators on error
-      setActiveSession((prev) => ({
-        ...prev,
-        messages: (prev.messages || []).filter(
-          (m) =>
-            m.character_name !== "__typing__" &&
-            m.character_name !== "__thinking__" &&
-            !m.is_streaming,
-        ),
-      }));
+      // Keep any tokens already painted. The old path deleted `is_streaming`
+      // bubbles on any post-token failure, which looked like the AI "stopped".
+      let retained = null;
+      setActiveSession((prev) => {
+        const { messages, retained: kept } = retainStreamingOnError(prev.messages || []);
+        retained = kept;
+        // If state was mid-frame and lost the partial, recover from the local
+        // accumulator / error.partialContent when available.
+        if (!retained) {
+          const partial =
+            (typeof err?.partialContent === "string" && err.partialContent.trim()) ||
+            (typeof streamedSoFar === "string" && streamedSoFar.trim()) ||
+            "";
+          if (partial) {
+            retained = {
+              role: "assistant",
+              content: partial,
+              character_name: replySpeakerName,
+              timestamp: new Date().toISOString(),
+              is_streaming: false,
+            };
+            return { ...prev, messages: [...messages, retained] };
+          }
+        }
+        return { ...prev, messages };
+      });
+
+      // Best-effort persist so a deferred cross-device sync can't wipe the kept reply.
+      if (retained && activeSession?.id) {
+        try {
+          if (!isContinue && !userMessagePersisted && content.trim()) {
+            await base44.messages.append(activeSession.id, userMessage);
+            userMessagePersisted = true;
+          }
+          await base44.messages.append(activeSession.id, retained);
+        } catch (persistErr) {
+          console.warn("[Anima] Failed to persist partial reply:", persistErr);
+          // Skip the deferred remote refresh — it would replace local state with
+          // server history that does not include this unpersisted partial.
+          pendingRemoteSyncRef.current = false;
+        }
+        toast.error("The reply was interrupted — kept what came through.");
+      }
     }
 
     setPendingMessage("");
