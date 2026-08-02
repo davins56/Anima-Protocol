@@ -51,16 +51,11 @@ export async function probeClerkConnectivity(clerkPubKey) {
     clerkProxyProbeBase(clerkPubKey) ||
     `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
 
-  let apiOk = false;
-  let proxyOk = false;
-  let scriptOk = false;
-
   try {
     const healthRes = await fetch(apiUrl('/healthz'), {
       credentials: 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
-    apiOk = healthRes.ok;
     if (!healthRes.ok) {
       hints.push(
         `API health check failed (${healthRes.status}). Set DATABASE_URL and CLERK_SECRET_KEY on Vercel.`,
@@ -75,7 +70,6 @@ export async function probeClerkConnectivity(clerkPubKey) {
       credentials: usesCustomDomain ? 'omit' : 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
-    proxyOk = clerkRes.ok;
     if (!clerkRes.ok) {
       const proxyError = await readProxyError(clerkRes);
       if (proxyError?.error === 'clerk_proxy_invalid_secret') {
@@ -132,7 +126,6 @@ export async function probeClerkConnectivity(clerkPubKey) {
         credentials: usesCustomDomain ? 'omit' : 'same-origin',
         signal: AbortSignal.timeout(8000),
       });
-      scriptOk = scriptRes.ok;
       if (!scriptRes.ok) {
         hints.push(
           `Login script failed to load (${scriptRes.status}) via ${scriptUrl}. Fix the Clerk proxy environment values, then redeploy without cache.`,
@@ -151,11 +144,6 @@ export async function probeClerkConnectivity(clerkPubKey) {
     );
   }
 
-  if (apiOk && proxyOk && scriptOk && hints.length === 0) {
-    hints.push(
-      'API and Clerk proxy look healthy, but the Clerk SDK did not finish loading. Disable ad blockers, try another browser, or refresh in a few seconds.',
-    );
-  }
-
+  // Healthy probes return no banner. ClerkFailed handles SDK load failures.
   return hints;
 }

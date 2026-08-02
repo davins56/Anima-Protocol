@@ -80,7 +80,31 @@ In GitHub, create or open the OAuth App used for Anima Protocol:
 Copy the GitHub OAuth **Client ID** and **Client Secret**, paste them into Clerk,
 and save.
 
-## 4. Vercel preview deployments (`*.vercel.app`)
+## 4. Email sign-in (code vs password)
+
+Production currently exposes **email verification code** as the email first
+factor (`user_settings.attributes.email_address.first_factors: ["email_code"]`),
+even though `preferred_sign_in_strategy` is `password`. That means the Sign-in
+form asks for a **code from email**, not a password — password attempts will
+look like “it tries but doesn’t work.”
+
+To enable email + password sign-in:
+
+1. Clerk Dashboard → **Production** → User & authentication
+2. Email → enable **Sign in with email**
+3. **Password** tab → enable password for sign-up / sign-in
+4. Ensure password is offered as a sign-in first factor (not email-code only)
+
+Until then, users must complete the emailed one-time code, or use a working
+OAuth provider.
+
+## 5. Vercel preview deployments (`*.vercel.app`)
+
+**Prefer https://www.anima-protocol.com/sign-in.** Unique deploy URLs
+(`*.vercel.app`) often have **Vercel Deployment Protection** (SSO redirect to
+`vercel.com/sso-api`), which blocks Clerk OAuth callbacks and breaks email
+login. The app toast “The string did not match the expected pattern” on those
+hosts usually means the preview callback URL was not in Clerk → Paths yet.
 
 Clerk does **not** support wildcard redirect URLs. Every preview host needs its
 own entries in **Clerk Dashboard → Paths → Redirect URLs** (Production for
@@ -117,7 +141,7 @@ If **Vercel Deployment Protection** is enabled on previews, OAuth callbacks to
 `/sign-in/sso-callback` may be blocked — disable protection for preview or test
 on `www.anima-protocol.com` instead.
 
-## 5. Apple (required if the Apple button is shown)
+## 6. Apple (required if the Apple button is shown)
 
 In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
 
@@ -134,18 +158,20 @@ If Apple is not ready, disable the Apple SSO connection in Clerk (or set
 `VITE_CLERK_OAUTH_STRATEGIES=oauth_google,oauth_github`) so the broken button
 is hidden.
 
-## 6. Troubleshooting live errors on www.anima-protocol.com
+## 7. Troubleshooting live errors on www.anima-protocol.com
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
+| Toast: **The string did not match the expected pattern** on `*.vercel.app` | Preview/unique deploy callback not in Clerk Paths, and/or Vercel Deployment Protection | Use **https://www.anima-protocol.com/sign-in**, or register that host’s `/sign-in/sso-callback` and disable Deployment Protection for Preview |
 | Google **Error 400: redirect_uri_mismatch** | Google OAuth client missing Clerk FAPI callback | In Google Cloud Console → Credentials → the OAuth client Clerk uses (Clerk → SSO → Google shows the Client ID; also exposed as `google_one_tap_client_id` in `/v1/environment`) → Authorized redirect URIs → add `https://clerk.anima-protocol.com/v1/oauth_callback` |
 | Apple **invalid_request** / empty `client_id=` | Apple enabled in Clerk without Services ID credentials | Clerk → Production → SSO → Apple → set custom credentials, or disable Apple until ready |
+| Email/password “tries but doesn’t work” | Production email first factor is **email_code**, not password | Enter the emailed one-time code, or enable Password under Clerk → User & authentication |
 | GitHub reaches `github.com/login` | Callback is correct | Complete sign-in; if it fails after authorize, check Clerk → Paths still lists `…/sign-in/sso-callback` |
 
 Do **not** put `/sign-in/sso-callback` into Google/GitHub/Apple — that only belongs
 in Clerk → Paths.
 
-## 7. Verify
+## 8. Verify
 
 Run from the repo root with the production Clerk keys in the environment:
 

@@ -329,11 +329,13 @@ const clerkAppearance = {
     footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
     headerTitle: "!text-cyan-200 tracking-wide",
     headerSubtitle: "!text-cyan-400/60",
-    socialButtonsBlockButton:
-      "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
-    socialButtonsBlockButtonText: "!text-cyan-100",
-    dividerLine: "!bg-cyan-400/20",
-    dividerText: "!text-cyan-400/50",
+    // Custom SocialAuthButtons handle OAuth — hide Clerk's duplicate row.
+    socialButtons: "!hidden",
+    socialButtonsBlockButton: "!hidden",
+    socialButtonsBlockButtonText: "!hidden",
+    dividerRow: "!hidden",
+    dividerLine: "!hidden",
+    dividerText: "!hidden",
     formFieldLabel: "!text-cyan-300/80",
     formFieldInput: "!bg-[#0c1420] !border-cyan-400/30 !text-cyan-100",
     formButtonPrimary:
@@ -342,6 +344,9 @@ const clerkAppearance = {
     footerActionLink: "!text-cyan-300 hover:!text-cyan-200",
     identityPreviewEditButton: "!text-cyan-300",
     otpCodeFieldInput: "!text-cyan-100 !border-cyan-400/30",
+    // Keep Clerk alerts readable on both light page chrome and dark cards.
+    alertText: "!text-amber-900",
+    formFieldErrorText: "!text-red-400",
   },
 };
 
@@ -511,7 +516,7 @@ function SocialAuthButtons({ mode }) {
   );
 
   const handleOAuth = async (strategy) => {
-    if (!clerk.loaded || fetchStatus === "fetching") {
+    if (!clerk.loaded || fetchStatus === "fetching" || !signIn) {
       return;
     }
     setPendingStrategy(strategy);
@@ -525,6 +530,7 @@ function SocialAuthButtons({ mode }) {
       basePath,
       mode,
     );
+    const onPreview = isVercelPreviewHost(window.location.hostname);
     try {
       // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
       const { error } = await signIn.sso({
@@ -535,6 +541,8 @@ function SocialAuthButtons({ mode }) {
       if (error) {
         throw error;
       }
+      // Successful sso() navigates away. If we are still here, reset the button.
+      setPendingStrategy(null);
     } catch (error) {
       console.error("OAuth redirect failed", error);
       const providerName =
@@ -542,16 +550,25 @@ function SocialAuthButtons({ mode }) {
           ?.label ?? "That provider";
       const detail = formatClerkOAuthError(error);
       const shortName = providerShortName(strategy);
+      const isPatternError = /did not match the expected pattern/i.test(detail);
+      if (onPreview || isPatternError) {
+        toast.error(
+          [
+            detail || `${providerName} could not start.`,
+            "Use https://www.anima-protocol.com/sign-in — not a *.vercel.app URL.",
+            "Vercel Deployment Protection blocks OAuth callbacks on preview/unique deploy URLs.",
+            `If you must use this host, register ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs (already done automatically on API cold start when possible).`,
+            clerkProviderOAuthHint(),
+          ].join(" "),
+        );
+        setPendingStrategy(null);
+        return;
+      }
       const instanceHint =
         clerkInstanceLabel() === "Development"
           ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
           : `Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). ${clerkProviderOAuthHint()} Development settings do not apply to pk_live_.`;
-      const previewNote = isVercelPreviewHost(window.location.hostname)
-        ? " Vercel preview URLs change on each deploy — redeploy (or restart the API) so redirect URLs auto-register, or run pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects --preview-host=" +
-          window.location.host +
-          "."
-        : "";
-      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.${previewNote}`;
+      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.`;
       toast.error(
         detail
           ? `${detail} ${instanceHint} ${redirectHint}`
@@ -644,8 +661,24 @@ function SocialAuthButtons({ mode }) {
 
 function ClerkLoginDiagnostics() {
   const [hints, setHints] = useState([]);
+  const clerk = useClerk();
 
   useEffect(() => {
+    // Preview / unique Vercel deploy URLs are a common source of the
+    // "string did not match the expected pattern" toast + broken email login.
+    if (isVercelPreviewHost(window.location.hostname)) {
+      setHints([
+        "You are on a Vercel deploy URL (*.vercel.app). Sign in at https://www.anima-protocol.com/sign-in instead — Deployment Protection and missing Clerk redirect URLs break Google/GitHub/Apple and email login here.",
+      ]);
+      return;
+    }
+
+    // Only probe when Clerk failed to load; healthy sessions should stay quiet.
+    if (clerk.loaded) {
+      setHints([]);
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       const next = await probeClerkConnectivity(clerkPubKey);
@@ -654,12 +687,12 @@ function ClerkLoginDiagnostics() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clerk.loaded]);
 
   if (hints.length === 0) return null;
 
   return (
-    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+    <div className="rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
       {hints.map((hint) => (
         <p key={hint} className="mt-1 first:mt-0">
           {hint}
@@ -678,7 +711,7 @@ function AuthFormShell({ mode, children }) {
           <SocialAuthButtons mode={mode} />
           <p className="mt-3 text-center text-xs text-cyan-400/45">
             {mode === "sign-in"
-              ? "Use GitHub if that is how you created your account. You can also sign in with email below."
+              ? "Email sign-in sends a one-time code (not a password). Or use GitHub if that is how you created your account."
               : "Or continue with email below."}
           </p>
         </div>
