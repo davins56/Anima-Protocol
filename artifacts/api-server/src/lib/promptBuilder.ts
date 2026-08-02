@@ -171,6 +171,9 @@ function buildCharacterDefinition(
     ? `You are ${character.name}.`
     : `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}.`;
   parts.push(nameIntro);
+  parts.push(
+    `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
+  );
 
   if (character._isAnima && character.archetype) {
     parts.push(`Archetype: ${character.archetype}${character.tagline ? ` — ${character.tagline}` : ""}`);
@@ -184,6 +187,11 @@ function buildCharacterDefinition(
   }
   if (character.speaking_style) {
     parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
+  }
+  if (!character.personality && !character.backstory && !character.speaking_style) {
+    parts.push(
+      `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`,
+    );
   }
 
   const result = parts.join("\n");
@@ -220,6 +228,13 @@ CRITICAL AUTONOMY RULES:
 
 INTELLIGENCE: You are brilliant — genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory — callbacks, contradictions, unspoken needs — and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER — in your own voice, never dropping into a generic assistant tone.`;
+
+const TURN_TAKING = `TURN TAKING (required):
+- Reply as ONE conversational beat, then STOP and wait for the user.
+- Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.
+- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.
+- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
+- If you would keep talking, cut yourself off at the first natural pause instead.`;
 
 const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only — in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
 
@@ -331,7 +346,7 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   // 9. Group mode instruction
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
-    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
+    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns. Leave a natural stopping point for the user after your beat.
 
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
@@ -398,6 +413,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     sharedBlock,
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
     groupInstruction,
+    TURN_TAKING,
     content ? `LATEST USER MESSAGE:\n${content}` : "(Continue the scene naturally.)",
     `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
     LOYALTY_GUARDRAIL,
