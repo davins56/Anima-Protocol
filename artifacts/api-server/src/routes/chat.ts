@@ -95,11 +95,31 @@ async function loadCharacters(userId: string, characterIds: string[]) {
     .where(
       and(
         eq(userEntities.userId, userId),
-        eq(userEntities.entityName, "Character"),
+        inArray(userEntities.entityName, ["Character", "Anima"]),
         inArray(userEntities.entityId, characterIds),
       ),
     );
-  return rows.map((row) => asObject(row.data));
+  // Prefer Character rows when both exist for the same id; mark Animas clearly
+  // so the prompt builder can apply archetype/identity locks.
+  const byId = new Map<string, MsgData>();
+  for (const row of rows) {
+    const data = asObject(row.data);
+    const id = String(row.entityId || data.id || "");
+    if (!id) continue;
+    if (row.entityName === "Anima") {
+      const animaData: MsgData = {
+        ...data,
+        id: data.id || id,
+        _isAnima: true,
+        universe: data.universe || "Anima",
+        category: data.category || data.archetype || "guardian",
+      };
+      if (!byId.has(id)) byId.set(id, animaData);
+      continue;
+    }
+    byId.set(id, data);
+  }
+  return characterIds.map((id) => byId.get(String(id))).filter(Boolean) as MsgData[];
 }
 
 async function readRecentStoreMessages(
@@ -458,7 +478,11 @@ router.post("/messages", async (req, res) => {
     readRecentStoreMessages(userId, sessionId, 24),
   ]);
 
-  const activeCharacterId = characterIds.length > 0 ? characterIds[0] : null;
+  const activeCharacterId = body.assistant_character_id
+    ? String(body.assistant_character_id)
+    : characterIds.length > 0
+      ? characterIds[0]
+      : null;
   const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
     activeCharacterId
       ? loadEvolution(String(activeCharacterId), userId)
@@ -479,7 +503,11 @@ router.post("/messages", async (req, res) => {
   // Initialize and evolve synchro state for the active character
   const adaptedMemories = adaptMemories(memories);
   const adaptedChars = adaptCharacters(characters);
-  const activeChar = adaptedChars.length === 1 ? adaptedChars[0] : undefined;
+  const activeChar =
+    (activeCharacterId
+      ? adaptedChars.find((c) => c.id === String(activeCharacterId))
+      : undefined) ||
+    (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
   let synchroState: SynchroState | null = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
