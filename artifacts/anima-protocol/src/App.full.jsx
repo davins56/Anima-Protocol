@@ -637,10 +637,26 @@ function SocialAuthButtons({ mode }) {
   );
 }
 
+/** Delay before probing Clerk connectivity so healthy loads never show a warning. */
+const CLERK_DIAGNOSTICS_STALL_MS = 2500;
+
 function ClerkLoginDiagnostics() {
+  const clerk = useClerk();
   const [hints, setHints] = useState([]);
+  const [shouldProbe, setShouldProbe] = useState(false);
 
   useEffect(() => {
+    if (clerk.loaded) {
+      setShouldProbe(false);
+      setHints([]);
+      return undefined;
+    }
+    const timer = setTimeout(() => setShouldProbe(true), CLERK_DIAGNOSTICS_STALL_MS);
+    return () => clearTimeout(timer);
+  }, [clerk.loaded]);
+
+  useEffect(() => {
+    if (!shouldProbe || clerk.loaded) return undefined;
     let cancelled = false;
     (async () => {
       const next = await probeClerkConnectivity(clerkPubKey);
@@ -649,7 +665,7 @@ function ClerkLoginDiagnostics() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [shouldProbe, clerk.loaded]);
 
   if (hints.length === 0) return null;
 
