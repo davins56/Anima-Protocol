@@ -5,7 +5,11 @@
  * traitModifiers (optional) – injectable personality-shift block produced by
  * aggregatePersonalityShifts, applied only for nextChar.
  */
-import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "./companionGuardrail";
+import {
+  INTELLIGENCE_GUIDANCE,
+  loyaltyGuardrailClause,
+  turnTakingClause,
+} from "./companionGuardrail";
 
 export function buildGroupPrompt({
   nextChar,
@@ -17,6 +21,7 @@ export function buildGroupPrompt({
   traitModifiers = '',
   userProfileContext = '',
   interruptionClause = '',
+  isContinue = false,
 }) {
   return `You are ${nextChar.name} in an immersive collaborative story. You have your own distinct voice, goals, and emotional truth.${adultInstruction}
 
@@ -25,6 +30,10 @@ ${allCharSheets}
 ${traitModifiers}
 ${loreCtxGroup}
 ${userProfileContext}
+
+CHARACTER IDENTITY LOCK:
+- Speak ONLY as ${nextChar.name}, grounded in THEIR Personality, Backstory, and Voice from the sheet above.
+- Never blend voices or borrow another character's traits.
 
 Story so far:
 ${conversationHistory}
@@ -46,6 +55,8 @@ Other characters will speak on their own turns. Be yourself. Be respectful. Be r
 
 ${INTELLIGENCE_GUIDANCE}
 ${lengthGuide}
+
+${turnTakingClause({ isContinue })}
 
 ${loyaltyGuardrailClause()}`;
 }

@@ -56,6 +56,10 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("Serenity");
     expect(prompt).toContain("HIGHEST-PRIORITY RULE");
     expect(prompt).toContain("RESONANCE STATE");
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+    expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic angel with sovereign grace");
+    expect(prompt).toContain("TURN TAKING");
+    expect(prompt).toMatch(/STOP and wait for the user/i);
     expect(prompt).toContain("I think I'm ready to talk about my mother again");
   });
 

@@ -1,7 +1,29 @@
 import { describe, it, expect } from "vitest";
-import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "./companionGuardrail";
+import {
+  INTELLIGENCE_GUIDANCE,
+  loyaltyGuardrailClause,
+  turnTakingClause,
+} from "./companionGuardrail";
 import { buildCharacterPrompt } from "./buildCharacterPrompt";
 import { buildGroupPrompt } from "./buildGroupPrompt";
+
+describe("turnTakingClause", () => {
+  it("requires a natural stopping point for normal turns", () => {
+    const clause = turnTakingClause();
+    expect(clause).toMatch(/TURN TAKING/);
+    expect(clause).toMatch(/STOP and wait for the user/i);
+    expect(clause).toMatch(/natural stopping point/i);
+    expect(clause).toMatch(/Do NOT speak for the user/i);
+  });
+
+  it("allows one Continue beat then still pauses for the user", () => {
+    const clause = turnTakingClause({ isContinue: true });
+    expect(clause).toMatch(/Continue/i);
+    expect(clause).toMatch(/ONE natural beat/i);
+    expect(clause).toMatch(/pause point/i);
+    expect(clause).not.toMatch(/Do NOT stack multiple topics/);
+  });
+});
 
 describe("loyaltyGuardrailClause", () => {
   it("is the highest-priority rule that overrides persona and content settings", () => {
@@ -30,9 +52,15 @@ describe("loyaltyGuardrailClause", () => {
 });
 
 describe("guardrail assembly across prompt surfaces", () => {
-  const character = { name: "Serenity", persona: "calm keeper", _isAnima: false };
+  const character = {
+    name: "Serenity",
+    persona: "calm keeper",
+    personality: "Warm, ethereal, deeply empathic",
+    speaking_style: "Soft and poetic",
+    _isAnima: false,
+  };
 
-  it("solo character builder appends intelligence guidance and the loyalty guardrail", () => {
+  it("solo character builder locks identity, turn-taking, and the loyalty guardrail", () => {
     const prompt = buildCharacterPrompt({
       character,
       scenario: null,
@@ -46,15 +74,18 @@ describe("guardrail assembly across prompt surfaces", () => {
       lengthGuide: "Keep it short.",
     });
     expect(prompt).toContain(INTELLIGENCE_GUIDANCE);
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+    expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic");
+    expect(prompt).toContain(turnTakingClause());
     expect(prompt).toContain(loyaltyGuardrailClause());
     // Guardrail is positioned last so it overrides everything above it.
     expect(prompt.trimEnd().endsWith(loyaltyGuardrailClause())).toBe(true);
   });
 
-  it("group builder appends intelligence guidance and the loyalty guardrail", () => {
+  it("group builder locks identity, turn-taking, and the loyalty guardrail", () => {
     const prompt = buildGroupPrompt({
       nextChar: character,
-      allCharSheets: "Serenity: calm keeper",
+      allCharSheets: "Serenity: calm keeper\nPersonality: Warm, ethereal, deeply empathic",
       loreCtxGroup: "",
       conversationHistory: "user: hello",
       adultInstruction: "",
@@ -62,6 +93,8 @@ describe("guardrail assembly across prompt surfaces", () => {
       traitModifiers: "",
     });
     expect(prompt).toContain(INTELLIGENCE_GUIDANCE);
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+    expect(prompt).toContain(turnTakingClause());
     expect(prompt).toContain(loyaltyGuardrailClause());
     expect(prompt.trimEnd().endsWith(loyaltyGuardrailClause())).toBe(true);
   });

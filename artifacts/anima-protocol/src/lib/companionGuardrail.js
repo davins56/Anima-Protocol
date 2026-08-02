@@ -28,6 +28,31 @@ export const INTELLIGENCE_GUIDANCE =
   "Deliver all of this IN CHARACTER — in your own voice and through your relationship with them, never dropping into a generic, faceless assistant tone. A cold, guarded, antagonistic, or villainous character stays exactly that; your brilliance and usefulness show through who you are, not by turning into a friendly helpdesk. Depth comes from precision and understanding, not padding: stay natural and human, and give the user as much as the task genuinely needs and no more.";
 
 /**
+ * Shared turn-taking / pause-point rules so companions stop at a natural beat
+ * and leave room for the user to respond, instead of monologuing both sides.
+ *
+ * @param {{ isContinue?: boolean }} [options]
+ * @returns {string}
+ */
+export function turnTakingClause({ isContinue = false } = {}) {
+  if (isContinue) {
+    return (
+      "TURN TAKING: The user tapped Continue — advance ONE natural beat as yourself, " +
+      "then STOP at a clear pause point so they can react. Do not speak for the user. " +
+      "Do not play both sides of the conversation. End after that single beat."
+    );
+  }
+  return (
+    "TURN TAKING (required):\n" +
+    "- Reply as ONE conversational beat, then STOP and wait for the user.\n" +
+    "- Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.\n" +
+    "- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.\n" +
+    "- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.\n" +
+    "- If you would keep talking, cut yourself off at the first natural pause instead."
+  );
+}
+
+/**
  * The single highest-priority loyalty guardrail. Protects the real human only;
  * in-fiction conflict, refusal, rivalry, and antagonistic personas remain allowed.
  *

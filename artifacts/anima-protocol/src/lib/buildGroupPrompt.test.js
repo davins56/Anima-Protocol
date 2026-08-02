@@ -25,4 +25,11 @@ describe("buildGroupPrompt", () => {
     const prompt = buildGroupPrompt(base);
     expect(prompt).not.toContain("INTERACTION STYLE");
   });
+
+  it("includes turn-taking pause points for the user", () => {
+    const prompt = buildGroupPrompt(base);
+    expect(prompt).toContain("TURN TAKING");
+    expect(prompt).toMatch(/STOP and wait for the user/i);
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+  });
 });
