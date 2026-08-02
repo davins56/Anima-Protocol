@@ -50,6 +50,7 @@ import {
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  clerkProviderOAuthCallbackUrl,
   isVercelPreviewHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
@@ -433,6 +434,17 @@ function filterProvidersByEnvList(providers) {
   );
 }
 
+function clerkProviderOAuthHint() {
+  const providerCallback = clerkProviderOAuthCallbackUrl(clerkPubKey);
+  if (!providerCallback) {
+    return "Copy the Authorized Redirect URI from Clerk → SSO connections into Google/GitHub/Apple.";
+  }
+  return (
+    `Google/GitHub/Apple OAuth apps must allowlist ${providerCallback} ` +
+    "(Clerk Frontend API callback — not /sign-in/sso-callback)."
+  );
+}
+
 function clerkSsoSetupHint(providerName) {
   const instance = clerkInstanceLabel();
   const slug = clerkInstanceSlug();
@@ -446,8 +458,8 @@ function clerkSsoSetupHint(providerName) {
   }
   return (
     `Enable ${providerName} in Clerk Dashboard → Production${instanceNote} → ` +
-    "SSO connections with custom OAuth credentials, Proxy URL " +
-    "https://www.anima-protocol.com/api/__clerk, and sign-in/sso-callback redirect URLs."
+    "SSO connections with custom OAuth credentials. " +
+    `${clerkProviderOAuthHint()} Also register /sign-in/sso-callback under Clerk → Paths → Redirect URLs.`
   );
 }
 
@@ -527,7 +539,7 @@ function SocialAuthButtons({ mode }) {
       const instanceHint =
         clerkInstanceLabel() === "Development"
           ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
-          : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
+          : `Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). ${clerkProviderOAuthHint()} Development settings do not apply to pk_live_.`;
       const previewNote = isVercelPreviewHost(window.location.hostname)
         ? " Vercel preview URLs change on each deploy — redeploy (or restart the API) so redirect URLs auto-register, or run pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects --preview-host=" +
           window.location.host +
