@@ -44,25 +44,25 @@ if those features are needed.
 
 Clerk has **two separate instances**: **Development** (`pk_test_…`) and **Production** (`pk_live_…`). SSO connections you enable in the Development tab (as in the Clerk dashboard screenshot) apply only when the site is built with a `pk_test_` publishable key. If Vercel uses `pk_live_`, you must enable Apple/GitHub again under the **Production** instance → Configure → SSO connections (shared dev credentials do not carry over).
 
-The frontend proxies Clerk’s Frontend API through **`/api/__clerk`** on production
-(same origin as the Vite app). That is required for GitHub and Apple sign-in on
-`anima-protocol.com` when there is no `clerk.{domain}` DNS CNAME. Do **not** use
-the Clerk proxy with `pk_test_` on a custom domain — it causes Origin mismatch;
-use `pk_live_` + proxy for production OAuth on `anima-protocol.com`.
+Production uses a Clerk **custom domain** (`clerk.anima-protocol.com`). The
+frontend talks to that host directly — leave `VITE_CLERK_PROXY_URL` empty.
+`/api/__clerk` is only needed when there is no `clerk.{domain}` CNAME.
 
 In the **Clerk Dashboard** for the **same instance as your publishable key**:
 
-1. **Social connections** — enable Google, Apple, and GitHub (Apple needs a
-   Services ID and return URLs configured in Clerk’s Apple setup guide).
-2. **Domains → Proxy URL** — set to `https://www.anima-protocol.com/api/__clerk`
-   (and the apex host if you use it without `www`).
-3. **Redirect URLs** — allow:
+1. **Social connections** — enable Google, Apple, and GitHub with **custom**
+   OAuth credentials (required for Production). Copy Clerk’s **Authorized
+   Redirect URI** (`https://clerk.anima-protocol.com/v1/oauth_callback`) into
+   each provider’s OAuth app (Google Cloud / GitHub / Apple). Do **not** put
+   `/sign-in/sso-callback` in those provider apps — that is Clerk → Anima only.
+2. **Redirect URLs** (Clerk → Paths) — allow:
    - `https://www.anima-protocol.com/sign-in/sso-callback`
    - `https://www.anima-protocol.com/sign-up/sso-callback`
    - Same paths for preview hosts you test on (e.g. `*.vercel.app`).
 
-Until `/api/*` returns healthy responses (not `FUNCTION_INVOCATION_FAILED`),
-OAuth will fail because the Clerk proxy route is on the same API function.
+See `docs/clerk-github-login.md` for the full Google/GitHub/Apple checklist.
+Google `redirect_uri_mismatch` means the provider app is missing
+`https://clerk.anima-protocol.com/v1/oauth_callback`.
 
 ## 4. Verify
 
@@ -70,9 +70,10 @@ After deploy:
 
 ```bash
 curl https://www.anima-protocol.com/api/healthz
+curl https://clerk.anima-protocol.com/v1/environment
 ```
 
-Expect: `{"status":"ok"}`
+Expect healthz `{"status":"ok"}` and Clerk environment HTTP 200.
 
 Sign in on the site, open **Characters → Add From Series**, add a Marvel character.
 It should save without "Session not recognized by the server".
