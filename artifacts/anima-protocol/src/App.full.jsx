@@ -141,6 +141,7 @@ const QuestTrackingDashboard = lazy(
 const CharacterLookCustomizer = lazy(
   () => import("./pages/CharacterLookCustomizer"),
 );
+const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"));
 const AIBehaviorSettings = lazy(() => import("./pages/AIBehaviorSettings"));
 const RelationshipAndLocationDashboard = lazy(
   () => import("./pages/RelationshipAndLocationDashboard"),
@@ -1600,6 +1601,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <CharacterCustomization />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/customise-anima"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CustomiseAnima />
                   </Suspense>
                 }
               />

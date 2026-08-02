@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mapImageEditError } from "../src/routes/openai/functions";
 
+// Shared by both /image-edit and /image-generate routes.
 describe("mapImageEditError", () => {
   it("maps OpenAI 429 rate limits to a friendly rate_limit error", () => {
     const mapped = mapImageEditError({ status: 429, message: "Rate limit reached" });

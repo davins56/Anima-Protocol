@@ -453,6 +453,14 @@ Return JSON with a single "${field}" string field.`,
                       Talk
                     </button>
                     <button
+                      onClick={() => navigate(`/customise-anima?anima=${anima.id}`)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-pink-400/30 text-pink-400/70 hover:text-pink-300 hover:border-pink-400/50 font-mono text-[9px] tracking-[0.2em] uppercase transition-all"
+                      title="Customise look"
+                    >
+                      <Palette className="w-3 h-3" />
+                      Look
+                    </button>
+                    <button
                       onClick={() => handleSetActive(anima)}
                       disabled={isActive || activatingId === anima.id || !me?.email}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 border font-mono text-[9px] tracking-[0.2em] uppercase transition-all disabled:cursor-not-allowed ${
@@ -484,11 +492,11 @@ Return JSON with a single "${field}" string field.`,
         <AnimaCustomizer
         anima={customizingAnima}
         onClose={() => setCustomizingAnima(null)}
-        onSave={({ avatar_url, theme_color }) => {
+        onSave={(patch) => {
           setAnimas((prev) =>
             prev.map((a) =>
               a.id === customizingAnima.id
-                ? { ...a, avatar_url, theme_color }
+                ? { ...a, ...patch }
                 : a
             )
           );
