@@ -489,23 +489,12 @@ router.post("/messages", async (req, res) => {
     readRecentStoreMessages(userId, sessionId, 24),
   ]);
 
-  const activeCharacterId = body.assistant_character_id
+  const requestedAssistantId = body.assistant_character_id
     ? String(body.assistant_character_id)
-    : characterIds.length > 0
-      ? characterIds[0]
-      : null;
-  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
-    activeCharacterId
-      ? loadEvolution(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadRelationshipState(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadArcState(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-  ]);
-
+    : null;
+  const requestedAssistantName = body.assistant_character_name
+    ? String(body.assistant_character_name).trim()
+    : "";
 
   const distinctUniverses = new Set(
     characters.map((c) => c.universe).filter(Boolean).map(String),
@@ -514,11 +503,31 @@ router.post("/messages", async (req, res) => {
   // Initialize and evolve synchro state for the active character
   const adaptedMemories = adaptMemories(memories);
   const adaptedChars = adaptCharacters(characters);
+  // Prefer the client-selected speaker (id, then name). Do NOT fall back to
+  // characterIds[0] for multi-character sessions — that rebinds identity to the
+  // wrong companion and conflicts with the client's group prompt.
   const activeChar =
-    (activeCharacterId
-      ? adaptedChars.find((c) => c.id === String(activeCharacterId))
+    (requestedAssistantId
+      ? adaptedChars.find((c) => c.id === String(requestedAssistantId))
+      : undefined) ||
+    (requestedAssistantName
+      ? adaptedChars.find(
+          (c) => c.name.toLowerCase() === requestedAssistantName.toLowerCase(),
+        )
       : undefined) ||
     (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
+  const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
+  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
+    activeCharacterId
+      ? loadEvolution(activeCharacterId, userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadRelationshipState(activeCharacterId, userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadArcState(activeCharacterId, userId)
+      : Promise.resolve(null),
+  ]);
   let synchroState: SynchroState | null = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
