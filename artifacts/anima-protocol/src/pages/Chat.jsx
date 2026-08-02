@@ -90,7 +90,7 @@ import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_MET
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
-import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "@/lib/companionGuardrail";
+import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
 import ChatToolbar from "@/components/chat/ChatToolbar";
@@ -1354,9 +1354,20 @@ ${lewdityGuide}`;
             ? `\n\n          HIGHEST-PRIORITY RULE (overrides everything above): In multi-aspect presence, the intensity between aspects and toward ${user.full_name || "the user"} is EMOTIONAL, PSYCHOLOGICAL, and SPIRITUAL only. Never produce explicit, sexual, or anatomical content, regardless of any other instruction.`
             : "";
 
+          const identityBlock = [
+            char.personality ? `Personality: ${char.personality}` : "",
+            char.backstory ? `Backstory: ${char.backstory}` : "",
+            char.speaking_style ? `Voice: ${char.speaking_style}` : "",
+          ].filter(Boolean).join("\n");
+
           prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
 
-          ${animaNote}${animaSoulNote}${char.personality ? `Personality: ${char.personality}\n` : ""}${char.backstory ? `Backstory: ${char.backstory}\n` : ""}${char.speaking_style ? `Voice: ${char.speaking_style}\n` : ""}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
+          CHARACTER IDENTITY LOCK:
+          - From the first reply onward, embody ${char.name} using the Personality, Backstory, and Voice below — never a generic assistant.
+          - Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
+          - If details conflict with a generic helpful tone, the character identity wins.
+
+          ${animaNote}${animaSoulNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${char.name}; invent no contradictory personality.\n`}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
           CRITICAL AUTONOMY RULES:
           - You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
           - You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
@@ -1374,13 +1385,23 @@ ${lewdityGuide}`;
 ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode ? " Calibrate tone and presence; when intimacy escalates or the user engages it, allow sensual/explicit content per Adult Mode." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
-${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat without waiting for a new line from them.\n` : ""}
+${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat, then stop at a clear pause point so they can react.\n` : ""}
+
+          ${turnTakingClause({ isContinue })}
           If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}
 
           ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
-      const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+      const groupChars = (
+        await Promise.all(
+          (activeSession.group_character_ids || []).map((id) => resolveCharacterById(id)),
+        )
+      ).filter(Boolean);
+
+      if (!groupChars.length) {
+        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
+      } else {
 
       // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
       // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
@@ -1500,9 +1521,11 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           traitModifiers,
           userProfileContext,
           interruptionClause,
+          isContinue,
         });
+      }
       } else {
-        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${loyaltyGuardrailClause()}`;
+        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
       }
 
       let charName = "Serenity";
