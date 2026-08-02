@@ -177,16 +177,26 @@ function assertClerkKeyPair(): void {
   }
 }
 
+function providerOAuthCallbackUrl(publishableKey: string | undefined): string | null {
+  const host = publishableKey ? decodeFrontendHost(publishableKey) : null;
+  if (!host) return null;
+  return `https://${host}/v1/oauth_callback`;
+}
+
 function dashboardHint(publishableKey: string | undefined): string {
   const label = instanceLabel(publishableKey);
   const slug = publishableKey ? decodeInstanceSlug(publishableKey) : null;
   const slugNote = slug ? ` (instance: ${slug})` : "";
+  const providerCallback = providerOAuthCallbackUrl(publishableKey);
   return [
     `Clerk Dashboard → ${label}${slugNote} → Configure → SSO connections`,
     "→ Add connection → For all users → Google and GitHub",
     label === "Development"
       ? "→ Leave “Use custom credentials” OFF (shared dev OAuth)"
       : "→ Enable sign-up/sign-in + add your Google and GitHub OAuth app credentials",
+    providerCallback
+      ? `→ Google/GitHub/Apple OAuth apps must allowlist ${providerCallback}`
+      : "→ Copy Clerk’s Authorized Redirect URI into Google/GitHub/Apple OAuth apps",
     "→ Paths → Redirect URLs: include www.anima-protocol.com/sign-in/sso-callback",
     "→ Redeploy Vercel after any env key changes",
   ].join("\n  ");
@@ -196,18 +206,26 @@ async function main(): Promise<void> {
   const fixRedirects = hasFlag("--fix-redirects");
   assertClerkKeyPair();
 
-  const slug = CLERK_PUBLISHABLE_KEY
-    ? decodeInstanceSlug(CLERK_PUBLISHABLE_KEY)
-    : null;
+  const publishableKey = CLERK_PUBLISHABLE_KEY!;
+  const slug = decodeInstanceSlug(publishableKey);
   if (!slug) {
     throw new Error(
       "Set CLERK_PUBLISHABLE_KEY (pk_test_ or pk_live_) in .env to inspect OAuth strategies",
     );
   }
 
-  console.log(`Clerk instance: ${slug} (${instanceLabel(CLERK_PUBLISHABLE_KEY)})`);
+  console.log(`Clerk instance: ${slug} (${instanceLabel(publishableKey)})`);
 
-  const environment = await fetchEnvironment(CLERK_PUBLISHABLE_KEY);
+  const providerCallback = providerOAuthCallbackUrl(publishableKey);
+  if (providerCallback) {
+    console.log(`\nProvider OAuth callback (Google/GitHub/Apple apps):`);
+    console.log(`  ${providerCallback}`);
+    console.log(
+      "  (App SSO paths like /sign-in/sso-callback belong in Clerk → Paths, not in provider apps.)",
+    );
+  }
+
+  const environment = await fetchEnvironment(publishableKey);
   const strategies = environment.auth_config?.identification_strategies ?? [];
   const firstFactors = environment.auth_config?.first_factors ?? [];
 

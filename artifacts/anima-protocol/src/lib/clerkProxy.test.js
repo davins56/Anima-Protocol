@@ -3,6 +3,7 @@ import {
   animaProductionClerkProxyUrl,
   clerkFrontendApiProbeBase,
   clerkJsScriptProbeUrl,
+  clerkProviderOAuthCallbackUrl,
   clerkProxyProbeBase,
   decodeClerkFrontendHost,
   ensureTrailingSlash,
@@ -61,6 +62,16 @@ describe('clerkProxy', () => {
     expect(clerkJsScriptProbeUrl(LIVE_KEY)).toBe(
       'https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
     );
+  });
+
+  it('derives the provider OAuth callback from the Clerk FAPI host', () => {
+    expect(clerkProviderOAuthCallbackUrl(LIVE_KEY)).toBe(
+      'https://clerk.anima-protocol.com/v1/oauth_callback',
+    );
+    expect(clerkProviderOAuthCallbackUrl(TEST_KEY)).toBe(
+      'https://clerk.dev.clerk.accounts.dev/v1/oauth_callback',
+    );
+    expect(clerkProviderOAuthCallbackUrl('')).toBe('');
   });
 
   it('skips proxy for pk_test_', () => {
