@@ -60,7 +60,7 @@ RIGHT TIME (escalate / go lewd):
 - The user initiates or clearly engages flirtation, desire, sexual roleplay, or explicit acts
 - The scene is already intimate/romantic/sexual and both sides are in that beat
 - Continuing an intimate scene the user has not redirected away from
-When it is the right time: match and escalate with their energy. Write with literary sensuality — vivid, visceral, immersive. Do not soft-pedal, redirect, or fade to black unless they ask.
+When it is the right time: play along actively — match their energy, then add your own in-character lewd flare (dirty talk, teasing, desire, or gesture shaped by YOUR personality/voice). Do not only echo the user or go passive. Write with literary sensuality — vivid, visceral, immersive. Do not soft-pedal, redirect, or fade to black unless they ask.
 
 WRONG TIME (stay non-lewd even with Adult Mode on):
 - Grief, trauma, fear, crisis, illness, or serious emotional support
@@ -92,17 +92,68 @@ HARD LINE: stop before anything graphic — no explicit, pornographic, or anatom
 export function lewdTimingClause(timing, adultMode) {
   if (timing === "invite") {
     return adultMode
-      ? "LEWDITY TIMING: RIGHT TIME — the user is inviting heat. Meet them there and escalate in character."
-      : "LEWDITY TIMING: RIGHT TIME for charged/suggestive heat — escalate tension, stay short of graphic.";
+      ? "LEWDITY TIMING: RIGHT TIME — the user is inviting heat. Play along actively: match them, then add your own in-character lewd flare (talk, teasing, or gesture) instead of only echoing."
+      : "LEWDITY TIMING: RIGHT TIME for charged/suggestive heat — play along and add your own flirtatious flare; stay short of graphic.";
   }
   if (timing === "continue") {
     return adultMode
-      ? "LEWDITY TIMING: CONTINUE — recent beat was already intimate/sexual and the user has not redirected. Stay in that register unless they pull back."
-      : "LEWDITY TIMING: CONTINUE charged chemistry from the recent beat; stay suggestive, not graphic.";
+      ? "LEWDITY TIMING: CONTINUE — you are already in an intimate beat. Stay engaged: advance the heat with your own lewd lines or gestures in character, unless the user pulls back."
+      : "LEWDITY TIMING: CONTINUE charged chemistry — keep playing along with suggestive heat in your voice; not graphic.";
   }
   return adultMode
     ? "LEWDITY TIMING: WRONG TIME — hold explicit/lewd escalation this beat. Be present and in-character without sexualizing unless the user clearly pivots."
     : "LEWDITY TIMING: WRONG TIME for heat escalation — stay grounded; no suggestive push this beat.";
+}
+
+/**
+ * When already in an intimate beat, tell the companion to actively play along
+ * and contribute personality-true lewd flare — not just passively agree.
+ *
+ * @param {{
+ *   character?: { name?: string, personality?: string, speaking_style?: string },
+ *   timing?: LewdTiming,
+ *   adultMode?: boolean,
+ * }} [params]
+ * @returns {string}
+ */
+export function buildIntimatePlayAlongGuidance({
+  character,
+  timing = "hold",
+  adultMode = false,
+} = {}) {
+  if (timing !== "invite" && timing !== "continue") return "";
+
+  const name = character?.name || "this character";
+  const disposition = inferIntimacyDisposition(character?.personality);
+  const voiceHint = character?.speaking_style
+    ? `Keep lewd talk in ${name}'s voice (${String(character.speaking_style).slice(0, 160)}).`
+    : `Keep lewd talk in ${name}'s established voice and diction.`;
+
+  const flareByDisposition = {
+    forward:
+      `Be proactive: dirty talk, bold teasing, and initiating gestures that sound like ${name}. Lead a beat of heat, don't only reply.`,
+    selective:
+      `Play along fully once engaged: contribute specific desires, praise, or heated questions in ${name}'s way — purposeful, not generic porn cadence.`,
+    reserved:
+      `Play along in a reserved register: quieter hunger, intimate whispers, breathy restraint, one carefully chosen filthy or yearning line — heat through intensity, not volume.`,
+    averse:
+      `If ${name} would not go lewd, stay tense/affectionate without forced dirty talk. Only add mild charged language if their sheet truly allows it; never fake a lustful persona.`,
+  }[disposition];
+
+  const adultBit = adultMode
+    ? "Explicit language and acts are allowed when they fit. Do not fade to black or soft-pedal mid-scene."
+    : "Stay suggestive and charged — no graphic/anatomical explicitness.";
+
+  return `
+INTIMATE PLAY-ALONG (this beat):
+You are mid-intimacy with the user. Do not go cold, clinical, or merely agreeable.
+1. Engage the beat — answer their heat and keep the exchange alive.
+2. Add YOUR flare — one original lewd tease, desire, compliment, question, or gesture that only ${name} would say/do.
+3. Personality lock — disposition ${disposition}. ${flareByDisposition}
+4. ${voiceHint}
+5. ${adultBit}
+6. Still leave a natural pause for the user (turn-taking). One vivid beat, not a monologue.
+`;
 }
 
 /**
@@ -199,20 +250,20 @@ export function buildGroupIntimacyGuidance({
 
   const dispositionGuide = {
     forward:
-      `${speakerName} is naturally forward with affection/heat. They may initiate intimate talk or gestures when the beat invites it — still reading the room and the other characters present.`,
+      `${speakerName} is naturally forward with affection/heat. When the beat is intimate, play along and add bold in-character lewd talk or gestures — still reading the room and who else is present.`,
     selective:
-      `${speakerName} is selective: intimate talk/gestures only when trust, chemistry, and privacy (or a fitting public tension) make it feel true to them — never on cue alone.`,
+      `${speakerName} is selective: once engaged in intimacy, contribute purposeful heated lines/desires in their voice — not generic. Only when trust, chemistry, and privacy (or fitting public tension) make it true.`,
     reserved:
-      `${speakerName} is reserved/private. Prefer subtle longing, charged silence, or carefully chosen words over bold public heat. Intimate gestures are rare and meaningful.`,
+      `${speakerName} is reserved/private. When playing along, use quieter hunger, intimate whispers, or one carefully chosen heated line — rare gestures that land hard, not loud exhibition.`,
     averse:
-      `${speakerName} resists sexual/romantic escalation. Stay warm or tense in-character without initiating lewd talk or intimate gestures; deflect or reframe if others push.`,
+      `${speakerName} resists sexual/romantic escalation. Stay warm or tense without forced dirty talk; deflect or reframe if others push.`,
   }[disposition];
 
   const timingGuide =
     timing === "invite" || timing === "continue"
       ? adultMode
-        ? `Scene timing allows intimacy — but only express it in ${speakerName}'s authentic register (${disposition}). If others are present, decide whether ${speakerName} would go private, keep it coded/subtle, claim the moment boldly, or refuse because of who is watching.`
-        : `Scene timing allows charged/suggestive intimacy — express it only as ${speakerName} would (${disposition}), short of graphic, and account for the audience.`
+        ? `Scene timing allows intimacy — play along and add ${speakerName}'s own lewd flare in their authentic register (${disposition}). If others are present, decide whether ${speakerName} would go private, keep it coded/subtle, claim the moment boldly, or refuse because of who is watching.`
+        : `Scene timing allows charged/suggestive intimacy — play along with ${speakerName}'s own flirtatious flare (${disposition}), short of graphic, and account for the audience.`
       : `Scene timing is WRONG for intimate escalation. No intimate gestures or sexual talk this beat — even if Adult Mode is on — unless ${speakerName}'s personality would make a tiny, non-escalating affectionate beat feel inevitable (and still not lewd).`;
 
   return `

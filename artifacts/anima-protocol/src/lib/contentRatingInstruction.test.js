@@ -3,6 +3,7 @@ import {
   assessLewdTiming,
   buildContentRatingInstruction,
   lewdTimingClause,
+  buildIntimatePlayAlongGuidance,
   buildSexualityGuide,
   buildLewdityGuide,
   inferIntimacyDisposition,
@@ -88,8 +89,52 @@ describe("buildContentRatingInstruction", () => {
 describe("lewdTimingClause", () => {
   it("labels invite / continue / hold clearly", () => {
     expect(lewdTimingClause("invite", true)).toContain("RIGHT TIME");
+    expect(lewdTimingClause("invite", true)).toMatch(/Play along|own.*lewd flare/i);
     expect(lewdTimingClause("continue", true)).toContain("CONTINUE");
+    expect(lewdTimingClause("continue", true)).toMatch(/own lewd|Stay engaged/i);
     expect(lewdTimingClause("hold", true)).toContain("WRONG TIME");
+  });
+});
+
+describe("buildIntimatePlayAlongGuidance", () => {
+  it("is empty on hold beats", () => {
+    expect(
+      buildIntimatePlayAlongGuidance({
+        character: { name: "Ava", personality: "flirtatious" },
+        timing: "hold",
+        adultMode: true,
+      }),
+    ).toBe("");
+  });
+
+  it("asks forward characters to add proactive lewd flare mid-intimacy", () => {
+    const text = buildIntimatePlayAlongGuidance({
+      character: {
+        name: "Rex",
+        personality: "Flirtatious and sensual",
+        speaking_style: "Rough, teasing, low voice",
+      },
+      timing: "continue",
+      adultMode: true,
+    });
+    expect(text).toContain("INTIMATE PLAY-ALONG");
+    expect(text).toContain("YOUR flare");
+    expect(text).toContain("forward");
+    expect(text).toContain("Rough, teasing");
+    expect(text).toMatch(/Do not go cold|play along/i);
+  });
+
+  it("keeps reserved characters intimate but quieter", () => {
+    const text = buildIntimatePlayAlongGuidance({
+      character: {
+        name: "Ava",
+        personality: "Shy, reserved, modest",
+      },
+      timing: "invite",
+      adultMode: true,
+    });
+    expect(text).toContain("reserved");
+    expect(text).toMatch(/whisper|quieter|carefully chosen/i);
   });
 });
 

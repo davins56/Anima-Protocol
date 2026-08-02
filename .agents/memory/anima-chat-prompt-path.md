@@ -43,6 +43,12 @@ must respect LEWDITY TIMING.
 should include `groupSpeakerIntimacyRules(timing)` so reserved/averse characters
 are not forced to lead lewd beats.
 
+**Intimate play-along:** On `invite` / `continue` beats, inject
+`buildIntimatePlayAlongGuidance({ character, timing, adultMode })` into solo and
+group prompts so the companion actively plays along and adds their own
+personality-true lewd flare (dirty talk / tease / gesture in their voice) —
+not only echoing the user. Empty on `hold` beats.
+
 **User profile injection:** The account-default "about me" lives at
 `user.settings.user_profile` (edited on the `/profile` page, `pages/UserProfile.jsx`).
 In `handleSendMessage` it's formatted ONCE into `userProfileContext` (a delimited
