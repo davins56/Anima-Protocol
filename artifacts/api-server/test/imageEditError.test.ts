@@ -49,4 +49,26 @@ describe("mapImageEditError", () => {
     expect(mapped.status).toBe(500);
     expect(mapped.error).toBe("something broke");
   });
+
+  it("maps OpenAI 401 invalid API key to auth_error without leaking key material", () => {
+    const mapped = mapImageEditError({
+      status: 401,
+      code: "invalid_api_key",
+      message:
+        "401 Incorrect API key provided: sk-proj-************************. You can find your API key at https://platform.openai.com/account/api-keys.",
+    });
+    expect(mapped.status).toBe(503);
+    expect(mapped.code).toBe("auth_error");
+    expect(mapped.error).not.toMatch(/sk-/);
+    expect(mapped.error).toMatch(/temporarily unavailable/i);
+  });
+
+  it("redacts sk- material from generic fallback messages", () => {
+    const mapped = mapImageEditError({
+      status: 500,
+      message: "provider failed with sk-proj-abc123",
+    });
+    expect(mapped.code).toBe("server_error");
+    expect(mapped.error).not.toMatch(/sk-/);
+  });
 });
