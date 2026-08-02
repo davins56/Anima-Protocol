@@ -107,6 +107,17 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
+  it('returns no banner hints when API and Clerk probes succeed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ status: 'ok' }), {
+        status: 200,
+      })),
+    );
+
+    await expect(probeClerkConnectivity(PROXY_LIVE_KEY)).resolves.toEqual([]);
+  });
+
   it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
     vi.stubGlobal(
       'fetch',
