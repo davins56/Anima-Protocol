@@ -46,6 +46,7 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
+  CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
@@ -639,24 +640,12 @@ function SocialAuthButtons({ mode }) {
   );
 }
 
-function ClerkLoginDiagnostics() {
-  const [hints, setHints] = useState([]);
+const CLERK_DIAGNOSTICS_STALL_MS = 4000;
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const next = await probeClerkConnectivity(clerkPubKey);
-      if (!cancelled) setHints(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (hints.length === 0) return null;
-
+function ClerkDiagnosticsBanner({ hints }) {
+  if (!hints?.length) return null;
   return (
-    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+    <div className="rounded-md border border-amber-400/35 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-100">
       {hints.map((hint) => (
         <p key={hint} className="mt-1 first:mt-0">
           {hint}
@@ -664,6 +653,60 @@ function ClerkLoginDiagnostics() {
       ))}
     </div>
   );
+}
+
+/**
+ * Connectivity hints only when Clerk failed, or is still loading after a stall
+ * timeout. Avoids always-on false positives when sign-in is already working.
+ */
+function ClerkLoginDiagnostics() {
+  return (
+    <>
+      <ClerkFailed>
+        <ClerkConnectivityHints includeStallHint={false} />
+      </ClerkFailed>
+      <ClerkLoading>
+        <ClerkStalledConnectivityHints />
+      </ClerkLoading>
+    </>
+  );
+}
+
+function ClerkStalledConnectivityHints() {
+  const [stalled, setStalled] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setStalled(true),
+      CLERK_DIAGNOSTICS_STALL_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!stalled) return null;
+  return <ClerkConnectivityHints includeStallHint />;
+}
+
+function ClerkConnectivityHints({ includeStallHint }) {
+  const [hints, setHints] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await probeClerkConnectivity(clerkPubKey);
+      if (cancelled) return;
+      if (includeStallHint && next.length === 0) {
+        setHints([CLERK_STALL_HINT]);
+        return;
+      }
+      setHints(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [includeStallHint]);
+
+  return <ClerkDiagnosticsBanner hints={hints} />;
 }
 
 function AuthFormShell({ mode, children }) {

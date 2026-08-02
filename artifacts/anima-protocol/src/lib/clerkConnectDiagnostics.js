@@ -6,8 +6,9 @@ import {
   resolveClerkProxyUrl,
 } from '@/lib/clerkProxy';
 
+// Match the query shape Clerk JS uses in production (single underscore).
 const CLERK_ENVIRONMENT_PROBE_PATH =
-  '/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=6.12.1';
+  '/v1/environment?_clerk_api_version=2025-11-10&_clerk_js_version=6.12.1';
 
 async function readProxyError(res) {
   try {
@@ -15,6 +16,13 @@ async function readProxyError(res) {
   } catch {
     return null;
   }
+}
+
+function clerkErrorCodes(proxyError) {
+  if (!proxyError || !Array.isArray(proxyError.errors)) return [];
+  return proxyError.errors
+    .map((entry) => entry?.code)
+    .filter((code) => typeof code === 'string' && code.length > 0);
 }
 
 /**
@@ -41,8 +49,9 @@ export async function isClerkProxyHealthy(clerkPubKey) {
 }
 
 /**
- * Probe API + Clerk proxy when Clerk JS fails to load. Returns human-readable
- * hints for the sign-in error UI.
+ * Probe API + Clerk frontend connectivity. Returns human-readable hints only
+ * for real failures — never a false-positive "SDK did not finish loading"
+ * message (that belongs in the UI when ClerkLoading is actually stalled).
  */
 export async function probeClerkConnectivity(clerkPubKey) {
   const hints = [];
@@ -51,16 +60,11 @@ export async function probeClerkConnectivity(clerkPubKey) {
     clerkProxyProbeBase(clerkPubKey) ||
     `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
 
-  let apiOk = false;
-  let proxyOk = false;
-  let scriptOk = false;
-
   try {
     const healthRes = await fetch(apiUrl('/healthz'), {
       credentials: 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
-    apiOk = healthRes.ok;
     if (!healthRes.ok) {
       hints.push(
         `API health check failed (${healthRes.status}). Set DATABASE_URL and CLERK_SECRET_KEY on Vercel.`,
@@ -75,27 +79,20 @@ export async function probeClerkConnectivity(clerkPubKey) {
       credentials: usesCustomDomain ? 'omit' : 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
-    proxyOk = clerkRes.ok;
     if (!clerkRes.ok) {
       const proxyError = await readProxyError(clerkRes);
+      const codes = clerkErrorCodes(proxyError);
       if (proxyError?.error === 'clerk_proxy_invalid_secret') {
         hints.push(
           'Clerk proxy is misconfigured: Vercel Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
         );
         return hints;
-      } else if (
-        proxyError?.errors?.some((entry) => entry?.code === 'host_invalid')
-      ) {
+      } else if (codes.includes('host_invalid')) {
         hints.push(
           'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
         );
         return hints;
-      } else if (
-        usesCustomDomain &&
-        proxyError?.errors?.some(
-          (entry) => entry?.code === 'subdomain_not_allowed',
-        )
-      ) {
+      } else if (usesCustomDomain && codes.includes('subdomain_not_allowed')) {
         hints.push(
           'Clerk is rejecting www.anima-protocol.com for the custom login domain. In Clerk Dashboard → Domains, add www.anima-protocol.com to the allowed subdomains for clerk.anima-protocol.com, then hard-refresh sign-in.',
         );
@@ -108,18 +105,21 @@ export async function probeClerkConnectivity(clerkPubKey) {
         hints.push(
           `Clerk proxy upstream failed (${clerkRes.status}). Redeploy the latest API build — the server now proxies Clerk via fetch on Vercel. Also confirm CLERK_SECRET_KEY is your Production sk_live_ key.`,
         );
+      } else if (usesCustomDomain) {
+        const codeHint = codes.length ? ` Clerk error: ${codes.join(', ')}.` : '';
+        hints.push(
+          `Clerk custom domain returned ${clerkRes.status} at ${proxyUrl}.${codeHint} In Clerk Dashboard → Production → Domains, confirm clerk.anima-protocol.com is verified and www.anima-protocol.com is an allowed subdomain, then hard-refresh.`,
+        );
       } else {
         hints.push(
-          usesCustomDomain
-            ? `Clerk custom domain failed (${clerkRes.status}) at ${proxyUrl}. Confirm clerk.anima-protocol.com DNS in Clerk → Domains.`
-            : `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
+          `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
         );
       }
     }
   } catch {
     hints.push(
       usesCustomDomain
-        ? `Clerk custom domain unreachable at ${proxyUrl} — check clerk.anima-protocol.com DNS.`
+        ? `Clerk custom domain unreachable at ${proxyUrl} — check clerk.anima-protocol.com DNS (CNAME → frontend-api.clerk.services).`
         : 'Clerk proxy unreachable at /api/__clerk — the api-server must proxy to Clerk in production.',
     );
   }
@@ -130,9 +130,9 @@ export async function probeClerkConnectivity(clerkPubKey) {
       const scriptRes = await fetch(scriptUrl, {
         method: 'GET',
         credentials: usesCustomDomain ? 'omit' : 'same-origin',
+        redirect: 'follow',
         signal: AbortSignal.timeout(8000),
       });
-      scriptOk = scriptRes.ok;
       if (!scriptRes.ok) {
         hints.push(
           `Login script failed to load (${scriptRes.status}) via ${scriptUrl}. Fix the Clerk proxy environment values, then redeploy without cache.`,
@@ -140,7 +140,9 @@ export async function probeClerkConnectivity(clerkPubKey) {
       }
     } catch {
       hints.push(
-        'Clerk JS bundle could not be fetched through /api/__clerk — sign-in cannot start until this path returns clerk.browser.js.',
+        usesCustomDomain
+          ? `Clerk JS bundle could not be fetched from ${scriptUrl} — check clerk.anima-protocol.com DNS and hard-refresh.`
+          : 'Clerk JS bundle could not be fetched through /api/__clerk — sign-in cannot start until this path returns clerk.browser.js.',
       );
     }
   }
@@ -151,11 +153,13 @@ export async function probeClerkConnectivity(clerkPubKey) {
     );
   }
 
-  if (apiOk && proxyOk && scriptOk && hints.length === 0) {
-    hints.push(
-      'API and Clerk proxy look healthy, but the Clerk SDK did not finish loading. Disable ad blockers, try another browser, or refresh in a few seconds.',
-    );
-  }
+  // Intentionally do NOT push a "healthy but SDK did not finish loading" hint
+  // here. That stall message is decided by the UI after ClerkLoading has
+  // actually stalled (see ClerkLoginDiagnostics in App.full.jsx).
 
   return hints;
 }
+
+/** Message shown only when Clerk UI is still loading after a stall timeout. */
+export const CLERK_STALL_HINT =
+  'API and Clerk look reachable, but the Clerk SDK has not finished loading. Disable ad blockers, try another browser, or refresh in a few seconds.';

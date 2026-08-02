@@ -107,7 +107,49 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
-  it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
+  
+  it('does not emit a false-positive stall hint when probes succeed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ auth_config: {} }), { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
+    expect(hints).toEqual([]);
+  });
+
+  it('surfaces custom-domain 400 with Clerk error codes instead of blaming DNS only', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+        }
+        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [{ code: 'invalid_request', message: 'bad request' }],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toContain('returned 400');
+    expect(hints[0]).toContain('invalid_request');
+    expect(hints[0]).not.toMatch(/Confirm clerk\.anima-protocol\.com DNS in Clerk/);
+  });
+
+it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {
@@ -140,7 +182,7 @@ describe('probeClerkConnectivity', () => {
     ]);
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining(
-        '/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=6.12.1',
+        '/v1/environment?_clerk_api_version=2025-11-10&_clerk_js_version=6.12.1',
       ),
       expect.anything(),
     );
