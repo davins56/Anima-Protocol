@@ -107,17 +107,16 @@ function storeError(res, message) {
   return e;
 }
 
-// AI photo edit. Sends a base64 image data URL + a text prompt to the
-// api-server (gpt-image-1 edit) and returns the transformed image as a data
-// URL. Used by the home-page "add photo" AI edit feature.
-export async function editImage({ image, prompt, signal }) {
+// Shared helper for image API calls (edit / generate). Surfaces abort vs
+// network vs server errors the same way so UI can branch consistently.
+async function postImageApi(path, body, signal) {
   const headers = await authHeaders();
   let res;
   try {
-    res = await fetch(apiUrl('/openai/image-edit'), {
+    res = await fetch(apiUrl(path), {
       method: 'POST',
       headers,
-      body: JSON.stringify({ image, prompt }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (err) {
@@ -136,6 +135,19 @@ export async function editImage({ image, prompt, signal }) {
     throw e;
   }
   return res.json();
+}
+
+// AI photo edit. Sends a base64 image data URL + a text prompt to the
+// api-server (gpt-image-1 edit) and returns the transformed image as a data
+// URL. Used by the home-page "add photo" AI edit feature.
+export async function editImage({ image, prompt, signal }) {
+  return postImageApi('/openai/image-edit', { image, prompt }, signal);
+}
+
+// AI image generation from a text prompt (no source image). Returns a PNG
+// data URL. Used by Customise Anima when forging a look from scratch.
+export async function generateImage({ prompt, signal }) {
+  return postImageApi('/openai/image-generate', { prompt }, signal);
 }
 
 // --- file uploads (object storage) ------------------------------------------
@@ -1194,9 +1206,34 @@ export const base44 = {
         return result;
       },
 
-      GenerateImage: async () => {
-        console.warn('GenerateImage not implemented in Replit environment');
-        return null;
+      // Generate (or re-style) an image. When existing_image_urls is provided,
+      // prefers the image-edit path so the current portrait is transformed;
+      // otherwise generates from the prompt alone. Returns { url } as a data URL.
+      GenerateImage: async ({ prompt, existing_image_urls, signal } = {}) => {
+        if (typeof prompt !== 'string' || !prompt.trim()) {
+          throw new Error('A generation prompt is required.');
+        }
+        const existing = Array.isArray(existing_image_urls)
+          ? existing_image_urls.find((u) => typeof u === 'string' && u.trim())
+          : null;
+
+        if (existing) {
+          try {
+            const dataUrl = await urlToDataUrl(existing);
+            const result = await editImage({ image: dataUrl, prompt, signal });
+            if (result?.image) return { url: result.image };
+          } catch (err) {
+            // Fall through to pure generation if the source can't be loaded
+            // or edit fails for a non-policy reason — generation still gives
+            // the user a portrait from their feature prompts.
+            if (err?.code === 'content_policy') throw err;
+            console.warn('GenerateImage edit path failed, falling back to generate:', err?.message);
+          }
+        }
+
+        const result = await generateImage({ prompt, signal });
+        if (!result?.image) throw new Error('No image was returned.');
+        return { url: result.image };
       },
 
       UploadFile: async ({ file } = {}) => {

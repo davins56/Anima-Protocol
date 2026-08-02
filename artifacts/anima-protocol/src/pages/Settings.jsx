@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
-  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle
+  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle, Wand2, Palette
 } from "lucide-react";
 import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
 import {
@@ -18,7 +18,15 @@ import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
 
-const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
+const SECTION = {
+  ACCOUNT: "account",
+  CUSTOMISE_ANIMA: "customise-anima",
+  BACKGROUND: "background",
+  AI: "ai",
+  INTERFACE: "interface",
+  DATA: "data",
+  LEGAL: "legal",
+};
 
 const defaultPrefs = {
   ai_creativity: 0.7,
@@ -319,6 +327,7 @@ export default function Settings() {
 
   const navItems = [
     { id: SECTION.ACCOUNT, label: "Account", icon: User },
+    { id: SECTION.CUSTOMISE_ANIMA, label: "Customise Anima", icon: Wand2 },
     { id: SECTION.BACKGROUND, label: "Background", icon: BookOpen },
     { id: SECTION.AI, label: "AI Behavior", icon: Bot },
     { id: SECTION.INTERFACE, label: "Interface", icon: Sliders },
@@ -388,6 +397,23 @@ export default function Settings() {
                 </div>
               </button>
 
+              <SectionTitle>Customise Anima</SectionTitle>
+              <button
+                onClick={() => navigate("/customise-anima")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  Shape their look • hair, outfit, eyes & style
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Wand2 className="w-4 h-4 text-primary/60" />
+                    Open Customise Anima
+                  </span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
                 <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
@@ -411,6 +437,57 @@ export default function Settings() {
                 </button>
                 <SaveButton onSave={handleSave} saved={saved} />
               </div>
+            </div>
+          )}
+
+          {/* ── CUSTOMISE ANIMA ── */}
+          {section === SECTION.CUSTOMISE_ANIMA && (
+            <div className="space-y-4">
+              <SectionTitle>Customise Anima</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 border border-primary/30 bg-primary/5 flex items-center justify-center flex-shrink-0">
+                    <Palette className="w-5 h-5 text-primary/70" />
+                  </div>
+                  <div className="space-y-2 min-w-0">
+                    <p className="font-mono text-sm text-primary tracking-wider">
+                      Personalise the look of your companion
+                    </p>
+                    <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
+                      Choose hair, outfit, eyes, setting, mood, and art style, then generate a new
+                      portrait for your personal Anima. Theme accent colour is saved with the look.
+                    </p>
+                  </div>
+                </div>
+                <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
+                  <li>• Hair, outfit, eyes, background, expression, art style</li>
+                  <li>• AI-generated portrait from your descriptions</li>
+                  <li>• Theme accent colour for your companion</li>
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => navigate("/customise-anima")}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  Open Customise Anima
+                </button>
+              </div>
+
+              <SectionTitle>Personality</SectionTitle>
+              <button
+                type="button"
+                onClick={() => navigate("/customize?tab=animas")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  Name, tagline, voice & behaviour
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span>Edit Anima personality</span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
             </div>
           )}
 
