@@ -23,11 +23,17 @@ length, persona), edit `Chat.jsx handleSendMessage`. The content-rating toggle l
 section) and is injected as the `adultInstruction` block — keep ON (permit explicit) and
 OFF (enforce safe/non-explicit) branches in sync across every prompt variant.
 
-**Adult Mode escalation:** When `adult_content_enabled` is on, prompts must allow lewd/
-explicit dialogue to increase when the situation presents itself or the user engages it.
-Do not append unconditional “never explicit / never anatomical” resonance or attunement
-clauses while Adult Mode is on — those silently override `adultInstruction`. Lewdity/
-sexuality guides must also not force “family-friendly” under Adult Mode.
+**Adult Mode escalation + timing:** When `adult_content_enabled` is on, prompts unlock
+lewd/explicit capability but must still judge the beat. Assembly lives in
+`src/lib/contentRatingInstruction.js` (`buildContentRatingInstruction`,
+`assessLewdTiming`, `lewdTimingClause`) and is injected from `Chat.jsx` as
+`adultInstruction`. Escalate on RIGHT TIME / CONTINUE (user invites heat, or an
+intimate scene is already in progress); HOLD on WRONG TIME (grief, crisis support,
+logistics/combat/planning, platonic beats, or user redirect). Do not append
+unconditional “never explicit / never anatomical” resonance or attunement clauses
+while Adult Mode is on — those silently override `adultInstruction`. Lewdity/
+sexuality guides must also not force “family-friendly” under Adult Mode, but they
+must respect LEWDITY TIMING.
 
 **User profile injection:** The account-default "about me" lives at
 `user.settings.user_profile` (edited on the `/profile` page, `pages/UserProfile.jsx`).
