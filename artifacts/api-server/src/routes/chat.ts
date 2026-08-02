@@ -9,6 +9,7 @@ import {
   chatSessions,
   companionMemories,
   db,
+  ensureSchemaOnce,
   makeId,
   migrateSessionMessages,
   sessionIdEq,
@@ -52,6 +53,16 @@ import { getOpenAIClient } from "../lib/openaiClient";
 const router = Router();
 
 router.use(rateLimit);
+
+// Same self-heal as /api/store — chat dual-writes chat_sessions / companion_memories.
+router.use(async (_req, _res, next) => {
+  try {
+    await ensureSchemaOnce();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 function requireUser(req: Request, res: Response): string | null {
   const { userId } = getAuth(req);
