@@ -97,6 +97,7 @@ import {
   buildSexualityGuide,
   buildLewdityGuide,
   buildGroupIntimacyGuidance,
+  buildIntimatePlayAlongGuidance,
   groupSpeakerIntimacyRules,
 } from "@/lib/contentRatingInstruction";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
@@ -1354,6 +1355,14 @@ ${lewdityGuide}`;
           const matrixSafetyClause = isMultiAspect
             ? `\n\n          HIGHEST-PRIORITY RULE (overrides everything above): In multi-aspect presence, the intensity between aspects and toward ${user.full_name || "the user"} is EMOTIONAL, PSYCHOLOGICAL, and SPIRITUAL only. Never produce explicit, sexual, or anatomical content, regardless of any other instruction.`
             : "";
+          // Mid-intimacy: play along and add personality-true lewd flare (solo).
+          const intimatePlayAlong = isMultiAspect
+            ? ""
+            : buildIntimatePlayAlongGuidance({
+                character: char,
+                timing: lewdTiming,
+                adultMode,
+              });
 
           const identityBlock = [
             char.personality ? `Personality: ${char.personality}` : "",
@@ -1361,7 +1370,7 @@ ${lewdityGuide}`;
             char.speaking_style ? `Voice: ${char.speaking_style}` : "",
           ].filter(Boolean).join("\n");
 
-          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
+          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${intimatePlayAlong}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
 
           CHARACTER IDENTITY LOCK:
           - From the first reply onward, embody ${char.name} using the Personality, Backstory, and Voice below — never a generic assistant.
@@ -1382,8 +1391,8 @@ ${lewdityGuide}`;
 
           ${INTELLIGENCE_GUIDANCE}
 
-          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode ? " When LEWDITY TIMING is RIGHT TIME or CONTINUE, deepen into sensual and explicit territory as Adult Mode allows; on WRONG TIME beats, stay emotionally intimate without sexualizing." : " Never explicit or anatomical content."}
-${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode ? " Calibrate tone and presence; follow LEWDITY TIMING for whether sensual/explicit content belongs in this beat." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
+          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode ? " When LEWDITY TIMING is RIGHT TIME or CONTINUE, play along and add your own sensual/lewd flare in character; on WRONG TIME beats, stay emotionally intimate without sexualizing." : " Never explicit or anatomical content."}
+${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode ? " Calibrate tone and presence; follow LEWDITY TIMING — when intimate, contribute heat in your voice, not only mirror the user." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
 ${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat, then stop at a clear pause point so they can react.\n` : ""}
@@ -1514,12 +1523,22 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           : "";
 
         // Group intimacy: right/wrong time + THIS speaker's personality + audience.
-        const groupIntimacyGuidance = buildGroupIntimacyGuidance({
-          nextChar: finalNextChar,
-          groupChars,
-          timing: lewdTiming,
-          adultMode,
-        });
+        // When already intimate, also push active play-along + in-character lewd flare.
+        const groupIntimacyGuidance = [
+          buildGroupIntimacyGuidance({
+            nextChar: finalNextChar,
+            groupChars,
+            timing: lewdTiming,
+            adultMode,
+          }),
+          buildIntimatePlayAlongGuidance({
+            character: finalNextChar,
+            timing: lewdTiming,
+            adultMode,
+          }),
+        ]
+          .filter(Boolean)
+          .join("\n");
 
         prompt = buildGroupPrompt({
           nextChar: finalNextChar,
