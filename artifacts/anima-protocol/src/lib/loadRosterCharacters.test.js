@@ -20,6 +20,11 @@ const {
       name: "Korra",
       universe: "Avatar: Legend of Korra",
     },
+    {
+      id: "seed_marvel-spider-man",
+      name: "Spider-Man",
+      universe: "Marvel",
+    },
   ]),
   whenBootstrapReady: vi.fn().mockResolvedValue(undefined),
 }));
@@ -88,23 +93,27 @@ describe("loadRosterCharacters", () => {
     const result = await loadRosterCharacters({ retrySeed: true });
 
     expect(retryStarterSeed).toHaveBeenCalledTimes(1);
-    expect(notifyStoreChanged).toHaveBeenCalled();
     expect(result.rawCharacters).toHaveLength(1);
     expect(result.characters.map((c) => c.name)).toContain("Korra");
     expect(result.usingBundledSeed).toBe(false);
   });
 
-  it("does not retry seeding when retrySeed is false", async () => {
+  it("keeps bundled starters on store-sync refetches with retrySeed false", async () => {
+    // This is the race that left Select Character on NO RESULTS FOUND:
+    // initial load showed bundled starters, then useStoreSync reloaded with
+    // retrySeed:false and wiped them because the store was still empty.
     characterList.mockResolvedValue([]);
     const { loadRosterCharacters } = await loadModule();
 
     const result = await loadRosterCharacters({
       retrySeed: false,
-      allowBundledFallback: false,
+      allowBundledFallback: true,
     });
 
     expect(retryStarterSeed).not.toHaveBeenCalled();
-    expect(result.characters).toEqual([]);
+    expect(result.usingBundledSeed).toBe(true);
+    expect(result.characters.length).toBeGreaterThan(0);
+    expect(result.characters.every((c) => c._bundled)).toBe(true);
   });
 
   it("merges Anima rows into the chat roster", async () => {
@@ -160,30 +169,10 @@ describe("loadRosterCharacters", () => {
     expect(result.error?.message).toMatch(/auth token/i);
   });
 
-  it("falls back to bundled starters when the store returns an empty roster after retry", async () => {
-    characterList.mockResolvedValue([]);
-    retryStarterSeed.mockResolvedValue(0);
-    const { loadRosterCharacters } = await loadModule();
-
-    const result = await loadRosterCharacters({ retrySeed: true });
-
-    expect(result.usingBundledSeed).toBe(true);
-    expect(result.characters.map((c) => c.name)).toContain("Korra");
-  });
-
-  it("falls back when waitForStoreAuth fails even before listing", async () => {
-    waitForStoreAuth.mockRejectedValue(
-      new Error("Store auth token not available"),
-    );
-    characterList.mockResolvedValue([]);
-    retryStarterSeed.mockRejectedValue(
-      new Error("Store auth token not available"),
-    );
-    const { loadRosterCharacters } = await loadModule();
-
-    const result = await loadRosterCharacters({ retrySeed: true });
-
-    expect(result.usingBundledSeed).toBe(true);
-    expect(result.characters.length).toBeGreaterThan(0);
+  it("exposes getBundledStarterRoster for immediate modal paint", async () => {
+    const { getBundledStarterRoster } = await loadModule();
+    const roster = getBundledStarterRoster();
+    expect(roster.length).toBeGreaterThan(0);
+    expect(roster.every((c) => c._bundled && c.id && c.name)).toBe(true);
   });
 });

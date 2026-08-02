@@ -28,13 +28,14 @@ export function isStoreDatabaseError(err) {
   return /database|postgres|unavailable|unreachable|connection/i.test(msg);
 }
 
-function bundledStarterRoster() {
+/** Bundled starter roster for chat pickers (not yet confirmed in the account store). */
+export function getBundledStarterRoster() {
   return getStarterRoster().map((c) => ({ ...c, _bundled: true }));
 }
 
 /**
  * Load Character + Anima rows for chat pickers.
- * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean, allowBundledFallback?: boolean }} [opts]
+ * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean, allowBundledFallback?: boolean, notifyOnSeed?: boolean }} [opts]
  * @returns {Promise<{ characters: object[], rawCharacters: object[], animas: object[], animaAsChars: object[], error: Error|null, usingBundledSeed: boolean }>}
  */
 export async function loadRosterCharacters({
@@ -45,6 +46,9 @@ export async function loadRosterCharacters({
   // Chat pickers should never look permanently empty — fall back to the
   // bundled starter roster when the store/seed path cannot populate one.
   allowBundledFallback = true,
+  // notifyStoreChanged re-enters useStoreSync loaders; only notify when the
+  // seed actually wrote rows (upsertCharacters already notifies on write).
+  notifyOnSeed = false,
 } = {}) {
   if (waitBootstrap) {
     await whenBootstrapReady();
@@ -77,10 +81,13 @@ export async function loadRosterCharacters({
   }
 
   let seedError = null;
+  let seededCount = 0;
   if (!rawCharacters.length && retrySeed) {
     try {
-      await retryStarterSeed();
-      notifyStoreChanged();
+      seededCount = (await retryStarterSeed()) || 0;
+      if (notifyOnSeed && seededCount > 0) {
+        notifyStoreChanged();
+      }
       rawCharacters =
         (await base44.entities.Character.list(
           "-created_date",
@@ -106,15 +113,11 @@ export async function loadRosterCharacters({
 
   const storeError = listError || seedError || authError;
   let usingBundledSeed = false;
-  // After a seed retry (or when the store is unreachable), never leave the
-  // Select Character screen blank — show bundled starters. Rows are marked
-  // `_bundled`; NewSessionModal upserts them before creating a session.
-  const shouldUseBundled =
-    allowBundledFallback &&
-    !rawCharacters.length &&
-    (retrySeed || isStoreDatabaseError(storeError) || !!authError);
-  if (shouldUseBundled) {
-    rawCharacters = bundledStarterRoster();
+  // Any empty store result for a chat picker must surface starters — including
+  // useStoreSync refetches with retrySeed:false, which previously wiped the
+  // bundled list and left Select Character on "NO RESULTS FOUND".
+  if (allowBundledFallback && !rawCharacters.length) {
+    rawCharacters = getBundledStarterRoster();
     usingBundledSeed = true;
   }
 
