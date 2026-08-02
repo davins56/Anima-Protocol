@@ -8,20 +8,27 @@ import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
 import { useTimelineBranching } from "@/hooks/useTimelineBranching";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
-import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import {
+  getBundledStarterRoster,
+  loadRosterCharacters,
+} from "@/lib/loadRosterCharacters";
 import { upsertCharacters } from "@/lib/seedCharacters";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
   const { createBranchForSession } = useTimelineBranching();
-  const [characters, setCharacters] = useState([]);
+  // Paint bundled starters immediately so Select Character is never blank while
+  // store auth / seeding runs (and so a later empty store-sync cannot flash empty).
+  const [characters, setCharacters] = useState(getBundledStarterRoster);
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
-  const [loadError, setLoadError] = useState(null);
-  const [usingBundledSeed, setUsingBundledSeed] = useState(false);
+  const [loadError, setLoadError] = useState(
+    "Loading account characters — starters are shown until sync finishes.",
+  );
+  const [usingBundledSeed, setUsingBundledSeed] = useState(true);
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState("characters"); // "characters", "templates", "stories", "canonical"
   const [showStoryChooser, setShowStoryChooser] = useState(false);
@@ -29,15 +36,16 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [openingScene, setOpeningScene] = useState("");
 
   const loadData = useCallback(async ({ retrySeed = false } = {}) => {
-    setLoading(true);
+    // Keep current roster visible while refreshing — never blank the grid.
     if (retrySeed) setSeeding(true);
-    setLoadError(null);
+    else setLoading(true);
     try {
       // Load roster and groups independently — a CharacterGroup failure must not
       // wipe a successful character roster (Promise.all rejection used to).
       const rosterResult = await loadRosterCharacters({
         retrySeed,
         waitBootstrap: false,
+        allowBundledFallback: true,
       });
       let grps = [];
       try {
@@ -49,30 +57,36 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         );
         grps = [];
       }
-      setCharacters(rosterResult?.characters || []);
+      const nextChars = rosterResult?.characters || [];
+      // Never replace a visible roster with [] — store-sync races used to wipe
+      // bundled starters right after they appeared.
+      if (nextChars.length) {
+        setCharacters(nextChars);
+        setUsingBundledSeed(!!rosterResult?.usingBundledSeed);
+      } else {
+        setCharacters((prev) =>
+          prev.length ? prev : getBundledStarterRoster(),
+        );
+        setUsingBundledSeed(true);
+      }
       setGroups(grps || []);
-      setUsingBundledSeed(!!rosterResult?.usingBundledSeed);
-      if (rosterResult?.usingBundledSeed) {
-        const reason = rosterResult.error?.message;
+      if (rosterResult?.usingBundledSeed || !nextChars.length) {
+        const reason = rosterResult?.error?.message;
         setLoadError(
           reason
             ? `${reason}. Showing starter characters — starting a chat saves them to your account.`
             : "Showing starter characters — starting a chat saves them to your account.",
-        );
-      } else if (rosterResult?.error && !rosterResult?.characters?.length) {
-        setLoadError(
-          rosterResult.error.message ||
-            "Could not load characters. Sign in again or try later.",
         );
       } else {
         setLoadError(null);
       }
     } catch (err) {
       console.error('Error loading characters:', err);
-      setCharacters([]);
-      setGroups([]);
-      setUsingBundledSeed(false);
-      setLoadError(err?.message || "Could not load characters.");
+      setCharacters((prev) => (prev.length ? prev : getBundledStarterRoster()));
+      setUsingBundledSeed(true);
+      setLoadError(
+        `${err?.message || "Could not load characters"}. Showing starter characters — starting a chat saves them to your account.`,
+      );
     } finally {
       setSeeding(false);
       setLoading(false);
@@ -98,7 +112,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     const searchLower = search.toLowerCase().trim();
     if (!searchLower) return true;
     return (
-      c.name.toLowerCase().includes(searchLower) ||
+      (c.name || "").toLowerCase().includes(searchLower) ||
       (c.universe || "").toLowerCase().includes(searchLower) ||
       (c.category || "").toLowerCase().includes(searchLower)
     );
@@ -312,7 +326,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
               onSelectStory={handleCanonSelect}
               isInline={true}
             />
-          ) : loading ? (
+          ) : filteredCharacters.length === 0 && filteredGroups.length === 0 && (loading || seeding) ? (
             <div className="text-center py-12 font-mono text-primary/30 text-sm tracking-widest uppercase animate-pulse">
               {seeding ? "Indexing starter characters..." : "Loading characters..."}
             </div>
@@ -390,7 +404,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
                             <img src={char.avatar_url} alt={char.name} className="w-12 h-12 object-cover border border-primary/20 mb-3" />
                           ) : (
                             <div className="w-12 h-12 bg-primary/10 border border-primary/20 flex items-center justify-center mb-3">
-                              <span className="font-mono text-primary text-lg">{char.name[0]}</span>
+                              <span className="font-mono text-primary text-lg">{(char.name || "?")[0]}</span>
                             </div>
                           )}
                           <div className="flex items-center gap-1.5">
