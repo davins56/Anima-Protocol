@@ -138,3 +138,116 @@ export function buildLewdityGuide(adultMode, lewdity = 0) {
     ? `Include suggestive heated content when the beat invites it; stay short of graphic (lewdity: ${level}%).`
     : `Keep language family-friendly and avoid explicit content (lewdity: ${level}%).`;
 }
+
+/** @typedef {'forward' | 'selective' | 'reserved' | 'averse'} IntimacyDisposition */
+
+const FORWARD_RE =
+  /\b(flirtatious|seductive|sensual|lustful|promiscuous|sexually (open|forward|bold)|boldly romantic|touches freely|physically affectionate|exhibitionist|hedonist|wanton)\b/i;
+const AVERSE_RE =
+  /\b(asexual|celibate|prudish|repulsed by (sex|intimacy)|avoids (touch|romance|intimacy)|sex-repulsed|aromantic)\b/i;
+const RESERVED_RE =
+  /\b(shy|reserved|stoic|guarded|demure|modest|private|slow to trust|emotionally closed|keeps (people|others) at (a )?distance|formal|proper|chaste)\b/i;
+
+/**
+ * Infer how readily a character initiates intimate talk/gestures from their sheet.
+ * @param {string} [personality]
+ * @returns {IntimacyDisposition}
+ */
+export function inferIntimacyDisposition(personality = "") {
+  const text = String(personality || "");
+  if (AVERSE_RE.test(text)) return "averse";
+  if (FORWARD_RE.test(text)) return "forward";
+  if (RESERVED_RE.test(text)) return "reserved";
+  return "selective";
+}
+
+/**
+ * Group-chat intimacy guidance: when heat/gestures are appropriate with an
+ * audience present, filtered through THIS speaker's personality — not a shared
+ * group libido.
+ *
+ * @param {{
+ *   nextChar?: { name?: string, personality?: string },
+ *   groupChars?: Array<{ name?: string, personality?: string }>,
+ *   timing?: LewdTiming,
+ *   adultMode?: boolean,
+ * }} [params]
+ * @returns {string}
+ */
+export function buildGroupIntimacyGuidance({
+  nextChar,
+  groupChars = [],
+  timing = "hold",
+  adultMode = false,
+} = {}) {
+  const speakerName = nextChar?.name || "this character";
+  const disposition = inferIntimacyDisposition(nextChar?.personality);
+  const others = (groupChars || []).filter(
+    (c) => c?.name && c.name !== speakerName,
+  );
+  const audience =
+    others.length > 0
+      ? others.map((c) => c.name).join(", ")
+      : "no other named companions";
+
+  const othersLines = others
+    .map((c) => {
+      const d = inferIntimacyDisposition(c.personality);
+      return `- ${c.name}: intimacy disposition ${d} — do not puppet them; only let YOUR reaction account for how ${speakerName} would feel acting in front of / toward them`;
+    })
+    .join("\n");
+
+  const dispositionGuide = {
+    forward:
+      `${speakerName} is naturally forward with affection/heat. They may initiate intimate talk or gestures when the beat invites it — still reading the room and the other characters present.`,
+    selective:
+      `${speakerName} is selective: intimate talk/gestures only when trust, chemistry, and privacy (or a fitting public tension) make it feel true to them — never on cue alone.`,
+    reserved:
+      `${speakerName} is reserved/private. Prefer subtle longing, charged silence, or carefully chosen words over bold public heat. Intimate gestures are rare and meaningful.`,
+    averse:
+      `${speakerName} resists sexual/romantic escalation. Stay warm or tense in-character without initiating lewd talk or intimate gestures; deflect or reframe if others push.`,
+  }[disposition];
+
+  const timingGuide =
+    timing === "invite" || timing === "continue"
+      ? adultMode
+        ? `Scene timing allows intimacy — but only express it in ${speakerName}'s authentic register (${disposition}). If others are present, decide whether ${speakerName} would go private, keep it coded/subtle, claim the moment boldly, or refuse because of who is watching.`
+        : `Scene timing allows charged/suggestive intimacy — express it only as ${speakerName} would (${disposition}), short of graphic, and account for the audience.`
+      : `Scene timing is WRONG for intimate escalation. No intimate gestures or sexual talk this beat — even if Adult Mode is on — unless ${speakerName}'s personality would make a tiny, non-escalating affectionate beat feel inevitable (and still not lewd).`;
+
+  return `
+GROUP INTIMACY JUDGMENT (required this turn):
+You are ${speakerName} with others present (${audience}). Intimate conversation and gestures are character-specific, not a group default.
+
+YOUR DISPOSITION: ${disposition}
+${dispositionGuide}
+
+${timingGuide}
+
+Audience awareness:
+${othersLines || `- Alone with the user in this cast — still stay true to ${speakerName}'s disposition.`}
+- Do NOT speak or act as other characters.
+- Do NOT force every companion into the same heat level.
+- A reserved or averse character may look away, interrupt, change the subject, or leave space — that is valid intimacy judgment.
+- Physical gestures (*touches*, *kisses*, etc.) only if ${speakerName} would actually do that here, given personality + who is watching + timing.
+`;
+}
+
+/**
+ * Extra director rules so speaker pick respects intimacy beats + personality.
+ * @param {LewdTiming} timing
+ * @returns {string}
+ */
+export function groupSpeakerIntimacyRules(timing = "hold") {
+  if (timing === "invite" || timing === "continue") {
+    return (
+      "- This beat has intimate/romantic charge: prefer the character whose personality would most naturally engage (or pointedly refuse) that charge\n" +
+      "- Do NOT pick a reserved/averse character to suddenly lead lewd escalation unless the user addressed them directly\n" +
+      "- A shy or private character may still react — with hesitation, jealousy, protectiveness, or deflection — if that is truer to them"
+    );
+  }
+  return (
+    "- This beat is NOT an intimacy cue: prefer whoever fits the plot/emotion; do not steer the scene toward heat\n" +
+    "- Avoid initiating flirtation or intimate gestures just to create drama"
+  );
+}

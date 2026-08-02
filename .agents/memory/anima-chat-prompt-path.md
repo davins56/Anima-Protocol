@@ -35,6 +35,14 @@ while Adult Mode is on — those silently override `adultInstruction`. Lewdity/
 sexuality guides must also not force “family-friendly” under Adult Mode, but they
 must respect LEWDITY TIMING.
 
+**Group intimacy:** In group/crossover turns, also inject
+`buildGroupIntimacyGuidance({ nextChar, groupChars, timing, adultMode })` into
+`buildGroupPrompt` so the speaking character judges intimate talk/gestures by
+(1) scene timing, (2) THEIR personality disposition
+(`inferIntimacyDisposition`), and (3) who else is present. Speaker selection
+should include `groupSpeakerIntimacyRules(timing)` so reserved/averse characters
+are not forced to lead lewd beats.
+
 **User profile injection:** The account-default "about me" lives at
 `user.settings.user_profile` (edited on the `/profile` page, `pages/UserProfile.jsx`).
 In `handleSendMessage` it's formatted ONCE into `userProfileContext` (a delimited
