@@ -96,6 +96,8 @@ import {
   lewdTimingClause,
   buildSexualityGuide,
   buildLewdityGuide,
+  buildGroupIntimacyGuidance,
+  groupSpeakerIntimacyRules,
 } from "@/lib/contentRatingInstruction";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
@@ -1443,6 +1445,7 @@ Rules:
 - The same character can speak again if it makes sense narratively
 - Consider who might be provoked, excited, curious, threatened, or emotionally moved by what just happened
 - Pick the character who would most authentically respond to what just happened
+${groupSpeakerIntimacyRules(lewdTiming)}
 
 Reply with ONLY the character's exact name — nothing else.`;
 
@@ -1510,6 +1513,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
           : "";
 
+        // Group intimacy: right/wrong time + THIS speaker's personality + audience.
+        const groupIntimacyGuidance = buildGroupIntimacyGuidance({
+          nextChar: finalNextChar,
+          groupChars,
+          timing: lewdTiming,
+          adultMode,
+        });
+
         prompt = buildGroupPrompt({
           nextChar: finalNextChar,
           allCharSheets,
@@ -1520,6 +1531,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           traitModifiers,
           userProfileContext,
           interruptionClause,
+          groupIntimacyGuidance,
           isContinue,
         });
       }

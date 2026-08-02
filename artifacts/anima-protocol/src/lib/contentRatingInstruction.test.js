@@ -5,6 +5,9 @@ import {
   lewdTimingClause,
   buildSexualityGuide,
   buildLewdityGuide,
+  inferIntimacyDisposition,
+  buildGroupIntimacyGuidance,
+  groupSpeakerIntimacyRules,
 } from "./contentRatingInstruction";
 
 describe("assessLewdTiming", () => {
@@ -95,5 +98,63 @@ describe("behavior guides", () => {
     expect(buildSexualityGuide(true, 80)).toContain("WRONG TIME");
     expect(buildLewdityGuide(true, 80)).toContain("RIGHT TIME");
     expect(buildLewdityGuide(false, 20)).toContain("family-friendly");
+  });
+});
+
+describe("inferIntimacyDisposition", () => {
+  it("classifies personality sheets", () => {
+    expect(inferIntimacyDisposition("Shy, reserved, keeps others at a distance")).toBe(
+      "reserved",
+    );
+    expect(
+      inferIntimacyDisposition("Flirtatious and sensual, boldly romantic"),
+    ).toBe("forward");
+    expect(inferIntimacyDisposition("Asexual and sex-repulsed")).toBe("averse");
+    expect(inferIntimacyDisposition("Loyal warrior with a dry wit")).toBe(
+      "selective",
+    );
+  });
+});
+
+describe("buildGroupIntimacyGuidance", () => {
+  const reserved = {
+    name: "Ava",
+    personality: "Shy, reserved, modest, private about affection",
+  };
+  const forward = {
+    name: "Rex",
+    personality: "Flirtatious, sensual, physically affectionate",
+  };
+
+  it("requires audience-aware, personality-specific intimacy judgment", () => {
+    const text = buildGroupIntimacyGuidance({
+      nextChar: reserved,
+      groupChars: [reserved, forward],
+      timing: "invite",
+      adultMode: true,
+    });
+    expect(text).toContain("GROUP INTIMACY JUDGMENT");
+    expect(text).toContain("reserved");
+    expect(text).toContain("Rex");
+    expect(text).toContain("who is watching");
+    expect(text).toMatch(/Physical gestures/i);
+  });
+
+  it("holds intimate escalation on wrong-time group beats", () => {
+    const text = buildGroupIntimacyGuidance({
+      nextChar: forward,
+      groupChars: [reserved, forward],
+      timing: "hold",
+      adultMode: true,
+    });
+    expect(text).toContain("WRONG for intimate escalation");
+  });
+});
+
+describe("groupSpeakerIntimacyRules", () => {
+  it("biases speaker pick on intimate beats without forcing reserved leads", () => {
+    const rules = groupSpeakerIntimacyRules("invite");
+    expect(rules).toContain("intimate/romantic charge");
+    expect(rules).toContain("reserved/averse");
   });
 });
