@@ -512,7 +512,9 @@ router.post("/messages", async (req, res) => {
       : undefined) ||
     (requestedAssistantName
       ? adaptedChars.find(
-          (c) => c.name.toLowerCase() === requestedAssistantName.toLowerCase(),
+          (c) =>
+            String(c.name || "").toLowerCase() ===
+            requestedAssistantName.toLowerCase(),
         )
       : undefined) ||
     (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
