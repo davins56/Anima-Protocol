@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
+const geminiStreamMock = vi.fn();
+const geminiCompletionMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
   const client = {
@@ -24,6 +26,11 @@ vi.mock("../src/lib/openaiClient", () => {
     resetLlmClientsForTests: () => {},
   };
 });
+
+vi.mock("../src/lib/geminiNative", () => ({
+  createGeminiChatStream: (...args: unknown[]) => geminiStreamMock(...args),
+  createGeminiChatCompletion: (...args: unknown[]) => geminiCompletionMock(...args),
+}));
 
 import {
   createChatCompletionWithFailover,
@@ -244,6 +251,8 @@ describe("createChatStreamWithFailover", () => {
     delete process.env.ANIMA_XAI_MODEL_HEAVY;
     resetLlmFailoverStateForTests();
     createMock.mockReset();
+    geminiStreamMock.mockReset();
+    geminiCompletionMock.mockReset();
   });
 
   afterEach(() => {
@@ -270,7 +279,7 @@ describe("createChatStreamWithFailover", () => {
   it("uses Gemini by default when GEMINI_API_KEY is set", async () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     delete process.env.ANIMA_LLM_PROVIDER;
-    createMock.mockResolvedValueOnce(fakeStream("gemini"));
+    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
     const result = await createChatStreamWithFailover({
       tier: "standard",
       model: "gpt-4o",
@@ -279,7 +288,9 @@ describe("createChatStreamWithFailover", () => {
     });
     expect(result.provider).toBe("gemini");
     expect(result.failedOver).toBe(false);
-    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(geminiStreamMock.mock.calls[0][0].model).toBe("gemini-2.5-flash");
   });
 
   it("returns OpenAI stream when ANIMA_LLM_PROVIDER=openai", async () => {
@@ -325,13 +336,12 @@ describe("createChatStreamWithFailover", () => {
   it("falls back from xAI team-no-credits 403 to Gemini", async () => {
     process.env.ANIMA_LLM_PROVIDER = "xai";
     process.env.GEMINI_API_KEY = "gemini-test";
-    createMock
-      .mockRejectedValueOnce({
-        status: 403,
-        message:
-          '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
-      })
-      .mockResolvedValueOnce(fakeStream("gemini"));
+    createMock.mockRejectedValueOnce({
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+    });
+    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
 
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -343,7 +353,8 @@ describe("createChatStreamWithFailover", () => {
     expect(result.provider).toBe("gemini");
     expect(result.failedOver).toBe(true);
     expect(result.previousProvider).toBe("xai");
-    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
   });
 
   it("points at the xAI console when Grok has no team credits and no backup", async () => {
@@ -369,7 +380,7 @@ describe("createChatStreamWithFailover", () => {
   it("surfaces a Gemini-only quota error without mentioning Grok when mode is gemini", async () => {
     process.env.ANIMA_LLM_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "gemini-test";
-    createMock.mockRejectedValueOnce({
+    geminiStreamMock.mockRejectedValueOnce({
       status: 429,
       message: "RESOURCE_EXHAUSTED: Quota exceeded",
     });
@@ -384,23 +395,23 @@ describe("createChatStreamWithFailover", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toMatch(/Gemini credits\/quota exhausted/i);
     expect((err as Error).message).not.toMatch(/Grok|console\.x\.ai|ANIMA_LLM_PROVIDER=gemini/i);
-    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it("does not suggest ANIMA_LLM_PROVIDER=gemini when Gemini already failed before Grok credits under auto", async () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.ANIMA_DISABLE_OPENAI = "true";
     process.env.GEMINI_API_KEY = "gemini-test";
-    createMock
-      .mockRejectedValueOnce({
-        status: 429,
-        message: "RESOURCE_EXHAUSTED: Quota exceeded",
-      })
-      .mockRejectedValueOnce({
-        status: 403,
-        message:
-          '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
-      });
+    geminiStreamMock.mockRejectedValueOnce({
+      status: 429,
+      message: "RESOURCE_EXHAUSTED: Quota exceeded",
+    });
+    createMock.mockRejectedValueOnce({
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+    });
 
     const err = await createChatStreamWithFailover({
       tier: "standard",
@@ -414,23 +425,25 @@ describe("createChatStreamWithFailover", () => {
       /Gemini was unavailable[\s\S]*console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i,
     );
     expect((err as Error).message).not.toMatch(/ANIMA_LLM_PROVIDER=gemini/);
+    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("skips Grok on later turns after a no-credits failure under auto", async () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.ANIMA_DISABLE_OPENAI = "true";
     process.env.GEMINI_API_KEY = "gemini-test";
-    createMock
+    geminiStreamMock
       .mockRejectedValueOnce({
         status: 429,
         message: "RESOURCE_EXHAUSTED: Quota exceeded",
       })
-      .mockRejectedValueOnce({
-        status: 403,
-        message:
-          '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
-      })
       .mockResolvedValueOnce(fakeStream("gemini-retry"));
+    createMock.mockRejectedValueOnce({
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+    });
 
     await expect(
       createChatStreamWithFailover({
@@ -451,8 +464,9 @@ describe("createChatStreamWithFailover", () => {
     expect(second.provider).toBe("gemini");
     expect(second.failedOver).toBe(false);
     // Turn 1: Gemini fail + xAI fail. Turn 2: Gemini only (sticky skip xAI).
-    expect(createMock).toHaveBeenCalledTimes(3);
-    expect(createMock.mock.calls[2][0].model).toBe("gemini-2.5-flash");
+    expect(geminiStreamMock).toHaveBeenCalledTimes(2);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock.mock.calls[1][0].model).toBe("gemini-2.5-flash");
   });
 
   it("falls back to Grok on OpenAI 401 status code (no body)", async () => {
@@ -515,7 +529,7 @@ describe("createChatStreamWithFailover", () => {
   it("uses Gemini when ANIMA_LLM_PROVIDER=gemini", async () => {
     process.env.ANIMA_LLM_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "gemini-test";
-    createMock.mockResolvedValueOnce(fakeStream("gemini"));
+    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
 
     const result = await createChatStreamWithFailover({
       tier: "heavy",
@@ -526,7 +540,8 @@ describe("createChatStreamWithFailover", () => {
 
     expect(result.provider).toBe("gemini");
     expect(result.model).toBe("gemini-2.5-pro");
-    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it("falls through OpenAI → xAI → Gemini on quota errors", async () => {
@@ -534,8 +549,8 @@ describe("createChatStreamWithFailover", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     createMock
       .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" })
-      .mockRejectedValueOnce({ status: 429, message: "rate limit" })
-      .mockResolvedValueOnce(fakeStream("gemini"));
+      .mockRejectedValueOnce({ status: 429, message: "rate limit" });
+    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
 
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -546,8 +561,9 @@ describe("createChatStreamWithFailover", () => {
 
     expect(result.provider).toBe("gemini");
     expect(result.failedOver).toBe(true);
-    expect(createMock).toHaveBeenCalledTimes(3);
-    expect(createMock.mock.calls[2][0].model).toBe("gemini-2.5-flash");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock.mock.calls[0][0].model).toBe("gemini-2.5-flash");
   });
 
   it("retries OpenAI standard model on model-unavailable before giving up", async () => {
@@ -634,6 +650,8 @@ describe("createChatCompletionWithFailover", () => {
     delete process.env.ANIMA_DISABLE_OPENAI;
     resetLlmFailoverStateForTests();
     createMock.mockReset();
+    geminiStreamMock.mockReset();
+    geminiCompletionMock.mockReset();
   });
 
   afterEach(() => {
@@ -654,5 +672,22 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("companion json");
     expect(result.provider).toBe("xai");
     expect(result.model).toBe("grok-3");
+  });
+
+  it("uses native Gemini completion when GEMINI_API_KEY is preferred", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "AQ.test-key";
+    geminiCompletionMock.mockResolvedValueOnce(fakeCompletion("native gemini"));
+
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "system", content: "You are Serenity." }],
+    });
+
+    expect(result.content).toBe("native gemini");
+    expect(result.provider).toBe("gemini");
+    expect(geminiCompletionMock).toHaveBeenCalledTimes(1);
+    expect(createMock).not.toHaveBeenCalled();
   });
 });

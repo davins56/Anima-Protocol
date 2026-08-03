@@ -30,7 +30,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
 | `OPENAI_API_KEY` | Recommended | For chat / AI features when OpenAI is enabled, and for image edit/generate (Customise Anima → Generate Look). Must be a valid key from https://platform.openai.com/account/api-keys — a revoked or mistyped key surfaces as image generation unavailable (OpenAI 401). Paste without quotes. Redeploy after changing. Optional for chat if you force Grok/Gemini below. |
-| `GEMINI_API_KEY` | Recommended | Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Used as the default chat provider when set. |
+| `GEMINI_API_KEY` | Recommended | Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Used as the default chat provider when set. Supports new `AQ.*` auth keys via the native Generative Language API (not the OpenAI-compatible endpoint). |
 | `XAI_API_KEY` | Optional | Grok (xAI). Used under `ANIMA_LLM_PROVIDER=auto` or as primary via `xai`. Not used when mode is `gemini` (default with `GEMINI_API_KEY`). |
 | `ANIMA_LLM_PROVIDER` | No | Unset + `GEMINI_API_KEY` → Gemini-only. Or set `gemini` / `auto` / `xai` / `grok` / `openai`. Under `auto`, order is Gemini → Grok → OpenAI. |
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |

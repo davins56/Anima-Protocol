@@ -64,8 +64,8 @@ export function getXaiClient(): OpenAI | null {
 }
 
 /**
- * OpenAI-compatible Gemini client (Google AI Studio).
- * Accepts GEMINI_API_KEY or GOOGLE_API_KEY. Returns null when neither is set.
+ * @deprecated Chat uses the native Generative Language API in `geminiNative.ts`
+ * so AQ.* AI Studio auth keys work. Kept only for any legacy callers/tests.
  */
 export function getGeminiClient(): OpenAI | null {
   const apiKey =

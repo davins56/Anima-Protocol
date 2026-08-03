@@ -31,7 +31,10 @@ import {
   type ResolvedModel,
 } from "./modelRouter";
 import {
-  getGeminiClient,
+  createGeminiChatCompletion,
+  createGeminiChatStream,
+} from "./geminiNative";
+import {
   getOpenAIClient,
   getXaiClient,
   hasGeminiKey,
@@ -329,20 +332,11 @@ function providerLabel(id: LlmProviderId): string {
   return "OpenAI";
 }
 
-function clientFor(provider: LlmProviderId): OpenAI {
+function clientFor(provider: Exclude<LlmProviderId, "gemini">): OpenAI {
   if (provider === "xai") {
     const client = getXaiClient();
     if (!client) {
       throw new Error("XAI_API_KEY must be set to use the Grok provider.");
-    }
-    return client;
-  }
-  if (provider === "gemini") {
-    const client = getGeminiClient();
-    if (!client) {
-      throw new Error(
-        "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
-      );
     }
     return client;
   }
@@ -397,6 +391,9 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
     return new Error(
       `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel` +
         " — paste the key without quotes, then redeploy. " +
+        (attempted.includes("gemini")
+          ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. "
+          : "") +
         "To skip OpenAI, set ANIMA_LLM_PROVIDER=xai (with XAI_API_KEY) or gemini (with GEMINI_API_KEY).",
     );
   }
@@ -449,6 +446,15 @@ async function createStream(
   resolved: ResolvedModel,
   messages: ChatCompletionMessageParam[],
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  // Use the native Generative Language API for Gemini so AQ.* AI Studio
+  // auth keys work (OpenAI-compatible /v1beta/openai rejects many of them).
+  if (provider === "gemini") {
+    return createGeminiChatStream({
+      model: resolved.model,
+      maxTokens: resolved.maxTokens,
+      messages,
+    });
+  }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
     max_tokens: resolved.maxTokens,
@@ -463,6 +469,14 @@ async function createCompletion(
   messages: ChatCompletionMessageParam[],
   temperature?: number,
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  if (provider === "gemini") {
+    return createGeminiChatCompletion({
+      model: resolved.model,
+      maxTokens: resolved.maxTokens,
+      messages,
+      temperature,
+    });
+  }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
     max_tokens: resolved.maxTokens,
