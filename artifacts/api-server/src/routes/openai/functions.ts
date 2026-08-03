@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { rateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
+import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { getOpenAIClient } from "../../lib/openaiClient";
 
 const router = Router();
@@ -20,15 +21,16 @@ router.use((req, res, next) => {
 });
 
 async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
-  const resp = await getOpenAIClient().chat.completions.create({
+  const result = await createChatCompletionWithFailover({
+    tier: "standard",
     model: "gpt-4o",
-    max_tokens: maxTokens,
+    maxTokens,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
   });
-  return resp.choices[0]?.message?.content ?? "";
+  return result.content;
 }
 
 // Web-grounded LLM call: uses the OpenAI Responses API with the web_search
@@ -199,9 +201,10 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 // Reads an uploaded photo with a vision model: OCRs any visible text and
 // describes the image, then distills it into the same ContextAnalysis shape.
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
-  const resp = await getOpenAIClient().chat.completions.create({
+  const result = await createChatCompletionWithFailover({
+    tier: "standard",
     model: "gpt-4o",
-    max_tokens: 1500,
+    maxTokens: 1500,
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },
       {
@@ -218,7 +221,7 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
       },
     ],
   });
-  return parseContextAnalysis(resp.choices[0]?.message?.content ?? "");
+  return parseContextAnalysis(result.content);
 }
 
 // Merge the extracted analysis onto the user's existing UserContext row (the
