@@ -1,17 +1,20 @@
 // Cross-provider chat completion with automatic failover.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - gemini           — Gemini primary; never call OpenAI (Grok as optional backup)
+//   - gemini           — Gemini only; never call OpenAI or Grok
 //   - auto             — Gemini → Grok → OpenAI when those keys exist; OpenAI alone
 //                        only when no alt key is configured
 //   - xai / grok       — Grok primary; never call OpenAI (Gemini as optional backup)
 //   - openai           — OpenAI primary with Grok/Gemini failover
 //
 // When ANIMA_LLM_PROVIDER is unset, Gemini is selected automatically whenever
-// GEMINI_API_KEY (or GOOGLE_API_KEY) is present.
+// GEMINI_API_KEY (or GOOGLE_API_KEY) is present (Gemini-only — no Grok backup).
+// Use ANIMA_LLM_PROVIDER=auto if you want Gemini → Grok → OpenAI failover.
 //
 // ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` (useful when the
 // OpenAI account is out of credits).
+// ANIMA_DISABLE_XAI=true blocks Grok under `auto` / `openai` (useful when the
+// xAI team has no credits/licenses).
 //
 // Intra-provider "model unavailable" fallback (routed → standard) is preserved
 // and still gated by isModelUnavailableError — that path must NOT fire on 429.
@@ -101,21 +104,27 @@ export function getConfiguredProviderMode(): LlmProviderMode {
   return hasGeminiKey() ? "gemini" : "auto";
 }
 
+function envFlagEnabled(name: string): boolean {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 export function isOpenAIBlocked(): boolean {
   const mode = getConfiguredProviderMode();
   if (mode === "xai" || mode === "gemini") return true;
-  const disabled = (process.env.ANIMA_DISABLE_OPENAI || "").trim().toLowerCase();
-  return (
-    disabled === "1" ||
-    disabled === "true" ||
-    disabled === "yes" ||
-    disabled === "on"
-  );
+  return envFlagEnabled("ANIMA_DISABLE_OPENAI");
+}
+
+export function isXaiBlocked(): boolean {
+  const mode = getConfiguredProviderMode();
+  if (mode === "gemini") return true;
+  if (preferNonXai) return true;
+  return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
 
 function providerAvailable(id: LlmProviderId): boolean {
   if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
-  if (id === "xai") return hasXaiKey() && !preferNonXai;
+  if (id === "xai") return !isXaiBlocked() && hasXaiKey();
   return hasGeminiKey();
 }
 
@@ -142,8 +151,9 @@ export function getProviderChain(): LlmProviderId[] {
   }
 
   if (mode === "gemini") {
+    // Gemini-only: a depleted XAI_API_KEY in the environment must not turn every
+    // Gemini outage into a confusing "buy Grok credits" error.
     push("gemini");
-    push("xai");
     return chain;
   }
 
@@ -405,14 +415,22 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
         `Grok (xAI) has no team credits/licenses yet (tried ${names}). ` +
           `Buy credits at ${xaiBilling}` +
           (hasGeminiKey()
-            ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead."
+            ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead (and optionally ANIMA_DISABLE_XAI=true)."
             : ". Optionally set GEMINI_API_KEY for a non-OpenAI backup."),
       );
     }
-    const hints: string[] = [];
-    if (!hasXaiKey() || preferNonXai) {
-      if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
+    if (attempted.length === 1 && attempted[0] === "gemini") {
+      return new Error(
+        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` +
+          (hasXaiKey() && !isXaiBlocked()
+            ? " Or set ANIMA_LLM_PROVIDER=auto to allow Grok/OpenAI failover."
+            : hasOpenAIKey() && !isOpenAIBlocked()
+              ? " Or set ANIMA_LLM_PROVIDER=auto to allow OpenAI failover."
+              : ""),
+      );
     }
+    const hints: string[] = [];
+    if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
     if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
     if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
     const hint =
