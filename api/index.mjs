@@ -125870,13 +125870,10 @@ function providerAvailable(id) {
   return hasGeminiKey();
 }
 function getAnimaTierProviderOrder(tier) {
-  if (tier === "light") {
-    return ["kimi", "gemini", "xai", "openai"];
-  }
   if (tier === "heavy") {
-    return ["xai", "openai", "kimi", "gemini"];
+    return ["xai", "kimi", "openai", "gemini"];
   }
-  return ["gemini", "kimi", "xai", "openai"];
+  return ["kimi", "gemini", "xai", "openai"];
 }
 function getProviderChain(tier = "standard") {
   const mode = getConfiguredProviderMode();
