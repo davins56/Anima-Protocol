@@ -8,7 +8,21 @@
 // functions) is kept identical to the old localStorage implementation so the
 // hundreds of call sites across the app are untouched.
 
-const DB_PREFIX = 'anima_entity_';
+import { downscaleDataUrl } from '@/lib/downscaleImage';
+import { apiUrl } from '@/lib/apiOrigin';
+import {
+  ensureBootstrapComplete,
+  isBootstrapSettled,
+} from '@/lib/bootstrapState';
+import {
+  authHeaders,
+  clearAuthTokenGetter,
+  getToken,
+  setAuthTokenGetter,
+  waitForStoreAuth,
+} from './authBridge';
+
+const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
 
