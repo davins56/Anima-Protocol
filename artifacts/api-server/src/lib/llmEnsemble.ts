@@ -19,6 +19,7 @@ import {
   hasXaiKey,
 } from "./openaiClient";
 import {
+  beginChatProviderTurn,
   getAnimaTierProviderOrder,
   isAnimaCustomMode,
   isKimiStickySkipped,
@@ -336,6 +337,7 @@ export async function* chunkTextAsStream(
 export async function createEnsembleChatReply(
   req: EnsembleChatRequest,
 ): Promise<EnsembleChatResult> {
+  beginChatProviderTurn();
   const minds = getEnsembleMinds(req.tier);
   if (minds.length === 0) {
     throw new Error(

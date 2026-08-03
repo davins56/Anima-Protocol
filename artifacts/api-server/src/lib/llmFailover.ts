@@ -127,12 +127,25 @@ let preferNonKimi = false;
 // Sticky skip after Gemini quota/auth failure in this process.
 let preferNonGemini = false;
 
-/** Test helper — clears sticky failover preference. */
-export function resetLlmFailoverStateForTests(): void {
+function clearAllStickySkips(): void {
   preferNonOpenAI = false;
   preferNonXai = false;
   preferNonKimi = false;
   preferNonGemini = false;
+}
+
+/** Test helper — clears sticky failover preference. */
+export function resetLlmFailoverStateForTests(): void {
+  clearAllStickySkips();
+}
+
+/**
+ * Every user chat turn starts fresh. Sticky skips only help within a single
+ * failover walk; carrying them across warm-isolate turns caused "tried OpenAI"
+ * alone while GEMINI_API_KEY / KIMI_API_KEY were still configured.
+ */
+export function beginChatProviderTurn(): void {
+  clearAllStickySkips();
 }
 
 function envFlagEnabled(name: string): boolean {
@@ -235,9 +248,9 @@ function hasAnyChatKey(): boolean {
 }
 
 /**
- * If prior quota/auth failures sticky-skipped every key, clear stickies so the
- * next turn can retry. Otherwise a warm Vercel isolate shows a false
- * "No LLM provider configured" even when keys are present.
+ * If sticky skips would hide Gemini/Kimi or empty the chain while keys exist,
+ * clear them. Prevents warm isolates from falling through to "tried OpenAI"
+ * alone after earlier Gemini/Kimi quota failures.
  */
 export function reviveStickySkippedProvidersIfNeeded(): boolean {
   if (!hasAnyStickySkip()) return false;
@@ -247,12 +260,14 @@ export function reviveStickySkippedProvidersIfNeeded(): boolean {
   const kimiOk = hasKimiKey() && !preferNonKimi && !isKimiConfigBlocked();
   const xaiOk = hasXaiKey() && !isXaiBlocked() && !preferNonXai;
   const openaiOk = hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
-  if (geminiOk || kimiOk || xaiOk || openaiOk) return false;
+  const nothingLeft = !geminiOk && !kimiOk && !xaiOk && !openaiOk;
+  const hidingPreferred =
+    (preferNonGemini && hasGeminiKey() && !isGeminiConfigBlocked()) ||
+    (preferNonKimi && hasKimiKey() && !isKimiConfigBlocked());
 
-  preferNonGemini = false;
-  preferNonKimi = false;
-  preferNonXai = false;
-  preferNonOpenAI = false;
+  if (!nothingLeft && !hidingPreferred) return false;
+
+  clearAllStickySkips();
   return true;
 }
 
@@ -853,6 +868,8 @@ function requireProviderChain(): LlmProviderId[] {
 export async function createChatStreamWithFailover(
   req: ChatStreamRequest,
 ): Promise<ChatStreamResult> {
+  // Always walk the full configured chain for each user message.
+  beginChatProviderTurn();
   const chain = requireProviderChain();
   const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
   const attempted: LlmProviderId[] = [];
@@ -902,6 +919,7 @@ export async function createChatStreamWithFailover(
 export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
+  beginChatProviderTurn();
   const chain = requireProviderChain();
   const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
   const attempted: LlmProviderId[] = [];
