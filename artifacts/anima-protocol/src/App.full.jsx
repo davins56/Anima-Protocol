@@ -44,6 +44,7 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
+  CLERK_FAILURE_HINT,
   CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -388,8 +389,11 @@ function ClerkConnectivityHints({ includeStallHint }) {
     (async () => {
       const next = await probeClerkConnectivity(clerkPubKey);
       if (cancelled) return;
-      if (includeStallHint && next.length === 0) {
-        setHints([CLERK_STALL_HINT]);
+      // When probes find no endpoint issue, still guide recovery:
+      // - stall path: SDK still loading after timeout
+      // - ClerkFailed path: SDK/browser init failed despite healthy endpoints
+      if (next.length === 0) {
+        setHints([includeStallHint ? CLERK_STALL_HINT : CLERK_FAILURE_HINT]);
         return;
       }
       setHints(next);

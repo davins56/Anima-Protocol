@@ -6,9 +6,9 @@ import {
   resolveClerkProxyUrl,
 } from '@/lib/clerkProxy';
 
-// Match the query shape Clerk JS uses in production (single underscore).
+// Match Clerk JS: API version uses double underscore; JS version uses single.
 const CLERK_ENVIRONMENT_PROBE_PATH =
-  '/v1/environment?_clerk_api_version=2025-11-10&_clerk_js_version=6.12.1';
+  '/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=6.12.1';
 
 async function readProxyError(res) {
   try {
@@ -166,9 +166,9 @@ export async function probeClerkConnectivity(clerkPubKey) {
     );
   }
 
-  // Intentionally do NOT push a "healthy but SDK did not finish loading" hint
-  // here. That stall message is decided by the UI after ClerkLoading has
-  // actually stalled (see ClerkLoginDiagnostics in App.full.jsx).
+  // Intentionally do NOT push stall/failure recovery hints here. Those are
+  // decided by the UI after ClerkLoading stalls or ClerkFailed confirms
+  // (see ClerkConnectivityHints in App.full.jsx).
 
   return hints;
 }
@@ -176,3 +176,10 @@ export async function probeClerkConnectivity(clerkPubKey) {
 /** Message shown only when Clerk UI is still loading after a stall timeout. */
 export const CLERK_STALL_HINT =
   'API and Clerk look reachable, but the Clerk SDK has not finished loading. Disable ad blockers, try another browser, or refresh in a few seconds.';
+
+/**
+ * Message when Clerk has confirmed failure (ClerkFailed) but health/environment/script
+ * probes all succeeded — e.g. script execution or SDK init failed in-browser.
+ */
+export const CLERK_FAILURE_HINT =
+  'API and Clerk look reachable, but the Clerk SDK failed to initialize. Disable ad blockers, try another browser, or hard-refresh.';
