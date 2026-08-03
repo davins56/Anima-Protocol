@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import OpenAI from "openai";
+declare const process: { env: Record<string, string | undefined> };
 
 const groq = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
