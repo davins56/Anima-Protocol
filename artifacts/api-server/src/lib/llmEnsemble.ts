@@ -3,8 +3,8 @@
 // Available backends draft a reply in parallel; the app synthesizes those
 // drafts into one in-character companion reply and streams it to the client.
 //
-// Gemini is never selected (retired for chat). Mind selection honors sticky
-// failover blocks from llmFailover so known-broken backends are skipped.
+// Sequential chat can use Gemini; ensemble minds currently fan out across
+// Kimi / Grok / ChatGPT. Sticky failover blocks from llmFailover are honored.
 //
 // Enabled when ANIMA_LLM_PROVIDER is anima | custom | ensemble (see
 // isAnimaCustomMode), or when ANIMA_LLM_ENSEMBLE=true under other modes.
@@ -34,7 +34,7 @@ import {
 } from "./llmFailover";
 import { resolveModel, type ModelTier } from "./modelRouter";
 
-/** Providers that may participate in ensemble drafts (Gemini retired). */
+/** Providers that may participate in ensemble drafts. */
 type EnsembleMindId = Exclude<LlmProviderId, "gemini">;
 
 export interface MindDraft {
@@ -96,8 +96,8 @@ export function isEnsembleMode(): boolean {
 
 /**
  * Backends that can draft a mind reply right now.
- * Never Gemini. Honors sticky unusable skips + ANIMA_DISABLE_* flags, but does
- * NOT apply Kimi-mode locks — ensemble intentionally fans out across keys.
+ * Honors sticky unusable skips + ANIMA_DISABLE_* flags. Gemini drafts stay on
+ * the sequential failover path for now (native streaming client).
  */
 export function getEnsembleMinds(tier: ModelTier = "standard"): EnsembleMindId[] {
   reviveStickySkippedProvidersIfNeeded();
