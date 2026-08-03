@@ -6,6 +6,7 @@ import {
   inspectSchema,
 } from "@workspace/db";
 import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
+import { getLlmDiagnostics } from "../lib/llmFailover";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,14 @@ if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
   res.json(data);
+});
+
+/**
+ * Public LLM wiring probe (no secrets). Use this to confirm Production sees
+ * KIMI_API_KEY and which provider chain chat will actually try.
+ */
+router.get("/healthz/llm", (_req, res) => {
+  res.json(getLlmDiagnostics("standard"));
 });
 
 /**

@@ -43,6 +43,7 @@ import {
   createChatStreamWithFailover,
   getAnimaTierProviderOrder,
   getConfiguredProviderMode,
+  getLlmDiagnostics,
   getPreferredProvider,
   getProviderChain,
   isAnimaCustomMode,
@@ -183,6 +184,7 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_DISABLE_XAI;
+    delete process.env.ANIMA_FORCE_GEMINI;
     resetLlmFailoverStateForTests();
   });
 
@@ -264,6 +266,24 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     process.env.ANIMA_LLM_PROVIDER = "gemini";
     expect(isOpenAIBlocked()).toBe(true);
     expect(isXaiBlocked()).toBe(true);
+    expect(getProviderChain()).toEqual(["gemini"]);
+  });
+
+  it("overrides leftover ANIMA_LLM_PROVIDER=gemini when KIMI_API_KEY is present", () => {
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
+    process.env.KIMI_API_KEY = "kimi-test";
+    expect(getConfiguredProviderMode()).toBe("kimi");
+    expect(getProviderChain()).toEqual(["kimi"]);
+    expect(getPreferredProvider()).toBe("kimi");
+    expect(getLlmDiagnostics().preferred).toBe("kimi");
+    expect(getLlmDiagnostics().keys.kimi).toBe(true);
+  });
+
+  it("keeps Gemini-only when ANIMA_FORCE_GEMINI=true even if Kimi key exists", () => {
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
+    process.env.KIMI_API_KEY = "kimi-test";
+    process.env.ANIMA_FORCE_GEMINI = "true";
+    expect(getConfiguredProviderMode()).toBe("gemini");
     expect(getProviderChain()).toEqual(["gemini"]);
   });
 
