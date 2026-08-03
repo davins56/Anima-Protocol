@@ -1,0 +1,427 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&family=Cinzel:wght@400;600&display=swap');
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@layer base {
+  /* Dark theme (default) */
+  :root {
+    --background: 220 20% 4%;
+    --foreground: 185 100% 80%;
+    --card: 220 20% 6%;
+    --card-foreground: 185 100% 80%;
+    --popover: 220 20% 6%;
+    --popover-foreground: 185 100% 80%;
+    --primary: 185 100% 50%;
+    --primary-foreground: 220 20% 4%;
+    --secondary: 220 20% 10%;
+    --secondary-foreground: 185 80% 60%;
+    --muted: 220 20% 8%;
+    --muted-foreground: 185 30% 40%;
+    --accent: 185 80% 15%;
+    --accent-foreground: 185 100% 70%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 185 50% 15%;
+    --input: 185 30% 10%;
+    --ring: 185 100% 50%;
+    --radius: 0.25rem;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-sans: 'Rajdhani', sans-serif;
+    --font-sacred: 'Cinzel', serif;
+    --cyan: 185 100% 50%;
+    /* AuraFlow sacred palette — cyan-based for dark mode */
+    --aura-violet: 185 90% 50%;
+    --aura-amethyst: 185 85% 55%;
+    --aura-rose: 185 100% 60%;
+    --aura-gold: 185 95% 65%;
+    /* Font size variables for accessibility */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.25rem;
+  }
+
+  /* Light theme — applied via class OR via OS preference */
+  @media (prefers-color-scheme: light) {
+    :root:not(.dark) {
+      --background: 0 0% 100%;
+      --foreground: 220 20% 15%;
+      --card: 0 0% 100%;
+      --card-foreground: 220 20% 15%;
+      --popover: 0 0% 100%;
+      --popover-foreground: 220 20% 15%;
+      --primary: 185 100% 40%;
+      --primary-foreground: 0 0% 100%;
+      --secondary: 220 20% 85%;
+      --secondary-foreground: 220 20% 20%;
+      --muted: 220 20% 90%;
+      --muted-foreground: 220 20% 40%;
+      --accent: 185 80% 45%;
+      --accent-foreground: 0 0% 100%;
+      --destructive: 0 84% 50%;
+      --destructive-foreground: 0 0% 100%;
+      --border: 220 20% 80%;
+      --input: 220 20% 93%;
+      --ring: 185 100% 40%;
+    }
+  }
+
+  :root.light {
+    --background: 0 0% 100%;
+    --foreground: 220 20% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 15%;
+    --primary: 185 100% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 20% 85%;
+    --secondary-foreground: 220 20% 20%;
+    --muted: 220 20% 90%;
+    --muted-foreground: 220 20% 40%;
+    --accent: 185 80% 45%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 80%;
+    --input: 220 20% 93%;
+    --ring: 185 100% 40%;
+  }
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --font-mono: var(--font-mono);
+  --font-sans: var(--font-sans);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: manipulation;
+  }
+  button, a, [role="button"], nav, .tab-bar, input, textarea, select {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+/* Safe area insets for iOS notch/home bar */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  /* Tab bar height for mobile padding: 56px + safe-area-inset-bottom */
+  --tab-bar-height: calc(56px + env(safe-area-inset-bottom, 0px));
+}
+
+/* On desktop (lg+), no tab bar padding needed */
+@media (min-width: 1024px) {
+  :root {
+    --tab-bar-height: 0px;
+  }
+}
+
+.safe-top { padding-top: env(safe-area-inset-top, 0px); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px); }
+
+/* Mobile page content padding — adds space for bottom tab bar on small screens */
+.mobile-page-padding {
+  padding-bottom: var(--tab-bar-height, 0px);
+}
+
+/* Touch-friendly tap targets — enforced on all mobile interactive elements */
+@media (max-width: 1023px) {
+  button, a[role="button"], [data-touch-target] {
+    min-height: 44px;
+  }
+
+  /* Dashboard widget buttons (icon-only) should still meet 44px minimum */
+  .widget-btn {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  /* Prevent text size boost on mobile */
+  body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  
+  /* Smooth momentum scrolling on iOS */
+  .overflow-y-auto, .overflow-y-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Accessibility: minimum font sizes */
+@layer utilities {
+  .text-label { font-size: 0.75rem; min-width: 12px; }
+  .text-secondary { font-size: 0.875rem; }
+  .text-primary { font-size: 1rem; }
+}
+
+@layer utilities {
+  .glow-text {
+    text-shadow: 0 0 10px hsl(var(--primary)), 0 0 20px hsl(var(--primary) / 0.5);
+  }
+  .glow-border {
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.3), inset 0 0 8px hsl(var(--primary) / 0.05);
+  }
+  .hud-corner {
+    position: relative;
+  }
+  .hud-corner::before,
+  .hud-corner::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-color: hsl(var(--primary) / 0.6);
+    border-style: solid;
+  }
+  .hud-corner::before {
+    top: -1px;
+    left: -1px;
+    border-width: 1px 0 0 1px;
+  }
+  .hud-corner::after {
+    bottom: -1px;
+    right: -1px;
+    border-width: 0 1px 1px 0;
+  }
+  .scanline {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(185 100% 50% / 0.015) 2px,
+      hsl(185 100% 50% / 0.015) 4px
+    );
+  }
+  .font-mono-hud {
+    font-family: 'Share Tech Mono', monospace;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(220 20% 4%);
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(185 50% 20%);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(185 100% 35%);
+}
+
+/* Sacred / spiritual utility classes */
+.font-sacred { font-family: 'Cinzel', serif; }
+.aura-glow {
+  box-shadow: 0 0 20px rgba(139,92,246,0.3), 0 0 40px rgba(139,92,246,0.1);
+}
+.aura-text {
+  background: linear-gradient(135deg, #A78BFA, #EC4899, #FBBF24);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.chakra-pulse {
+  animation: chakra-pulse 3s ease-in-out infinite;
+}
+@keyframes chakra-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(167,139,250,0.3); }
+  33% { box-shadow: 0 0 25px rgba(236,72,153,0.4); }
+  66% { box-shadow: 0 0 20px rgba(251,191,36,0.3); }
+}
+.sacred-bg {
+  background: linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%);
+}
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink::after {
+  content: '█';
+  animation: blink 1s infinite;
+  color: hsl(185 100% 50%);
+  font-size: 0.7em;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px hsl(185 100% 50% / 0.3); }
+  50% { box-shadow: 0 0 15px hsl(185 100% 50% / 0.6), 0 0 30px hsl(185 100% 50% / 0.2); }
+}
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.8; }
+  94% { opacity: 1; }
+  96% { opacity: 0.9; }
+  97% { opacity: 1; }
+}
+.flicker {
+  animation: flicker 8s infinite;
+}
+
+/* Emotion-driven animations */
+@keyframes pulse-glow-emotion {
+  0%, 100% { box-shadow: 0 0 5px hsl(var(--primary) / 0.3); }
+  50% { box-shadow: 0 0 20px hsl(var(--primary) / 0.6), 0 0 40px hsl(var(--primary) / 0.2); }
+}
+
+@keyframes drift {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes strobe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Sacred Geometry & Glowing Effects */
+.sacred-glow {
+  box-shadow: 
+    0 0 10px hsl(var(--primary) / 0.2),
+    0 0 20px hsl(var(--primary) / 0.1),
+    inset 0 0 10px hsl(var(--primary) / 0.05);
+}
+
+.sacred-glow-strong {
+  box-shadow: 
+    0 0 20px hsl(var(--primary) / 0.4),
+    0 0 40px hsl(var(--primary) / 0.2),
+    inset 0 0 15px hsl(var(--primary) / 0.1);
+}
+
+/* Premium Card Elevation via Glow */
+.card-elevated {
+  background: linear-gradient(135deg, hsl(var(--card) / 0.8) 0%, hsl(var(--card) / 0.6) 100%);
+  border: 1px solid hsl(var(--primary) / 0.2);
+  box-shadow: 
+    0 0 15px hsl(var(--primary) / 0.15),
+    0 0 30px hsl(var(--primary) / 0.05);
+}
+
+/* Sacred Button Aesthetic */
+.btn-sacred {
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.15) 0%, hsl(var(--primary) / 0.05) 100%);
+  border: 1px solid hsl(var(--primary) / 0.3);
+  transition: all 400ms ease-in-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-sacred:hover {
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.25) 0%, hsl(var(--primary) / 0.1) 100%);
+  border-color: hsl(var(--primary) / 0.6);
+  box-shadow: 0 0 20px hsl(var(--primary) / 0.25);
+}
+
+.btn-sacred:active {
+  transform: scale(0.98);
+}
+
+/* Input Sacred Style */
+.input-sacred {
+  background: hsl(var(--background) / 0.8);
+  border: 1px solid hsl(var(--primary) / 0.15);
+  transition: all 300ms ease-in-out;
+}
+
+.input-sacred:focus {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 0 15px hsl(var(--primary) / 0.15);
+  background: hsl(var(--background) / 0.95);
+}
+
+/* Emotion-driven aesthetics (introspective, not playful) */
+.emotion-joyful {
+  background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(60 30% 10%) 100%);
+  animation: pulse-glow-emotion 2s ease-in-out infinite;
+}
+
+.emotion-calm {
+  background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(150 20% 8%) 100%);
+  animation: drift 4s ease-in-out infinite;
+}
+
+.emotion-sad {
+  background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(240 20% 5%) 100%);
+  opacity: 0.95;
+}
+
+.emotion-angry {
+  background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(0 30% 10%) 100%);
+  animation: pulse-glow-emotion 1.5s ease-in-out infinite;
+}
+
+.emotion-anxious {
+  background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(280 30% 8%) 100%);
+  animation: strobe 1s ease-in-out infinite;
+}
+
+.emotion-peaceful {
+  background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(180 30% 7%) 100%);
+  animation: drift 5s ease-in-out infinite;
+}
+
+.emotion-hopeful {
+  background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(60 30% 12%) 100%);
+  animation: pulse-glow-emotion 2.5s ease-in-out infinite;
+}
+
+.emotion-conflicted {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
+  animation: strobe 2s ease-in-out infinite;
+}

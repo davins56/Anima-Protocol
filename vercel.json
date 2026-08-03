@@ -1,4 +1,9 @@
 {
-  "buildCommand": "pnpm --filter @workspace/mockup-sandbox build",
-  "outputDirectory": "artifacts/mockup-sandbox/dist"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install -g pnpm@10 && pnpm install --no-frozen-lockfile",
+  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/anima-protocol run build",
+  "outputDirectory": "artifacts/anima-protocol/dist/public",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
