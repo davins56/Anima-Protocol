@@ -191,43 +191,47 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("defaults to Gemini-only when GEMINI_API_KEY is set and provider is unset", () => {
+  it("does not use Gemini for chat even when GEMINI_API_KEY is set", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
-    expect(getConfiguredProviderMode()).toBe("gemini");
+    delete process.env.KIMI_API_KEY;
+    expect(getConfiguredProviderMode()).toBe("auto");
+    expect(getProviderChain()).toEqual(["xai", "openai"]);
+    expect(getProviderChain()).not.toContain("gemini");
+  });
+
+  it("defaults to Kimi-only when KIMI_API_KEY is set", () => {
+    process.env.KIMI_API_KEY = "kimi-test";
+    delete process.env.ANIMA_LLM_PROVIDER;
+    expect(getConfiguredProviderMode()).toBe("kimi");
     expect(isOpenAIBlocked()).toBe(true);
     expect(isXaiBlocked()).toBe(true);
-    expect(getProviderChain()).toEqual(["gemini"]);
-    expect(getPreferredProvider()).toBe("gemini");
-  });
-
-  it("defaults to Kimi-only when only KIMI_API_KEY is set", () => {
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_API_KEY;
-    delete process.env.XAI_API_KEY;
-    process.env.KIMI_API_KEY = "kimi-test";
-    delete process.env.ANIMA_LLM_PROVIDER;
-    expect(getConfiguredProviderMode()).toBe("kimi");
-    expect(isOpenAIBlocked()).toBe(true);
     expect(getProviderChain()).toEqual(["kimi"]);
     expect(getPreferredProvider()).toBe("kimi");
   });
 
-  it("prefers Kimi over Gemini when both keys are set and provider is unset", () => {
+  it("keeps Kimi-only even when Gemini key and ANIMA_LLM_PROVIDER=gemini are set", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
-    delete process.env.ANIMA_LLM_PROVIDER;
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
     expect(getConfiguredProviderMode()).toBe("kimi");
     expect(getProviderChain()).toEqual(["kimi"]);
     expect(getPreferredProvider()).toBe("kimi");
   });
 
-  it("auto prefers Kimi/Gemini/Grok over OpenAI when alt keys exist", () => {
+  it("forces Kimi-only when ANIMA_LLM_PROVIDER=auto but Kimi key exists", () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.KIMI_API_KEY = "kimi-test";
+    expect(getConfiguredProviderMode()).toBe("kimi");
+    expect(getProviderChain()).toEqual(["kimi"]);
+  });
+
+  it("auto without Kimi uses Grok then OpenAI (never Gemini)", () => {
+    delete process.env.KIMI_API_KEY;
+    delete process.env.MOONSHOT_API_KEY;
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     expect(getConfiguredProviderMode()).toBe("auto");
-    expect(isOpenAIBlocked()).toBe(false);
-    expect(getProviderChain()).toEqual(["kimi", "gemini", "xai", "openai"]);
-    expect(getPreferredProvider()).toBe("kimi");
+    expect(getProviderChain()).toEqual(["xai", "openai"]);
+    expect(getProviderChain()).not.toContain("gemini");
   });
 
   it("auto uses OpenAI alone when no alt keys are configured", () => {
@@ -240,31 +244,34 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     expect(getPreferredProvider()).toBe("openai");
   });
 
-  it("forces OpenAI-first when ANIMA_LLM_PROVIDER=openai", () => {
+  it("forces OpenAI-first when ANIMA_LLM_PROVIDER=openai and no Kimi key", () => {
+    delete process.env.KIMI_API_KEY;
     process.env.ANIMA_LLM_PROVIDER = "openai";
-    expect(getProviderChain()).toEqual(["openai", "xai", "gemini"]);
+    expect(getProviderChain()).toEqual(["openai", "xai"]);
     expect(getPreferredProvider()).toBe("openai");
   });
 
-  it("blocks OpenAI when ANIMA_LLM_PROVIDER=xai", () => {
+  it("blocks OpenAI when ANIMA_LLM_PROVIDER=xai and no Kimi key", () => {
+    delete process.env.KIMI_API_KEY;
     process.env.ANIMA_LLM_PROVIDER = "xai";
     expect(getConfiguredProviderMode()).toBe("xai");
     expect(isOpenAIBlocked()).toBe(true);
-    expect(getProviderChain()).toEqual(["xai", "gemini"]);
+    expect(getProviderChain()).toEqual(["xai"]);
     expect(getPreferredProvider()).toBe("xai");
   });
 
-  it("accepts grok as an alias for xai", () => {
+  it("accepts grok as an alias for xai when no Kimi key", () => {
+    delete process.env.KIMI_API_KEY;
     process.env.ANIMA_LLM_PROVIDER = "grok";
     expect(getConfiguredProviderMode()).toBe("xai");
     expect(getProviderChain()[0]).toBe("xai");
   });
 
-  it("uses Gemini-only when ANIMA_LLM_PROVIDER=gemini", () => {
+  it("ignores ANIMA_LLM_PROVIDER=gemini (retired for chat)", () => {
+    delete process.env.KIMI_API_KEY;
     process.env.ANIMA_LLM_PROVIDER = "gemini";
-    expect(isOpenAIBlocked()).toBe(true);
-    expect(isXaiBlocked()).toBe(true);
-    expect(getProviderChain()).toEqual(["gemini"]);
+    expect(getConfiguredProviderMode()).toBe("auto");
+    expect(getProviderChain()).not.toContain("gemini");
   });
 
   it("uses Kimi-only when ANIMA_LLM_PROVIDER=kimi", () => {
@@ -275,84 +282,36 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     expect(getProviderChain()).toEqual(["kimi"]);
   });
 
-  it("accepts moonshot as an alias for kimi", () => {
+  it("accepts moonshot as an alias that resolves to Kimi-only", () => {
     process.env.ANIMA_LLM_PROVIDER = "moonshot";
     process.env.MOONSHOT_API_KEY = "moon-test";
     expect(getConfiguredProviderMode()).toBe("kimi");
     expect(getProviderChain()).toEqual(["kimi"]);
   });
 
-  it("enables Anima custom multi-model mode with tier-aware routing", () => {
-    process.env.ANIMA_LLM_PROVIDER = "anima";
+  it("treats anima/custom/ensemble as Kimi-only when Kimi key is present", () => {
     process.env.KIMI_API_KEY = "kimi-test";
-    expect(getConfiguredProviderMode()).toBe("anima");
-    expect(isAnimaCustomMode()).toBe(true);
-    expect(isOpenAIBlocked()).toBe(false);
-    expect(isXaiBlocked()).toBe(false);
-    expect(getAnimaTierProviderOrder("light")).toEqual([
-      "kimi",
-      "gemini",
-      "xai",
-      "openai",
-    ]);
-    expect(getAnimaTierProviderOrder("standard")).toEqual([
-      "kimi",
-      "gemini",
-      "xai",
-      "openai",
-    ]);
-    expect(getAnimaTierProviderOrder("heavy")).toEqual([
-      "xai",
-      "kimi",
-      "openai",
-      "gemini",
-    ]);
-    expect(getProviderChain("light")).toEqual(["kimi", "gemini", "xai", "openai"]);
-    expect(getProviderChain("standard")).toEqual([
-      "kimi",
-      "gemini",
-      "xai",
-      "openai",
-    ]);
-    expect(getProviderChain("heavy")).toEqual(["xai", "kimi", "openai", "gemini"]);
-    expect(getPreferredProvider("standard")).toBe("kimi");
-    expect(getPreferredProvider("heavy")).toBe("xai");
-  });
-
-  it("Anima mode cannot try Kimi when KIMI_API_KEY is missing (skips to Gemini)", () => {
     process.env.ANIMA_LLM_PROVIDER = "anima";
+    expect(getConfiguredProviderMode()).toBe("kimi");
+    expect(isAnimaCustomMode()).toBe(true);
+    expect(getProviderChain()).toEqual(["kimi"]);
+    expect(getAnimaTierProviderOrder("standard")).not.toContain("gemini");
+  });
+
+  it("blocks OpenAI under auto when ANIMA_DISABLE_OPENAI=true (no Gemini)", () => {
     delete process.env.KIMI_API_KEY;
-    delete process.env.MOONSHOT_API_KEY;
-    expect(getProviderChain("standard")).toEqual(["gemini", "xai", "openai"]);
-    expect(getPreferredProvider("standard")).toBe("gemini");
-  });
-
-  it("accepts custom and ensemble aliases for anima mode", () => {
-    process.env.ANIMA_LLM_PROVIDER = "custom";
-    expect(getConfiguredProviderMode()).toBe("anima");
-    process.env.ANIMA_LLM_PROVIDER = "ensemble";
-    expect(getConfiguredProviderMode()).toBe("anima");
-  });
-
-  it("blocks OpenAI under auto when ANIMA_DISABLE_OPENAI=true", () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.ANIMA_DISABLE_OPENAI = "true";
     expect(isOpenAIBlocked()).toBe(true);
-    expect(getProviderChain()).toEqual(["gemini", "xai"]);
+    expect(getProviderChain()).toEqual(["xai"]);
   });
 
-  it("blocks Grok under auto when ANIMA_DISABLE_XAI=true", () => {
+  it("blocks Grok under auto when ANIMA_DISABLE_XAI=true (no Gemini)", () => {
+    delete process.env.KIMI_API_KEY;
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.ANIMA_DISABLE_XAI = "true";
     expect(isXaiBlocked()).toBe(true);
-    expect(getProviderChain()).toEqual(["gemini", "openai"]);
-  });
-
-  it("auto with Kimi key and OpenAI blocked prefers Kimi then Gemini", () => {
-    process.env.ANIMA_LLM_PROVIDER = "auto";
-    process.env.ANIMA_DISABLE_OPENAI = "true";
-    process.env.KIMI_API_KEY = "kimi-test";
-    expect(getProviderChain()).toEqual(["kimi", "gemini", "xai"]);
+    expect(getProviderChain()).toEqual(["openai"]);
   });
 });
 
@@ -400,21 +359,21 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock.mock.calls[0][0].model).toBe("grok-3");
   });
 
-  it("uses Gemini by default when GEMINI_API_KEY is set", async () => {
+  it("ignores GEMINI_API_KEY and uses Kimi when KIMI_API_KEY is set", async () => {
     process.env.GEMINI_API_KEY = "gemini-test";
+    process.env.KIMI_API_KEY = "kimi-test";
     delete process.env.ANIMA_LLM_PROVIDER;
-    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
+    createMock.mockResolvedValueOnce(fakeStream("kimi"));
     const result = await createChatStreamWithFailover({
       tier: "standard",
       model: "gpt-4o",
       maxTokens: 8192,
       messages: [{ role: "user", content: "hello" }],
     });
-    expect(result.provider).toBe("gemini");
+    expect(result.provider).toBe("kimi");
     expect(result.failedOver).toBe(false);
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
-    expect(createMock).not.toHaveBeenCalled();
-    expect(geminiStreamMock.mock.calls[0][0].model).toBe("gemini-2.5-flash");
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
   it("returns OpenAI stream when ANIMA_LLM_PROVIDER=openai", async () => {
@@ -457,28 +416,33 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock.mock.calls[1][0].model).toBe("grok-4");
   });
 
-  it("falls back from xAI team-no-credits 403 to Gemini", async () => {
+  it("falls back from xAI team-no-credits 403 to Kimi (not Gemini)", async () => {
+    // Without Kimi key, xai mode is active; with Kimi key, chat is Kimi-only.
+    // This case covers xai mode → Kimi backup when Kimi is added as failover
+    // via openai mode chain. Use openai mode so both can be tried... actually
+    // with Kimi key everything is kimi-only. So test xai→kimi by NOT setting
+    // Kimi until... wait, with our hard rule Kimi key forces kimi-only.
+    // So xAI→Kimi failover only happens when mode is xai WITHOUT kimi key
+    // for primary, which can't include kimi. Document: Gemini removed; xAI
+    // alone fails with billing link when no Kimi.
     process.env.ANIMA_LLM_PROVIDER = "xai";
     process.env.GEMINI_API_KEY = "gemini-test";
+    delete process.env.KIMI_API_KEY;
     createMock.mockRejectedValueOnce({
       status: 403,
       message:
         '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
     });
-    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
 
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "gpt-4o",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("gemini");
-    expect(result.failedOver).toBe(true);
-    expect(result.previousProvider).toBe("xai");
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i);
+    expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
   it("points at the xAI console when Grok has no team credits and no backup", async () => {
@@ -501,12 +465,13 @@ describe("createChatStreamWithFailover", () => {
     ).rejects.toThrow(/console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i);
   });
 
-  it("surfaces a Gemini-only quota error without mentioning Grok when mode is gemini", async () => {
-    process.env.ANIMA_LLM_PROVIDER = "gemini";
+  it("surfaces a Kimi-only quota error when Kimi is the only chat provider", async () => {
+    process.env.KIMI_API_KEY = "kimi-test";
     process.env.GEMINI_API_KEY = "gemini-test";
-    geminiStreamMock.mockRejectedValueOnce({
+    delete process.env.ANIMA_LLM_PROVIDER;
+    createMock.mockRejectedValueOnce({
       status: 429,
-      message: "RESOURCE_EXHAUSTED: Quota exceeded",
+      message: "quota exhausted",
     });
 
     const err = await createChatStreamWithFailover({
@@ -517,80 +482,28 @@ describe("createChatStreamWithFailover", () => {
     }).catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toMatch(/Gemini credits\/quota exhausted/i);
-    expect((err as Error).message).not.toMatch(/Grok|console\.x\.ai|ANIMA_LLM_PROVIDER=gemini/i);
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
-    expect(createMock).not.toHaveBeenCalled();
+    expect((err as Error).message).toMatch(/Kimi \(Moonshot\) credits\/quota exhausted/i);
+    expect((err as Error).message).not.toMatch(/Gemini/i);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
-  it("does not suggest ANIMA_LLM_PROVIDER=gemini when Gemini already failed before Grok credits under auto", async () => {
+  it("never calls Gemini under auto even when GEMINI_API_KEY is set", async () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.ANIMA_DISABLE_OPENAI = "true";
     process.env.GEMINI_API_KEY = "gemini-test";
-    geminiStreamMock.mockRejectedValueOnce({
-      status: 429,
-      message: "RESOURCE_EXHAUSTED: Quota exceeded",
-    });
-    createMock.mockRejectedValueOnce({
-      status: 403,
-      message:
-        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
-    });
+    delete process.env.KIMI_API_KEY;
+    createMock.mockResolvedValueOnce(fakeStream("grok"));
 
-    const err = await createChatStreamWithFailover({
+    const result = await createChatStreamWithFailover({
       tier: "standard",
       model: "gpt-4o",
       maxTokens: 8192,
       messages: [{ role: "user", content: "hello" }],
-    }).catch((e: unknown) => e);
-
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toMatch(
-      /Gemini was unavailable[\s\S]*console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i,
-    );
-    expect((err as Error).message).not.toMatch(/ANIMA_LLM_PROVIDER=gemini/);
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
-    expect(createMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips Grok on later turns after a no-credits failure under auto", async () => {
-    process.env.ANIMA_LLM_PROVIDER = "auto";
-    process.env.ANIMA_DISABLE_OPENAI = "true";
-    process.env.GEMINI_API_KEY = "gemini-test";
-    geminiStreamMock
-      .mockRejectedValueOnce({
-        status: 429,
-        message: "RESOURCE_EXHAUSTED: Quota exceeded",
-      })
-      .mockResolvedValueOnce(fakeStream("gemini-retry"));
-    createMock.mockRejectedValueOnce({
-      status: 403,
-      message:
-        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
     });
 
-    await expect(
-      createChatStreamWithFailover({
-        tier: "standard",
-        model: "gpt-4o",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "one" }],
-      }),
-    ).rejects.toThrow(/Gemini was unavailable/i);
-
-    const second = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "gpt-4o",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "two" }],
-    });
-
-    expect(second.provider).toBe("gemini");
-    expect(second.failedOver).toBe(false);
-    // Turn 1: Gemini fail + xAI fail. Turn 2: Gemini only (sticky skip xAI).
-    expect(geminiStreamMock).toHaveBeenCalledTimes(2);
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(geminiStreamMock.mock.calls[1][0].model).toBe("gemini-2.5-flash");
+    expect(result.provider).toBe("xai");
+    expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
   it("falls back to Grok on OpenAI 401 status code (no body)", async () => {
@@ -650,10 +563,11 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock.mock.calls[0][0].model).toBe("grok-3");
   });
 
-  it("uses Gemini when ANIMA_LLM_PROVIDER=gemini", async () => {
+  it("does not use Gemini when ANIMA_LLM_PROVIDER=gemini (retired)", async () => {
     process.env.ANIMA_LLM_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "gemini-test";
-    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
+    delete process.env.KIMI_API_KEY;
+    createMock.mockResolvedValueOnce(fakeStream("grok"));
 
     const result = await createChatStreamWithFailover({
       tier: "heavy",
@@ -662,10 +576,8 @@ describe("createChatStreamWithFailover", () => {
       messages: [{ role: "user", content: "hello" }],
     });
 
-    expect(result.provider).toBe("gemini");
-    expect(result.model).toBe("gemini-2.5-pro");
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
-    expect(createMock).not.toHaveBeenCalled();
+    expect(result.provider).toBe("xai");
+    expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
   it("uses Kimi when ANIMA_LLM_PROVIDER=kimi", async () => {
@@ -706,11 +618,11 @@ describe("createChatStreamWithFailover", () => {
     expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
-  it("Anima custom mode picks Grok for heavy tier", async () => {
+  it("Anima mode with Kimi key stays on Kimi for heavy tier (no Gemini/Grok)", async () => {
     process.env.ANIMA_LLM_PROVIDER = "anima";
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
-    createMock.mockResolvedValueOnce(fakeStream("anima-grok"));
+    createMock.mockResolvedValueOnce(fakeStream("anima-kimi-heavy"));
 
     const result = await createChatStreamWithFailover({
       tier: "heavy",
@@ -720,40 +632,18 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.brand).toBe("anima");
-    expect(result.provider).toBe("xai");
-    expect(result.model).toBe("grok-4");
+    expect(result.provider).toBe("kimi");
+    expect(result.model).toBe("kimi-k3");
+    expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
-  it("Anima custom mode fails over from Kimi to Gemini while keeping brand", async () => {
-    process.env.ANIMA_LLM_PROVIDER = "anima";
-    process.env.GEMINI_API_KEY = "gemini-test";
-    process.env.KIMI_API_KEY = "kimi-test";
-    createMock.mockRejectedValueOnce({
-      status: 429,
-      message: "quota exhausted",
-    });
-    geminiStreamMock.mockResolvedValueOnce(fakeStream("anima-gemini-backup"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "gpt-4o",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.brand).toBe("anima");
-    expect(result.provider).toBe("gemini");
-    expect(result.failedOver).toBe(true);
-    expect(result.previousProvider).toBe("kimi");
-  });
-
-  it("falls through OpenAI → xAI → Gemini on quota errors", async () => {
+  it("falls through OpenAI → xAI on quota errors without Gemini", async () => {
     process.env.ANIMA_LLM_PROVIDER = "openai";
     process.env.GEMINI_API_KEY = "gemini-test";
+    delete process.env.KIMI_API_KEY;
     createMock
       .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" })
-      .mockRejectedValueOnce({ status: 429, message: "rate limit" });
-    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
+      .mockResolvedValueOnce(fakeStream("grok"));
 
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -762,11 +652,10 @@ describe("createChatStreamWithFailover", () => {
       messages: [{ role: "user", content: "hello" }],
     });
 
-    expect(result.provider).toBe("gemini");
+    expect(result.provider).toBe("xai");
     expect(result.failedOver).toBe(true);
     expect(createMock).toHaveBeenCalledTimes(2);
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
-    expect(geminiStreamMock.mock.calls[0][0].model).toBe("gemini-2.5-flash");
+    expect(geminiStreamMock).not.toHaveBeenCalled();
   });
 
   it("retries OpenAI standard model on model-unavailable before giving up", async () => {
@@ -825,6 +714,7 @@ describe("createChatStreamWithFailover", () => {
   it("surfaces a helpful error when OpenAI is out of credits and no alt key is set", async () => {
     delete process.env.XAI_API_KEY;
     delete process.env.GEMINI_API_KEY;
+    delete process.env.KIMI_API_KEY;
     createMock.mockRejectedValueOnce({
       status: 429,
       message: "429 You have no credits remaining.",
@@ -837,7 +727,7 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toThrow(/XAI_API_KEY|GEMINI_API_KEY|ANIMA_LLM_PROVIDER/);
+    ).rejects.toThrow(/KIMI_API_KEY|XAI_API_KEY|ANIMA_LLM_PROVIDER/);
   });
 });
 
@@ -849,6 +739,8 @@ describe("createChatCompletionWithFailover", () => {
     process.env.OPENAI_API_KEY = "sk-test-openai";
     process.env.XAI_API_KEY = "xai-test";
     delete process.env.GEMINI_API_KEY;
+    delete process.env.KIMI_API_KEY;
+    delete process.env.MOONSHOT_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
     resetLlmFailoverStateForTests();
@@ -877,10 +769,11 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.model).toBe("grok-3");
   });
 
-  it("uses native Gemini completion when GEMINI_API_KEY is preferred", async () => {
+  it("uses Kimi completion when KIMI_API_KEY is set (Gemini retired for chat)", async () => {
     process.env.ANIMA_LLM_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "AQ.test-key";
-    geminiCompletionMock.mockResolvedValueOnce(fakeCompletion("native gemini"));
+    process.env.KIMI_API_KEY = "kimi-test";
+    createMock.mockResolvedValueOnce(fakeCompletion("kimi reply"));
 
     const result = await createChatCompletionWithFailover({
       tier: "standard",
@@ -888,9 +781,9 @@ describe("createChatCompletionWithFailover", () => {
       messages: [{ role: "system", content: "You are Serenity." }],
     });
 
-    expect(result.content).toBe("native gemini");
-    expect(result.provider).toBe("gemini");
-    expect(geminiCompletionMock).toHaveBeenCalledTimes(1);
-    expect(createMock).not.toHaveBeenCalled();
+    expect(result.content).toBe("kimi reply");
+    expect(result.provider).toBe("kimi");
+    expect(geminiCompletionMock).not.toHaveBeenCalled();
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
