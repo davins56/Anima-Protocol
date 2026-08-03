@@ -32,7 +32,35 @@ export interface GeminiGenerateRequest {
   generationConfig?: {
     maxOutputTokens?: number;
     temperature?: number;
+    /**
+     * Gemini 2.5+ counts thinking tokens against maxOutputTokens. Uncapped
+     * dynamic thinking can burn the whole budget and return empty visible text
+     * (finishReason MAX_TOKENS with no parts) — which surfaces in chat as
+     * "The companion returned an empty reply."
+     */
+    thinkingConfig?: {
+      thinkingBudget?: number;
+    };
   };
+}
+
+/**
+ * Pick a thinking budget safe for companion chat.
+ * - Flash / Flash-Lite: disable thinking (budget 0) so maxOutputTokens is
+ *   available for the visible reply.
+ * - Pro: cannot disable; use a modest budget and leave headroom in max tokens.
+ * Override with ANIMA_GEMINI_THINKING_BUDGET (integer; use -1 for dynamic).
+ */
+export function thinkingBudgetForModel(model: string): number | undefined {
+  const raw = process.env.ANIMA_GEMINI_THINKING_BUDGET?.trim();
+  if (raw !== undefined && raw !== "") {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return Math.trunc(n);
+  }
+  const m = model.toLowerCase();
+  if (m.includes("pro")) return 1024;
+  // flash, flash-lite, and unknown chat models: disable thinking by default
+  return 0;
 }
 
 function geminiApiKey(): string {
@@ -79,7 +107,7 @@ function messageText(content: ChatCompletionMessageParam["content"]): string {
  */
 export function toGeminiGenerateRequest(
   messages: ChatCompletionMessageParam[],
-  opts?: { maxTokens?: number; temperature?: number },
+  opts?: { maxTokens?: number; temperature?: number; model?: string },
 ): GeminiGenerateRequest {
   const systemChunks: string[] = [];
   const contents: GeminiContent[] = [];
@@ -137,13 +165,18 @@ export function toGeminiGenerateRequest(
   if (typeof opts?.temperature === "number") {
     generationConfig.temperature = opts.temperature;
   }
+  const thinkingBudget = thinkingBudgetForModel(opts?.model || "");
+  if (typeof thinkingBudget === "number") {
+    generationConfig.thinkingConfig = { thinkingBudget };
+  }
   if (Object.keys(generationConfig).length > 0) {
     body.generationConfig = generationConfig;
   }
   return body;
 }
 
-function extractCandidateText(payload: unknown): string {
+/** Visible reply text only — skip Gemini "thought" parts. */
+export function extractCandidateText(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
   const candidates = (payload as { candidates?: unknown }).candidates;
   if (!Array.isArray(candidates) || !candidates[0]) return "";
@@ -151,12 +184,23 @@ function extractCandidateText(payload: unknown): string {
   const parts = content?.parts;
   if (!Array.isArray(parts)) return "";
   return parts
-    .map((part) =>
-      part && typeof part === "object" && "text" in part
-        ? String((part as { text?: unknown }).text || "")
-        : "",
-    )
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      // Thought summaries must not be shown as the companion reply.
+      if ("thought" in part && (part as { thought?: unknown }).thought) {
+        return "";
+      }
+      return "text" in part ? String((part as { text?: unknown }).text || "") : "";
+    })
     .join("");
+}
+
+export function extractFinishReason(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const candidates = (payload as { candidates?: unknown }).candidates;
+  if (!Array.isArray(candidates) || !candidates[0]) return undefined;
+  const reason = (candidates[0] as { finishReason?: unknown }).finishReason;
+  return typeof reason === "string" ? reason : undefined;
 }
 
 async function readErrorBody(res: Response): Promise<{
@@ -244,6 +288,8 @@ async function* parseGeminiSse(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let emittedText = false;
+  let lastFinishReason: string | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -263,12 +309,27 @@ async function* parseGeminiSse(
       if (!data || data === "[DONE]") continue;
       try {
         const payload = JSON.parse(data) as unknown;
+        const finish = extractFinishReason(payload);
+        if (finish) lastFinishReason = finish;
         const text = extractCandidateText(payload);
-        if (text) yield openaiChunk(text);
+        if (text) {
+          emittedText = true;
+          yield openaiChunk(text);
+        }
       } catch {
         // Ignore malformed SSE frames; continue reading the stream.
       }
     }
+  }
+
+  if (!emittedText) {
+    const reason = lastFinishReason || "EMPTY";
+    throw new GeminiApiError(
+      `Gemini returned no visible text (finishReason=${reason}). ` +
+        "Thinking tokens may have consumed maxOutputTokens — retry, or set " +
+        "ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.",
+      { status: 502, code: "empty_visible_text" },
+    );
   }
 }
 
@@ -289,6 +350,7 @@ export async function createGeminiChatCompletion(opts: {
   const body = toGeminiGenerateRequest(opts.messages, {
     maxTokens: opts.maxTokens,
     temperature: opts.temperature,
+    model: opts.model,
   });
   const url = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:generateContent`;
 
@@ -310,7 +372,17 @@ export async function createGeminiChatCompletion(opts: {
   }
 
   const payload = (await res.json()) as unknown;
-  return openaiCompletion(extractCandidateText(payload), opts.model);
+  const text = extractCandidateText(payload);
+  if (!text.trim()) {
+    const reason = extractFinishReason(payload) || "EMPTY";
+    throw new GeminiApiError(
+      `Gemini returned no visible text (finishReason=${reason}). ` +
+        "Thinking tokens may have consumed maxOutputTokens — retry, or set " +
+        "ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.",
+      { status: 502, code: "empty_visible_text" },
+    );
+  }
+  return openaiCompletion(text, opts.model);
 }
 
 export async function createGeminiChatStream(opts: {
@@ -328,6 +400,7 @@ export async function createGeminiChatStream(opts: {
   const apiKey = geminiApiKey();
   const body = toGeminiGenerateRequest(opts.messages, {
     maxTokens: opts.maxTokens,
+    model: opts.model,
   });
   const url = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:streamGenerateContent?alt=sse`;
 

@@ -125498,6 +125498,16 @@ var GeminiApiError = class extends Error {
     this.code = opts?.code;
   }
 };
+function thinkingBudgetForModel(model) {
+  const raw = process.env.ANIMA_GEMINI_THINKING_BUDGET?.trim();
+  if (raw !== void 0 && raw !== "") {
+    const n2 = Number(raw);
+    if (Number.isFinite(n2)) return Math.trunc(n2);
+  }
+  const m2 = model.toLowerCase();
+  if (m2.includes("pro")) return 1024;
+  return 0;
+}
 function geminiApiKey() {
   const key = normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY);
   if (!key) {
@@ -125570,6 +125580,10 @@ function toGeminiGenerateRequest(messages2, opts) {
   if (typeof opts?.temperature === "number") {
     generationConfig.temperature = opts.temperature;
   }
+  const thinkingBudget = thinkingBudgetForModel(opts?.model || "");
+  if (typeof thinkingBudget === "number") {
+    generationConfig.thinkingConfig = { thinkingBudget };
+  }
   if (Object.keys(generationConfig).length > 0) {
     body.generationConfig = generationConfig;
   }
@@ -125582,9 +125596,20 @@ function extractCandidateText(payload) {
   const content = candidates[0].content;
   const parts = content?.parts;
   if (!Array.isArray(parts)) return "";
-  return parts.map(
-    (part) => part && typeof part === "object" && "text" in part ? String(part.text || "") : ""
-  ).join("");
+  return parts.map((part) => {
+    if (!part || typeof part !== "object") return "";
+    if ("thought" in part && part.thought) {
+      return "";
+    }
+    return "text" in part ? String(part.text || "") : "";
+  }).join("");
+}
+function extractFinishReason(payload) {
+  if (!payload || typeof payload !== "object") return void 0;
+  const candidates = payload.candidates;
+  if (!Array.isArray(candidates) || !candidates[0]) return void 0;
+  const reason = candidates[0].finishReason;
+  return typeof reason === "string" ? reason : void 0;
 }
 async function readErrorBody(res) {
   const raw = await res.text().catch(() => "");
@@ -125645,6 +125670,8 @@ async function* parseGeminiSse(body) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let emittedText = false;
+  let lastFinishReason;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -125659,11 +125686,23 @@ async function* parseGeminiSse(body) {
       if (!data || data === "[DONE]") continue;
       try {
         const payload = JSON.parse(data);
+        const finish = extractFinishReason(payload);
+        if (finish) lastFinishReason = finish;
         const text3 = extractCandidateText(payload);
-        if (text3) yield openaiChunk(text3);
+        if (text3) {
+          emittedText = true;
+          yield openaiChunk(text3);
+        }
       } catch {
       }
     }
+  }
+  if (!emittedText) {
+    const reason = lastFinishReason || "EMPTY";
+    throw new GeminiApiError(
+      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
+      { status: 502, code: "empty_visible_text" }
+    );
   }
 }
 async function createGeminiChatCompletion(opts) {
@@ -125676,7 +125715,8 @@ async function createGeminiChatCompletion(opts) {
   const apiKey = geminiApiKey();
   const body = toGeminiGenerateRequest(opts.messages, {
     maxTokens: opts.maxTokens,
-    temperature: opts.temperature
+    temperature: opts.temperature,
+    model: opts.model
   });
   const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:generateContent`;
   const res = await geminiFetch(url3, {
@@ -125695,7 +125735,15 @@ async function createGeminiChatCompletion(opts) {
     });
   }
   const payload = await res.json();
-  return openaiCompletion(extractCandidateText(payload), opts.model);
+  const text3 = extractCandidateText(payload);
+  if (!text3.trim()) {
+    const reason = extractFinishReason(payload) || "EMPTY";
+    throw new GeminiApiError(
+      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
+      { status: 502, code: "empty_visible_text" }
+    );
+  }
+  return openaiCompletion(text3, opts.model);
 }
 async function createGeminiChatStream(opts) {
   if (!hasGeminiKey()) {
@@ -125706,7 +125754,8 @@ async function createGeminiChatStream(opts) {
   }
   const apiKey = geminiApiKey();
   const body = toGeminiGenerateRequest(opts.messages, {
-    maxTokens: opts.maxTokens
+    maxTokens: opts.maxTokens,
+    model: opts.model
   });
   const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:streamGenerateContent?alt=sse`;
   const res = await geminiFetch(url3, {
