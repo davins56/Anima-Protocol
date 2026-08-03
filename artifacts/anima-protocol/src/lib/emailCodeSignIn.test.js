@@ -75,32 +75,63 @@ describe("clerkErrorMessage", () => {
     ).toBe("Couldn't find your account.");
   });
 
+  it("preserves non-format Clerk parameter errors", () => {
+    const clerkMessage = "This parameter is invalid for the requested strategy.";
+
+    expect(
+      clerkErrorMessage({
+        errors: [{ code: "form_param_value_invalid", message: clerkMessage }],
+      }),
+    ).toBe(clerkMessage);
+  });
+
   it("reads Future API longMessage", () => {
     expect(clerkErrorMessage({ longMessage: "Invalid code", message: "x" })).toBe(
       "Invalid code",
     );
   });
 
-  it("humanizes pattern mismatch errors", () => {
+  it("only humanizes identifier format errors when explicitly requested", () => {
+    const error = {
+      errors: [
+        {
+          code: "form_param_format_invalid",
+          message: "The string did not match the expected pattern.",
+        },
+      ],
+    };
+
+    expect(clerkErrorMessage(error)).toBe(
+      "The string did not match the expected pattern.",
+    );
     expect(
-      clerkErrorMessage({
-        errors: [
-          {
-            code: "form_param_format_invalid",
-            message: "The string did not match the expected pattern.",
-          },
-        ],
-      }),
+      clerkErrorMessage(error, { humanizeIdentifierFormat: true }),
     ).toMatch(/typos/i);
   });
 
   it("handles object-shaped message fields without crashing", () => {
     expect(
-      clerkErrorMessage({
-        message: { message: "The string did not match the expected pattern." },
-        code: "form_param_format_invalid",
-      }),
+      clerkErrorMessage(
+        {
+          message: { message: "The string did not match the expected pattern." },
+          code: "form_param_format_invalid",
+        },
+        { humanizeIdentifierFormat: true },
+      ),
     ).toMatch(/typos/i);
+  });
+
+  it("keeps a format error from another flow as Clerk's own message", () => {
+    expect(
+      clerkErrorMessage({
+        errors: [
+          {
+            code: "form_param_format_invalid",
+            message: "The verification code must contain six digits.",
+          },
+        ],
+      }),
+    ).toBe("The verification code must contain six digits.");
   });
 
   it("returns null for empty values", () => {
