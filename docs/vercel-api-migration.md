@@ -31,9 +31,10 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
 | `OPENAI_API_KEY` | Recommended | For chat / AI features when OpenAI is enabled, and for image edit/generate (Customise Anima → Generate Look). Must be a valid key from https://platform.openai.com/account/api-keys — a revoked or mistyped key surfaces as image generation unavailable (OpenAI 401). Paste without quotes. Redeploy after changing. Optional for chat if you force Grok/Gemini below. |
 | `GEMINI_API_KEY` | Recommended | Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Used as the default chat provider when set. |
-| `XAI_API_KEY` | Optional backup | Grok (xAI). Used when Gemini is unavailable, or as primary via `ANIMA_LLM_PROVIDER=xai`. |
-| `ANIMA_LLM_PROVIDER` | No | Unset + `GEMINI_API_KEY` → Gemini. Or set `gemini` / `auto` / `xai` / `grok` / `openai`. Under `auto`, order is Gemini → Grok → OpenAI. |
+| `XAI_API_KEY` | Optional | Grok (xAI). Used under `ANIMA_LLM_PROVIDER=auto` or as primary via `xai`. Not used when mode is `gemini` (default with `GEMINI_API_KEY`). |
+| `ANIMA_LLM_PROVIDER` | No | Unset + `GEMINI_API_KEY` → Gemini-only. Or set `gemini` / `auto` / `xai` / `grok` / `openai`. Under `auto`, order is Gemini → Grok → OpenAI. |
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
+| `ANIMA_DISABLE_XAI` | No | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 | `DATABASE_URL` | Yes | Also stores avatar uploads in `uploaded_images` (Vercel has no Replit object-storage sidecar) |
 
@@ -41,7 +42,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI/xAI credits are empty or the key is revoked. Set a working **`GEMINI_API_KEY`** on Vercel (Google AI Studio) and redeploy — chat defaults to Gemini when that key is present. Optional: `ANIMA_LLM_PROVIDER=gemini`. Image generation still needs a funded `OPENAI_API_KEY`.
 
-**If the error says Gemini was unavailable and Grok has no team credits:** both providers failed. Fix Gemini first (check `GEMINI_API_KEY` / Google AI Studio quota), or buy xAI credits at the console link in the error. Setting `ANIMA_LLM_PROVIDER=gemini` alone will not help if Gemini already failed in that request.
+**If chat fails with a Grok “no team credits” error after trying Gemini:** you are on `ANIMA_LLM_PROVIDER=auto` (or an older deploy). Fix Gemini first (check `GEMINI_API_KEY` / Google AI Studio quota), set `ANIMA_DISABLE_XAI=true`, or buy xAI credits. With the current default (`gemini` mode when `GEMINI_API_KEY` is set), Grok is not used as a backup — failures surface as Gemini quota/key errors instead.
 
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 

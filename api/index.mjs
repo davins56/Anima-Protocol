@@ -125515,15 +125515,24 @@ function getConfiguredProviderMode() {
   }
   return hasGeminiKey() ? "gemini" : "auto";
 }
+function envFlagEnabled(name) {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
 function isOpenAIBlocked() {
   const mode = getConfiguredProviderMode();
   if (mode === "xai" || mode === "gemini") return true;
-  const disabled = (process.env.ANIMA_DISABLE_OPENAI || "").trim().toLowerCase();
-  return disabled === "1" || disabled === "true" || disabled === "yes" || disabled === "on";
+  return envFlagEnabled("ANIMA_DISABLE_OPENAI");
+}
+function isXaiBlocked() {
+  const mode = getConfiguredProviderMode();
+  if (mode === "gemini") return true;
+  if (preferNonXai) return true;
+  return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
 function providerAvailable(id) {
   if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
-  if (id === "xai") return hasXaiKey() && !preferNonXai;
+  if (id === "xai") return !isXaiBlocked() && hasXaiKey();
   return hasGeminiKey();
 }
 function getProviderChain() {
@@ -125545,7 +125554,6 @@ function getProviderChain() {
   }
   if (mode === "gemini") {
     push2("gemini");
-    push2("xai");
     return chain;
   }
   const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey();
@@ -125704,13 +125712,16 @@ function enrichError(err, attempted) {
         );
       }
       return new Error(
-        `Grok (xAI) has no team credits/licenses yet (tried ${names}). Buy credits at ${xaiBilling}` + (hasGeminiKey() ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead." : ". Optionally set GEMINI_API_KEY for a non-OpenAI backup.")
+        `Grok (xAI) has no team credits/licenses yet (tried ${names}). Buy credits at ${xaiBilling}` + (hasGeminiKey() ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead (and optionally ANIMA_DISABLE_XAI=true)." : ". Optionally set GEMINI_API_KEY for a non-OpenAI backup.")
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "gemini") {
+      return new Error(
+        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` + (hasXaiKey() && !isXaiBlocked() ? " Or set ANIMA_LLM_PROVIDER=auto to allow Grok/OpenAI failover." : hasOpenAIKey() && !isOpenAIBlocked() ? " Or set ANIMA_LLM_PROVIDER=auto to allow OpenAI failover." : "")
       );
     }
     const hints = [];
-    if (!hasXaiKey() || preferNonXai) {
-      if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
-    }
+    if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
     if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
     if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
     const hint = hints.length > 0 ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.` : " All configured providers failed. Check GEMINI_API_KEY / Google AI Studio quota, or fund XAI_API_KEY / OPENAI_API_KEY.";

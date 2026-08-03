@@ -132,10 +132,11 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
 | `OPENAI_API_KEY` | API | Optional for chat when Grok/Gemini is configured; still used for image generate/edit |
-| `XAI_API_KEY` | API | Optional backup. Grok (xAI) — used when Gemini is unavailable, or as primary via `ANIMA_LLM_PROVIDER=xai` |
-| `GEMINI_API_KEY` | API | Recommended. Gemini (Google AI Studio). Default chat provider when set. Also accepts `GOOGLE_API_KEY` |
-| `ANIMA_LLM_PROVIDER` | API | Unset + `GEMINI_API_KEY` → Gemini. Or `auto` (Gemini → Grok → OpenAI), `xai` / `grok` / `gemini` / `openai` |
+| `XAI_API_KEY` | API | Optional. Grok (xAI) — used under `ANIMA_LLM_PROVIDER=auto` / `xai`, not as a Gemini-mode backup |
+| `GEMINI_API_KEY` | API | Recommended. Gemini (Google AI Studio). Default chat provider when set (Gemini-only). Also accepts `GOOGLE_API_KEY` |
+| `ANIMA_LLM_PROVIDER` | API | Unset + `GEMINI_API_KEY` → Gemini-only. Or `auto` (Gemini → Grok → OpenAI), `xai` / `grok` / `gemini` / `openai` |
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
+| `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
 | `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
