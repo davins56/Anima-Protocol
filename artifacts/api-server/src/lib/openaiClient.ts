@@ -9,6 +9,9 @@ let xaiClientKey: string | null = null;
 let geminiClient: OpenAI | null = null;
 let geminiClientKey: string | null = null;
 
+let kimiClient: OpenAI | null = null;
+let kimiClientKey: string | null = null;
+
 /** Normalize env keys that were pasted with surrounding quotes or whitespace. */
 export function normalizeApiKey(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -34,6 +37,14 @@ export function hasGeminiKey(): boolean {
   return Boolean(
     normalizeApiKey(process.env.GEMINI_API_KEY) ||
       normalizeApiKey(process.env.GOOGLE_API_KEY),
+  );
+}
+
+/** Moonshot / Kimi Open Platform key (`KIMI_API_KEY` or `MOONSHOT_API_KEY`). */
+export function hasKimiKey(): boolean {
+  return Boolean(
+    normalizeApiKey(process.env.KIMI_API_KEY) ||
+      normalizeApiKey(process.env.MOONSHOT_API_KEY),
   );
 }
 
@@ -84,6 +95,30 @@ export function getGeminiClient(): OpenAI | null {
   return geminiClient;
 }
 
+/**
+ * OpenAI-compatible Moonshot / Kimi client.
+ * Accepts KIMI_API_KEY or MOONSHOT_API_KEY. Returns null when neither is set.
+ */
+export function getKimiClient(): OpenAI | null {
+  const apiKey =
+    normalizeApiKey(process.env.KIMI_API_KEY) ||
+    normalizeApiKey(process.env.MOONSHOT_API_KEY);
+  if (!apiKey) return null;
+  if (!kimiClient || kimiClientKey !== apiKey) {
+    kimiClient = new OpenAI({
+      apiKey,
+      baseURL:
+        process.env.KIMI_BASE_URL?.trim() ||
+        process.env.MOONSHOT_BASE_URL?.trim() ||
+        "https://api.moonshot.ai/v1",
+      // Moonshot Tier-0 accounts can burn RPM on SDK auto-retries after 429.
+      maxRetries: 0,
+    });
+    kimiClientKey = apiKey;
+  }
+  return kimiClient;
+}
+
 /** Test helper — clears cached SDK clients between cases. */
 export function resetLlmClientsForTests(): void {
   openaiClient = null;
@@ -92,4 +127,6 @@ export function resetLlmClientsForTests(): void {
   xaiClientKey = null;
   geminiClient = null;
   geminiClientKey = null;
+  kimiClient = null;
+  kimiClientKey = null;
 }

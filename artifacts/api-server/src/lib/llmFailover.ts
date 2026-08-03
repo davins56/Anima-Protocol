@@ -1,20 +1,28 @@
 // Cross-provider chat completion with automatic failover.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
+//   - anima / custom   — Custom multi-model LLM: tier-aware routing across
+//                        Kimi, Gemini, Grok (xAI), and ChatGPT (OpenAI)
+//   - kimi / moonshot  — Kimi only (Moonshot Open Platform)
 //   - gemini           — Gemini only; never call OpenAI or Grok
-//   - auto             — Gemini → Grok → OpenAI when those keys exist; OpenAI alone
-//                        only when no alt key is configured
-//   - xai / grok       — Grok primary; never call OpenAI (Gemini as optional backup)
-//   - openai           — OpenAI primary with Grok/Gemini failover
+//   - auto             — Kimi → Gemini → Grok → OpenAI when those keys exist
+//   - xai / grok       — Grok primary; never call OpenAI (Gemini/Kimi backup)
+//   - openai           — OpenAI primary with Kimi/Grok/Gemini failover
 //
-// When ANIMA_LLM_PROVIDER is unset, Gemini is selected automatically whenever
-// GEMINI_API_KEY (or GOOGLE_API_KEY) is present (Gemini-only — no Grok backup).
-// Use ANIMA_LLM_PROVIDER=auto if you want Gemini → Grok → OpenAI failover.
+// When ANIMA_LLM_PROVIDER is unset:
+//   - KIMI_API_KEY / MOONSHOT_API_KEY → kimi-only (wins over Gemini)
+//   - else GEMINI_API_KEY → gemini-only
+//   - else auto
 //
-// ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` (useful when the
-// OpenAI account is out of credits).
-// ANIMA_DISABLE_XAI=true blocks Grok under `auto` / `openai` (useful when the
-// xAI team has no credits/licenses).
+// Anima custom LLM tier preferences (skip missing keys, then failover):
+//   - light    → Kimi → Gemini → Grok → OpenAI   (cheap / snappy)
+//   - standard → Gemini → Kimi → Grok → OpenAI   (balanced companion chat)
+//   - heavy    → Grok → OpenAI → Kimi → Gemini   (high-stakes depth)
+//
+// ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` / `anima` (useful
+// when the OpenAI account is out of credits).
+// ANIMA_DISABLE_XAI=true blocks Grok under `auto` / `openai` / `anima` (useful
+// when the xAI team has no credits/licenses).
 //
 // Intra-provider "model unavailable" fallback (routed → standard) is preserved
 // and still gated by isModelUnavailableError — that path must NOT fire on 429.
@@ -35,16 +43,27 @@ import {
   createGeminiChatStream,
 } from "./geminiNative";
 import {
+  getKimiClient,
   getOpenAIClient,
   getXaiClient,
   hasGeminiKey,
+  hasKimiKey,
   hasOpenAIKey,
   hasXaiKey,
 } from "./openaiClient";
 
-export type LlmProviderId = "openai" | "xai" | "gemini";
+export type LlmProviderId = "openai" | "xai" | "gemini" | "kimi";
 
-export type LlmProviderMode = "auto" | "openai" | "xai" | "gemini";
+export type LlmProviderMode =
+  | "auto"
+  | "openai"
+  | "xai"
+  | "gemini"
+  | "kimi"
+  | "anima";
+
+/** Brand for the custom multi-model stack (when ANIMA_LLM_PROVIDER=anima|custom). */
+export type LlmBrand = "anima";
 
 export interface ChatStreamRequest {
   tier: ModelTier;
@@ -56,6 +75,8 @@ export interface ChatStreamRequest {
 export interface ChatStreamResult {
   stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
   provider: LlmProviderId;
+  /** Present when the custom Anima multi-model mode selected the backend. */
+  brand?: LlmBrand;
   model: string;
   tier: ModelTier;
   failedOver: boolean;
@@ -73,6 +94,8 @@ export interface ChatCompletionRequest {
 export interface ChatCompletionResult {
   content: string;
   provider: LlmProviderId;
+  /** Present when the custom Anima multi-model mode selected the backend. */
+  brand?: LlmBrand;
   model: string;
   tier: ModelTier;
   failedOver: boolean;
@@ -93,18 +116,36 @@ export function resetLlmFailoverStateForTests(): void {
   preferNonXai = false;
 }
 
+function defaultProviderMode(): LlmProviderMode {
+  // Prefer Kimi when present so unpaid Moonshot setups are not blocked by a
+  // leftover / broken GEMINI_API_KEY still sitting on Vercel.
+  // Force Gemini with ANIMA_LLM_PROVIDER=gemini when that is intentional.
+  if (hasKimiKey()) return "kimi";
+  if (hasGeminiKey()) return "gemini";
+  return "auto";
+}
+
 export function getConfiguredProviderMode(): LlmProviderMode {
   const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
-  if (!raw) {
-    // Default to Gemini when its key is configured so depleted OpenAI / xAI
-    // credit balances do not keep owning every chat turn.
-    return hasGeminiKey() ? "gemini" : "auto";
-  }
+  if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
-  if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "auto") {
+  if (raw === "moonshot") return "kimi";
+  if (raw === "custom" || raw === "ensemble") return "anima";
+  if (
+    raw === "xai" ||
+    raw === "openai" ||
+    raw === "gemini" ||
+    raw === "kimi" ||
+    raw === "anima" ||
+    raw === "auto"
+  ) {
     return raw;
   }
-  return hasGeminiKey() ? "gemini" : "auto";
+  return defaultProviderMode();
+}
+
+export function isAnimaCustomMode(): boolean {
+  return getConfiguredProviderMode() === "anima";
 }
 
 function envFlagEnabled(name: string): boolean {
@@ -114,13 +155,13 @@ function envFlagEnabled(name: string): boolean {
 
 export function isOpenAIBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  if (mode === "xai" || mode === "gemini") return true;
+  if (mode === "xai" || mode === "gemini" || mode === "kimi") return true;
   return envFlagEnabled("ANIMA_DISABLE_OPENAI");
 }
 
 export function isXaiBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  if (mode === "gemini") return true;
+  if (mode === "gemini" || mode === "kimi") return true;
   if (preferNonXai) return true;
   return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
@@ -128,11 +169,28 @@ export function isXaiBlocked(): boolean {
 function providerAvailable(id: LlmProviderId): boolean {
   if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
   if (id === "xai") return !isXaiBlocked() && hasXaiKey();
+  if (id === "kimi") return hasKimiKey();
   return hasGeminiKey();
 }
 
+/**
+ * Preferred provider order for the Anima custom LLM, by message tier.
+ * Each chain uses a different "lead" model family so the stack feels like one
+ * product built on Kimi + Gemini + Grok + ChatGPT rather than a single vendor.
+ */
+export function getAnimaTierProviderOrder(tier: ModelTier): LlmProviderId[] {
+  if (tier === "light") {
+    return ["kimi", "gemini", "xai", "openai"];
+  }
+  if (tier === "heavy") {
+    return ["xai", "openai", "kimi", "gemini"];
+  }
+  // standard — balanced companion chat
+  return ["gemini", "kimi", "xai", "openai"];
+}
+
 /** Ordered list of providers to try for the current env / sticky state. */
-export function getProviderChain(): LlmProviderId[] {
+export function getProviderChain(tier: ModelTier = "standard"): LlmProviderId[] {
   const mode = getConfiguredProviderMode();
   const chain: LlmProviderId[] = [];
 
@@ -142,6 +200,7 @@ export function getProviderChain(): LlmProviderId[] {
 
   if (mode === "openai") {
     push("openai");
+    push("kimi");
     push("xai");
     push("gemini");
     return chain;
@@ -149,6 +208,7 @@ export function getProviderChain(): LlmProviderId[] {
 
   if (mode === "xai") {
     push("xai");
+    push("kimi");
     push("gemini");
     return chain;
   }
@@ -160,12 +220,29 @@ export function getProviderChain(): LlmProviderId[] {
     return chain;
   }
 
-  // auto — prefer Gemini, then Grok, whenever they are configured so a dead
-  // OpenAI key (401) or empty credits (429) cannot break every chat turn.
+  if (mode === "kimi") {
+    push("kimi");
+    return chain;
+  }
+
+  if (mode === "anima") {
+    for (const id of getAnimaTierProviderOrder(tier)) {
+      push(id);
+    }
+    return chain;
+  }
+
+  // auto — prefer Kimi, then Gemini, then Grok, whenever they are configured
+  // so a dead OpenAI key (401) or empty credits (429) cannot break every turn.
   // Set ANIMA_LLM_PROVIDER=openai to force OpenAI-first.
   const preferAlt =
-    preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey();
+    preferNonOpenAI ||
+    isOpenAIBlocked() ||
+    hasXaiKey() ||
+    hasGeminiKey() ||
+    hasKimiKey();
   if (preferAlt) {
+    push("kimi");
     push("gemini");
     push("xai");
     push("openai");
@@ -175,10 +252,11 @@ export function getProviderChain(): LlmProviderId[] {
   return chain;
 }
 
-export function getPreferredProvider(): LlmProviderId {
-  const chain = getProviderChain();
+export function getPreferredProvider(tier: ModelTier = "standard"): LlmProviderId {
+  const chain = getProviderChain(tier);
   if (chain[0]) return chain[0];
   // Last resort label for error messages when nothing is configured.
+  if (hasKimiKey()) return "kimi";
   if (hasGeminiKey()) return "gemini";
   if (hasXaiKey()) return "xai";
   return "openai";
@@ -302,6 +380,20 @@ const GEMINI_ENV_KEYS: Record<ModelTier, string> = {
   heavy: "ANIMA_GEMINI_MODEL_HEAVY",
 };
 
+// Prefer K2.6 for routine chat (k2.5 is sunsetting for new accounts); K3 for
+// high-stakes turns. Override with ANIMA_KIMI_MODEL_* env vars.
+const DEFAULT_KIMI_MODELS: Record<ModelTier, string> = {
+  light: "kimi-k2.6",
+  standard: "kimi-k2.6",
+  heavy: "kimi-k3",
+};
+
+const KIMI_ENV_KEYS: Record<ModelTier, string> = {
+  light: "ANIMA_KIMI_MODEL_LIGHT",
+  standard: "ANIMA_KIMI_MODEL_STANDARD",
+  heavy: "ANIMA_KIMI_MODEL_HEAVY",
+};
+
 export function resolveXaiModel(tier: ModelTier): ResolvedModel {
   const override =
     process.env[XAI_ENV_KEYS[tier]]?.trim() ||
@@ -326,9 +418,22 @@ export function resolveGeminiModel(tier: ModelTier): ResolvedModel {
   };
 }
 
+export function resolveKimiModel(tier: ModelTier): ResolvedModel {
+  const override =
+    process.env[KIMI_ENV_KEYS[tier]]?.trim() ||
+    process.env.ANIMA_KIMI_MODEL?.trim();
+  const openaiResolved = resolveModel(tier);
+  return {
+    tier,
+    model: override || DEFAULT_KIMI_MODELS[tier],
+    maxTokens: openaiResolved.maxTokens,
+  };
+}
+
 function providerLabel(id: LlmProviderId): string {
   if (id === "xai") return "Grok (xAI)";
   if (id === "gemini") return "Gemini";
+  if (id === "kimi") return "Kimi (Moonshot)";
   return "OpenAI";
 }
 
@@ -340,17 +445,30 @@ function clientFor(provider: Exclude<LlmProviderId, "gemini">): OpenAI {
     }
     return client;
   }
+  if (provider === "kimi") {
+    const client = getKimiClient();
+    if (!client) {
+      throw new Error(
+        "KIMI_API_KEY (or MOONSHOT_API_KEY) must be set to use the Kimi provider.",
+      );
+    }
+    return client;
+  }
   return getOpenAIClient();
 }
 
 function resolveForProvider(provider: LlmProviderId, tier: ModelTier): ResolvedModel {
   if (provider === "xai") return resolveXaiModel(tier);
   if (provider === "gemini") return resolveGeminiModel(tier);
+  if (provider === "kimi") return resolveKimiModel(tier);
   return resolveModel(tier);
 }
 
 function markOpenAIUnusable(err: unknown): void {
-  if (isProviderUnusableError(err) && (hasXaiKey() || hasGeminiKey())) {
+  if (
+    isProviderUnusableError(err) &&
+    (hasXaiKey() || hasGeminiKey() || hasKimiKey())
+  ) {
     preferNonOpenAI = true;
   }
 }
@@ -385,6 +503,7 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
     const keyHints = attempted.map((id) => {
       if (id === "xai") return "XAI_API_KEY";
       if (id === "gemini") return "GEMINI_API_KEY";
+      if (id === "kimi") return "KIMI_API_KEY";
       return "OPENAI_API_KEY";
     });
     const uniqueKeys = [...new Set(keyHints)].join(" / ");
@@ -394,7 +513,10 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
         (attempted.includes("gemini")
           ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. "
           : "") +
-        "To skip OpenAI, set ANIMA_LLM_PROVIDER=xai (with XAI_API_KEY) or gemini (with GEMINI_API_KEY).",
+        (attempted.includes("kimi")
+          ? "Kimi uses Moonshot keys from https://platform.kimi.ai (KIMI_API_KEY or MOONSHOT_API_KEY). "
+          : "") +
+        "To force a provider, set ANIMA_LLM_PROVIDER=kimi|gemini|xai|openai.",
     );
   }
   if (isProviderUnusableError(err)) {
@@ -405,35 +527,46 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
         return new Error(
           `Chat providers failed (tried ${names}). Gemini was unavailable, and ` +
             `Grok (xAI) has no team credits/licenses. Check GEMINI_API_KEY / Google AI Studio ` +
-            `quota on Vercel, or buy Grok credits at ${xaiBilling}.`,
+            `quota on Vercel, set KIMI_API_KEY + ANIMA_LLM_PROVIDER=kimi, or buy Grok credits at ${xaiBilling}.`,
         );
       }
       return new Error(
         `Grok (xAI) has no team credits/licenses yet (tried ${names}). ` +
           `Buy credits at ${xaiBilling}` +
-          (hasGeminiKey()
-            ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead (and optionally ANIMA_DISABLE_XAI=true)."
-            : ". Optionally set GEMINI_API_KEY for a non-OpenAI backup."),
+          (hasKimiKey()
+            ? ", or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead."
+            : hasGeminiKey()
+              ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead (and optionally ANIMA_DISABLE_XAI=true)."
+              : ". Optionally set KIMI_API_KEY or GEMINI_API_KEY for a non-OpenAI backup."),
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "kimi") {
+      return new Error(
+        `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). ` +
+          `Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, then redeploy.`,
       );
     }
     if (attempted.length === 1 && attempted[0] === "gemini") {
       return new Error(
         `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` +
-          (hasXaiKey() && !isXaiBlocked()
-            ? " Or set ANIMA_LLM_PROVIDER=auto to allow Grok/OpenAI failover."
-            : hasOpenAIKey() && !isOpenAIBlocked()
-              ? " Or set ANIMA_LLM_PROVIDER=auto to allow OpenAI failover."
-              : ""),
+          (hasKimiKey()
+            ? " Or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead."
+            : hasXaiKey() && !isXaiBlocked()
+              ? " Or set ANIMA_LLM_PROVIDER=auto to allow Grok/OpenAI failover."
+              : hasOpenAIKey() && !isOpenAIBlocked()
+                ? " Or set ANIMA_LLM_PROVIDER=auto to allow OpenAI failover."
+                : ""),
       );
     }
     const hints: string[] = [];
+    if (!hasKimiKey()) hints.push("Set KIMI_API_KEY for Kimi");
     if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
     if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
     if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
     const hint =
       hints.length > 0
-        ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.`
-        : " All configured providers failed. Check GEMINI_API_KEY / Google AI Studio quota, or fund XAI_API_KEY / OPENAI_API_KEY.";
+        ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=kimi|gemini|xai to skip OpenAI.`
+        : " All configured providers failed. Check KIMI_API_KEY / GEMINI_API_KEY / Google AI Studio quota, or fund XAI_API_KEY / OPENAI_API_KEY.";
     return new Error(
       `LLM credits/quota exhausted (tried ${names}).${hint}`,
     );
@@ -513,13 +646,15 @@ async function withModelFallback<T>(
 export async function createChatStreamWithFailover(
   req: ChatStreamRequest,
 ): Promise<ChatStreamResult> {
-  const chain = getProviderChain();
+  const chain = getProviderChain(req.tier);
+  const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
   if (chain.length === 0) {
     throw new Error(
-      "No LLM provider configured. Set XAI_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY" +
+      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" +
         (isOpenAIBlocked()
           ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)."
-          : "."),
+          : ".") +
+        " For the custom multi-model stack set ANIMA_LLM_PROVIDER=anima.",
     );
   }
 
@@ -545,6 +680,7 @@ export async function createChatStreamWithFailover(
       return {
         stream,
         provider,
+        brand,
         model: resolved.model,
         tier: resolved.tier,
         failedOver: i > 0,
@@ -571,13 +707,15 @@ export async function createChatStreamWithFailover(
 export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
-  const chain = getProviderChain();
+  const chain = getProviderChain(req.tier);
+  const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
   if (chain.length === 0) {
     throw new Error(
-      "No LLM provider configured. Set XAI_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY" +
+      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" +
         (isOpenAIBlocked()
           ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)."
-          : "."),
+          : ".") +
+        " For the custom multi-model stack set ANIMA_LLM_PROVIDER=anima.",
     );
   }
 
@@ -602,6 +740,7 @@ export async function createChatCompletionWithFailover(
       return {
         content: completion.choices[0]?.message?.content ?? "",
         provider,
+        brand,
         model: resolved.model,
         tier: resolved.tier,
         failedOver: i > 0,

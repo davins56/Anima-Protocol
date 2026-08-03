@@ -142,8 +142,10 @@ export default function Chat() {
   const [activeSession, setActiveSession] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" */
+  /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" */
   const [llmProvider, setLlmProvider] = useState(null);
+  /** "anima" when the custom multi-model stack selected the backend */
+  const [llmBrand, setLlmBrand] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState("solo");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -1695,15 +1697,30 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         throw new Error("The companion returned an empty reply. Please try again.");
       }
 
-      // Surface which backend LLM served this turn (Gemini → Grok → OpenAI).
+      // Surface which backend LLM served this turn (Anima custom stack or single provider).
       if (resultPayload.provider) {
         setLlmProvider(resultPayload.provider);
       }
-      if (resultPayload.failed_over && resultPayload.provider === "gemini") {
+      if (resultPayload.brand) {
+        setLlmBrand(resultPayload.brand);
+      }
+      if (resultPayload.failed_over && resultPayload.brand === "anima") {
+        toast.success("Anima routed to a backup model.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Custom multi-model failover active",
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "gemini") {
         toast.success("Switched to Gemini.", {
           description: resultPayload.model
             ? `Now using ${resultPayload.model}`
             : "Gemini failover active for this session",
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "kimi") {
+        toast.success("Switched to Kimi.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Kimi failover active for this session",
         });
       } else if (resultPayload.failed_over && resultPayload.provider === "xai") {
         toast.success("Switched to Grok — previous LLM was unavailable.", {
@@ -1712,7 +1729,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             : "xAI failover active for this session",
         });
       } else if (resultPayload.failed_over && resultPayload.provider === "openai") {
-        toast.success("Switched to OpenAI — previous LLMs were unavailable.", {
+        toast.success("Switched to ChatGPT — previous LLMs were unavailable.", {
           description: resultPayload.model ? `Now using ${resultPayload.model}` : undefined,
         });
       }
@@ -2421,6 +2438,7 @@ Return JSON:
               onShowExport={() => setShowExportArchive(true)}
               onAvatarClick={setBioCharacter}
               llmProvider={llmProvider}
+              llmBrand={llmBrand}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <ResonanceField value={resonance.value} label={resonance.label} />

@@ -622,7 +622,8 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-  let usedProvider: "openai" | "xai" | "gemini" = "openai";
+  let usedProvider: "openai" | "xai" | "gemini" | "kimi" = "openai";
+  let usedBrand: "anima" | undefined;
   let failedOver = false;
 
   try {
@@ -635,6 +636,7 @@ router.post("/messages", async (req, res) => {
     usedModel = completion.model;
     usedTier = completion.tier;
     usedProvider = completion.provider;
+    usedBrand = completion.brand;
     failedOver = completion.failedOver;
 
     for await (const chunk of completion.stream) {
@@ -676,6 +678,7 @@ router.post("/messages", async (req, res) => {
           model: usedModel,
           tier: usedTier,
           provider: usedProvider,
+          brand: usedBrand,
           failed_over: failedOver,
         },
       });
@@ -757,6 +760,7 @@ router.post("/messages", async (req, res) => {
         model: usedModel,
         tier: usedTier,
         provider: usedProvider,
+        brand: usedBrand,
         failed_over: failedOver,
         is_crossover: isCrossover,
         messages: [persistedUser, persistedAssistant].filter(Boolean),
