@@ -86,12 +86,24 @@ export function llmDisplayBadgeClass(provider, brand) {
   return llmProviderBadgeClass(provider);
 }
 
-/** Providers shown in Settings — chat is Kimi-only. */
+/** Providers shown in Settings — Kimi preferred, Grok/OpenAI as backup. */
 export const CONFIGURED_LLM_PROVIDERS = [
   {
     id: "kimi",
     label: "Kimi",
     env: "KIMI_API_KEY",
-    note: "Moonshot — sole chat LLM (Gemini removed)",
+    note: "Moonshot — preferred chat LLM (fails over to Grok/OpenAI)",
+  },
+  {
+    id: "xai",
+    label: "Grok",
+    env: "XAI_API_KEY",
+    note: "xAI — backup when Kimi is exhausted",
+  },
+  {
+    id: "openai",
+    label: "ChatGPT",
+    env: "OPENAI_API_KEY",
+    note: "OpenAI — backup + image generation",
   },
 ];
