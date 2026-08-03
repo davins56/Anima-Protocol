@@ -30,10 +30,10 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
 | `OPENAI_API_KEY` | Recommended | Image edit/generate (Customise Anima → Generate Look). Also chat backup under `auto`. |
-| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Recommended | Kimi / Kiwi (Moonshot) — preferred chat LLM. Base URL `https://api.moonshot.ai/v1`. |
-| `XAI_API_KEY` | Optional | Grok (xAI) backup when Kimi is missing, rejected, or out of credits. |
-| `GEMINI_API_KEY` | Unused for chat | Gemini is retired from chat selection. Safe to remove from Vercel. |
-| `ANIMA_LLM_PROVIDER` | No | Unset / `auto`: **Kimi → Grok → OpenAI**. `kimi` / `moonshot` = Kimi-only. Or `xai` / `grok` / `openai` / `anima`. **Never paste an API key here** (e.g. Gemini `AQ.*`) — those values are ignored. |
+| `GEMINI_API_KEY` | Recommended | Preferred chat LLM under `auto` (native Google AI Studio, including `AQ.*` keys). |
+| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Optional | Kimi / Moonshot backup. Base URL `https://api.moonshot.ai/v1`. |
+| `XAI_API_KEY` | Optional | Grok (xAI) backup in the auto chain. |
+| `ANIMA_LLM_PROVIDER` | No | Unset / `auto`: **Gemini → Kimi → Grok → OpenAI**. Or `gemini` / `kimi` / `xai` / `openai` / `anima`. **Never paste an API key here** — put Gemini keys in `GEMINI_API_KEY`. |
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
 | `ANIMA_DISABLE_XAI` | No | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
@@ -41,13 +41,13 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
-**If chat fails for every companion with “no credits” or `401 status code (no body)`:** Prefer a funded **`KIMI_API_KEY`**, or ensure `XAI_API_KEY` / `OPENAI_API_KEY` are set with `ANIMA_LLM_PROVIDER=auto` so chat can fail over. Also check that `ANIMA_LLM_PROVIDER` is a mode name (`auto` / `kimi` / …), not an API key. Image generation still needs a funded `OPENAI_API_KEY`.
+**If chat fails for every companion with “no credits” or `401 status code (no body)`:** Prefer a working **`GEMINI_API_KEY`**, keep `ANIMA_LLM_PROVIDER=auto`, and ensure backups (`KIMI_API_KEY` / `XAI_API_KEY` / `OPENAI_API_KEY`) are funded. Also check that `ANIMA_LLM_PROVIDER` is a mode name (`auto` / `gemini` / …), not an API key. Image generation still needs a funded `OPENAI_API_KEY`.
 
-**Kimi setup (recommended):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) on Vercel **Production**, set `ANIMA_LLM_PROVIDER=auto` (or leave unset), and remove leftover `ANIMA_LLM_PROVIDER=gemini` / any `AQ.*` value pasted by mistake. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"kimi"`, `"chain":["kimi","xai","openai"]` (when those keys exist), and `"keys":{"kimi":true,...}`. Moonshot may require a small platform balance before the key can call models; when Kimi is exhausted, chat fails over to Grok/OpenAI automatically.
+**Gemini setup (recommended):** Create a key at Google AI Studio, set `GEMINI_API_KEY` on Vercel **Production**, set `ANIMA_LLM_PROVIDER=auto` (or `gemini`), and move any `AQ.*` value out of `ANIMA_LLM_PROVIDER` into `GEMINI_API_KEY`. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"gemini"` and a chain like `["gemini","kimi","xai","openai"]`.
 
-**Chat default is Kimi-first with failover:** Without any chat keys, chat fails with a clear setup error. Gemini is never used. With `ANIMA_LLM_PROVIDER=anima` / `ensemble` (or `ANIMA_LLM_ENSEMBLE=true`), available minds (**Kimi / Grok / ChatGPT** — not Gemini) draft in parallel, then a combined reply is streamed. Sticky provider failures are skipped on later turns; timed-out mind calls are aborted.
+**Chat default is Gemini-first with failover:** Without any chat keys, chat fails with a clear setup error. With `ANIMA_LLM_PROVIDER=anima` / `ensemble` (or `ANIMA_LLM_ENSEMBLE=true`), available minds (**Kimi / Grok / ChatGPT**) draft in parallel, then a combined reply is streamed. Sticky provider failures are skipped on later turns; timed-out mind calls are aborted.
 
-**If chat fails with a Grok “no team credits” error:** buy xAI credits, set `ANIMA_DISABLE_XAI=true` to skip Grok, or fund `KIMI_API_KEY` / `OPENAI_API_KEY`.
+**If chat fails with a Grok “no team credits” error:** buy xAI credits, set `ANIMA_DISABLE_XAI=true` to skip Grok, or rely on Gemini / Kimi / OpenAI backups.
 
 **If chat says “Too many requests. Please slow down” after one message:** that is the API’s own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
 
