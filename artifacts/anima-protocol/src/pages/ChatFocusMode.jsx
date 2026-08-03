@@ -1,3 +1,4 @@
+// @ts-check
 // Chat Focus Mode Implementation Guide
 // To integrate focus mode into Chat.jsx, wrap the main content area with ChatUIContainer:
 // import ChatUIContainer from "@/components/chat/ChatUIContainer";

@@ -1,3 +1,4 @@
+// @ts-check
 import { useEffect } from "react";
 
 const EMOTION_THEMES = {
@@ -77,7 +78,9 @@ const EMOTION_THEMES = {
 
 export function useEmotionalTheming(emotion = "neutral") {
   useEffect(() => {
-    const theme = EMOTION_THEMES[emotion] || EMOTION_THEMES.neutral;
+    const theme =
+      EMOTION_THEMES[/** @type {keyof typeof EMOTION_THEMES} */ (emotion)] ||
+      EMOTION_THEMES.neutral;
     const root = document.documentElement;
 
     // Apply color variables

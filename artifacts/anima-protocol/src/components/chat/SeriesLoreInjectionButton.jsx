@@ -1,7 +1,11 @@
+// @ts-check
 import { useState } from "react";
 import { BookOpen } from "lucide-react";
 import StoryIngestModal from "@/components/stories/StoryIngestModal";
 
+/**
+ * @param {{ sessionId?: string, characterId?: string }} props
+ */
 export default function SeriesLoreInjectionButton({ sessionId, characterId }) {
   const [showModal, setShowModal] = useState(false);
 

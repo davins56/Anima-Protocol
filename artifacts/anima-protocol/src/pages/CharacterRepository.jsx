@@ -3,9 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Search, Sparkles, Heart, Trash2, ArrowLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
+import { useConfirm } from "@/lib/ConfirmDialog";
 import PullToRefreshContainer from "@/components/mobile/PullToRefreshContainer";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
 
 export default function CharacterRepository() {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [characters, setCharacters] = useState([]);
   const [selectedChar, setSelectedChar] = useState(null);
@@ -18,7 +21,13 @@ export default function CharacterRepository() {
   const [swipeOffset, setSwipeOffset] = useState({});
 
   useEffect(() => {
-    loadRepository();
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadRepository();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadRepository = async () => {
@@ -118,6 +127,12 @@ export default function CharacterRepository() {
   const deleteCharacter = async (charId) => {
     const char = characters.find(c => c.id === charId);
     if (!char) return;
+    const ok = await confirm({
+      title: "Delete this character?",
+      message: "This permanently removes the character and cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     try {
       await (char._isAnima
         ? base44.entities.Anima.delete(charId)
@@ -131,7 +146,7 @@ export default function CharacterRepository() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center flex-1 min-h-0">
         <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase animate-pulse">
           Loading character repository...
         </p>
@@ -140,7 +155,7 @@ export default function CharacterRepository() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>

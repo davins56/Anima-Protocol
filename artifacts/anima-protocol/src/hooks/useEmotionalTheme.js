@@ -1,5 +1,7 @@
+// @ts-check
 import { useEffect, useState } from "react";
 
+/** @type {Record<string, any>} */
 const EMOTION_THEMES = {
   joyful: {
     primary: "185 100% 60%",
@@ -93,8 +95,12 @@ const EMOTION_THEMES = {
   },
 };
 
+/**
+ * @param {string} emotion
+ * @param {number} [intensity]
+ */
 export default function useEmotionalTheme(emotion, intensity = 50) {
-  const [theme, setTheme] = useState(null);
+  const [theme, setTheme] = useState(/** @type {any} */ (null));
 
   useEffect(() => {
     const selectedTheme = EMOTION_THEMES[emotion] || EMOTION_THEMES.neutral;
@@ -109,7 +115,7 @@ export default function useEmotionalTheme(emotion, intensity = 50) {
     root.style.setProperty("--background", selectedTheme.background);
     root.style.setProperty("--foreground", selectedTheme.foreground);
     root.style.setProperty("--emotion-animation-speed", selectedTheme.animationSpeed);
-    root.style.setProperty("--emotion-animation-intensity", intensityFactor);
+    root.style.setProperty("--emotion-animation-intensity", String(intensityFactor));
     root.style.setProperty("--emotion-pattern", selectedTheme.bgPattern);
 
     // Apply animation class to body

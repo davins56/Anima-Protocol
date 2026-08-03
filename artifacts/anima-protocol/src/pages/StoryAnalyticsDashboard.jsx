@@ -50,7 +50,7 @@ export default function StoryAnalyticsDashboard() {
 
   if (!sessionId) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="flex-1 min-h-0 bg-background flex items-center justify-center p-4">
         <div className="text-center space-y-4">
           <BarChart3 className="w-12 h-12 text-primary/20 mx-auto" />
           <h2 className="font-mono text-lg text-primary/60 tracking-widest uppercase">
@@ -66,7 +66,7 @@ export default function StoryAnalyticsDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
           <Loader className="w-8 h-8 text-primary/60 animate-spin mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase animate-pulse">
@@ -78,7 +78,7 @@ export default function StoryAnalyticsDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <motion.div

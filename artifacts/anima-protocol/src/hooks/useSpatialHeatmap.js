@@ -1,9 +1,13 @@
+// @ts-check
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 
+/**
+ * @param {string} [sessionId]
+ */
 export function useSpatialHeatmap(sessionId) {
-  const [locations, setLocations] = useState([]);
-  const [intensities, setIntensities] = useState({});
+  const [locations, setLocations] = useState(/** @type {any[]} */ ([]));
+  const [intensities, setIntensities] = useState(/** @type {Record<string, any>} */ ({}));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,9 +27,10 @@ export function useSpatialHeatmap(sessionId) {
 
       setLocations(locs || []);
 
+      /** @type {Record<string, any>} */
       const intensityMap = {};
 
-      (locs || []).forEach(loc => {
+      (locs || []).forEach((/** @type {any} */ loc) => {
         const locName = loc.name?.toLowerCase() || '';
 
         // Conflict: events + high emotions
@@ -65,6 +70,10 @@ export function useSpatialHeatmap(sessionId) {
     }
   };
 
+  /**
+   * @param {string} [layer]
+   * @param {number} [threshold]
+   */
   const getHotspots = (layer = 'overall', threshold = 60) => {
     return Object.entries(intensities)
       .filter(([_, data]) => data[layer] >= threshold)

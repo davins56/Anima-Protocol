@@ -1,3 +1,4 @@
+// @ts-check
 import { useMemo } from 'react';
 import LoreKeywordBadge from '@/components/lore/LoreKeywordBadge';
 import { renderItalicText } from './renderItalicText';
@@ -6,7 +7,10 @@ import { renderItalicText } from './renderItalicText';
  * Renders message content with inline lore keyword indicators.
  * Detects and highlights lore concepts mentioned in the text.
  */
-export default function LoreTextWithIndicators({ content, loreContext = [] }) {
+/**
+ * @param {{ content?: string, loreContext?: any[] }} props
+ */
+export default function LoreTextWithIndicators({ content = '', loreContext = [] }) {
   const segments = useMemo(() => {
     if (!loreContext || loreContext.length === 0) {
       return [{ text: content, lore: null }];

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, Loader } from 'lucide-react';
+import { toast } from 'sonner';
 
 const MOODS = [
   { id: 'joyful', label: 'Joyful', emoji: '✨' },
@@ -32,7 +33,7 @@ export default function CheckInModal({ isOpen, onSubmit, isLoading }) {
 
   const handlePromptsNext = () => {
     if (!formData.currentFocus && !formData.revelation) {
-      alert('Please fill in at least one prompt.');
+      toast.error('Please fill in at least one prompt.');
       return;
     }
     setStep(2);
@@ -44,7 +45,7 @@ export default function CheckInModal({ isOpen, onSubmit, isLoading }) {
 
   const handleFinalSubmit = async () => {
     if (!formData.mood) {
-      alert('Mood is required.');
+      toast.error('Mood is required.');
       return;
     }
     setSubmitted(true);

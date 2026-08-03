@@ -2,6 +2,16 @@ import { useState } from 'react';
 import { Upload, X, Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { base44 } from '@/api/base44Client';
+import { downscaleDataUrl } from '@/lib/downscaleImage';
+import { readPhotoAsDataUrl } from '@/lib/avatarPhoto';
+
+const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+
+function isImageFile(file) {
+  if (!file) return false;
+  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  return (file.type || '').startsWith('image/') || IMAGE_EXTS.includes(ext);
+}
 
 export default function UserContextUploadModal({ isOpen, onClose, onUploadComplete }) {
   const [file, setFile] = useState(null);
@@ -13,16 +23,15 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
   const handleFileSelect = (e) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      const validTypes = ['text/plain', 'application/pdf', 'text/markdown', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/epub+zip'];
-      const validExts = ['.txt', '.md', '.pdf', '.docx', '.epub'];
+      const validTypes = ['text/plain', 'application/pdf', 'text/markdown', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/epub+zip', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+      const validExts = ['.txt', '.md', '.pdf', '.docx', '.epub', ...IMAGE_EXTS];
       const ext = selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase();
       
       if (!validTypes.includes(selectedFile.type) && !validExts.includes(ext)) {
-        setError('Please upload: .txt, .md, .pdf, .docx, or .epub');
+        setError('Please upload: .txt, .md, .pdf, .docx, .epub, or an image');
         return;
       }
 
-      const isPdf = ext === '.pdf' || selectedFile.type === 'application/pdf';
       const maxSize = 10 * 1024 * 1024;
       if (selectedFile.size > maxSize) {
         setError('File must be under 10MB.');
@@ -47,10 +56,45 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
     try {
       const user = await base44.auth.me();
 
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      const isPdf = ext === '.pdf' || file.type === 'application/pdf';
+      const isImage = isImageFile(file);
+
+      // Large phone photos (5–15MB) are shrunk to ~1024px JPEG before upload so
+      // they don't slow the request or bloat in-memory data URLs; the original
+      // file is kept as a fallback if downscaling fails.
+      // The backend has no fetchable copy of the file (uploads aren't persisted
+      // to object storage here), so for images we also send the downscaled photo
+      // inline as a data URL — that's how the backend reads (OCR + describes) it.
+      let fileToUpload = file;
+      let imageDataUrl = '';
+      if (isImage) {
+        try {
+          const dataUrl = await readPhotoAsDataUrl(file);
+          if (dataUrl) {
+            let small = '';
+            try {
+              small = await downscaleDataUrl(dataUrl, 1024, 0.85);
+            } catch (downscaleErr) {
+              console.debug('Image downscale failed; using original', downscaleErr);
+            }
+            imageDataUrl = small || dataUrl;
+            if (small) {
+              const blob = await (await fetch(small)).blob();
+              const baseName = file.name.replace(/\.[^.]+$/, '');
+              fileToUpload = new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+            }
+          }
+        } catch (readErr) {
+          console.debug('Image read failed; using original', readErr);
+          fileToUpload = file;
+        }
+      }
+
       // Upload file first
       let uploadRes;
       try {
-        uploadRes = await base44.integrations.Core.UploadFile({ file });
+        uploadRes = await base44.integrations.Core.UploadFile({ file: fileToUpload });
       } catch (uploadErr) {
         setError('Failed to upload file. Please try again.');
         setUploading(false);
@@ -59,11 +103,10 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
 
       const fileUrl = uploadRes.file_url;
 
-      // For non-PDF files, also read as text to send to backend
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      const isPdf = ext === '.pdf' || file.type === 'application/pdf';
+      // For plain-text files, also read as text to send to backend. PDFs and
+      // images are handled by the backend from the uploaded file instead.
       let fileData = '';
-      if (!isPdf) {
+      if (!isPdf && !isImage) {
         try { fileData = await file.text(); } catch (_) {}
       }
 
@@ -77,15 +120,22 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         processing_complete: false,
       });
 
-      // Process the context — backend will use ExtractDataFromUploadedFile for PDFs
+      // Process the context in the background. For images the backend reads the
+      // inline data URL (OCR + vision); for text it reads file_content. It
+      // persists the extracted analysis onto the record server-side, so refresh
+      // the list again once it finishes to surface the generated summary.
       base44.functions.invoke('processUserContext', {
         user_context_id: contextRecord.id,
         file_url: fileUrl,
         file_content: fileData,
         is_pdf: isPdf,
+        is_image: isImage,
+        image_data_url: imageDataUrl,
         document_type: docType,
         title,
-      }).catch(err => console.warn('Background processing encountered an issue:', err));
+      })
+        .then(() => onUploadComplete?.())
+        .catch(err => console.warn('Background processing encountered an issue:', err));
 
       onUploadComplete?.();
       setFile(null);
@@ -170,7 +220,7 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
             <input
               type="file"
               onChange={handleFileSelect}
-              accept=".txt,.md,.pdf,.docx,.epub"
+              accept=".txt,.md,.pdf,.docx,.epub,image/*"
               className="hidden"
               id="file-input"
               disabled={uploading}
@@ -190,7 +240,7 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
             </label>
           </div>
           <p className="text-[8px] font-mono text-purple-400/40">
-            Supported: .txt, .md, .pdf, .docx, .epub (max 10MB)
+            Supported: .txt, .md, .pdf, .docx, .epub, images (max 10MB)
           </p>
         </div>
 

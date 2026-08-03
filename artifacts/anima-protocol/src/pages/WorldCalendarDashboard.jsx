@@ -85,7 +85,7 @@ export default function WorldCalendarDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center space-y-3">
           <Loader className="w-8 h-8 text-primary animate-spin mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -98,7 +98,7 @@ export default function WorldCalendarDashboard() {
 
   if (!calendar) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center space-y-4">
           <AlertCircle className="w-8 h-8 text-primary/30 mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -113,7 +113,7 @@ export default function WorldCalendarDashboard() {
   const progressPercent = getProgressPercentage();
 
   return (
-    <div className="min-h-[100dvh] bg-background p-4 sm:p-6 space-y-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 space-y-6">
       {/* Header */}
       <div className="max-w-6xl mx-auto space-y-1">
         <div className="flex items-center gap-3">

@@ -119,7 +119,10 @@ export default function CharacterPresencePanel({
                       <div className="space-y-1">
                         <p className="text-[8px] font-mono text-current/70 tracking-widest uppercase">
                           {emotion.emotion}
-                          {emotion.intensity && ` (${emotion.intensity}/10)`}
+                          {emotion.emotion_level ? ` · ${emotion.emotion_level}` : ''}
+                        </p>
+                        <p className="text-[8px] text-current/60 leading-tight">
+                          Intensity: {emotion.intensity != null ? emotion.intensity : '—'}{emotion.arousal != null ? ` · Arousal: ${emotion.arousal}` : ''}
                         </p>
                         {emotion.trigger && (
                           <p className="text-[8px] text-current/50 leading-tight">

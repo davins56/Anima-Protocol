@@ -1,8 +1,12 @@
+// @ts-check
 import { useState } from "react";
 import { X, Wand2, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 
+/**
+ * @param {{ isOpen?: boolean, onClose: () => void, onImageGenerated?: (url: string, prompt?: string) => void }} props
+ */
 export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated }) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);

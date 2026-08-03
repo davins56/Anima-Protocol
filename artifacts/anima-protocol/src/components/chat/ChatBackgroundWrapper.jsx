@@ -1,3 +1,4 @@
+// @ts-check
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground";
 import SacredGeometryBackground from "@/components/world/SacredGeometryBackground";
 

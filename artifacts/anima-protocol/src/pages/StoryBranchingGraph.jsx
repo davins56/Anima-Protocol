@@ -120,7 +120,7 @@ export default function StoryBranchingGraph() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center space-y-3">
           <Loader className="w-8 h-8 text-primary animate-spin mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -133,7 +133,7 @@ export default function StoryBranchingGraph() {
 
   if (!snapshots || snapshots.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center space-y-4">
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
             No branches yet. Start a session to create narrative branches.
@@ -144,7 +144,7 @@ export default function StoryBranchingGraph() {
   }
 
   return (
-    <div className="flex h-[100dvh] w-full bg-background overflow-hidden">
+    <div className="flex flex-1 min-h-0 w-full bg-background overflow-hidden">
       {/* Graph Canvas */}
       <div className="flex-1 flex flex-col relative border-r border-primary/20">
         <div className="px-4 py-3 border-b border-primary/20 bg-black/60">

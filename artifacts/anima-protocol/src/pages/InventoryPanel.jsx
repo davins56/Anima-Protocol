@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useConfirm } from "@/lib/ConfirmDialog";
+import { deleteWithUndo } from "@/lib/undoableDelete";
 import { ChevronLeft, Filter, Loader, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import InventoryGrid from "@/components/inventory/InventoryGrid";
@@ -10,6 +12,7 @@ const ITEM_TYPES = ["all", "gear", "weapon", "armor", "consumable", "artifact", 
 const RARITIES = ["all", "common", "uncommon", "rare", "legendary"];
 
 export default function InventoryPanel() {
+  const confirm = useConfirm();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
   const characterId = searchParams.get("character");
@@ -90,10 +93,20 @@ export default function InventoryPanel() {
   };
 
   const handleDelete = async (itemId) => {
-    await base44.entities.Inventory.delete(itemId);
-    setItems(prev => prev.filter(i => i.id !== itemId));
-    calculateStats(items.filter(i => i.id !== itemId));
+    const ok = await confirm({
+      title: "Delete this item?",
+      message: "You'll have a few seconds to undo this.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    const item = items.find((i) => i.id === itemId);
     setSelectedItem(null);
+    await deleteWithUndo({
+      entity: "Inventory",
+      item,
+      label: "Item",
+      onChange: loadInventory,
+    });
   };
 
   const filteredItems = items.filter(item => {
@@ -105,7 +118,7 @@ export default function InventoryPanel() {
   const currentChar = characters.find(c => c.id === selectedChar);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="flex-1 min-h-0 bg-background flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-primary/20 bg-black/60 backdrop-blur-md sticky top-0 z-10">
         <div className="flex items-center gap-3">

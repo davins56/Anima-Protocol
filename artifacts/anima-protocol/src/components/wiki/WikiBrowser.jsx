@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { useConfirm } from "@/lib/ConfirmDialog";
 import { Search, Filter, Plus, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WikiEntryCard from './WikiEntryCard';
@@ -7,6 +8,7 @@ import WikiEntryCard from './WikiEntryCard';
 const ENTRY_TYPES = ['character', 'location', 'event', 'item', 'faction', 'concept', 'creature', 'lore'];
 
 export default function WikiBrowser({ sessionId, onEditEntry }) {
+  const confirm = useConfirm();
   const [entries, setEntries] = useState([]);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [search, setSearch] = useState('');
@@ -138,6 +140,12 @@ export default function WikiBrowser({ sessionId, onEditEntry }) {
                 entry={entry}
                 onEdit={onEditEntry}
                 onDelete={async (id) => {
+                  const ok = await confirm({
+                    title: "Delete this wiki entry?",
+                    message: "This permanently removes the entry and cannot be undone.",
+                    confirmLabel: "Delete",
+                  });
+                  if (!ok) return;
                   await base44.entities.WikiCodex.delete(id);
                   loadEntries();
                 }}

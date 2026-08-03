@@ -4,7 +4,10 @@ import { base44 } from "@/api/base44Client";
 import { motion } from "framer-motion";
 import VoiceRecorder from "@/components/voice/VoiceRecorder";
 
+import { useConfirm } from "@/lib/ConfirmDialog";
+
 export default function VoiceCloneManager({ character, onUpdate }) {
+  const confirm = useConfirm();
   const [voiceClones, setVoiceClones] = useState(character.voice_clones || []);
   const [uploading, setUploading] = useState(null);
   const [testing, setTesting] = useState(null);
@@ -74,6 +77,12 @@ export default function VoiceCloneManager({ character, onUpdate }) {
   };
 
   const handleDeleteClone = async (cloneId) => {
+    const ok = await confirm({
+      title: "Delete this voice clone?",
+      message: "This permanently removes the voice clone and cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     const updated = voiceClones.filter((c) => c.id !== cloneId);
     setVoiceClones(updated);
     await onUpdate({ voice_clones: updated });

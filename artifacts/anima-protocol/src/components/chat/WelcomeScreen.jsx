@@ -10,7 +10,7 @@ export default function WelcomeScreen({ onNewSession, mode }) {
   const navigate = useNavigate();
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
-  const [animaName, setAnimaName] = useState("Serenity");
+  const [animaName, setAnimaName] = useState("Anima");
   const [animaAvatar, setAnimaAvatar] = useState(null);
   const [animaTagline, setAnimaTagline] = useState("I monitor the Slipthk fluctuations and your neural health.");
   const [animaThemeColor, setAnimaThemeColor] = useState("#00e5e5");
@@ -42,13 +42,13 @@ export default function WelcomeScreen({ onNewSession, mode }) {
         }
         
         if (userAnima) {
-          setAnimaName(userAnima.name || "Serenity");
+          setAnimaName(userAnima.name || "Anima");
           if (userAnima.avatar_url) setAnimaAvatar(userAnima.avatar_url);
           if (userAnima.tagline) setAnimaTagline(userAnima.tagline);
           if (userAnima.theme_color) setAnimaThemeColor(userAnima.theme_color);
 
           // Generate dynamic greeting
-          const name = userAnima.name || "Serenity";
+          const name = userAnima.name || "Anima";
           const personality = userAnima.personality || "";
           const tagline = userAnima.tagline || "";
           const userName = me?.full_name?.split(" ")[0] || "";

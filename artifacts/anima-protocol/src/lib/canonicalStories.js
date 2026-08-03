@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Curated canonical stories from popular series
  * Each story is plot-aligned with the actual series narrative
@@ -312,6 +313,7 @@ export const UNIVERSE_CATEGORIES = {
   supernatural: ["The Vampire Diaries", "The Legend of Korra"],
 };
 
+/** @param {string} universe */
 export function getStoryByUniverse(universe) {
   return CANONICAL_STORIES.filter(
     (story) => story.universe.toLowerCase() === universe.toLowerCase()
