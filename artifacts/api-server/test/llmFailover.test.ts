@@ -13,10 +13,16 @@ vi.mock("../src/lib/openaiClient", () => {
     hasXaiKey: () => Boolean(process.env.XAI_API_KEY?.trim()),
     hasGeminiKey: () =>
       Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
+    hasKimiKey: () =>
+      Boolean(process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()),
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () =>
       process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()
+        ? client
+        : null,
+    getKimiClient: () =>
+      process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()
         ? client
         : null,
     normalizeApiKey: (raw: string | undefined) => {
@@ -45,6 +51,7 @@ import {
   isProviderUnusableError,
   resetLlmFailoverStateForTests,
   resolveGeminiModel,
+  resolveKimiModel,
   resolveXaiModel,
 } from "../src/lib/llmFailover";
 
@@ -146,6 +153,19 @@ describe("resolveXaiModel / resolveGeminiModel", () => {
     process.env.ANIMA_GEMINI_MODEL_STANDARD = "gemini-3.6-flash";
     expect(resolveGeminiModel("standard").model).toBe("gemini-3.6-flash");
   });
+
+  it("defaults per tier and honors env overrides for Kimi", () => {
+    delete process.env.ANIMA_KIMI_MODEL;
+    delete process.env.ANIMA_KIMI_MODEL_LIGHT;
+    delete process.env.ANIMA_KIMI_MODEL_STANDARD;
+    delete process.env.ANIMA_KIMI_MODEL_HEAVY;
+    expect(resolveKimiModel("light").model).toBe("kimi-k2.5");
+    expect(resolveKimiModel("standard").model).toBe("kimi-k2.6");
+    expect(resolveKimiModel("heavy").model).toBe("kimi-k3");
+
+    process.env.ANIMA_KIMI_MODEL_STANDARD = "kimi-k2.7-code";
+    expect(resolveKimiModel("standard").model).toBe("kimi-k2.7-code");
+  });
 });
 
 describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
@@ -156,6 +176,8 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     process.env.OPENAI_API_KEY = "sk-test-openai";
     process.env.XAI_API_KEY = "xai-test";
     process.env.GEMINI_API_KEY = "gemini-test";
+    delete process.env.KIMI_API_KEY;
+    delete process.env.MOONSHOT_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_DISABLE_XAI;
@@ -176,11 +198,24 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     expect(getPreferredProvider()).toBe("gemini");
   });
 
-  it("auto prefers Gemini/Grok over OpenAI when alt keys exist", () => {
+  it("defaults to Kimi-only when only KIMI_API_KEY is set", () => {
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.XAI_API_KEY;
+    process.env.KIMI_API_KEY = "kimi-test";
+    delete process.env.ANIMA_LLM_PROVIDER;
+    expect(getConfiguredProviderMode()).toBe("kimi");
+    expect(isOpenAIBlocked()).toBe(true);
+    expect(getProviderChain()).toEqual(["kimi"]);
+    expect(getPreferredProvider()).toBe("kimi");
+  });
+
+  it("auto prefers Gemini/Kimi/Grok over OpenAI when alt keys exist", () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
+    process.env.KIMI_API_KEY = "kimi-test";
     expect(getConfiguredProviderMode()).toBe("auto");
     expect(isOpenAIBlocked()).toBe(false);
-    expect(getProviderChain()).toEqual(["gemini", "xai", "openai"]);
+    expect(getProviderChain()).toEqual(["gemini", "kimi", "xai", "openai"]);
     expect(getPreferredProvider()).toBe("gemini");
   });
 
@@ -188,6 +223,8 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     delete process.env.XAI_API_KEY;
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
+    delete process.env.KIMI_API_KEY;
+    delete process.env.MOONSHOT_API_KEY;
     expect(getProviderChain()).toEqual(["openai"]);
     expect(getPreferredProvider()).toBe("openai");
   });
@@ -219,6 +256,21 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     expect(getProviderChain()).toEqual(["gemini"]);
   });
 
+  it("uses Kimi-only when ANIMA_LLM_PROVIDER=kimi", () => {
+    process.env.ANIMA_LLM_PROVIDER = "kimi";
+    process.env.KIMI_API_KEY = "kimi-test";
+    expect(getConfiguredProviderMode()).toBe("kimi");
+    expect(isOpenAIBlocked()).toBe(true);
+    expect(getProviderChain()).toEqual(["kimi"]);
+  });
+
+  it("accepts moonshot as an alias for kimi", () => {
+    process.env.ANIMA_LLM_PROVIDER = "moonshot";
+    process.env.MOONSHOT_API_KEY = "moon-test";
+    expect(getConfiguredProviderMode()).toBe("kimi");
+    expect(getProviderChain()).toEqual(["kimi"]);
+  });
+
   it("blocks OpenAI under auto when ANIMA_DISABLE_OPENAI=true", () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.ANIMA_DISABLE_OPENAI = "true";
@@ -243,6 +295,8 @@ describe("createChatStreamWithFailover", () => {
     process.env.XAI_API_KEY = "xai-test";
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
+    delete process.env.KIMI_API_KEY;
+    delete process.env.MOONSHOT_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_XAI_MODEL;
@@ -542,6 +596,24 @@ describe("createChatStreamWithFailover", () => {
     expect(result.model).toBe("gemini-2.5-pro");
     expect(geminiStreamMock).toHaveBeenCalledTimes(1);
     expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("uses Kimi when ANIMA_LLM_PROVIDER=kimi", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "kimi";
+    process.env.KIMI_API_KEY = "kimi-test";
+    createMock.mockResolvedValueOnce(fakeStream("kimi"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("kimi");
+    expect(result.model).toBe("kimi-k2.6");
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0].model).toBe("kimi-k2.6");
   });
 
   it("falls through OpenAI → xAI → Gemini on quota errors", async () => {

@@ -1705,6 +1705,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             ? `Now using ${resultPayload.model}`
             : "Gemini failover active for this session",
         });
+      } else if (resultPayload.failed_over && resultPayload.provider === "kimi") {
+        toast.success("Switched to Kimi.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Kimi failover active for this session",
+        });
       } else if (resultPayload.failed_over && resultPayload.provider === "xai") {
         toast.success("Switched to Grok — previous LLM was unavailable.", {
           description: resultPayload.model

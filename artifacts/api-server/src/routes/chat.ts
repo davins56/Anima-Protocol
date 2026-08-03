@@ -622,7 +622,7 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-  let usedProvider: "openai" | "xai" | "gemini" = "openai";
+  let usedProvider: "openai" | "xai" | "gemini" | "kimi" = "openai";
   let failedOver = false;
 
   try {
