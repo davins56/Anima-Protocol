@@ -30,16 +30,16 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
 | `OPENAI_API_KEY` | Recommended | For chat / AI features when OpenAI is enabled, and for image edit/generate (Customise Anima → Generate Look). Must be a valid key from https://platform.openai.com/account/api-keys — a revoked or mistyped key surfaces as image generation unavailable (OpenAI 401). Paste without quotes. Redeploy after changing. Optional for chat if you force Grok/Gemini below. |
-| `XAI_API_KEY` | Recommended when OpenAI is out of credits | Grok (xAI). Chat fails over here on OpenAI 429 / no credits, or use as primary via `ANIMA_LLM_PROVIDER`. |
-| `GEMINI_API_KEY` | No | Optional Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Used as failover or primary via `ANIMA_LLM_PROVIDER=gemini`. |
-| `ANIMA_LLM_PROVIDER` | No | `auto` (default), `openai`, `xai`/`grok`, or `gemini`. Under `auto`, chat prefers Grok/Gemini whenever those keys exist (OpenAI last). Set `openai` to force OpenAI-first. |
+| `GEMINI_API_KEY` | Recommended | Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Used as the default chat provider when set. |
+| `XAI_API_KEY` | Optional backup | Grok (xAI). Used when Gemini is unavailable, or as primary via `ANIMA_LLM_PROVIDER=xai`. |
+| `ANIMA_LLM_PROVIDER` | No | Unset + `GEMINI_API_KEY` → Gemini. Or set `gemini` / `auto` / `xai` / `grok` / `openai`. Under `auto`, order is Gemini → Grok → OpenAI. |
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 | `DATABASE_URL` | Yes | Also stores avatar uploads in `uploaded_images` (Vercel has no Replit object-storage sidecar) |
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
-**If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI’s key is dead/revoked or out of credits. Fix chat by setting a working **`XAI_API_KEY`** (and/or **`GEMINI_API_KEY`**) on Vercel and redeploying — `auto` will use those first. To hard-block OpenAI: `ANIMA_LLM_PROVIDER=xai` or `gemini`. Image generation still needs a funded `OPENAI_API_KEY`.
+**If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI/xAI credits are empty or the key is revoked. Set a working **`GEMINI_API_KEY`** on Vercel (Google AI Studio) and redeploy — chat defaults to Gemini when that key is present. Optional: `ANIMA_LLM_PROVIDER=gemini`. Image generation still needs a funded `OPENAI_API_KEY`.
 
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 

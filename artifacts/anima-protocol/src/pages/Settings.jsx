@@ -1031,7 +1031,7 @@ export default function Settings() {
               <SectionTitle>About</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
-                <InfoRow label="AI Engine" value="OpenAI + Grok failover" />
+                <InfoRow label="AI Engine" value="Gemini primary (Grok / OpenAI backup)" />
                 <InfoRow label="Platform" value="Base44" />
               </div>
             </div>

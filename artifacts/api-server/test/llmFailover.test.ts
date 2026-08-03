@@ -158,11 +158,20 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("auto prefers Grok/Gemini over OpenAI when alt keys exist", () => {
+  it("defaults to Gemini when GEMINI_API_KEY is set and provider is unset", () => {
+    delete process.env.ANIMA_LLM_PROVIDER;
+    expect(getConfiguredProviderMode()).toBe("gemini");
+    expect(isOpenAIBlocked()).toBe(true);
+    expect(getProviderChain()).toEqual(["gemini", "xai"]);
+    expect(getPreferredProvider()).toBe("gemini");
+  });
+
+  it("auto prefers Gemini/Grok over OpenAI when alt keys exist", () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     expect(getConfiguredProviderMode()).toBe("auto");
     expect(isOpenAIBlocked()).toBe(false);
-    expect(getProviderChain()).toEqual(["xai", "gemini", "openai"]);
-    expect(getPreferredProvider()).toBe("xai");
+    expect(getProviderChain()).toEqual(["gemini", "xai", "openai"]);
+    expect(getPreferredProvider()).toBe("gemini");
   });
 
   it("auto uses OpenAI alone when no alt keys are configured", () => {
@@ -200,9 +209,10 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
   });
 
   it("blocks OpenAI under auto when ANIMA_DISABLE_OPENAI=true", () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.ANIMA_DISABLE_OPENAI = "true";
     expect(isOpenAIBlocked()).toBe(true);
-    expect(getProviderChain()).toEqual(["xai", "gemini"]);
+    expect(getProviderChain()).toEqual(["gemini", "xai"]);
   });
 });
 
@@ -230,7 +240,8 @@ describe("createChatStreamWithFailover", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("uses Grok first under auto when XAI_API_KEY is set (skips dead OpenAI)", async () => {
+  it("uses Grok under auto when only XAI_API_KEY is set (skips dead OpenAI)", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     createMock.mockResolvedValueOnce(fakeStream("grok"));
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -243,6 +254,21 @@ describe("createChatStreamWithFailover", () => {
     expect(result.failedOver).toBe(false);
     expect(createMock).toHaveBeenCalledTimes(1);
     expect(createMock.mock.calls[0][0].model).toBe("grok-3");
+  });
+
+  it("uses Gemini by default when GEMINI_API_KEY is set", async () => {
+    process.env.GEMINI_API_KEY = "gemini-test";
+    delete process.env.ANIMA_LLM_PROVIDER;
+    createMock.mockResolvedValueOnce(fakeStream("gemini"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("gemini");
+    expect(result.failedOver).toBe(false);
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns OpenAI stream when ANIMA_LLM_PROVIDER=openai", async () => {

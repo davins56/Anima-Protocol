@@ -125504,12 +125504,15 @@ function getGeminiClient() {
 // src/lib/llmFailover.ts
 var preferNonOpenAI = false;
 function getConfiguredProviderMode() {
-  const raw = (process.env.ANIMA_LLM_PROVIDER || "auto").trim().toLowerCase();
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  if (!raw) {
+    return hasGeminiKey() ? "gemini" : "auto";
+  }
   if (raw === "grok") return "xai";
   if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "auto") {
     return raw;
   }
-  return "auto";
+  return hasGeminiKey() ? "gemini" : "auto";
 }
 function isOpenAIBlocked() {
   const mode = getConfiguredProviderMode();
@@ -125546,8 +125549,8 @@ function getProviderChain() {
   }
   const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey();
   if (preferAlt) {
-    push2("xai");
     push2("gemini");
+    push2("xai");
     push2("openai");
   } else {
     push2("openai");
