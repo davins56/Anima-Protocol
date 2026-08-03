@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  asSearchText,
   clerkErrorMessage,
   hasEmailCodeFactor,
   humanizeIdentifierError,
@@ -32,10 +33,35 @@ describe("hasEmailCodeFactor", () => {
   });
 });
 
+describe("asSearchText", () => {
+  it("tolerates non-string Clerk fields", () => {
+    expect(asSearchText({ message: "The string did not match the expected pattern." })).toMatch(
+      /pattern/,
+    );
+    expect(asSearchText(["Form", "Param"])).toBe("form param");
+    expect(asSearchText(undefined)).toBe("");
+  });
+});
+
 describe("humanizeIdentifierError", () => {
   it("rewrites pattern / format failures into actionable copy", () => {
     expect(
       humanizeIdentifierError("The string did not match the expected pattern.", null),
+    ).toMatch(/typos/i);
+  });
+
+  it("does not throw when message/code are objects", () => {
+    expect(() =>
+      humanizeIdentifierError(
+        { message: "The string did not match the expected pattern." },
+        { code: "form_param_format_invalid" },
+      ),
+    ).not.toThrow();
+    expect(
+      humanizeIdentifierError(
+        { message: "The string did not match the expected pattern." },
+        "form_param_format_invalid",
+      ),
     ).toMatch(/typos/i);
   });
 });
@@ -64,6 +90,15 @@ describe("clerkErrorMessage", () => {
             message: "The string did not match the expected pattern.",
           },
         ],
+      }),
+    ).toMatch(/typos/i);
+  });
+
+  it("handles object-shaped message fields without crashing", () => {
+    expect(
+      clerkErrorMessage({
+        message: { message: "The string did not match the expected pattern." },
+        code: "form_param_format_invalid",
       }),
     ).toMatch(/typos/i);
   });

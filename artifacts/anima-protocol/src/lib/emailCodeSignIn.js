@@ -15,13 +15,72 @@ export function hasEmailCodeFactor(factors) {
 }
 
 /**
+ * Coerce Clerk/browser values to a lowercase search string.
+ * Clerk Future errors sometimes put non-strings in `message` / `code`.
+ * @param {unknown} value
+ */
+export function asSearchText(value) {
+  if (typeof value === "string") return value.toLowerCase();
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value).toLowerCase();
+  }
+  if (Array.isArray(value)) {
+    return value.map(asSearchText).filter(Boolean).join(" ");
+  }
+  if (value && typeof value === "object") {
+    const obj = /** @type {{ message?: unknown, longMessage?: unknown, long_message?: unknown, code?: unknown }} */ (
+      value
+    );
+    const nested =
+      asSearchText(obj.longMessage) ||
+      asSearchText(obj.long_message) ||
+      asSearchText(obj.message) ||
+      asSearchText(obj.code);
+    if (nested) return nested;
+  }
+  return "";
+}
+
+/**
+ * Coerce a Clerk field into displayable text (or null).
+ * @param {unknown} value
+ */
+export function asDisplayMessage(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    for (const part of value) {
+      const text = asDisplayMessage(part);
+      if (text) return text;
+    }
+    return null;
+  }
+  if (value && typeof value === "object") {
+    const obj = /** @type {{ longMessage?: unknown, long_message?: unknown, message?: unknown }} */ (
+      value
+    );
+    return (
+      asDisplayMessage(obj.longMessage) ||
+      asDisplayMessage(obj.long_message) ||
+      asDisplayMessage(obj.message)
+    );
+  }
+  return null;
+}
+
+/**
  * Friendlier copy when Clerk/browser reject a mistyped email pattern.
- * @param {string | null | undefined} message
- * @param {string | null | undefined} code
+ * @param {unknown} message
+ * @param {unknown} code
  */
 export function humanizeIdentifierError(message, code) {
-  const text = (message || "").toLowerCase();
-  const errCode = (code || "").toLowerCase();
+  const text = asSearchText(message);
+  const errCode = asSearchText(code);
   if (
     errCode.includes("format") ||
     errCode.includes("param") ||
@@ -31,34 +90,50 @@ export function humanizeIdentifierError(message, code) {
   ) {
     return "That email or username looks invalid. Check for typos (for example .com, not .om) and try again.";
   }
-  return message || null;
+  return asDisplayMessage(message);
 }
 
 /**
  * Pick a user-facing message from a Clerk Future `{ error }` or thrown value.
+ * Never throws — Clerk error shapes are inconsistent across SDK builds.
  * @param {unknown} err
  */
 export function clerkErrorMessage(err) {
-  if (!err) return null;
-  if (typeof err === "string") return humanizeIdentifierError(err, null);
-  if (typeof err === "object") {
-    const direct = /** @type {{ message?: string, longMessage?: string, code?: string, errors?: Array<{ code?: string, long_message?: string, message?: string, longMessage?: string }> }} */ (
-      err
-    );
-    if (direct.longMessage) {
-      return humanizeIdentifierError(direct.longMessage, direct.code) || direct.longMessage;
+  try {
+    if (!err) return null;
+    if (typeof err === "string") return humanizeIdentifierError(err, null);
+    if (err instanceof Error) {
+      return humanizeIdentifierError(err.message, /** @type {{ code?: unknown }} */ (err).code);
     }
-    if (direct.message && !direct.errors) {
-      return humanizeIdentifierError(direct.message, direct.code) || direct.message;
+    if (typeof err === "object") {
+      const direct = /** @type {{ message?: unknown, longMessage?: unknown, code?: unknown, errors?: Array<{ code?: unknown, long_message?: unknown, message?: unknown, longMessage?: unknown }> }} */ (
+        err
+      );
+      if (direct.longMessage != null && direct.longMessage !== "") {
+        return (
+          humanizeIdentifierError(direct.longMessage, direct.code) ||
+          asDisplayMessage(direct.longMessage)
+        );
+      }
+      if (direct.message != null && direct.message !== "" && !direct.errors) {
+        return (
+          humanizeIdentifierError(direct.message, direct.code) ||
+          asDisplayMessage(direct.message)
+        );
+      }
+      const first = direct.errors?.[0];
+      const nested =
+        first?.long_message ?? first?.longMessage ?? first?.message ?? null;
+      if (nested != null && nested !== "") {
+        return humanizeIdentifierError(nested, first?.code) || asDisplayMessage(nested);
+      }
+      // Last resort: stringify unknown object shapes without crashing.
+      return humanizeIdentifierError(direct, direct.code);
     }
-    const first = direct.errors?.[0];
-    const nested =
-      first?.long_message || first?.longMessage || first?.message || null;
-    if (nested) {
-      return humanizeIdentifierError(nested, first?.code) || nested;
-    }
+    return null;
+  } catch {
+    return "Couldn't start sign-in. Please try again.";
   }
-  return null;
 }
 
 /**
