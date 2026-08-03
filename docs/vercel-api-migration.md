@@ -32,11 +32,13 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `OPENAI_API_KEY` | Recommended | For chat / AI features when OpenAI is enabled, and for image edit/generate (Customise Anima → Generate Look). Must be a valid key from https://platform.openai.com/account/api-keys — a revoked or mistyped key surfaces as image generation unavailable (OpenAI 401). Paste without quotes. Redeploy after changing. Optional for chat if you force Grok/Gemini below. |
 | `XAI_API_KEY` | Recommended when OpenAI is out of credits | Grok (xAI). Chat fails over here on OpenAI 429 / no credits, or use as primary via `ANIMA_LLM_PROVIDER`. |
 | `GEMINI_API_KEY` | No | Optional Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Used as failover or primary via `ANIMA_LLM_PROVIDER=gemini`. |
-| `ANIMA_LLM_PROVIDER` | No | `auto` (default), `openai`, `xai`/`grok`, or `gemini`. Set to `xai` or `gemini` to **block OpenAI for chat** and stop credit errors. |
-| `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely (same effect as forcing xAI/Gemini when those keys exist). |
+| `ANIMA_LLM_PROVIDER` | No | `auto` (default), `openai`, `xai`/`grok`, or `gemini`. Under `auto`, chat prefers Grok/Gemini whenever those keys exist (OpenAI last). Set `openai` to force OpenAI-first. |
+| `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 
-**If OpenAI keeps saying “no credits remaining”:** set `ANIMA_LLM_PROVIDER=xai` (and `XAI_API_KEY`) or `ANIMA_LLM_PROVIDER=gemini` (and `GEMINI_API_KEY`) on Vercel, then redeploy. Chat will never call OpenAI. Image generation still needs a funded `OPENAI_API_KEY`.
+**If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI’s key is dead/revoked or out of credits. Fix chat by setting a working **`XAI_API_KEY`** (and/or **`GEMINI_API_KEY`**) on Vercel and redeploying — `auto` will use those first. To hard-block OpenAI: `ANIMA_LLM_PROVIDER=xai` or `gemini`. Image generation still needs a funded `OPENAI_API_KEY`.
+
+**`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 
 If `DATABASE_URL` or `CLERK_SECRET_KEY` is missing, `/api/*` returns **503**
 (with a JSON body) instead of crashing the Vercel function.

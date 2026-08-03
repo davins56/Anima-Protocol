@@ -1,13 +1,14 @@
 // Cross-provider chat completion with automatic failover.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - auto   (default) — OpenAI first, then Grok, then Gemini on billing/quota errors
+//   - auto   (default) — Grok → Gemini → OpenAI when those keys exist; OpenAI alone
+//                        only when no alt key is configured
 //   - xai / grok       — Grok primary; never call OpenAI (Gemini as optional backup)
 //   - gemini           — Gemini primary; never call OpenAI (Grok as optional backup)
 //   - openai           — OpenAI primary with Grok/Gemini failover
 //
 // ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` (useful when the
-// OpenAI account is out of credits and every cold start would otherwise retry it).
+// OpenAI account is out of credits).
 //
 // Intra-provider "model unavailable" fallback (routed → standard) is preserved
 // and still gated by isModelUnavailableError — that path must NOT fire on 429.
@@ -132,15 +133,17 @@ export function getProviderChain(): LlmProviderId[] {
     return chain;
   }
 
-  // auto
-  if (preferNonOpenAI || isOpenAIBlocked()) {
+  // auto — prefer Grok/Gemini whenever they are configured so a dead/revoked
+  // OpenAI key (401) or empty credits (429) cannot break every chat turn.
+  // Set ANIMA_LLM_PROVIDER=openai to force OpenAI-first.
+  const preferAlt =
+    preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey();
+  if (preferAlt) {
     push("xai");
     push("gemini");
     push("openai");
   } else {
     push("openai");
-    push("xai");
-    push("gemini");
   }
   return chain;
 }
@@ -154,10 +157,44 @@ export function getPreferredProvider(): LlmProviderId {
   return "openai";
 }
 
+/** True when the provider rejected the API key / auth (worth trying another vendor). */
+export function isProviderAuthError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { status?: number; code?: string; type?: string; message?: string };
+  const code = (e.code || e.type || "").toLowerCase();
+  const msg = (e.message || "").toLowerCase();
+
+  if (
+    code.includes("invalid_api_key") ||
+    code.includes("authentication_error") ||
+    code.includes("invalid_auth")
+  ) {
+    return true;
+  }
+
+  if (
+    msg.includes("incorrect api key") ||
+    msg.includes("invalid api key") ||
+    msg.includes("api key provided") ||
+    msg.includes("authentication") ||
+    // OpenAI SDK surfaces empty 401 bodies as: "401 status code (no body)"
+    msg.includes("status code (no body)") ||
+    msg.includes("401 status code")
+  ) {
+    return true;
+  }
+
+  if (e.status === 401) return true;
+  return false;
+}
+
 // True when the provider account cannot serve more requests due to billing,
-// exhausted credits/quota, or a hard rate limit — worth trying another vendor.
+// exhausted credits/quota, hard rate limit, or bad API key — worth trying
+// another vendor.
 export function isProviderUnusableError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
+  if (isProviderAuthError(err)) return true;
+
   const e = err as { status?: number; code?: string; type?: string; message?: string };
   const code = (e.code || e.type || "").toLowerCase();
   const msg = (e.message || "").toLowerCase();
@@ -277,8 +314,20 @@ function markOpenAIUnusable(err: unknown): void {
 }
 
 function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
-  const base = err instanceof Error ? err.message : String(err);
   const names = attempted.map(providerLabel).join(" → ");
+  if (isProviderAuthError(err)) {
+    const keyHints = attempted.map((id) => {
+      if (id === "xai") return "XAI_API_KEY";
+      if (id === "gemini") return "GEMINI_API_KEY";
+      return "OPENAI_API_KEY";
+    });
+    const uniqueKeys = [...new Set(keyHints)].join(" / ");
+    return new Error(
+      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel` +
+        " — paste the key without quotes, then redeploy. " +
+        "To skip OpenAI, set ANIMA_LLM_PROVIDER=xai (with XAI_API_KEY) or gemini (with GEMINI_API_KEY).",
+    );
+  }
   if (isProviderUnusableError(err)) {
     const hints: string[] = [];
     if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
@@ -289,10 +338,10 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
         ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.`
         : " All configured providers failed. Set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.";
     return new Error(
-      `${base} (tried ${names}). LLM credits/quota exhausted.${hint}`,
+      `LLM credits/quota exhausted (tried ${names}).${hint}`,
     );
   }
-  return err instanceof Error ? err : new Error(base);
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 async function createStream(
