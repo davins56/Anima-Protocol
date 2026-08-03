@@ -73,13 +73,18 @@ export default function EmailCodeSignIn() {
       return;
     }
     setBusy("email");
+    let stage = "create";
     try {
       const { error: createError } = await signIn.create({ identifier: value });
       if (createError) {
-        setError(clerkErrorMessage(createError) || "Couldn't start sign-in.");
+        setError(
+          clerkErrorMessage(createError, { humanizeIdentifierFormat: true }) ||
+            "Couldn't start sign-in.",
+        );
         return;
       }
 
+      stage = "factor";
       if (!hasEmailCodeFactor(signIn.supportedFirstFactors)) {
         setError(
           "Email code sign-in is not available for this account. Use Continue with GitHub instead.",
@@ -87,6 +92,7 @@ export default function EmailCodeSignIn() {
         return;
       }
 
+      stage = "send-code";
       const { error: sendError } = await signIn.emailCode.sendCode();
       if (sendError) {
         setError(clerkErrorMessage(sendError) || "Couldn't send a verification code.");
@@ -100,7 +106,10 @@ export default function EmailCodeSignIn() {
       setStep("code");
       setCode("");
     } catch (err) {
-      setError(clerkErrorMessage(err) || "Couldn't start sign-in.");
+      setError(
+        clerkErrorMessage(err, { humanizeIdentifierFormat: stage === "create" }) ||
+          "Couldn't start sign-in.",
+      );
     } finally {
       setBusy(null);
     }
