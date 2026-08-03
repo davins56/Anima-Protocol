@@ -27,6 +27,10 @@ pass the async getter directly (single arrow). The unit contract is fixed by
 `src/api/apiAuth.test.js` (`setAuthTokenGetter(() => 'test-token')` →
 `Authorization: 'Bearer test-token'`).
 
+**Defense in depth:** `authBridge.getToken()` unwraps one accidental extra
+function layer and only returns strings, so a double-wrap no longer poisons
+`Authorization` headers (add-from-series / character feature writes).
+
 Note: `src/hooks/useSeedCharacters.ts` (POST /api/seed-characters) is DEAD code —
 never imported and the endpoint does not exist on api-server. Real seeding is
 `src/lib/seedCharacters.js`.
