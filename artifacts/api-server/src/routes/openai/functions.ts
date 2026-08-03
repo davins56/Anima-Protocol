@@ -3,14 +3,15 @@ import { toFile } from "openai";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { rateLimit } from "../../lib/rateLimit";
+import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { getOpenAIClient } from "../../lib/openaiClient";
 
 const router = Router();
-router.use(rateLimit);
+// Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
+router.use(createRateLimit({ name: "openai-functions", max: 180 }));
 router.use((req, res, next) => {
   const { userId } = getAuth(req);
   if (!userId) {
