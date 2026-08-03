@@ -334,6 +334,9 @@ function ClerkQueryClientCacheInvalidator() {
 /** Delay before probing Clerk connectivity so healthy loads never show a warning. */
 const CLERK_DIAGNOSTICS_STALL_MS = 2500;
 
+/** Delay before probing Clerk connectivity so healthy loads never show a warning. */
+const CLERK_DIAGNOSTICS_STALL_MS = 2500;
+
 function ClerkLoginDiagnostics() {
   const clerk = useClerk();
   const [hints, setHints] = useState([]);
