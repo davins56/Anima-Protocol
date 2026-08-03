@@ -458,9 +458,9 @@ function AuthFormShell({ mode, children }) {
         <ClerkLoginDiagnostics />
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
-            Use Continue with GitHub, or enter your username/email for a
-            one-time email code. Google and Apple stay hidden until their
-            provider redirect URIs are fixed.
+            Prefer Continue with GitHub, or the username/email already on your
+            account for a one-time code. Google and Apple stay hidden until
+            their provider redirect URIs are fixed.
           </p>
         ) : null}
         {children}
