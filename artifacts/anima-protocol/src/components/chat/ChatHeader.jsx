@@ -3,6 +3,11 @@ import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles } from "l
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
+import {
+  llmProviderBadgeClass,
+  llmProviderShortLabel,
+  llmProviderTitle,
+} from "@/lib/llmProviderLabel";
 
 export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider }) {
   const navigate = useNavigate();
@@ -148,21 +153,13 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         </div>
       </div>
 
-      {/* Shows which LLM served the last reply (OpenAI primary, Grok on failover) */}
+      {/* Shows which LLM served the last reply (Gemini / Grok / OpenAI) */}
       {llmProvider && (
         <span
-          title={
-            llmProvider === "xai"
-              ? "Last reply from Grok (xAI) — OpenAI failover"
-              : "Last reply from OpenAI"
-          }
-          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${
-            llmProvider === "xai"
-              ? "border-amber-400/50 text-amber-300/90 bg-amber-400/10"
-              : "border-primary/30 text-primary/50"
-          }`}
+          title={llmProviderTitle(llmProvider)}
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${llmProviderBadgeClass(llmProvider)}`}
         >
-          {llmProvider === "xai" ? "Grok" : "OpenAI"}
+          {llmProviderShortLabel(llmProvider) || llmProvider}
         </span>
       )}
 
