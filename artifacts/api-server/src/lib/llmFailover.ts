@@ -177,17 +177,17 @@ export function isAnimaCustomMode(): boolean {
   return raw === "anima" || raw === "custom" || raw === "ensemble";
 }
 
+/** True when OpenAI is blocked by config (mode / ANIMA_DISABLE_OPENAI), not sticky. */
 export function isOpenAIBlocked(): boolean {
   const mode = getConfiguredProviderMode();
   if (mode === "xai" || mode === "kimi") return true;
-  if (preferNonOpenAI) return true;
   return envFlagEnabled("ANIMA_DISABLE_OPENAI");
 }
 
+/** True when Grok is blocked by config (mode / ANIMA_DISABLE_XAI), not sticky. */
 export function isXaiBlocked(): boolean {
   const mode = getConfiguredProviderMode();
   if (mode === "kimi") return true;
-  if (preferNonXai) return true;
   return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
 
@@ -210,6 +210,32 @@ export function isKimiStickySkipped(): boolean {
   return preferNonKimi;
 }
 
+function hasAnyStickySkip(): boolean {
+  return preferNonKimi || preferNonXai || preferNonOpenAI;
+}
+
+/**
+ * If prior quota/auth failures sticky-skipped every key, clear stickies so the
+ * next turn can retry. Otherwise a warm Vercel isolate shows a false
+ * "No LLM provider configured" even when KIMI_API_KEY is set.
+ */
+export function reviveStickySkippedProvidersIfNeeded(): boolean {
+  if (!hasAnyStickySkip()) return false;
+  const anyKey = hasKimiKey() || hasXaiKey() || hasOpenAIKey();
+  if (!anyKey) return false;
+
+  // Would the chain be empty with stickies applied?
+  const kimiOk = hasKimiKey() && !preferNonKimi;
+  const xaiOk = hasXaiKey() && !isXaiBlocked() && !preferNonXai;
+  const openaiOk = hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
+  if (kimiOk || xaiOk || openaiOk) return false;
+
+  preferNonKimi = false;
+  preferNonXai = false;
+  preferNonOpenAI = false;
+  return true;
+}
+
 /** Gemini is removed from chat provider selection. */
 export function isGeminiBlocked(): boolean {
   return true;
@@ -217,8 +243,12 @@ export function isGeminiBlocked(): boolean {
 
 function providerAvailable(id: LlmProviderId): boolean {
   if (id === "gemini") return false;
-  if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
-  if (id === "xai") return !isXaiBlocked() && hasXaiKey();
+  if (id === "openai") {
+    return hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
+  }
+  if (id === "xai") {
+    return hasXaiKey() && !isXaiBlocked() && !preferNonXai;
+  }
   if (id === "kimi") return hasKimiKey() && !preferNonKimi;
   return false;
 }
@@ -236,6 +266,8 @@ export function getAnimaTierProviderOrder(tier: ModelTier): LlmProviderId[] {
 
 /** Ordered list of providers to try for the current env / sticky state. */
 export function getProviderChain(_tier: ModelTier = "standard"): LlmProviderId[] {
+  reviveStickySkippedProvidersIfNeeded();
+
   const mode = getConfiguredProviderMode();
   const chain: LlmProviderId[] = [];
 
@@ -696,11 +728,21 @@ async function withModelFallback<T>(
 function requireProviderChain(): LlmProviderId[] {
   const chain = getProviderChain();
   if (chain.length === 0) {
+    const missing: string[] = [];
+    if (!hasKimiKey()) missing.push("KIMI_API_KEY");
+    if (!hasXaiKey()) missing.push("XAI_API_KEY");
+    if (!hasOpenAIKey()) missing.push("OPENAI_API_KEY");
+    const configNote = isOpenAIBlocked()
+      ? " OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI."
+      : "";
+    const modeNote =
+      getConfiguredProviderMode() === "kimi"
+        ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY."
+        : "";
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY (preferred), XAI_API_KEY, or OPENAI_API_KEY on Vercel" +
-        (isOpenAIBlocked()
-          ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)."
-          : ", then redeploy."),
+      missing.length > 0
+        ? `No LLM provider configured. Set ${missing.join(" / ")} on Vercel Production, then redeploy.${configNote}${modeNote}`
+        : `No usable LLM provider right now.${configNote}${modeNote} Check key values on Vercel Production and redeploy.`,
     );
   }
   return chain;

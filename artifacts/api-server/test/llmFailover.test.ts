@@ -49,14 +49,18 @@ import {
   isAnimaCustomMode,
   isKimiStickySkipped,
   isOpenAIBlocked,
+  isOpenAIStickySkipped,
   isXaiBlocked,
+  isXaiStickySkipped,
   isProviderAuthError,
   extractXaiBillingUrl,
   isProviderUnusableError,
+  recordProviderFailure,
   resetLlmFailoverStateForTests,
   resolveGeminiModel,
   resolveKimiModel,
   resolveXaiModel,
+  reviveStickySkippedProvidersIfNeeded,
   sanitizeProviderEnv,
 } from "../src/lib/llmFailover";
 
@@ -573,6 +577,56 @@ describe("createChatStreamWithFailover", () => {
     expect(second.failedOver).toBe(false);
     // First turn: kimi fail + grok ok. Second turn: grok only (kimi sticky-skipped).
     expect(createMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("revives sticky skips when every provider was marked unusable", async () => {
+    process.env.KIMI_API_KEY = "kimi-test";
+    process.env.XAI_API_KEY = "xai-test";
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.ANIMA_LLM_PROVIDER = "auto";
+
+    recordProviderFailure("kimi", { status: 429, message: "quota exhausted" });
+    recordProviderFailure("xai", {
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/abc."',
+    });
+    recordProviderFailure("openai", {
+      status: 429,
+      message: "You have no credits remaining",
+    });
+
+    expect(isKimiStickySkipped()).toBe(true);
+    expect(isXaiStickySkipped()).toBe(true);
+    expect(isOpenAIStickySkipped()).toBe(true);
+    // Without revive this used to surface as "No LLM provider configured"
+    // even though KIMI_API_KEY was set.
+    expect(getProviderChain()).toEqual(["kimi", "xai", "openai"]);
+    expect(isKimiStickySkipped()).toBe(false);
+
+    createMock.mockResolvedValueOnce(fakeStream("revived-kimi"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "try again" }],
+    });
+    expect(result.provider).toBe("kimi");
+  });
+
+  it("does not claim keys are missing when they are present but sticky-exhausted", () => {
+    process.env.KIMI_API_KEY = "kimi-test";
+    process.env.XAI_API_KEY = "xai-test";
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.ANIMA_LLM_PROVIDER = "auto";
+    recordProviderFailure("kimi", { status: 429, message: "quota exhausted" });
+    recordProviderFailure("xai", {
+      status: 403,
+      message: "no credits or licenses https://console.x.ai/team/abc",
+    });
+    recordProviderFailure("openai", { status: 429, message: "no credits remaining" });
+    expect(reviveStickySkippedProvidersIfNeeded()).toBe(true);
+    expect(getProviderChain()[0]).toBe("kimi");
   });
 });
 
