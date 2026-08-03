@@ -125839,10 +125839,14 @@ function getConfiguredProviderMode() {
   if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
   if (raw === "moonshot") return "kimi";
-  if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "kimi" || raw === "auto") {
+  if (raw === "custom" || raw === "ensemble") return "anima";
+  if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "kimi" || raw === "anima" || raw === "auto") {
     return raw;
   }
   return defaultProviderMode();
+}
+function isAnimaCustomMode() {
+  return getConfiguredProviderMode() === "anima";
 }
 function envFlagEnabled(name) {
   const raw = (process.env[name] || "").trim().toLowerCase();
@@ -125865,7 +125869,16 @@ function providerAvailable(id) {
   if (id === "kimi") return hasKimiKey();
   return hasGeminiKey();
 }
-function getProviderChain() {
+function getAnimaTierProviderOrder(tier) {
+  if (tier === "light") {
+    return ["kimi", "gemini", "xai", "openai"];
+  }
+  if (tier === "heavy") {
+    return ["xai", "openai", "kimi", "gemini"];
+  }
+  return ["gemini", "kimi", "xai", "openai"];
+}
+function getProviderChain(tier = "standard") {
   const mode = getConfiguredProviderMode();
   const chain = [];
   const push2 = (id) => {
@@ -125890,6 +125903,12 @@ function getProviderChain() {
   }
   if (mode === "kimi") {
     push2("kimi");
+    return chain;
+  }
+  if (mode === "anima") {
+    for (const id of getAnimaTierProviderOrder(tier)) {
+      push2(id);
+    }
     return chain;
   }
   const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey() || hasKimiKey();
@@ -125964,7 +125983,7 @@ var GEMINI_ENV_KEYS = {
   heavy: "ANIMA_GEMINI_MODEL_HEAVY"
 };
 var DEFAULT_KIMI_MODELS = {
-  light: "kimi-k2.5",
+  light: "kimi-k2.6",
   standard: "kimi-k2.6",
   heavy: "kimi-k3"
 };
@@ -126139,10 +126158,11 @@ async function withModelFallback(provider, preferred, run) {
   }
 }
 async function createChatStreamWithFailover(req) {
-  const chain = getProviderChain();
+  const chain = getProviderChain(req.tier);
+  const brand = isAnimaCustomMode() ? "anima" : void 0;
   if (chain.length === 0) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".")
+      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " For the custom multi-model stack set ANIMA_LLM_PROVIDER=anima."
     );
   }
   const attempted = [];
@@ -126161,6 +126181,7 @@ async function createChatStreamWithFailover(req) {
       return {
         stream,
         provider,
+        brand,
         model: resolved.model,
         tier: resolved.tier,
         failedOver: i2 > 0,
@@ -126178,10 +126199,11 @@ async function createChatStreamWithFailover(req) {
   throw enrichError(lastErr, attempted);
 }
 async function createChatCompletionWithFailover(req) {
-  const chain = getProviderChain();
+  const chain = getProviderChain(req.tier);
+  const brand = isAnimaCustomMode() ? "anima" : void 0;
   if (chain.length === 0) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".")
+      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " For the custom multi-model stack set ANIMA_LLM_PROVIDER=anima."
     );
   }
   const attempted = [];
@@ -126200,6 +126222,7 @@ async function createChatCompletionWithFailover(req) {
       return {
         content: completion.choices[0]?.message?.content ?? "",
         provider,
+        brand,
         model: resolved.model,
         tier: resolved.tier,
         failedOver: i2 > 0,
@@ -141706,6 +141729,7 @@ router9.post("/messages", async (req, res) => {
   let usedModel = routed.model;
   let usedTier = routed.tier;
   let usedProvider = "openai";
+  let usedBrand;
   let failedOver = false;
   try {
     const completion = await createChatStreamWithFailover({
@@ -141717,6 +141741,7 @@ router9.post("/messages", async (req, res) => {
     usedModel = completion.model;
     usedTier = completion.tier;
     usedProvider = completion.provider;
+    usedBrand = completion.brand;
     failedOver = completion.failedOver;
     for await (const chunk of completion.stream) {
       const delta = chunk.choices[0]?.delta?.content;
@@ -141755,6 +141780,7 @@ router9.post("/messages", async (req, res) => {
           model: usedModel,
           tier: usedTier,
           provider: usedProvider,
+          brand: usedBrand,
           failed_over: failedOver
         }
       });
@@ -141817,6 +141843,7 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
         model: usedModel,
         tier: usedTier,
         provider: usedProvider,
+        brand: usedBrand,
         failed_over: failedOver,
         is_crossover: isCrossover,
         messages: [persistedUser, persistedAssistant].filter(Boolean)

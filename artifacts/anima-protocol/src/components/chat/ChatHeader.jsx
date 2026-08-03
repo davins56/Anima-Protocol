@@ -4,12 +4,12 @@ import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
 import {
-  llmProviderBadgeClass,
-  llmProviderShortLabel,
-  llmProviderTitle,
+  llmDisplayBadgeClass,
+  llmDisplayLabel,
+  llmDisplayTitle,
 } from "@/lib/llmProviderLabel";
 
-export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider }) {
+export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -153,13 +153,13 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         </div>
       </div>
 
-      {/* Shows which LLM served the last reply (Gemini / Grok / OpenAI) */}
+      {/* Shows Anima custom LLM brand, or the concrete backend that served the reply */}
       {llmProvider && (
         <span
-          title={llmProviderTitle(llmProvider)}
-          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${llmProviderBadgeClass(llmProvider)}`}
+          title={llmDisplayTitle(llmProvider, llmBrand)}
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${llmDisplayBadgeClass(llmProvider, llmBrand)}`}
         >
-          {llmProviderShortLabel(llmProvider) || llmProvider}
+          {llmDisplayLabel(llmProvider, llmBrand) || llmProvider}
         </span>
       )}
 
