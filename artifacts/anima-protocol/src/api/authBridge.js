@@ -2,17 +2,30 @@
 let tokenGetter = null;
 
 export function setAuthTokenGetter(fn) {
-  tokenGetter = fn;
+  tokenGetter = typeof fn === 'function' ? fn : null;
 }
 
 export function clearAuthTokenGetter() {
   tokenGetter = null;
 }
 
+/**
+ * Resolve a bearer token from the registered getter.
+ *
+ * Guards against the setState-style mistake
+ * `setAuthTokenGetter(() => async () => token)` which would otherwise stringify
+ * the inner function into `Authorization: Bearer async () => …` and break every
+ * authenticated write (add-from-series, character features, seeding).
+ */
 export async function getToken(options = {}) {
   if (!tokenGetter) return null;
   try {
-    return await tokenGetter(options);
+    let token = await tokenGetter(options);
+    // Unwrap one accidental extra function layer.
+    if (typeof token === 'function') {
+      token = await token(options);
+    }
+    return typeof token === 'string' && token.length > 0 ? token : null;
   } catch {
     return null;
   }
@@ -44,6 +57,8 @@ export async function authHeaders(extra, options = {}) {
     ...publicOriginHeaders(),
     ...extra,
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (typeof token === 'string' && token.length > 0) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   return headers;
 }
