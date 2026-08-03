@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLERK_FAILURE_HINT,
+  CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from './clerkConnectDiagnostics';
@@ -106,6 +108,7 @@ describe('probeClerkConnectivity', () => {
       expect.anything(),
     );
   });
+
   it('does not emit a false-positive stall hint when probes succeed', async () => {
     vi.stubGlobal(
       'fetch',
@@ -119,6 +122,9 @@ describe('probeClerkConnectivity', () => {
 
     const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
     expect(hints).toEqual([]);
+    // Recovery copy is UI-only (ClerkFailed / stalled ClerkLoading).
+    expect(CLERK_STALL_HINT).toMatch(/has not finished loading/);
+    expect(CLERK_FAILURE_HINT).toMatch(/failed to initialize/);
   });
 
   it('surfaces custom-domain 400 with Clerk error codes instead of blaming DNS only', async () => {
@@ -180,7 +186,7 @@ describe('probeClerkConnectivity', () => {
     ]);
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining(
-        '/v1/environment?_clerk_api_version=2025-11-10&_clerk_js_version=6.12.1',
+        '/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=6.12.1',
       ),
       expect.anything(),
     );
