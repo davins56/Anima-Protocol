@@ -23,11 +23,31 @@ length, persona), edit `Chat.jsx handleSendMessage`. The content-rating toggle l
 section) and is injected as the `adultInstruction` block — keep ON (permit explicit) and
 OFF (enforce safe/non-explicit) branches in sync across every prompt variant.
 
-**Adult Mode escalation:** When `adult_content_enabled` is on, prompts must allow lewd/
-explicit dialogue to increase when the situation presents itself or the user engages it.
-Do not append unconditional “never explicit / never anatomical” resonance or attunement
-clauses while Adult Mode is on — those silently override `adultInstruction`. Lewdity/
-sexuality guides must also not force “family-friendly” under Adult Mode.
+**Adult Mode escalation + timing:** When `adult_content_enabled` is on, prompts unlock
+lewd/explicit capability but must still judge the beat. Assembly lives in
+`src/lib/contentRatingInstruction.js` (`buildContentRatingInstruction`,
+`assessLewdTiming`, `lewdTimingClause`) and is injected from `Chat.jsx` as
+`adultInstruction`. Escalate on RIGHT TIME / CONTINUE (user invites heat, or an
+intimate scene is already in progress); HOLD on WRONG TIME (grief, crisis support,
+logistics/combat/planning, platonic beats, or user redirect). Do not append
+unconditional “never explicit / never anatomical” resonance or attunement clauses
+while Adult Mode is on — those silently override `adultInstruction`. Lewdity/
+sexuality guides must also not force “family-friendly” under Adult Mode, but they
+must respect LEWDITY TIMING.
+
+**Group intimacy:** In group/crossover turns, also inject
+`buildGroupIntimacyGuidance({ nextChar, groupChars, timing, adultMode })` into
+`buildGroupPrompt` so the speaking character judges intimate talk/gestures by
+(1) scene timing, (2) THEIR personality disposition
+(`inferIntimacyDisposition`), and (3) who else is present. Speaker selection
+should include `groupSpeakerIntimacyRules(timing)` so reserved/averse characters
+are not forced to lead lewd beats.
+
+**Intimate play-along:** On `invite` / `continue` beats, inject
+`buildIntimatePlayAlongGuidance({ character, timing, adultMode })` into solo and
+group prompts so the companion actively plays along and adds their own
+personality-true lewd flare (dirty talk / tease / gesture in their voice) —
+not only echoing the user. Empty on `hold` beats.
 
 **User profile injection:** The account-default "about me" lives at
 `user.settings.user_profile` (edited on the `/profile` page, `pages/UserProfile.jsx`).
