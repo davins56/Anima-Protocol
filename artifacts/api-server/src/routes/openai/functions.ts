@@ -1040,10 +1040,31 @@ export function mapImageEditError(err: unknown): {
     };
   }
 
+  // Invalid / missing OpenAI API key — never echo the key material OpenAI
+  // includes in the raw 401 message (e.g. "Incorrect API key provided: sk-…").
+  if (
+    upstreamStatus === 401 ||
+    rawCode === "invalid_api_key" ||
+    haystack.includes("incorrect api key") ||
+    haystack.includes("invalid api key") ||
+    haystack.includes("api key provided")
+  ) {
+    return {
+      status: 503,
+      code: "auth_error",
+      error: "Image generation is temporarily unavailable. Please try again later.",
+    };
+  }
+
+  // Strip any accidental secret leakage from fallback messages.
+  const safeMessage = /sk-[A-Za-z0-9_\-*]+/.test(rawMessage)
+    ? "Image generation failed. Please try again later."
+    : rawMessage;
+
   return {
     status: upstreamStatus ?? 500,
     code: "server_error",
-    error: rawMessage,
+    error: safeMessage,
   };
 }
 
