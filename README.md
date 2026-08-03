@@ -132,10 +132,10 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
 | `OPENAI_API_KEY` | API | Optional for chat when Kimi/Grok is configured; still used for image generate/edit |
-| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Recommended. Kimi (Moonshot / “Kiwi”) — sole chat LLM whenever set. Force with `ANIMA_LLM_PROVIDER=kimi` |
-| `XAI_API_KEY` | API | Optional. Grok (xAI) — only used for chat when Kimi is not configured (`auto` / `xai`) |
+| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | **Required for chat.** Kimi (Moonshot / “Kiwi”) is the only chat LLM. Verify via `/api/healthz/llm` |
+| `XAI_API_KEY` | API | Unused for chat (retired). Optional leftover |
 | `GEMINI_API_KEY` | API | Unused for chat (retired). Safe to remove from Vercel |
-| `ANIMA_LLM_PROVIDER` | API | Unset: **Kimi-only** if `KIMI_API_KEY` is set (ignores leftover `gemini` / `anima`). Or `kimi` / `moonshot` / `auto` / `xai` / `openai`. Values `gemini` / `anima` / `custom` / `ensemble` resolve to Kimi-only when a Kimi key is present |
+| `ANIMA_LLM_PROVIDER` | API | Prefer `kimi`. Leftover `gemini` / `anima` / `auto` cannot select Gemini — chat always uses Kimi when the key is set |
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
 | `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
