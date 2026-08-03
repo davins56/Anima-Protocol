@@ -6,6 +6,7 @@ import {
   inspectSchema,
 } from "@workspace/db";
 import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
+import { getLlmRoutingStatus } from "../lib/llmFailover";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,15 @@ if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
   res.json(data);
+});
+
+/**
+ * Public LLM routing probe (no secrets). Shows which chat provider will be used
+ * so we can confirm Kimi-only deploys without reading Vercel env UI.
+ */
+router.get("/healthz/llm", (_req, res) => {
+  const routing = getLlmRoutingStatus("standard");
+  res.status(routing.status === "ok" ? 200 : 503).json(routing);
 });
 
 /**

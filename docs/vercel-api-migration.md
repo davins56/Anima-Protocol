@@ -43,9 +43,9 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **If chat fails for every companion with “no credits” or `401 status code (no body)`:** Set a working **`KIMI_API_KEY`** (Moonshot) and `ANIMA_LLM_PROVIDER=kimi`, then redeploy. Image generation still needs a funded `OPENAI_API_KEY`.
 
-**Kimi setup (recommended):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) on Vercel Production, set `ANIMA_LLM_PROVIDER=kimi`, and remove leftover `ANIMA_LLM_PROVIDER=gemini` / `GEMINI_API_KEY` if present. Redeploy. Moonshot may require a small platform balance before the key can call models — check the console if auth/quota errors persist.
+**Kimi setup (required for chat):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) on Vercel **Production**, set `ANIMA_LLM_PROVIDER=kimi`, and remove leftover `ANIMA_LLM_PROVIDER=gemini` if present. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"kimi"` and `"keys":{"kimi":true,...}`. Moonshot may require a small platform balance before the key can call models.
 
-**Chat is Kimi-only:** When `KIMI_API_KEY` is set, Gemini is never selected for chat — leftover `ANIMA_LLM_PROVIDER=gemini` / `anima` values cannot route elsewhere. Without a Kimi key, chat falls back to Grok → OpenAI under `auto`.
+**Chat is Kimi-only:** Chat never calls Gemini / Grok / OpenAI. Without `KIMI_API_KEY`, chat fails with a clear “requires KIMI_API_KEY” error instead of falling back to Gemini.
 
 **If chat fails with a Grok “no team credits” error:** you do not have a usable Kimi key (or are on an older deploy). Set `KIMI_API_KEY` + `ANIMA_LLM_PROVIDER=kimi`, set `ANIMA_DISABLE_XAI=true`, or buy xAI credits.
 
