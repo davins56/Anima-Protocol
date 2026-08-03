@@ -35,6 +35,7 @@ import { useEmotionalTTS } from "@/hooks/useEmotionalTTS";
 import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
 import { motion, AnimatePresence } from "framer-motion";
 import InventoryDrawer from "@/components/chat/InventoryDrawer";
+import CharacterBioSheet from "@/components/character/CharacterBioSheet";
 import SystemAlert from "@/components/chat/SystemAlert";
 import CalendarDisplay from "@/components/chat/CalendarDisplay";
 
@@ -156,6 +157,7 @@ export default function Chat() {
   const [characterMemories, setCharacterMemories] = useState([]); // cross-session memories
   const [inventoryItems, setInventoryItems] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
+  const [bioCharacter, setBioCharacter] = useState(null);
   const [showMentalLine, setShowMentalLine] = useState(false);
   const [mentalLineLoading, setMentalLineLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -2393,6 +2395,7 @@ Return JSON:
               onSelectBranch={handleSelectBranch}
               onCreateBranch={() => setShowCreateBranch(true)}
               onShowExport={() => setShowExportArchive(true)}
+              onAvatarClick={setBioCharacter}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <ResonanceField value={resonance.value} label={resonance.label} />
@@ -2538,6 +2541,7 @@ Return JSON:
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
                 onRegenerateMessage={handleRegenerateMessage}
+                onAvatarClick={setBioCharacter}
               />
               
               {/* Render quest detection messages inline */}
@@ -2622,6 +2626,12 @@ Return JSON:
           onClose={() => { setShowInventory(false); loadInventory(activeSession.character_id); }}
         />
       )}
+
+      <CharacterBioSheet
+        character={bioCharacter}
+        open={!!bioCharacter}
+        onClose={() => setBioCharacter(null)}
+      />
 
       <DataExportModal
         isOpen={showExportModal}
