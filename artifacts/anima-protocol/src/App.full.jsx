@@ -23,7 +23,6 @@ import {
   Show,
   useClerk,
 } from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -50,6 +49,7 @@ import {
 } from "@/lib/clerkConnectDiagnostics";
 import {
   isVercelPreviewHost,
+  publishableKeyFromFrontendHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
@@ -225,7 +225,7 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
     return envKey;
   }
 
-  return publishableKeyFromHost(hostname, envKey || undefined);
+  return publishableKeyFromFrontendHost(hostname, envKey);
 }
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
@@ -402,10 +402,11 @@ function AuthFormShell({ mode, children }) {
         <ClerkLoginDiagnostics />
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
-            Password only works if one is set on this account. Otherwise enter
-            your username or email and use the email code — or continue with
-            GitHub below. Google sign-in needs its OAuth redirect URI allowlisted
-            in Google Cloud before it will work.
+            Password sign-in only works if a password is set on this Production
+            account. Otherwise enter the username or email that exists there and
+            use the email code — or continue with GitHub below if that is how
+            you created the account. Google sign-in needs its OAuth redirect URI
+            allowlisted in Google Cloud before it will work.
           </p>
         ) : null}
         {children}
