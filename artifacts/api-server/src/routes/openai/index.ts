@@ -2,13 +2,13 @@ import { Router } from "express";
 import { db, conversations, messages } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
-import { rateLimit } from "../../lib/rateLimit";
+import { createRateLimit } from "../../lib/rateLimit";
 import { routeModel } from "../../lib/modelRouter";
 import { createChatStreamWithFailover } from "../../lib/llmFailover";
 
 const router = Router();
 
-router.use(rateLimit);
+router.use(createRateLimit({ name: "openai-chat", max: 60 }));
 
 router.get("/conversations", async (req, res) => {
   const { userId } = getAuth(req);

@@ -19,6 +19,11 @@ import { classifyDbError } from "./lib/dbErrors";
 
 const app: Express = express();
 
+// Vercel (and most hosts) terminate TLS in front of the function. Without this,
+// req.ip is the proxy hop and every visitor shares one rate-limit bucket —
+// which surfaces as "Too many requests" after a single chat send.
+app.set("trust proxy", 1);
+
 // Clerk Frontend API proxy — must be mounted before the body parsers because it
 // streams raw request bytes. It self-guards and is only active in production /
 // pk_live; otherwise it returns a deterministic 503.
