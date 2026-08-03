@@ -17,11 +17,8 @@ import {
   type MsgData,
 } from "@workspace/db";
 import { rateLimit } from "../lib/rateLimit";
-import {
-  isModelUnavailableError,
-  resolveModel,
-  routeModel,
-} from "../lib/modelRouter";
+import { routeModel } from "../lib/modelRouter";
+import { createChatStreamWithFailover } from "../lib/llmFailover";
 import {
   buildCompanionPrompt,
   type CompanionMemoryRecord,
@@ -48,7 +45,6 @@ import {
   serializeSynchroState,
   type SynchroState,
 } from "../lib/synchroEngine";
-import { getOpenAIClient } from "../lib/openaiClient";
 import {
   resolveActiveCharacterId,
   resolveActiveCharacterName,
@@ -580,7 +576,6 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
-  const standard = resolveModel("standard");
   const shouldPersist = body.persist !== false;
 
   await syncTypedSession({
@@ -622,32 +617,22 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
+  let usedProvider: "openai" | "xai" = "openai";
+  let failedOver = false;
 
   try {
-    let stream;
-    try {
-      stream = await getOpenAIClient().chat.completions.create({
-        model: routed.model,
-        max_tokens: routed.maxTokens,
-        messages: [{ role: "system", content: prompt }],
-        stream: true,
-      });
-    } catch (modelErr) {
-      if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
-        usedModel = standard.model;
-        usedTier = standard.tier;
-        stream = await getOpenAIClient().chat.completions.create({
-          model: standard.model,
-          max_tokens: standard.maxTokens,
-          messages: [{ role: "system", content: prompt }],
-          stream: true,
-        });
-      } else {
-        throw modelErr;
-      }
-    }
+    const completion = await createChatStreamWithFailover({
+      tier: routed.tier,
+      model: routed.model,
+      maxTokens: routed.maxTokens,
+      messages: [{ role: "system", content: prompt }],
+    });
+    usedModel = completion.model;
+    usedTier = completion.tier;
+    usedProvider = completion.provider;
+    failedOver = completion.failedOver;
 
-    for await (const chunk of stream) {
+    for await (const chunk of completion.stream) {
       const delta = chunk.choices[0]?.delta?.content;
       if (!delta) continue;
       fullResponse += delta;
@@ -682,7 +667,12 @@ router.post("/messages", async (req, res) => {
         characterId: activeCharacterId,
         characterName: activeCharacterName,
         isCrossover,
-        metadata: { model: usedModel, tier: usedTier },
+        metadata: {
+          model: usedModel,
+          tier: usedTier,
+          provider: usedProvider,
+          failed_over: failedOver,
+        },
       });
       const sharedFact = isCrossover
         ? {
@@ -761,6 +751,8 @@ router.post("/messages", async (req, res) => {
         done: true,
         model: usedModel,
         tier: usedTier,
+        provider: usedProvider,
+        failed_over: failedOver,
         is_crossover: isCrossover,
         messages: [persistedUser, persistedAssistant].filter(Boolean),
       })}\n\n`,
