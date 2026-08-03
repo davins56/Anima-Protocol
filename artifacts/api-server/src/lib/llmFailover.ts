@@ -15,9 +15,8 @@
 //   - else auto
 //
 // Anima custom LLM tier preferences (skip missing keys, then failover):
-//   - light    → Kimi → Gemini → Grok → OpenAI   (cheap / snappy)
-//   - standard → Gemini → Kimi → Grok → OpenAI   (balanced companion chat)
-//   - heavy    → Grok → OpenAI → Kimi → Gemini   (high-stakes depth)
+//   - light / standard → Kimi → Gemini → Grok → OpenAI  (Kimi leads everyday chat)
+//   - heavy            → Grok → Kimi → OpenAI → Gemini  (high-stakes depth)
 //
 // ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` / `anima` (useful
 // when the OpenAI account is out of credits).
@@ -175,18 +174,18 @@ function providerAvailable(id: LlmProviderId): boolean {
 
 /**
  * Preferred provider order for the Anima custom LLM, by message tier.
- * Each chain uses a different "lead" model family so the stack feels like one
- * product built on Kimi + Gemini + Grok + ChatGPT rather than a single vendor.
+ *
+ * Kimi is the default lead for everyday chat (light + standard). Most turns
+ * classify as `standard`, so putting Gemini first made production look like it
+ * "skipped" Kimi entirely. Heavy / deep-mode turns still prefer Grok, with Kimi
+ * as the first backup before OpenAI/Gemini.
  */
 export function getAnimaTierProviderOrder(tier: ModelTier): LlmProviderId[] {
-  if (tier === "light") {
-    return ["kimi", "gemini", "xai", "openai"];
-  }
   if (tier === "heavy") {
-    return ["xai", "openai", "kimi", "gemini"];
+    return ["xai", "kimi", "openai", "gemini"];
   }
-  // standard — balanced companion chat
-  return ["gemini", "kimi", "xai", "openai"];
+  // light + standard — Kimi first whenever the key is configured
+  return ["kimi", "gemini", "xai", "openai"];
 }
 
 /** Ordered list of providers to try for the current env / sticky state. */
