@@ -47,6 +47,7 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 |----------|---------|
 | `DATABASE_URL` | API + `db push` |
 | `OPENAI_API_KEY` | API (import-time check) |
+| `XAI_API_KEY` | API (optional Grok failover when OpenAI is out of credits) |
 | `PORT` | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend `/`, mockup `/__mockup` |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) — must match `CLERK_PUBLISHABLE_KEY`; Vite build also reads `CLERK_PUBLISHABLE_KEY` if `VITE_` is unset |

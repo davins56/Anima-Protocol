@@ -142,6 +142,8 @@ export default function Chat() {
   const [activeSession, setActiveSession] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  /** Last LLM provider that served a reply: "openai" | "xai" */
+  const [llmProvider, setLlmProvider] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState("solo");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -1693,6 +1695,22 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         throw new Error("The companion returned an empty reply. Please try again.");
       }
 
+      // Surface which backend LLM served this turn (OpenAI vs Grok/xAI failover).
+      if (resultPayload.provider) {
+        setLlmProvider(resultPayload.provider);
+      }
+      if (resultPayload.failed_over && resultPayload.provider === "xai") {
+        toast.success("Switched to Grok — OpenAI was unavailable.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "xAI failover active for this session",
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "openai") {
+        toast.success("Switched back to OpenAI.", {
+          description: resultPayload.model ? `Now using ${resultPayload.model}` : undefined,
+        });
+      }
+
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
       const strippedResult = result.replace(eventTagRegex, "").trim();
@@ -2396,6 +2414,7 @@ Return JSON:
               onCreateBranch={() => setShowCreateBranch(true)}
               onShowExport={() => setShowExportArchive(true)}
               onAvatarClick={setBioCharacter}
+              llmProvider={llmProvider}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <ResonanceField value={resonance.value} label={resonance.label} />

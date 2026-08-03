@@ -36,6 +36,7 @@ export default function ChatToolbar({
   onCreateBranch,
   onShowExport,
   onAvatarClick,
+  llmProvider,
 }) {
   const [showActionsPanel, setShowActionsPanel] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
@@ -52,6 +53,7 @@ export default function ChatToolbar({
             characterEmotions={characterEmotions}
             onToggleDeepMode={onToggleDeepMode}
             onAvatarClick={onAvatarClick}
+            llmProvider={llmProvider}
           />
         </div>
 

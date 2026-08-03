@@ -39973,10 +39973,10 @@ var require_sasl = __commonJS({
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
       const saltedPassword = await crypto4.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey2 = await crypto4.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto4.sha256(clientKey2);
+      const clientKey = await crypto4.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto4.sha256(clientKey);
       const clientSignature = await crypto4.hmacSha256(storedKey, authMessage);
-      const clientProof = xorBuffers(Buffer.from(clientKey2), Buffer.from(clientSignature)).toString("base64");
+      const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
       const serverKey = await crypto4.hmacSha256(saltedPassword, "Server Key");
       const serverSignatureBytes = await crypto4.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
@@ -42669,8 +42669,8 @@ var require_client = __commonJS({
         }
         return data;
       }
-      cancel(client2, query) {
-        if (client2.activeQuery === query) {
+      cancel(client, query) {
+        if (client.activeQuery === query) {
           const con = this.connection;
           if (this.host && this.host.indexOf("/") === 0) {
             con.connect(this.host + "/.s.PGSQL." + this.port);
@@ -42678,10 +42678,10 @@ var require_client = __commonJS({
             con.connect(this.port, this.host);
           }
           con.on("connect", function() {
-            con.cancel(client2.processID, client2.secretKey);
+            con.cancel(client.processID, client.secretKey);
           });
-        } else if (client2._queryQueue.indexOf(query) !== -1) {
-          client2._queryQueue.splice(client2._queryQueue.indexOf(query), 1);
+        } else if (client._queryQueue.indexOf(query) !== -1) {
+          client._queryQueue.splice(client._queryQueue.indexOf(query), 1);
         }
       }
       setTypeParser(oid, format, parseFn) {
@@ -42850,8 +42850,8 @@ var require_pg_pool = __commonJS({
       return i2 === -1 ? void 0 : list.splice(i2, 1)[0];
     };
     var IdleItem = class {
-      constructor(client2, idleListener, timeoutId) {
-        this.client = client2;
+      constructor(client, idleListener, timeoutId) {
+        this.client = client;
         this.idleListener = idleListener;
         this.timeoutId = timeoutId;
       }
@@ -42870,8 +42870,8 @@ var require_pg_pool = __commonJS({
       }
       let rej;
       let res;
-      const cb = function(err, client2) {
-        err ? rej(err) : res(client2);
+      const cb = function(err, client) {
+        err ? rej(err) : res(client);
       };
       const result = new Promise2(function(resolve, reject) {
         res = resolve;
@@ -42882,15 +42882,15 @@ var require_pg_pool = __commonJS({
       });
       return { callback: cb, result };
     }
-    function makeIdleListener(pool3, client2) {
+    function makeIdleListener(pool3, client) {
       return function idleListener(err) {
-        err.client = client2;
-        client2.removeListener("error", idleListener);
-        client2.on("error", () => {
+        err.client = client;
+        client.removeListener("error", idleListener);
+        client.on("error", () => {
           pool3.log("additional client error after disconnection due to error", err);
         });
-        pool3._remove(client2);
-        pool3.emit("error", err, client2);
+        pool3._remove(client);
+        pool3.emit("error", err, client);
       };
     }
     var Pool6 = class extends EventEmitter2 {
@@ -42973,25 +42973,25 @@ var require_pg_pool = __commonJS({
         if (this._idle.length) {
           const idleItem = this._idle.pop();
           clearTimeout(idleItem.timeoutId);
-          const client2 = idleItem.client;
-          client2.ref && client2.ref();
+          const client = idleItem.client;
+          client.ref && client.ref();
           const idleListener = idleItem.idleListener;
-          return this._acquireClient(client2, pendingItem, idleListener, false);
+          return this._acquireClient(client, pendingItem, idleListener, false);
         }
         if (!this._isFull()) {
           return this.newClient(pendingItem);
         }
         throw new Error("unexpected condition");
       }
-      _remove(client2, callback) {
-        const removed = removeWhere(this._idle, (item) => item.client === client2);
+      _remove(client, callback) {
+        const removed = removeWhere(this._idle, (item) => item.client === client);
         if (removed !== void 0) {
           clearTimeout(removed.timeoutId);
         }
-        this._clients = this._clients.filter((c2) => c2 !== client2);
+        this._clients = this._clients.filter((c2) => c2 !== client);
         const context = this;
-        client2.end(() => {
-          context.emit("remove", client2);
+        client.end(() => {
+          context.emit("remove", client);
           if (typeof callback === "function") {
             callback();
           }
@@ -43032,34 +43032,34 @@ var require_pg_pool = __commonJS({
         return result;
       }
       newClient(pendingItem) {
-        const client2 = new this.Client(this.options);
-        this._clients.push(client2);
-        const idleListener = makeIdleListener(this, client2);
+        const client = new this.Client(this.options);
+        this._clients.push(client);
+        const idleListener = makeIdleListener(this, client);
         this.log("checking client timeout");
         let tid;
         let timeoutHit = false;
         if (this.options.connectionTimeoutMillis) {
           tid = setTimeout(() => {
-            if (client2.connection) {
+            if (client.connection) {
               this.log("ending client due to timeout");
               timeoutHit = true;
-              client2.connection.stream.destroy();
-            } else if (!client2.isConnected()) {
+              client.connection.stream.destroy();
+            } else if (!client.isConnected()) {
               this.log("ending client due to timeout");
               timeoutHit = true;
-              client2.end();
+              client.end();
             }
           }, this.options.connectionTimeoutMillis);
         }
         this.log("connecting new client");
-        client2.connect((err) => {
+        client.connect((err) => {
           if (tid) {
             clearTimeout(tid);
           }
-          client2.on("error", idleListener);
+          client.on("error", idleListener);
           if (err) {
             this.log("client failed to connect", err);
-            this._clients = this._clients.filter((c2) => c2 !== client2);
+            this._clients = this._clients.filter((c2) => c2 !== client);
             if (timeoutHit) {
               err = new Error("Connection terminated due to connection timeout", { cause: err });
             }
@@ -43070,13 +43070,13 @@ var require_pg_pool = __commonJS({
           } else {
             this.log("new client connected");
             if (this.options.onConnect) {
-              this._promiseTry(() => this.options.onConnect(client2)).then(
+              this._promiseTry(() => this.options.onConnect(client)).then(
                 () => {
-                  this._afterConnect(client2, pendingItem, idleListener);
+                  this._afterConnect(client, pendingItem, idleListener);
                 },
                 (hookErr) => {
-                  this._clients = this._clients.filter((c2) => c2 !== client2);
-                  client2.end(() => {
+                  this._clients = this._clients.filter((c2) => c2 !== client);
+                  client.end(() => {
                     this._pulseQueue();
                     if (!pendingItem.timedOut) {
                       pendingItem.callback(hookErr, void 0, NOOP);
@@ -43086,93 +43086,93 @@ var require_pg_pool = __commonJS({
               );
               return;
             }
-            return this._afterConnect(client2, pendingItem, idleListener);
+            return this._afterConnect(client, pendingItem, idleListener);
           }
         });
       }
-      _afterConnect(client2, pendingItem, idleListener) {
+      _afterConnect(client, pendingItem, idleListener) {
         if (this.options.maxLifetimeSeconds !== 0) {
           const maxLifetimeTimeout = setTimeout(() => {
             this.log("ending client due to expired lifetime");
-            this._expired.add(client2);
-            const idleIndex = this._idle.findIndex((idleItem) => idleItem.client === client2);
+            this._expired.add(client);
+            const idleIndex = this._idle.findIndex((idleItem) => idleItem.client === client);
             if (idleIndex !== -1) {
               this._acquireClient(
-                client2,
-                new PendingItem((err, client3, clientRelease) => clientRelease()),
+                client,
+                new PendingItem((err, client2, clientRelease) => clientRelease()),
                 idleListener,
                 false
               );
             }
           }, this.options.maxLifetimeSeconds * 1e3);
           maxLifetimeTimeout.unref();
-          client2.once("end", () => clearTimeout(maxLifetimeTimeout));
+          client.once("end", () => clearTimeout(maxLifetimeTimeout));
         }
-        return this._acquireClient(client2, pendingItem, idleListener, true);
+        return this._acquireClient(client, pendingItem, idleListener, true);
       }
       // acquire a client for a pending work item
-      _acquireClient(client2, pendingItem, idleListener, isNew) {
+      _acquireClient(client, pendingItem, idleListener, isNew) {
         if (isNew) {
-          this.emit("connect", client2);
+          this.emit("connect", client);
         }
-        this.emit("acquire", client2);
-        client2.release = this._releaseOnce(client2, idleListener);
-        client2.removeListener("error", idleListener);
+        this.emit("acquire", client);
+        client.release = this._releaseOnce(client, idleListener);
+        client.removeListener("error", idleListener);
         if (!pendingItem.timedOut) {
           if (isNew && this.options.verify) {
-            this.options.verify(client2, (err) => {
+            this.options.verify(client, (err) => {
               if (err) {
-                client2.release(err);
+                client.release(err);
                 return pendingItem.callback(err, void 0, NOOP);
               }
-              pendingItem.callback(void 0, client2, client2.release);
+              pendingItem.callback(void 0, client, client.release);
             });
           } else {
-            pendingItem.callback(void 0, client2, client2.release);
+            pendingItem.callback(void 0, client, client.release);
           }
         } else {
           if (isNew && this.options.verify) {
-            this.options.verify(client2, client2.release);
+            this.options.verify(client, client.release);
           } else {
-            client2.release();
+            client.release();
           }
         }
       }
       // returns a function that wraps _release and throws if called more than once
-      _releaseOnce(client2, idleListener) {
+      _releaseOnce(client, idleListener) {
         let released = false;
         return (err) => {
           if (released) {
             throwOnDoubleRelease();
           }
           released = true;
-          this._release(client2, idleListener, err);
+          this._release(client, idleListener, err);
         };
       }
       // release a client back to the poll, include an error
       // to remove it from the pool
-      _release(client2, idleListener, err) {
-        client2.on("error", idleListener);
-        client2._poolUseCount = (client2._poolUseCount || 0) + 1;
-        this.emit("release", err, client2);
-        if (err || this.ending || !client2._queryable || client2._ending || client2._poolUseCount >= this.options.maxUses) {
-          if (client2._poolUseCount >= this.options.maxUses) {
+      _release(client, idleListener, err) {
+        client.on("error", idleListener);
+        client._poolUseCount = (client._poolUseCount || 0) + 1;
+        this.emit("release", err, client);
+        if (err || this.ending || !client._queryable || client._ending || client._poolUseCount >= this.options.maxUses) {
+          if (client._poolUseCount >= this.options.maxUses) {
             this.log("remove expended client");
           }
-          return this._remove(client2, this._pulseQueue.bind(this));
+          return this._remove(client, this._pulseQueue.bind(this));
         }
-        const isExpired = this._expired.has(client2);
+        const isExpired = this._expired.has(client);
         if (isExpired) {
           this.log("remove expired client");
-          this._expired.delete(client2);
-          return this._remove(client2, this._pulseQueue.bind(this));
+          this._expired.delete(client);
+          return this._remove(client, this._pulseQueue.bind(this));
         }
         let tid;
         if (this.options.idleTimeoutMillis && this._isAboveMin()) {
           tid = setTimeout(() => {
             if (this._isAboveMin()) {
               this.log("remove idle client");
-              this._remove(client2, this._pulseQueue.bind(this));
+              this._remove(client, this._pulseQueue.bind(this));
             }
           }, this.options.idleTimeoutMillis);
           if (this.options.allowExitOnIdle) {
@@ -43180,9 +43180,9 @@ var require_pg_pool = __commonJS({
           }
         }
         if (this.options.allowExitOnIdle) {
-          client2.unref();
+          client.unref();
         }
-        this._idle.push(new IdleItem(client2, idleListener, tid));
+        this._idle.push(new IdleItem(client, idleListener, tid));
         this._pulseQueue();
       }
       query(text3, values, cb) {
@@ -43199,7 +43199,7 @@ var require_pg_pool = __commonJS({
         }
         const response = promisify2(this.Promise, cb);
         cb = response.callback;
-        this.connect((err, client2) => {
+        this.connect((err, client) => {
           if (err) {
             return cb(err);
           }
@@ -43209,27 +43209,27 @@ var require_pg_pool = __commonJS({
               return;
             }
             clientReleased = true;
-            client2.release(err2);
+            client.release(err2);
             cb(err2);
           };
-          client2.once("error", onError);
+          client.once("error", onError);
           this.log("dispatching query");
           try {
-            client2.query(text3, values, (err2, res) => {
+            client.query(text3, values, (err2, res) => {
               this.log("query dispatched");
-              client2.removeListener("error", onError);
+              client.removeListener("error", onError);
               if (clientReleased) {
                 return;
               }
               clientReleased = true;
-              client2.release(err2);
+              client.release(err2);
               if (err2) {
                 return cb(err2);
               }
               return cb(void 0, res);
             });
           } catch (err2) {
-            client2.release(err2);
+            client.release(err2);
             return cb(err2);
           }
         });
@@ -43254,7 +43254,7 @@ var require_pg_pool = __commonJS({
         return this._idle.length;
       }
       get expiredCount() {
-        return this._clients.reduce((acc, client2) => acc + (this._expired.has(client2) ? 1 : 0), 0);
+        return this._clients.reduce((acc, client) => acc + (this._expired.has(client) ? 1 : 0), 0);
       }
       get totalCount() {
         return this._clients.length;
@@ -43335,13 +43335,13 @@ var require_query2 = __commonJS({
       );
       return this._promise;
     };
-    NativeQuery.prototype.submit = function(client2) {
+    NativeQuery.prototype.submit = function(client) {
       this.state = "running";
       const self2 = this;
-      this.native = client2.native;
-      client2.native.arrayMode = this._arrayMode;
+      this.native = client.native;
+      client.native.arrayMode = this._arrayMode;
       let after = function(err, rows, results) {
-        client2.native.arrayMode = false;
+        client.native.arrayMode = false;
         setImmediate(function() {
           self2.emit("_done");
         });
@@ -43377,16 +43377,16 @@ var require_query2 = __commonJS({
           console.error("This can cause conflicts and silent errors executing queries");
         }
         const values = (this.values || []).map(utils.prepareValue);
-        if (client2.namedQueries[this.name]) {
-          if (this.text && client2.namedQueries[this.name] !== this.text) {
+        if (client.namedQueries[this.name]) {
+          if (this.text && client.namedQueries[this.name] !== this.text) {
             const err = new Error(`Prepared statements must be unique - '${this.name}' was used for a different statement`);
             return after(err);
           }
-          return client2.native.execute(this.name, values, after);
+          return client.native.execute(this.name, values, after);
         }
-        return client2.native.prepare(this.name, this.text, values.length, function(err) {
+        return client.native.prepare(this.name, this.text, values.length, function(err) {
           if (err) return after(err);
-          client2.namedQueries[self2.name] = self2.text;
+          client.namedQueries[self2.name] = self2.text;
           return self2.native.execute(self2.name, values, after);
         });
       } else if (this.values) {
@@ -43395,11 +43395,11 @@ var require_query2 = __commonJS({
           return after(err);
         }
         const vals = this.values.map(utils.prepareValue);
-        client2.native.query(this.text, vals, after);
+        client.native.query(this.text, vals, after);
       } else if (this.queryMode === "extended") {
-        client2.native.query(this.text, [], after);
+        client.native.query(this.text, [], after);
       } else {
-        client2.native.query(this.text, after);
+        client.native.query(this.text, after);
       }
     };
   }
@@ -44237,10 +44237,10 @@ var require_sasl2 = __commonJS({
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
       const saltedPassword = await crypto4.deriveKey(password, saltBytes, sv.iteration);
-      const clientKey2 = await crypto4.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto4.sha256(clientKey2);
+      const clientKey = await crypto4.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto4.sha256(clientKey);
       const clientSignature = await crypto4.hmacSha256(storedKey, authMessage);
-      const clientProof = xorBuffers(Buffer.from(clientKey2), Buffer.from(clientSignature)).toString("base64");
+      const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
       const serverKey = await crypto4.hmacSha256(saltedPassword, "Server Key");
       const serverSignatureBytes = await crypto4.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
@@ -46557,8 +46557,8 @@ var require_client3 = __commonJS({
         }
         return data;
       }
-      cancel(client2, query) {
-        if (client2.activeQuery === query) {
+      cancel(client, query) {
+        if (client.activeQuery === query) {
           const con = this.connection;
           if (this.host && this.host.indexOf("/") === 0) {
             con.connect(this.host + "/.s.PGSQL." + this.port);
@@ -46566,10 +46566,10 @@ var require_client3 = __commonJS({
             con.connect(this.port, this.host);
           }
           con.on("connect", function() {
-            con.cancel(client2.processID, client2.secretKey);
+            con.cancel(client.processID, client.secretKey);
           });
-        } else if (client2._queryQueue.indexOf(query) !== -1) {
-          client2._queryQueue.splice(client2._queryQueue.indexOf(query), 1);
+        } else if (client._queryQueue.indexOf(query) !== -1) {
+          client._queryQueue.splice(client._queryQueue.indexOf(query), 1);
         }
       }
       setTypeParser(oid, format, parseFn) {
@@ -46735,8 +46735,8 @@ var require_pg_pool2 = __commonJS({
       return i2 === -1 ? void 0 : list.splice(i2, 1)[0];
     };
     var IdleItem = class {
-      constructor(client2, idleListener, timeoutId) {
-        this.client = client2;
+      constructor(client, idleListener, timeoutId) {
+        this.client = client;
         this.idleListener = idleListener;
         this.timeoutId = timeoutId;
       }
@@ -46755,8 +46755,8 @@ var require_pg_pool2 = __commonJS({
       }
       let rej;
       let res;
-      const cb = function(err, client2) {
-        err ? rej(err) : res(client2);
+      const cb = function(err, client) {
+        err ? rej(err) : res(client);
       };
       const result = new Promise2(function(resolve, reject) {
         res = resolve;
@@ -46767,15 +46767,15 @@ var require_pg_pool2 = __commonJS({
       });
       return { callback: cb, result };
     }
-    function makeIdleListener(pool3, client2) {
+    function makeIdleListener(pool3, client) {
       return function idleListener(err) {
-        err.client = client2;
-        client2.removeListener("error", idleListener);
-        client2.on("error", () => {
+        err.client = client;
+        client.removeListener("error", idleListener);
+        client.on("error", () => {
           pool3.log("additional client error after disconnection due to error", err);
         });
-        pool3._remove(client2);
-        pool3.emit("error", err, client2);
+        pool3._remove(client);
+        pool3.emit("error", err, client);
       };
     }
     var Pool6 = class extends EventEmitter2 {
@@ -46858,25 +46858,25 @@ var require_pg_pool2 = __commonJS({
         if (this._idle.length) {
           const idleItem = this._idle.pop();
           clearTimeout(idleItem.timeoutId);
-          const client2 = idleItem.client;
-          client2.ref && client2.ref();
+          const client = idleItem.client;
+          client.ref && client.ref();
           const idleListener = idleItem.idleListener;
-          return this._acquireClient(client2, pendingItem, idleListener, false);
+          return this._acquireClient(client, pendingItem, idleListener, false);
         }
         if (!this._isFull()) {
           return this.newClient(pendingItem);
         }
         throw new Error("unexpected condition");
       }
-      _remove(client2, callback) {
-        const removed = removeWhere(this._idle, (item) => item.client === client2);
+      _remove(client, callback) {
+        const removed = removeWhere(this._idle, (item) => item.client === client);
         if (removed !== void 0) {
           clearTimeout(removed.timeoutId);
         }
-        this._clients = this._clients.filter((c2) => c2 !== client2);
+        this._clients = this._clients.filter((c2) => c2 !== client);
         const context = this;
-        client2.end(() => {
-          context.emit("remove", client2);
+        client.end(() => {
+          context.emit("remove", client);
           if (typeof callback === "function") {
             callback();
           }
@@ -46917,34 +46917,34 @@ var require_pg_pool2 = __commonJS({
         return result;
       }
       newClient(pendingItem) {
-        const client2 = new this.Client(this.options);
-        this._clients.push(client2);
-        const idleListener = makeIdleListener(this, client2);
+        const client = new this.Client(this.options);
+        this._clients.push(client);
+        const idleListener = makeIdleListener(this, client);
         this.log("checking client timeout");
         let tid;
         let timeoutHit = false;
         if (this.options.connectionTimeoutMillis) {
           tid = setTimeout(() => {
-            if (client2.connection) {
+            if (client.connection) {
               this.log("ending client due to timeout");
               timeoutHit = true;
-              client2.connection.stream.destroy();
-            } else if (!client2.isConnected()) {
+              client.connection.stream.destroy();
+            } else if (!client.isConnected()) {
               this.log("ending client due to timeout");
               timeoutHit = true;
-              client2.end();
+              client.end();
             }
           }, this.options.connectionTimeoutMillis);
         }
         this.log("connecting new client");
-        client2.connect((err) => {
+        client.connect((err) => {
           if (tid) {
             clearTimeout(tid);
           }
-          client2.on("error", idleListener);
+          client.on("error", idleListener);
           if (err) {
             this.log("client failed to connect", err);
-            this._clients = this._clients.filter((c2) => c2 !== client2);
+            this._clients = this._clients.filter((c2) => c2 !== client);
             if (timeoutHit) {
               err = new Error("Connection terminated due to connection timeout", { cause: err });
             }
@@ -46955,13 +46955,13 @@ var require_pg_pool2 = __commonJS({
           } else {
             this.log("new client connected");
             if (this.options.onConnect) {
-              this._promiseTry(() => this.options.onConnect(client2)).then(
+              this._promiseTry(() => this.options.onConnect(client)).then(
                 () => {
-                  this._afterConnect(client2, pendingItem, idleListener);
+                  this._afterConnect(client, pendingItem, idleListener);
                 },
                 (hookErr) => {
-                  this._clients = this._clients.filter((c2) => c2 !== client2);
-                  client2.end(() => {
+                  this._clients = this._clients.filter((c2) => c2 !== client);
+                  client.end(() => {
                     this._pulseQueue();
                     if (!pendingItem.timedOut) {
                       pendingItem.callback(hookErr, void 0, NOOP);
@@ -46971,93 +46971,93 @@ var require_pg_pool2 = __commonJS({
               );
               return;
             }
-            return this._afterConnect(client2, pendingItem, idleListener);
+            return this._afterConnect(client, pendingItem, idleListener);
           }
         });
       }
-      _afterConnect(client2, pendingItem, idleListener) {
+      _afterConnect(client, pendingItem, idleListener) {
         if (this.options.maxLifetimeSeconds !== 0) {
           const maxLifetimeTimeout = setTimeout(() => {
             this.log("ending client due to expired lifetime");
-            this._expired.add(client2);
-            const idleIndex = this._idle.findIndex((idleItem) => idleItem.client === client2);
+            this._expired.add(client);
+            const idleIndex = this._idle.findIndex((idleItem) => idleItem.client === client);
             if (idleIndex !== -1) {
               this._acquireClient(
-                client2,
-                new PendingItem((err, client3, clientRelease) => clientRelease()),
+                client,
+                new PendingItem((err, client2, clientRelease) => clientRelease()),
                 idleListener,
                 false
               );
             }
           }, this.options.maxLifetimeSeconds * 1e3);
           maxLifetimeTimeout.unref();
-          client2.once("end", () => clearTimeout(maxLifetimeTimeout));
+          client.once("end", () => clearTimeout(maxLifetimeTimeout));
         }
-        return this._acquireClient(client2, pendingItem, idleListener, true);
+        return this._acquireClient(client, pendingItem, idleListener, true);
       }
       // acquire a client for a pending work item
-      _acquireClient(client2, pendingItem, idleListener, isNew) {
+      _acquireClient(client, pendingItem, idleListener, isNew) {
         if (isNew) {
-          this.emit("connect", client2);
+          this.emit("connect", client);
         }
-        this.emit("acquire", client2);
-        client2.release = this._releaseOnce(client2, idleListener);
-        client2.removeListener("error", idleListener);
+        this.emit("acquire", client);
+        client.release = this._releaseOnce(client, idleListener);
+        client.removeListener("error", idleListener);
         if (!pendingItem.timedOut) {
           if (isNew && this.options.verify) {
-            this.options.verify(client2, (err) => {
+            this.options.verify(client, (err) => {
               if (err) {
-                client2.release(err);
+                client.release(err);
                 return pendingItem.callback(err, void 0, NOOP);
               }
-              pendingItem.callback(void 0, client2, client2.release);
+              pendingItem.callback(void 0, client, client.release);
             });
           } else {
-            pendingItem.callback(void 0, client2, client2.release);
+            pendingItem.callback(void 0, client, client.release);
           }
         } else {
           if (isNew && this.options.verify) {
-            this.options.verify(client2, client2.release);
+            this.options.verify(client, client.release);
           } else {
-            client2.release();
+            client.release();
           }
         }
       }
       // returns a function that wraps _release and throws if called more than once
-      _releaseOnce(client2, idleListener) {
+      _releaseOnce(client, idleListener) {
         let released = false;
         return (err) => {
           if (released) {
             throwOnDoubleRelease();
           }
           released = true;
-          this._release(client2, idleListener, err);
+          this._release(client, idleListener, err);
         };
       }
       // release a client back to the poll, include an error
       // to remove it from the pool
-      _release(client2, idleListener, err) {
-        client2.on("error", idleListener);
-        client2._poolUseCount = (client2._poolUseCount || 0) + 1;
-        this.emit("release", err, client2);
-        if (err || this.ending || !client2._queryable || client2._ending || client2._poolUseCount >= this.options.maxUses) {
-          if (client2._poolUseCount >= this.options.maxUses) {
+      _release(client, idleListener, err) {
+        client.on("error", idleListener);
+        client._poolUseCount = (client._poolUseCount || 0) + 1;
+        this.emit("release", err, client);
+        if (err || this.ending || !client._queryable || client._ending || client._poolUseCount >= this.options.maxUses) {
+          if (client._poolUseCount >= this.options.maxUses) {
             this.log("remove expended client");
           }
-          return this._remove(client2, this._pulseQueue.bind(this));
+          return this._remove(client, this._pulseQueue.bind(this));
         }
-        const isExpired = this._expired.has(client2);
+        const isExpired = this._expired.has(client);
         if (isExpired) {
           this.log("remove expired client");
-          this._expired.delete(client2);
-          return this._remove(client2, this._pulseQueue.bind(this));
+          this._expired.delete(client);
+          return this._remove(client, this._pulseQueue.bind(this));
         }
         let tid;
         if (this.options.idleTimeoutMillis && this._isAboveMin()) {
           tid = setTimeout(() => {
             if (this._isAboveMin()) {
               this.log("remove idle client");
-              this._remove(client2, this._pulseQueue.bind(this));
+              this._remove(client, this._pulseQueue.bind(this));
             }
           }, this.options.idleTimeoutMillis);
           if (this.options.allowExitOnIdle) {
@@ -47065,9 +47065,9 @@ var require_pg_pool2 = __commonJS({
           }
         }
         if (this.options.allowExitOnIdle) {
-          client2.unref();
+          client.unref();
         }
-        this._idle.push(new IdleItem(client2, idleListener, tid));
+        this._idle.push(new IdleItem(client, idleListener, tid));
         this._pulseQueue();
       }
       query(text3, values, cb) {
@@ -47084,7 +47084,7 @@ var require_pg_pool2 = __commonJS({
         }
         const response = promisify2(this.Promise, cb);
         cb = response.callback;
-        this.connect((err, client2) => {
+        this.connect((err, client) => {
           if (err) {
             return cb(err);
           }
@@ -47094,27 +47094,27 @@ var require_pg_pool2 = __commonJS({
               return;
             }
             clientReleased = true;
-            client2.release(err2);
+            client.release(err2);
             cb(err2);
           };
-          client2.once("error", onError);
+          client.once("error", onError);
           this.log("dispatching query");
           try {
-            client2.query(text3, values, (err2, res) => {
+            client.query(text3, values, (err2, res) => {
               this.log("query dispatched");
-              client2.removeListener("error", onError);
+              client.removeListener("error", onError);
               if (clientReleased) {
                 return;
               }
               clientReleased = true;
-              client2.release(err2);
+              client.release(err2);
               if (err2) {
                 return cb(err2);
               }
               return cb(void 0, res);
             });
           } catch (err2) {
-            client2.release(err2);
+            client.release(err2);
             return cb(err2);
           }
         });
@@ -47139,7 +47139,7 @@ var require_pg_pool2 = __commonJS({
         return this._idle.length;
       }
       get expiredCount() {
-        return this._clients.reduce((acc, client2) => acc + (this._expired.has(client2) ? 1 : 0), 0);
+        return this._clients.reduce((acc, client) => acc + (this._expired.has(client) ? 1 : 0), 0);
       }
       get totalCount() {
         return this._clients.length;
@@ -47220,13 +47220,13 @@ var require_query4 = __commonJS({
       );
       return this._promise;
     };
-    NativeQuery.prototype.submit = function(client2) {
+    NativeQuery.prototype.submit = function(client) {
       this.state = "running";
       const self2 = this;
-      this.native = client2.native;
-      client2.native.arrayMode = this._arrayMode;
+      this.native = client.native;
+      client.native.arrayMode = this._arrayMode;
       let after = function(err, rows, results) {
-        client2.native.arrayMode = false;
+        client.native.arrayMode = false;
         setImmediate(function() {
           self2.emit("_done");
         });
@@ -47262,16 +47262,16 @@ var require_query4 = __commonJS({
           console.error("This can cause conflicts and silent errors executing queries");
         }
         const values = (this.values || []).map(utils.prepareValue);
-        if (client2.namedQueries[this.name]) {
-          if (this.text && client2.namedQueries[this.name] !== this.text) {
+        if (client.namedQueries[this.name]) {
+          if (this.text && client.namedQueries[this.name] !== this.text) {
             const err = new Error(`Prepared statements must be unique - '${this.name}' was used for a different statement`);
             return after(err);
           }
-          return client2.native.execute(this.name, values, after);
+          return client.native.execute(this.name, values, after);
         }
-        return client2.native.prepare(this.name, this.text, values.length, function(err) {
+        return client.native.prepare(this.name, this.text, values.length, function(err) {
           if (err) return after(err);
-          client2.namedQueries[self2.name] = self2.text;
+          client.namedQueries[self2.name] = self2.text;
           return self2.native.execute(self2.name, values, after);
         });
       } else if (this.values) {
@@ -47280,11 +47280,11 @@ var require_query4 = __commonJS({
           return after(err);
         }
         const vals = this.values.map(utils.prepareValue);
-        client2.native.query(this.text, vals, after);
+        client.native.query(this.text, vals, after);
       } else if (this.queryMode === "extended") {
-        client2.native.query(this.text, [], after);
+        client.native.query(this.text, [], after);
       } else {
-        client2.native.query(this.text, after);
+        client.native.query(this.text, after);
       }
     };
   }
@@ -61444,9 +61444,9 @@ var require_refreshclient = __commonJS({
        * @param json The input object.
        */
       static fromJSON(json4) {
-        const client2 = new _UserRefreshClient();
-        client2.fromJSON(json4);
-        return client2;
+        const client = new _UserRefreshClient();
+        client.fromJSON(json4);
+        return client;
       }
     };
     exports.UserRefreshClient = UserRefreshClient;
@@ -63531,10 +63531,10 @@ var require_googleauth = __commonJS({
       // GAPIC client libraries should always use self-signed JWTs. The following
       // variables are set on the JWT client in order to indicate the type of library,
       // and sign the JWT with the correct audience and scopes (if not supplied).
-      setGapicJWTValues(client2) {
-        client2.defaultServicePath = this.defaultServicePath;
-        client2.useJWTAccessWithScope = this.useJWTAccessWithScope;
-        client2.defaultScopes = this.defaultScopes;
+      setGapicJWTValues(client) {
+        client.defaultServicePath = this.defaultServicePath;
+        client.useJWTAccessWithScope = this.useJWTAccessWithScope;
+        client.defaultScopes = this.defaultScopes;
       }
       getProjectId(callback) {
         if (callback) {
@@ -63741,8 +63741,8 @@ var require_googleauth = __commonJS({
         if (!location) {
           return null;
         }
-        const client2 = await this._getApplicationCredentialsFromFilePath(location, options);
-        return client2;
+        const client = await this._getApplicationCredentialsFromFilePath(location, options);
+        return client;
       }
       /**
        * Attempts to load default credentials from a file at the given path..
@@ -63814,28 +63814,28 @@ var require_googleauth = __commonJS({
        * @returns JWT or UserRefresh Client with data
        */
       fromJSON(json4, options = {}) {
-        let client2;
+        let client;
         const preferredUniverseDomain = (0, util_1.originalOrCamelOptions)(options).get("universe_domain");
         if (json4.type === refreshclient_1.USER_REFRESH_ACCOUNT_TYPE) {
-          client2 = new refreshclient_1.UserRefreshClient(options);
-          client2.fromJSON(json4);
+          client = new refreshclient_1.UserRefreshClient(options);
+          client.fromJSON(json4);
         } else if (json4.type === impersonated_1.IMPERSONATED_ACCOUNT_TYPE) {
-          client2 = this.fromImpersonatedJSON(json4);
+          client = this.fromImpersonatedJSON(json4);
         } else if (json4.type === baseexternalclient_1.EXTERNAL_ACCOUNT_TYPE) {
-          client2 = externalclient_1.ExternalAccountClient.fromJSON(json4, options);
-          client2.scopes = this.getAnyScopes();
+          client = externalclient_1.ExternalAccountClient.fromJSON(json4, options);
+          client.scopes = this.getAnyScopes();
         } else if (json4.type === externalAccountAuthorizedUserClient_1.EXTERNAL_ACCOUNT_AUTHORIZED_USER_TYPE) {
-          client2 = new externalAccountAuthorizedUserClient_1.ExternalAccountAuthorizedUserClient(json4, options);
+          client = new externalAccountAuthorizedUserClient_1.ExternalAccountAuthorizedUserClient(json4, options);
         } else {
           options.scopes = this.scopes;
-          client2 = new jwtclient_1.JWT(options);
-          this.setGapicJWTValues(client2);
-          client2.fromJSON(json4);
+          client = new jwtclient_1.JWT(options);
+          this.setGapicJWTValues(client);
+          client.fromJSON(json4);
         }
         if (preferredUniverseDomain) {
-          client2.universeDomain = preferredUniverseDomain;
+          client.universeDomain = preferredUniverseDomain;
         }
-        return client2;
+        return client;
       }
       /**
        * Return a JWT or UserRefreshClient from JavaScript object, caching both the
@@ -63845,10 +63845,10 @@ var require_googleauth = __commonJS({
        * @returns JWT or UserRefresh Client with data
        */
       _cacheClientFromJSON(json4, options) {
-        const client2 = this.fromJSON(json4, options);
+        const client = this.fromJSON(json4, options);
         this.jsonContent = json4;
-        this.cachedCredential = client2;
-        return client2;
+        this.cachedCredential = client;
+        return client;
       }
       fromStream(inputStream, optionsOrCallback = {}, callback) {
         let options = {};
@@ -63878,13 +63878,13 @@ var require_googleauth = __commonJS({
               } catch (err) {
                 if (!this.keyFilename)
                   throw err;
-                const client2 = new jwtclient_1.JWT({
+                const client = new jwtclient_1.JWT({
                   ...this.clientOptions,
                   keyFile: this.keyFilename
                 });
-                this.cachedCredential = client2;
-                this.setGapicJWTValues(client2);
-                return resolve(client2);
+                this.cachedCredential = client;
+                this.setGapicJWTValues(client);
+                return resolve(client);
               }
             } catch (err) {
               return reject(err);
@@ -63991,16 +63991,16 @@ var require_googleauth = __commonJS({
         }
       }
       async getCredentialsAsync() {
-        const client2 = await this.getClient();
-        if (client2 instanceof impersonated_1.Impersonated) {
-          return { client_email: client2.getTargetPrincipal() };
+        const client = await this.getClient();
+        if (client instanceof impersonated_1.Impersonated) {
+          return { client_email: client.getTargetPrincipal() };
         }
-        if (client2 instanceof baseexternalclient_1.BaseExternalAccountClient) {
-          const serviceAccountEmail = client2.getServiceAccountEmail();
+        if (client instanceof baseexternalclient_1.BaseExternalAccountClient) {
+          const serviceAccountEmail = client.getServiceAccountEmail();
           if (serviceAccountEmail) {
             return {
               client_email: serviceAccountEmail,
-              universe_domain: client2.universeDomain
+              universe_domain: client.universeDomain
             };
           }
         }
@@ -64042,27 +64042,27 @@ var require_googleauth = __commonJS({
        * @returns IdTokenClient for making HTTP calls authenticated with ID tokens.
        */
       async getIdTokenClient(targetAudience) {
-        const client2 = await this.getClient();
-        if (!("fetchIdToken" in client2)) {
+        const client = await this.getClient();
+        if (!("fetchIdToken" in client)) {
           throw new Error("Cannot fetch ID token in this environment, use GCE or set the GOOGLE_APPLICATION_CREDENTIALS environment variable to a service account credentials JSON file.");
         }
-        return new idtokenclient_1.IdTokenClient({ targetAudience, idTokenProvider: client2 });
+        return new idtokenclient_1.IdTokenClient({ targetAudience, idTokenProvider: client });
       }
       /**
        * Automatically obtain application default credentials, and return
        * an access token for making requests.
        */
       async getAccessToken() {
-        const client2 = await this.getClient();
-        return (await client2.getAccessToken()).token;
+        const client = await this.getClient();
+        return (await client.getAccessToken()).token;
       }
       /**
        * Obtain the HTTP headers that will provide authorization for a given
        * request.
        */
       async getRequestHeaders(url3) {
-        const client2 = await this.getClient();
-        return client2.getRequestHeaders(url3);
+        const client = await this.getClient();
+        return client.getRequestHeaders(url3);
       }
       /**
        * Obtain credentials for a request, then attach the appropriate headers to
@@ -64072,8 +64072,8 @@ var require_googleauth = __commonJS({
       async authorizeRequest(opts) {
         opts = opts || {};
         const url3 = opts.url || opts.uri;
-        const client2 = await this.getClient();
-        const headers = await client2.getRequestHeaders(url3);
+        const client = await this.getClient();
+        const headers = await client.getRequestHeaders(url3);
         opts.headers = Object.assign(opts.headers || {}, headers);
         return opts;
       }
@@ -64084,8 +64084,8 @@ var require_googleauth = __commonJS({
        */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async request(opts) {
-        const client2 = await this.getClient();
-        return client2.request(opts);
+        const client = await this.getClient();
+        return client.request(opts);
       }
       /**
        * Determine the compute environment in which the code is running.
@@ -64105,16 +64105,16 @@ var require_googleauth = __commonJS({
        * ```
        */
       async sign(data, endpoint) {
-        const client2 = await this.getClient();
+        const client = await this.getClient();
         const universe = await this.getUniverseDomain();
         endpoint = endpoint || `https://iamcredentials.${universe}/v1/projects/-/serviceAccounts/`;
-        if (client2 instanceof impersonated_1.Impersonated) {
-          const signed = await client2.sign(data);
+        if (client instanceof impersonated_1.Impersonated) {
+          const signed = await client.sign(data);
           return signed.signedBlob;
         }
         const crypto4 = (0, crypto_1.createCrypto)();
-        if (client2 instanceof jwtclient_1.JWT && client2.key) {
-          const sign = await crypto4.sign(client2.key, data);
+        if (client instanceof jwtclient_1.JWT && client.key) {
+          const sign = await crypto4.sign(client.key, data);
           return sign;
         }
         const creds = await this.getCredentials();
@@ -64155,9 +64155,9 @@ var require_googleauth = __commonJS({
         const stream = fs4.createReadStream(filePath);
         return await this.fromStreamAsync(stream, this.clientOptions);
       } else if (this.apiKey) {
-        const client2 = await this.fromAPIKey(this.apiKey, this.clientOptions);
-        client2.scopes = this.scopes;
-        const { credential } = await __classPrivateFieldGet17(this, _GoogleAuth_instances, "m", _GoogleAuth_prepareAndCacheClient).call(this, client2);
+        const client = await this.fromAPIKey(this.apiKey, this.clientOptions);
+        client.scopes = this.scopes;
+        const { credential } = await __classPrivateFieldGet17(this, _GoogleAuth_instances, "m", _GoogleAuth_prepareAndCacheClient).call(this, client);
         return credential;
       } else {
         const { credential } = await this.getApplicationDefaultAsync(this.clientOptions);
@@ -77087,8 +77087,8 @@ function handleClerkAPIError(tokenType, err, notFoundMessage) {
 }
 async function verifyM2MToken(token, options) {
   try {
-    const client2 = createBackendApiClient(options);
-    const verifiedToken = await client2.m2m.verify({ token });
+    const client = createBackendApiClient(options);
+    const verifiedToken = await client.m2m.verify({ token });
     return { data: verifiedToken, tokenType: TokenType.M2MToken, errors: void 0 };
   } catch (err) {
     return handleClerkAPIError(TokenType.M2MToken, err, "Machine token not found");
@@ -77096,8 +77096,8 @@ async function verifyM2MToken(token, options) {
 }
 async function verifyOAuthToken(accessToken, options) {
   try {
-    const client2 = createBackendApiClient(options);
-    const verifiedToken = await client2.idPOAuthAccessToken.verify(accessToken);
+    const client = createBackendApiClient(options);
+    const verifiedToken = await client.idPOAuthAccessToken.verify(accessToken);
     return { data: verifiedToken, tokenType: TokenType.OAuthToken, errors: void 0 };
   } catch (err) {
     return handleClerkAPIError(TokenType.OAuthToken, err, "OAuth token not found");
@@ -77105,8 +77105,8 @@ async function verifyOAuthToken(accessToken, options) {
 }
 async function verifyAPIKey(secret, options) {
   try {
-    const client2 = createBackendApiClient(options);
-    const verifiedToken = await client2.apiKeys.verify(secret);
+    const client = createBackendApiClient(options);
+    const verifiedToken = await client.apiKeys.verify(secret);
     return { data: verifiedToken, tokenType: TokenType.ApiKey, errors: void 0 };
   } catch (err) {
     return handleClerkAPIError(TokenType.ApiKey, err, "API key not found");
@@ -78726,12 +78726,12 @@ var clerkClient = new Proxy(clerkClientSingleton, {
       ...loadApiEnv(),
       ...loadClientEnv()
     };
-    const client2 = createClerkClient({
+    const client = createClerkClient({
       ...env,
       userAgent: `@clerk/express@2.1.32`
     });
-    if (env.secretKey) clerkClientSingleton = client2;
-    return client2[property];
+    if (env.secretKey) clerkClientSingleton = client;
+    return client[property];
   },
   set() {
     return false;
@@ -85759,9 +85759,9 @@ var PgTransaction = class extends PgDatabase {
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/session.js
 var { Pool: Pool2, types: types2 } = esm_default;
 var NodePgPreparedQuery = class extends PgPreparedQuery {
-  constructor(client2, queryString, params, logger3, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
+  constructor(client, queryString, params, logger3, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
     super({ sql: queryString, params }, cache2, queryMetadata, cacheConfig);
-    this.client = client2;
+    this.client = client;
     this.queryString = queryString;
     this.params = params;
     this.logger = logger3;
@@ -85851,7 +85851,7 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
     return tracer.startActiveSpan("drizzle.execute", async () => {
       const params = fillPlaceholders(this.params, placeholderValues);
       this.logger.logQuery(this.rawQueryConfig.text, params);
-      const { fields, rawQueryConfig: rawQuery, client: client2, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
+      const { fields, rawQueryConfig: rawQuery, client, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
       if (!fields && !customResultMapper) {
         return tracer.startActiveSpan("drizzle.driver.execute", async (span) => {
           span?.setAttributes({
@@ -85860,7 +85860,7 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
             "drizzle.query.params": JSON.stringify(params)
           });
           return this.queryWithCache(rawQuery.text, params, async () => {
-            return await client2.query(rawQuery, params);
+            return await client.query(rawQuery, params);
           });
         });
       }
@@ -85871,7 +85871,7 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
           "drizzle.query.params": JSON.stringify(params)
         });
         return this.queryWithCache(query.text, params, async () => {
-          return await client2.query(query, params);
+          return await client.query(query, params);
         });
       });
       return tracer.startActiveSpan("drizzle.mapResponse", () => {
@@ -85901,9 +85901,9 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
   }
 };
 var NodePgSession = class _NodePgSession extends PgSession {
-  constructor(client2, dialect, schema, options = {}) {
+  constructor(client, dialect, schema, options = {}) {
     super(dialect);
-    this.client = client2;
+    this.client = client;
     this.schema = schema;
     this.options = options;
     this.logger = options.logger ?? new NoopLogger();
@@ -85974,8 +85974,8 @@ var NodePgTransaction = class _NodePgTransaction extends PgTransaction {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/driver.js
 var NodePgDriver = class {
-  constructor(client2, dialect, options = {}) {
-    this.client = client2;
+  constructor(client, dialect, options = {}) {
+    this.client = client;
     this.dialect = dialect;
     this.options = options;
   }
@@ -85990,7 +85990,7 @@ var NodePgDriver = class {
 var NodePgDatabase = class extends PgDatabase {
   static [entityKind] = "NodePgDatabase";
 };
-function construct(client2, config2 = {}) {
+function construct(client, config2 = {}) {
   const dialect = new PgDialect({ casing: config2.casing });
   let logger3;
   if (config2.logger === true) {
@@ -86010,10 +86010,10 @@ function construct(client2, config2 = {}) {
       tableNamesMap: tablesConfig.tableNamesMap
     };
   }
-  const driver = new NodePgDriver(client2, dialect, { logger: logger3, cache: config2.cache });
+  const driver = new NodePgDriver(client, dialect, { logger: logger3, cache: config2.cache });
   const session = driver.createSession(schema);
   const db3 = new NodePgDatabase(dialect, session, schema);
-  db3.$client = client2;
+  db3.$client = client;
   db3.$cache = config2.cache;
   if (db3.$cache) {
     db3.$cache["invalidate"] = config2.cache?.onMutate;
@@ -86028,8 +86028,8 @@ function drizzle(...params) {
     return construct(instance, params[1]);
   }
   if (isConfig(params[0])) {
-    const { connection, client: client2, ...drizzleConfig } = params[0];
-    if (client2) return construct(client2, drizzleConfig);
+    const { connection, client, ...drizzleConfig } = params[0];
+    if (client) return construct(client, drizzleConfig);
     const instance = typeof connection === "string" ? new esm_default.Pool({
       connectionString: connection
     }) : new esm_default.Pool(connection);
@@ -104434,9 +104434,9 @@ var esm_default2 = import_lib2.default;
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/session.js
 var { Pool: Pool4, types: types4 } = esm_default2;
 var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
-  constructor(client2, queryString, params, logger3, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
+  constructor(client, queryString, params, logger3, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
     super({ sql: queryString, params }, cache2, queryMetadata, cacheConfig);
-    this.client = client2;
+    this.client = client;
     this.queryString = queryString;
     this.params = params;
     this.logger = logger3;
@@ -104526,7 +104526,7 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
     return tracer2.startActiveSpan("drizzle.execute", async () => {
       const params = fillPlaceholders2(this.params, placeholderValues);
       this.logger.logQuery(this.rawQueryConfig.text, params);
-      const { fields, rawQueryConfig: rawQuery, client: client2, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
+      const { fields, rawQueryConfig: rawQuery, client, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
       if (!fields && !customResultMapper) {
         return tracer2.startActiveSpan("drizzle.driver.execute", async (span) => {
           span?.setAttributes({
@@ -104535,7 +104535,7 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
             "drizzle.query.params": JSON.stringify(params)
           });
           return this.queryWithCache(rawQuery.text, params, async () => {
-            return await client2.query(rawQuery, params);
+            return await client.query(rawQuery, params);
           });
         });
       }
@@ -104546,7 +104546,7 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
           "drizzle.query.params": JSON.stringify(params)
         });
         return this.queryWithCache(query.text, params, async () => {
-          return await client2.query(query, params);
+          return await client.query(query, params);
         });
       });
       return tracer2.startActiveSpan("drizzle.mapResponse", () => {
@@ -104576,9 +104576,9 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
   }
 };
 var NodePgSession2 = class _NodePgSession extends PgSession2 {
-  constructor(client2, dialect, schema, options = {}) {
+  constructor(client, dialect, schema, options = {}) {
     super(dialect);
-    this.client = client2;
+    this.client = client;
     this.schema = schema;
     this.options = options;
     this.logger = options.logger ?? new NoopLogger2();
@@ -104649,8 +104649,8 @@ var NodePgTransaction2 = class _NodePgTransaction extends PgTransaction2 {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/driver.js
 var NodePgDriver2 = class {
-  constructor(client2, dialect, options = {}) {
-    this.client = client2;
+  constructor(client, dialect, options = {}) {
+    this.client = client;
     this.dialect = dialect;
     this.options = options;
   }
@@ -104665,7 +104665,7 @@ var NodePgDriver2 = class {
 var NodePgDatabase2 = class extends PgDatabase2 {
   static [entityKind2] = "NodePgDatabase";
 };
-function construct2(client2, config2 = {}) {
+function construct2(client, config2 = {}) {
   const dialect = new PgDialect2({ casing: config2.casing });
   let logger3;
   if (config2.logger === true) {
@@ -104685,10 +104685,10 @@ function construct2(client2, config2 = {}) {
       tableNamesMap: tablesConfig.tableNamesMap
     };
   }
-  const driver = new NodePgDriver2(client2, dialect, { logger: logger3, cache: config2.cache });
+  const driver = new NodePgDriver2(client, dialect, { logger: logger3, cache: config2.cache });
   const session = driver.createSession(schema);
   const db3 = new NodePgDatabase2(dialect, session, schema);
-  db3.$client = client2;
+  db3.$client = client;
   db3.$cache = config2.cache;
   if (db3.$cache) {
     db3.$cache["invalidate"] = config2.cache?.onMutate;
@@ -104703,8 +104703,8 @@ function drizzle2(...params) {
     return construct2(instance, params[1]);
   }
   if (isConfig2(params[0])) {
-    const { connection, client: client2, ...drizzleConfig } = params[0];
-    if (client2) return construct2(client2, drizzleConfig);
+    const { connection, client, ...drizzleConfig } = params[0];
+    if (client) return construct2(client, drizzleConfig);
     const instance = typeof connection === "string" ? new esm_default2.Pool({
       connectionString: connection
     }) : new esm_default2.Pool(connection);
@@ -111415,9 +111415,9 @@ var APIClient = class {
   }
 };
 var AbstractPage = class {
-  constructor(client2, response, body, options) {
+  constructor(client, response, body, options) {
     _AbstractPage_client.set(this, void 0);
-    __classPrivateFieldSet6(this, _AbstractPage_client, client2, "f");
+    __classPrivateFieldSet6(this, _AbstractPage_client, client, "f");
     this.options = options;
     this.response = response;
     this.body = body;
@@ -111463,8 +111463,8 @@ var AbstractPage = class {
   }
 };
 var PagePromise = class extends APIPromise {
-  constructor(client2, request, Page2) {
-    super(request, async (props) => new Page2(client2, props.response, await defaultParseResponse(props), props.options));
+  constructor(client, request, Page2) {
+    super(request, async (props) => new Page2(client, props.response, await defaultParseResponse(props), props.options));
   }
   /**
    * Allow auto-paginating iteration on an unawaited list call, eg:
@@ -111778,8 +111778,8 @@ function isObj(obj) {
 
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/pagination.mjs
 var Page = class extends AbstractPage {
-  constructor(client2, response, body, options) {
-    super(client2, response, body, options);
+  constructor(client, response, body, options) {
+    super(client, response, body, options);
     this.data = body.data || [];
     this.object = body.object;
   }
@@ -111799,8 +111799,8 @@ var Page = class extends AbstractPage {
   }
 };
 var CursorPage = class extends AbstractPage {
-  constructor(client2, response, body, options) {
-    super(client2, response, body, options);
+  constructor(client, response, body, options) {
+    super(client, response, body, options);
     this.data = body.data || [];
     this.has_more = body.has_more || false;
   }
@@ -111840,8 +111840,8 @@ var CursorPage = class extends AbstractPage {
 
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/resource.mjs
 var APIResource = class {
-  constructor(client2) {
-    this._client = client2;
+  constructor(client) {
+    this._client = client;
   }
 };
 
@@ -113077,7 +113077,7 @@ var AbstractChatCompletionRunner = class extends EventStream {
       this._emit("totalUsage", __classPrivateFieldGet10(this, _AbstractChatCompletionRunner_instances, "m", _AbstractChatCompletionRunner_calculateTotalUsage).call(this));
     }
   }
-  async _createChatCompletion(client2, params, options) {
+  async _createChatCompletion(client, params, options) {
     const signal = options?.signal;
     if (signal) {
       if (signal.aborted)
@@ -113085,17 +113085,17 @@ var AbstractChatCompletionRunner = class extends EventStream {
       signal.addEventListener("abort", () => this.controller.abort());
     }
     __classPrivateFieldGet10(this, _AbstractChatCompletionRunner_instances, "m", _AbstractChatCompletionRunner_validateParams).call(this, params);
-    const chatCompletion = await client2.chat.completions.create({ ...params, stream: false }, { ...options, signal: this.controller.signal });
+    const chatCompletion = await client.chat.completions.create({ ...params, stream: false }, { ...options, signal: this.controller.signal });
     this._connected();
     return this._addChatCompletion(parseChatCompletion(chatCompletion, params));
   }
-  async _runChatCompletion(client2, params, options) {
+  async _runChatCompletion(client, params, options) {
     for (const message of params.messages) {
       this._addMessage(message, false);
     }
-    return await this._createChatCompletion(client2, params, options);
+    return await this._createChatCompletion(client, params, options);
   }
-  async _runFunctions(client2, params, options) {
+  async _runFunctions(client, params, options) {
     const role = "function";
     const { function_call = "auto", stream, ...restParams } = params;
     const singleFunctionToCall = typeof function_call !== "string" && function_call?.name;
@@ -113113,7 +113113,7 @@ var AbstractChatCompletionRunner = class extends EventStream {
       this._addMessage(message, false);
     }
     for (let i2 = 0; i2 < maxChatCompletions; ++i2) {
-      const chatCompletion = await this._createChatCompletion(client2, {
+      const chatCompletion = await this._createChatCompletion(client, {
         ...restParams,
         function_call,
         functions,
@@ -113154,7 +113154,7 @@ var AbstractChatCompletionRunner = class extends EventStream {
         return;
     }
   }
-  async _runTools(client2, params, options) {
+  async _runTools(client, params, options) {
     const role = "tool";
     const { tool_choice = "auto", stream, ...restParams } = params;
     const singleFunctionToCall = typeof tool_choice !== "string" && tool_choice?.function?.name;
@@ -113197,7 +113197,7 @@ var AbstractChatCompletionRunner = class extends EventStream {
       this._addMessage(message, false);
     }
     for (let i2 = 0; i2 < maxChatCompletions; ++i2) {
-      const chatCompletion = await this._createChatCompletion(client2, {
+      const chatCompletion = await this._createChatCompletion(client, {
         ...restParams,
         tool_choice,
         tools,
@@ -113311,22 +113311,22 @@ _AbstractChatCompletionRunner_instances = /* @__PURE__ */ new WeakSet(), _Abstra
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/lib/ChatCompletionRunner.mjs
 var ChatCompletionRunner = class _ChatCompletionRunner extends AbstractChatCompletionRunner {
   /** @deprecated - please use `runTools` instead. */
-  static runFunctions(client2, params, options) {
+  static runFunctions(client, params, options) {
     const runner = new _ChatCompletionRunner();
     const opts = {
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runFunctions" }
     };
-    runner._run(() => runner._runFunctions(client2, params, opts));
+    runner._run(() => runner._runFunctions(client, params, opts));
     return runner;
   }
-  static runTools(client2, params, options) {
+  static runTools(client, params, options) {
     const runner = new _ChatCompletionRunner();
     const opts = {
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runTools" }
     };
-    runner._run(() => runner._runTools(client2, params, opts));
+    runner._run(() => runner._runTools(client, params, opts));
     return runner;
   }
   _addMessage(message, emit = true) {
@@ -113598,12 +113598,12 @@ var ChatCompletionStream = class _ChatCompletionStream extends AbstractChatCompl
     runner._run(() => runner._fromReadableStream(stream));
     return runner;
   }
-  static createChatCompletion(client2, params, options) {
+  static createChatCompletion(client, params, options) {
     const runner = new _ChatCompletionStream(params);
-    runner._run(() => runner._runChatCompletion(client2, { ...params, stream: true }, { ...options, headers: { ...options?.headers, "X-Stainless-Helper-Method": "stream" } }));
+    runner._run(() => runner._runChatCompletion(client, { ...params, stream: true }, { ...options, headers: { ...options?.headers, "X-Stainless-Helper-Method": "stream" } }));
     return runner;
   }
-  async _createChatCompletion(client2, params, options) {
+  async _createChatCompletion(client, params, options) {
     super._createChatCompletion;
     const signal = options?.signal;
     if (signal) {
@@ -113612,7 +113612,7 @@ var ChatCompletionStream = class _ChatCompletionStream extends AbstractChatCompl
       signal.addEventListener("abort", () => this.controller.abort());
     }
     __classPrivateFieldGet11(this, _ChatCompletionStream_instances, "m", _ChatCompletionStream_beginRequest).call(this);
-    const stream = await client2.chat.completions.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
+    const stream = await client.chat.completions.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
     this._connected();
     for await (const chunk of stream) {
       __classPrivateFieldGet11(this, _ChatCompletionStream_instances, "m", _ChatCompletionStream_addChunk).call(this, chunk);
@@ -114048,16 +114048,16 @@ var ChatCompletionStreamingRunner = class _ChatCompletionStreamingRunner extends
     return runner;
   }
   /** @deprecated - please use `runTools` instead. */
-  static runFunctions(client2, params, options) {
+  static runFunctions(client, params, options) {
     const runner = new _ChatCompletionStreamingRunner(null);
     const opts = {
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runFunctions" }
     };
-    runner._run(() => runner._runFunctions(client2, params, opts));
+    runner._run(() => runner._runFunctions(client, params, opts));
     return runner;
   }
-  static runTools(client2, params, options) {
+  static runTools(client, params, options) {
     const runner = new _ChatCompletionStreamingRunner(
       // @ts-expect-error TODO these types are incompatible
       params
@@ -114066,7 +114066,7 @@ var ChatCompletionStreamingRunner = class _ChatCompletionStreamingRunner extends
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runTools" }
     };
-    runner._run(() => runner._runTools(client2, params, opts));
+    runner._run(() => runner._runTools(client, params, opts));
     return runner;
   }
 };
@@ -115388,15 +115388,15 @@ var ResponseStream = class _ResponseStream extends EventStream {
     _ResponseStream_finalResponse.set(this, void 0);
     __classPrivateFieldSet10(this, _ResponseStream_params, params, "f");
   }
-  static createResponse(client2, params, options) {
+  static createResponse(client, params, options) {
     const runner = new _ResponseStream(params);
-    runner._run(() => runner._createOrRetrieveResponse(client2, params, {
+    runner._run(() => runner._createOrRetrieveResponse(client, params, {
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "stream" }
     }));
     return runner;
   }
-  async _createOrRetrieveResponse(client2, params, options) {
+  async _createOrRetrieveResponse(client, params, options) {
     const signal = options?.signal;
     if (signal) {
       if (signal.aborted)
@@ -115407,10 +115407,10 @@ var ResponseStream = class _ResponseStream extends EventStream {
     let stream;
     let starting_after = null;
     if ("response_id" in params) {
-      stream = await client2.responses.retrieve(params.response_id, { stream: true }, { ...options, signal: this.controller.signal, stream: true });
+      stream = await client.responses.retrieve(params.response_id, { stream: true }, { ...options, signal: this.controller.signal, stream: true });
       starting_after = params.starting_after ?? null;
     } else {
-      stream = await client2.responses.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
+      stream = await client.responses.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
     }
     this._connected();
     for await (const event of stream) {
@@ -115999,12 +115999,12 @@ var FileBatches = class extends APIResource {
     }
     const configuredConcurrency = options?.maxConcurrency ?? 5;
     const concurrencyLimit = Math.min(configuredConcurrency, files.length);
-    const client2 = this._client;
+    const client = this._client;
     const fileIterator = files.values();
     const allFileIds = [...fileIds];
     async function processFiles(iterator) {
       for (let item of iterator) {
-        const fileObj = await client2.files.create({ file: item, purpose: "assistants" }, options);
+        const fileObj = await client.files.create({ file: item, purpose: "assistants" }, options);
         allFileIds.push(fileObj.id);
       }
     }
@@ -116220,18 +116220,199 @@ OpenAI.ContainerListResponsesPage = ContainerListResponsesPage;
 var openai_default = OpenAI;
 
 // src/lib/openaiClient.ts
-var client = null;
-var clientKey = null;
+var openaiClient = null;
+var openaiClientKey = null;
+var xaiClient = null;
+var xaiClientKey = null;
+function normalizeApiKey(raw) {
+  if (!raw) return null;
+  let key = raw.trim();
+  if (key.startsWith('"') && key.endsWith('"') || key.startsWith("'") && key.endsWith("'")) {
+    key = key.slice(1, -1).trim();
+  }
+  return key || null;
+}
+function hasOpenAIKey() {
+  return Boolean(normalizeApiKey(process.env.OPENAI_API_KEY));
+}
+function hasXaiKey() {
+  return Boolean(normalizeApiKey(process.env.XAI_API_KEY));
+}
 function getOpenAIClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY must be set.");
   }
-  if (!client || clientKey !== apiKey) {
-    client = new openai_default({ apiKey });
-    clientKey = apiKey;
+  if (!openaiClient || openaiClientKey !== apiKey) {
+    openaiClient = new openai_default({ apiKey });
+    openaiClientKey = apiKey;
   }
-  return client;
+  return openaiClient;
+}
+function getXaiClient() {
+  const apiKey = normalizeApiKey(process.env.XAI_API_KEY);
+  if (!apiKey) return null;
+  if (!xaiClient || xaiClientKey !== apiKey) {
+    xaiClient = new openai_default({
+      apiKey,
+      baseURL: process.env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1"
+    });
+    xaiClientKey = apiKey;
+  }
+  return xaiClient;
+}
+
+// src/lib/llmFailover.ts
+var preferXai = false;
+function getPreferredProvider() {
+  if (preferXai && hasXaiKey()) return "xai";
+  if (hasOpenAIKey()) return "openai";
+  if (hasXaiKey()) return "xai";
+  return "openai";
+}
+function isProviderUnusableError(err) {
+  if (!err || typeof err !== "object") return false;
+  const e2 = err;
+  const code = (e2.code || e2.type || "").toLowerCase();
+  const msg = (e2.message || "").toLowerCase();
+  if (code.includes("insufficient_quota") || code.includes("billing_not_active") || code.includes("billing_hard_limit") || code.includes("account_deactivated")) {
+    return true;
+  }
+  if (msg.includes("no credits remaining") || msg.includes("insufficient_quota") || msg.includes("exceeded your current quota") || msg.includes("billing") && msg.includes("limit") || msg.includes("add credits") || msg.includes("payment required")) {
+    return true;
+  }
+  if (e2.status === 429) return true;
+  if (e2.status === 402) return true;
+  return false;
+}
+var DEFAULT_XAI_MODELS = {
+  light: "grok-3-mini",
+  standard: "grok-3",
+  heavy: "grok-4"
+};
+var XAI_ENV_KEYS = {
+  light: "ANIMA_XAI_MODEL_LIGHT",
+  standard: "ANIMA_XAI_MODEL_STANDARD",
+  heavy: "ANIMA_XAI_MODEL_HEAVY"
+};
+function resolveXaiModel(tier) {
+  const override = process.env[XAI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_XAI_MODEL?.trim();
+  const openaiResolved = resolveModel(tier);
+  return {
+    tier,
+    model: override || DEFAULT_XAI_MODELS[tier],
+    maxTokens: openaiResolved.maxTokens
+  };
+}
+function providerLabel(id) {
+  return id === "xai" ? "Grok (xAI)" : "OpenAI";
+}
+function clientFor(provider) {
+  if (provider === "xai") {
+    const client = getXaiClient();
+    if (!client) {
+      throw new Error("XAI_API_KEY must be set to use the Grok fallback.");
+    }
+    return client;
+  }
+  return getOpenAIClient();
+}
+function resolveForProvider(provider, tier) {
+  return provider === "xai" ? resolveXaiModel(tier) : resolveModel(tier);
+}
+async function createStream(provider, resolved, messages2) {
+  return clientFor(provider).chat.completions.create({
+    model: resolved.model,
+    max_tokens: resolved.maxTokens,
+    messages: messages2,
+    stream: true
+  });
+}
+function markOpenAIUnusable(err) {
+  if (isProviderUnusableError(err) && hasXaiKey()) {
+    preferXai = true;
+  }
+}
+function enrichError(err, attempted) {
+  const base = err instanceof Error ? err.message : String(err);
+  const names = attempted.map(providerLabel).join(" \u2192 ");
+  if (isProviderUnusableError(err)) {
+    return new Error(
+      `${base} (tried ${names}). OpenAI credits/quota are exhausted` + (hasXaiKey() ? "; Grok fallback also failed." : ". Set XAI_API_KEY to enable automatic Grok failover.")
+    );
+  }
+  return err instanceof Error ? err : new Error(base);
+}
+async function createChatStreamWithFailover(req) {
+  const primary = getPreferredProvider();
+  const secondary = primary === "openai" ? hasXaiKey() ? "xai" : null : hasOpenAIKey() ? "openai" : null;
+  const attempted = [];
+  try {
+    attempted.push(primary);
+    const routed = resolveForProvider(primary, req.tier);
+    const preferredModel = primary === "openai" ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens } : routed;
+    try {
+      const stream = await createStream(primary, preferredModel, req.messages);
+      return {
+        stream,
+        provider: primary,
+        model: preferredModel.model,
+        tier: preferredModel.tier,
+        // Only true when *this request* switched providers mid-flight.
+        failedOver: false
+      };
+    } catch (modelErr) {
+      const standard = resolveForProvider(primary, "standard");
+      if (preferredModel.model !== standard.model && isModelUnavailableError(modelErr)) {
+        const stream = await createStream(primary, standard, req.messages);
+        return {
+          stream,
+          provider: primary,
+          model: standard.model,
+          tier: standard.tier,
+          failedOver: false
+        };
+      }
+      throw modelErr;
+    }
+  } catch (err) {
+    if (primary === "openai") markOpenAIUnusable(err);
+    if (!secondary || !isProviderUnusableError(err)) {
+      throw enrichError(err, attempted);
+    }
+  }
+  const fallback = secondary;
+  try {
+    attempted.push(fallback);
+    const resolved = resolveForProvider(fallback, req.tier);
+    try {
+      const stream = await createStream(fallback, resolved, req.messages);
+      return {
+        stream,
+        provider: fallback,
+        model: resolved.model,
+        tier: resolved.tier,
+        failedOver: true,
+        previousProvider: primary
+      };
+    } catch (modelErr) {
+      const standard = resolveForProvider(fallback, "standard");
+      if (resolved.model !== standard.model && isModelUnavailableError(modelErr)) {
+        const stream = await createStream(fallback, standard, req.messages);
+        return {
+          stream,
+          provider: fallback,
+          model: standard.model,
+          tier: standard.tier,
+          failedOver: true,
+          previousProvider: primary
+        };
+      }
+      throw modelErr;
+    }
+  } catch (err) {
+    throw enrichError(err, attempted);
+  }
 }
 
 // src/routes/openai/index.ts
@@ -116331,32 +116512,13 @@ router3.post("/conversations/:id/messages", async (req, res) => {
   let fullResponse = "";
   try {
     const routed = routeModel(content, { deepMode, conversationDepth: history.length });
-    const standard = resolveModel("standard");
-    let usedModel = routed.model;
-    let usedTier = routed.tier;
-    let stream;
-    try {
-      stream = await getOpenAIClient().chat.completions.create({
-        model: routed.model,
-        max_tokens: routed.maxTokens,
-        messages: chatMessages2,
-        stream: true
-      });
-    } catch (modelErr) {
-      if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
-        usedModel = standard.model;
-        usedTier = standard.tier;
-        stream = await getOpenAIClient().chat.completions.create({
-          model: standard.model,
-          max_tokens: standard.maxTokens,
-          messages: chatMessages2,
-          stream: true
-        });
-      } else {
-        throw modelErr;
-      }
-    }
-    for await (const chunk of stream) {
+    const completion = await createChatStreamWithFailover({
+      tier: routed.tier,
+      model: routed.model,
+      maxTokens: routed.maxTokens,
+      messages: chatMessages2
+    });
+    for await (const chunk of completion.stream) {
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
@@ -116366,9 +116528,17 @@ router3.post("/conversations/:id/messages", async (req, res) => {
       }
     }
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
-    res.write(`data: ${JSON.stringify({ done: true, model: usedModel, tier: usedTier })}
+    res.write(
+      `data: ${JSON.stringify({
+        done: true,
+        model: completion.model,
+        tier: completion.tier,
+        provider: completion.provider,
+        failed_over: completion.failedOver
+      })}
 
-`);
+`
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.write(`data: ${JSON.stringify({ error: msg })}
@@ -117200,10 +117370,18 @@ function mapImageEditError(err) {
       error: "The image service is busy right now."
     };
   }
+  if (upstreamStatus === 401 || rawCode === "invalid_api_key" || haystack.includes("incorrect api key") || haystack.includes("invalid api key") || haystack.includes("api key provided")) {
+    return {
+      status: 503,
+      code: "auth_error",
+      error: "Image generation is temporarily unavailable. Please try again later."
+    };
+  }
+  const safeMessage = /sk-[A-Za-z0-9_\-*]+/.test(rawMessage) ? "Image generation failed. Please try again later." : rawMessage;
   return {
     status: upstreamStatus ?? 500,
     code: "server_error",
-    error: rawMessage
+    error: safeMessage
   };
 }
 router4.post("/image-edit", async (req, res) => {
@@ -117238,6 +117416,29 @@ router4.post("/image-edit", async (req, res) => {
     const result = await getOpenAIClient().images.edit({
       model: "gpt-image-1",
       image: file2,
+      prompt: prompt.trim().slice(0, 1e3),
+      size: "1024x1024"
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    if (!b64) {
+      res.status(502).json({ error: "No image was returned." });
+      return;
+    }
+    res.json({ image: `data:image/png;base64,${b64}` });
+  } catch (err) {
+    const mapped = mapImageEditError(err);
+    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+  }
+});
+router4.post("/image-generate", async (req, res) => {
+  const { prompt } = req.body;
+  if (typeof prompt !== "string" || !prompt.trim()) {
+    res.status(400).json({ error: "A generation prompt is required." });
+    return;
+  }
+  try {
+    const result = await getOpenAIClient().images.generate({
+      model: "gpt-image-1",
       prompt: prompt.trim().slice(0, 1e3),
       size: "1024x1024"
     });
@@ -130780,6 +130981,9 @@ function buildCharacterDefinition(character, maxChars) {
   const parts = [];
   const nameIntro = character._isAnima ? `You are ${character.name}.` : `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}.`;
   parts.push(nameIntro);
+  parts.push(
+    `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`
+  );
   if (character._isAnima && character.archetype) {
     parts.push(`Archetype: ${character.archetype}${character.tagline ? ` \u2014 ${character.tagline}` : ""}`);
   }
@@ -130791,6 +130995,11 @@ function buildCharacterDefinition(character, maxChars) {
   }
   if (character.speaking_style) {
     parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
+  }
+  if (!character.personality && !character.backstory && !character.speaking_style) {
+    parts.push(
+      `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`
+    );
   }
   const result = parts.join("\n");
   return result.length > maxChars ? result.slice(0, maxChars) : result;
@@ -130814,6 +131023,12 @@ CRITICAL AUTONOMY RULES:
 
 INTELLIGENCE: You are brilliant \u2014 genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory \u2014 callbacks, contradictions, unspoken needs \u2014 and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER \u2014 in your own voice, never dropping into a generic assistant tone.`;
+var TURN_TAKING = `TURN TAKING (required):
+- Reply as ONE conversational beat, then STOP and wait for the user.
+- Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.
+- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.
+- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
+- If you would keep talking, cut yourself off at the first natural pause instead.`;
 var LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only \u2014 in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
 function buildCompanionPrompt(params) {
   const {
@@ -130833,12 +131048,14 @@ function buildCompanionPrompt(params) {
     arcState
   } = params;
   const evolutionDelta = params.evolutionDelta;
-  const mainChar = activeCharacter || characters2[0];
+  const mainChar = activeCharacter || (mode === "group" ? characters2.length === 1 ? characters2[0] : void 0 : characters2[0]);
   const characterNames = new Map(
     characters2.map((c2) => [String(c2.id || ""), String(c2.name || "Companion")])
   );
   const corePrompt = systemPrompt || CORE_BEHAVIOR;
-  const charDef = mainChar ? buildCharacterDefinition(mainChar, BUDGET.characterDef) : characters2.length > 0 ? characters2.map((c2) => buildCharacterDefinition(c2, BUDGET.characterDef / characters2.length)).join("\n\n") : "";
+  const charDef = mainChar ? buildCharacterDefinition(mainChar, BUDGET.characterDef) : mode === "group" && systemPrompt ? "" : characters2.length > 0 ? characters2.map(
+    (c2) => buildCharacterDefinition(c2, BUDGET.characterDef / characters2.length)
+  ).join("\n\n") : "";
   let resonanceBlock = "";
   if (synchroState) {
     resonanceBlock = synchroToPromptGuidance(synchroState);
@@ -130878,7 +131095,7 @@ function buildCompanionPrompt(params) {
   const historyBlock = buildConversationContext(recentMessages, BUDGET.history);
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
-    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
+    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns. Leave a natural stopping point for the user after your beat.
 
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
@@ -130932,6 +131149,7 @@ ${charDef}` : "",
     historyBlock ? `CONVERSATION CONTEXT:
 ${historyBlock}` : "",
     groupInstruction,
+    TURN_TAKING,
     content ? `LATEST USER MESSAGE:
 ${content}` : "(Continue the scene naturally.)",
     `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
@@ -131073,6 +131291,26 @@ async function loadArcState(animaId, userId) {
   return row.state ?? null;
 }
 
+// src/lib/chatParticipants.ts
+function resolveActiveCharacterId(requestedId, characterIds) {
+  const participants = characterIds.map(String).filter(Boolean);
+  if (requestedId != null && String(requestedId).trim()) {
+    const id = String(requestedId);
+    if (participants.includes(id)) return id;
+  }
+  return participants.length > 0 ? participants[0] : null;
+}
+function resolveActiveCharacterName(params) {
+  const { requestedId, resolvedId, requestedName, loadedName } = params;
+  if (resolvedId && requestedId != null && String(requestedId) === resolvedId && requestedName != null && String(requestedName).trim()) {
+    return String(requestedName);
+  }
+  if (loadedName != null && String(loadedName).trim()) {
+    return String(loadedName);
+  }
+  return null;
+}
+
 // src/routes/chat.ts
 var router9 = (0, import_express14.Router)();
 router9.use(rateLimit);
@@ -131115,11 +131353,29 @@ async function loadCharacters(userId, characterIds) {
   const rows = await db.select().from(userEntities).where(
     and(
       eq(userEntities.userId, userId),
-      eq(userEntities.entityName, "Character"),
+      inArray(userEntities.entityName, ["Character", "Anima"]),
       inArray(userEntities.entityId, characterIds)
     )
   );
-  return rows.map((row) => asObject(row.data));
+  const byId = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const data = asObject(row.data);
+    const id = String(row.entityId || data.id || "");
+    if (!id) continue;
+    if (row.entityName === "Anima") {
+      const animaData = {
+        ...data,
+        id: data.id || id,
+        _isAnima: true,
+        universe: data.universe || "Anima",
+        category: data.category || data.archetype || "guardian"
+      };
+      if (!byId.has(id)) byId.set(id, animaData);
+      continue;
+    }
+    byId.set(id, data);
+  }
+  return characterIds.map((id) => byId.get(String(id))).filter(Boolean);
 }
 async function readRecentStoreMessages(userId, sessionId, limit2 = 20) {
   await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
@@ -131368,19 +131624,30 @@ router9.post("/messages", async (req, res) => {
     loadMemories(userId, characterIds),
     readRecentStoreMessages(userId, sessionId, 24)
   ]);
-  const activeCharacterId = characterIds.length > 0 ? characterIds[0] : null;
-  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
-    activeCharacterId ? loadEvolution(String(activeCharacterId), userId) : Promise.resolve(null),
-    activeCharacterId ? loadRelationshipState(String(activeCharacterId), userId) : Promise.resolve(null),
-    activeCharacterId ? loadArcState(String(activeCharacterId), userId) : Promise.resolve(null)
-  ]);
+  const requestedAssistantId = body.assistant_character_id ? String(body.assistant_character_id) : null;
+  const requestedAssistantName = body.assistant_character_name ? String(body.assistant_character_name).trim() : "";
   const distinctUniverses = new Set(
     characters2.map((c2) => c2.universe).filter(Boolean).map(String)
   ).size;
   const isCrossover = mode === "group" && distinctUniverses >= 2;
   const adaptedMemories = adaptMemories(memories);
   const adaptedChars = adaptCharacters(characters2);
-  const activeChar = adaptedChars.length === 1 ? adaptedChars[0] : void 0;
+  const requestedParticipantId = requestedAssistantId && characterIds.includes(requestedAssistantId) ? resolveActiveCharacterId(requestedAssistantId, characterIds) : null;
+  const activeChar = (requestedParticipantId ? adaptedChars.find((c2) => c2.id === String(requestedParticipantId)) : void 0) || (requestedAssistantName ? adaptedChars.find(
+    (c2) => String(c2.name || "").toLowerCase() === requestedAssistantName.toLowerCase()
+  ) : void 0) || (adaptedChars.length === 1 ? adaptedChars[0] : void 0);
+  const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
+  const activeCharacterName = resolveActiveCharacterName({
+    requestedId: requestedParticipantId,
+    resolvedId: activeCharacterId,
+    requestedName: requestedAssistantName,
+    loadedName: activeChar?.name ?? null
+  });
+  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
+    activeCharacterId ? loadEvolution(activeCharacterId, userId) : Promise.resolve(null),
+    activeCharacterId ? loadRelationshipState(activeCharacterId, userId) : Promise.resolve(null),
+    activeCharacterId ? loadArcState(activeCharacterId, userId) : Promise.resolve(null)
+  ]);
   let synchroState = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
@@ -131414,7 +131681,6 @@ router9.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length
   });
-  const standard = resolveModel("standard");
   const shouldPersist = body.persist !== false;
   await syncTypedSession({
     userId,
@@ -131452,30 +131718,20 @@ router9.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
+  let usedProvider = "openai";
+  let failedOver = false;
   try {
-    let stream;
-    try {
-      stream = await getOpenAIClient().chat.completions.create({
-        model: routed.model,
-        max_tokens: routed.maxTokens,
-        messages: [{ role: "system", content: prompt }],
-        stream: true
-      });
-    } catch (modelErr) {
-      if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
-        usedModel = standard.model;
-        usedTier = standard.tier;
-        stream = await getOpenAIClient().chat.completions.create({
-          model: standard.model,
-          max_tokens: standard.maxTokens,
-          messages: [{ role: "system", content: prompt }],
-          stream: true
-        });
-      } else {
-        throw modelErr;
-      }
-    }
-    for await (const chunk of stream) {
+    const completion = await createChatStreamWithFailover({
+      tier: routed.tier,
+      model: routed.model,
+      maxTokens: routed.maxTokens,
+      messages: [{ role: "system", content: prompt }]
+    });
+    usedModel = completion.model;
+    usedTier = completion.tier;
+    usedProvider = completion.provider;
+    failedOver = completion.failedOver;
+    for await (const chunk of completion.stream) {
       const delta = chunk.choices[0]?.delta?.content;
       if (!delta) continue;
       fullResponse += delta;
@@ -131483,13 +131739,16 @@ router9.post("/messages", async (req, res) => {
 
 `);
     }
+    if (!String(fullResponse).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
+    }
     let persistedAssistant = null;
     if (shouldPersist) {
       const assistantMessage = {
         role: "assistant",
         content: fullResponse,
-        character_id: body.assistant_character_id ?? body.character_id ?? null,
-        character_name: body.assistant_character_name ?? null,
+        character_id: activeCharacterId,
+        character_name: activeCharacterName,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       };
       persistedAssistant = await appendStoreMessage(
@@ -131502,10 +131761,15 @@ router9.post("/messages", async (req, res) => {
         sessionId,
         role: "assistant",
         content: fullResponse,
-        characterId: body.assistant_character_id ?? body.character_id ?? null,
-        characterName: body.assistant_character_name ?? null,
+        characterId: activeCharacterId,
+        characterName: activeCharacterName,
         isCrossover,
-        metadata: { model: usedModel, tier: usedTier }
+        metadata: {
+          model: usedModel,
+          tier: usedTier,
+          provider: usedProvider,
+          failed_over: failedOver
+        }
       });
       const sharedFact = isCrossover ? {
         type: "crossover_turn",
@@ -131565,6 +131829,8 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
         done: true,
         model: usedModel,
         tier: usedTier,
+        provider: usedProvider,
+        failed_over: failedOver,
         is_crossover: isCrossover,
         messages: [persistedUser, persistedAssistant].filter(Boolean)
       })}
@@ -131703,7 +131969,72 @@ app.use(
 );
 var app_default = app;
 
+// src/lib/ensureClerkPreviewRedirects.ts
+var SIGN_IN_CALLBACK = "/sign-in/sso-callback";
+var SIGN_UP_CALLBACK = "/sign-up/sso-callback";
+function previewOriginFromEnv() {
+  const raw = process.env.VERCEL_URL?.trim() || process.env.VERCEL_BRANCH_URL?.trim() || "";
+  if (!raw) return null;
+  const host = raw.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (!host.endsWith(".vercel.app")) return null;
+  return `https://${host}`;
+}
+function callbackUrls(origin) {
+  return [`${origin}${SIGN_IN_CALLBACK}`, `${origin}${SIGN_UP_CALLBACK}`];
+}
+async function listRedirectUrls(secretKey) {
+  const response = await fetch("https://api.clerk.com/v1/redirect_urls", {
+    headers: { Authorization: `Bearer ${secretKey}` }
+  });
+  if (!response.ok) {
+    throw new Error(`Clerk redirect_urls list failed (${response.status})`);
+  }
+  const body = await response.json();
+  const rows = Array.isArray(body) ? body : body.data ?? [];
+  return new Set(
+    rows.map((entry) => entry.url).filter((url3) => Boolean(url3))
+  );
+}
+async function addRedirectUrl(secretKey, url3) {
+  const response = await fetch("https://api.clerk.com/v1/redirect_urls", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ url: url3 })
+  });
+  if (response.ok) return "added";
+  const text3 = await response.text();
+  if (response.status === 422 && text3.includes("already exists")) {
+    return "exists";
+  }
+  throw new Error(`Clerk redirect_urls create failed (${response.status}): ${text3}`);
+}
+async function ensureClerkPreviewRedirects() {
+  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
+  const origin = previewOriginFromEnv();
+  if (!secretKey?.startsWith("sk_") || !origin) {
+    return;
+  }
+  try {
+    const existing = await listRedirectUrls(secretKey);
+    const missing = callbackUrls(origin).filter((url3) => !existing.has(url3));
+    if (missing.length === 0) {
+      logger.info({ origin }, "Clerk preview redirect URLs already registered");
+      return;
+    }
+    for (const url3 of missing) {
+      const result = await addRedirectUrl(secretKey, url3);
+      logger.info({ url: url3, result }, "Registered Clerk preview redirect URL");
+    }
+  } catch (err) {
+    logger.warn({ err, origin }, "Could not auto-register Clerk preview redirect URLs");
+  }
+}
+
 // src/vercel.ts
+void ensureClerkPreviewRedirects();
 var vercel_default = app_default;
 export {
   vercel_default as default
