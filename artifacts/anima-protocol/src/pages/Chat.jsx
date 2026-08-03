@@ -1600,6 +1600,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         { onDelta: showStreamingPartial },
       );
       const result = resultPayload.content || "";
+      // An empty "success" used to replace the thinking/typing bubble with a
+      // blank assistant row (or nothing visible). Treat it as a failed turn so
+      // the catch path can surface an error instead of silently vanishing.
+      if (!String(result).trim()) {
+        throw new Error("The companion returned an empty reply. Please try again.");
+      }
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
@@ -2156,21 +2162,38 @@ Return JSON:
         return { ...prev, messages };
       });
 
-      // Best-effort persist so a deferred cross-device sync can't wipe the kept reply.
-      if (retained && activeSession?.id) {
+      // Best-effort persist so a deferred cross-device sync can't wipe the kept reply
+      // (or the optimistic user turn that was never written because persist:false).
+      if (activeSession?.id) {
         try {
           if (!isContinue && !userMessagePersisted && content.trim()) {
             await base44.messages.append(activeSession.id, userMessage);
             userMessagePersisted = true;
           }
-          await base44.messages.append(activeSession.id, retained);
+          if (retained) {
+            await base44.messages.append(activeSession.id, retained);
+          }
         } catch (persistErr) {
           console.warn("[Anima] Failed to persist partial reply:", persistErr);
           // Skip the deferred remote refresh — it would replace local state with
-          // server history that does not include this unpersisted partial.
+          // server history that does not include this unpersisted turn.
           pendingRemoteSyncRef.current = false;
         }
+      }
+
+      if (retained) {
         toast.error("The reply was interrupted — kept what came through.");
+      } else {
+        // Pre-token failures used to remove thinking/typing with no UI feedback,
+        // which looked like the companion started thinking then vanished.
+        const detail =
+          err instanceof Error && err.message
+            ? err.message
+            : "The companion could not reply. Please try again.";
+        toast.error(detail);
+        // Don't let a deferred sync (armed while isLoading) immediately replace
+        // local optimistic state with a server list that lacks this turn.
+        pendingRemoteSyncRef.current = false;
       }
     }
 
