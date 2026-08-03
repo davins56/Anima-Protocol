@@ -1,19 +1,20 @@
 import { useState } from "react";
 import { useClerk, useSignIn } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
-import { clerkErrorMessage, hasEmailCodeFactor } from "@/lib/emailCodeSignIn";
 import {
-  clerkOAuthCompletePath,
-  clerkSsoCallbackPath,
-} from "@/lib/clerkOAuthPaths";
+  clerkErrorMessage,
+  hasEmailCodeFactor,
+  startGitHubOAuthSignIn,
+} from "@/lib/emailCodeSignIn";
+import { clerkOAuthCompletePath } from "@/lib/clerkOAuthPaths";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /**
  * Custom sign-in that forces email OTP (not magic link) and uses
- * Clerk.authenticateWithRedirect for GitHub (the built-in SignIn social
- * button path). Avoids the prebuilt Continue → email_link hang when the
- * verification email is opened on another device.
+ * Clerk Future `signIn.sso()` for GitHub OAuth. Avoids the prebuilt
+ * Continue → email_link hang when the verification email is opened on
+ * another device.
  */
 export default function EmailCodeSignIn() {
   const { signIn, fetchStatus } = useSignIn();
@@ -62,9 +63,13 @@ export default function EmailCodeSignIn() {
   const handleIdentifierSubmit = async (event) => {
     event.preventDefault();
     setError(null);
-    const value = identifier.trim();
+    const value = String(identifier ?? "").trim();
     if (!value) {
       setError("Enter your email or username.");
+      return;
+    }
+    if (!signIn || typeof signIn.create !== "function") {
+      setError("Sign-in is still loading. Wait a moment and try again.");
       return;
     }
     setBusy("email");
@@ -146,13 +151,13 @@ export default function EmailCodeSignIn() {
     setError(null);
     setBusy("github");
     try {
-      // Use Clerk-level redirect OAuth (not signIn.sso), which is the path the
-      // built-in GitHub button uses successfully in production.
-      await clerk.authenticateWithRedirect({
-        strategy: "oauth_github",
-        redirectUrl: clerkSsoCallbackPath(basePath, "sign-in"),
-        redirectUrlComplete: clerkOAuthCompletePath(basePath),
-      });
+      if (!signIn) {
+        setError("Sign-in is still loading. Wait a moment and try GitHub again.");
+        return;
+      }
+      // Clerk React v6 Future API: use signIn.sso(). Calling
+      // clerk.authenticateWithRedirect throws "is not a function".
+      await startGitHubOAuthSignIn(signIn, basePath, clerk);
     } catch (err) {
       setError(clerkErrorMessage(err) || "GitHub sign-in failed. Try again.");
       setBusy(null);
