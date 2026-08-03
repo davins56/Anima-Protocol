@@ -145,9 +145,23 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("defaults to auto with OpenAI first", () => {
+  it("auto prefers Grok/Gemini over OpenAI when alt keys exist", () => {
     expect(getConfiguredProviderMode()).toBe("auto");
     expect(isOpenAIBlocked()).toBe(false);
+    expect(getProviderChain()).toEqual(["xai", "gemini", "openai"]);
+    expect(getPreferredProvider()).toBe("xai");
+  });
+
+  it("auto uses OpenAI alone when no alt keys are configured", () => {
+    delete process.env.XAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    expect(getProviderChain()).toEqual(["openai"]);
+    expect(getPreferredProvider()).toBe("openai");
+  });
+
+  it("forces OpenAI-first when ANIMA_LLM_PROVIDER=openai", () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
     expect(getProviderChain()).toEqual(["openai", "xai", "gemini"]);
     expect(getPreferredProvider()).toBe("openai");
   });
@@ -203,7 +217,23 @@ describe("createChatStreamWithFailover", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("returns OpenAI stream on success without failover", async () => {
+  it("uses Grok first under auto when XAI_API_KEY is set (skips dead OpenAI)", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("grok"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("xai");
+    expect(result.model).toBe("grok-3");
+    expect(result.failedOver).toBe(false);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0].model).toBe("grok-3");
+  });
+
+  it("returns OpenAI stream when ANIMA_LLM_PROVIDER=openai", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
     createMock.mockResolvedValueOnce(fakeStream("hi"));
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -218,6 +248,7 @@ describe("createChatStreamWithFailover", () => {
   });
 
   it("falls back to Grok when OpenAI reports no credits", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
     createMock
       .mockRejectedValueOnce({
         status: 429,
@@ -242,6 +273,7 @@ describe("createChatStreamWithFailover", () => {
   });
 
   it("falls back to Grok on OpenAI 401 status code (no body)", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
     createMock
       .mockRejectedValueOnce({
         status: 401,
@@ -315,6 +347,7 @@ describe("createChatStreamWithFailover", () => {
   });
 
   it("falls through OpenAI → xAI → Gemini on quota errors", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
     process.env.GEMINI_API_KEY = "gemini-test";
     createMock
       .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" })
@@ -335,6 +368,7 @@ describe("createChatStreamWithFailover", () => {
   });
 
   it("retries OpenAI standard model on model-unavailable before giving up", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
     createMock
       .mockRejectedValueOnce({
         status: 404,
@@ -357,6 +391,7 @@ describe("createChatStreamWithFailover", () => {
   });
 
   it("prefers xAI on subsequent turns after OpenAI billing failure", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
     createMock
       .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" })
       .mockResolvedValueOnce(fakeStream("grok-1"))
@@ -369,6 +404,8 @@ describe("createChatStreamWithFailover", () => {
       messages: [{ role: "user", content: "one" }],
     });
 
+    // Clear forced openai so sticky preferNonOpenAI can take effect under auto.
+    delete process.env.ANIMA_LLM_PROVIDER;
     const second = await createChatStreamWithFailover({
       tier: "standard",
       model: "gpt-4o",
@@ -378,7 +415,7 @@ describe("createChatStreamWithFailover", () => {
 
     expect(second.provider).toBe("xai");
     expect(second.failedOver).toBe(false);
-    // First turn: OpenAI fail + xAI ok. Second turn: xAI only (sticky).
+    // First turn: OpenAI fail + xAI ok. Second turn: xAI only (sticky / auto).
     expect(createMock).toHaveBeenCalledTimes(3);
     expect(createMock.mock.calls[2][0].model).toBe("grok-3");
   });
