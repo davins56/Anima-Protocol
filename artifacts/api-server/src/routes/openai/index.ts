@@ -1,41 +1,49 @@
 import { Router } from "express";
 import { db, conversations, messages } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import OpenAI from "openai";
+import { and, eq } from "drizzle-orm";
+import { getAuth } from "@clerk/express";
 import { rateLimit } from "../../lib/rateLimit";
-
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY must be set.");
-}
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { routeModel } from "../../lib/modelRouter";
+import { createChatStreamWithFailover } from "../../lib/llmFailover";
 
 const router = Router();
 
 router.use(rateLimit);
 
-router.get("/conversations", async (_req, res) => {
-  const rows = await db.select().from(conversations).orderBy(conversations.createdAt);
+router.get("/conversations", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const rows = await db.select().from(conversations)
+    .where(eq(conversations.userId, userId))
+    .orderBy(conversations.createdAt);
   res.json(rows);
 });
 
 router.post("/conversations", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const { title } = req.body as { title?: string };
-  const [row] = await db.insert(conversations).values({ title: title || "New conversation" }).returning();
+  const [row] = await db.insert(conversations).values({ userId, title: title || "New conversation" }).returning();
   res.status(201).json(row);
 });
 
 router.get("/conversations/:id", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
-  const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
   const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
   res.json({ ...conv, messages: msgs });
 });
 
 router.delete("/conversations/:id", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
-  const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
   await db.delete(messages).where(eq(messages.conversationId, id));
   await db.delete(conversations).where(eq(conversations.id, id));
@@ -43,16 +51,24 @@ router.delete("/conversations/:id", async (req, res) => {
 });
 
 router.get("/conversations/:id/messages", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
+  if (!conv) { res.status(404).json({ error: "Not found" }); return; }
   const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
   res.json(msgs);
 });
 
 router.post("/conversations/:id/messages", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
-  const { content, systemPrompt } = req.body as { content: string; systemPrompt?: string };
+  const { content, systemPrompt, deepMode } = req.body as { content: string; systemPrompt?: string; deepMode?: boolean };
 
-  const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+  const [conv] = await db.select().from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
 
   await db.insert(messages).values({ conversationId: id, role: "user", content });
@@ -79,14 +95,18 @@ router.post("/conversations/:id/messages", async (req, res) => {
   let fullResponse = "";
 
   try {
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4o",
-      max_tokens: 8192,
+    // Pick the model from the latest message's stakes plus per-conversation
+    // context: an explicit deep-mode toggle, and how deep this thread already is
+    // (history includes the user message we just inserted).
+    const routed = routeModel(content, { deepMode, conversationDepth: history.length });
+    const completion = await createChatStreamWithFailover({
+      tier: routed.tier,
+      model: routed.model,
+      maxTokens: routed.maxTokens,
       messages: chatMessages,
-      stream: true,
     });
 
-    for await (const chunk of stream) {
+    for await (const chunk of completion.stream) {
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
@@ -95,7 +115,15 @@ router.post("/conversations/:id/messages", async (req, res) => {
     }
 
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({
+        done: true,
+        model: completion.model,
+        tier: completion.tier,
+        provider: completion.provider,
+        failed_over: completion.failedOver,
+      })}\n\n`,
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
