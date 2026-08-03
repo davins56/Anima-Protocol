@@ -45,11 +45,17 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **Kimi setup (lowest-cost option):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) on Vercel Production, redeploy. When a Kimi key is present it is preferred automatically over Gemini. Optional: set `ANIMA_LLM_PROVIDER=kimi` to force Kimi-only, or remove `GEMINI_API_KEY` if you no longer want it. Moonshot may require a small platform balance before the key can call models — check the console if auth/quota errors persist.
 
-**Custom Anima LLM (Kimi + Gemini + Grok + ChatGPT):** Set `ANIMA_LLM_PROVIDER=anima` (or `custom`) and configure as many of `KIMI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, and `OPENAI_API_KEY` as you have. **`KIMI_API_KEY` must be set** or Anima cannot call Kimi and will jump straight to Gemini. Everyday chat (light + standard) prefers **Kimi first**, then Gemini → Grok → ChatGPT. Heavy / deep-mode prefers Grok, then Kimi. The chat chip shows **Anima**; the tooltip names which backend served the turn.
+**Custom Anima LLM (parallel minds + combined reply):** Set `ANIMA_LLM_PROVIDER=anima` (aliases `custom` / `ensemble`) — or just set `KIMI_API_KEY` plus any other provider key. Chat no longer fails over sequentially. Instead:
+
+1. Available minds (**Kimi**, **Gemini**, **Grok**, **ChatGPT**) draft replies **in parallel** in the background
+2. The app **synthesizes** those drafts into one in-character companion reply
+3. That combined reply is streamed to the UI
+
+The typing indicator shows “Minds drafting…” / “Combining mind drafts…”. A toast lists which minds contributed. Optional knobs: `ANIMA_ENSEMBLE_MIND_TIMEOUT_MS` (default `14000`), `ANIMA_ENSEMBLE_MAX_MINDS` (default `4`), `ANIMA_LLM_ENSEMBLE=true` to force ensemble under other modes.
 
 **If chat still shows Gemini and never Kimi:** open `https://www.anima-protocol.com/api/healthz/llm` — it reports which keys Production sees and the live provider chain (no secrets). Common causes:
 1. `keys.kimi: false` → add `KIMI_API_KEY` on Vercel **Production** and redeploy
-2. `envProvider: "gemini"` from earlier unpaid setups → this deploy overrides that to Kimi when the key is present (or set `ANIMA_LLM_PROVIDER=kimi` / delete the gemini value). To keep Gemini-only on purpose, set `ANIMA_FORCE_GEMINI=true`.
+2. `envProvider: "gemini"` from earlier unpaid setups → this deploy overrides that to Anima ensemble when the Kimi key is present. To keep Gemini-only on purpose, set `ANIMA_FORCE_GEMINI=true`.
 
 **If chat fails with a Grok “no team credits” error after trying Gemini:** you are on `ANIMA_LLM_PROVIDER=auto` (or an older deploy). Fix Gemini first (check `GEMINI_API_KEY` / Google AI Studio quota), set `ANIMA_DISABLE_XAI=true`, or buy xAI credits. With the current default (`gemini` mode when `GEMINI_API_KEY` is set), Grok is not used as a backup — failures surface as Gemini quota/key errors instead.
 

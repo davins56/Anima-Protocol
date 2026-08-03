@@ -91,7 +91,7 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "anima",
     label: "Anima",
     env: "ANIMA_LLM_PROVIDER=anima",
-    note: "Custom multi-model LLM — Kimi-first for everyday chat; Grok for heavy; needs KIMI_API_KEY",
+    note: "Custom multi-model LLM — minds draft in parallel, then Anima streams one combined reply",
   },
   {
     id: "kimi",

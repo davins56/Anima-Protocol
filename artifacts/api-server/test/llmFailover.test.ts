@@ -206,6 +206,7 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
     delete process.env.XAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     process.env.KIMI_API_KEY = "kimi-test";
     delete process.env.ANIMA_LLM_PROVIDER;
     expect(getConfiguredProviderMode()).toBe("kimi");
@@ -214,13 +215,13 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     expect(getPreferredProvider()).toBe("kimi");
   });
 
-  it("prefers Kimi over Gemini when both keys are set and provider is unset", () => {
+  it("defaults to Anima ensemble when Kimi plus another provider key is set", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     delete process.env.ANIMA_LLM_PROVIDER;
-    expect(getConfiguredProviderMode()).toBe("kimi");
-    expect(getProviderChain()).toEqual(["kimi"]);
-    expect(getPreferredProvider()).toBe("kimi");
+    expect(getConfiguredProviderMode()).toBe("anima");
+    expect(isAnimaCustomMode()).toBe(true);
+    expect(getProviderChain("standard")[0]).toBe("kimi");
   });
 
   it("auto prefers Kimi/Gemini/Grok over OpenAI when alt keys exist", () => {
@@ -269,14 +270,14 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     expect(getProviderChain()).toEqual(["gemini"]);
   });
 
-  it("overrides leftover ANIMA_LLM_PROVIDER=gemini when KIMI_API_KEY is present", () => {
+  it("overrides leftover ANIMA_LLM_PROVIDER=gemini to Anima ensemble when KIMI_API_KEY is present", () => {
     process.env.ANIMA_LLM_PROVIDER = "gemini";
     process.env.KIMI_API_KEY = "kimi-test";
-    expect(getConfiguredProviderMode()).toBe("kimi");
-    expect(getProviderChain()).toEqual(["kimi"]);
-    expect(getPreferredProvider()).toBe("kimi");
-    expect(getLlmDiagnostics().preferred).toBe("kimi");
+    expect(getConfiguredProviderMode()).toBe("anima");
+    expect(isAnimaCustomMode()).toBe(true);
+    expect(getProviderChain("standard")[0]).toBe("kimi");
     expect(getLlmDiagnostics().keys.kimi).toBe(true);
+    expect(getLlmDiagnostics().configuredMode).toBe("anima");
   });
 
   it("keeps Gemini-only when ANIMA_FORCE_GEMINI=true even if Kimi key exists", () => {
