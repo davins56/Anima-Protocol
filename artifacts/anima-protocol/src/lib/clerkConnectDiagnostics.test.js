@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from './clerkConnectDiagnostics';
@@ -215,7 +216,7 @@ describe('probeClerkConnectivity', () => {
     ]);
   });
 
-  it('uses custom-domain wording when probes succeed but SDK stalled', async () => {
+  it('returns no hints when probes succeed (stall copy is UI-gated)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {
@@ -230,9 +231,10 @@ describe('probeClerkConnectivity', () => {
 
     const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
 
-    expect(hints).toEqual([
-      'API and Clerk custom domain look healthy, but the Clerk SDK did not finish loading. Disable ad blockers, try another browser, or refresh in a few seconds.',
-    ]);
+    // Healthy probes must stay quiet — CLERK_STALL_HINT is shown by the UI
+    // only after ClerkLoading actually stalls / ClerkFailed.
+    expect(hints).toEqual([]);
+    expect(CLERK_STALL_HINT).toMatch(/SDK has not finished loading/i);
   });
 });
 

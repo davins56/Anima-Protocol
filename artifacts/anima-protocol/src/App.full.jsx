@@ -44,10 +44,12 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
+  CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  isVercelPreviewHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
@@ -334,7 +336,11 @@ function ClerkQueryClientCacheInvalidator() {
 /** Delay before probing Clerk connectivity so healthy loads never show a warning. */
 const CLERK_DIAGNOSTICS_STALL_MS = 2500;
 
-
+/**
+ * Connectivity hints only after Clerk failed to load, or is still loading past
+ * the stall timeout. Preview-host guidance is NOT shown unconditionally — only
+ * when probes find a real problem (or the SDK never reaches loaded).
+ */
 function ClerkLoginDiagnostics() {
   const clerk = useClerk();
   const [hints, setHints] = useState([]);
@@ -355,7 +361,21 @@ function ClerkLoginDiagnostics() {
     let cancelled = false;
     (async () => {
       const next = await probeClerkConnectivity(clerkPubKey);
-      if (!cancelled) setHints(next);
+      if (cancelled) return;
+      if (next.length > 0) {
+        // Only mention *.vercel.app after a real probe failure on a preview host.
+        if (isVercelPreviewHost(window.location.hostname)) {
+          setHints([
+            ...next,
+            "This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use https://www.anima-protocol.com/sign-in instead.",
+          ]);
+          return;
+        }
+        setHints(next);
+        return;
+      }
+      // Probes healthy but SDK never reached loaded — preserve fallback messaging.
+      setHints([CLERK_STALL_HINT]);
     })();
     return () => {
       cancelled = true;
