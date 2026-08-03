@@ -27,18 +27,16 @@ import {
   type ResolvedModel,
 } from "./modelRouter";
 import {
-  createGeminiChatCompletion,
-  createGeminiChatStream,
-} from "./geminiNative";
-import {
   getKimiClient,
   getOpenAIClient,
   getXaiClient,
+  hasGeminiKey,
   hasKimiKey,
   hasOpenAIKey,
   hasXaiKey,
 } from "./openaiClient";
 
+/** Chat providers. `gemini` remains only as a legacy label — never selected. */
 export type LlmProviderId = "openai" | "xai" | "gemini" | "kimi";
 
 export type LlmProviderMode =
@@ -51,6 +49,25 @@ export type LlmProviderMode =
 
 /** Brand for the custom multi-model stack (when ANIMA_LLM_PROVIDER=anima|custom). */
 export type LlmBrand = "anima";
+
+/** Public, secret-free snapshot of how chat will route (for /api/healthz/llm). */
+export interface LlmRoutingStatus {
+  status: "ok" | "error";
+  mode: LlmProviderMode;
+  preferred: LlmProviderId | null;
+  chain: LlmProviderId[];
+  brand: LlmBrand | null;
+  keys: {
+    kimi: boolean;
+    openai: boolean;
+    xai: boolean;
+    /** Present but ignored for chat. */
+    gemini: boolean;
+  };
+  geminiRetiredForChat: true;
+  rawProviderEnv: string | null;
+  note: string;
+}
 
 export interface ChatStreamRequest {
   tier: ModelTier;
@@ -228,6 +245,35 @@ export function getPreferredProvider(tier: ModelTier = "standard"): LlmProviderI
   return "openai";
 }
 
+/** Secret-free routing diagnostic for operators and the chat UI. */
+export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingStatus {
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim() || null;
+  const mode = getConfiguredProviderMode();
+  const chain = getProviderChain(tier);
+  const preferred = chain[0] ?? null;
+  const kimi = hasKimiKey();
+  return {
+    status: preferred ? "ok" : "error",
+    mode,
+    preferred,
+    chain,
+    brand: isAnimaCustomMode() ? "anima" : null,
+    keys: {
+      kimi,
+      openai: hasOpenAIKey(),
+      xai: hasXaiKey(),
+      gemini: hasGeminiKey(),
+    },
+    geminiRetiredForChat: true,
+    rawProviderEnv: raw,
+    note: kimi
+      ? "Chat is Kimi-only. Gemini/Grok/OpenAI are not used for chat while KIMI_API_KEY is set."
+      : preferred
+        ? "KIMI_API_KEY is missing — chat falls back to Grok/OpenAI. Gemini is never used for chat."
+        : "No chat LLM key configured. Set KIMI_API_KEY on Vercel and redeploy.",
+  };
+}
+
 /** True when the provider rejected the API key / auth (worth trying another vendor). */
 export function isProviderAuthError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -334,18 +380,6 @@ const XAI_ENV_KEYS: Record<ModelTier, string> = {
   heavy: "ANIMA_XAI_MODEL_HEAVY",
 };
 
-const DEFAULT_GEMINI_MODELS: Record<ModelTier, string> = {
-  light: "gemini-2.5-flash-lite",
-  standard: "gemini-2.5-flash",
-  heavy: "gemini-2.5-pro",
-};
-
-const GEMINI_ENV_KEYS: Record<ModelTier, string> = {
-  light: "ANIMA_GEMINI_MODEL_LIGHT",
-  standard: "ANIMA_GEMINI_MODEL_STANDARD",
-  heavy: "ANIMA_GEMINI_MODEL_HEAVY",
-};
-
 // Prefer K2.6 for routine chat (k2.5 is sunsetting for new accounts); K3 for
 // high-stakes turns. Override with ANIMA_KIMI_MODEL_* env vars.
 const DEFAULT_KIMI_MODELS: Record<ModelTier, string> = {
@@ -372,14 +406,12 @@ export function resolveXaiModel(tier: ModelTier): ResolvedModel {
   };
 }
 
+/** @deprecated Gemini is retired for chat — kept only so older tests compile. */
 export function resolveGeminiModel(tier: ModelTier): ResolvedModel {
-  const override =
-    process.env[GEMINI_ENV_KEYS[tier]]?.trim() ||
-    process.env.ANIMA_GEMINI_MODEL?.trim();
   const openaiResolved = resolveModel(tier);
   return {
     tier,
-    model: override || DEFAULT_GEMINI_MODELS[tier],
+    model: "gemini-retired",
     maxTokens: openaiResolved.maxTokens,
   };
 }
@@ -398,7 +430,7 @@ export function resolveKimiModel(tier: ModelTier): ResolvedModel {
 
 function providerLabel(id: LlmProviderId): string {
   if (id === "xai") return "Grok (xAI)";
-  if (id === "gemini") return "Gemini";
+  if (id === "gemini") return "Gemini (retired)";
   if (id === "kimi") return "Kimi (Moonshot)";
   return "OpenAI";
 }
@@ -424,8 +456,10 @@ function clientFor(provider: Exclude<LlmProviderId, "gemini">): OpenAI {
 }
 
 function resolveForProvider(provider: LlmProviderId, tier: ModelTier): ResolvedModel {
+  if (provider === "gemini") {
+    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
+  }
   if (provider === "xai") return resolveXaiModel(tier);
-  if (provider === "gemini") return resolveGeminiModel(tier);
   if (provider === "kimi") return resolveKimiModel(tier);
   return resolveModel(tier);
 }
@@ -515,14 +549,8 @@ async function createStream(
   resolved: ResolvedModel,
   messages: ChatCompletionMessageParam[],
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
-  // Use the native Generative Language API for Gemini so AQ.* AI Studio
-  // auth keys work (OpenAI-compatible /v1beta/openai rejects many of them).
   if (provider === "gemini") {
-    return createGeminiChatStream({
-      model: resolved.model,
-      maxTokens: resolved.maxTokens,
-      messages,
-    });
+    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
   }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
@@ -539,12 +567,7 @@ async function createCompletion(
   temperature?: number,
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   if (provider === "gemini") {
-    return createGeminiChatCompletion({
-      model: resolved.model,
-      maxTokens: resolved.maxTokens,
-      messages,
-      temperature,
-    });
+    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
   }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
@@ -582,58 +605,34 @@ async function withModelFallback<T>(
 export async function createChatStreamWithFailover(
   req: ChatStreamRequest,
 ): Promise<ChatStreamResult> {
-  const chain = getProviderChain(req.tier);
-  const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
-  if (chain.length === 0) {
+  // Chat is Kimi-only. Gemini / Grok / OpenAI are never used for chat turns.
+  if (!hasKimiKey()) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY (preferred), XAI_API_KEY, or OPENAI_API_KEY" +
-        (isOpenAIBlocked()
-          ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)."
-          : ".") +
-        " Gemini is not used for chat.",
+      "Chat requires KIMI_API_KEY (or MOONSHOT_API_KEY) on Vercel. " +
+        "Gemini is retired for chat — remove ANIMA_LLM_PROVIDER=gemini if set, " +
+        "add your Moonshot key from https://platform.kimi.ai, then redeploy.",
     );
   }
 
-  const attempted: LlmProviderId[] = [];
-  let lastErr: unknown;
-
-  for (let i = 0; i < chain.length; i++) {
-    const provider = chain[i]!;
-    attempted.push(provider);
-    const routed = resolveForProvider(provider, req.tier);
-    // On OpenAI, honor the concrete model the router already chose (env overrides).
-    const preferredModel =
-      provider === "openai"
-        ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens }
-        : routed;
-
-    try {
-      const { value: stream, resolved } = await withModelFallback(
-        provider,
-        preferredModel,
-        (m) => createStream(provider, m, req.messages),
-      );
-      return {
-        stream,
-        provider,
-        brand,
-        model: resolved.model,
-        tier: resolved.tier,
-        failedOver: i > 0,
-        previousProvider: i > 0 ? chain[0] : undefined,
-      };
-    } catch (err) {
-      lastErr = err;
-      if (provider === "openai") markOpenAIUnusable(err);
-      if (provider === "xai") markXaiUnusable(err);
-      if (!isProviderUnusableError(err)) {
-        throw enrichError(err, attempted);
-      }
-      // Try next provider in chain.
-    }
+  const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
+  const preferredModel = resolveKimiModel(req.tier);
+  try {
+    const { value: stream, resolved } = await withModelFallback(
+      "kimi",
+      preferredModel,
+      (m) => createStream("kimi", m, req.messages),
+    );
+    return {
+      stream,
+      provider: "kimi",
+      brand,
+      model: resolved.model,
+      tier: resolved.tier,
+      failedOver: false,
+    };
+  } catch (err) {
+    throw enrichError(err, ["kimi"]);
   }
-
-  throw enrichError(lastErr, attempted);
 }
 
 /**
@@ -643,54 +642,32 @@ export async function createChatStreamWithFailover(
 export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
-  const chain = getProviderChain(req.tier);
-  const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
-  if (chain.length === 0) {
+  if (!hasKimiKey()) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY (preferred), XAI_API_KEY, or OPENAI_API_KEY" +
-        (isOpenAIBlocked()
-          ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)."
-          : ".") +
-        " Gemini is not used for chat.",
+      "Chat requires KIMI_API_KEY (or MOONSHOT_API_KEY) on Vercel. " +
+        "Gemini is retired for chat — remove ANIMA_LLM_PROVIDER=gemini if set, " +
+        "add your Moonshot key from https://platform.kimi.ai, then redeploy.",
     );
   }
 
-  const attempted: LlmProviderId[] = [];
-  let lastErr: unknown;
-
-  for (let i = 0; i < chain.length; i++) {
-    const provider = chain[i]!;
-    attempted.push(provider);
-    const routed = resolveForProvider(provider, req.tier);
-    const preferredModel =
-      provider === "openai" && req.model
-        ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens }
-        : routed;
-
-    try {
-      const { value: completion, resolved } = await withModelFallback(
-        provider,
-        preferredModel,
-        (m) => createCompletion(provider, m, req.messages, req.temperature),
-      );
-      return {
-        content: completion.choices[0]?.message?.content ?? "",
-        provider,
-        brand,
-        model: resolved.model,
-        tier: resolved.tier,
-        failedOver: i > 0,
-        previousProvider: i > 0 ? chain[0] : undefined,
-      };
-    } catch (err) {
-      lastErr = err;
-      if (provider === "openai") markOpenAIUnusable(err);
-      if (provider === "xai") markXaiUnusable(err);
-      if (!isProviderUnusableError(err)) {
-        throw enrichError(err, attempted);
-      }
-    }
+  const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
+  const preferredModel = resolveKimiModel(req.tier);
+  try {
+    const { value: completion, resolved } = await withModelFallback(
+      "kimi",
+      preferredModel,
+      (m) => createCompletion("kimi", m, req.messages, req.temperature),
+    );
+    const content = completion.choices?.[0]?.message?.content ?? "";
+    return {
+      content: typeof content === "string" ? content : "",
+      provider: "kimi",
+      brand,
+      model: resolved.model,
+      tier: resolved.tier,
+      failedOver: false,
+    };
+  } catch (err) {
+    throw enrichError(err, ["kimi"]);
   }
-
-  throw enrichError(lastErr, attempted);
 }
