@@ -1,13 +1,14 @@
 // Cross-provider chat completion with automatic failover.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - auto   (default) — OpenAI first, then Grok, then Gemini on billing/quota errors
+//   - auto   (default) — Grok → Gemini → OpenAI when those keys exist; OpenAI alone
+//                        only when no alt key is configured
 //   - xai / grok       — Grok primary; never call OpenAI (Gemini as optional backup)
 //   - gemini           — Gemini primary; never call OpenAI (Grok as optional backup)
 //   - openai           — OpenAI primary with Grok/Gemini failover
 //
 // ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` (useful when the
-// OpenAI account is out of credits and every cold start would otherwise retry it).
+// OpenAI account is out of credits).
 //
 // Intra-provider "model unavailable" fallback (routed → standard) is preserved
 // and still gated by isModelUnavailableError — that path must NOT fire on 429.
@@ -132,15 +133,17 @@ export function getProviderChain(): LlmProviderId[] {
     return chain;
   }
 
-  // auto
-  if (preferNonOpenAI || isOpenAIBlocked()) {
+  // auto — prefer Grok/Gemini whenever they are configured so a dead/revoked
+  // OpenAI key (401) or empty credits (429) cannot break every chat turn.
+  // Set ANIMA_LLM_PROVIDER=openai to force OpenAI-first.
+  const preferAlt =
+    preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey();
+  if (preferAlt) {
     push("xai");
     push("gemini");
     push("openai");
   } else {
     push("openai");
-    push("xai");
-    push("gemini");
   }
   return chain;
 }
