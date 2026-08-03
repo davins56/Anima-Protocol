@@ -33,6 +33,7 @@ import {
   getProviderChain,
   isOpenAIBlocked,
   isProviderAuthError,
+  extractXaiBillingUrl,
   isProviderUnusableError,
   resetLlmFailoverStateForTests,
   resolveGeminiModel,
@@ -80,6 +81,18 @@ describe("isProviderUnusableError", () => {
         message: "Incorrect API key provided",
       }),
     ).toBe(true);
+  });
+
+  it("detects xAI team with no credits/licenses (403)", () => {
+    const xaiTeamError = {
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+    };
+    expect(isProviderUnusableError(xaiTeamError)).toBe(true);
+    expect(extractXaiBillingUrl(xaiTeamError)).toBe(
+      "https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374",
+    );
   });
 
   it("does not treat model-unavailable as provider-unusable", () => {
@@ -270,6 +283,50 @@ describe("createChatStreamWithFailover", () => {
     expect(result.previousProvider).toBe("openai");
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[1][0].model).toBe("grok-4");
+  });
+
+  it("falls back from xAI team-no-credits 403 to Gemini", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    createMock
+      .mockRejectedValueOnce({
+        status: 403,
+        message:
+          '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+      })
+      .mockResolvedValueOnce(fakeStream("gemini"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("gemini");
+    expect(result.failedOver).toBe(true);
+    expect(result.previousProvider).toBe("xai");
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("points at the xAI console when Grok has no team credits and no backup", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    createMock.mockRejectedValueOnce({
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+    });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i);
   });
 
   it("falls back to Grok on OpenAI 401 status code (no body)", async () => {
