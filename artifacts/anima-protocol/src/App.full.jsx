@@ -381,10 +381,11 @@ function AuthFormShell({ mode, children }) {
         <ClerkLoginDiagnostics />
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
-            Password only works if one is set on this account. Otherwise enter
-            your username or email and use the email code — or continue with
-            GitHub below. Google sign-in needs its OAuth redirect URI allowlisted
-            in Google Cloud before it will work.
+            Password sign-in only works if a password is set on this Production
+            account. Otherwise enter the username or email that exists there and
+            use the email code — or continue with GitHub below if that is how
+            you created the account. Google sign-in needs its OAuth redirect URI
+            allowlisted in Google Cloud before it will work.
           </p>
         ) : null}
         {children}

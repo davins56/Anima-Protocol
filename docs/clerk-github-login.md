@@ -20,19 +20,21 @@ SSO connections → Google (same value for GitHub/Apple when using the custom do
 
 ## Code requirements (already in the app)
 
-The frontend must pass **relative** paths to Clerk `signIn.sso()` (not absolute
-`https://…` URLs). With the custom-domain publishable key, Clerk talks to
-`clerk.anima-protocol.com` directly (no `/api/__clerk` proxy):
+Sign-in uses Clerk’s built-in social buttons inside `<SignIn>` / `<SignUp>`
+(not custom top-of-page “Continue with …” buttons — those hung on
+`signIn.sso()` with no network). With the custom-domain publishable key, Clerk
+talks to `clerk.anima-protocol.com` directly (no `/api/__clerk` proxy):
 
 | Piece | Location | Expected value |
 |-------|----------|----------------|
-| OAuth redirect paths | `artifacts/anima-protocol/src/lib/clerkOAuthPaths.js` | `/sign-in/sso-callback`, `/sign-up/sso-callback` |
+| Social buttons | Clerk `<SignIn>` / `<SignUp>` | GitHub (+ Google once provider redirect is allowlisted) |
 | Clerk proxy | `artifacts/anima-protocol/src/lib/clerkProxy.js` | empty on production custom domain; `/api/__clerk/` only when no custom FAPI host |
 | Provider OAuth callback | derived from publishable key | `https://clerk.anima-protocol.com/v1/oauth_callback` |
 | SSO routes | `artifacts/anima-protocol/src/App.full.jsx` | `/sign-in/sso-callback`, `/sign-up/sso-callback`, `/sso-callback` |
 
-Absolute app URLs in `signIn.sso()` cause Clerk validation errors such as
-*"The string did not match the expected pattern"* and prevent redirects.
+**Use https://www.anima-protocol.com/sign-in** for GitHub login. Protected
+`*.vercel.app` preview URLs block OAuth callbacks (Vercel Deployment Protection)
+and often show false “Clerk SDK did not finish loading” warnings.
 
 ## 1. Fix Vercel production keys
 
@@ -129,7 +131,21 @@ on `www.anima-protocol.com` instead.
 
 Do **not** rely on the old duplicate “Continue with …” buttons above the Clerk form — those called a custom `signIn.sso()` path that hung on “Redirecting…” without starting OAuth. Sign-in now uses Clerk’s built-in social buttons only.
 
-## 6. Apple (optional)
+## 6. Password vs email code vs GitHub
+
+Production Clerk may show an identifier-first form (email or username first).
+That does **not** mean every account can use a password:
+
+| Symptom | Cause | What to do |
+|---------|--------|------------|
+| `Couldn't find your account` for a Gmail address | That email is not on the **Production** Clerk instance | Sign in with the username / email that exists there (often the original Hotmail), or use **GitHub** |
+| After username, only “Check your email” / OTP — no password field | Account has **no password** (common for GitHub/OAuth signups). Clerk returns `strategy_for_user_invalid` for `password` | Enter the email code, or **Continue with GitHub**. After you’re in, set a password in Clerk account settings if you want password next time |
+| Want password for an existing OAuth user | Password never set in Production | Clerk Dashboard → Users → user → **Set password**, or user sets one after OTP/GitHub sign-in |
+
+Sign-up on Production may be **waitlist** mode — a brand-new Gmail signup can be
+blocked even when sign-in for an existing username works.
+
+## 7. Apple (optional)
 
 In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
 
@@ -139,7 +155,7 @@ In Clerk Dashboard → Production (or Development) → Configure → SSO connect
    (`https://clerk.anima-protocol.com/v1/oauth_callback`) as an Apple Return URL.
 4. Keep `/sign-in/sso-callback` / `/sign-up/sso-callback` registered under Clerk → Paths.
 
-## 7. Verify
+## 8. Verify
 
 Run from the repo root with the production Clerk keys in the environment:
 
