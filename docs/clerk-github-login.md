@@ -20,14 +20,19 @@ SSO connections → Google (same value for GitHub/Apple when using the custom do
 
 ## Code requirements (already in the app)
 
-Sign-in uses Clerk’s built-in social buttons inside `<SignIn>` / `<SignUp>`
-(not custom top-of-page “Continue with …” buttons — those hung on
-`signIn.sso()` with no network). With the custom-domain publishable key, Clerk
-talks to `clerk.anima-protocol.com` directly (no `/api/__clerk` proxy):
+Sign-in uses a custom **email OTP** form (`EmailCodeSignIn`) plus GitHub via
+`Clerk.authenticateWithRedirect` — not the prebuilt `<SignIn>` Continue path.
+Production Clerk also enables magic links (`email_link`); the prebuilt UI often
+chose that after Continue, then sat on “Check your email” forever if the link
+was opened on another device/browser. Forcing `email_code` avoids that hang.
+Do **not** reintroduce custom `signIn.sso()` “Continue with …” buttons — those
+hung with no network. With the custom-domain publishable key, Clerk talks to
+`clerk.anima-protocol.com` directly (no `/api/__clerk` proxy):
 
 | Piece | Location | Expected value |
 |-------|----------|----------------|
-| Social buttons | Clerk `<SignIn>` / `<SignUp>` | GitHub (+ Google once provider redirect is allowlisted) |
+| Sign-in UI | `components/auth/EmailCodeSignIn.jsx` | GitHub redirect + email verification **code** |
+| Sign-up UI | Clerk `<SignUp>` (waitlist) | Built-in Clerk form |
 | Clerk proxy | `artifacts/anima-protocol/src/lib/clerkProxy.js` | empty on production custom domain; `/api/__clerk/` only when no custom FAPI host |
 | Provider OAuth callback | derived from publishable key | `https://clerk.anima-protocol.com/v1/oauth_callback` |
 | SSO routes | `artifacts/anima-protocol/src/App.full.jsx` | `/sign-in/sso-callback`, `/sign-up/sso-callback`, `/sso-callback` |
@@ -147,13 +152,14 @@ on `www.anima-protocol.com` instead.
 
 | Method | Status | Notes |
 |--------|--------|-------|
-| **GitHub** (Clerk social icons) | Works | Prefer this if the account was created with GitHub |
-| **Email code / email link** | Works | Production accounts without a password (e.g. OAuth signup) only support this — not username+password |
+| **GitHub** | Works | Prefer this if the account was created with GitHub |
+| **Email verification code** | Works | App forces `email_code` after Continue (not magic link) |
+| **Email magic link** | Avoided in app UI | Still enabled in Clerk Dashboard; opening a link on another device left the original tab waiting forever |
 | **Google** | Broken until console fix | Live symptom: `Error 400: redirect_uri_mismatch`. Add `https://clerk.anima-protocol.com/v1/oauth_callback` to the Google OAuth client’s Authorized redirect URIs |
-| **Apple** | Broken until credentials | Clerk reports empty `client_id` — set Apple custom credentials in Clerk → SSO, or leave Apple disabled (the app hides the Apple button) |
-| **Password** | Only if set | Accounts that never set a password get `strategy_for_user_invalid`. Use email code, or “Forgot password” / Clerk Dashboard → Users → Set password |
+| **Apple** | Broken until credentials | Clerk reports empty `client_id` — set Apple custom credentials in Clerk → SSO |
+| **Password** | Only if set as a first factor | Production first factors are email_code / email_link / oauth_github — password is enabled but `used_for_first_factor: false` |
 
-Do **not** rely on the old duplicate “Continue with …” buttons above the Clerk form — those called a custom `signIn.sso()` path that hung on “Redirecting…” without starting OAuth. Sign-in now uses Clerk’s built-in social buttons only.
+Do **not** reintroduce custom `signIn.sso()` “Continue with …” buttons — those hung on “Redirecting…” with no network. Optional ops cleanup: in Clerk Dashboard → User & authentication → Email, disable **Email verification link** so only codes remain instance-wide.
 
 ## 7. Password vs email code vs GitHub
 
@@ -192,7 +198,8 @@ current app hides the Apple social button until credentials are ready.
 | Toast: **The string did not match the expected pattern** on `*.vercel.app` | Preview/unique deploy callback not in Clerk Paths, and/or Vercel Deployment Protection | Use **https://www.anima-protocol.com/sign-in**, or register that host’s `/sign-in/sso-callback` and disable Deployment Protection for Preview |
 | Google **Error 400: redirect_uri_mismatch** | Google OAuth client missing Clerk FAPI callback | In Google Cloud Console → Credentials → the OAuth client Clerk uses (Clerk → SSO → Google shows the Client ID; also exposed as `google_one_tap_client_id` in `/v1/environment`) → Authorized redirect URIs → add `https://clerk.anima-protocol.com/v1/oauth_callback` |
 | Apple **invalid_request** / empty `client_id=` | Apple enabled in Clerk without Services ID credentials | Clerk → Production → SSO → Apple → set custom credentials, or disable Apple until ready |
-| Email/password “tries but doesn’t work” | Production email first factor is **email_code**, not password | Enter the emailed one-time code, or enable Password under Clerk → User & authentication |
+| Email/password “tries but doesn’t work” | Password is not a Production first factor | Use the emailed one-time **code**, or GitHub |
+| Continue → “Check your email” forever | Magic link opened on another device/browser (same-device required) | Use the app’s email **code** flow (current UI), or open the link in the **same** browser tab that started sign-in |
 | GitHub reaches `github.com/login` | Callback is correct | Complete sign-in; if it fails after authorize, check Clerk → Paths still lists `…/sign-in/sso-callback` |
 
 Do **not** put `/sign-in/sso-callback` into Google/GitHub/Apple — that only belongs
