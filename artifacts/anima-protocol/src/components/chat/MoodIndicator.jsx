@@ -1,3 +1,4 @@
+// @ts-check
 import { motion, AnimatePresence } from "framer-motion";
 import { MOODS } from "@/lib/moodDetector";
 
@@ -5,8 +6,11 @@ import { MOODS } from "@/lib/moodDetector";
  * Displays the current detected mood of the active character.
  * Animates whenever the mood changes.
  */
+/**
+ * @param {{ mood?: string }} props
+ */
 export default function MoodIndicator({ mood }) {
-  const config = MOODS[mood] || MOODS.neutral;
+  const config = MOODS[/** @type {keyof typeof MOODS} */ (mood)] || MOODS.neutral;
 
   return (
     <AnimatePresence mode="wait">

@@ -25,7 +25,9 @@ export default function GlobalWiki() {
     const [lore, chars, sess] = await Promise.all([
       base44.entities.WorldState.filter({ is_active: true }, "-created_date", 500),
       base44.entities.Character.list("-created_date", 200),
-      base44.entities.ChatSession.list("-updated_date", 200)
+      // Sessions are only used here as a title/id lookup for lore entries — skip
+      // hydrating every session's full message history so the wiki loads fast.
+      base44.entities.ChatSession.list("-updated_date", 200, { withMessages: false })
     ]);
 
     setLoreEntries(lore || []);
@@ -112,7 +114,7 @@ export default function GlobalWiki() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">

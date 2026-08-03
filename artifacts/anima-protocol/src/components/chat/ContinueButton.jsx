@@ -1,5 +1,11 @@
+// @ts-check
+/**
+ * @param {{ onClick?: () => void, disabled?: boolean, mode?: string }} props
+ */
 export default function ContinueButton({ onClick, disabled, mode }) {
-  if (mode !== "solo") return null;
+  // Available in both solo and group — keeps the scene moving without forcing
+  // the user to invent the next line every turn.
+  if (mode !== "solo" && mode !== "group") return null;
 
   return (
     <button

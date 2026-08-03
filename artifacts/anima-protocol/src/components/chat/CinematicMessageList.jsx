@@ -7,7 +7,8 @@ export default function CinematicMessageList({
   session, 
   characters, 
   isFocusMode,
-  onSpeak 
+  onSpeak,
+  onAvatarClick,
 }) {
   const messagesEndRef = useRef(null);
   const [visibleCount, setVisibleCount] = useState(20);
@@ -77,6 +78,7 @@ export default function CinematicMessageList({
                 character={msgChar}
                 isFocusMode={isFocusMode}
                 onSpeak={onSpeak}
+                onAvatarClick={onAvatarClick}
               />
             </motion.div>
           );

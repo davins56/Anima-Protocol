@@ -1,8 +1,13 @@
+// @ts-check
 import { useState } from "react";
 import { Download, FileText, Loader, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
+import { toast } from "sonner";
 
+/**
+ * @param {{ isOpen?: boolean, onClose: () => void, session?: any }} props
+ */
 export default function ExportArchiveModal({ isOpen, onClose, session }) {
   const [format, setFormat] = useState("markdown");
   const [includeSummary, setIncludeSummary] = useState(true);
@@ -39,7 +44,7 @@ export default function ExportArchiveModal({ isOpen, onClose, session }) {
       onClose();
     } catch (err) {
       console.error("Export error:", err);
-      alert("Export failed. Please try again.");
+      toast.error("Export failed. Please try again.");
     } finally {
       setExporting(false);
     }

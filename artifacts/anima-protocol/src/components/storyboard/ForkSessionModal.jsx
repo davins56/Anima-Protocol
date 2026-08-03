@@ -1,7 +1,11 @@
+// @ts-check
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { X } from "lucide-react";
 
+/**
+ * @param {{ storypoint: any, onClose: () => void, onSuccess: (id: string) => void }} props
+ */
 export default function ForkSessionModal({ storypoint, onClose, onSuccess }) {
   const [sessionName, setSessionName] = useState(`${storypoint.title} [ALT]`);
   const [saving, setSaving] = useState(false);

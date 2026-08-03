@@ -137,11 +137,11 @@ export default function AgeVerificationGate({ onVerify, isOptional = false }) {
       {/* Legal Note */}
       <p className="text-[8px] font-mono text-primary/20 text-center">
         By continuing, you acknowledge you have read and agree to our{' '}
-        <a href="/terms-of-service.html" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
+        <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
           Terms of Service
         </a>{' '}
         and{' '}
-        <a href="/privacy-policy.html" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
+        <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
           Privacy Policy
         </a>.
       </p>

@@ -1,0 +1,19 @@
+run = "npm install && npm run dev"
+
+language = "nodejs"
+
+onBoot = ["npm install"]
+
+[env]
+NODE_ENV = "development"
+
+[[ports]]
+localPort = 5173
+externalPort = 80
+description = "Frontend"
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
+description = "Backend API"
+

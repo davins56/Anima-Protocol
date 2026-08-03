@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Feature Messaging Guide
  * 
@@ -73,9 +74,13 @@ export const FEATURE_MESSAGING = {
 /**
  * Get feature message with fallback
  */
+/**
+ * @param {keyof typeof FEATURE_MESSAGING} key
+ * @param {string} [field]
+ */
 export function getFeatureMessage(key, field = 'new') {
   const feature = FEATURE_MESSAGING[key];
   if (!feature) return null;
   if (typeof feature === 'string') return feature;
-  return feature[field] || feature.new || feature.old;
+  return (/** @type {Record<string, string>} */ (feature))[field] || feature.new || feature.old;
 }

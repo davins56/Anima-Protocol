@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Lightweight client-side mood detector.
  * Analyzes AI response text and maps it to a predefined mood.

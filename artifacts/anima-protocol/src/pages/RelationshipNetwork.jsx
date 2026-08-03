@@ -62,7 +62,7 @@ export default function RelationshipNetwork() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
         <p className="font-mono text-primary/30 text-sm tracking-widest uppercase animate-pulse">
           Loading network...
         </p>
@@ -71,8 +71,8 @@ export default function RelationshipNetwork() {
   }
 
   return (
-    <div className="min-h-screen bg-background scanline">
-      <div className="flex flex-col h-screen">
+    <div className="flex-1 min-h-0 flex flex-col bg-background scanline">
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md p-6">
           <div className="flex items-center justify-between gap-4 mb-4">

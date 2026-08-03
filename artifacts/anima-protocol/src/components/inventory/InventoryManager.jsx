@@ -4,11 +4,15 @@ import { Plus, X, Loader, Filter, TrendingUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import InventoryItemCard from "./InventoryItemCard";
 import InventoryItemForm from "./InventoryItemForm";
+import { deleteWithUndo } from "@/lib/undoableDelete";
 
 const ITEM_TYPES = ["all", "gear", "consumable", "weapon", "armor", "artifact", "misc"];
 const SLOTS = ["none", "head", "chest", "hands", "feet", "weapon", "offhand", "accessory"];
 
+import { useConfirm } from "@/lib/ConfirmDialog";
+
 export default function InventoryManager({ characterId, sessionId, onItemsChange }) {
+  const confirm = useConfirm();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -65,14 +69,20 @@ export default function InventoryManager({ characterId, sessionId, onItemsChange
   };
 
   const handleDeleteItem = async (itemId) => {
-    if (!confirm("Delete this item?")) return;
-    try {
-      await base44.entities.Inventory.delete(itemId);
-      setItems(prev => prev.filter(i => i.id !== itemId));
-      onItemsChange?.([...items].filter(i => i.id !== itemId));
-    } catch (err) {
-      console.error("Error deleting item:", err);
-    }
+    const ok = await confirm({
+      title: "Delete this item?",
+      message: "You'll have a few seconds to undo this.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+    await deleteWithUndo({
+      entity: "Inventory",
+      item,
+      label: "Item",
+      onChange: loadItems,
+    });
   };
 
   const handleEquipItem = async (itemId) => {

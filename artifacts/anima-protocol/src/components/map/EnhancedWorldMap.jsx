@@ -112,9 +112,12 @@ export default function EnhancedWorldMap({ sessionId }) {
               y={loc.y_coord * 6 + 28}
               textAnchor="middle"
               className="font-mono text-[10px] fill-current"
-              style={{ color: loc.color_hex || "#60A5FA" }}
+              style={{
+                color: loc.color_hex || "#60A5FA",
+                cursor: "pointer",
+                pointerEvents: "auto",
+              }}
               onClick={() => setSelectedLocation(loc)}
-              style={{ cursor: "pointer", pointerEvents: "auto" }}
             >
               {loc.name}
             </text>

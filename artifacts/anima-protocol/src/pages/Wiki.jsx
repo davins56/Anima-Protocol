@@ -2,10 +2,13 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
+import { useConfirm } from "@/lib/ConfirmDialog";
 import { BookOpen, Map, Shield, Scroll, Search, Trash2, Plus, X, Loader, Network, ArrowLeft } from "lucide-react";
 import RelationshipTimeline from "@/components/lorebook/RelationshipTimeline";
 
 export default function Wiki() {
+  const confirm = useConfirm();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
 
@@ -22,10 +25,6 @@ export default function Wiki() {
   const [savingEntity, setSavingEntity] = useState(false);
   const [showVisualization, setShowVisualization] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     setLoading(true);
     const [l, loc, s] = await Promise.all([
@@ -39,12 +38,31 @@ export default function Wiki() {
     setLoading(false);
   };
 
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadData);
+
   const handleDeleteLore = async (id) => {
+    const ok = await confirm({
+      title: "Delete this lore entry?",
+      message: "This permanently removes the entry and cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     await base44.entities.WorldState.delete(id);
     await loadData();
   };
 
   const handleDeleteLocation = async (id) => {
+    const ok = await confirm({
+      title: "Delete this location?",
+      message: "This permanently removes the location and cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     await base44.entities.Location.delete(id);
     await loadData();
   };
@@ -130,7 +148,7 @@ export default function Wiki() {
   };
 
   return (
-    <div className="min-h-screen bg-background overflow-x-hidden">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background overflow-x-hidden">
       <div className="w-full px-4 sm:px-6 py-6">
         {/* Header */}
          <div className="mb-8 flex items-start justify-between gap-4">

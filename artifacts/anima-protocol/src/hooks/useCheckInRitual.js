@@ -10,6 +10,11 @@ export const setGlobalCheckInContext = (ctx) => {
   _globalCheckInContext = ctx;
   _listeners.forEach(fn => fn(ctx));
 };
+// Subscribe to check-in updates (e.g. to refresh derived context). Returns an unsubscribe fn.
+export const subscribeCheckInContext = (fn) => {
+  _listeners.add(fn);
+  return () => _listeners.delete(fn);
+};
 
 export const useCheckInRitual = (sessionId, characterId) => {
   const [showCheckIn, setShowCheckIn] = useState(false);

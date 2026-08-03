@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from 'react';
 import { BookOpen, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -5,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 /**
  * Subtle badge that appears when lore keyword is detected.
  * Clicking opens a popover with deeper historical context.
+ * @param {{ loreEntry?: any, position?: string }} props
  */
 export default function LoreKeywordBadge({ loreEntry, position = 'right' }) {
   const [isOpen, setIsOpen] = useState(false);

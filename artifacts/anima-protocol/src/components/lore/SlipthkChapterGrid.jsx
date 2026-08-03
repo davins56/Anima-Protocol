@@ -1,6 +1,8 @@
+// @ts-check
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+/** @type {any[]} */
 const CHAPTERS = [
   {
     id: "chapter_zero",
@@ -150,8 +152,11 @@ It has only ever been arriving.`,
   },
 ];
 
+/**
+ * @param {{ profile?: any }} props
+ */
 export default function SlipthkChapterGrid({ profile }) {
-  const [expanded, setExpanded] = useState(null);
+  const [expanded, setExpanded] = useState(/** @type {string | null} */ (null));
   const unlockedIds = new Set(profile?.unlocked_chapters || ["chapter_zero"]);
   const currentXP = profile?.resonance_xp || 0;
 
@@ -262,7 +267,7 @@ export default function SlipthkChapterGrid({ profile }) {
 
                   {/* Full Lore */}
                   <div className="space-y-3">
-                    {chapter.lore.split("\n\n").map((paragraph, pIdx) => (
+                    {chapter.lore.split("\n\n").map((/** @type {string} */ paragraph, /** @type {number} */ pIdx) => (
                       <p key={pIdx} className="font-mono text-[10px] sm:text-xs leading-relaxed"
                         style={{ color: "rgba(220,210,255,0.55)" }}>
                         {paragraph}
