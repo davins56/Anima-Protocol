@@ -20,19 +20,21 @@ SSO connections → Google (same value for GitHub/Apple when using the custom do
 
 ## Code requirements (already in the app)
 
-The frontend must pass **relative** paths to Clerk `signIn.sso()` (not absolute
-`https://…` URLs). With the custom-domain publishable key, Clerk talks to
-`clerk.anima-protocol.com` directly (no `/api/__clerk` proxy):
+Sign-in uses Clerk’s built-in social buttons inside `<SignIn>` / `<SignUp>`
+(not custom top-of-page “Continue with …” buttons — those hung on
+`signIn.sso()` with no network). With the custom-domain publishable key, Clerk
+talks to `clerk.anima-protocol.com` directly (no `/api/__clerk` proxy):
 
 | Piece | Location | Expected value |
 |-------|----------|----------------|
-| OAuth redirect paths | `artifacts/anima-protocol/src/lib/clerkOAuthPaths.js` | `/sign-in/sso-callback`, `/sign-up/sso-callback` |
+| Social buttons | Clerk `<SignIn>` / `<SignUp>` | GitHub (+ Google once provider redirect is allowlisted) |
 | Clerk proxy | `artifacts/anima-protocol/src/lib/clerkProxy.js` | empty on production custom domain; `/api/__clerk/` only when no custom FAPI host |
 | Provider OAuth callback | derived from publishable key | `https://clerk.anima-protocol.com/v1/oauth_callback` |
 | SSO routes | `artifacts/anima-protocol/src/App.full.jsx` | `/sign-in/sso-callback`, `/sign-up/sso-callback`, `/sso-callback` |
 
-Absolute app URLs in `signIn.sso()` cause Clerk validation errors such as
-*"The string did not match the expected pattern"* and prevent redirects.
+**Use https://www.anima-protocol.com/sign-in** for GitHub login. Protected
+`*.vercel.app` preview URLs block OAuth callbacks (Vercel Deployment Protection)
+and often show false “Clerk SDK did not finish loading” warnings.
 
 ## 1. Fix Vercel production keys
 

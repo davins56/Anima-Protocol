@@ -5,7 +5,8 @@
  * configured in the Clerk dashboard exactly (production uses www.anima-protocol.com).
  */
 
-const ANIMA_WWW = 'https://www.anima-protocol.com';
+export const ANIMA_APEX_HOST = 'anima-protocol.com';
+const ANIMA_WWW = `https://www.${ANIMA_APEX_HOST}`;
 
 function clerkProxyEnvValue() {
   return typeof import.meta.env.VITE_CLERK_PROXY_URL === 'string'
@@ -41,12 +42,38 @@ export function isVercelPreviewHost(hostname) {
 }
 
 export function isAnimaProductionHost(hostname) {
-  const host = (hostname || '').toLowerCase();
+  const host = (hostname || '').toLowerCase().replace(/:\d+$/, '');
   return (
-    host === 'anima-protocol.com' ||
-    host === 'www.anima-protocol.com' ||
-    host.endsWith('.anima-protocol.com')
+    host === ANIMA_APEX_HOST ||
+    host === `www.${ANIMA_APEX_HOST}` ||
+    host.endsWith(`.${ANIMA_APEX_HOST}`)
   );
+}
+
+function encodeClerkPublishableKeyHost(hostname) {
+  const payload = `clerk.${hostname}$`;
+  // Clerk publishable keys omit base64 padding (`=`).
+  let encoded = '';
+  if (typeof btoa === 'function') {
+    encoded = btoa(payload);
+  } else if (typeof Buffer !== 'undefined') {
+    encoded = Buffer.from(payload, 'utf8').toString('base64');
+  }
+  return encoded.replace(/=+$/, '');
+}
+
+/**
+ * Build a Clerk publishable key from a browser host without importing Clerk's
+ * private internals. The production app uses a Clerk custom domain at the apex;
+ * deriving from `www.anima-protocol.com` would point Clerk at the invalid
+ * `clerk.www.anima-protocol.com` host and prevent clerk-js from loading.
+ */
+export function publishableKeyFromFrontendHost(hostname, fallbackKey = '') {
+  const host = (hostname || '').toLowerCase().replace(/:\d+$/, '');
+  if (!host) return fallbackKey || '';
+  const clerkHost = isAnimaProductionHost(host) ? ANIMA_APEX_HOST : host;
+  const encodedHost = encodeClerkPublishableKeyHost(clerkHost);
+  return encodedHost ? `pk_live_${encodedHost}` : fallbackKey || '';
 }
 
 export function ensureTrailingSlash(url) {
