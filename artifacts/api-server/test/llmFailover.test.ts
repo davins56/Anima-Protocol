@@ -1,0 +1,532 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const createMock = vi.fn();
+
+vi.mock("../src/lib/openaiClient", () => {
+  const client = {
+    chat: { completions: { create: (...args: unknown[]) => createMock(...args) } },
+  };
+  return {
+    hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
+    hasXaiKey: () => Boolean(process.env.XAI_API_KEY?.trim()),
+    hasGeminiKey: () =>
+      Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
+    getOpenAIClient: () => client,
+    getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
+    getGeminiClient: () =>
+      process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()
+        ? client
+        : null,
+    normalizeApiKey: (raw: string | undefined) => {
+      if (!raw) return null;
+      return raw.trim() || null;
+    },
+    resetLlmClientsForTests: () => {},
+  };
+});
+
+import {
+  createChatCompletionWithFailover,
+  createChatStreamWithFailover,
+  getConfiguredProviderMode,
+  getPreferredProvider,
+  getProviderChain,
+  isOpenAIBlocked,
+  isProviderAuthError,
+  extractXaiBillingUrl,
+  isProviderUnusableError,
+  resetLlmFailoverStateForTests,
+  resolveGeminiModel,
+  resolveXaiModel,
+} from "../src/lib/llmFailover";
+
+function fakeStream(label = "ok") {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { choices: [{ delta: { content: label } }] };
+    },
+  };
+}
+
+function fakeCompletion(content = "ok") {
+  return { choices: [{ message: { content } }] };
+}
+
+describe("isProviderUnusableError", () => {
+  it("detects OpenAI credit / quota exhaustion (the screenshot 429)", () => {
+    expect(
+      isProviderUnusableError({
+        status: 429,
+        message:
+          "429 You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/",
+      }),
+    ).toBe(true);
+    expect(
+      isProviderUnusableError({ status: 429, code: "insufficient_quota" }),
+    ).toBe(true);
+    expect(isProviderUnusableError({ status: 402, message: "Payment required" })).toBe(true);
+  });
+
+  it("detects 401 / invalid API key (including SDK 'no body' message)", () => {
+    expect(isProviderAuthError({ status: 401, message: "401 status code (no body)" })).toBe(
+      true,
+    );
+    expect(isProviderUnusableError({ status: 401, message: "401 status code (no body)" })).toBe(
+      true,
+    );
+    expect(
+      isProviderUnusableError({
+        status: 401,
+        code: "invalid_api_key",
+        message: "Incorrect API key provided",
+      }),
+    ).toBe(true);
+  });
+
+  it("detects xAI team with no credits/licenses (403)", () => {
+    const xaiTeamError = {
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+    };
+    expect(isProviderUnusableError(xaiTeamError)).toBe(true);
+    expect(extractXaiBillingUrl(xaiTeamError)).toBe(
+      "https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374",
+    );
+  });
+
+  it("does not treat model-unavailable as provider-unusable", () => {
+    expect(
+      isProviderUnusableError({
+        status: 404,
+        message: "The model does not exist",
+        code: "model_not_found",
+      }),
+    ).toBe(false);
+    expect(isProviderUnusableError({ status: 500, message: "internal error" })).toBe(false);
+  });
+});
+
+describe("resolveXaiModel / resolveGeminiModel", () => {
+  const SAVED = { ...process.env };
+  afterEach(() => {
+    process.env = { ...SAVED };
+  });
+
+  it("defaults per tier and honors env overrides for xAI", () => {
+    delete process.env.ANIMA_XAI_MODEL;
+    delete process.env.ANIMA_XAI_MODEL_LIGHT;
+    delete process.env.ANIMA_XAI_MODEL_STANDARD;
+    delete process.env.ANIMA_XAI_MODEL_HEAVY;
+    expect(resolveXaiModel("light").model).toBe("grok-3-mini");
+    expect(resolveXaiModel("standard").model).toBe("grok-3");
+    expect(resolveXaiModel("heavy").model).toBe("grok-4");
+
+    process.env.ANIMA_XAI_MODEL_HEAVY = "grok-4.5";
+    expect(resolveXaiModel("heavy").model).toBe("grok-4.5");
+  });
+
+  it("defaults per tier and honors env overrides for Gemini", () => {
+    delete process.env.ANIMA_GEMINI_MODEL;
+    delete process.env.ANIMA_GEMINI_MODEL_LIGHT;
+    delete process.env.ANIMA_GEMINI_MODEL_STANDARD;
+    delete process.env.ANIMA_GEMINI_MODEL_HEAVY;
+    expect(resolveGeminiModel("light").model).toBe("gemini-2.5-flash-lite");
+    expect(resolveGeminiModel("standard").model).toBe("gemini-2.5-flash");
+    expect(resolveGeminiModel("heavy").model).toBe("gemini-2.5-pro");
+
+    process.env.ANIMA_GEMINI_MODEL_STANDARD = "gemini-3.6-flash";
+    expect(resolveGeminiModel("standard").model).toBe("gemini-3.6-flash");
+  });
+});
+
+describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
+  const SAVED = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...SAVED };
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.XAI_API_KEY = "xai-test";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_DISABLE_OPENAI;
+    resetLlmFailoverStateForTests();
+  });
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmFailoverStateForTests();
+  });
+
+  it("auto prefers Grok/Gemini over OpenAI when alt keys exist", () => {
+    expect(getConfiguredProviderMode()).toBe("auto");
+    expect(isOpenAIBlocked()).toBe(false);
+    expect(getProviderChain()).toEqual(["xai", "gemini", "openai"]);
+    expect(getPreferredProvider()).toBe("xai");
+  });
+
+  it("auto uses OpenAI alone when no alt keys are configured", () => {
+    delete process.env.XAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    expect(getProviderChain()).toEqual(["openai"]);
+    expect(getPreferredProvider()).toBe("openai");
+  });
+
+  it("forces OpenAI-first when ANIMA_LLM_PROVIDER=openai", () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
+    expect(getProviderChain()).toEqual(["openai", "xai", "gemini"]);
+    expect(getPreferredProvider()).toBe("openai");
+  });
+
+  it("blocks OpenAI when ANIMA_LLM_PROVIDER=xai", () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    expect(getConfiguredProviderMode()).toBe("xai");
+    expect(isOpenAIBlocked()).toBe(true);
+    expect(getProviderChain()).toEqual(["xai", "gemini"]);
+    expect(getPreferredProvider()).toBe("xai");
+  });
+
+  it("accepts grok as an alias for xai", () => {
+    process.env.ANIMA_LLM_PROVIDER = "grok";
+    expect(getConfiguredProviderMode()).toBe("xai");
+    expect(getProviderChain()[0]).toBe("xai");
+  });
+
+  it("blocks OpenAI when ANIMA_LLM_PROVIDER=gemini", () => {
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
+    expect(isOpenAIBlocked()).toBe(true);
+    expect(getProviderChain()).toEqual(["gemini", "xai"]);
+  });
+
+  it("blocks OpenAI under auto when ANIMA_DISABLE_OPENAI=true", () => {
+    process.env.ANIMA_DISABLE_OPENAI = "true";
+    expect(isOpenAIBlocked()).toBe(true);
+    expect(getProviderChain()).toEqual(["xai", "gemini"]);
+  });
+});
+
+describe("createChatStreamWithFailover", () => {
+  const SAVED = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...SAVED };
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.XAI_API_KEY = "xai-test";
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_DISABLE_OPENAI;
+    delete process.env.ANIMA_XAI_MODEL;
+    delete process.env.ANIMA_XAI_MODEL_LIGHT;
+    delete process.env.ANIMA_XAI_MODEL_STANDARD;
+    delete process.env.ANIMA_XAI_MODEL_HEAVY;
+    resetLlmFailoverStateForTests();
+    createMock.mockReset();
+  });
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmFailoverStateForTests();
+  });
+
+  it("uses Grok first under auto when XAI_API_KEY is set (skips dead OpenAI)", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("grok"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("xai");
+    expect(result.model).toBe("grok-3");
+    expect(result.failedOver).toBe(false);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0].model).toBe("grok-3");
+  });
+
+  it("returns OpenAI stream when ANIMA_LLM_PROVIDER=openai", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
+    createMock.mockResolvedValueOnce(fakeStream("hi"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("openai");
+    expect(result.model).toBe("gpt-4o");
+    expect(result.failedOver).toBe(false);
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to Grok when OpenAI reports no credits", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
+    createMock
+      .mockRejectedValueOnce({
+        status: 429,
+        message:
+          "429 You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/",
+      })
+      .mockResolvedValueOnce(fakeStream("grok"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "heavy",
+      model: "gpt-4.1",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "continue" }],
+    });
+
+    expect(result.provider).toBe("xai");
+    expect(result.model).toBe("grok-4");
+    expect(result.failedOver).toBe(true);
+    expect(result.previousProvider).toBe("openai");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[1][0].model).toBe("grok-4");
+  });
+
+  it("falls back from xAI team-no-credits 403 to Gemini", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    createMock
+      .mockRejectedValueOnce({
+        status: 403,
+        message:
+          '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+      })
+      .mockResolvedValueOnce(fakeStream("gemini"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("gemini");
+    expect(result.failedOver).toBe(true);
+    expect(result.previousProvider).toBe("xai");
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("points at the xAI console when Grok has no team credits and no backup", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    createMock.mockRejectedValueOnce({
+      status: 403,
+      message:
+        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+    });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i);
+  });
+
+  it("falls back to Grok on OpenAI 401 status code (no body)", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
+    createMock
+      .mockRejectedValueOnce({
+        status: 401,
+        message: "401 status code (no body)",
+      })
+      .mockResolvedValueOnce(fakeStream("grok"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("xai");
+    expect(result.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a clear auth error when the forced provider key is rejected", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    delete process.env.GEMINI_API_KEY;
+    createMock.mockRejectedValueOnce({
+      status: 401,
+      message: "401 status code (no body)",
+    });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/XAI_API_KEY|authentication failed/i);
+  });
+
+  it("skips OpenAI entirely when ANIMA_LLM_PROVIDER=xai", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    createMock.mockResolvedValueOnce(fakeStream("grok-direct"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("xai");
+    expect(result.model).toBe("grok-3");
+    expect(result.failedOver).toBe(false);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0].model).toBe("grok-3");
+  });
+
+  it("uses Gemini when ANIMA_LLM_PROVIDER=gemini", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    createMock.mockResolvedValueOnce(fakeStream("gemini"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "heavy",
+      model: "gpt-4.1",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("gemini");
+    expect(result.model).toBe("gemini-2.5-pro");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls through OpenAI → xAI → Gemini on quota errors", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    createMock
+      .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" })
+      .mockRejectedValueOnce({ status: 429, message: "rate limit" })
+      .mockResolvedValueOnce(fakeStream("gemini"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("gemini");
+    expect(result.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock.mock.calls[2][0].model).toBe("gemini-2.5-flash");
+  });
+
+  it("retries OpenAI standard model on model-unavailable before giving up", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
+    createMock
+      .mockRejectedValueOnce({
+        status: 404,
+        code: "model_not_found",
+        message: "The model does not exist",
+      })
+      .mockResolvedValueOnce(fakeStream("standard"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "heavy",
+      model: "gpt-4.1",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hi there friend" }],
+    });
+
+    expect(result.provider).toBe("openai");
+    expect(result.model).toBe("gpt-4o");
+    expect(result.failedOver).toBe(false);
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("prefers xAI on subsequent turns after OpenAI billing failure", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "openai";
+    createMock
+      .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" })
+      .mockResolvedValueOnce(fakeStream("grok-1"))
+      .mockResolvedValueOnce(fakeStream("grok-2"));
+
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "one" }],
+    });
+
+    // Clear forced openai so sticky preferNonOpenAI can take effect under auto.
+    delete process.env.ANIMA_LLM_PROVIDER;
+    const second = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "two" }],
+    });
+
+    expect(second.provider).toBe("xai");
+    expect(second.failedOver).toBe(false);
+    // First turn: OpenAI fail + xAI ok. Second turn: xAI only (sticky / auto).
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock.mock.calls[2][0].model).toBe("grok-3");
+  });
+
+  it("surfaces a helpful error when OpenAI is out of credits and no alt key is set", async () => {
+    delete process.env.XAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    createMock.mockRejectedValueOnce({
+      status: 429,
+      message: "429 You have no credits remaining.",
+    });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/XAI_API_KEY|GEMINI_API_KEY|ANIMA_LLM_PROVIDER/);
+  });
+});
+
+describe("createChatCompletionWithFailover", () => {
+  const SAVED = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...SAVED };
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.XAI_API_KEY = "xai-test";
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_DISABLE_OPENAI;
+    resetLlmFailoverStateForTests();
+    createMock.mockReset();
+  });
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmFailoverStateForTests();
+  });
+
+  it("returns non-streaming content from the preferred provider", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    createMock.mockResolvedValueOnce(fakeCompletion("companion json"));
+
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "make a character" }],
+    });
+
+    expect(result.content).toBe("companion json");
+    expect(result.provider).toBe("xai");
+    expect(result.model).toBe("grok-3");
+  });
+});
