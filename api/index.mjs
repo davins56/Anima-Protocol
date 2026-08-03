@@ -118662,145 +118662,6 @@ function databaseTargetHint(rawUrl = process.env.DATABASE_URL) {
   }
 }
 
-// src/routes/health.ts
-var router2 = (0, import_express3.Router)();
-if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
-if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
-router2.get("/healthz", (_req, res) => {
-  const data = HealthCheckResponse.parse({ status: "ok" });
-  res.json(data);
-});
-router2.get("/healthz/db", async (_req, res) => {
-  const target = databaseTargetHint();
-  try {
-    const result = await getPool().query("select 1::int as ok");
-    let schema;
-    try {
-      schema = await inspectSchema();
-    } catch (schemaErr) {
-      const info = classifyDbError(schemaErr);
-      res.status(503).json({
-        status: "error",
-        db: true,
-        ok: result.rows?.[0]?.ok === 1,
-        schema: { ok: false, error: info.safeMessage, code: info.code },
-        target
-      });
-      return;
-    }
-    const healthy = schema.ok;
-    res.status(healthy ? 200 : 503).json({
-      status: healthy ? "ok" : "error",
-      db: true,
-      ok: result.rows?.[0]?.ok === 1,
-      schema: {
-        ok: schema.ok,
-        missingTables: schema.missingTables,
-        presentTables: schema.presentTables,
-        hasPgTrgm: schema.hasPgTrgm
-      },
-      target
-    });
-  } catch (err) {
-    const info = classifyDbError(err);
-    res.status(503).json({
-      status: "error",
-      db: false,
-      error: info.safeMessage,
-      code: info.code,
-      target
-    });
-  }
-});
-router2.get("/healthz/schema", async (_req, res) => {
-  const target = databaseTargetHint();
-  try {
-    const schema = await inspectSchema();
-    res.status(schema.ok ? 200 : 503).json({
-      status: schema.ok ? "ok" : "error",
-      schema,
-      target
-    });
-  } catch (err) {
-    const info = classifyDbError(err);
-    res.status(503).json({
-      status: "error",
-      error: info.safeMessage,
-      code: info.code,
-      target
-    });
-  }
-});
-router2.post("/healthz/schema", async (_req, res) => {
-  const target = databaseTargetHint();
-  try {
-    const result = await ensureSchemaOnce();
-    res.status(result.ok ? 200 : 503).json({
-      status: result.ok ? "ok" : "error",
-      ensured: result,
-      target
-    });
-  } catch (err) {
-    const info = classifyDbError(err);
-    res.status(503).json({
-      status: "error",
-      error: info.safeMessage,
-      code: info.code,
-      target
-    });
-  }
-});
-var health_default = router2;
-
-// src/routes/index.ts
-var import_express18 = __toESM(require_express2(), 1);
-
-// src/routes/openai/index.ts
-var import_express5 = __toESM(require_express2(), 1);
-
-// src/lib/rateLimit.ts
-var DEFAULT_WINDOW_MS = 6e4;
-var DEFAULT_MAX_REQUESTS = 120;
-var counts = /* @__PURE__ */ new Map();
-function rateLimitKey(req, name = "default") {
-  try {
-    const { userId } = getAuth(req);
-    if (userId) return `${name}:user:${userId}`;
-  } catch {
-  }
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
-  const realIp = String(req.headers["x-real-ip"] || "").trim();
-  const ip = (req.ip || realIp || forwarded || req.socket.remoteAddress || "unknown").replace(/:\d+$/, "");
-  return `${name}:ip:${ip || "unknown"}`;
-}
-function createRateLimit(options = {}) {
-  const max = options.max ?? DEFAULT_MAX_REQUESTS;
-  const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
-  const name = options.name ?? "default";
-  return function rateLimit2(req, res, next) {
-    const key = rateLimitKey(req, name);
-    const now = Date.now();
-    const entry = counts.get(key);
-    if (!entry || now > entry.resetAt) {
-      counts.set(key, { count: 1, resetAt: now + windowMs });
-      return next();
-    }
-    entry.count += 1;
-    if (entry.count > max) {
-      const retryAfterSec = Math.max(1, Math.ceil((entry.resetAt - now) / 1e3));
-      res.setHeader("Retry-After", String(retryAfterSec));
-      res.status(429).json({
-        error: `Too many requests. Please slow down and retry in about ${retryAfterSec}s.`,
-        code: "rate_limit",
-        retry_after_seconds: retryAfterSec
-      });
-      return;
-    }
-    next();
-  };
-}
-var rateLimit = createRateLimit();
-
 // src/lib/modelRouter.ts
 var DEFAULT_MODELS = {
   light: "gpt-4.1-mini",
@@ -125531,301 +125392,6 @@ function getKimiClient() {
   return kimiClient;
 }
 
-// src/lib/geminiNative.ts
-var GeminiApiError = class extends Error {
-  status;
-  code;
-  constructor(message, opts) {
-    super(message, opts?.cause !== void 0 ? { cause: opts.cause } : void 0);
-    this.name = "GeminiApiError";
-    this.status = opts?.status;
-    this.code = opts?.code;
-  }
-};
-function thinkingBudgetForModel(model) {
-  const raw = process.env.ANIMA_GEMINI_THINKING_BUDGET?.trim();
-  if (raw !== void 0 && raw !== "") {
-    const n2 = Number(raw);
-    if (Number.isFinite(n2)) return Math.trunc(n2);
-  }
-  const m2 = model.toLowerCase();
-  if (m2.includes("pro")) return 1024;
-  return 0;
-}
-function geminiApiKey() {
-  const key = normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY);
-  if (!key) {
-    throw new GeminiApiError(
-      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
-      { status: 401, code: "missing_api_key" }
-    );
-  }
-  return key;
-}
-function geminiNativeBaseUrl() {
-  const raw = process.env.GEMINI_NATIVE_BASE_URL?.trim() || process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta";
-  return raw.replace(/\/openai\/?$/i, "").replace(/\/+$/, "");
-}
-function messageText(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((part) => {
-    if (typeof part === "string") return part;
-    if (part && typeof part === "object" && "type" in part) {
-      if (part.type === "text" && "text" in part) return String(part.text || "");
-    }
-    return "";
-  }).filter(Boolean).join("\n");
-}
-function toGeminiGenerateRequest(messages2, opts) {
-  const systemChunks = [];
-  const contents = [];
-  for (const message of messages2) {
-    const text3 = messageText(message.content).trim();
-    if (!text3) continue;
-    if (message.role === "system" || message.role === "developer") {
-      systemChunks.push(text3);
-      continue;
-    }
-    const role = message.role === "assistant" ? "model" : "user";
-    const last = contents[contents.length - 1];
-    if (last && last.role === role) {
-      last.parts.push({ text: text3 });
-    } else {
-      contents.push({ role, parts: [{ text: text3 }] });
-    }
-  }
-  const systemText = systemChunks.join("\n\n").trim();
-  let systemAsUserContent = false;
-  if (contents.length === 0) {
-    if (!systemText) {
-      throw new GeminiApiError("Gemini request has no message content.", {
-        status: 400,
-        code: "empty_messages"
-      });
-    }
-    contents.push({ role: "user", parts: [{ text: systemText }] });
-    systemAsUserContent = true;
-  }
-  if (contents[0]?.role === "model") {
-    contents.unshift({
-      role: "user",
-      parts: [{ text: "(continue)" }]
-    });
-  }
-  const body = { contents };
-  if (systemText && !systemAsUserContent) {
-    body.systemInstruction = { parts: [{ text: systemText }] };
-  }
-  const generationConfig = {};
-  if (typeof opts?.maxTokens === "number" && opts.maxTokens > 0) {
-    generationConfig.maxOutputTokens = opts.maxTokens;
-  }
-  if (typeof opts?.temperature === "number") {
-    generationConfig.temperature = opts.temperature;
-  }
-  const thinkingBudget = thinkingBudgetForModel(opts?.model || "");
-  if (typeof thinkingBudget === "number") {
-    generationConfig.thinkingConfig = { thinkingBudget };
-  }
-  if (Object.keys(generationConfig).length > 0) {
-    body.generationConfig = generationConfig;
-  }
-  return body;
-}
-function extractCandidateText(payload) {
-  if (!payload || typeof payload !== "object") return "";
-  const candidates = payload.candidates;
-  if (!Array.isArray(candidates) || !candidates[0]) return "";
-  const content = candidates[0].content;
-  const parts = content?.parts;
-  if (!Array.isArray(parts)) return "";
-  return parts.map((part) => {
-    if (!part || typeof part !== "object") return "";
-    if ("thought" in part && part.thought) {
-      return "";
-    }
-    return "text" in part ? String(part.text || "") : "";
-  }).join("");
-}
-function extractFinishReason(payload) {
-  if (!payload || typeof payload !== "object") return void 0;
-  const candidates = payload.candidates;
-  if (!Array.isArray(candidates) || !candidates[0]) return void 0;
-  const reason = candidates[0].finishReason;
-  return typeof reason === "string" ? reason : void 0;
-}
-async function readErrorBody(res) {
-  const raw = await res.text().catch(() => "");
-  if (!raw) {
-    return { message: `${res.status} status code (no body)` };
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    const message = parsed.error?.message || parsed.message || raw;
-    const code = typeof parsed.error?.status === "string" ? parsed.error.status : typeof parsed.error?.code === "string" ? parsed.error.code : void 0;
-    return { message: String(message), code };
-  } catch {
-    return { message: raw };
-  }
-}
-async function geminiFetch(url3, init2) {
-  try {
-    return await fetch(url3, init2);
-  } catch (err) {
-    throw new GeminiApiError(
-      err instanceof Error ? err.message : `Gemini request failed: ${String(err)}`,
-      { status: 502, code: "network_error", cause: err }
-    );
-  }
-}
-function openaiChunk(content) {
-  return {
-    id: "gemini-native",
-    object: "chat.completion.chunk",
-    created: Math.floor(Date.now() / 1e3),
-    model: "gemini",
-    choices: [
-      {
-        index: 0,
-        delta: { content },
-        finish_reason: null
-      }
-    ]
-  };
-}
-function openaiCompletion(content, model) {
-  return {
-    id: "gemini-native",
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1e3),
-    model,
-    choices: [
-      {
-        index: 0,
-        message: { role: "assistant", content, refusal: null },
-        finish_reason: "stop",
-        logprobs: null
-      }
-    ]
-  };
-}
-async function* parseGeminiSse(body) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let emittedText = false;
-  let lastFinishReason;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let sep;
-    while ((sep = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
-      const dataLines = frame.split("\n").filter((line3) => line3.startsWith("data:")).map((line3) => line3.slice(5).trimStart());
-      if (dataLines.length === 0) continue;
-      const data = dataLines.join("\n").trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const payload = JSON.parse(data);
-        const finish = extractFinishReason(payload);
-        if (finish) lastFinishReason = finish;
-        const text3 = extractCandidateText(payload);
-        if (text3) {
-          emittedText = true;
-          yield openaiChunk(text3);
-        }
-      } catch {
-      }
-    }
-  }
-  if (!emittedText) {
-    const reason = lastFinishReason || "EMPTY";
-    throw new GeminiApiError(
-      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
-      { status: 502, code: "empty_visible_text" }
-    );
-  }
-}
-async function createGeminiChatCompletion(opts) {
-  if (!hasGeminiKey()) {
-    throw new GeminiApiError(
-      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
-      { status: 401, code: "missing_api_key" }
-    );
-  }
-  const apiKey = geminiApiKey();
-  const body = toGeminiGenerateRequest(opts.messages, {
-    maxTokens: opts.maxTokens,
-    temperature: opts.temperature,
-    model: opts.model
-  });
-  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:generateContent`;
-  const res = await geminiFetch(url3, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey
-    },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const err = await readErrorBody(res);
-    throw new GeminiApiError(err.message, {
-      status: res.status,
-      code: err.code
-    });
-  }
-  const payload = await res.json();
-  const text3 = extractCandidateText(payload);
-  if (!text3.trim()) {
-    const reason = extractFinishReason(payload) || "EMPTY";
-    throw new GeminiApiError(
-      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
-      { status: 502, code: "empty_visible_text" }
-    );
-  }
-  return openaiCompletion(text3, opts.model);
-}
-async function createGeminiChatStream(opts) {
-  if (!hasGeminiKey()) {
-    throw new GeminiApiError(
-      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
-      { status: 401, code: "missing_api_key" }
-    );
-  }
-  const apiKey = geminiApiKey();
-  const body = toGeminiGenerateRequest(opts.messages, {
-    maxTokens: opts.maxTokens,
-    model: opts.model
-  });
-  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:streamGenerateContent?alt=sse`;
-  const res = await geminiFetch(url3, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey
-    },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const err = await readErrorBody(res);
-    throw new GeminiApiError(err.message, {
-      status: res.status,
-      code: err.code
-    });
-  }
-  if (!res.body) {
-    throw new GeminiApiError("Gemini stream returned an empty body.", {
-      status: 502,
-      code: "empty_stream"
-    });
-  }
-  return parseGeminiSse(res.body);
-}
-
 // src/lib/llmFailover.ts
 var preferNonOpenAI = false;
 var preferNonXai = false;
@@ -125904,6 +125470,29 @@ function getProviderChain(_tier = "standard") {
   }
   return chain;
 }
+function getLlmRoutingStatus(tier = "standard") {
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim() || null;
+  const mode = getConfiguredProviderMode();
+  const chain = getProviderChain(tier);
+  const preferred = chain[0] ?? null;
+  const kimi = hasKimiKey();
+  return {
+    status: preferred ? "ok" : "error",
+    mode,
+    preferred,
+    chain,
+    brand: isAnimaCustomMode() ? "anima" : null,
+    keys: {
+      kimi,
+      openai: hasOpenAIKey(),
+      xai: hasXaiKey(),
+      gemini: hasGeminiKey()
+    },
+    geminiRetiredForChat: true,
+    rawProviderEnv: raw,
+    note: kimi ? "Chat is Kimi-only. Gemini/Grok/OpenAI are not used for chat while KIMI_API_KEY is set." : preferred ? "KIMI_API_KEY is missing \u2014 chat falls back to Grok/OpenAI. Gemini is never used for chat." : "No chat LLM key configured. Set KIMI_API_KEY on Vercel and redeploy."
+  };
+}
 function isProviderAuthError(err) {
   if (!err || typeof err !== "object") return false;
   const e2 = err;
@@ -125954,16 +125543,6 @@ var XAI_ENV_KEYS = {
   standard: "ANIMA_XAI_MODEL_STANDARD",
   heavy: "ANIMA_XAI_MODEL_HEAVY"
 };
-var DEFAULT_GEMINI_MODELS = {
-  light: "gemini-2.5-flash-lite",
-  standard: "gemini-2.5-flash",
-  heavy: "gemini-2.5-pro"
-};
-var GEMINI_ENV_KEYS = {
-  light: "ANIMA_GEMINI_MODEL_LIGHT",
-  standard: "ANIMA_GEMINI_MODEL_STANDARD",
-  heavy: "ANIMA_GEMINI_MODEL_HEAVY"
-};
 var DEFAULT_KIMI_MODELS = {
   light: "kimi-k2.6",
   standard: "kimi-k2.6",
@@ -125983,15 +125562,6 @@ function resolveXaiModel(tier) {
     maxTokens: openaiResolved.maxTokens
   };
 }
-function resolveGeminiModel(tier) {
-  const override = process.env[GEMINI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GEMINI_MODEL?.trim();
-  const openaiResolved = resolveModel(tier);
-  return {
-    tier,
-    model: override || DEFAULT_GEMINI_MODELS[tier],
-    maxTokens: openaiResolved.maxTokens
-  };
-}
 function resolveKimiModel(tier) {
   const override = process.env[KIMI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_KIMI_MODEL?.trim();
   const openaiResolved = resolveModel(tier);
@@ -126003,7 +125573,7 @@ function resolveKimiModel(tier) {
 }
 function providerLabel(id) {
   if (id === "xai") return "Grok (xAI)";
-  if (id === "gemini") return "Gemini";
+  if (id === "gemini") return "Gemini (retired)";
   if (id === "kimi") return "Kimi (Moonshot)";
   return "OpenAI";
 }
@@ -126027,26 +125597,12 @@ function clientFor(provider) {
   return getOpenAIClient();
 }
 function resolveForProvider(provider, tier) {
+  if (provider === "gemini") {
+    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
+  }
   if (provider === "xai") return resolveXaiModel(tier);
-  if (provider === "gemini") return resolveGeminiModel(tier);
   if (provider === "kimi") return resolveKimiModel(tier);
   return resolveModel(tier);
-}
-function markOpenAIUnusable(err) {
-  if (isProviderUnusableError(err) && (hasXaiKey() || hasKimiKey())) {
-    preferNonOpenAI = true;
-  }
-}
-function isXaiCreditsError(err) {
-  if (!isProviderUnusableError(err)) return false;
-  if (extractXaiBillingUrl(err)) return true;
-  const msg = err instanceof Error ? err.message.toLowerCase() : typeof err === "object" && err && "message" in err ? String(err.message || "").toLowerCase() : String(err || "").toLowerCase();
-  return msg.includes("credits or licenses") || msg.includes("no credits or licenses") || msg.includes("console.x.ai") && msg.includes("credit");
-}
-function markXaiUnusable(err) {
-  if (isXaiCreditsError(err) && hasKimiKey()) {
-    preferNonXai = true;
-  }
 }
 function enrichError(err, attempted) {
   const names = attempted.map(providerLabel).join(" \u2192 ");
@@ -126086,11 +125642,7 @@ function enrichError(err, attempted) {
 }
 async function createStream(provider, resolved, messages2) {
   if (provider === "gemini") {
-    return createGeminiChatStream({
-      model: resolved.model,
-      maxTokens: resolved.maxTokens,
-      messages: messages2
-    });
+    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
   }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
@@ -126101,12 +125653,7 @@ async function createStream(provider, resolved, messages2) {
 }
 async function createCompletion(provider, resolved, messages2, temperature) {
   if (provider === "gemini") {
-    return createGeminiChatCompletion({
-      model: resolved.model,
-      maxTokens: resolved.maxTokens,
-      messages: messages2,
-      temperature
-    });
+    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
   }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
@@ -126127,87 +125674,201 @@ async function withModelFallback(provider, preferred, run) {
   }
 }
 async function createChatStreamWithFailover(req) {
-  const chain = getProviderChain(req.tier);
-  const brand = isAnimaCustomMode() ? "anima" : void 0;
-  if (chain.length === 0) {
+  if (!hasKimiKey()) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY (preferred), XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " Gemini is not used for chat."
+      "Chat requires KIMI_API_KEY (or MOONSHOT_API_KEY) on Vercel. Gemini is retired for chat \u2014 remove ANIMA_LLM_PROVIDER=gemini if set, add your Moonshot key from https://platform.kimi.ai, then redeploy."
     );
   }
-  const attempted = [];
-  let lastErr;
-  for (let i2 = 0; i2 < chain.length; i2++) {
-    const provider = chain[i2];
-    attempted.push(provider);
-    const routed = resolveForProvider(provider, req.tier);
-    const preferredModel = provider === "openai" ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens } : routed;
-    try {
-      const { value: stream, resolved } = await withModelFallback(
-        provider,
-        preferredModel,
-        (m2) => createStream(provider, m2, req.messages)
-      );
-      return {
-        stream,
-        provider,
-        brand,
-        model: resolved.model,
-        tier: resolved.tier,
-        failedOver: i2 > 0,
-        previousProvider: i2 > 0 ? chain[0] : void 0
-      };
-    } catch (err) {
-      lastErr = err;
-      if (provider === "openai") markOpenAIUnusable(err);
-      if (provider === "xai") markXaiUnusable(err);
-      if (!isProviderUnusableError(err)) {
-        throw enrichError(err, attempted);
-      }
-    }
+  const brand = isAnimaCustomMode() ? "anima" : void 0;
+  const preferredModel = resolveKimiModel(req.tier);
+  try {
+    const { value: stream, resolved } = await withModelFallback(
+      "kimi",
+      preferredModel,
+      (m2) => createStream("kimi", m2, req.messages)
+    );
+    return {
+      stream,
+      provider: "kimi",
+      brand,
+      model: resolved.model,
+      tier: resolved.tier,
+      failedOver: false
+    };
+  } catch (err) {
+    throw enrichError(err, ["kimi"]);
   }
-  throw enrichError(lastErr, attempted);
 }
 async function createChatCompletionWithFailover(req) {
-  const chain = getProviderChain(req.tier);
-  const brand = isAnimaCustomMode() ? "anima" : void 0;
-  if (chain.length === 0) {
+  if (!hasKimiKey()) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY (preferred), XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " Gemini is not used for chat."
+      "Chat requires KIMI_API_KEY (or MOONSHOT_API_KEY) on Vercel. Gemini is retired for chat \u2014 remove ANIMA_LLM_PROVIDER=gemini if set, add your Moonshot key from https://platform.kimi.ai, then redeploy."
     );
   }
-  const attempted = [];
-  let lastErr;
-  for (let i2 = 0; i2 < chain.length; i2++) {
-    const provider = chain[i2];
-    attempted.push(provider);
-    const routed = resolveForProvider(provider, req.tier);
-    const preferredModel = provider === "openai" && req.model ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens } : routed;
-    try {
-      const { value: completion, resolved } = await withModelFallback(
-        provider,
-        preferredModel,
-        (m2) => createCompletion(provider, m2, req.messages, req.temperature)
-      );
-      return {
-        content: completion.choices[0]?.message?.content ?? "",
-        provider,
-        brand,
-        model: resolved.model,
-        tier: resolved.tier,
-        failedOver: i2 > 0,
-        previousProvider: i2 > 0 ? chain[0] : void 0
-      };
-    } catch (err) {
-      lastErr = err;
-      if (provider === "openai") markOpenAIUnusable(err);
-      if (provider === "xai") markXaiUnusable(err);
-      if (!isProviderUnusableError(err)) {
-        throw enrichError(err, attempted);
-      }
-    }
+  const brand = isAnimaCustomMode() ? "anima" : void 0;
+  const preferredModel = resolveKimiModel(req.tier);
+  try {
+    const { value: completion, resolved } = await withModelFallback(
+      "kimi",
+      preferredModel,
+      (m2) => createCompletion("kimi", m2, req.messages, req.temperature)
+    );
+    const content = completion.choices?.[0]?.message?.content ?? "";
+    return {
+      content: typeof content === "string" ? content : "",
+      provider: "kimi",
+      brand,
+      model: resolved.model,
+      tier: resolved.tier,
+      failedOver: false
+    };
+  } catch (err) {
+    throw enrichError(err, ["kimi"]);
   }
-  throw enrichError(lastErr, attempted);
 }
+
+// src/routes/health.ts
+var router2 = (0, import_express3.Router)();
+if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
+if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
+router2.get("/healthz", (_req, res) => {
+  const data = HealthCheckResponse.parse({ status: "ok" });
+  res.json(data);
+});
+router2.get("/healthz/llm", (_req, res) => {
+  const routing = getLlmRoutingStatus("standard");
+  res.status(routing.status === "ok" ? 200 : 503).json(routing);
+});
+router2.get("/healthz/db", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const result = await getPool().query("select 1::int as ok");
+    let schema;
+    try {
+      schema = await inspectSchema();
+    } catch (schemaErr) {
+      const info = classifyDbError(schemaErr);
+      res.status(503).json({
+        status: "error",
+        db: true,
+        ok: result.rows?.[0]?.ok === 1,
+        schema: { ok: false, error: info.safeMessage, code: info.code },
+        target
+      });
+      return;
+    }
+    const healthy = schema.ok;
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "error",
+      db: true,
+      ok: result.rows?.[0]?.ok === 1,
+      schema: {
+        ok: schema.ok,
+        missingTables: schema.missingTables,
+        presentTables: schema.presentTables,
+        hasPgTrgm: schema.hasPgTrgm
+      },
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      db: false,
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+router2.get("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const schema = await inspectSchema();
+    res.status(schema.ok ? 200 : 503).json({
+      status: schema.ok ? "ok" : "error",
+      schema,
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+router2.post("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const result = await ensureSchemaOnce();
+    res.status(result.ok ? 200 : 503).json({
+      status: result.ok ? "ok" : "error",
+      ensured: result,
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+var health_default = router2;
+
+// src/routes/index.ts
+var import_express18 = __toESM(require_express2(), 1);
+
+// src/routes/openai/index.ts
+var import_express5 = __toESM(require_express2(), 1);
+
+// src/lib/rateLimit.ts
+var DEFAULT_WINDOW_MS = 6e4;
+var DEFAULT_MAX_REQUESTS = 120;
+var counts = /* @__PURE__ */ new Map();
+function rateLimitKey(req, name = "default") {
+  try {
+    const { userId } = getAuth(req);
+    if (userId) return `${name}:user:${userId}`;
+  } catch {
+  }
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
+  const realIp = String(req.headers["x-real-ip"] || "").trim();
+  const ip = (req.ip || realIp || forwarded || req.socket.remoteAddress || "unknown").replace(/:\d+$/, "");
+  return `${name}:ip:${ip || "unknown"}`;
+}
+function createRateLimit(options = {}) {
+  const max = options.max ?? DEFAULT_MAX_REQUESTS;
+  const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
+  const name = options.name ?? "default";
+  return function rateLimit2(req, res, next) {
+    const key = rateLimitKey(req, name);
+    const now = Date.now();
+    const entry = counts.get(key);
+    if (!entry || now > entry.resetAt) {
+      counts.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      const retryAfterSec = Math.max(1, Math.ceil((entry.resetAt - now) / 1e3));
+      res.setHeader("Retry-After", String(retryAfterSec));
+      res.status(429).json({
+        error: `Too many requests. Please slow down and retry in about ${retryAfterSec}s.`,
+        code: "rate_limit",
+        retry_after_seconds: retryAfterSec
+      });
+      return;
+    }
+    next();
+  };
+}
+var rateLimit = createRateLimit();
 
 // src/routes/openai/index.ts
 var router3 = (0, import_express5.Router)();
