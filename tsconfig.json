@@ -2,6 +2,17 @@
   "extends": "./tsconfig.base.json",
   "compileOnSave": false,
   "files": [],
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "noEmitOnError": false,
+    "lib": [
+      "es2022",
+      "dom",
+      "dom.iterable"
+    ]
+  },
   "references": [
     {
       "path": "./artifacts/api-server"
