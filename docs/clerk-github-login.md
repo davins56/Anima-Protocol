@@ -21,17 +21,19 @@ SSO connections → Google (same value for GitHub/Apple when using the custom do
 ## Code requirements (already in the app)
 
 Sign-in uses a custom **email OTP** form (`EmailCodeSignIn`) plus GitHub via
-`Clerk.authenticateWithRedirect` — not the prebuilt `<SignIn>` Continue path.
-Production Clerk also enables magic links (`email_link`); the prebuilt UI often
-chose that after Continue, then sat on “Check your email” forever if the link
-was opened on another device/browser. Forcing `email_code` avoids that hang.
-Do **not** reintroduce custom `signIn.sso()` “Continue with …” buttons — those
-hung with no network. With the custom-domain publishable key, Clerk talks to
-`clerk.anima-protocol.com` directly (no `/api/__clerk` proxy):
+Clerk Future `signIn.sso()` (relative redirect paths from `clerkOAuthPaths`).
+Do **not** call `clerk.authenticateWithRedirect` — that method is not on the
+LoadedClerk object in `@clerk/react` v6 and throws
+`authenticateWithRedirect is not a function`. Production Clerk also enables
+magic links (`email_link`); the prebuilt UI often chose that after Continue,
+then sat on “Check your email” forever if the link was opened on another
+device/browser. Forcing `email_code` avoids that hang. With the custom-domain
+publishable key, Clerk talks to `clerk.anima-protocol.com` directly
+(no `/api/__clerk` proxy):
 
 | Piece | Location | Expected value |
 |-------|----------|----------------|
-| Sign-in UI | `components/auth/EmailCodeSignIn.jsx` | GitHub redirect + email verification **code** |
+| Sign-in UI | `components/auth/EmailCodeSignIn.jsx` | `signIn.sso` GitHub + email verification **code** |
 | Sign-up UI | Clerk `<SignUp>` (waitlist) | Built-in Clerk form |
 | Clerk proxy | `artifacts/anima-protocol/src/lib/clerkProxy.js` | empty on production custom domain; `/api/__clerk/` only when no custom FAPI host |
 | Provider OAuth callback | derived from publishable key | `https://clerk.anima-protocol.com/v1/oauth_callback` |
