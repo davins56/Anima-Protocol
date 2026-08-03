@@ -1,7 +1,9 @@
+// @ts-check
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import Sidebar from "./Sidebar";
 
-export default function TabletSidebar({ ...props }) {
+/** @param {import('react').ComponentProps<typeof Sidebar>} props */
+export default function TabletSidebar(props) {
   const { isTablet } = useResponsiveLayout();
 
   if (!isTablet) return null;

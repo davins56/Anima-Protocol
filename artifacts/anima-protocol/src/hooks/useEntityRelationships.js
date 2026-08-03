@@ -1,9 +1,13 @@
+// @ts-check
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 
 /**
  * Loads an entity + related entities (e.g., character + relationships + inventory).
  * Batches related queries to reduce network calls.
+ * @param {string} entityName
+ * @param {string} entityId
+ * @param {Record<string, any>} [relatedEntities]
  */
 export function useEntityRelationships(entityName, entityId, relatedEntities = {}) {
   const { data, isLoading, error } = useQuery({

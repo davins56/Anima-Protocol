@@ -1,8 +1,9 @@
-iimport { useState } from "react";
+import { useState } from "react";
 import { Upload, FileText, X, Loader, Lock } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { useBiometricAuth } from "@/hooks/useBiometricAuth";
+import { useConfirm } from "@/lib/ConfirmDialog";
 
 export default function YnStoryImporter({ onClose }) {
   const [mode, setMode] = useState("paste"); // "paste" or "upload"
@@ -10,6 +11,7 @@ export default function YnStoryImporter({ onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const { authenticate, isAuthenticating, isSupported } = useBiometricAuth();
 
   const handleFileUpload = (e) => {
@@ -40,9 +42,14 @@ export default function YnStoryImporter({ onClose }) {
 
     // If importing from link and not authenticated with Y/n, prompt login
     if (mode === "link" && !content.includes("localhost")) {
-      const confirmed = window.confirm(
-        "You may need to be logged into Y/n to access this story. Would you like to log in first?"
-      );
+      const confirmed = await confirm({
+        heading: "Login",
+        title: "Log in to Y/n first?",
+        message:
+          "You may need to be logged into Y/n to access this story. Log in before importing?",
+        confirmLabel: "Log In",
+        cancelLabel: "Not Now",
+      });
       if (confirmed) {
         handleLoginToYn();
         return;

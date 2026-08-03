@@ -61,7 +61,7 @@ export default function RelationshipGraph() {
   const currentSession = sessions.find(s => s.id === selectedSession);
 
   return (
-    <div className="min-h-screen bg-background overflow-hidden flex flex-col">
+    <div className="flex-1 min-h-0 bg-background overflow-hidden flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-primary/20 bg-black/60 backdrop-blur-md">
         <div>

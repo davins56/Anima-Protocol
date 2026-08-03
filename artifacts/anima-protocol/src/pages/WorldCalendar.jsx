@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { ArrowLeft, Calendar, Cloud, Wind, Flame, Snowflake, Sparkles, Loader, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 
 const SEASONS = {
   spring: { icon: Wind, color: "text-green-400", desc: "Awakening • Growth • Renewal" },
@@ -67,7 +68,7 @@ export default function WorldCalendar() {
       });
       if (result?.data?.suggestions) {
         // Show suggestions in a list or modal
-        alert(`Generated ${result.data.suggestions.length} event suggestions`);
+        toast.success(`Generated ${result.data.suggestions.length} event suggestions`);
       }
     } catch (err) {
       console.error("Error generating events:", err);
@@ -98,7 +99,7 @@ export default function WorldCalendar() {
 
   if (!selectedSession) {
     return (
-      <div className="min-h-[100dvh] bg-background scanline flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background scanline flex items-center justify-center">
         <div className="text-center space-y-4">
           <Calendar className="w-12 h-12 text-primary/20 mx-auto" />
           <p className="font-mono text-primary/40 text-sm tracking-[0.3em] uppercase">Select a session</p>
@@ -111,7 +112,7 @@ export default function WorldCalendar() {
   const seasonData = calendar ? SEASONS[calendar.current_season] : {};
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">

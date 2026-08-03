@@ -1,6 +1,8 @@
+// @ts-check
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, Plus } from 'lucide-react';
 
+/** @type {Record<string, string>} */
 const typeIcons = {
   character: '👤',
   location: '📍',
@@ -12,6 +14,9 @@ const typeIcons = {
   lore: '📜',
 };
 
+/**
+ * @param {{ entities?: any[], isExtracting?: boolean, onAddToWiki?: (entity: any) => void }} props
+ */
 export default function AutoDetectedEntities({
   entities = [],
   isExtracting = false,
@@ -34,7 +39,7 @@ export default function AutoDetectedEntities({
       </div>
 
       <AnimatePresence>
-        {entities.map((entity, idx) => (
+        {entities.map((/** @type {any} */ entity, /** @type {number} */ idx) => (
           <motion.div
             key={`${entity.name}-${idx}`}
             initial={{ opacity: 0, x: -10 }}

@@ -1,6 +1,10 @@
+// @ts-check
 import { motion } from 'framer-motion';
 import { Lock } from 'lucide-react';
 
+/**
+ * @param {{ isCheckInRequired?: boolean, children?: import('react').ReactNode }} props
+ */
 export default function ChatGatekeeper({ isCheckInRequired, children }) {
   if (!isCheckInRequired) {
     return children;

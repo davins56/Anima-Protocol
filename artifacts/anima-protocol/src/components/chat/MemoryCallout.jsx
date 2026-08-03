@@ -1,9 +1,13 @@
+// @ts-check
 import { motion } from "framer-motion";
 import { Zap } from "lucide-react";
 
 /**
  * Visual callout that appears when AI references a prior memory.
  * Creates the magical "they remember me" moment.
+ */
+/**
+ * @param {{ memory?: any, isVisible?: boolean }} props
  */
 export default function MemoryCallout({ memory, isVisible }) {
   if (!isVisible || !memory) return null;

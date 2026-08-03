@@ -1,6 +1,10 @@
+// @ts-check
 import { Maximize2, Minimize2 } from "lucide-react";
 import { motion } from "framer-motion";
 
+/**
+ * @param {{ isFocusMode?: boolean, onToggle?: () => void }} props
+ */
 export default function FocusModeToggle({ isFocusMode, onToggle }) {
   return (
     <motion.button

@@ -1,3 +1,4 @@
+// @ts-check
 import { Heart, Github, Mail } from 'lucide-react';
 
 export default function Footer() {

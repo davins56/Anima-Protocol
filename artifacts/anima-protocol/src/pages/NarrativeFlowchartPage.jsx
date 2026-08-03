@@ -1,29 +1,88 @@
+// @ts-check
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { base44 } from "@/api/base44Client";
 import NarrativeFlowchart from "@/components/branching/NarrativeFlowchart";
 import CharacterVoiceConfig from "@/components/voice/CharacterVoiceConfig";
 import { ChevronLeft, Volume2, GitBranch } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 export default function NarrativeFlowchartPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const sessionId = searchParams.get("session");
   const [activeTab, setActiveTab] = useState("flowchart");
-  const [restoringSnapshot, setRestoringSnapshot] = useState(null);
+  const [restoringSnapshot, setRestoringSnapshot] = useState(/** @type {any} */ (null));
 
-  const handleRestore = async (snapshot) => {
+  const handleRestore = async (/** @type {any} */ snapshot) => {
     setRestoringSnapshot(snapshot);
     // The actual restoration would be handled by the Chat page
     // This just passes the snapshot info
   };
 
-  const handleFork = (snapshot) => {
-    // Trigger fork creation
-    window.alert(`Fork from: ${snapshot.branch_name}`);
+  const handleFork = async (/** @type {any} */ snapshot) => {
+    try {
+      // Find the source session this snapshot belongs to.
+      const sourceSession = await base44.entities.ChatSession.get(
+        snapshot.session_id,
+      );
+
+      if (!sourceSession) {
+        toast.error("Could not find the original session to fork from.");
+        return;
+      }
+
+      // Copy the story up to the snapshot's point. If the snapshot pins a
+      // specific message index, branch from there; otherwise carry the whole
+      // history.
+      const sourceMessages = sourceSession.messages || [];
+      const forkedMessages =
+        typeof snapshot.message_index === "number"
+          ? sourceMessages.slice(0, snapshot.message_index + 1)
+          : sourceMessages;
+
+      const forkTitle = `${sourceSession.title || snapshot.branch_name || "Story"} [FORK]`;
+
+      // Create the new branch session.
+      const forkedSession = await base44.entities.ChatSession.create({
+        title: forkTitle,
+        mode: sourceSession.mode,
+        character_id: sourceSession.character_id || null,
+        group_character_ids: sourceSession.group_character_ids || [],
+        messages: forkedMessages,
+        last_message: forkedMessages[forkedMessages.length - 1]?.content?.slice(0, 60) || "",
+        parent_session_id: sourceSession.id,
+        fork_snapshot_id: snapshot.id,
+      });
+
+      // Record the fork as a new branch in the narrative tree, linked to the
+      // snapshot it diverged from.
+      await base44.entities.WorldSnapshot.create({
+        session_id: forkedSession.id,
+        branch_name: forkTitle,
+        decision_point: `Forked from "${snapshot.branch_name}"`,
+        parent_snapshot_id: snapshot.id,
+        message_index: forkedMessages.length - 1,
+        depth: (snapshot.depth || 0) + 1,
+        outcome_summary: `An alternate timeline branching from ${snapshot.branch_name}.`,
+        world_state: {
+          forked_from_session: sourceSession.id,
+          forked_from_snapshot: snapshot.id,
+        },
+        relationship_snapshots: [],
+        is_active: true,
+      });
+
+      toast.success(`Forked "${snapshot.branch_name}" into a new branch.`);
+      navigate(`/chat/${forkedSession.id}`);
+    } catch (err) {
+      console.error("Error forking snapshot:", err);
+      toast.error("Failed to create the fork. Please try again.");
+    }
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">

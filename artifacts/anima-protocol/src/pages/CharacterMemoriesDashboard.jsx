@@ -115,7 +115,7 @@ export default function CharacterMemoriesDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background">
+      <div className="flex items-center justify-center flex-1 min-h-0 bg-background">
         <div className="text-center">
           <Loader className="w-8 h-8 text-primary/60 animate-spin mx-auto mb-3" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -127,7 +127,7 @@ export default function CharacterMemoriesDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6 lg:p-8">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-6 lg:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">

@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { base44, exportData } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
+import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
-  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink
+  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle, Wand2, Palette
 } from "lucide-react";
-const resetTutorial = () => localStorage.removeItem("serenity_tutorial_seen_v1");
+import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
@@ -12,8 +14,19 @@ import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen } from "lucide-react";
 import UserContextSettings from "@/components/anima/UserContextSettings";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
+import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
+import { performRestoreFlow } from "@/lib/restoreHandlers";
+import { repairStarterCharacters } from "@/lib/seedCharacters";
 
-const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
+const SECTION = {
+  ACCOUNT: "account",
+  CUSTOMISE_ANIMA: "customise-anima",
+  BACKGROUND: "background",
+  AI: "ai",
+  INTERFACE: "interface",
+  DATA: "data",
+  LEGAL: "legal",
+};
 
 const defaultPrefs = {
   ai_creativity: 0.7,
@@ -36,6 +49,7 @@ const defaultPrefs = {
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [section, setSection] = useState(SECTION.ACCOUNT);
   const [user, setUser] = useState(null);
   const [prefs, setPrefs] = useState(defaultPrefs);
@@ -51,6 +65,20 @@ export default function Settings() {
   const [showAdultGate, setShowAdultGate] = useState(false);
   const [assigningVoices, setAssigningVoices] = useState(false);
   const [voicesAssigned, setVoicesAssigned] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportedAt, setExportedAt] = useState(null);
+  const [exportError, setExportError] = useState(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState(null);
+  const [pendingRestore, setPendingRestore] = useState(null);
+  const [confirmReplace, setConfirmReplace] = useState(false);
+  // Summary of the user's CURRENT data, loaded lazily when they choose to
+  // "Replace Everything" so the confirm step can show exactly what gets wiped.
+  const [currentSummary, setCurrentSummary] = useState(null);
+  const [loadingCurrent, setLoadingCurrent] = useState(false);
+  const [restoringStarters, setRestoringStarters] = useState(false);
+  const [startersRestored, setStartersRestored] = useState(false);
+  const [startersRestoreError, setStartersRestoreError] = useState(null);
 
   useEffect(() => {
     loadUser();
@@ -66,7 +94,9 @@ export default function Settings() {
 
   const loadStats = async () => {
     const [sessions, chars] = await Promise.all([
-      base44.entities.ChatSession.list("-created_date", 200),
+      // Stats only needs the row count — skip hydrating every session's full
+      // message history so this loads instantly for users with lots of chats.
+      base44.entities.ChatSession.list("-created_date", 200, { withMessages: false }),
       base44.entities.Character.list("-created_date", 200),
     ]);
     setSessionCount(sessions.length);
@@ -81,18 +111,32 @@ export default function Settings() {
 
   const handleClearSessions = async () => {
     setClearingData("sessions");
-    const sessions = await base44.entities.ChatSession.list("-created_date", 200);
-    await Promise.all(sessions.map((s) => base44.entities.ChatSession.delete(s.id)));
-    await loadStats();
-    setClearingData(null);
+    try {
+      const sessions = await base44.entities.ChatSession.list("-created_date", 200);
+      await deleteAllWithUndo({
+        entity: "ChatSession",
+        items: sessions,
+        label: "chat sessions",
+        onChange: loadStats,
+      });
+    } finally {
+      setClearingData(null);
+    }
   };
 
   const handleClearCustomChars = async () => {
     setClearingData("chars");
-    const chars = await base44.entities.Character.filter({ is_default: false });
-    await Promise.all(chars.map((c) => base44.entities.Character.delete(c.id)));
-    await loadStats();
-    setClearingData(null);
+    try {
+      const chars = await base44.entities.Character.filter({ is_default: false });
+      await deleteAllWithUndo({
+        entity: "Character",
+        items: chars,
+        label: "characters",
+        onChange: loadStats,
+      });
+    } finally {
+      setClearingData(null);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -100,7 +144,8 @@ export default function Settings() {
     try {
       // Fetch all linked entities in parallel
       const [sessions, chars, memories, vectorMemories, inventory, checkIns, lore, quests] = await Promise.all([
-        base44.entities.ChatSession.list("-created_date", 500),
+        // Deleting only needs each session's id — skip message hydration.
+        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
         base44.entities.Character.filter({ is_default: false }),
         base44.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
         base44.entities.VectorMemory.list("-created_date", 500).catch(() => []),
@@ -120,9 +165,9 @@ export default function Settings() {
         ...lore.map((l) => base44.entities.WorldState.delete(l.id)),
         ...quests.map((q) => base44.entities.Quest.delete(q.id)),
       ]);
-      // Clear local storage and logout
+      // Clear local storage and sign out via Clerk
       localStorage.clear();
-      base44.auth.logout("/");
+      await logout();
     } catch (err) {
       console.error("Error deleting account:", err);
       setDeletingAccount(false);
@@ -135,7 +180,8 @@ export default function Settings() {
     try {
       // Fetch all deletable entity lists in parallel
       const [sessions, chars, animas, quests, lore, memories, worldStates, checkIns, crystals, resonance, userContexts, graphs] = await Promise.all([
-        base44.entities.ChatSession.list("-created_date", 500),
+        // Deleting only needs each session's id — skip message hydration.
+        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
         base44.entities.Character.filter({ is_default: false }),
         base44.entities.Anima.list("-created_date", 500),
         base44.entities.Quest.list("-created_date", 500),
@@ -180,7 +226,88 @@ export default function Settings() {
     }
   };
 
-  const handleLogout = () => base44.auth.logout("/");
+  const handleExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const data = await exportData();
+      const payload = JSON.stringify(data, null, 2);
+      const blob = new Blob([payload], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `anima-backup-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportedAt(new Date());
+      return true;
+    } catch (err) {
+      console.error("Export failed:", err);
+      setExportError(err?.message || "Export failed");
+      return false;
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleRestoreFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setRestoreResult(null);
+    try {
+      const text = await file.text();
+      // Validate + summarize before staging; throws (friendly message) for a
+      // malformed file so nothing is staged and no network call is made.
+      const staged = parseBackup(text);
+      // Defer the actual write until the user picks merge vs replace.
+      setPendingRestore(staged);
+      setConfirmReplace(false);
+    } catch (err) {
+      console.error("Restore failed:", err);
+      setRestoreResult({ ok: false, message: err?.message || "Restore failed" });
+    }
+  };
+
+  const performRestore = (mode) =>
+    performRestoreFlow(mode, {
+      pendingRestore,
+      setRestoring,
+      setRestoreResult,
+      setPendingRestore,
+      setConfirmReplace,
+      loadStats,
+      loadUser,
+    });
+
+  // Move to the "Replace Everything" confirm step, lazily loading a summary of
+  // the user's current data so we can show exactly how much will be wiped.
+  const beginReplace = async () => {
+    setConfirmReplace(true);
+    if (currentSummary || loadingCurrent) return;
+    setLoadingCurrent(true);
+    try {
+      const data = await exportData();
+      setCurrentSummary(summarizeEntities(data?.entities));
+    } catch (err) {
+      console.error("Failed to load current data summary:", err);
+      setCurrentSummary(null);
+    } finally {
+      setLoadingCurrent(false);
+    }
+  };
+
+  const cancelRestore = () => {
+    setPendingRestore(null);
+    setConfirmReplace(false);
+    setCurrentSummary(null);
+    setLoadingCurrent(false);
+  };
+
+  const handleLogout = () => logout();
   const setPref = (key, val) => setPrefs((p) => ({ ...p, [key]: val }));
 
   const handleAssignVoices = async () => {
@@ -200,6 +327,7 @@ export default function Settings() {
 
   const navItems = [
     { id: SECTION.ACCOUNT, label: "Account", icon: User },
+    { id: SECTION.CUSTOMISE_ANIMA, label: "Customise Anima", icon: Wand2 },
     { id: SECTION.BACKGROUND, label: "Background", icon: BookOpen },
     { id: SECTION.AI, label: "AI Behavior", icon: Bot },
     { id: SECTION.INTERFACE, label: "Interface", icon: Sliders },
@@ -208,7 +336,7 @@ export default function Settings() {
   ];
 
   return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-background scanline">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-4 sm:px-6 py-4 flex-shrink-0 relative z-40">
         <div className="max-w-4xl mx-auto flex items-center gap-3 sm:gap-4">
@@ -255,6 +383,37 @@ export default function Settings() {
                 <InfoRow label="Role" value={user?.role || "user"} />
               </div>
 
+              <SectionTitle>Your Profile</SectionTitle>
+              <button
+                onClick={() => navigate("/profile")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  About you • seen by your Anima
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span>Create or edit your profile</span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+
+              <SectionTitle>Customise Anima</SectionTitle>
+              <button
+                onClick={() => navigate("/customise-anima")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  Shape their look • hair, outfit, eyes & style
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Wand2 className="w-4 h-4 text-primary/60" />
+                    Open Customise Anima
+                  </span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
                 <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
@@ -278,6 +437,57 @@ export default function Settings() {
                 </button>
                 <SaveButton onSave={handleSave} saved={saved} />
               </div>
+            </div>
+          )}
+
+          {/* ── CUSTOMISE ANIMA ── */}
+          {section === SECTION.CUSTOMISE_ANIMA && (
+            <div className="space-y-4">
+              <SectionTitle>Customise Anima</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 border border-primary/30 bg-primary/5 flex items-center justify-center flex-shrink-0">
+                    <Palette className="w-5 h-5 text-primary/70" />
+                  </div>
+                  <div className="space-y-2 min-w-0">
+                    <p className="font-mono text-sm text-primary tracking-wider">
+                      Personalise the look of your companion
+                    </p>
+                    <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
+                      Choose hair, outfit, eyes, setting, mood, and art style, then generate a new
+                      portrait for your personal Anima. Theme accent colour is saved with the look.
+                    </p>
+                  </div>
+                </div>
+                <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
+                  <li>• Hair, outfit, eyes, background, expression, art style</li>
+                  <li>• AI-generated portrait from your descriptions</li>
+                  <li>• Theme accent colour for your companion</li>
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => navigate("/customise-anima")}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  Open Customise Anima
+                </button>
+              </div>
+
+              <SectionTitle>Personality</SectionTitle>
+              <button
+                type="button"
+                onClick={() => navigate("/customize?tab=animas")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  Name, tagline, voice & behaviour
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span>Edit Anima personality</span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
             </div>
           )}
 
@@ -413,10 +623,10 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                      Enables explicit, lewd, and sexual roleplay content. By enabling this you confirm you are 18 years of age or older.
+                      Enables explicit, lewd, and sexual roleplay. Characters escalate when the moment invites it — and hold back during grief, support, or non-intimate beats. By enabling this you confirm you are 18 years of age or older.
                     </p>
                     {prefs.adult_content_enabled && (
-                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — explicit content permitted</p>
+                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — heat when the beat is right</p>
                     )}
                   </div>
                   <button
@@ -619,7 +829,119 @@ export default function Settings() {
               <SectionTitle>Storage</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 grid grid-cols-2 gap-4">
                 <StatBox label="Chat Sessions" value={sessionCount} />
-                <StatBox label="Custom Characters" value={charCount} />
+                <StatBox label="Characters" value={charCount} />
+              </div>
+
+              <div className="border border-primary/15 bg-black/40 p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <Bot className="w-3.5 h-3.5" />
+                      Restore Starter Characters
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Re-add the preloaded Korra, Marvel, Guardians, and Invincible roster if your character list is empty or incomplete. Your own custom characters are not removed.
+                    </p>
+                    {startersRestored && (
+                      <p className="text-[9px] font-mono text-green-400/70 mt-1.5 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Starter characters restored. Open Characters or start a new chat to see them.
+                      </p>
+                    )}
+                    {startersRestoreError && (
+                      <p className="text-[9px] font-mono text-destructive/70 mt-1.5">{startersRestoreError}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={restoringStarters}
+                    onClick={async () => {
+                      setRestoringStarters(true);
+                      setStartersRestored(false);
+                      setStartersRestoreError(null);
+                      try {
+                        const restored = await repairStarterCharacters();
+                        await loadStats();
+                        setStartersRestored(true);
+                        if (restored > 0) {
+                          setStartersRestoreError(null);
+                        }
+                      } catch (err) {
+                        setStartersRestoreError(
+                          err?.message?.trim() || "Could not restore starter characters.",
+                        );
+                      } finally {
+                        setRestoringStarters(false);
+                      }
+                    }}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+                  >
+                    {restoringStarters ? <Loader className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                    {restoringStarters ? "Restoring..." : "Restore"}
+                  </button>
+                </div>
+              </div>
+
+              <SectionTitle>Backup &amp; Restore</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5" />
+                      Export My Data
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Download a JSON backup of everything — chat sessions, characters, memories, quests, lore, inventory &amp; more. Keep it safe before wiping your data.
+                    </p>
+                    {exportedAt && (
+                      <p className="text-[9px] font-mono text-green-400/70 mt-1.5 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Backup downloaded {exportedAt.toLocaleTimeString()}
+                      </p>
+                    )}
+                    {exportError && (
+                      <p className="text-[9px] font-mono text-destructive/70 mt-1.5">{exportError}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleExport}
+                    disabled={exporting}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+                  >
+                    {exporting ? <Loader className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                    {exporting ? "Exporting..." : "Export"}
+                  </button>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 pt-4 border-t border-primary/10">
+                  <div>
+                    <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Restore From Backup
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/30 mt-0.5 leading-relaxed">
+                      Import a previously exported backup file. You'll choose whether to merge it into your current data or replace everything.
+                    </p>
+                    {restoreResult && (
+                      <p className={`text-[9px] font-mono mt-1.5 leading-relaxed ${restoreResult.ok ? "text-green-400/70" : "text-orange-400/70"}`}>
+                        {restoreResult.ok
+                          ? `${restoreResult.mode === "replace" ? "Replaced everything with" : "Merged in"} ${restoreResult.count} record${restoreResult.count === 1 ? "" : "s"}.`
+                          : restoreResult.message}
+                      </p>
+                    )}
+                  </div>
+                  <label className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[10px] tracking-widest uppercase transition-all cursor-pointer">
+                    {restoring ? <Loader className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                    {restoring ? "Restoring..." : "Restore"}
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      disabled={restoring}
+                      onChange={handleRestoreFile}
+                    />
+                  </label>
+                </div>
               </div>
 
               <SectionTitle>Clear Data</SectionTitle>
@@ -709,7 +1031,7 @@ export default function Settings() {
               <SectionTitle>About</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
-                <InfoRow label="AI Engine" value="Core LLM" />
+                <InfoRow label="AI Engine" value="Grok / Gemini primary (OpenAI last)" />
                 <InfoRow label="Platform" value="Base44" />
               </div>
             </div>
@@ -755,6 +1077,134 @@ export default function Settings() {
         </div>
       )}
 
+      {/* Restore From Backup Dialog */}
+      {pendingRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-background border border-primary/40 hud-corner p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <RotateCcw className="w-5 h-5 text-primary flex-shrink-0" />
+              <h2 className="font-mono text-primary tracking-[0.2em] uppercase text-sm">Restore Backup</h2>
+            </div>
+            <div className="space-y-2">
+              <p className="font-mono text-[10px] text-primary/50 tracking-wider leading-relaxed">
+                This backup contains <span className="text-primary font-bold">{pendingRestore.recordCount}</span> record{pendingRestore.recordCount === 1 ? "" : "s"}
+                {pendingRestore.exportedLabel ? <> · exported {pendingRestore.exportedLabel}</> : null}.
+              </p>
+              {pendingRestore.breakdown.length > 0 && (
+                <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-40 overflow-y-auto border-t border-primary/10 pt-2">
+                  {pendingRestore.breakdown.map((item) => (
+                    <li
+                      key={item.name}
+                      className="font-mono text-[9px] text-primary/40 tracking-wider flex justify-between gap-2"
+                    >
+                      <span className="truncate capitalize">{entityLabel(item.name, item.count)}</span>
+                      <span className="text-primary/70 font-bold flex-shrink-0">{item.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {!confirmReplace ? (
+              <>
+                <div className="space-y-3">
+                  <button
+                    onClick={() => performRestore("merge")}
+                    disabled={restoring}
+                    className="w-full text-left border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 disabled:opacity-40 p-4 transition-all"
+                  >
+                    <p className="font-mono text-xs text-primary tracking-wider uppercase flex items-center gap-2">
+                      {restoring ? <Loader className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                      Merge Into Current Data
+                    </p>
+                    <p className="text-[9px] font-mono text-primary/40 mt-1 leading-relaxed">
+                      Adds and updates records from the backup, keeping anything not in the backup. Nothing is deleted.
+                    </p>
+                  </button>
+                  <button
+                    onClick={beginReplace}
+                    disabled={restoring}
+                    className="w-full text-left border border-orange-500/40 bg-orange-950/10 hover:bg-orange-900/20 hover:border-orange-400 disabled:opacity-40 p-4 transition-all"
+                  >
+                    <p className="font-mono text-xs text-orange-400 tracking-wider uppercase flex items-center gap-2">
+                      <AlertTriangle className="w-3 h-3" />
+                      Replace Everything
+                    </p>
+                    <p className="text-[9px] font-mono text-orange-300/50 mt-1 leading-relaxed">
+                      Wipes all current data first, then restores the backup. Cannot be undone.
+                    </p>
+                  </button>
+                </div>
+                <button
+                  onClick={cancelRestore}
+                  disabled={restoring}
+                  className="w-full px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-30"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="border border-orange-500/20 bg-orange-950/30 px-4 py-3 space-y-2">
+                  <p className="font-mono text-[10px] text-orange-300/80 tracking-wider leading-relaxed">
+                    Replacing everything will <span className="text-destructive font-bold">permanently delete</span> all of your current data before restoring the backup.
+                  </p>
+                  {loadingCurrent ? (
+                    <p className="font-mono text-[10px] text-orange-300/60 tracking-wider flex items-center gap-2">
+                      <Loader className="w-3 h-3 animate-spin" /> Checking what you have now...
+                    </p>
+                  ) : currentSummary && currentSummary.recordCount > 0 ? (
+                    <div className="space-y-1.5 border-t border-orange-500/20 pt-2">
+                      <p className="font-mono text-[10px] text-orange-300/80 tracking-wider leading-relaxed">
+                        You currently have <span className="text-destructive font-bold">{currentSummary.recordCount}</span> record{currentSummary.recordCount === 1 ? "" : "s"} that will be wiped:
+                      </p>
+                      <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-y-auto">
+                        {currentSummary.breakdown.map((item) => (
+                          <li
+                            key={item.name}
+                            className="font-mono text-[9px] text-orange-300/50 tracking-wider flex justify-between gap-2"
+                          >
+                            <span className="truncate capitalize">{entityLabel(item.name, item.count)}</span>
+                            <span className="text-orange-300/80 font-bold flex-shrink-0">{item.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : currentSummary ? (
+                    <p className="font-mono text-[10px] text-orange-300/60 tracking-wider leading-relaxed border-t border-orange-500/20 pt-2">
+                      Your account currently has no records to wipe.
+                    </p>
+                  ) : null}
+                </div>
+                <p className="font-mono text-xs text-primary/60 leading-relaxed">
+                  This <span className="text-destructive">cannot be undone</span>. Continue?
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setConfirmReplace(false)}
+                    disabled={restoring}
+                    className="flex-1 px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-30"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => performRestore("replace")}
+                    disabled={restoring}
+                    className="flex-1 px-4 py-2 bg-orange-900/30 border border-orange-500/60 text-orange-400 hover:bg-orange-900/50 disabled:opacity-50 font-mono text-xs tracking-widest uppercase transition-all flex items-center justify-center gap-2"
+                  >
+                    {restoring ? (
+                      <><Loader className="w-3 h-3 animate-spin" /> Restoring...</>
+                    ) : (
+                      "Replace Everything"
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Factory Reset Confirmation Dialog */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
@@ -777,6 +1227,14 @@ export default function Settings() {
             <p className="font-mono text-xs text-primary/60 leading-relaxed">
               You will be taken back to <span className="text-orange-400 font-bold">onboarding</span> to start fresh. This <span className="text-destructive">cannot be undone</span>.
             </p>
+            <button
+              onClick={handleExport}
+              disabled={resetting || exporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all"
+            >
+              {exporting ? <Loader className="w-3 h-3 animate-spin" /> : exportedAt ? <CheckCircle className="w-3 h-3" /> : <Download className="w-3 h-3" />}
+              {exporting ? "Exporting..." : exportedAt ? "Backup Downloaded — Export Again" : "Export My Data First"}
+            </button>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowResetConfirm(false)}
@@ -821,6 +1279,14 @@ export default function Settings() {
             <p className="font-mono text-xs text-primary/60 leading-relaxed">
               This action <span className="text-destructive font-bold">cannot be undone</span>. You will be logged out immediately.
             </p>
+            <button
+              onClick={handleExport}
+              disabled={deletingAccount || exporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 font-mono text-[10px] tracking-widest uppercase transition-all min-h-[44px]"
+            >
+              {exporting ? <Loader className="w-3 h-3 animate-spin" /> : exportedAt ? <CheckCircle className="w-3 h-3" /> : <Download className="w-3 h-3" />}
+              {exporting ? "Exporting..." : exportedAt ? "Backup Downloaded — Export Again" : "Export My Data First"}
+            </button>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowDeleteConfirm(false)}

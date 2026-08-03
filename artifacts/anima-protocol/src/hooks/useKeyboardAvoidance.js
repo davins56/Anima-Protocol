@@ -1,3 +1,4 @@
+// @ts-check
 import { useEffect, useRef } from "react";
 
 /**
@@ -5,9 +6,10 @@ import { useEffect, useRef } from "react";
  * opens on mobile, so inputs are never obscured by the BottomTabBar or keyboard.
  *
  * Uses the Visual Viewport API (supported on iOS 13+ and Android Chrome).
+ * @param {{ current: HTMLElement | null }} containerRef
  */
 export function useKeyboardAvoidance(containerRef) {
-  const rafRef = useRef(null);
+  const rafRef = useRef(/** @type {number | null} */ (null));
 
   useEffect(() => {
     const vv = window.visualViewport;

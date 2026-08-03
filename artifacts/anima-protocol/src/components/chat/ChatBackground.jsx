@@ -1,3 +1,4 @@
+// @ts-check
 export const BACKGROUND_THEMES = [
   {
     id: "default",
@@ -26,6 +27,9 @@ export const BACKGROUND_THEMES = [
   }
 ];
 
+/**
+ * @param {{ theme?: string, imageUrl?: string | null }} props
+ */
 export default function ChatBackground({ theme, imageUrl }) {
   if (theme === "custom" && imageUrl) {
     return (

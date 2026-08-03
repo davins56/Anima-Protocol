@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from "react";
 import {
   Menu,
@@ -19,15 +20,20 @@ import {
   Settings,
   Zap,
   Scroll,
+  Palette,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
+/**
+ * @param {{ activeSessionId?: string | null, onMobileMenuClick?: () => void }} [props]
+ */
 export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick } = { activeSessionId: null, onMobileMenuClick: undefined }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const menuItems = [
     { icon: Settings, label: "Settings", path: "/settings", title: "Settings" },
+    { icon: Palette, label: "Customise Anima", path: "/customise-anima", title: "Customise Anima look" },
     { icon: BookMarked, label: "Storyboard", path: "/storyboard", title: "Storyboard" },
     { icon: BookOpen, label: "Lore Book", path: "/lorebook", title: "Lore Book" },
     { icon: Newspaper, label: "Journals", path: "/journals", title: "Journals" },
@@ -128,7 +134,7 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
                 </button>
               </div>
 
-              <div className="max-h-96 overflow-y-auto p-2 space-y-1">
+              <div className="max-h-96 overflow-y-auto p-2 space-y-1 pb-12">
                 {menuItems.map((item) => (
                   <Link
                     key={item.path}
@@ -148,4 +154,3 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
     </div>
   );
 }
-

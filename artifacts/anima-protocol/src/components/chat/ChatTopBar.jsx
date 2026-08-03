@@ -14,6 +14,7 @@ export default function ChatTopBar({
   tts,
   elTTS,
   emotionalTTS,
+  onAvatarClick,
 }) {
   return (
     <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0">
@@ -26,6 +27,7 @@ export default function ChatTopBar({
             characters={characters}
             mood={mood}
             characterEmotions={characterEmotions}
+            onAvatarClick={onAvatarClick}
           />
         </div>
 

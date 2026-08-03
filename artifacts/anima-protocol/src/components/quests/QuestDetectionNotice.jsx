@@ -1,6 +1,10 @@
+// @ts-check
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, X } from 'lucide-react';
 
+/**
+ * @param {{ quest?: any, onDismiss?: () => void }} props
+ */
 export default function QuestDetectionNotice({ quest, onDismiss }) {
   if (!quest) return null;
 

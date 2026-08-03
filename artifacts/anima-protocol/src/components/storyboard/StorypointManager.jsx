@@ -3,7 +3,10 @@ import { base44 } from "@/api/base44Client";
 import { Plus, ChevronDown, Edit2, Trash2, GripVertical } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+import { useConfirm } from "@/lib/ConfirmDialog";
+
 export default function StorypointManager({ sessionId, isVisible = true }) {
+  const confirm = useConfirm();
   const [storypoints, setStorypoints] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -79,7 +82,12 @@ export default function StorypointManager({ sessionId, isVisible = true }) {
   };
 
   const handleDeleteStorypoint = async (id) => {
-    if (!confirm("Delete this story point?")) return;
+    const ok = await confirm({
+      title: "Delete this story point?",
+      message: "This permanently removes the story point and cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     try {
       await base44.entities.Storypoint.delete(id);
       await loadStorypoints();

@@ -1,11 +1,15 @@
+// @ts-check
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Lightbulb, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+/**
+ * @param {{ activeQuests: any[], sessionId?: string }} props
+ */
 export default function QuestHintsPanel({ activeQuests, sessionId }) {
-  const [hints, setHints] = useState({});
-  const [expandedQuestId, setExpandedQuestId] = useState(null);
+  const [hints, setHints] = useState(/** @type {Record<string, string>} */ ({}));
+  const [expandedQuestId, setExpandedQuestId] = useState(/** @type {string | null} */ (null));
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -47,7 +51,7 @@ export default function QuestHintsPanel({ activeQuests, sessionId }) {
       </div>
 
       <div className="space-y-1">
-        {activeQuests.map((quest) => (
+        {activeQuests.map((/** @type {any} */ quest) => (
           <button
             key={quest.id}
             onClick={() =>

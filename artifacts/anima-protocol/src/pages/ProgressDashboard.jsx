@@ -32,7 +32,7 @@ export default function ProgressDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] bg-background scanline flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background scanline flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
           <p className="font-mono text-primary/40 text-xs tracking-[0.3em] uppercase">Loading progress...</p>
@@ -45,7 +45,7 @@ export default function ProgressDashboard() {
   const xpProgress = ((progress?.xp_total || 0) % 100) / 100;
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline p-4 sm:p-6" style={{ paddingBottom: 'var(--tab-bar-height, 120px)' }}>
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline p-4 sm:p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
