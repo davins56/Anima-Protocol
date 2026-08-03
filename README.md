@@ -132,6 +132,8 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
 | `OPENAI_API_KEY` | API | Required at API import time for OpenAI routes |
+| `XAI_API_KEY` | API | Optional. Enables automatic Grok (xAI) failover when OpenAI returns 429 / no credits |
+| `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
 | `CLERK_PUBLISHABLE_KEY` | API | Fallback publishable key for Clerk middleware |

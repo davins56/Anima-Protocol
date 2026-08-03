@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
 
-export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick }) {
+export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -147,6 +147,24 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
           {!isGroup && mood && <MoodIndicator mood={mood} />}
         </div>
       </div>
+
+      {/* Shows which LLM served the last reply (OpenAI primary, Grok on failover) */}
+      {llmProvider && (
+        <span
+          title={
+            llmProvider === "xai"
+              ? "Last reply from Grok (xAI) — OpenAI failover"
+              : "Last reply from OpenAI"
+          }
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${
+            llmProvider === "xai"
+              ? "border-amber-400/50 text-amber-300/90 bg-amber-400/10"
+              : "border-primary/30 text-primary/50"
+          }`}
+        >
+          {llmProvider === "xai" ? "Grok" : "OpenAI"}
+        </span>
+      )}
 
       {/* Deep mode toggle — forces every reply onto the most capable model */}
       {onToggleDeepMode && (
