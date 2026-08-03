@@ -275,7 +275,16 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
       }
     | undefined;
 
-  const mainChar = activeCharacter || characters[0];
+  // In group/crossover turns the client already chose the speaker. Falling back
+  // to characters[0] when activeCharacter is missing rebinds TURN RULES / CHARACTER
+  // to the wrong companion and fights the client system prompt.
+  const mainChar =
+    activeCharacter ||
+    (mode === "group"
+      ? characters.length === 1
+        ? characters[0]
+        : undefined
+      : characters[0]);
   const characterNames = new Map(
     characters.map((c) => [String(c.id || ""), String(c.name || "Companion")]),
   );
@@ -284,11 +293,20 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const corePrompt = systemPrompt || CORE_BEHAVIOR;
 
   // 2. Character definition
+  // Group turns without a resolved speaker already carry identity in the client
+  // system prompt — dumping every character under CHARACTER: implies a blended
+  // identity and fights the "ONLY {speaker}" lock.
   const charDef = mainChar
     ? buildCharacterDefinition(mainChar, BUDGET.characterDef)
-    : characters.length > 0
-      ? characters.map((c) => buildCharacterDefinition(c, BUDGET.characterDef / characters.length)).join("\n\n")
-      : "";
+    : mode === "group" && systemPrompt
+      ? ""
+      : characters.length > 0
+        ? characters
+            .map((c) =>
+              buildCharacterDefinition(c, BUDGET.characterDef / characters.length),
+            )
+            .join("\n\n")
+        : "";
 
   // 3. Resonance / synchro state
   let resonanceBlock = "";

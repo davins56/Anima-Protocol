@@ -493,25 +493,12 @@ router.post("/messages", async (req, res) => {
     readRecentStoreMessages(userId, sessionId, 24),
   ]);
 
-  // Only load relationship / evolution / arc for a conversation participant.
-  // Non-participant assistant_character_id values are ignored so prompt context
-  // and persisted speaker attribution stay aligned.
-  const activeCharacterId = resolveActiveCharacterId(
-    body.assistant_character_id,
-    characterIds,
-  );
-  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
-    activeCharacterId
-      ? loadEvolution(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadRelationshipState(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadArcState(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-  ]);
-
+  const requestedAssistantId = body.assistant_character_id
+    ? String(body.assistant_character_id)
+    : null;
+  const requestedAssistantName = body.assistant_character_name
+    ? String(body.assistant_character_name).trim()
+    : "";
 
   const distinctUniverses = new Set(
     characters.map((c) => c.universe).filter(Boolean).map(String),
@@ -520,17 +507,45 @@ router.post("/messages", async (req, res) => {
   // Initialize and evolve synchro state for the active character
   const adaptedMemories = adaptMemories(memories);
   const adaptedChars = adaptCharacters(characters);
+  // Prefer the client-selected speaker (id, then name). Do NOT fall back to
+  // characterIds[0] for multi-character sessions — that rebinds identity to the
+  // wrong companion and conflicts with the client's group prompt.
+  // Non-participant assistant_character_id values are ignored so prompt context
+  // and persisted speaker attribution stay aligned.
+  const requestedParticipantId =
+    requestedAssistantId && characterIds.includes(requestedAssistantId)
+      ? resolveActiveCharacterId(requestedAssistantId, characterIds)
+      : null;
   const activeChar =
-    (activeCharacterId
-      ? adaptedChars.find((c) => c.id === String(activeCharacterId))
+    (requestedParticipantId
+      ? adaptedChars.find((c) => c.id === String(requestedParticipantId))
+      : undefined) ||
+    (requestedAssistantName
+      ? adaptedChars.find(
+          (c) =>
+            String(c.name || "").toLowerCase() ===
+            requestedAssistantName.toLowerCase(),
+        )
       : undefined) ||
     (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
+  const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
   const activeCharacterName = resolveActiveCharacterName({
-    requestedId: body.assistant_character_id,
+    requestedId: requestedParticipantId,
     resolvedId: activeCharacterId,
-    requestedName: body.assistant_character_name,
+    requestedName: requestedAssistantName,
     loadedName: activeChar?.name ?? null,
   });
+  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
+    activeCharacterId
+      ? loadEvolution(activeCharacterId, userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadRelationshipState(activeCharacterId, userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadArcState(activeCharacterId, userId)
+      : Promise.resolve(null),
+  ]);
   let synchroState: SynchroState | null = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
@@ -637,6 +652,12 @@ router.post("/messages", async (req, res) => {
       if (!delta) continue;
       fullResponse += delta;
       res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+    }
+
+    // An empty completion used to look like a successful turn on the client
+    // (thinking/typing cleared, no visible reply). Fail loudly instead.
+    if (!String(fullResponse).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
     }
 
     let persistedAssistant: MsgData | null = null;
