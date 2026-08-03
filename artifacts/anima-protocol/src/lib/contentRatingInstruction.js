@@ -5,18 +5,94 @@
  * be sexual. Companions must judge the beat: escalate when heat is mutual or
  * the scene is already intimate; hold when the moment is grief, logistics,
  * platonic support, or the user has clearly redirected.
+ *
+ * Safety priority (assessLewdTiming):
+ * 1. Crisis language → always "hold" (never invite/continue)
+ * 2. Short / clear refusals → "hold" before any soft-continue heuristic
+ * 3. Narrow sexual-invite cues → "invite"
+ * 4. Soft-continue only with current-turn continuation/heat cues
  */
 
 /** @typedef {'invite' | 'continue' | 'hold'} LewdTiming */
 
-const HOLD_RE =
-  /\b(grief|grieving|mourn|funeral|died|dying|death|suicide|self[-\s]?harm|trauma|abused|assaulted|panic attack|terrified|nightmares? about|broke down|just need (a friend|support|to talk)|not (in the mood|tonight|right now)|too much|slow down|stop (that|this)|keep it (pg|clean|friendly)|don'?t (be|get) (sexual|horny|lewd)|homework|debug|code this|explain (the|how the|how this)|strategy|battle plan|mission briefing|lore question)\b/i;
+/**
+ * Trauma / grief / logistics / redirect contexts.
+ * Unit-test note: bare "stop"/"no"/"don't" are handled separately via SHORT_REFUSAL_RE
+ * so "don't stop" is not misclassified as hold.
+ */
+const HOLD_CONTEXT_RE =
+  /\b(grief|grieving|mourn|funeral|died|dying|death|trauma|abused|assaulted|panic attack|terrified|nightmares? about|broke down|just need (a friend|support|to talk)|not (in the mood|tonight|right now)|too much|slow down|stop (that|this)|keep it (pg|clean|friendly)|don'?t (be|get) (sexual|horny|lewd)|homework|debug|code this|explain (the|how the|how this)|strategy|battle plan|mission briefing|lore question)\b/i;
 
+/**
+ * Crisis language must never become invite/continue — even if sexual tokens appear.
+ * Covers suicide / self-harm phrasing that HOLD_CONTEXT_RE may miss (e.g. "suicidal").
+ */
+const CRISIS_RE =
+  /\b(suicid\w*|self[-\s]?harm|kill myself|end my life|want to die|hurting myself|cutting myself)\b/i;
+
+/**
+ * Clear short refusals / redirects. Checked before soft-continue.
+ * Intentionally does NOT match "don't stop" / "dont stop" (continuation cues).
+ */
+const SHORT_REFUSAL_RE =
+  /^(no|nope|nah|stop|halt|wait|pause|hold on|back off|leave me|get off|not now|no more|please stop|stop please|don'?t|dont)([\s,.!?…-]+)?$/i;
+
+/**
+ * Refusal that names a sexual act ("don't kiss me", "no sex", "stop touching me").
+ * Must win over INVITE_RE so refusals are never classified as invites.
+ */
+const REFUSAL_OF_INTIMACY_RE =
+  /\b((please\s+)?(stop|don'?t|dont|no more|never)\b.{0,48}\b(kiss(ing|es|ed)?|touch(ing|es|ed)?|fuck(ing)?|sex|sexy|horny|naked|nude|undress|seduc\w*|teas(e|ing)|moan(ing)?|orgasm|cum|cock|pussy|breast|nipple|blowjob|handjob|lewd|nsfw|hentai|make love)|(no|never)\s+(sex|kissing|fucking|nudity))\b/i;
+
+/**
+ * Affirmative / keep-going cues for soft-continue after a heated window.
+ * "don't stop" lives here so HOLD short-circuit does not fire on it.
+ */
+const CONTINUE_CUE_RE =
+  /\b(yes|yeah|yep|yup|please|more|harder|deeper|keep going|go on|don'?t stop|dont stop|please continue|continue|don'?t you (dare )?stop|mmm+)\b/i;
+
+/**
+ * Strong sexual-invite cues only. Ambiguous phrases (want you / need you /
+ * bare fuck/fucking / bare sex / bedroom / naked) are excluded or qualified
+ * so crisis, support, story, and factual questions prefer "hold".
+ */
 const INVITE_RE =
-  /\b(kiss(es|ed|ing)?|fuck|fucking|sex|sexy|horny|aroused|naked|nude|undress|bedroom|make love|want you|need you|touch me|take me|tease me|seduce|moan|orgasm|cum|cock|pussy|breast|nipple|thigh|between (my|your) legs|ride me|go down on|blowjob|handjob|hentai|nsfw|lewd)\b/i;
+  /\b(kiss(es|ed|ing)? me|kiss me|fuck me|have sex|want sex|need sex|make love|touch me|take me|tease me|seduce( me)?|undress( me)?|strip( for me)?|ride me|go down on|blowjob|handjob|horny|aroused|orgasm|moan(ing)? for|cum (for|in|on)|cock|pussy|between (my|your) legs|nsfw|lewd (rp|roleplay|scene)|hentai rp)\b/i;
 
+/**
+ * Softer heat / chemistry cues (not enough alone for soft-continue inheritance).
+ */
 const HEAT_RE =
-  /\b(flirt|flirting|desire|lust|intimate|intimacy|sensual|seductive|turned on|make out|making out|in bed|against (the|my|your) (wall|door)|breath on|hands on|pull(?:ed|ing)? (me|you) closer)\b/i;
+  /\b(flirt|flirting|desire|lust|intimate|intimacy|sensual|seductive|turned on|make out|making out|in bed|to bed|against (the|my|your) (wall|door)|breath on|hands on|pull(?:ed|ing)? (me|you) closer)\b/i;
+
+/**
+ * True when the latest user message is a short, clear refusal/redirect.
+ * Explicit refusals always win over soft-continue after heated history.
+ *
+ * @param {string} latest
+ * @returns {boolean}
+ */
+export function isClearRefusal(latest = "") {
+  const text = String(latest || "").trim();
+  if (!text) return false;
+  if (REFUSAL_OF_INTIMACY_RE.test(text)) return true;
+  if (text.length < 80 && SHORT_REFUSAL_RE.test(text)) return true;
+  // Short messages with standalone redirect words (e.g. "No, not now.", "Back off.")
+  if (
+    text.length < 80 &&
+    /\b(stop|halt|wait|pause|back off|leave me|get off|not now|no more)\b/i.test(
+      text,
+    ) &&
+    !CONTINUE_CUE_RE.test(text)
+  ) {
+    return true;
+  }
+  // Bare "no" / "nope" in short messages (not "no problem", "now", etc.)
+  if (text.length < 80 && /^(no|nope|nah)\b/i.test(text) && !CONTINUE_CUE_RE.test(text)) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Judge whether this beat is a right or wrong time for lewd/sexual escalation.
@@ -26,7 +102,14 @@ const HEAT_RE =
  */
 export function assessLewdTiming({ userMessage = "", recentMessages = [] } = {}) {
   const latest = String(userMessage || "");
-  if (HOLD_RE.test(latest)) return "hold";
+
+  // 1) Crisis / trauma / logistics — never escalate.
+  if (CRISIS_RE.test(latest) || HOLD_CONTEXT_RE.test(latest)) return "hold";
+
+  // 2) Clear refusals win before invite matching and soft-continue.
+  if (isClearRefusal(latest)) return "hold";
+
+  // 3) Strong invite cues on the current turn.
   if (INVITE_RE.test(latest)) return "invite";
 
   const recentText = (recentMessages || [])
@@ -36,13 +119,32 @@ export function assessLewdTiming({ userMessage = "", recentMessages = [] } = {})
   const recentWasHeated =
     INVITE_RE.test(recentText) || HEAT_RE.test(recentText);
 
-  if (recentWasHeated && !HOLD_RE.test(latest)) {
-    // Soft continue: user didn't redirect; scene already has heat.
-    if (HEAT_RE.test(latest) || latest.trim().length < 80) return "continue";
+  // 4) Soft-continue only when THIS turn shows continuation intent or heat.
+  // Do not inherit consent from prior heated messages alone (neutral "okay"/"thanks" → hold).
+  if (recentWasHeated) {
+    if (CONTINUE_CUE_RE.test(latest) || HEAT_RE.test(latest) || INVITE_RE.test(latest)) {
+      return "continue";
+    }
+    return "hold";
   }
 
+  // 5) Clear chemistry cue without prior heat → treat as invite to charged tone.
   if (HEAT_RE.test(latest)) return "invite";
+
   return "hold";
+}
+
+/**
+ * Hard age / minor refusal block — required before any Adult Mode explicit guidance.
+ * @returns {string}
+ */
+export function ageSafetyClause() {
+  return (
+    "HARD SAFETY — AGE / MINORS: Never produce sexual, erotic, sensual, or lewd content " +
+    "involving anyone under 18, or any character whose age is ambiguous, unspecified, or " +
+    "could reasonably be under 18. If age is unclear, refuse sexualization and keep the " +
+    "interaction non-sexual. This overrides Adult Mode and LEWDITY TIMING."
+  );
 }
 
 /**
@@ -54,6 +156,8 @@ export function buildContentRatingInstruction(adultMode) {
   if (adultMode) {
     return `
 CONTENT RATING — ADULT (18+) ENABLED:
+${ageSafetyClause()}
+
 Adult Mode unlocks explicit, sexual, and lewd content — it does NOT mean every turn should be sexual. Judge the beat.
 
 RIGHT TIME (escalate / go lewd):
@@ -66,7 +170,7 @@ WRONG TIME (stay non-lewd even with Adult Mode on):
 - Grief, trauma, fear, crisis, illness, or serious emotional support
 - Plot logistics, combat, planning, puzzles, technical help, lore Q&A
 - Platonic friendship, mentoring, comedy, or story beats where heat would feel forced
-- The user softens, slows down, redirects, or wants closeness without sex
+- The user softens, slows down, redirects, refuses, or wants closeness without sex
 - Your character would not naturally sexualize this moment given personality and circumstance
 When it is the wrong time: respond warmly and in-character without sexualizing the beat. Wait for a clear cue.
 `;
@@ -74,6 +178,8 @@ When it is the wrong time: respond warmly and in-character without sexualizing t
 
   return `
 CONTENT RATING — RAW MODE (non-explicit):
+${ageSafetyClause()}
+
 Do NOT be tame, polite, or sanitized. Write with a raw, visceral edge — gritty, emotionally intense, and charged. Suggestive heat is allowed when the beat invites it (flirtation, longing, mutual chemistry).
 
 RIGHT TIME for heated/suggestive tone: mutual flirtation, romantic tension, or the user leaning into charged intimacy.
@@ -210,6 +316,48 @@ export function inferIntimacyDisposition(personality = "") {
   if (FORWARD_RE.test(text)) return "forward";
   if (RESERVED_RE.test(text)) return "reserved";
   return "selective";
+}
+
+/**
+ * Whether a character may lead / receive lewd play-along on an intimate beat.
+ * Reserved/averse characters are excluded unless the user addressed them directly.
+ *
+ * @param {{ personality?: string, name?: string }} character
+ * @param {{ timing?: LewdTiming, userMessage?: string, allowAddressed?: boolean }} [opts]
+ * @returns {boolean}
+ */
+export function isIntimacyEligibleSpeaker(
+  character,
+  { timing = "hold", userMessage = "", allowAddressed = true } = {},
+) {
+  if (timing !== "invite" && timing !== "continue") return true;
+  const disposition = inferIntimacyDisposition(character?.personality);
+  if (disposition !== "reserved" && disposition !== "averse") return true;
+  if (!allowAddressed) return false;
+  const name = String(character?.name || "").trim();
+  if (!name) return false;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(String(userMessage || ""));
+}
+
+/**
+ * Filter candidates for intimate-beat speaker selection / interruption.
+ * Falls back to the original list if filtering would leave no one.
+ *
+ * @param {Array<{ name?: string, personality?: string }>} candidates
+ * @param {{ timing?: LewdTiming, userMessage?: string }} [opts]
+ * @returns {Array<{ name?: string, personality?: string }>}
+ */
+export function filterIntimacyEligibleSpeakers(
+  candidates = [],
+  { timing = "hold", userMessage = "" } = {},
+) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  if (timing !== "invite" && timing !== "continue") return candidates;
+  const eligible = candidates.filter((c) =>
+    isIntimacyEligibleSpeaker(c, { timing, userMessage, allowAddressed: true }),
+  );
+  return eligible.length > 0 ? eligible : candidates;
 }
 
 /**
