@@ -10,6 +10,7 @@ export const REQUIRED_TABLES = [
   "chat_sessions",
   "chat_messages",
   "companion_memories",
+  "uploaded_images",
 ] as const;
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
@@ -146,6 +147,23 @@ export async function ensureSchema(
       "updated_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:user_profiles",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "uploaded_images" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "content_type" text NOT NULL,
+      "data_base64" text NOT NULL,
+      "byte_size" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:uploaded_images",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "uploaded_images_user_idx"
+       ON "uploaded_images" USING btree ("user_id")`,
+    "index:uploaded_images_user_idx",
   );
 
   await run(

@@ -1,11 +1,14 @@
 // Cross-provider chat completion with automatic failover.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - auto   (default) — Grok → Gemini → OpenAI when those keys exist; OpenAI alone
+//   - gemini           — Gemini primary; never call OpenAI (Grok as optional backup)
+//   - auto             — Gemini → Grok → OpenAI when those keys exist; OpenAI alone
 //                        only when no alt key is configured
 //   - xai / grok       — Grok primary; never call OpenAI (Gemini as optional backup)
-//   - gemini           — Gemini primary; never call OpenAI (Grok as optional backup)
 //   - openai           — OpenAI primary with Grok/Gemini failover
+//
+// When ANIMA_LLM_PROVIDER is unset, Gemini is selected automatically whenever
+// GEMINI_API_KEY (or GOOGLE_API_KEY) is present.
 //
 // ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` (useful when the
 // OpenAI account is out of credits).
@@ -79,12 +82,17 @@ export function resetLlmFailoverStateForTests(): void {
 }
 
 export function getConfiguredProviderMode(): LlmProviderMode {
-  const raw = (process.env.ANIMA_LLM_PROVIDER || "auto").trim().toLowerCase();
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  if (!raw) {
+    // Default to Gemini when its key is configured so depleted OpenAI / xAI
+    // credit balances do not keep owning every chat turn.
+    return hasGeminiKey() ? "gemini" : "auto";
+  }
   if (raw === "grok") return "xai";
   if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "auto") {
     return raw;
   }
-  return "auto";
+  return hasGeminiKey() ? "gemini" : "auto";
 }
 
 export function isOpenAIBlocked(): boolean {
@@ -133,14 +141,14 @@ export function getProviderChain(): LlmProviderId[] {
     return chain;
   }
 
-  // auto — prefer Grok/Gemini whenever they are configured so a dead/revoked
+  // auto — prefer Gemini, then Grok, whenever they are configured so a dead
   // OpenAI key (401) or empty credits (429) cannot break every chat turn.
   // Set ANIMA_LLM_PROVIDER=openai to force OpenAI-first.
   const preferAlt =
     preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey();
   if (preferAlt) {
-    push("xai");
     push("gemini");
+    push("xai");
     push("openai");
   } else {
     push("openai");
@@ -152,8 +160,8 @@ export function getPreferredProvider(): LlmProviderId {
   const chain = getProviderChain();
   if (chain[0]) return chain[0];
   // Last resort label for error messages when nothing is configured.
-  if (hasXaiKey()) return "xai";
   if (hasGeminiKey()) return "gemini";
+  if (hasXaiKey()) return "xai";
   return "openai";
 }
 

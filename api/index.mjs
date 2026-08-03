@@ -87078,6 +87078,7 @@ __export(schema_exports, {
   insertConversationSchema: () => insertConversationSchema,
   insertMessageSchema: () => insertMessageSchema,
   messages: () => messages,
+  uploadedImages: () => uploadedImages,
   userEntities: () => userEntities,
   userProfiles: () => userProfiles
 });
@@ -105439,6 +105440,21 @@ var userProfiles = pgTable2("user_profiles", {
   createdAt: timestamp2("created_at").notNull().defaultNow(),
   updatedAt: timestamp2("updated_at").notNull().defaultNow()
 });
+var uploadedImages = pgTable2(
+  "uploaded_images",
+  {
+    id: text2("id").primaryKey(),
+    userId: text2("user_id").notNull(),
+    contentType: text2("content_type").notNull(),
+    // Raw base64 payload (no data: URL prefix).
+    dataBase64: text2("data_base64").notNull(),
+    byteSize: integer2("byte_size").notNull().default(0),
+    createdAt: timestamp2("created_at").notNull().defaultNow()
+  },
+  (table) => ({
+    userIdx: index("uploaded_images_user_idx").on(table.userId)
+  })
+);
 
 // ../../node_modules/.pnpm/pg@8.20.0/node_modules/pg/esm/index.mjs
 var import_lib2 = __toESM(require_lib6(), 1);
@@ -114228,7 +114244,8 @@ var REQUIRED_TABLES = [
   "messages",
   "chat_sessions",
   "chat_messages",
-  "companion_memories"
+  "companion_memories",
+  "uploaded_images"
 ];
 async function listPresentTables(db3, names) {
   const { rows } = await db3.query(
@@ -114317,6 +114334,22 @@ async function ensureSchema(db3 = getPool()) {
       "updated_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:user_profiles"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "uploaded_images" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "content_type" text NOT NULL,
+      "data_base64" text NOT NULL,
+      "byte_size" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:uploaded_images"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "uploaded_images_user_idx"
+       ON "uploaded_images" USING btree ("user_id")`,
+    "index:uploaded_images_user_idx"
   );
   await run(
     `CREATE TABLE IF NOT EXISTS "chat_sessions" (
@@ -125471,12 +125504,15 @@ function getGeminiClient() {
 // src/lib/llmFailover.ts
 var preferNonOpenAI = false;
 function getConfiguredProviderMode() {
-  const raw = (process.env.ANIMA_LLM_PROVIDER || "auto").trim().toLowerCase();
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  if (!raw) {
+    return hasGeminiKey() ? "gemini" : "auto";
+  }
   if (raw === "grok") return "xai";
   if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "auto") {
     return raw;
   }
-  return "auto";
+  return hasGeminiKey() ? "gemini" : "auto";
 }
 function isOpenAIBlocked() {
   const mode = getConfiguredProviderMode();
@@ -125513,8 +125549,8 @@ function getProviderChain() {
   }
   const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey();
   if (preferAlt) {
-    push2("xai");
     push2("gemini");
+    push2("xai");
     push2("openai");
   } else {
     push2("openai");
@@ -139666,10 +139702,115 @@ async function signObjectURL({
   return signedURL;
 }
 
+// src/lib/imageUploads.ts
+import { randomUUID as randomUUID5 } from "crypto";
+var UPLOADS_PATH_PREFIX = "/objects/uploads/";
+var MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+function isDbUploadObjectPath(objectPath) {
+  return objectPath.startsWith(UPLOADS_PATH_PREFIX);
+}
+function objectPathForUploadId(id) {
+  return `${UPLOADS_PATH_PREFIX}${id}`;
+}
+function uploadIdFromObjectPath(objectPath) {
+  if (!isDbUploadObjectPath(objectPath)) return null;
+  const id = objectPath.slice(UPLOADS_PATH_PREFIX.length).split("/")[0];
+  return id || null;
+}
+function parseImagePayload(input) {
+  const dataUrl = typeof input.dataUrl === "string" ? input.dataUrl.trim() : "";
+  if (dataUrl.startsWith("data:")) {
+    const match3 = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl);
+    if (!match3) {
+      throw new Error("Invalid data URL. Expected data:<type>;base64,...");
+    }
+    const contentType2 = match3[1].toLowerCase();
+    const dataBase642 = match3[2].replace(/\s+/g, "");
+    if (!contentType2.startsWith("image/")) {
+      throw new Error("Only image uploads are supported");
+    }
+    const byteSize2 = Buffer.byteLength(dataBase642, "base64");
+    if (byteSize2 <= 0) throw new Error("Empty image payload");
+    if (byteSize2 > MAX_UPLOAD_BYTES) {
+      throw new Error("Image is too large (max 4 MB after compression)");
+    }
+    return { contentType: contentType2, dataBase64: dataBase642, byteSize: byteSize2 };
+  }
+  const contentType = String(input.contentType || "").trim().toLowerCase();
+  const dataBase64 = String(input.dataBase64 || "").replace(/\s+/g, "").trim();
+  if (!contentType.startsWith("image/")) {
+    throw new Error("Only image uploads are supported");
+  }
+  if (!dataBase64) throw new Error("Missing image data");
+  const byteSize = Buffer.byteLength(dataBase64, "base64");
+  if (byteSize <= 0) throw new Error("Empty image payload");
+  if (byteSize > MAX_UPLOAD_BYTES) {
+    throw new Error("Image is too large (max 4 MB after compression)");
+  }
+  return { contentType, dataBase64, byteSize };
+}
+async function storeUploadedImage(userId, payload) {
+  await ensureSchemaOnce();
+  const parsed = parseImagePayload(payload);
+  const id = randomUUID5();
+  await db.insert(uploadedImages).values({
+    id,
+    userId,
+    contentType: parsed.contentType,
+    dataBase64: parsed.dataBase64,
+    byteSize: parsed.byteSize
+  });
+  return {
+    id,
+    objectPath: objectPathForUploadId(id),
+    contentType: parsed.contentType,
+    byteSize: parsed.byteSize
+  };
+}
+async function getUploadedImage(objectPath) {
+  const id = uploadIdFromObjectPath(objectPath);
+  if (!id) return null;
+  await ensureSchemaOnce();
+  const rows = await db.select().from(uploadedImages).where(eq(uploadedImages.id, id)).limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.userId,
+    contentType: row.contentType,
+    dataBase64: row.dataBase64,
+    byteSize: row.byteSize
+  };
+}
+
 // src/routes/storage.ts
 var router8 = (0, import_express12.Router)();
 var objectStorageService = new ObjectStorageService();
-router8.use("/storage/uploads/request-url", rateLimit);
+router8.use("/storage/uploads", rateLimit);
+router8.post("/storage/uploads", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    const stored = await storeUploadedImage(userId, req.body ?? {});
+    res.status(201).json({
+      objectPath: stored.objectPath,
+      contentType: stored.contentType,
+      byteSize: stored.byteSize,
+      // Same-origin path the client persists as avatar_url.
+      file_url: `/api/storage${stored.objectPath}`
+    });
+  } catch (error40) {
+    const message = error40 instanceof Error ? error40.message : "Upload failed";
+    const status = message.includes("Only image") || message.includes("Invalid") || message.includes("Missing") || message.includes("Empty") || message.includes("too large") ? 400 : 500;
+    if (status >= 500) {
+      console.error("Error storing uploaded image:", error40);
+    }
+    res.status(status).json({ error: message });
+  }
+});
 router8.post(
   "/storage/uploads/request-url",
   async (req, res) => {
@@ -139690,7 +139831,10 @@ router8.post(
       res.json({ uploadURL, objectPath });
     } catch (error40) {
       console.error("Error generating upload URL:", error40);
-      res.status(500).json({ error: "Failed to generate upload URL" });
+      res.status(500).json({
+        error: "Object storage is unavailable. Use the direct /api/storage/uploads endpoint (Postgres-backed) instead.",
+        code: "object_storage_unavailable"
+      });
     }
   }
 );
@@ -139698,7 +139842,9 @@ function pipeDownload(res, response) {
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
   if (response.body) {
-    const nodeStream = Readable8.fromWeb(response.body);
+    const nodeStream = Readable8.fromWeb(
+      response.body
+    );
     nodeStream.pipe(res);
   } else {
     res.end();
@@ -139709,6 +139855,19 @@ router8.get("/storage/objects/*path", async (req, res) => {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
+    if (isDbUploadObjectPath(objectPath)) {
+      const image = await getUploadedImage(objectPath);
+      if (!image) {
+        res.status(404).json({ error: "Object not found" });
+        return;
+      }
+      const buffer = Buffer.from(image.dataBase64, "base64");
+      res.setHeader("Content-Type", image.contentType);
+      res.setHeader("Content-Length", String(buffer.byteLength));
+      res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+      res.status(200).end(buffer);
+      return;
+    }
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
     const response = await objectStorageService.downloadObject(objectFile);
     pipeDownload(res, response);

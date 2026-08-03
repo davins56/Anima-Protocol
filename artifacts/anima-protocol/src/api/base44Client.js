@@ -160,28 +160,46 @@ function readFileAsDataUrl(file) {
   });
 }
 
-// Upload an image blob via a presigned PUT and return the served object path.
+// Convert a Blob to a base64 payload (no data: prefix) for the direct upload API.
+async function blobToBase64(blob) {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Upload an image blob and return the served object path.
+ *
+ * Uses the Postgres-backed POST /api/storage/uploads endpoint so avatar upload
+ * works on Vercel (the legacy Replit GCS sidecar is unavailable there).
+ */
 async function uploadBlob(blob) {
   const headers = await authHeaders();
-  const res = await fetch(apiUrl('/storage/uploads/request-url'), {
+  const dataBase64 = await blobToBase64(blob);
+  const res = await fetch(apiUrl('/storage/uploads'), {
     method: 'POST',
     headers,
-    body: JSON.stringify({ contentType: blob.type, size: blob.size }),
+    body: JSON.stringify({
+      contentType: blob.type || 'image/jpeg',
+      dataBase64,
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+    throw new Error(err.error || res.statusText || `Upload failed (${res.status})`);
   }
-  const { uploadURL, objectPath } = await res.json();
-  const putRes = await fetch(uploadURL, {
-    method: 'PUT',
-    headers: { 'Content-Type': blob.type },
-    body: blob,
-  });
-  if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
-  // Root-relative path so the avatar resolves against the current origin and
-  // stays portable across domains (dev preview, deployment, custom domains).
-  return `/api/storage${objectPath}`;
+  const payload = await res.json();
+  if (payload?.file_url) return payload.file_url;
+  if (payload?.objectPath) {
+    // Root-relative path so the avatar resolves against the current origin.
+    return `/api/storage${payload.objectPath}`;
+  }
+  throw new Error('Upload failed — no file URL returned.');
 }
 
 // Downscale a data URL to a small JPEG and upload it. Returns the served path.
