@@ -43,6 +43,7 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
+  CLERK_FAILURE_HINT,
   CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -343,65 +344,110 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
-/** Delay before probing Clerk connectivity so healthy loads never show a warning. */
-const CLERK_DIAGNOSTICS_STALL_MS = 2500;
+/** Delay before showing stall diagnostics so healthy loads never flash a warning. */
+const CLERK_DIAGNOSTICS_STALL_MS = 4000;
 
-/**
- * Connectivity hints only after Clerk failed to load, or is still loading past
- * the stall timeout. Preview-host guidance is NOT shown unconditionally — only
- * when probes find a real problem (or the SDK never reaches loaded).
- */
-function ClerkLoginDiagnostics() {
-  const clerk = useClerk();
-  const [hints, setHints] = useState([]);
-  const [shouldProbe, setShouldProbe] = useState(false);
+const VERCEL_PREVIEW_SIGNIN_HINT =
+  "This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use https://www.anima-protocol.com/sign-in instead.";
 
-  useEffect(() => {
-    if (clerk.loaded) {
-      setShouldProbe(false);
-      setHints([]);
-      return undefined;
-    }
-    const timer = setTimeout(() => setShouldProbe(true), CLERK_DIAGNOSTICS_STALL_MS);
-    return () => clearTimeout(timer);
-  }, [clerk.loaded]);
-
-  useEffect(() => {
-    if (!shouldProbe || clerk.loaded) return undefined;
-    let cancelled = false;
-    (async () => {
-      const next = await probeClerkConnectivity(clerkPubKey);
-      if (cancelled) return;
-      if (next.length > 0) {
-        // Only mention *.vercel.app after a real probe failure on a preview host.
-        if (isVercelPreviewHost(window.location.hostname)) {
-          setHints([
-            ...next,
-            "This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use https://www.anima-protocol.com/sign-in instead.",
-          ]);
-          return;
-        }
-        setHints(next);
-        return;
-      }
-      // Probes healthy but SDK never reached loaded — preserve fallback messaging.
-      setHints([CLERK_STALL_HINT]);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [shouldProbe, clerk.loaded]);
-
-  if (hints.length === 0) return null;
-
+function ClerkDiagnosticsBanner({ hints }) {
+  if (!hints?.length) return null;
   return (
-    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+    <div className="rounded-md border border-amber-400/35 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-100">
       {hints.map((hint) => (
         <p key={hint} className="mt-1 first:mt-0">
           {hint}
         </p>
       ))}
     </div>
+  );
+}
+
+/**
+ * Connectivity hints only when Clerk failed, or is still loading after a stall
+ * timeout. Avoids always-on false positives when sign-in is already working.
+ */
+function ClerkLoginDiagnostics() {
+  return (
+    <>
+      <ClerkFailed>
+        <ClerkFailedConnectivityHints />
+      </ClerkFailed>
+      <ClerkLoading>
+        <ClerkStalledConnectivityHints />
+      </ClerkLoading>
+    </>
+  );
+}
+
+function useClerkProbeHints() {
+  const [probeHints, setProbeHints] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await probeClerkConnectivity(clerkPubKey);
+      if (!cancelled) setProbeHints(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return probeHints;
+}
+
+function withPreviewHostHint(hints) {
+  // Only append preview guidance after a real probe failure — never on healthy
+  // stall/failure fallbacks alone.
+  if (
+    hints.length > 0 &&
+    typeof window !== "undefined" &&
+    isVercelPreviewHost(window.location.hostname)
+  ) {
+    return [...hints, VERCEL_PREVIEW_SIGNIN_HINT];
+  }
+  return hints;
+}
+
+function resolveConnectivityHints(probeHints, fallbackHint) {
+  if (probeHints === null) return [fallbackHint];
+  if (probeHints.length > 0) return withPreviewHostHint(probeHints);
+  return [fallbackHint];
+}
+
+/**
+ * Start probes as soon as ClerkLoading mounts. At the stall timeout, show the
+ * stall hint immediately (don't wait for sequential probe timeouts), then swap
+ * in specific endpoint failures when probes finish.
+ */
+function ClerkStalledConnectivityHints() {
+  const [stalled, setStalled] = useState(false);
+  const probeHints = useClerkProbeHints();
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setStalled(true),
+      CLERK_DIAGNOSTICS_STALL_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!stalled) return null;
+  return (
+    <ClerkDiagnosticsBanner
+      hints={resolveConnectivityHints(probeHints, CLERK_STALL_HINT)}
+    />
+  );
+}
+
+/** Immediate failure fallback, upgraded with probe results when ready. */
+function ClerkFailedConnectivityHints() {
+  const probeHints = useClerkProbeHints();
+  return (
+    <ClerkDiagnosticsBanner
+      hints={resolveConnectivityHints(probeHints, CLERK_FAILURE_HINT)}
+    />
   );
 }
 
