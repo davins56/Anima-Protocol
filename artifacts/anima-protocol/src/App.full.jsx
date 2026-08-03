@@ -23,7 +23,6 @@ import {
   Show,
   useClerk,
 } from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -48,6 +47,7 @@ import {
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  publishableKeyFromFrontendHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
@@ -223,7 +223,7 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
     return envKey;
   }
 
-  return publishableKeyFromHost(hostname, envKey || undefined);
+  return publishableKeyFromFrontendHost(hostname, envKey);
 }
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
