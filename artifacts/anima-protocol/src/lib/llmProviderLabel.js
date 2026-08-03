@@ -49,13 +49,13 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "kimi",
     label: "Kimi",
     env: "KIMI_API_KEY",
-    note: "Moonshot Open Platform — set ANIMA_LLM_PROVIDER=kimi to force",
+    note: "Preferred when set (Moonshot) — even if Gemini is also configured",
   },
   {
     id: "gemini",
     label: "Gemini",
     env: "GEMINI_API_KEY",
-    note: "Default chat model when set (Google AI Studio)",
+    note: "Used when Kimi is unset, or force with ANIMA_LLM_PROVIDER=gemini",
   },
   {
     id: "xai",
