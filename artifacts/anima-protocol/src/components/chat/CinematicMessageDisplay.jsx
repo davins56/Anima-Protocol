@@ -6,7 +6,8 @@ export default function CinematicMessageDisplay({
   message, 
   character, 
   isFocusMode, 
-  onSpeak 
+  onSpeak,
+  onAvatarClick,
 }) {
   const [hasAnimated, setHasAnimated] = useState(false);
   const isUser = message.role === "user";
@@ -61,15 +62,21 @@ export default function CinematicMessageDisplay({
       animate="animate"
       className={`flex gap-2 sm:gap-3 group ${isUser ? "flex-row-reverse" : "flex-row"} ${isFocusMode ? "mb-6 sm:mb-8" : "mb-2 sm:mb-3"}`}
     >
-      {/* Avatar */}
+      {/* Avatar — tap to open bio sheet */}
       {!isUser && !isFocusMode && (
-        <div className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4">
+        <button
+          type="button"
+          onClick={() => character && onAvatarClick?.(character)}
+          disabled={!character || !onAvatarClick}
+          title={character ? `View ${character.name} bio sheet` : undefined}
+          className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4 disabled:cursor-default hover:enabled:border-primary/70 hover:enabled:ring-1 hover:enabled:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+        >
           {avatarUrl ? (
             <img src={avatarUrl} alt={character?.name} className="w-full h-full object-cover" />
           ) : (
             <span className="font-mono text-primary text-[10px] sm:text-xs">{avatarInitial}</span>
           )}
-        </div>
+        </button>
       )}
 
       <div className={`flex flex-col gap-0.5 sm:gap-1 ${isUser ? "items-end" : "items-start"} ${isFocusMode ? "w-full" : "max-w-[80%] sm:max-w-[75%]"}`}>
@@ -85,18 +92,22 @@ export default function CinematicMessageDisplay({
 
         {/* Large portrait in focus mode */}
         {!isUser && isFocusMode && avatarUrl && (
-          <motion.div
+          <motion.button
+            type="button"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
-            className="w-full max-w-sm h-64 sm:h-80 rounded-lg overflow-hidden border border-primary/30 mb-4"
+            onClick={() => character && onAvatarClick?.(character)}
+            disabled={!character || !onAvatarClick}
+            title={character ? `View ${character.name} bio sheet` : undefined}
+            className="w-full max-w-sm h-64 sm:h-80 rounded-lg overflow-hidden border border-primary/30 mb-4 disabled:cursor-default hover:enabled:border-primary/60 transition-colors"
           >
             <img 
               src={avatarUrl} 
               alt={character?.name} 
               className="w-full h-full object-cover"
             />
-          </motion.div>
+          </motion.button>
         )}
 
         {/* Message bubble */}

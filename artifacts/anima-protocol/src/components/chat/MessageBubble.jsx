@@ -16,7 +16,7 @@ import { useLoreDetection } from "@/hooks/useLoreDetection";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [] }) {
+export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
@@ -70,15 +70,21 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
 
   return (
     <div className={`flex gap-2 sm:gap-3 group ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-      {/* Avatar */}
+      {/* Avatar — tap to open bio sheet */}
       {!isUser && (
-        <div className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4">
+        <button
+          type="button"
+          onClick={() => character && onAvatarClick?.(character)}
+          disabled={!character || !onAvatarClick}
+          title={character ? `View ${character.name} bio sheet` : undefined}
+          className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4 disabled:cursor-default hover:enabled:border-primary/70 hover:enabled:ring-1 hover:enabled:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+        >
           {avatarUrl ? (
             <img src={avatarUrl} alt={character?.name} className="w-full h-full object-cover" />
           ) : (
             <span className="font-mono text-primary text-[10px] sm:text-xs">{avatarInitial}</span>
           )}
-        </div>
+        </button>
       )}
 
       <div className={`max-w-[80%] sm:max-w-[75%] flex flex-col gap-0.5 sm:gap-1 ${isUser ? "items-end" : "items-start"}`}>
