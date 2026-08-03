@@ -1,12 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
   assessLewdTiming,
+  isClearRefusal,
   buildContentRatingInstruction,
+  ageSafetyClause,
   lewdTimingClause,
   buildIntimatePlayAlongGuidance,
   buildSexualityGuide,
   buildLewdityGuide,
   inferIntimacyDisposition,
+  isIntimacyEligibleSpeaker,
+  filterIntimacyEligibleSpeakers,
   buildGroupIntimacyGuidance,
   groupSpeakerIntimacyRules,
 } from "./contentRatingInstruction";
@@ -35,17 +39,146 @@ describe("assessLewdTiming", () => {
       "invite",
     );
     expect(
-      assessLewdTiming({ userMessage: "I want you — take me to bed" }),
+      assessLewdTiming({ userMessage: "I want you — take me to bed with you" }),
     ).toBe("invite");
   });
 
-  it("continues when recent heat is active and user hasn't redirected", () => {
+  it("does not invite on ambiguous want you / need you alone", () => {
+    expect(
+      assessLewdTiming({ userMessage: "I need you to help me with this quest" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "I want you to stay safe" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "I really need you right now, I'm scared." }),
+    ).toBe("hold");
+  });
+
+  it("does not invite on bare fuck / fucking frustration", () => {
+    expect(
+      assessLewdTiming({
+        userMessage: "What the fuck is wrong with this code?",
+      }),
+    ).toBe("hold");
+  });
+
+  it("does not invite on factual sex / bedroom questions", () => {
+    expect(
+      assessLewdTiming({ userMessage: "What does safe sex mean?" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "What is the bedroom scene in this film?",
+      }),
+    ).toBe("hold");
+  });
+
+  it("holds crisis language even when sexual tokens appear", () => {
+    expect(
+      assessLewdTiming({ userMessage: "I'm suicidal, fuck me" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "I want to die and I need you" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "I want to end it all, kiss me" }),
+    ).toBe("hold");
+  });
+
+  it("holds short refusals even after a heated window", () => {
+    const heated = [
+      { role: "user", content: "Kiss me like you mean it" },
+      { role: "assistant", content: "*pulls you closer* Tell me what you need." },
+    ];
+    for (const userMessage of [
+      "no",
+      "stop",
+      "stop.",
+      "Don't.",
+      "No, not now.",
+      "back off",
+      "please stop",
+    ]) {
+      expect(assessLewdTiming({ userMessage, recentMessages: heated })).toBe(
+        "hold",
+      );
+    }
+  });
+
+  it("holds refusals that name sexual acts (never invite)", () => {
+    expect(
+      assessLewdTiming({ userMessage: "don't kiss me" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "don't touch me" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "no sex" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "please, stop",
+        recentMessages: [{ role: "assistant", content: "I want to kiss you." }],
+      }),
+    ).toBe("hold");
+  });
+
+  it("holds neutral short acks after heat (no inherited consent)", () => {
+    const heated = [
+      { role: "assistant", content: "I want to kiss you senseless." },
+    ];
+    expect(
+      assessLewdTiming({ userMessage: "okay", recentMessages: heated }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "thanks", recentMessages: heated }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "I understand",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "Anyway... let's change topics",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+  });
+
+  it("continues when recent heat is active and user shows keep-going intent", () => {
+    expect(
+      assessLewdTiming({
+        userMessage: "never stop kissing me",
+        recentMessages: [
+          { role: "assistant", content: "*pulls you closer*" },
+        ],
+      }),
+    ).toBe("invite");
     expect(
       assessLewdTiming({
         userMessage: "don't stop",
         recentMessages: [
-          { role: "user", content: "I want you so badly" },
+          { role: "user", content: "Kiss me like you mean it" },
           { role: "assistant", content: "*pulls you closer* Tell me what you need." },
+        ],
+      }),
+    ).toBe("continue");
+    expect(
+      assessLewdTiming({
+        userMessage: "I never want you to stop touching me",
+        recentMessages: [
+          { role: "assistant", content: "*pulls you closer* in bed with you" },
+        ],
+      }),
+    ).toBe("continue");
+    expect(
+      assessLewdTiming({
+        userMessage: "keep going",
+        recentMessages: [
+          { role: "assistant", content: "*pulls you closer* in bed with you" },
         ],
       }),
     ).toBe("continue");
@@ -54,6 +187,98 @@ describe("assessLewdTiming", () => {
   it("holds by default when there is no sexual cue", () => {
     expect(
       assessLewdTiming({ userMessage: "How was your day in the city?" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "take me home" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "let's get to bed, I'm exhausted" }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({ userMessage: "I'm sick in bed" }),
+    ).toBe("hold");
+  });
+
+  it("does not treat crisis history as heat for continuation", () => {
+    expect(
+      assessLewdTiming({
+        userMessage: "yes",
+        recentMessages: [
+          { role: "user", content: "I want to end it all, kiss me" },
+        ],
+      }),
+    ).toBe("hold");
+    // Heat earlier in the window must not survive a later crisis/refusal.
+    expect(
+      assessLewdTiming({
+        userMessage: "yes",
+        recentMessages: [
+          { role: "user", content: "kiss me" },
+          { role: "user", content: "I'm suicidal" },
+        ],
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "yes",
+        recentMessages: [
+          { role: "user", content: "kiss me" },
+          { role: "user", content: "stop" },
+        ],
+      }),
+    ).toBe("hold");
+  });
+
+  it("does not soft-continue on bare please / more / go on redirects", () => {
+    const heated = [
+      { role: "user", content: "Kiss me like you mean it" },
+      { role: "assistant", content: "*pulls you closer* Tell me what you need." },
+    ];
+    expect(
+      assessLewdTiming({
+        userMessage: "please change the subject",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "please tell me about your family",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "tell me more about the lore",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "go on with the battle plan",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+  });
+
+  it("treats Continue taps as soft-continue after heat without a continue token", () => {
+    expect(
+      assessLewdTiming({
+        userMessage: "",
+        isContinue: true,
+        recentMessages: [
+          { role: "user", content: "Kiss me like you mean it" },
+          { role: "assistant", content: "*pulls you closer*" },
+        ],
+      }),
+    ).toBe("continue");
+    expect(
+      assessLewdTiming({
+        userMessage: "",
+        isContinue: true,
+        recentMessages: [
+          { role: "user", content: "How was your day?" },
+        ],
+      }),
     ).toBe("hold");
   });
 
@@ -69,6 +294,15 @@ describe("assessLewdTiming", () => {
   });
 });
 
+describe("isClearRefusal", () => {
+  it("detects short standalone refusals", () => {
+    expect(isClearRefusal("no")).toBe(true);
+    expect(isClearRefusal("Stop.")).toBe(true);
+    expect(isClearRefusal("back off")).toBe(true);
+    expect(isClearRefusal("don't stop")).toBe(false);
+  });
+});
+
 describe("buildContentRatingInstruction", () => {
   it("teaches right vs wrong time under Adult Mode", () => {
     const text = buildContentRatingInstruction(true);
@@ -76,6 +310,12 @@ describe("buildContentRatingInstruction", () => {
     expect(text).toContain("RIGHT TIME");
     expect(text).toContain("WRONG TIME");
     expect(text).toContain("does NOT mean every turn should be sexual");
+  });
+
+  it("includes hard age / minor refusal before explicit guidance", () => {
+    expect(buildContentRatingInstruction(true)).toContain(ageSafetyClause());
+    expect(buildContentRatingInstruction(false)).toContain(ageSafetyClause());
+    expect(ageSafetyClause()).toMatch(/under 18|ambiguous/i);
   });
 
   it("keeps the graphic hard line in raw mode", () => {
@@ -158,6 +398,58 @@ describe("inferIntimacyDisposition", () => {
     expect(inferIntimacyDisposition("Loyal warrior with a dry wit")).toBe(
       "selective",
     );
+  });
+});
+
+describe("intimacy speaker eligibility", () => {
+  const reserved = {
+    name: "Ava",
+    personality: "Shy, reserved, modest, private about affection",
+  };
+  const forward = {
+    name: "Rex",
+    personality: "Flirtatious, sensual, physically affectionate",
+  };
+
+  it("excludes reserved/averse leads on intimate beats unless addressed", () => {
+    expect(
+      isIntimacyEligibleSpeaker(reserved, {
+        timing: "invite",
+        userMessage: "kiss me",
+      }),
+    ).toBe(false);
+    expect(
+      isIntimacyEligibleSpeaker(reserved, {
+        timing: "invite",
+        userMessage: "Ava, kiss me",
+      }),
+    ).toBe(true);
+    expect(
+      isIntimacyEligibleSpeaker(forward, {
+        timing: "invite",
+        userMessage: "kiss me",
+      }),
+    ).toBe(true);
+  });
+
+  it("filters interruption candidates on intimate beats", () => {
+    const filtered = filterIntimacyEligibleSpeakers([reserved, forward], {
+      timing: "continue",
+      userMessage: "keep going",
+    });
+    expect(filtered.map((c) => c.name)).toEqual(["Rex"]);
+  });
+
+  it("does not restore ineligible candidates when no group speaker qualifies", () => {
+    const averse = {
+      name: "Nyx",
+      personality: "Asexual and sex-repulsed",
+    };
+    const filtered = filterIntimacyEligibleSpeakers([reserved, averse], {
+      timing: "continue",
+      userMessage: "keep going",
+    });
+    expect(filtered).toEqual([]);
   });
 });
 

@@ -43,10 +43,12 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
+  CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  isVercelPreviewHost,
   publishableKeyFromFrontendHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
@@ -298,6 +300,16 @@ const clerkAppearance = {
     // Apple Production SSO has empty client_id — hide until credentials are set.
     socialButtonsBlockButton__apple: "!hidden",
     socialButtonsProviderIcon__apple: "!hidden",
+    // Google Production still returns redirect_uri_mismatch until Google Cloud
+    // allowlists https://clerk.anima-protocol.com/v1/oauth_callback — hide so
+    // users are not sent into a hard failure; use GitHub or email code instead.
+    socialButtonsBlockButton__google: "!hidden",
+    socialButtonsProviderIcon__google: "!hidden",
+    socialButtonsBlockButton__google_one_tap: "!hidden",
+    socialButtonsProviderIcon__google_one_tap: "!hidden",
+    // Prefer GitHub while Google/Apple are ops-blocked.
+    socialButtonsBlockButton__github:
+      "!border-cyan-400/40 !bg-cyan-400/10 hover:!bg-cyan-400/15",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -334,6 +346,11 @@ function ClerkQueryClientCacheInvalidator() {
 /** Delay before probing Clerk connectivity so healthy loads never show a warning. */
 const CLERK_DIAGNOSTICS_STALL_MS = 2500;
 
+/**
+ * Connectivity hints only after Clerk failed to load, or is still loading past
+ * the stall timeout. Preview-host guidance is NOT shown unconditionally — only
+ * when probes find a real problem (or the SDK never reaches loaded).
+ */
 function ClerkLoginDiagnostics() {
   const clerk = useClerk();
   const [hints, setHints] = useState([]);
@@ -354,7 +371,21 @@ function ClerkLoginDiagnostics() {
     let cancelled = false;
     (async () => {
       const next = await probeClerkConnectivity(clerkPubKey);
-      if (!cancelled) setHints(next);
+      if (cancelled) return;
+      if (next.length > 0) {
+        // Only mention *.vercel.app after a real probe failure on a preview host.
+        if (isVercelPreviewHost(window.location.hostname)) {
+          setHints([
+            ...next,
+            "This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use https://www.anima-protocol.com/sign-in instead.",
+          ]);
+          return;
+        }
+        setHints(next);
+        return;
+      }
+      // Probes healthy but SDK never reached loaded — preserve fallback messaging.
+      setHints([CLERK_STALL_HINT]);
     })();
     return () => {
       cancelled = true;
@@ -381,11 +412,11 @@ function AuthFormShell({ mode, children }) {
         <ClerkLoginDiagnostics />
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
-            Password sign-in only works if a password is set on this Production
-            account. Otherwise enter the username or email that exists there and
-            use the email code — or continue with GitHub below if that is how
-            you created the account. Google sign-in needs its OAuth redirect URI
-            allowlisted in Google Cloud before it will work.
+            Working options right now: Continue with GitHub, or enter your
+            username/email and use the emailed verification code. Password
+            sign-in only works if a password is already set on this Production
+            account. Google and Apple are temporarily hidden until their
+            provider console credentials/redirect URIs are fixed.
           </p>
         ) : null}
         {children}
