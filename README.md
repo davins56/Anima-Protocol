@@ -131,10 +131,11 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | Variable | Used by | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
-| `OPENAI_API_KEY` | API | Optional for chat when Grok/Gemini is configured; still used for image generate/edit |
-| `XAI_API_KEY` | API | Optional. Grok (xAI) — used under `ANIMA_LLM_PROVIDER=auto` / `xai`, not as a Gemini-mode backup |
-| `GEMINI_API_KEY` | API | Recommended. Gemini (Google AI Studio), including `AQ.*` auth keys via the native API. Default chat provider when set (Gemini-only). Also accepts `GOOGLE_API_KEY` |
-| `ANIMA_LLM_PROVIDER` | API | Unset + `GEMINI_API_KEY` → Gemini-only. Or `auto` (Gemini → Grok → OpenAI), `xai` / `grok` / `gemini` / `openai` |
+| `OPENAI_API_KEY` | API | Optional for chat when Grok/Gemini/Kimi is configured; still used for image generate/edit. ChatGPT backend under `ANIMA_LLM_PROVIDER=anima` |
+| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Optional. Kimi (Moonshot / “Kiwi”). Default when Gemini is unset. Force with `ANIMA_LLM_PROVIDER=kimi` |
+| `XAI_API_KEY` | API | Optional. Grok (xAI) — used under `ANIMA_LLM_PROVIDER=auto` / `xai` / `anima`, not as a Gemini/Kimi-mode backup |
+| `GEMINI_API_KEY` | API | Optional. Gemini (Google AI Studio), including `AQ.*` auth keys via the native API. Default when set (Gemini-only). Also accepts `GOOGLE_API_KEY` |
+| `ANIMA_LLM_PROVIDER` | API | Unset: Kimi-only if `KIMI_API_KEY`, else Gemini-only if `GEMINI_API_KEY`, else `auto`. Or `anima` / `custom` (tier-aware multi-model: Kimi · Gemini · Grok · ChatGPT), `kimi` / `moonshot` / `gemini` / `auto` / `xai` / `openai` |
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
 | `ANIMA_GEMINI_THINKING_BUDGET` | API | Optional. Gemini thinking token budget (`0` disables on Flash; default `0` Flash / `1024` Pro) |
