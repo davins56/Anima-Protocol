@@ -19,3 +19,12 @@ causes `Error 400: redirect_uri_mismatch`.
 Helper: `clerkProviderOAuthCallbackUrl` in
 `artifacts/anima-protocol/src/lib/clerkProxy.js`. Checklist:
 `docs/clerk-github-login.md`.
+
+## Live symptoms (2026-08-03)
+
+- Custom top “Continue with …” buttons (`signIn.sso`) hung on “Redirecting…”
+  with **no network** — removed; use Clerk built-in social icons only.
+- Clerk built-in **GitHub** works; **Google** still `redirect_uri_mismatch`
+  until Google Cloud allowlists the FAPI callback above.
+- Production account `Davins56` / `davins56@hotmail.com` has **no password**
+  (`strategy_for_user_invalid`) — use email code or GitHub.

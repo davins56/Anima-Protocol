@@ -25,6 +25,16 @@ function clerkErrorCodes(proxyError) {
     .filter((code) => typeof code === 'string' && code.length > 0);
 }
 
+function clerkErrorDetail(proxyError) {
+  const entry = proxyError?.errors?.[0];
+  return (
+    entry?.long_message ||
+    entry?.message ||
+    (typeof proxyError?.error === 'string' ? proxyError.error : '') ||
+    ''
+  );
+}
+
 /**
  * Quick health check for the same-origin Clerk proxy. When this returns false,
  * ClerkProvider should skip proxyUrl so email/OAuth can use Clerk's API directly.
@@ -89,7 +99,9 @@ export async function probeClerkConnectivity(clerkPubKey) {
         return hints;
       } else if (codes.includes('host_invalid')) {
         hints.push(
-          'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+          usesCustomDomain
+            ? 'Clerk custom domain host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key for clerk.anima-protocol.com, and that domain is verified in Clerk → Domains.'
+            : 'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
         );
         return hints;
       } else if (usesCustomDomain && codes.includes('subdomain_not_allowed')) {
@@ -105,14 +117,13 @@ export async function probeClerkConnectivity(clerkPubKey) {
         hints.push(
           `Clerk proxy upstream failed (${clerkRes.status}). Redeploy the latest API build — the server now proxies Clerk via fetch on Vercel. Also confirm CLERK_SECRET_KEY is your Production sk_live_ key.`,
         );
-      } else if (usesCustomDomain) {
+      } else {
+        const detail = clerkErrorDetail(proxyError).replace(/[.]+$/, '');
         const codeHint = codes.length ? ` Clerk error: ${codes.join(', ')}.` : '';
         hints.push(
-          `Clerk custom domain returned ${clerkRes.status} at ${proxyUrl}.${codeHint} In Clerk Dashboard → Production → Domains, confirm clerk.anima-protocol.com is verified and www.anima-protocol.com is an allowed subdomain, then hard-refresh.`,
-        );
-      } else {
-        hints.push(
-          `Clerk proxy failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
+          usesCustomDomain
+            ? `Clerk custom domain failed (${clerkRes.status}) at ${proxyUrl}${detail ? `: ${detail}` : ''}.${codeHint} Confirm clerk.anima-protocol.com is verified in Clerk → Domains and DNS CNAMEs to frontend-api.clerk.services.`
+            : `Clerk proxy failed (${clerkRes.status})${detail ? `: ${detail}` : ''}. Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
         );
       }
     }
@@ -135,7 +146,9 @@ export async function probeClerkConnectivity(clerkPubKey) {
       });
       if (!scriptRes.ok) {
         hints.push(
-          `Login script failed to load (${scriptRes.status}) via ${scriptUrl}. Fix the Clerk proxy environment values, then redeploy without cache.`,
+          usesCustomDomain
+            ? `Login script failed to load (${scriptRes.status}) via ${scriptUrl}. Confirm clerk.anima-protocol.com DNS in Clerk → Domains, then hard-refresh.`
+            : `Login script failed to load (${scriptRes.status}) via ${scriptUrl}. Fix the Clerk proxy environment values, then redeploy without cache.`,
         );
       }
     } catch {
