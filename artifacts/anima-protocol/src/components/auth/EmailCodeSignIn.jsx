@@ -63,9 +63,13 @@ export default function EmailCodeSignIn() {
   const handleIdentifierSubmit = async (event) => {
     event.preventDefault();
     setError(null);
-    const value = identifier.trim();
+    const value = String(identifier ?? "").trim();
     if (!value) {
       setError("Enter your email or username.");
+      return;
+    }
+    if (!signIn || typeof signIn.create !== "function") {
+      setError("Sign-in is still loading. Wait a moment and try again.");
       return;
     }
     setBusy("email");
