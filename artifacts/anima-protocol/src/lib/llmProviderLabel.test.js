@@ -10,39 +10,31 @@ import {
 } from "./llmProviderLabel";
 
 describe("llmProviderLabel", () => {
-  it("labels Anima, Gemini, Kimi, Grok, and OpenAI", () => {
+  it("labels Kimi, Grok, and OpenAI (Gemini kept only as legacy)", () => {
     expect(llmProviderShortLabel("anima")).toBe("Anima");
-    expect(llmProviderShortLabel("gemini")).toBe("Gemini");
     expect(llmProviderShortLabel("kimi")).toBe("Kimi");
     expect(llmProviderShortLabel("xai")).toBe("Grok");
     expect(llmProviderShortLabel("openai")).toBe("OpenAI");
+    expect(llmProviderShortLabel("gemini")).toBe("Gemini");
     expect(llmProviderShortLabel(null)).toBeNull();
   });
 
   it("shows Anima when brand is set, even if a concrete backend provider is present", () => {
-    expect(llmDisplayLabel("gemini", "anima")).toBe("Anima");
+    expect(llmDisplayLabel("kimi", "anima")).toBe("Anima");
     expect(llmDisplayLabel("kimi", null)).toBe("Kimi");
-    expect(llmDisplayTitle("xai", "anima")).toMatch(/Anima custom LLM/);
-    expect(llmDisplayTitle("xai", "anima")).toMatch(/Grok/);
+    expect(llmDisplayTitle("kimi", "anima")).toMatch(/Anima/);
+    expect(llmDisplayTitle("kimi", "anima")).toMatch(/Kimi/);
     expect(llmDisplayBadgeClass("openai", "anima")).toMatch(/rose/);
   });
 
-  it("lists Anima plus the four backend families", () => {
-    expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
-      "anima",
-      "kimi",
-      "gemini",
-      "xai",
-      "openai",
-    ]);
+  it("lists Kimi as the sole chat LLM (no Gemini)", () => {
+    expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual(["kimi"]);
   });
 
   it("returns distinct badge classes", () => {
     expect(llmProviderBadgeClass("anima")).toMatch(/rose/);
-    expect(llmProviderBadgeClass("gemini")).toMatch(/sky/);
     expect(llmProviderBadgeClass("kimi")).toMatch(/emerald/);
     expect(llmProviderBadgeClass("xai")).toMatch(/amber/);
     expect(llmProviderTitle("kimi")).toMatch(/Kimi/i);
-    expect(llmProviderTitle("gemini")).toMatch(/Gemini/i);
   });
 });

@@ -125829,89 +125829,74 @@ async function createGeminiChatStream(opts) {
 // src/lib/llmFailover.ts
 var preferNonOpenAI = false;
 var preferNonXai = false;
+function envFlagEnabled(name) {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
 function defaultProviderMode() {
   if (hasKimiKey()) return "kimi";
-  if (hasGeminiKey()) return "gemini";
   return "auto";
 }
 function getConfiguredProviderMode() {
+  if (hasKimiKey()) return "kimi";
   const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
   if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
-  if (raw === "moonshot") return "kimi";
-  if (raw === "custom" || raw === "ensemble") return "anima";
-  if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "kimi" || raw === "anima" || raw === "auto") {
+  if (raw === "moonshot" || raw === "custom" || raw === "ensemble" || raw === "anima") {
+    return "kimi";
+  }
+  if (raw === "gemini") return "auto";
+  if (raw === "xai" || raw === "openai" || raw === "kimi" || raw === "auto") {
     return raw;
   }
   return defaultProviderMode();
 }
 function isAnimaCustomMode() {
-  return getConfiguredProviderMode() === "anima";
-}
-function envFlagEnabled(name) {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  return raw === "anima" || raw === "custom" || raw === "ensemble";
 }
 function isOpenAIBlocked() {
   const mode = getConfiguredProviderMode();
-  if (mode === "xai" || mode === "gemini" || mode === "kimi") return true;
+  if (mode === "xai" || mode === "kimi") return true;
   return envFlagEnabled("ANIMA_DISABLE_OPENAI");
 }
 function isXaiBlocked() {
   const mode = getConfiguredProviderMode();
-  if (mode === "gemini" || mode === "kimi") return true;
+  if (mode === "kimi") return true;
   if (preferNonXai) return true;
   return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
 function providerAvailable(id) {
+  if (id === "gemini") return false;
   if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
   if (id === "xai") return !isXaiBlocked() && hasXaiKey();
   if (id === "kimi") return hasKimiKey();
-  return hasGeminiKey();
+  return false;
 }
-function getAnimaTierProviderOrder(tier) {
-  if (tier === "heavy") {
-    return ["xai", "kimi", "openai", "gemini"];
-  }
-  return ["kimi", "gemini", "xai", "openai"];
-}
-function getProviderChain(tier = "standard") {
+function getProviderChain(_tier = "standard") {
   const mode = getConfiguredProviderMode();
   const chain = [];
   const push2 = (id) => {
     if (providerAvailable(id) && !chain.includes(id)) chain.push(id);
   };
+  if (mode === "kimi") {
+    push2("kimi");
+    return chain;
+  }
   if (mode === "openai") {
     push2("openai");
     push2("kimi");
     push2("xai");
-    push2("gemini");
     return chain;
   }
   if (mode === "xai") {
     push2("xai");
     push2("kimi");
-    push2("gemini");
     return chain;
   }
-  if (mode === "gemini") {
-    push2("gemini");
-    return chain;
-  }
-  if (mode === "kimi") {
-    push2("kimi");
-    return chain;
-  }
-  if (mode === "anima") {
-    for (const id of getAnimaTierProviderOrder(tier)) {
-      push2(id);
-    }
-    return chain;
-  }
-  const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey() || hasKimiKey();
+  const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasKimiKey();
   if (preferAlt) {
     push2("kimi");
-    push2("gemini");
     push2("xai");
     push2("openai");
   } else {
@@ -126048,7 +126033,7 @@ function resolveForProvider(provider, tier) {
   return resolveModel(tier);
 }
 function markOpenAIUnusable(err) {
-  if (isProviderUnusableError(err) && (hasXaiKey() || hasGeminiKey() || hasKimiKey())) {
+  if (isProviderUnusableError(err) && (hasXaiKey() || hasKimiKey())) {
     preferNonOpenAI = true;
   }
 }
@@ -126059,7 +126044,7 @@ function isXaiCreditsError(err) {
   return msg.includes("credits or licenses") || msg.includes("no credits or licenses") || msg.includes("console.x.ai") && msg.includes("credit");
 }
 function markXaiUnusable(err) {
-  if (isXaiCreditsError(err) && hasGeminiKey()) {
+  if (isXaiCreditsError(err) && hasKimiKey()) {
     preferNonXai = true;
   }
 }
@@ -126068,26 +126053,19 @@ function enrichError(err, attempted) {
   if (isProviderAuthError(err)) {
     const keyHints = attempted.map((id) => {
       if (id === "xai") return "XAI_API_KEY";
-      if (id === "gemini") return "GEMINI_API_KEY";
       if (id === "kimi") return "KIMI_API_KEY";
       return "OPENAI_API_KEY";
     });
     const uniqueKeys = [...new Set(keyHints)].join(" / ");
     return new Error(
-      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("gemini") ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. " : "") + (attempted.includes("kimi") ? "Kimi uses Moonshot keys from https://platform.kimi.ai (KIMI_API_KEY or MOONSHOT_API_KEY). " : "") + "To force a provider, set ANIMA_LLM_PROVIDER=kimi|gemini|xai|openai."
+      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("kimi") ? "Kimi uses Moonshot keys from https://platform.kimi.ai (KIMI_API_KEY or MOONSHOT_API_KEY). " : "") + "Chat uses Kimi when KIMI_API_KEY is set (Gemini is not used for chat)."
     );
   }
   if (isProviderUnusableError(err)) {
     const xaiBilling = extractXaiBillingUrl(err);
     if (xaiBilling && attempted.includes("xai")) {
-      const geminiAlreadyTried = attempted.includes("gemini");
-      if (geminiAlreadyTried) {
-        return new Error(
-          `Chat providers failed (tried ${names}). Gemini was unavailable, and Grok (xAI) has no team credits/licenses. Check GEMINI_API_KEY / Google AI Studio quota on Vercel, set KIMI_API_KEY + ANIMA_LLM_PROVIDER=kimi, or buy Grok credits at ${xaiBilling}.`
-        );
-      }
       return new Error(
-        `Grok (xAI) has no team credits/licenses yet (tried ${names}). Buy credits at ${xaiBilling}` + (hasKimiKey() ? ", or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead." : hasGeminiKey() ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead (and optionally ANIMA_DISABLE_XAI=true)." : ". Optionally set KIMI_API_KEY or GEMINI_API_KEY for a non-OpenAI backup.")
+        `Grok (xAI) has no team credits/licenses yet (tried ${names}). Buy credits at ${xaiBilling}` + (hasKimiKey() ? ", or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead." : ". Set KIMI_API_KEY for Kimi chat.")
       );
     }
     if (attempted.length === 1 && attempted[0] === "kimi") {
@@ -126095,17 +126073,11 @@ function enrichError(err, attempted) {
         `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, then redeploy.`
       );
     }
-    if (attempted.length === 1 && attempted[0] === "gemini") {
-      return new Error(
-        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` + (hasKimiKey() ? " Or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead." : hasXaiKey() && !isXaiBlocked() ? " Or set ANIMA_LLM_PROVIDER=auto to allow Grok/OpenAI failover." : hasOpenAIKey() && !isOpenAIBlocked() ? " Or set ANIMA_LLM_PROVIDER=auto to allow OpenAI failover." : "")
-      );
-    }
     const hints = [];
     if (!hasKimiKey()) hints.push("Set KIMI_API_KEY for Kimi");
     if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
-    if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
     if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
-    const hint = hints.length > 0 ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=kimi|gemini|xai to skip OpenAI.` : " All configured providers failed. Check KIMI_API_KEY / GEMINI_API_KEY / Google AI Studio quota, or fund XAI_API_KEY / OPENAI_API_KEY.";
+    const hint = hints.length > 0 ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=kimi|xai to skip OpenAI.` : " All configured providers failed. Check KIMI_API_KEY at https://platform.kimi.ai, or fund XAI_API_KEY / OPENAI_API_KEY.";
     return new Error(
       `LLM credits/quota exhausted (tried ${names}).${hint}`
     );
@@ -126159,7 +126131,7 @@ async function createChatStreamWithFailover(req) {
   const brand = isAnimaCustomMode() ? "anima" : void 0;
   if (chain.length === 0) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " For the custom multi-model stack set ANIMA_LLM_PROVIDER=anima."
+      "No LLM provider configured. Set KIMI_API_KEY (preferred), XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " Gemini is not used for chat."
     );
   }
   const attempted = [];
@@ -126200,7 +126172,7 @@ async function createChatCompletionWithFailover(req) {
   const brand = isAnimaCustomMode() ? "anima" : void 0;
   if (chain.length === 0) {
     throw new Error(
-      "No LLM provider configured. Set KIMI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " For the custom multi-model stack set ANIMA_LLM_PROVIDER=anima."
+      "No LLM provider configured. Set KIMI_API_KEY (preferred), XAI_API_KEY, or OPENAI_API_KEY" + (isOpenAIBlocked() ? " (OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI)." : ".") + " Gemini is not used for chat."
     );
   }
   const attempted = [];
