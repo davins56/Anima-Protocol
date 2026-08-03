@@ -20,6 +20,7 @@ import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
+import CharacterBioSheet from "@/components/character/CharacterBioSheet";
 
 /** True when /api/store failed because Postgres is down / unreachable. */
 function isStoreDatabaseError(err) {
@@ -79,6 +80,7 @@ export default function Characters() {
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [showSeriesModal, setShowSeriesModal] = useState(false);
+  const [bioCharacter, setBioCharacter] = useState(null);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [loadError, setLoadError] = useState(null);
@@ -484,22 +486,36 @@ export default function Characters() {
                   </button>
                 </div>
 
-                {/* Avatar */}
+                {/* Avatar — tap photo to open bio sheet */}
                 <div className="relative">
                   {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
-                    <img
-                      src={char.avatar_url}
-                      alt={char.name}
-                      className="w-full aspect-square object-cover"
-                      onError={() =>
-                        setBrokenPhotoIds((prev) =>
-                          prev.has(char.id) ? prev : new Set(prev).add(char.id)
-                        )
-                      }
-                    />
+                    <button
+                      type="button"
+                      className="w-full block focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                      onClick={() => setBioCharacter(char)}
+                      title={`View ${char.name} bio sheet`}
+                    >
+                      <img
+                        src={char.avatar_url}
+                        alt={char.name}
+                        className="w-full aspect-square object-cover"
+                        onError={() =>
+                          setBrokenPhotoIds((prev) =>
+                            prev.has(char.id) ? prev : new Set(prev).add(char.id)
+                          )
+                        }
+                      />
+                    </button>
                   ) : (
                     <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
-                      <span className="font-mono text-primary/30 text-4xl">{char.name[0]}</span>
+                      <button
+                        type="button"
+                        onClick={() => setBioCharacter(char)}
+                        title={`View ${char.name} bio sheet`}
+                        className="font-mono text-primary/30 text-4xl hover:text-primary/60 transition-colors focus:outline-none"
+                      >
+                        {char.name[0]}
+                      </button>
                       <button
                         type="button"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -721,6 +737,12 @@ export default function Characters() {
           </div>
         </div>
       )}
+
+      <CharacterBioSheet
+        character={bioCharacter}
+        open={!!bioCharacter}
+        onClose={() => setBioCharacter(null)}
+      />
     </div>
   );
 }

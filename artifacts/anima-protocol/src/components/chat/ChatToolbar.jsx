@@ -35,12 +35,13 @@ export default function ChatToolbar({
   onSelectBranch,
   onCreateBranch,
   onShowExport,
+  onAvatarClick,
 }) {
   const [showActionsPanel, setShowActionsPanel] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
 
   return (
-    <div className="hidden sm:flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
+    <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
       {/* Single row: session info + Online button */}
       <div className="flex items-center min-w-0 h-12">
         <div className="flex-shrink-0 min-w-[200px] max-w-[60%]">
@@ -50,6 +51,7 @@ export default function ChatToolbar({
             mood={currentMood}
             characterEmotions={characterEmotions}
             onToggleDeepMode={onToggleDeepMode}
+            onAvatarClick={onAvatarClick}
           />
         </div>
 
