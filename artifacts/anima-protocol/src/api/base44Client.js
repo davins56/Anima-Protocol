@@ -8,22 +8,7 @@
 // functions) is kept identical to the old localStorage implementation so the
 // hundreds of call sites across the app are untouched.
 
-import { animaApi } from './animaApi';
-import { downscaleDataUrl } from '@/lib/downscaleImage';
-import { apiUrl } from '@/lib/apiOrigin';
-import {
-  ensureBootstrapComplete,
-  isBootstrapSettled,
-} from '@/lib/bootstrapState';
-import {
-  authHeaders,
-  clearAuthTokenGetter,
-  getToken,
-  setAuthTokenGetter,
-  waitForStoreAuth,
-} from './authBridge';
-
-const STORE_BASE = () => apiUrl('/store');
+const DB_PREFIX = 'anima_entity_';
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
 
@@ -1183,27 +1168,20 @@ export const base44 = {
 
   integrations: {
     Core: {
-      InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
-        // Create/reuse a conversation for LLM calls
-        let convId = sessionStorage.getItem('anima_llm_conv_id');
-        if (!convId) {
-          const conv = await animaApi.conversations.create('LLM session');
-          convId = String(conv.id);
-          sessionStorage.setItem('anima_llm_conv_id', convId);
+      InvokeLLM: async ({ prompt, systemPrompt, history }) => {
+        const res = await fetch(`${window.location.origin}/api/llm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, systemPrompt, history: history || [] }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(err.error || res.statusText);
         }
 
-        let result = '';
-        for await (const chunk of animaApi.sendMessage(
-          Number(convId),
-          prompt,
-          systemPrompt || '',
-          !!deepMode,
-        )) {
-          if (chunk.done) break;
-          if (chunk.error) throw new Error(chunk.error);
-          if (chunk.content) result += chunk.content;
-        }
-        return result;
+        const json = await res.json();
+        return json.content || '';
       },
 
       // Generate (or re-style) an image. When existing_image_urls is provided,
