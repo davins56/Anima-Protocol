@@ -135,7 +135,7 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Optional. Kimi (Moonshot / “Kiwi”). Default when Gemini is unset. Force with `ANIMA_LLM_PROVIDER=kimi` |
 | `XAI_API_KEY` | API | Optional. Grok (xAI) — used under `ANIMA_LLM_PROVIDER=auto` / `xai` / `anima`, not as a Gemini/Kimi-mode backup |
 | `GEMINI_API_KEY` | API | Optional. Gemini (Google AI Studio), including `AQ.*` auth keys via the native API. Default when set (Gemini-only). Also accepts `GOOGLE_API_KEY` |
-| `ANIMA_LLM_PROVIDER` | API | Unset: Anima ensemble if Kimi + another key; else Kimi-only / Gemini-only / `auto`. `anima` / `custom` / `ensemble` = parallel minds draft then app combines one reply. Or `kimi` / `gemini` / `auto` / `xai` / `openai` |
+| `ANIMA_LLM_PROVIDER` | API | Unset: Anima ensemble if Kimi + another key; else Kimi-only / Gemini-only / `auto`. `anima` / `custom` / `ensemble` = parallel minds draft then app combines one reply. Or `kimi` / `moonshot` / `gemini` / `auto` / `xai` / `openai` |
 | `ANIMA_LLM_ENSEMBLE` | API | Set `true` to force parallel-minds + combined reply even under other provider modes |
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
