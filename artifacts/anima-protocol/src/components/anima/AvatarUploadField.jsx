@@ -39,7 +39,14 @@ export default function AvatarUploadField({
         setError("Upload failed — try another image.");
       }
     } catch (err) {
-      setError(err?.message || "Upload failed — try another image.");
+      const msg = String(err?.message || "");
+      if (/unauthorized|sign in|not signed|401/i.test(msg)) {
+        setError("Sign in to upload an avatar, then try again.");
+      } else if (/too large/i.test(msg)) {
+        setError("That image is too large. Try a smaller photo.");
+      } else {
+        setError(msg || "Upload failed — try another image.");
+      }
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";

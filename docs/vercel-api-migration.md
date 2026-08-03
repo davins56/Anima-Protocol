@@ -35,6 +35,9 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `ANIMA_LLM_PROVIDER` | No | `auto` (default), `openai`, `xai`/`grok`, or `gemini`. Under `auto`, chat prefers Grok/Gemini whenever those keys exist (OpenAI last). Set `openai` to force OpenAI-first. |
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
+| `DATABASE_URL` | Yes | Also stores avatar uploads in `uploaded_images` (Vercel has no Replit object-storage sidecar) |
+
+**Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
 **If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI’s key is dead/revoked or out of credits. Fix chat by setting a working **`XAI_API_KEY`** (and/or **`GEMINI_API_KEY`**) on Vercel and redeploying — `auto` will use those first. To hard-block OpenAI: `ANIMA_LLM_PROVIDER=xai` or `gemini`. Image generation still needs a funded `OPENAI_API_KEY`.
 
