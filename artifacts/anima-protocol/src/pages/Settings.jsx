@@ -17,6 +17,7 @@ import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
+import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 
 const SECTION = {
   ACCOUNT: "account",
@@ -503,6 +504,32 @@ export default function Settings() {
           {/* ── AI BEHAVIOR ── */}
           {section === SECTION.AI && (
             <div className="space-y-4">
+              <SectionTitle>LLM Providers</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
+                <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
+                  Chat uses these models in order. Set the matching API key on the host (Vercel) to enable each one.
+                </p>
+                {CONFIGURED_LLM_PROVIDERS.map((provider, index) => (
+                  <div
+                    key={provider.id}
+                    className="flex items-start justify-between gap-3 border border-primary/10 bg-black/30 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs text-primary/80 tracking-wider uppercase">
+                        {index + 1}. {provider.label}
+                        {index === 0 ? (
+                          <span className="ml-2 text-[8px] text-sky-300/80 tracking-widest">Primary</span>
+                        ) : null}
+                      </p>
+                      <p className="text-[9px] font-mono text-primary/35 mt-0.5">{provider.note}</p>
+                    </div>
+                    <span className="flex-shrink-0 font-mono text-[8px] text-primary/40 tracking-widest uppercase">
+                      {provider.env}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
               <SectionTitle>AI Behavior</SectionTitle>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-5">
@@ -1031,7 +1058,10 @@ export default function Settings() {
               <SectionTitle>About</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
-                <InfoRow label="AI Engine" value="Gemini primary (Grok / OpenAI backup)" />
+                <InfoRow
+                  label="AI Engine"
+                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(" → ")}
+                />
                 <InfoRow label="Platform" value="Base44" />
               </div>
             </div>
