@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: [
       "test/imageUploads.test.ts",
+      "test/llmEnsemble.test.ts",
       "test/llmFailover.test.ts",
       "test/modelRouter.test.ts",
     ],
