@@ -188,7 +188,7 @@ const MARVEL_CHARACTERS = [
   },
 ];
 
-const AVATAR_FIX_KEY = "anima_avatars_fixed_v1";
+const AVATAR_FIX_KEY = "anima_avatars_fixed_v2";
 
 async function fixBrokenAvatars() {
   if (localStorage.getItem(AVATAR_FIX_KEY)) return;

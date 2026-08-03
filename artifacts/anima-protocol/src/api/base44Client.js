@@ -23,11 +23,23 @@ function makeId() {
 
 function entityStore(entityName) {
   return {
-    async list(filters = {}) {
-      const items = getStore(entityName);
-      return items.filter((item) => {
-        return Object.entries(filters).every(([k, v]) => item[k] === v);
-      });
+    async list(filtersOrSort = {}, limit) {
+      let items = getStore(entityName);
+      if (typeof filtersOrSort === 'string') {
+        // base44 signature: list("-created_date", limit)
+        const desc = filtersOrSort.startsWith('-');
+        const field = desc ? filtersOrSort.slice(1) : filtersOrSort;
+        items = [...items].sort((a, b) => {
+          const av = a[field] ?? '';
+          const bv = b[field] ?? '';
+          return desc ? (av < bv ? 1 : av > bv ? -1 : 0) : (av > bv ? 1 : av < bv ? -1 : 0);
+        });
+      } else {
+        items = items.filter((item) =>
+          Object.entries(filtersOrSort).every(([k, v]) => item[k] === v)
+        );
+      }
+      return typeof limit === 'number' ? items.slice(0, limit) : items;
     },
 
     async get(id) {
