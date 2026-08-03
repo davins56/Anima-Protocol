@@ -16,6 +16,7 @@ import {
   syncFromRemote as handleRemoteSync,
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
+import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -90,6 +91,7 @@ import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_MET
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
+import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
@@ -960,7 +962,7 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (message) => {
-    if (!activeSession) return;
+    if (!activeSession || isLoading) return;
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
@@ -979,6 +981,11 @@ export default function Chat() {
     // read again when parsing the response into per-aspect bubbles.
     let isMultiAspect = false;
     let multiAspectChars = [];
+    // Hoisted for the catch path: keep painted tokens + correct speaker label
+    // when a turn fails after the stream has started.
+    let streamedSoFar = "";
+    let replySpeakerName = "Character";
+    let userMessagePersisted = false;
 
     // In "continue" mode, skip adding a user message — just advance the speaker
     const userMessage = { role: "user", content, timestamp: new Date().toISOString() };
@@ -1537,11 +1544,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         activeChar = currentGroupSpeakerRef.current;
         charName = activeChar?.name || "Character";
       }
+      replySpeakerName = charName;
 
       // Stream tokens into the open bubble as they arrive — no post-buffer delay.
       // Thinking indicator stays until the first delta, then the live reply grows.
       const streamTs = new Date().toISOString();
       const showStreamingPartial = (accumulated) => {
+        streamedSoFar = accumulated;
         const streamingMsg = {
           role: "assistant",
           content: accumulated,
@@ -1618,8 +1627,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // In group mode, parse multi-character **Name:** format into separate bubbles
       let newAiMessages;
       if (activeSession.mode === "group") {
+        const groupIdsForParse = activeSession.group_character_ids || [];
         const groupCharsForParse = characters.filter((c) =>
-          activeSession.group_character_ids.includes(c.id)
+          groupIdsForParse.includes(c.id)
         );
         newAiMessages = parseGroupResponse(strippedResult, groupCharsForParse, charName);
       } else if (isMultiAspect && multiAspectChars.length > 1) {
@@ -1647,7 +1657,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       ];
       const storedNew = [];
       for (const m of newMessages) {
-        storedNew.push(await base44.messages.append(activeSession.id, m));
+        const stored = await base44.messages.append(activeSession.id, m);
+        if (m.role === "user") userMessagePersisted = true;
+        storedNew.push(stored);
       }
 
       // Session metadata only — NEVER the messages array (those are rows now).
@@ -1804,10 +1816,15 @@ ${loyaltyGuardrailClause()}`;
             character_name: "Serenity",
             timestamp: new Date().toISOString(),
           };
-          const withSerenity = [...finalMessages, serenityMsg];
-          await base44.entities.ChatSession.update(activeSession.id, { messages: withSerenity });
-          setActiveSession((prev) => ({ ...prev, messages: withSerenity }));
-          speakMessage(serenityMsg.content, "Serenity");
+          // Append only — never ChatSession.update({ messages }) with a stale
+          // finalMessages snapshot (replaceMessages would delete newer turns).
+          const stored = await appendAmbientMessage({
+            appendMessage: base44.messages.append,
+            sessionId: activeSession.id,
+            message: serenityMsg,
+            setActiveSession,
+          });
+          speakMessage(stored.content, "Serenity");
         }).catch(() => {});
       }
 
@@ -1843,7 +1860,9 @@ ${loyaltyGuardrailClause()}`;
 
       if (shouldGenerateGroupInteraction) {
         groupInteractionCheckRef.current = 0;
-        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+        const groupChars = characters.filter((c) =>
+          (activeSession.group_character_ids || []).includes(c.id),
+        );
         
         setTimeout(() => {
           base44.functions.invoke("generateGroupInteraction", {
@@ -1872,15 +1891,14 @@ ${loyaltyGuardrailClause()}`;
                 timestamp: new Date().toISOString(),
               };
 
-              setActiveSession((prev) => ({
-                ...prev,
-                messages: [...(prev.messages || []), interactionMsg],
-              }));
-
-              setTimeout(() => {
-                const updated = [...finalMessages, interactionMsg];
-                base44.entities.ChatSession.update(activeSession.id, { messages: updated }).catch(() => {});
-              }, 500);
+              // Append only — a replace against stale finalMessages would wipe
+              // any messages the user sent while this background job ran.
+              appendAmbientMessage({
+                appendMessage: base44.messages.append,
+                sessionId: activeSession.id,
+                message: interactionMsg,
+                setActiveSession,
+              }).catch(() => {});
             }
           }).catch(() => {});
         }, 1500);
@@ -2074,7 +2092,10 @@ Return JSON:
               if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
               if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
               
-              base44.entities.Character.update(activeChar.id, {
+              // Must update Anima — Character.update upserts a thin Character
+              // row with the same id that shadows the real Anima in chat.ts
+              // loadCharacters (Character preferred over Anima).
+              base44.entities.Anima.update(activeChar.id, {
                 personality: newPersonality,
               });
               toast.success(`${activeChar.name} has evolved based on your interactions.`);
@@ -2108,16 +2129,49 @@ Return JSON:
       }
     } catch (err) {
       console.error(err);
-      // Remove typing/thinking/streaming indicators on error
-      setActiveSession((prev) => ({
-        ...prev,
-        messages: (prev.messages || []).filter(
-          (m) =>
-            m.character_name !== "__typing__" &&
-            m.character_name !== "__thinking__" &&
-            !m.is_streaming,
-        ),
-      }));
+      // Keep any tokens already painted. The old path deleted `is_streaming`
+      // bubbles on any post-token failure, which looked like the AI "stopped".
+      let retained = null;
+      setActiveSession((prev) => {
+        const { messages, retained: kept } = retainStreamingOnError(prev.messages || []);
+        retained = kept;
+        // If state was mid-frame and lost the partial, recover from the local
+        // accumulator / error.partialContent when available.
+        if (!retained) {
+          const partial =
+            (typeof err?.partialContent === "string" && err.partialContent.trim()) ||
+            (typeof streamedSoFar === "string" && streamedSoFar.trim()) ||
+            "";
+          if (partial) {
+            retained = {
+              role: "assistant",
+              content: partial,
+              character_name: replySpeakerName,
+              timestamp: new Date().toISOString(),
+              is_streaming: false,
+            };
+            return { ...prev, messages: [...messages, retained] };
+          }
+        }
+        return { ...prev, messages };
+      });
+
+      // Best-effort persist so a deferred cross-device sync can't wipe the kept reply.
+      if (retained && activeSession?.id) {
+        try {
+          if (!isContinue && !userMessagePersisted && content.trim()) {
+            await base44.messages.append(activeSession.id, userMessage);
+            userMessagePersisted = true;
+          }
+          await base44.messages.append(activeSession.id, retained);
+        } catch (persistErr) {
+          console.warn("[Anima] Failed to persist partial reply:", persistErr);
+          // Skip the deferred remote refresh — it would replace local state with
+          // server history that does not include this unpersisted partial.
+          pendingRemoteSyncRef.current = false;
+        }
+        toast.error("The reply was interrupted — kept what came through.");
+      }
     }
 
     setPendingMessage("");
