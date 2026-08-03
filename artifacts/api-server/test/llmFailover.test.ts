@@ -32,6 +32,7 @@ import {
   getPreferredProvider,
   getProviderChain,
   isOpenAIBlocked,
+  isProviderAuthError,
   isProviderUnusableError,
   resetLlmFailoverStateForTests,
   resolveGeminiModel,
@@ -63,6 +64,22 @@ describe("isProviderUnusableError", () => {
       isProviderUnusableError({ status: 429, code: "insufficient_quota" }),
     ).toBe(true);
     expect(isProviderUnusableError({ status: 402, message: "Payment required" })).toBe(true);
+  });
+
+  it("detects 401 / invalid API key (including SDK 'no body' message)", () => {
+    expect(isProviderAuthError({ status: 401, message: "401 status code (no body)" })).toBe(
+      true,
+    );
+    expect(isProviderUnusableError({ status: 401, message: "401 status code (no body)" })).toBe(
+      true,
+    );
+    expect(
+      isProviderUnusableError({
+        status: 401,
+        code: "invalid_api_key",
+        message: "Incorrect API key provided",
+      }),
+    ).toBe(true);
   });
 
   it("does not treat model-unavailable as provider-unusable", () => {
@@ -222,6 +239,44 @@ describe("createChatStreamWithFailover", () => {
     expect(result.previousProvider).toBe("openai");
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[1][0].model).toBe("grok-4");
+  });
+
+  it("falls back to Grok on OpenAI 401 status code (no body)", async () => {
+    createMock
+      .mockRejectedValueOnce({
+        status: 401,
+        message: "401 status code (no body)",
+      })
+      .mockResolvedValueOnce(fakeStream("grok"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("xai");
+    expect(result.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a clear auth error when the forced provider key is rejected", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "xai";
+    delete process.env.GEMINI_API_KEY;
+    createMock.mockRejectedValueOnce({
+      status: 401,
+      message: "401 status code (no body)",
+    });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/XAI_API_KEY|authentication failed/i);
   });
 
   it("skips OpenAI entirely when ANIMA_LLM_PROVIDER=xai", async () => {

@@ -38,6 +38,8 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **If OpenAI keeps saying “no credits remaining”:** set `ANIMA_LLM_PROVIDER=xai` (and `XAI_API_KEY`) or `ANIMA_LLM_PROVIDER=gemini` (and `GEMINI_API_KEY`) on Vercel, then redeploy. Chat will never call OpenAI. Image generation still needs a funded `OPENAI_API_KEY`.
 
+**If you see `401 status code (no body)`:** the active LLM provider rejected the API key (empty body from OpenAI/xAI/Gemini). Check the matching env var (`OPENAI_API_KEY`, `XAI_API_KEY`, or `GEMINI_API_KEY`) — paste without quotes, confirm the key is active, redeploy. With failover keys configured, chat will try the next provider automatically.
+
 If `DATABASE_URL` or `CLERK_SECRET_KEY` is missing, `/api/*` returns **503**
 (with a JSON body) instead of crashing the Vercel function.
 
