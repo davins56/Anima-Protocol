@@ -28,7 +28,7 @@ const HOLD_CONTEXT_RE =
  * Covers suicide / self-harm phrasing that HOLD_CONTEXT_RE may miss (e.g. "suicidal").
  */
 const CRISIS_RE =
-  /\b(suicid\w*|self[-\s]?harm|kill myself|end my life|want to die|hurting myself|cutting myself)\b/i;
+  /\b(suicid\w*|self[-\s]?harm|kill myself|end (my life|it all)|want to die|hurting myself|cutting myself)\b/i;
 
 /**
  * Clear short refusals / redirects. Checked before soft-continue.
@@ -44,12 +44,16 @@ const SHORT_REFUSAL_RE =
 const REFUSAL_OF_INTIMACY_RE =
   /\b((please\s+)?(stop|don'?t|dont|no more|never)\b.{0,48}\b(kiss(ing|es|ed)?|touch(ing|es|ed)?|fuck(ing)?|sex|sexy|horny|naked|nude|undress|seduc\w*|teas(e|ing)|moan(ing)?|orgasm|cum|cock|pussy|breast|nipple|blowjob|handjob|lewd|nsfw|hentai|make love)|(no|never)\s+(sex|kissing|fucking|nudity))\b/i;
 
+const DONT_STOP_RE = /\bdon'?t\s+stop\b|\bdont\s+stop\b|\bdon'?t\s+you\s+(dare\s+)?stop\b/i;
+const NEVER_STOP_INTIMACY_RE =
+  /\bnever\s+(want\s+you\s+to\s+)?stop\b.{0,48}\b(kiss(ing)?|touch(ing)?|teas(e|ing)|seduc\w*|undress|make love|fuck(ing)?|sex|moan(ing)?|cum)\b/i;
+
 /**
  * Affirmative / keep-going cues for soft-continue after a heated window.
  * "don't stop" lives here so HOLD short-circuit does not fire on it.
  */
 const CONTINUE_CUE_RE =
-  /\b(yes|yeah|yep|yup|please|more|harder|deeper|keep going|go on|don'?t stop|dont stop|please continue|continue|don'?t you (dare )?stop|mmm+)\b/i;
+  /\b(yes|yeah|yep|yup|please|more|harder|deeper|keep going|go on|don'?t stop|dont stop|never (want you to )?stop|please continue|continue|don'?t you (dare )?stop|mmm+)\b/i;
 
 /**
  * Strong sexual-invite cues only. Ambiguous phrases (want you / need you /
@@ -57,13 +61,13 @@ const CONTINUE_CUE_RE =
  * so crisis, support, story, and factual questions prefer "hold".
  */
 const INVITE_RE =
-  /\b(kiss(es|ed|ing)? me|kiss me|fuck me|have sex|want sex|need sex|make love|touch me|take me|tease me|seduce( me)?|undress( me)?|strip( for me)?|ride me|go down on|blowjob|handjob|horny|aroused|orgasm|moan(ing)? for|cum (for|in|on)|cock|pussy|between (my|your) legs|nsfw|lewd (rp|roleplay|scene)|hentai rp)\b/i;
+  /\b(kiss(es|ed|ing)? me|kiss me|fuck me|have sex|want sex|need sex|make love|touch me|take me to bed with you|take me to your bed|tease me|seduce( me)?|undress( me)?|strip( for me)?|ride me|go down on|blowjob|handjob|horny|aroused|orgasm|moan(ing)? for|cum (for|in|on)|cock|pussy|between (my|your) legs|nsfw|lewd (rp|roleplay|scene)|hentai rp)\b/i;
 
 /**
  * Softer heat / chemistry cues (not enough alone for soft-continue inheritance).
  */
 const HEAT_RE =
-  /\b(flirt|flirting|desire|lust|intimate|intimacy|sensual|seductive|turned on|make out|making out|in bed|to bed|against (the|my|your) (wall|door)|breath on|hands on|pull(?:ed|ing)? (me|you) closer)\b/i;
+  /\b(flirt|flirting|desire|lust|intimate|intimacy|sensual|seductive|turned on|make out|making out|in bed with (you|me)|to bed with (you|me)|against (the|my|your) (wall|door)|breath on|hands on|pull(?:ed|ing)? (me|you) closer)\b/i;
 
 /**
  * True when the latest user message is a short, clear refusal/redirect.
@@ -75,6 +79,7 @@ const HEAT_RE =
 export function isClearRefusal(latest = "") {
   const text = String(latest || "").trim();
   if (!text) return false;
+  if (DONT_STOP_RE.test(text) || NEVER_STOP_INTIMACY_RE.test(text)) return false;
   if (REFUSAL_OF_INTIMACY_RE.test(text)) return true;
   if (text.length < 80 && SHORT_REFUSAL_RE.test(text)) return true;
   // Short messages with standalone redirect words (e.g. "No, not now.", "Back off.")
@@ -83,12 +88,12 @@ export function isClearRefusal(latest = "") {
     /\b(stop|halt|wait|pause|back off|leave me|get off|not now|no more)\b/i.test(
       text,
     ) &&
-    !CONTINUE_CUE_RE.test(text)
+    !DONT_STOP_RE.test(text)
   ) {
     return true;
   }
   // Bare "no" / "nope" in short messages (not "no problem", "now", etc.)
-  if (text.length < 80 && /^(no|nope|nah)\b/i.test(text) && !CONTINUE_CUE_RE.test(text)) {
+  if (text.length < 80 && /^(no|nope|nah)\b/i.test(text) && !DONT_STOP_RE.test(text)) {
     return true;
   }
   return false;
@@ -115,6 +120,12 @@ export function assessLewdTiming({ userMessage = "", recentMessages = [] } = {})
   const recentText = (recentMessages || [])
     .slice(-6)
     .map((m) => String(m?.content || ""))
+    .filter((text) =>
+      text &&
+      !CRISIS_RE.test(text) &&
+      !HOLD_CONTEXT_RE.test(text) &&
+      !isClearRefusal(text),
+    )
     .join("\n");
   const recentWasHeated =
     INVITE_RE.test(recentText) || HEAT_RE.test(recentText);
@@ -342,7 +353,7 @@ export function isIntimacyEligibleSpeaker(
 
 /**
  * Filter candidates for intimate-beat speaker selection / interruption.
- * Falls back to the original list if filtering would leave no one.
+ * Returns an empty list when every candidate is excluded.
  *
  * @param {Array<{ name?: string, personality?: string }>} candidates
  * @param {{ timing?: LewdTiming, userMessage?: string }} [opts]
@@ -357,7 +368,7 @@ export function filterIntimacyEligibleSpeakers(
   const eligible = candidates.filter((c) =>
     isIntimacyEligibleSpeaker(c, { timing, userMessage, allowAddressed: true }),
   );
-  return eligible.length > 0 ? eligible : candidates;
+  return eligible;
 }
 
 /**
