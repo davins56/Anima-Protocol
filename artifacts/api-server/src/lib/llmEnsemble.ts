@@ -28,6 +28,7 @@ import {
   recordProviderFailure,
   resolveKimiModel,
   resolveXaiModel,
+  reviveStickySkippedProvidersIfNeeded,
   type LlmBrand,
   type LlmProviderId,
 } from "./llmFailover";
@@ -99,6 +100,8 @@ export function isEnsembleMode(): boolean {
  * NOT apply Kimi-mode locks — ensemble intentionally fans out across keys.
  */
 export function getEnsembleMinds(tier: ModelTier = "standard"): EnsembleMindId[] {
+  reviveStickySkippedProvidersIfNeeded();
+
   const disableOpenAI = envFlagEnabled("ANIMA_DISABLE_OPENAI");
   const disableXai = envFlagEnabled("ANIMA_DISABLE_XAI");
   const minds: EnsembleMindId[] = [];
