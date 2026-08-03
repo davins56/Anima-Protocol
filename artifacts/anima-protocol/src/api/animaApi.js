@@ -1,5 +1,6 @@
 import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
+import { readSseJsonStream } from '@/lib/readSseJsonStream';
 
 async function request(path, options = {}) {
   const headers = await authHeaders(options.headers);
@@ -39,28 +40,7 @@ export const animaApi = {
       }
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            yield data;
-          } catch {
-            // ignore parse errors
-          }
-        }
-      }
-    }
+    yield* readSseJsonStream(res.body);
   },
 
   chat: {
@@ -95,28 +75,11 @@ export const animaApi = {
           metadata,
         }),
       });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              yield JSON.parse(line.slice(6));
-            } catch {
-              // ignore parse errors
-            }
-          }
-        }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || `API error: ${res.status}`);
       }
+      yield* readSseJsonStream(res.body);
     },
 
     completeMessage: async (payload) => {
