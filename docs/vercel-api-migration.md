@@ -47,6 +47,10 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **Custom Anima LLM (Kimi + Gemini + Grok + ChatGPT):** Set `ANIMA_LLM_PROVIDER=anima` (or `custom`) and configure as many of `KIMI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, and `OPENAI_API_KEY` as you have. **`KIMI_API_KEY` must be set** or Anima cannot call Kimi and will jump straight to Gemini. Everyday chat (light + standard) prefers **Kimi first**, then Gemini → Grok → ChatGPT. Heavy / deep-mode prefers Grok, then Kimi. The chat chip shows **Anima**; the tooltip names which backend served the turn.
 
+**If chat still shows Gemini and never Kimi:** open `https://www.anima-protocol.com/api/healthz/llm` — it reports which keys Production sees and the live provider chain (no secrets). Common causes:
+1. `keys.kimi: false` → add `KIMI_API_KEY` on Vercel **Production** and redeploy
+2. `envProvider: "gemini"` from earlier unpaid setups → this deploy overrides that to Kimi when the key is present (or set `ANIMA_LLM_PROVIDER=kimi` / delete the gemini value). To keep Gemini-only on purpose, set `ANIMA_FORCE_GEMINI=true`.
+
 **If chat fails with a Grok “no team credits” error after trying Gemini:** you are on `ANIMA_LLM_PROVIDER=auto` (or an older deploy). Fix Gemini first (check `GEMINI_API_KEY` / Google AI Studio quota), set `ANIMA_DISABLE_XAI=true`, or buy xAI credits. With the current default (`gemini` mode when `GEMINI_API_KEY` is set), Grok is not used as a backup — failures surface as Gemini quota/key errors instead.
 
 **If the key is valid but companions return an empty reply / no visible text:** Gemini 2.5 thinking tokens can consume `maxOutputTokens` and leave no room for the answer. Current deploys disable thinking on Flash by default (`thinkingBudget: 0`). Override with `ANIMA_GEMINI_THINKING_BUDGET` if needed, then redeploy.
