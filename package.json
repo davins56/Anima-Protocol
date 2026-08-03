@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --config vite.config.ts --host 0.0.0.0",
+    "dev": "pnpm --filter @workspace/mockup-sandbox dev",
     "dev:api": "npx tsx api/_dev-server.ts",
-    "build": "vite build",
-    "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
+    "build": "pnpm --filter @workspace/mockup-sandbox build",
+    "serve": "pnpm --filter @workspace/mockup-sandbox preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test tests/**/*.test.mjs"
   },
