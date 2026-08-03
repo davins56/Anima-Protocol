@@ -69870,7 +69870,7 @@ var require_lib9 = __commonJS({
 });
 
 // src/app.ts
-var import_express18 = __toESM(require_express2(), 1);
+var import_express19 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/lib/logger.ts
@@ -118753,30 +118753,53 @@ router2.post("/healthz/schema", async (_req, res) => {
 var health_default = router2;
 
 // src/routes/index.ts
-var import_express17 = __toESM(require_express2(), 1);
+var import_express18 = __toESM(require_express2(), 1);
 
 // src/routes/openai/index.ts
-var import_express4 = __toESM(require_express2(), 1);
+var import_express5 = __toESM(require_express2(), 1);
 
 // src/lib/rateLimit.ts
-var windowMs = 6e4;
-var maxRequests = 30;
+var DEFAULT_WINDOW_MS = 6e4;
+var DEFAULT_MAX_REQUESTS = 120;
 var counts = /* @__PURE__ */ new Map();
-function rateLimit(req, res, next) {
-  const ip = req.ip ?? "unknown";
-  const now = Date.now();
-  const entry = counts.get(ip);
-  if (!entry || now > entry.resetAt) {
-    counts.set(ip, { count: 1, resetAt: now + windowMs });
-    return next();
+function rateLimitKey(req, name = "default") {
+  try {
+    const { userId } = getAuth(req);
+    if (userId) return `${name}:user:${userId}`;
+  } catch {
   }
-  entry.count += 1;
-  if (entry.count > maxRequests) {
-    res.status(429).json({ error: "Too many requests. Please slow down." });
-    return;
-  }
-  next();
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
+  const realIp = String(req.headers["x-real-ip"] || "").trim();
+  const ip = (req.ip || realIp || forwarded || req.socket.remoteAddress || "unknown").replace(/:\d+$/, "");
+  return `${name}:ip:${ip || "unknown"}`;
 }
+function createRateLimit(options = {}) {
+  const max = options.max ?? DEFAULT_MAX_REQUESTS;
+  const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
+  const name = options.name ?? "default";
+  return function rateLimit2(req, res, next) {
+    const key = rateLimitKey(req, name);
+    const now = Date.now();
+    const entry = counts.get(key);
+    if (!entry || now > entry.resetAt) {
+      counts.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      const retryAfterSec = Math.max(1, Math.ceil((entry.resetAt - now) / 1e3));
+      res.setHeader("Retry-After", String(retryAfterSec));
+      res.status(429).json({
+        error: `Too many requests. Please slow down and retry in about ${retryAfterSec}s.`,
+        code: "rate_limit",
+        retry_after_seconds: retryAfterSec
+      });
+      return;
+    }
+    next();
+  };
+}
+var rateLimit = createRateLimit();
 
 // src/lib/modelRouter.ts
 var DEFAULT_MODELS = {
@@ -126125,8 +126148,8 @@ async function createChatCompletionWithFailover(req) {
 }
 
 // src/routes/openai/index.ts
-var router3 = (0, import_express4.Router)();
-router3.use(rateLimit);
+var router3 = (0, import_express5.Router)();
+router3.use(createRateLimit({ name: "openai-chat", max: 60 }));
 router3.get("/conversations", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -126259,7 +126282,7 @@ router3.post("/conversations/:id/messages", async (req, res) => {
 var openai_default2 = router3;
 
 // src/routes/openai/functions.ts
-var import_express6 = __toESM(require_express2(), 1);
+var import_express7 = __toESM(require_express2(), 1);
 
 // src/lib/storeEvents.ts
 var clients = /* @__PURE__ */ new Map();
@@ -126291,8 +126314,8 @@ function notifyUser(userId) {
 }
 
 // src/routes/openai/functions.ts
-var router4 = (0, import_express6.Router)();
-router4.use(rateLimit);
+var router4 = (0, import_express7.Router)();
+router4.use(createRateLimit({ name: "openai-functions", max: 180 }));
 router4.use((req, res, next) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -127167,8 +127190,8 @@ router4.post("/image-generate", async (req, res) => {
 var functions_default = router4;
 
 // src/routes/elevenlabs.ts
-var import_express8 = __toESM(require_express2(), 1);
-var router5 = (0, import_express8.Router)();
+var import_express9 = __toESM(require_express2(), 1);
+var router5 = (0, import_express9.Router)();
 router5.use(["/tts", "/voices"], rateLimit);
 var DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 var EMOTION_TUNE = {
@@ -127278,8 +127301,8 @@ router5.post("/tts", async (req, res) => {
 var elevenlabs_default = router5;
 
 // src/routes/characterImage.ts
-var import_express9 = __toESM(require_express2(), 1);
-var router6 = (0, import_express9.Router)();
+var import_express10 = __toESM(require_express2(), 1);
+var router6 = (0, import_express10.Router)();
 router6.use("/character-image", rateLimit);
 var WIKI_HEADERS = { "User-Agent": "AnimaProtocol/1.0 (character portrait lookup)" };
 async function wikiSearchTitle(query) {
@@ -127338,8 +127361,8 @@ router6.get("/character-image", async (req, res) => {
 var characterImage_default = router6;
 
 // src/routes/store.ts
-var import_express10 = __toESM(require_express2(), 1);
-var router7 = (0, import_express10.Router)();
+var import_express11 = __toESM(require_express2(), 1);
+var router7 = (0, import_express11.Router)();
 function requireUser(req, res, next) {
   let userId = null;
   try {
@@ -128175,7 +128198,7 @@ router7.delete("/:entity/:id", async (req, res) => {
 var store_default = router7;
 
 // src/routes/storage.ts
-var import_express12 = __toESM(require_express2(), 1);
+var import_express13 = __toESM(require_express2(), 1);
 import { Readable as Readable8 } from "stream";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/service.js
@@ -140104,7 +140127,7 @@ async function getUploadedImage(objectPath) {
 }
 
 // src/routes/storage.ts
-var router8 = (0, import_express12.Router)();
+var router8 = (0, import_express13.Router)();
 var objectStorageService = new ObjectStorageService();
 router8.use("/storage/uploads", rateLimit);
 router8.post("/storage/uploads", async (req, res) => {
@@ -140222,7 +140245,7 @@ router8.get(
 var storage_default = router8;
 
 // src/routes/chat.ts
-var import_express14 = __toESM(require_express2(), 1);
+var import_express15 = __toESM(require_express2(), 1);
 
 // src/lib/memoryRetrieval.ts
 var TYPE_SIGNALS = {
@@ -141203,8 +141226,11 @@ function resolveActiveCharacterName(params) {
 }
 
 // src/routes/chat.ts
-var router9 = (0, import_express14.Router)();
-router9.use(rateLimit);
+var router9 = (0, import_express15.Router)();
+router9.use(
+  "/messages",
+  createRateLimit({ name: "chat-messages", max: 60, windowMs: 6e4 })
+);
 router9.use(async (_req, _res, next) => {
   try {
     await ensureSchemaOnce();
@@ -141740,8 +141766,8 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
 var chat_default = router9;
 
 // src/routes/admin.ts
-var import_express16 = __toESM(require_express2(), 1);
-var router10 = (0, import_express16.Router)();
+var import_express17 = __toESM(require_express2(), 1);
+var router10 = (0, import_express17.Router)();
 function requireMigrationSecret(req, res, next) {
   const configured = process.env.ADMIN_MIGRATION_SECRET?.trim();
   if (!configured) {
@@ -141807,7 +141833,7 @@ router10.post(
 var admin_default = router10;
 
 // src/routes/index.ts
-var router11 = (0, import_express17.Router)();
+var router11 = (0, import_express18.Router)();
 router11.use("/admin", admin_default);
 router11.use("/openai", openai_default2);
 router11.use("/openai", functions_default);
@@ -141826,12 +141852,13 @@ router11.get("/placeholder/:w/:h", (req, res) => {
 var routes_default = router11;
 
 // src/app.ts
-var app = (0, import_express18.default)();
+var app = (0, import_express19.default)();
+app.set("trust proxy", 1);
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
-app.use(import_express18.default.json({ limit: "25mb" }));
-app.use(import_express18.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express19.default.json({ limit: "25mb" }));
+app.use(import_express19.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use("/api", health_default);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });

@@ -16,7 +16,7 @@ import {
   userEntities,
   type MsgData,
 } from "@workspace/db";
-import { rateLimit } from "../lib/rateLimit";
+import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import { createChatStreamWithFailover } from "../lib/llmFailover";
 import {
@@ -52,7 +52,12 @@ import {
 
 const router = Router();
 
-router.use(rateLimit);
+// Only throttle the expensive LLM stream. Lightweight context/memory GETs must
+// not burn the same budget (and must not share a collapsed proxy-IP bucket).
+router.use(
+  "/messages",
+  createRateLimit({ name: "chat-messages", max: 60, windowMs: 60_000 }),
+);
 
 // Same self-heal as /api/store — chat dual-writes chat_sessions / companion_memories.
 router.use(async (_req, _res, next) => {
