@@ -210,21 +210,45 @@ export function isProviderUnusableError(err: unknown): boolean {
 
   if (
     msg.includes("no credits remaining") ||
+    msg.includes("doesn't have any credits") ||
+    msg.includes("does not have any credits") ||
+    msg.includes("no credits or licenses") ||
+    msg.includes("credits or licenses") ||
     msg.includes("insufficient_quota") ||
     msg.includes("exceeded your current quota") ||
     (msg.includes("billing") && msg.includes("limit")) ||
     msg.includes("add credits") ||
-    msg.includes("payment required")
+    msg.includes("purchase those") ||
+    msg.includes("payment required") ||
+    msg.includes("console.x.ai")
   ) {
     return true;
   }
 
   // 429 covers both rate-limit and quota exhaustion from OpenAI; either way the
   // account is not usable for this turn and a different provider may be.
+  // xAI returns 403 when a newly created team has no credits/licenses yet.
   if (e.status === 429) return true;
   if (e.status === 402) return true;
+  if (e.status === 403 && (msg.includes("credit") || msg.includes("license"))) {
+    return true;
+  }
 
   return false;
+}
+
+/** Pull a console.x.ai billing URL out of a provider error, if present. */
+export function extractXaiBillingUrl(err: unknown): string | null {
+  const text =
+    err instanceof Error
+      ? err.message
+      : typeof err === "object" && err && "message" in err
+        ? String((err as { message?: unknown }).message || "")
+        : String(err || "");
+  const match = text.match(/https:\/\/console\.x\.ai\/[^\s"']+/i);
+  if (!match?.[0]) return null;
+  // Provider copy often ends the sentence with a period inside the quotes.
+  return match[0].replace(/[.,;:]+$/g, "");
 }
 
 const DEFAULT_XAI_MODELS: Record<ModelTier, string> = {
@@ -329,6 +353,16 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
     );
   }
   if (isProviderUnusableError(err)) {
+    const xaiBilling = extractXaiBillingUrl(err);
+    if (xaiBilling && attempted.includes("xai")) {
+      return new Error(
+        `Grok (xAI) has no team credits/licenses yet (tried ${names}). ` +
+          `Buy credits at ${xaiBilling}` +
+          (hasGeminiKey()
+            ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead."
+            : ". Optionally set GEMINI_API_KEY for a non-OpenAI backup."),
+      );
+    }
     const hints: string[] = [];
     if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
     if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
