@@ -8,8 +8,8 @@
 //   - openai           — OpenAI primary with Kimi/Grok/Gemini failover
 //
 // When ANIMA_LLM_PROVIDER is unset:
-//   - GEMINI_API_KEY → gemini-only
-//   - else KIMI_API_KEY / MOONSHOT_API_KEY → kimi-only
+//   - KIMI_API_KEY / MOONSHOT_API_KEY → kimi-only (wins over Gemini)
+//   - else GEMINI_API_KEY → gemini-only
 //   - else auto
 //
 // ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` (useful when the
@@ -97,10 +97,11 @@ export function resetLlmFailoverStateForTests(): void {
 }
 
 function defaultProviderMode(): LlmProviderMode {
-  // Prefer Gemini when present; otherwise Kimi so a Moonshot key alone can
-  // power chat without paid OpenAI / xAI balance.
-  if (hasGeminiKey()) return "gemini";
+  // Prefer Kimi when present so unpaid Moonshot setups are not blocked by a
+  // leftover / broken GEMINI_API_KEY still sitting on Vercel.
+  // Force Gemini with ANIMA_LLM_PROVIDER=gemini when that is intentional.
   if (hasKimiKey()) return "kimi";
+  if (hasGeminiKey()) return "gemini";
   return "auto";
 }
 
@@ -182,7 +183,7 @@ export function getProviderChain(): LlmProviderId[] {
     return chain;
   }
 
-  // auto — prefer Gemini, then Kimi, then Grok, whenever they are configured
+  // auto — prefer Kimi, then Gemini, then Grok, whenever they are configured
   // so a dead OpenAI key (401) or empty credits (429) cannot break every turn.
   // Set ANIMA_LLM_PROVIDER=openai to force OpenAI-first.
   const preferAlt =
@@ -192,8 +193,8 @@ export function getProviderChain(): LlmProviderId[] {
     hasGeminiKey() ||
     hasKimiKey();
   if (preferAlt) {
-    push("gemini");
     push("kimi");
+    push("gemini");
     push("xai");
     push("openai");
   } else {
@@ -206,8 +207,8 @@ export function getPreferredProvider(): LlmProviderId {
   const chain = getProviderChain();
   if (chain[0]) return chain[0];
   // Last resort label for error messages when nothing is configured.
-  if (hasGeminiKey()) return "gemini";
   if (hasKimiKey()) return "kimi";
+  if (hasGeminiKey()) return "gemini";
   if (hasXaiKey()) return "xai";
   return "openai";
 }

@@ -33,7 +33,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `GEMINI_API_KEY` | Optional | Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Default when set (Gemini-only). Supports `AQ.*` auth keys via the native Generative Language API. |
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Recommended when unpaid | Kimi (Moonshot). Default when Gemini is unset. Force with `ANIMA_LLM_PROVIDER=kimi`. Base URL `https://api.moonshot.ai/v1`. |
 | `XAI_API_KEY` | Optional | Grok (xAI). Used under `ANIMA_LLM_PROVIDER=auto` or as primary via `xai`. Not used when mode is `gemini` / `kimi`. |
-| `ANIMA_LLM_PROVIDER` | No | Unset: Gemini-only if `GEMINI_API_KEY`, else Kimi-only if `KIMI_API_KEY`, else `auto`. Or `kimi` / `moonshot` / `gemini` / `auto` / `xai` / `grok` / `openai`. Under `auto`: Gemini → Kimi → Grok → OpenAI. |
+| `ANIMA_LLM_PROVIDER` | No | Unset: Kimi-only if `KIMI_API_KEY` (even when Gemini is also set), else Gemini-only if `GEMINI_API_KEY`, else `auto`. Or `kimi` / `moonshot` / `gemini` / `auto` / `xai` / `grok` / `openai`. Under `auto`: Kimi → Gemini → Grok → OpenAI. |
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
 | `ANIMA_DISABLE_XAI` | No | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
@@ -43,7 +43,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI/xAI credits are empty or the key is revoked. Prefer a **`KIMI_API_KEY`** (Moonshot) with `ANIMA_LLM_PROVIDER=kimi`, or a working **`GEMINI_API_KEY`**, then redeploy. Image generation still needs a funded `OPENAI_API_KEY`.
 
-**Kimi setup (lowest-cost option):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) and `ANIMA_LLM_PROVIDER=kimi` on Vercel Production, redeploy. Moonshot may require a small platform balance before the key can call models — check the console if auth/quota errors persist.
+**Kimi setup (lowest-cost option):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) on Vercel Production, redeploy. When a Kimi key is present it is preferred automatically over Gemini. Optional: set `ANIMA_LLM_PROVIDER=kimi` to force Kimi-only, or remove `GEMINI_API_KEY` if you no longer want it. Moonshot may require a small platform balance before the key can call models — check the console if auth/quota errors persist.
 
 **If chat fails with a Grok “no team credits” error after trying Gemini:** you are on `ANIMA_LLM_PROVIDER=auto` (or an older deploy). Fix Gemini first (check `GEMINI_API_KEY` / Google AI Studio quota), set `ANIMA_DISABLE_XAI=true`, or buy xAI credits. With the current default (`gemini` mode when `GEMINI_API_KEY` is set), Grok is not used as a backup — failures surface as Gemini quota/key errors instead.
 

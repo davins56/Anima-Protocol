@@ -210,13 +210,22 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     expect(getPreferredProvider()).toBe("kimi");
   });
 
-  it("auto prefers Gemini/Kimi/Grok over OpenAI when alt keys exist", () => {
+  it("prefers Kimi over Gemini when both keys are set and provider is unset", () => {
+    process.env.GEMINI_API_KEY = "gemini-test";
+    process.env.KIMI_API_KEY = "kimi-test";
+    delete process.env.ANIMA_LLM_PROVIDER;
+    expect(getConfiguredProviderMode()).toBe("kimi");
+    expect(getProviderChain()).toEqual(["kimi"]);
+    expect(getPreferredProvider()).toBe("kimi");
+  });
+
+  it("auto prefers Kimi/Gemini/Grok over OpenAI when alt keys exist", () => {
     process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.KIMI_API_KEY = "kimi-test";
     expect(getConfiguredProviderMode()).toBe("auto");
     expect(isOpenAIBlocked()).toBe(false);
-    expect(getProviderChain()).toEqual(["gemini", "kimi", "xai", "openai"]);
-    expect(getPreferredProvider()).toBe("gemini");
+    expect(getProviderChain()).toEqual(["kimi", "gemini", "xai", "openai"]);
+    expect(getPreferredProvider()).toBe("kimi");
   });
 
   it("auto uses OpenAI alone when no alt keys are configured", () => {
@@ -283,6 +292,13 @@ describe("ANIMA_LLM_PROVIDER / OpenAI block", () => {
     process.env.ANIMA_DISABLE_XAI = "true";
     expect(isXaiBlocked()).toBe(true);
     expect(getProviderChain()).toEqual(["gemini", "openai"]);
+  });
+
+  it("auto with Kimi key and OpenAI blocked prefers Kimi then Gemini", () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
+    process.env.ANIMA_DISABLE_OPENAI = "true";
+    process.env.KIMI_API_KEY = "kimi-test";
+    expect(getProviderChain()).toEqual(["kimi", "gemini", "xai"]);
   });
 });
 

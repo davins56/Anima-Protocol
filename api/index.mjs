@@ -125830,8 +125830,8 @@ async function createGeminiChatStream(opts) {
 var preferNonOpenAI = false;
 var preferNonXai = false;
 function defaultProviderMode() {
-  if (hasGeminiKey()) return "gemini";
   if (hasKimiKey()) return "kimi";
+  if (hasGeminiKey()) return "gemini";
   return "auto";
 }
 function getConfiguredProviderMode() {
@@ -125894,8 +125894,8 @@ function getProviderChain() {
   }
   const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasGeminiKey() || hasKimiKey();
   if (preferAlt) {
-    push2("gemini");
     push2("kimi");
+    push2("gemini");
     push2("xai");
     push2("openai");
   } else {
