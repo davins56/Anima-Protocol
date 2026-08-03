@@ -1,17 +1,20 @@
 // Cross-provider chat completion with automatic failover.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - gemini           — Gemini primary; never call OpenAI (Grok as optional backup)
+//   - gemini           — Gemini only; never call OpenAI or Grok
 //   - auto             — Gemini → Grok → OpenAI when those keys exist; OpenAI alone
 //                        only when no alt key is configured
 //   - xai / grok       — Grok primary; never call OpenAI (Gemini as optional backup)
 //   - openai           — OpenAI primary with Grok/Gemini failover
 //
 // When ANIMA_LLM_PROVIDER is unset, Gemini is selected automatically whenever
-// GEMINI_API_KEY (or GOOGLE_API_KEY) is present.
+// GEMINI_API_KEY (or GOOGLE_API_KEY) is present (Gemini-only — no Grok backup).
+// Use ANIMA_LLM_PROVIDER=auto if you want Gemini → Grok → OpenAI failover.
 //
 // ANIMA_DISABLE_OPENAI=true also blocks OpenAI under `auto` (useful when the
 // OpenAI account is out of credits).
+// ANIMA_DISABLE_XAI=true blocks Grok under `auto` / `openai` (useful when the
+// xAI team has no credits/licenses).
 //
 // Intra-provider "model unavailable" fallback (routed → standard) is preserved
 // and still gated by isModelUnavailableError — that path must NOT fire on 429.
@@ -79,9 +82,15 @@ export interface ChatCompletionResult {
 // Sticky preference after OpenAI billing/credits failure in this process.
 let preferNonOpenAI = false;
 
+// Sticky skip after xAI reports no team credits/licenses in this process.
+// Prevents every chat turn from re-hitting a depleted Grok account once we
+// already know it cannot serve (and keeps error copy focused on Gemini).
+let preferNonXai = false;
+
 /** Test helper — clears sticky failover preference. */
 export function resetLlmFailoverStateForTests(): void {
   preferNonOpenAI = false;
+  preferNonXai = false;
 }
 
 export function getConfiguredProviderMode(): LlmProviderMode {
@@ -98,21 +107,27 @@ export function getConfiguredProviderMode(): LlmProviderMode {
   return hasGeminiKey() ? "gemini" : "auto";
 }
 
+function envFlagEnabled(name: string): boolean {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 export function isOpenAIBlocked(): boolean {
   const mode = getConfiguredProviderMode();
   if (mode === "xai" || mode === "gemini") return true;
-  const disabled = (process.env.ANIMA_DISABLE_OPENAI || "").trim().toLowerCase();
-  return (
-    disabled === "1" ||
-    disabled === "true" ||
-    disabled === "yes" ||
-    disabled === "on"
-  );
+  return envFlagEnabled("ANIMA_DISABLE_OPENAI");
+}
+
+export function isXaiBlocked(): boolean {
+  const mode = getConfiguredProviderMode();
+  if (mode === "gemini") return true;
+  if (preferNonXai) return true;
+  return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
 
 function providerAvailable(id: LlmProviderId): boolean {
   if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
-  if (id === "xai") return hasXaiKey();
+  if (id === "xai") return !isXaiBlocked() && hasXaiKey();
   return hasGeminiKey();
 }
 
@@ -139,8 +154,9 @@ export function getProviderChain(): LlmProviderId[] {
   }
 
   if (mode === "gemini") {
+    // Gemini-only: a depleted XAI_API_KEY in the environment must not turn every
+    // Gemini outage into a confusing "buy Grok credits" error.
     push("gemini");
-    push("xai");
     return chain;
   }
 
@@ -339,6 +355,30 @@ function markOpenAIUnusable(err: unknown): void {
   }
 }
 
+function isXaiCreditsError(err: unknown): boolean {
+  if (!isProviderUnusableError(err)) return false;
+  if (extractXaiBillingUrl(err)) return true;
+  const msg =
+    err instanceof Error
+      ? err.message.toLowerCase()
+      : typeof err === "object" && err && "message" in err
+        ? String((err as { message?: unknown }).message || "").toLowerCase()
+        : String(err || "").toLowerCase();
+  return (
+    msg.includes("credits or licenses") ||
+    msg.includes("no credits or licenses") ||
+    (msg.includes("console.x.ai") && msg.includes("credit"))
+  );
+}
+
+function markXaiUnusable(err: unknown): void {
+  // Only sticky-skip xAI on the specific no-credits/licenses failure — not on
+  // every 429 — so a temporary rate limit can still be retried later.
+  if (isXaiCreditsError(err) && hasGeminiKey()) {
+    preferNonXai = true;
+  }
+}
+
 function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
   const names = attempted.map(providerLabel).join(" → ");
   if (isProviderAuthError(err)) {
@@ -360,12 +400,30 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
   if (isProviderUnusableError(err)) {
     const xaiBilling = extractXaiBillingUrl(err);
     if (xaiBilling && attempted.includes("xai")) {
+      const geminiAlreadyTried = attempted.includes("gemini");
+      if (geminiAlreadyTried) {
+        return new Error(
+          `Chat providers failed (tried ${names}). Gemini was unavailable, and ` +
+            `Grok (xAI) has no team credits/licenses. Check GEMINI_API_KEY / Google AI Studio ` +
+            `quota on Vercel, or buy Grok credits at ${xaiBilling}.`,
+        );
+      }
       return new Error(
         `Grok (xAI) has no team credits/licenses yet (tried ${names}). ` +
           `Buy credits at ${xaiBilling}` +
           (hasGeminiKey()
-            ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead."
+            ? ", or set ANIMA_LLM_PROVIDER=gemini to use Gemini instead (and optionally ANIMA_DISABLE_XAI=true)."
             : ". Optionally set GEMINI_API_KEY for a non-OpenAI backup."),
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "gemini") {
+      return new Error(
+        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` +
+          (hasXaiKey() && !isXaiBlocked()
+            ? " Or set ANIMA_LLM_PROVIDER=auto to allow Grok/OpenAI failover."
+            : hasOpenAIKey() && !isOpenAIBlocked()
+              ? " Or set ANIMA_LLM_PROVIDER=auto to allow OpenAI failover."
+              : ""),
       );
     }
     const hints: string[] = [];
@@ -375,7 +433,7 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
     const hint =
       hints.length > 0
         ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.`
-        : " All configured providers failed. Set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.";
+        : " All configured providers failed. Check GEMINI_API_KEY / Google AI Studio quota, or fund XAI_API_KEY / OPENAI_API_KEY.";
     return new Error(
       `LLM credits/quota exhausted (tried ${names}).${hint}`,
     );
@@ -495,6 +553,7 @@ export async function createChatStreamWithFailover(
     } catch (err) {
       lastErr = err;
       if (provider === "openai") markOpenAIUnusable(err);
+      if (provider === "xai") markXaiUnusable(err);
       if (!isProviderUnusableError(err)) {
         throw enrichError(err, attempted);
       }
@@ -551,6 +610,7 @@ export async function createChatCompletionWithFailover(
     } catch (err) {
       lastErr = err;
       if (provider === "openai") markOpenAIUnusable(err);
+      if (provider === "xai") markXaiUnusable(err);
       if (!isProviderUnusableError(err)) {
         throw enrichError(err, attempted);
       }
