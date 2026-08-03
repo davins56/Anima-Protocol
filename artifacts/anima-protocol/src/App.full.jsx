@@ -22,12 +22,10 @@ import {
   SignUp,
   Show,
   useClerk,
-  useSignIn,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
-import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
-import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
@@ -50,15 +48,9 @@ import {
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
-  clerkProviderOAuthCallbackUrl,
-  isVercelPreviewHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
-import {
-  clerkOAuthCallbackAbsolute,
-  clerkOAuthRedirectPaths,
-} from "@/lib/clerkOAuthPaths";
 
 // Title screen is eager so cold opens paint Landing immediately (no spinner).
 import Landing from "./pages/Landing";
@@ -239,40 +231,11 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
-function isDevClerkKey(key) {
-  const builtIn =
-    typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
-      ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-      : "";
-  if (builtIn.startsWith("pk_test_")) return true;
-  return typeof key === "string" && key.startsWith("pk_test_");
-}
-
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
-const CLERK_SSO_DASHBOARD_URL =
-  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
-
-const socialAuthProviders = [
-  {
-    label: "Continue with Google",
-    strategy: "oauth_google",
-    Icon: FaGoogle,
-  },
-  {
-    label: "Continue with Apple",
-    strategy: "oauth_apple",
-    Icon: FaApple,
-  },
-  {
-    label: "Continue with GitHub",
-    strategy: "oauth_github",
-    Icon: FaGithub,
-  },
-];
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -329,13 +292,14 @@ const clerkAppearance = {
     footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
     headerTitle: "!text-cyan-200 tracking-wide",
     headerSubtitle: "!text-cyan-400/60",
-    // Custom SocialAuthButtons handle OAuth — hide Clerk's duplicate row.
-    socialButtons: "!hidden",
-    socialButtonsBlockButton: "!hidden",
-    socialButtonsBlockButtonText: "!hidden",
-    dividerRow: "!hidden",
-    dividerLine: "!hidden",
-    dividerText: "!hidden",
+    socialButtonsBlockButton:
+      "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
+    socialButtonsBlockButtonText: "!text-cyan-100",
+    // Apple Production SSO has empty client_id — hide until credentials are set.
+    socialButtonsBlockButton__apple: "!hidden",
+    socialButtonsProviderIcon__apple: "!hidden",
+    dividerLine: "!bg-cyan-400/20",
+    dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
     formFieldInput: "!bg-[#0c1420] !border-cyan-400/30 !text-cyan-100",
     formButtonPrimary:
@@ -344,9 +308,6 @@ const clerkAppearance = {
     footerActionLink: "!text-cyan-300 hover:!text-cyan-200",
     identityPreviewEditButton: "!text-cyan-300",
     otpCodeFieldInput: "!text-cyan-100 !border-cyan-400/30",
-    // Keep Clerk alerts readable on both light page chrome and dark cards.
-    alertText: "!text-amber-900",
-    formFieldErrorText: "!text-red-400",
   },
 };
 
@@ -370,315 +331,26 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
-function formatClerkOAuthError(error) {
-  if (error?.errors?.length) {
-    return error.errors
-      .map((entry) => entry.longMessage || entry.message)
-      .filter(Boolean)
-      .join(" ");
-  }
-  return error?.longMessage || error?.message || "";
-}
-
-function clerkInstanceLabel() {
-  if (typeof clerkPubKey !== "string") return "Clerk";
-  return clerkPubKey.startsWith("pk_test_") ? "Development" : "Production";
-}
-
-function clerkInstanceSlug() {
-  if (typeof clerkPubKey !== "string") return null;
-  const match = clerkPubKey.match(/^pk_(?:test|live)_(.+)$/);
-  if (!match) return null;
-  try {
-    const decoded = atob(match[1]);
-    return decoded.split(".")[0]?.replace(/\$$/, "") ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function providerShortName(strategy) {
-  return strategy.replace(/^oauth_/, "").replace(/^\w/, (c) => c.toUpperCase());
-}
-
-function getEnabledOAuthStrategies(clerk) {
-  const environment =
-    clerk?.__internal_environment ?? clerk?.environment ?? null;
-  const strategies =
-    environment?.userSettings?.authenticatableSocialStrategies ?? null;
-  if (Array.isArray(strategies) && strategies.length > 0) {
-    return strategies;
-  }
-
-  const social = environment?.userSettings?.social;
-  if (social && typeof social === "object") {
-    const fromSocial = Object.values(social)
-      .filter((provider) => provider?.enabled)
-      .map((provider) => provider.strategy)
-      .filter(Boolean);
-    if (fromSocial.length > 0) {
-      return fromSocial;
-    }
-  }
-
-  return null;
-}
-
-function filterProvidersByEnvList(providers) {
-  const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
-  if (typeof envList !== "string" || !envList.trim()) {
-    return providers;
-  }
-
-  const allowed = new Set(
-    envList
-      .split(",")
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  return providers.filter((provider) =>
-    allowed.has(provider.strategy.toLowerCase()) ||
-    allowed.has(provider.strategy.replace(/^oauth_/, "").toLowerCase()),
-  );
-}
-
-function clerkProviderOAuthHint() {
-  const providerCallback = clerkProviderOAuthCallbackUrl(clerkPubKey);
-  if (!providerCallback) {
-    return "Copy the Authorized Redirect URI from Clerk → SSO connections into Google/GitHub/Apple.";
-  }
-  return (
-    `Google/GitHub/Apple OAuth apps must allowlist ${providerCallback} ` +
-    "(Clerk Frontend API callback — not /sign-in/sso-callback)."
-  );
-}
-
-function clerkSsoSetupHint(providerName) {
-  const instance = clerkInstanceLabel();
-  const slug = clerkInstanceSlug();
-  const instanceNote = slug ? ` (${slug})` : "";
-  if (instance === "Development") {
-    return (
-      `Enable ${providerName} in Clerk Dashboard → Development${instanceNote} → ` +
-      "SSO connections → Add connection → For all users → " +
-      `${providerName}. Leave “Use custom credentials” OFF.`
-    );
-  }
-  return (
-    `Enable ${providerName} in Clerk Dashboard → Production${instanceNote} → ` +
-    "SSO connections with custom OAuth credentials. " +
-    `${clerkProviderOAuthHint()} ` +
-    "Google Error 400 redirect_uri_mismatch means that URI is missing in Google Cloud. " +
-    "Apple invalid_request with an empty client_id means Apple credentials are missing in Clerk. " +
-    "Also register /sign-in/sso-callback under Clerk → Paths → Redirect URLs."
-  );
-}
-
-function SocialAuthButtons({ mode }) {
-  const clerk = useClerk();
-  const { signIn, fetchStatus } = useSignIn();
-  const [pendingStrategy, setPendingStrategy] = useState(null);
-  const [enabledStrategies, setEnabledStrategies] = useState(null);
-
-  useEffect(() => {
-    if (!clerk.loaded) {
-      setEnabledStrategies(null);
-      return;
-    }
-    const syncStrategies = () => {
-      setEnabledStrategies(getEnabledOAuthStrategies(clerk));
-    };
-    syncStrategies();
-    return clerk.addListener(syncStrategies);
-  }, [clerk, clerk.loaded]);
-
-  const providers = useMemo(() => {
-    if (!clerk.loaded) return [];
-    const configuredProviders = filterProvidersByEnvList(socialAuthProviders);
-    if (isDevClerkKey(clerkPubKey) || !Array.isArray(enabledStrategies)) {
-      return configuredProviders.map((provider) => ({
-        ...provider,
-        isEnabled: true,
-      }));
-    }
-    return configuredProviders.map((provider) => ({
-      ...provider,
-      isEnabled: enabledStrategies.includes(provider.strategy),
-    }));
-  }, [clerk.loaded, enabledStrategies]);
-
-  const missingProviderNames = useMemo(
-    () =>
-      providers
-        .filter((provider) => !provider.isEnabled)
-        .map((provider) => providerShortName(provider.strategy)),
-    [providers],
-  );
-
-  const handleOAuth = async (strategy) => {
-    if (!clerk.loaded || fetchStatus === "fetching" || !signIn) {
-      return;
-    }
-    setPendingStrategy(strategy);
-    // Clerk requires relative same-origin paths — absolute URLs fail validation.
-    const { redirectCallbackUrl, redirectUrl } = clerkOAuthRedirectPaths(
-      basePath,
-      mode,
-    );
-    const redirectCallbackAbsolute = clerkOAuthCallbackAbsolute(
-      window.location.origin,
-      basePath,
-      mode,
-    );
-    const onPreview = isVercelPreviewHost(window.location.hostname);
-    try {
-      // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
-      const { error } = await signIn.sso({
-        strategy,
-        redirectCallbackUrl,
-        redirectUrl,
-      });
-      if (error) {
-        throw error;
-      }
-      // Successful sso() navigates away. If we are still here, reset the button.
-      setPendingStrategy(null);
-    } catch (error) {
-      console.error("OAuth redirect failed", error);
-      const providerName =
-        socialAuthProviders.find((provider) => provider.strategy === strategy)
-          ?.label ?? "That provider";
-      const detail = formatClerkOAuthError(error);
-      const shortName = providerShortName(strategy);
-      const isPatternError = /did not match the expected pattern/i.test(detail);
-      if (onPreview || isPatternError) {
-        toast.error(
-          [
-            detail || `${providerName} could not start.`,
-            "Use https://www.anima-protocol.com/sign-in — not a *.vercel.app URL.",
-            "Vercel Deployment Protection blocks OAuth callbacks on preview/unique deploy URLs.",
-            `If you must use this host, register ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs (already done automatically on API cold start when possible).`,
-            clerkProviderOAuthHint(),
-          ].join(" "),
-        );
-        setPendingStrategy(null);
-        return;
-      }
-      const instanceHint =
-        clerkInstanceLabel() === "Development"
-          ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
-          : `Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). ${clerkProviderOAuthHint()} Development settings do not apply to pk_live_.`;
-      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.`;
-      toast.error(
-        detail
-          ? `${detail} ${instanceHint} ${redirectHint}`
-          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)} ${instanceHint} ${redirectHint}`,
-      );
-      setPendingStrategy(null);
-    }
-  };
-
-  return (
-    <div className="w-full space-y-2">
-      {!clerk.loaded ? (
-        <p className="py-2 text-center text-sm text-cyan-400/50">
-          Loading sign-in options…
-        </p>
-      ) : providers.length === 0 ? (
-        <div className="space-y-2 py-2 text-center text-sm text-cyan-400/50">
-          <p>Google and GitHub sign-in are not enabled in Clerk yet.</p>
-          <p className="text-xs leading-relaxed text-cyan-400/40">
-            Add OAuth credentials under Clerk → Production → SSO connections
-            (see docs/clerk-github-login.md). Email sign-in below still works
-            when Clerk connects.
-          </p>
-        </div>
-      ) : (
-        providers.map(({ label, strategy, Icon, isEnabled }) => (
-          <button
-            key={strategy}
-            type="button"
-            disabled={
-              isEnabled &&
-              (Boolean(pendingStrategy) || fetchStatus === "fetching")
-            }
-            title={
-              isEnabled
-                ? undefined
-                : clerkSsoSetupHint(providerShortName(strategy))
-            }
-            onClick={() => {
-              if (!isEnabled) {
-                toast.error(clerkSsoSetupHint(providerShortName(strategy)));
-                return;
-              }
-              handleOAuth(strategy);
-            }}
-            className={`flex h-10 w-full items-center justify-center gap-2 rounded border px-4 text-sm font-semibold transition ${
-              isEnabled
-                ? "border-cyan-400/30 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
-                : "cursor-pointer border-amber-400/20 bg-amber-400/5 text-amber-200/70 hover:bg-amber-400/10"
-            }`}
-          >
-            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="text-left">
-              {pendingStrategy === strategy
-                ? "Redirecting..."
-                : isEnabled
-                  ? label
-                  : `${label} (not set up in Clerk)`}
-            </span>
-          </button>
-        ))
-      )}
-      {missingProviderNames.length > 0 ? (
-        <div className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
-          <p>
-            Only{" "}
-            {providers
-              .filter((provider) => provider.isEnabled)
-              .map((provider) => providerShortName(provider.strategy))
-              .join(", ") || "email"}{" "}
-            is active in Clerk {clerkInstanceLabel()}
-            {clerkInstanceSlug() ? ` (${clerkInstanceSlug()})` : ""}. To enable{" "}
-            {missingProviderNames.join(" and ")}: Clerk Dashboard →{" "}
-            {clerkInstanceLabel()} → SSO connections → Add connection → For all
-            users.
-          </p>
-          <a
-            href={CLERK_SSO_DASHBOARD_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 inline-block text-cyan-300 underline hover:text-cyan-200"
-          >
-            Open Clerk SSO settings
-          </a>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+/** Delay before probing Clerk connectivity so healthy loads never show a warning. */
+const CLERK_DIAGNOSTICS_STALL_MS = 2500;
 
 function ClerkLoginDiagnostics() {
-  const [hints, setHints] = useState([]);
   const clerk = useClerk();
+  const [hints, setHints] = useState([]);
+  const [shouldProbe, setShouldProbe] = useState(false);
 
   useEffect(() => {
-    // Preview / unique Vercel deploy URLs are a common source of the
-    // "string did not match the expected pattern" toast + broken email login.
-    if (isVercelPreviewHost(window.location.hostname)) {
-      setHints([
-        "You are on a Vercel deploy URL (*.vercel.app). Sign in at https://www.anima-protocol.com/sign-in instead — Deployment Protection and missing Clerk redirect URLs break Google/GitHub/Apple and email login here.",
-      ]);
-      return;
-    }
-
-    // Only probe when Clerk failed to load; healthy sessions should stay quiet.
     if (clerk.loaded) {
+      setShouldProbe(false);
       setHints([]);
-      return;
+      return undefined;
     }
+    const timer = setTimeout(() => setShouldProbe(true), CLERK_DIAGNOSTICS_STALL_MS);
+    return () => clearTimeout(timer);
+  }, [clerk.loaded]);
 
+  useEffect(() => {
+    if (!shouldProbe || clerk.loaded) return undefined;
     let cancelled = false;
     (async () => {
       const next = await probeClerkConnectivity(clerkPubKey);
@@ -687,12 +359,12 @@ function ClerkLoginDiagnostics() {
     return () => {
       cancelled = true;
     };
-  }, [clerk.loaded]);
+  }, [shouldProbe, clerk.loaded]);
 
   if (hints.length === 0) return null;
 
   return (
-    <div className="rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
       {hints.map((hint) => (
         <p key={hint} className="mt-1 first:mt-0">
           {hint}
@@ -707,14 +379,14 @@ function AuthFormShell({ mode, children }) {
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
         <ClerkLoginDiagnostics />
-        <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
-          <SocialAuthButtons mode={mode} />
-          <p className="mt-3 text-center text-xs text-cyan-400/45">
-            {mode === "sign-in"
-              ? "Email sign-in sends a one-time code (not a password). Or use GitHub if that is how you created your account."
-              : "Or continue with email below."}
+        {mode === "sign-in" ? (
+          <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
+            Password only works if one is set on this account. Otherwise enter
+            your username or email and use the email code — or continue with
+            GitHub below. Google sign-in needs its OAuth redirect URI allowlisted
+            in Google Cloud before it will work.
           </p>
-        </div>
+        ) : null}
         {children}
       </div>
     </div>

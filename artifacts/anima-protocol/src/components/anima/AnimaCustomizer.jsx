@@ -63,7 +63,9 @@ export default function AnimaCustomizer({
           ? "That look was blocked by the safety filter. Try a different description."
           : err?.code === "rate_limit"
             ? "The image service is busy right now. Please try again shortly."
-            : err?.message || "Failed to generate appearance.";
+            : err?.code === "auth_error"
+              ? "Image generation is temporarily unavailable. Please try again later."
+              : err?.message || "Failed to generate appearance.";
       setError(msg);
     } finally {
       setGenerating(false);
