@@ -16,6 +16,7 @@ import {
   syncFromRemote as handleRemoteSync,
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
+import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -1399,43 +1400,43 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
           ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
-      const groupChars = (
-        await Promise.all(
-          (activeSession.group_character_ids || []).map((id) => resolveCharacterById(id)),
-        )
-      ).filter(Boolean);
+        const groupChars = (
+          await Promise.all(
+            (activeSession.group_character_ids || []).map((id) => resolveCharacterById(id)),
+          )
+        ).filter(Boolean);
 
-      if (!groupChars.length) {
-        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
-      } else {
+        if (!groupChars.length) {
+          prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
+        } else {
 
-      // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
-      // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
-      const recentSpeakers = updatedMessages.slice(-6)
-        .filter(m =>
-          m.role === "assistant" &&
-          m.character_name !== "Narrator" &&
-          m.character_name !== "__typing__" &&
-          m.character_name !== "__thinking__" &&
-          !m.is_streaming
-        )
-        .map(m => m.character_name);
-      const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
+          // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
+          // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
+          const recentSpeakers = updatedMessages.slice(-6)
+            .filter(m =>
+              m.role === "assistant" &&
+              m.character_name !== "Narrator" &&
+              m.character_name !== "__typing__" &&
+              m.character_name !== "__thinking__" &&
+              !m.is_streaming
+            )
+            .map(m => m.character_name);
+          const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
 
-      const shouldOutOfTurn =
-        Math.random() < 0.35 && // 35% per request
-        groupChars.length >= 2 &&
-        !isContinue;
-        
-        const charSummaries = groupChars.map(c =>
-          `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
-        ).join("\n");
-        
-        const recentConvoSnippet = updatedMessages.slice(-6)
-          .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
-          .join("\n");
-        
-        const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
+          const shouldOutOfTurn =
+            Math.random() < 0.35 && // 35% per request
+            groupChars.length >= 2 &&
+            !isContinue;
+
+          const charSummaries = groupChars.map(c =>
+            `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
+          ).join("\n");
+
+          const recentConvoSnippet = updatedMessages.slice(-6)
+            .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
+            .join("\n");
+
+          const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
 
 Characters:
 ${charSummaries}
@@ -1453,83 +1454,83 @@ Rules:
 
 Reply with ONLY the character's exact name — nothing else.`;
 
-        let nextChar;
-        try {
-          const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
-          const chosenName = speakerResult?.trim();
-          nextChar = groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
-        } catch {}
-        
-        // Fallback: pick someone who hasn't spoken recently
-        if (!nextChar) {
-          const recentSpeakerSet = new Set(recentSpeakers);
-          nextChar = groupChars.find(c => !recentSpeakerSet.has(c.name)) || groupChars[0];
-        }
-        
-        currentGroupSpeakerRef.current = nextChar;
-        
-        const loreCtxGroup = buildLoreContext();
+          let nextChar;
+          try {
+            const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
+            const chosenName = speakerResult?.trim();
+            nextChar = groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
+          } catch {}
 
-        // Build a rich character sheet for each character
-        const allCharSheets = groupChars.map(c => {
-          const rel = getRelationshipContext(c.id);
-          return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
+          // Fallback: pick someone who hasn't spoken recently
+          if (!nextChar) {
+            const recentSpeakerSet = new Set(recentSpeakers);
+            nextChar = groupChars.find(c => !recentSpeakerSet.has(c.name)) || groupChars[0];
+          }
+
+          currentGroupSpeakerRef.current = nextChar;
+
+          const loreCtxGroup = buildLoreContext();
+
+          // Build a rich character sheet for each character
+          const allCharSheets = groupChars.map(c => {
+            const rel = getRelationshipContext(c.id);
+            return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
 ${c.personality ? `Personality: ${c.personality}` : ""}
 ${c.backstory ? `Backstory: ${c.backstory}` : ""}
 ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
-        }).join("\n\n");
+          }).join("\n\n");
 
-        // Fetch solo-session personality shifts for the next speaker (best-effort)
-        let traitModifiers = '';
-        try {
-          const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
-            character_id: nextChar.id,
-            character_name: nextChar.name,
-            max_sessions: 5,
+          // Fetch solo-session personality shifts for the next speaker (best-effort)
+          let traitModifiers = '';
+          try {
+            const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
+              character_id: nextChar.id,
+              character_name: nextChar.name,
+              max_sessions: 5,
+            });
+            traitModifiers = shiftRes?.data?.trait_modifiers || '';
+          } catch (_) { /* silently ignore — enhancement, not a requirement */ }
+
+          // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
+          // We still select a valid character, but we may interrupt the usual pacing.
+          let finalNextChar = nextChar;
+          if (shouldOutOfTurn) {
+            const recentMentioned = updatedMessages
+              .slice(-10)
+              .map(m => m.character_name)
+              .filter(Boolean);
+            const preferred = groupChars
+              .filter(c => c.name !== nextChar?.name)
+              .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
+
+            // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
+            const recentSpeakerSet = new Set(recentSpeakers);
+            const leastRecent = groupChars.find(c => !recentSpeakerSet.has(c.name) && c.name !== nextChar?.name);
+
+            finalNextChar = preferred[0] || leastRecent || groupChars.find(c => c.name !== nextChar?.name) || nextChar;
+          }
+
+          // Keep the ref in sync for later Serenity auto-address handling etc.
+          currentGroupSpeakerRef.current = finalNextChar;
+
+          // Add explicit allowance for interruption/out-of-turn to the prompt.
+          const interruptionClause = shouldOutOfTurn
+            ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
+            : "";
+
+          prompt = buildGroupPrompt({
+            nextChar: finalNextChar,
+            allCharSheets,
+            loreCtxGroup,
+            conversationHistory,
+            adultInstruction,
+            lengthGuide,
+            traitModifiers,
+            userProfileContext,
+            interruptionClause,
+            isContinue,
           });
-          traitModifiers = shiftRes?.data?.trait_modifiers || '';
-        } catch (_) { /* silently ignore — enhancement, not a requirement */ }
-
-        // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
-        // We still select a valid character, but we may interrupt the usual pacing.
-        let finalNextChar = nextChar;
-        if (shouldOutOfTurn) {
-          const recentMentioned = updatedMessages
-            .slice(-10)
-            .map(m => m.character_name)
-            .filter(Boolean);
-          const preferred = groupChars
-            .filter(c => c.name !== nextChar?.name)
-            .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
-
-          // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
-          const recentSpeakerSet = new Set(recentSpeakers);
-          const leastRecent = groupChars.find(c => !recentSpeakerSet.has(c.name) && c.name !== nextChar?.name);
-
-          finalNextChar = preferred[0] || leastRecent || groupChars.find(c => c.name !== nextChar?.name) || nextChar;
         }
-
-        // Keep the ref in sync for later Serenity auto-address handling etc.
-        currentGroupSpeakerRef.current = finalNextChar;
-
-        // Add explicit allowance for interruption/out-of-turn to the prompt.
-        const interruptionClause = shouldOutOfTurn
-          ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
-          : "";
-
-        prompt = buildGroupPrompt({
-          nextChar: finalNextChar,
-          allCharSheets,
-          loreCtxGroup,
-          conversationHistory,
-          adultInstruction,
-          lengthGuide,
-          traitModifiers,
-          userProfileContext,
-          interruptionClause,
-          isContinue,
-        });
-      }
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
       }
@@ -1599,6 +1600,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         { onDelta: showStreamingPartial },
       );
       const result = resultPayload.content || "";
+      // An empty "success" used to replace the thinking/typing bubble with a
+      // blank assistant row (or nothing visible). Treat it as a failed turn so
+      // the catch path can surface an error instead of silently vanishing.
+      if (!String(result).trim()) {
+        throw new Error("The companion returned an empty reply. Please try again.");
+      }
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
@@ -1815,10 +1822,15 @@ ${loyaltyGuardrailClause()}`;
             character_name: "Serenity",
             timestamp: new Date().toISOString(),
           };
-          const withSerenity = [...finalMessages, serenityMsg];
-          await base44.entities.ChatSession.update(activeSession.id, { messages: withSerenity });
-          setActiveSession((prev) => ({ ...prev, messages: withSerenity }));
-          speakMessage(serenityMsg.content, "Serenity");
+          // Append only — never ChatSession.update({ messages }) with a stale
+          // finalMessages snapshot (replaceMessages would delete newer turns).
+          const stored = await appendAmbientMessage({
+            appendMessage: base44.messages.append,
+            sessionId: activeSession.id,
+            message: serenityMsg,
+            setActiveSession,
+          });
+          speakMessage(stored.content, "Serenity");
         }).catch(() => {});
       }
 
@@ -1885,15 +1897,14 @@ ${loyaltyGuardrailClause()}`;
                 timestamp: new Date().toISOString(),
               };
 
-              setActiveSession((prev) => ({
-                ...prev,
-                messages: [...(prev.messages || []), interactionMsg],
-              }));
-
-              setTimeout(() => {
-                const updated = [...finalMessages, interactionMsg];
-                base44.entities.ChatSession.update(activeSession.id, { messages: updated }).catch(() => {});
-              }, 500);
+              // Append only — a replace against stale finalMessages would wipe
+              // any messages the user sent while this background job ran.
+              appendAmbientMessage({
+                appendMessage: base44.messages.append,
+                sessionId: activeSession.id,
+                message: interactionMsg,
+                setActiveSession,
+              }).catch(() => {});
             }
           }).catch(() => {});
         }, 1500);
@@ -2087,7 +2098,10 @@ Return JSON:
               if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
               if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
               
-              base44.entities.Character.update(activeChar.id, {
+              // Must update Anima — Character.update upserts a thin Character
+              // row with the same id that shadows the real Anima in chat.ts
+              // loadCharacters (Character preferred over Anima).
+              base44.entities.Anima.update(activeChar.id, {
                 personality: newPersonality,
               });
               toast.success(`${activeChar.name} has evolved based on your interactions.`);
@@ -2148,21 +2162,38 @@ Return JSON:
         return { ...prev, messages };
       });
 
-      // Best-effort persist so a deferred cross-device sync can't wipe the kept reply.
-      if (retained && activeSession?.id) {
+      // Best-effort persist so a deferred cross-device sync can't wipe the kept reply
+      // (or the optimistic user turn that was never written because persist:false).
+      if (activeSession?.id) {
         try {
           if (!isContinue && !userMessagePersisted && content.trim()) {
             await base44.messages.append(activeSession.id, userMessage);
             userMessagePersisted = true;
           }
-          await base44.messages.append(activeSession.id, retained);
+          if (retained) {
+            await base44.messages.append(activeSession.id, retained);
+          }
         } catch (persistErr) {
           console.warn("[Anima] Failed to persist partial reply:", persistErr);
           // Skip the deferred remote refresh — it would replace local state with
-          // server history that does not include this unpersisted partial.
+          // server history that does not include this unpersisted turn.
           pendingRemoteSyncRef.current = false;
         }
+      }
+
+      if (retained) {
         toast.error("The reply was interrupted — kept what came through.");
+      } else {
+        // Pre-token failures used to remove thinking/typing with no UI feedback,
+        // which looked like the companion started thinking then vanished.
+        const detail =
+          err instanceof Error && err.message
+            ? err.message
+            : "The companion could not reply. Please try again.";
+        toast.error(detail);
+        // Don't let a deferred sync (armed while isLoading) immediately replace
+        // local optimistic state with a server list that lacks this turn.
+        pendingRemoteSyncRef.current = false;
       }
     }
 

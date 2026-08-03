@@ -21,6 +21,9 @@ function friendlyError(err) {
   if (status === 401) {
     return "Your session expired. Sign in again to edit photos.";
   }
+  if (code === "auth_error" || msg.includes("temporarily unavailable")) {
+    return "Image editing is temporarily unavailable. Please try again later.";
+  }
   if (status === 413) {
     return "That image is too large. Try a smaller photo.";
   }
