@@ -107,6 +107,19 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
+  it('uses proxy wording when probes succeed but SDK stalled', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ status: 'ok' }), {
+        status: 200,
+      })),
+    );
+
+    await expect(probeClerkConnectivity(PROXY_LIVE_KEY)).resolves.toEqual([
+      'API and Clerk proxy look healthy, but the Clerk SDK did not finish loading. Disable ad blockers, try another browser, or refresh in a few seconds.',
+    ]);
+  });
+
   it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
     vi.stubGlobal(
       'fetch',
