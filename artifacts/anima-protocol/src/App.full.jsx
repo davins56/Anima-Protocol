@@ -675,9 +675,16 @@ function AuthFormShell({ mode, children }) {
           <SocialAuthButtons mode={mode} />
           <p className="mt-3 text-center text-xs text-cyan-400/45">
             {mode === "sign-in"
-              ? "Use GitHub if that is how you created your account. You can also sign in with email below."
+              ? "Prefer Continue with GitHub if that is how you created your account."
               : "Or continue with email below."}
           </p>
+          {mode === "sign-in" ? (
+            <p className="mt-2 text-center text-[11px] leading-relaxed text-cyan-200/55">
+              Password sign-in only works if a password is set on this account.
+              Otherwise use your username (not a different email), then the email
+              code — or GitHub above.
+            </p>
+          ) : null}
         </div>
         {children}
       </div>
