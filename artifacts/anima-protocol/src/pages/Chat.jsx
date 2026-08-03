@@ -91,6 +91,18 @@ import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_MET
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
+import {
+  assessLewdTiming,
+  buildContentRatingInstruction,
+  lewdTimingClause,
+  buildSexualityGuide,
+  buildLewdityGuide,
+  buildGroupIntimacyGuidance,
+  buildIntimatePlayAlongGuidance,
+  groupSpeakerIntimacyRules,
+  filterIntimacyEligibleSpeakers,
+  isIntimacyEligibleSpeaker,
+} from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import MessageList from "@/components/chat/MessageList";
@@ -1118,9 +1130,17 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
         })
         .join("\n");
 
-      const adultInstruction = adultMode
-        ? "\nCONTENT RATING — ADULT (18+) ENABLED: The user has explicitly enabled adult mode. You may engage in explicit, sexual, and lewd content whenever the situation presents itself OR the user initiates/engages that tone. Match and escalate with their energy — if they lean into heat, intimacy, desire, or explicit acts, meet them there and intensify rather than soft-pedaling, redirecting, or fading to black. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back unless the user clearly indicates otherwise.\n"
-        : "\nCONTENT RATING — RAW MODE (non-explicit): Do NOT be tame, polite, or sanitized. Write with a raw, visceral, unfiltered edge — gritty, emotionally intense, and electrically charged. Lean hard into heat: smoldering tension, aching longing, magnetic and dangerous attraction, sensual and suggestive undertones, bold and evocative mature language. When the user engages flirtation or charged intimacy, escalate the heat with them. The ONE hard line: stop before anything graphic — no explicit, pornographic, or anatomical sexual description; fade to black at that exact threshold. Within that single limit, hold nothing else back.\n";
+      // Adult Mode unlocks explicit capability; lewdTiming tells the model whether
+      // THIS beat is a right or wrong time to use it (grief/logistics vs invite/heat).
+      // Continue taps pass isContinue (not a literal "continue" token) so soft-continue
+      // follows prior-heat logic without treating bare politeness words as cues.
+      const lewdTiming = assessLewdTiming({
+        userMessage: isContinue ? "" : content,
+        recentMessages: updatedMessages,
+        isContinue,
+      });
+      const adultInstruction =
+        `\n${buildContentRatingInstruction(adultMode)}\n${lewdTimingClause(lewdTiming, adultMode)}\n`;
 
       // Build injected memory context (user-selected recalled memories)
       const buildInjectedMemoryContext = () => {
@@ -1309,21 +1329,8 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
               ? `Be confrontational, assertive, and willing to challenge or argue (aggressiveness: ${cfg.aggressiveness}%).`
               : `Be gentle, passive, and accommodating in your approach (aggressiveness: ${cfg.aggressiveness}%).`;
             
-            const sexualityGuide = adultMode
-              ? (cfg.sexuality > 50
-                  ? `Be openly flirtatious and sexually forward; escalate when the user engages (sexuality: ${cfg.sexuality}%).`
-                  : `When the user initiates flirtation or sexual cues, match and follow their intensity (sexuality: ${cfg.sexuality}%).`)
-              : (cfg.sexuality > 50
-                  ? `Be openly flirtatious and sexually forward when appropriate (sexuality: ${cfg.sexuality}%).`
-                  : `Maintain a neutral, non-flirtatious demeanor (sexuality: ${cfg.sexuality}%).`);
-            
-            const lewdityGuide = adultMode
-              ? (cfg.lewdity > 50
-                  ? `Include suggestive and explicit content freely when the narrative or user engagement calls for it (lewdity: ${cfg.lewdity}%).`
-                  : `Allow suggestive and explicit content when the situation presents itself or the user engages it — do not shut it down (lewdity: ${cfg.lewdity}%).`)
-              : (cfg.lewdity > 50
-                  ? `Include suggestive and heated content when the narrative calls for it; stay short of graphic (lewdity: ${cfg.lewdity}%).`
-                  : `Keep language family-friendly and avoid explicit content (lewdity: ${cfg.lewdity}%).`);
+            const sexualityGuide = buildSexualityGuide(adultMode, cfg.sexuality);
+            const lewdityGuide = buildLewdityGuide(adultMode, cfg.lewdity);
             
             behaviorInstructions = `
 AI BEHAVIOR CONFIGURATION:
@@ -1360,6 +1367,14 @@ ${lewdityGuide}`;
           const matrixSafetyClause = isMultiAspect
             ? `\n\n          HIGHEST-PRIORITY RULE (overrides everything above): In multi-aspect presence, the intensity between aspects and toward ${user.full_name || "the user"} is EMOTIONAL, PSYCHOLOGICAL, and SPIRITUAL only. Never produce explicit, sexual, or anatomical content, regardless of any other instruction.`
             : "";
+          // Mid-intimacy: play along and add personality-true lewd flare (solo).
+          const intimatePlayAlong = isMultiAspect
+            ? ""
+            : buildIntimatePlayAlongGuidance({
+                character: char,
+                timing: lewdTiming,
+                adultMode,
+              });
 
           const identityBlock = [
             char.personality ? `Personality: ${char.personality}` : "",
@@ -1367,7 +1382,7 @@ ${lewdityGuide}`;
             char.speaking_style ? `Voice: ${char.speaking_style}` : "",
           ].filter(Boolean).join("\n");
 
-          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
+          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${intimatePlayAlong}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
 
           CHARACTER IDENTITY LOCK:
           - From the first reply onward, embody ${char.name} using the Personality, Backstory, and Voice below — never a generic assistant.
@@ -1388,8 +1403,8 @@ ${lewdityGuide}`;
 
           ${INTELLIGENCE_GUIDANCE}
 
-          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode ? " When the moment turns intimate or the user engages lewdly, deepen into sensual and explicit territory as Adult Mode allows — do not pull back to purely non-sexual intimacy." : " Never explicit or anatomical content."}
-${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode ? " Calibrate tone and presence; when intimacy escalates or the user engages it, allow sensual/explicit content per Adult Mode." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
+          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode && !isMultiAspect ? " When LEWDITY TIMING is RIGHT TIME or CONTINUE, play along and add your own sensual/lewd flare in character; on WRONG TIME beats, stay emotionally intimate without sexualizing." : " Never explicit or anatomical content."}
+${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode && !isMultiAspect ? " Calibrate tone and presence; follow LEWDITY TIMING — when intimate, contribute heat in your voice, not only mirror the user." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
 ${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat, then stop at a clear pause point so they can react.\n` : ""}
@@ -1451,20 +1466,41 @@ Rules:
 - The same character can speak again if it makes sense narratively
 - Consider who might be provoked, excited, curious, threatened, or emotionally moved by what just happened
 - Pick the character who would most authentically respond to what just happened
+${groupSpeakerIntimacyRules(lewdTiming)}
 
 Reply with ONLY the character's exact name — nothing else.`;
+
+          const intimacyEligibleChars = filterIntimacyEligibleSpeakers(groupChars, {
+            timing: lewdTiming,
+            userMessage: content,
+          });
 
           let nextChar;
           try {
             const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
             const chosenName = speakerResult?.trim();
-            nextChar = groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
+            nextChar = intimacyEligibleChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase())
+              || groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
+            // Intimate beats: reject reserved/averse leads unless the user addressed them.
+            if (
+              nextChar &&
+              !isIntimacyEligibleSpeaker(nextChar, {
+                timing: lewdTiming,
+                userMessage: content,
+              })
+            ) {
+              nextChar = null;
+            }
           } catch {}
 
-          // Fallback: pick someone who hasn't spoken recently
+          // Fallback: pick someone who hasn't spoken recently (respect intimacy disposition).
           if (!nextChar) {
             const recentSpeakerSet = new Set(recentSpeakers);
-            nextChar = groupChars.find(c => !recentSpeakerSet.has(c.name)) || groupChars[0];
+            nextChar =
+              intimacyEligibleChars.find(c => !recentSpeakerSet.has(c.name)) ||
+              intimacyEligibleChars[0] ||
+              groupChars.find(c => !recentSpeakerSet.has(c.name)) ||
+              groupChars[0];
           }
 
           currentGroupSpeakerRef.current = nextChar;
@@ -1480,35 +1516,64 @@ ${c.backstory ? `Backstory: ${c.backstory}` : ""}
 ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           }).join("\n\n");
 
-          // Fetch solo-session personality shifts for the next speaker (best-effort)
-          let traitModifiers = '';
-          try {
-            const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
-              character_id: nextChar.id,
-              character_name: nextChar.name,
-              max_sessions: 5,
-            });
-            traitModifiers = shiftRes?.data?.trait_modifiers || '';
-          } catch (_) { /* silently ignore — enhancement, not a requirement */ }
-
           // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
           // We still select a valid character, but we may interrupt the usual pacing.
+          // Re-apply intimacy disposition so reserved/averse never get lewd play-along via interruption.
           let finalNextChar = nextChar;
           if (shouldOutOfTurn) {
             const recentMentioned = updatedMessages
               .slice(-10)
               .map(m => m.character_name)
               .filter(Boolean);
-            const preferred = groupChars
-              .filter(c => c.name !== nextChar?.name)
+            const interruptPool = intimacyEligibleChars.filter(c => c.name !== nextChar?.name);
+            const preferred = interruptPool
               .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
 
             // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
             const recentSpeakerSet = new Set(recentSpeakers);
-            const leastRecent = groupChars.find(c => !recentSpeakerSet.has(c.name) && c.name !== nextChar?.name);
+            const leastRecent = interruptPool.find(c => !recentSpeakerSet.has(c.name));
 
-            finalNextChar = preferred[0] || leastRecent || groupChars.find(c => c.name !== nextChar?.name) || nextChar;
+            finalNextChar =
+              preferred[0] ||
+              leastRecent ||
+              interruptPool[0] ||
+              nextChar;
           }
+
+          // Final guard: never leave a reserved/averse speaker with intimate play-along guidance
+          // unless the user addressed them directly.
+          if (
+            finalNextChar &&
+            !isIntimacyEligibleSpeaker(finalNextChar, {
+              timing: lewdTiming,
+              userMessage: content,
+            })
+          ) {
+            finalNextChar = intimacyEligibleChars[0] || finalNextChar;
+          }
+
+          // Fetch personality shifts for the FINAL speaker (after interrupt/disposition).
+          let traitModifiers = '';
+          try {
+            if (finalNextChar?.id) {
+              const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
+                character_id: finalNextChar.id,
+                character_name: finalNextChar.name,
+                max_sessions: 5,
+              });
+              traitModifiers = shiftRes?.data?.trait_modifiers || '';
+            }
+          } catch (_) { /* silently ignore — enhancement, not a requirement */ }
+
+          const speakerCanReceiveIntimateGuidance =
+            finalNextChar &&
+            isIntimacyEligibleSpeaker(finalNextChar, {
+              timing: lewdTiming,
+              userMessage: content,
+            });
+          const speakerLewdTiming = speakerCanReceiveIntimateGuidance
+            ? lewdTiming
+            : "hold";
 
           // Keep the ref in sync for later Serenity auto-address handling etc.
           currentGroupSpeakerRef.current = finalNextChar;
@@ -1517,6 +1582,24 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           const interruptionClause = shouldOutOfTurn
             ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
             : "";
+
+          // Group intimacy: right/wrong time + THIS speaker's personality + audience.
+          // When already intimate, also push active play-along + in-character lewd flare.
+          const groupIntimacyGuidance = [
+            buildGroupIntimacyGuidance({
+              nextChar: finalNextChar,
+              groupChars,
+              timing: speakerLewdTiming,
+              adultMode,
+            }),
+            buildIntimatePlayAlongGuidance({
+              character: finalNextChar,
+              timing: speakerLewdTiming,
+              adultMode,
+            }),
+          ]
+            .filter(Boolean)
+            .join("\n");
 
           prompt = buildGroupPrompt({
             nextChar: finalNextChar,
@@ -1528,6 +1611,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             traitModifiers,
             userProfileContext,
             interruptionClause,
+            groupIntimacyGuidance,
             isContinue,
           });
         }
@@ -1802,7 +1886,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             ? "Feel free to write longer, more thoughtful responses (2 paragraphs)." 
             : "Aim for 1-2 sentences, present but not dominating.";
         
-        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${adultInstruction}
+        // Lover Matrix / multi-aspect: keep Serenity on the same non-sexual boundary
+        // as the primary prompt (do not inject unrestricted Adult/Raw guidance).
+        const serenityAdultInstruction = isMultiAspect
+          ? `\n\nHIGHEST-PRIORITY RULE: Emotional, psychological, and spiritual presence only. Never produce explicit, sexual, or anatomical content.`
+          : adultInstruction;
+        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${serenityAdultInstruction}
 ${serenity.personality ? `Personality: ${serenity.personality}\n` : ""}${serenity.backstory ? `Backstory: ${serenity.backstory}\n` : ""}${serenity.speaking_style ? `Voice: ${serenity.speaking_style}\n` : ""}${serenityRelCtx}${userProfileContext}
 Story so far:
 ${conversationHistory}

@@ -32,4 +32,13 @@ describe("buildGroupPrompt", () => {
     expect(prompt).toMatch(/STOP and wait for the user/i);
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
   });
+
+  it("embeds group intimacy guidance when provided", () => {
+    const prompt = buildGroupPrompt({
+      ...base,
+      groupIntimacyGuidance: "GROUP INTIMACY JUDGMENT (required this turn):\nBe selective.",
+    });
+    expect(prompt).toContain("GROUP INTIMACY JUDGMENT");
+    expect(prompt).toContain("Intimate talk or gestures only when timing");
+  });
 });

@@ -166,7 +166,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
     );
   }
 
-  // Intentionally do NOT push stall/failure recovery hints here. Those are
+// Intentionally do NOT push stall/failure recovery hints here. Those are
   // decided by the UI after ClerkLoading stalls or ClerkFailed confirms
   // (see ClerkConnectivityHints in App.full.jsx).
 
