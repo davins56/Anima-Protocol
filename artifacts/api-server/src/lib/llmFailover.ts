@@ -76,9 +76,15 @@ export interface ChatCompletionResult {
 // Sticky preference after OpenAI billing/credits failure in this process.
 let preferNonOpenAI = false;
 
+// Sticky skip after xAI reports no team credits/licenses in this process.
+// Prevents every chat turn from re-hitting a depleted Grok account once we
+// already know it cannot serve (and keeps error copy focused on Gemini).
+let preferNonXai = false;
+
 /** Test helper — clears sticky failover preference. */
 export function resetLlmFailoverStateForTests(): void {
   preferNonOpenAI = false;
+  preferNonXai = false;
 }
 
 export function getConfiguredProviderMode(): LlmProviderMode {
@@ -109,7 +115,7 @@ export function isOpenAIBlocked(): boolean {
 
 function providerAvailable(id: LlmProviderId): boolean {
   if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
-  if (id === "xai") return hasXaiKey();
+  if (id === "xai") return hasXaiKey() && !preferNonXai;
   return hasGeminiKey();
 }
 
@@ -345,6 +351,30 @@ function markOpenAIUnusable(err: unknown): void {
   }
 }
 
+function isXaiCreditsError(err: unknown): boolean {
+  if (!isProviderUnusableError(err)) return false;
+  if (extractXaiBillingUrl(err)) return true;
+  const msg =
+    err instanceof Error
+      ? err.message.toLowerCase()
+      : typeof err === "object" && err && "message" in err
+        ? String((err as { message?: unknown }).message || "").toLowerCase()
+        : String(err || "").toLowerCase();
+  return (
+    msg.includes("credits or licenses") ||
+    msg.includes("no credits or licenses") ||
+    (msg.includes("console.x.ai") && msg.includes("credit"))
+  );
+}
+
+function markXaiUnusable(err: unknown): void {
+  // Only sticky-skip xAI on the specific no-credits/licenses failure — not on
+  // every 429 — so a temporary rate limit can still be retried later.
+  if (isXaiCreditsError(err) && hasGeminiKey()) {
+    preferNonXai = true;
+  }
+}
+
 function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
   const names = attempted.map(providerLabel).join(" → ");
   if (isProviderAuthError(err)) {
@@ -363,6 +393,14 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
   if (isProviderUnusableError(err)) {
     const xaiBilling = extractXaiBillingUrl(err);
     if (xaiBilling && attempted.includes("xai")) {
+      const geminiAlreadyTried = attempted.includes("gemini");
+      if (geminiAlreadyTried) {
+        return new Error(
+          `Chat providers failed (tried ${names}). Gemini was unavailable, and ` +
+            `Grok (xAI) has no team credits/licenses. Check GEMINI_API_KEY / Google AI Studio ` +
+            `quota on Vercel, or buy Grok credits at ${xaiBilling}.`,
+        );
+      }
       return new Error(
         `Grok (xAI) has no team credits/licenses yet (tried ${names}). ` +
           `Buy credits at ${xaiBilling}` +
@@ -372,13 +410,15 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
       );
     }
     const hints: string[] = [];
-    if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
+    if (!hasXaiKey() || preferNonXai) {
+      if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
+    }
     if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
     if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
     const hint =
       hints.length > 0
         ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.`
-        : " All configured providers failed. Set ANIMA_LLM_PROVIDER=xai|gemini to skip OpenAI.";
+        : " All configured providers failed. Check GEMINI_API_KEY / Google AI Studio quota, or fund XAI_API_KEY / OPENAI_API_KEY.";
     return new Error(
       `LLM credits/quota exhausted (tried ${names}).${hint}`,
     );
@@ -481,6 +521,7 @@ export async function createChatStreamWithFailover(
     } catch (err) {
       lastErr = err;
       if (provider === "openai") markOpenAIUnusable(err);
+      if (provider === "xai") markXaiUnusable(err);
       if (!isProviderUnusableError(err)) {
         throw enrichError(err, attempted);
       }
@@ -537,6 +578,7 @@ export async function createChatCompletionWithFailover(
     } catch (err) {
       lastErr = err;
       if (provider === "openai") markOpenAIUnusable(err);
+      if (provider === "xai") markXaiUnusable(err);
       if (!isProviderUnusableError(err)) {
         throw enrichError(err, attempted);
       }
