@@ -1132,8 +1132,9 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
 
       // Adult Mode unlocks explicit capability; lewdTiming tells the model whether
       // THIS beat is a right or wrong time to use it (grief/logistics vs invite/heat).
+      const timingUserMessage = isContinue ? "continue" : content;
       const lewdTiming = assessLewdTiming({
-        userMessage: content,
+        userMessage: timingUserMessage,
         recentMessages: updatedMessages,
       });
       const adultInstruction =
@@ -1560,6 +1561,16 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             finalNextChar = intimacyEligibleChars[0] || finalNextChar;
           }
 
+          const speakerCanReceiveIntimateGuidance =
+            finalNextChar &&
+            isIntimacyEligibleSpeaker(finalNextChar, {
+              timing: lewdTiming,
+              userMessage: content,
+            });
+          const speakerLewdTiming = speakerCanReceiveIntimateGuidance
+            ? lewdTiming
+            : "hold";
+
           // Keep the ref in sync for later Serenity auto-address handling etc.
           currentGroupSpeakerRef.current = finalNextChar;
 
@@ -1574,12 +1585,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             buildGroupIntimacyGuidance({
               nextChar: finalNextChar,
               groupChars,
-              timing: lewdTiming,
+              timing: speakerLewdTiming,
               adultMode,
             }),
             buildIntimatePlayAlongGuidance({
               character: finalNextChar,
-              timing: lewdTiming,
+              timing: speakerLewdTiming,
               adultMode,
             }),
           ]

@@ -245,6 +245,8 @@ async function main(): Promise<void> {
   console.log("\nIdentification strategies:", strategies.join(", ") || "(none)");
   console.log("First factors:", firstFactors.join(", ") || "(none)");
 
+  const missingRequiredStrategies: string[] = [];
+  const missingRequiredOptionalStrategies: string[] = [];
   let oauthOk = true;
   for (const strategy of REQUIRED_STRATEGIES) {
     const enabled =
@@ -252,7 +254,10 @@ async function main(): Promise<void> {
     console.log(
       enabled ? `✓ ${strategy} is enabled` : `✗ ${strategy} is NOT enabled`,
     );
-    if (!enabled) oauthOk = false;
+    if (!enabled) {
+      missingRequiredStrategies.push(strategy);
+      oauthOk = false;
+    }
   }
 
   for (const strategy of OPTIONAL_STRATEGIES) {
@@ -262,6 +267,7 @@ async function main(): Promise<void> {
       console.log(`✓ ${strategy} is enabled`);
     } else if (requireApple) {
       console.log(`✗ ${strategy} is NOT enabled (--require-apple)`);
+      missingRequiredOptionalStrategies.push(strategy);
       oauthOk = false;
     } else {
       console.log(
@@ -300,17 +306,31 @@ async function main(): Promise<void> {
   }
 
   if (!oauthOk) {
-    console.log("\nGoogle/GitHub sign-in will fail until you enable them in Clerk:\n");
-    console.log(`  ${dashboardHint(CLERK_PUBLISHABLE_KEY)}`);
-    console.log(
-      "\nNote: Creating the repo on GitHub or signing into Clerk with GitHub",
-    );
-    console.log(
-      "does not automatically enable GitHub for your app's end users.",
-    );
-    console.log(
-      "Apple may stay disabled until Services ID credentials exist; use --require-apple only when checking Apple readiness.",
-    );
+    if (missingRequiredStrategies.length > 0) {
+      console.log("\nGoogle/GitHub sign-in will fail until you enable them in Clerk:\n");
+      console.log(`  ${dashboardHint(CLERK_PUBLISHABLE_KEY)}`);
+      console.log(
+        "\nNote: Creating the repo on GitHub or signing into Clerk with GitHub",
+      );
+      console.log(
+        "does not automatically enable GitHub for your app's end users.",
+      );
+    }
+
+    if (missingRequiredOptionalStrategies.length > 0) {
+      console.log(
+        "\nApple sign-in is not ready for this Clerk instance (--require-apple was passed):\n",
+      );
+      console.log(`  ${dashboardHint(CLERK_PUBLISHABLE_KEY)}`);
+      console.log(
+        "Enable Apple SSO and add Services ID credentials in Clerk before treating Apple as ready.",
+      );
+    } else if (missingRequiredStrategies.length > 0) {
+      console.log(
+        "Apple may stay disabled until Services ID credentials exist; pass --require-apple only when checking Apple readiness.",
+      );
+    }
+
     process.exitCode = 1;
     return;
   }
