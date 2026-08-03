@@ -82,7 +82,31 @@ In GitHub, create or open the OAuth App used for Anima Protocol:
 Copy the GitHub OAuth **Client ID** and **Client Secret**, paste them into Clerk,
 and save.
 
-## 4. Vercel preview deployments (`*.vercel.app`)
+## 4. Email sign-in (code vs password)
+
+Production currently exposes **email verification code** as the email first
+factor (`user_settings.attributes.email_address.first_factors: ["email_code"]`),
+even though `preferred_sign_in_strategy` is `password`. That means the Sign-in
+form asks for a **code from email**, not a password — password attempts will
+look like “it tries but doesn’t work.”
+
+To enable email + password sign-in:
+
+1. Clerk Dashboard → **Production** → User & authentication
+2. Email → enable **Sign in with email**
+3. **Password** tab → enable password for sign-up / sign-in
+4. Ensure password is offered as a sign-in first factor (not email-code only)
+
+Until then, users must complete the emailed one-time code, or use a working
+OAuth provider.
+
+## 5. Vercel preview deployments (`*.vercel.app`)
+
+**Prefer https://www.anima-protocol.com/sign-in.** Unique deploy URLs
+(`*.vercel.app`) often have **Vercel Deployment Protection** (SSO redirect to
+`vercel.com/sso-api`), which blocks Clerk OAuth callbacks and breaks email
+login. The app toast “The string did not match the expected pattern” on those
+hosts usually means the preview callback URL was not in Clerk → Paths yet.
 
 Clerk does **not** support wildcard redirect URLs. Every preview host needs its
 own entries in **Clerk Dashboard → Paths → Redirect URLs** (Production for
@@ -119,7 +143,7 @@ If **Vercel Deployment Protection** is enabled on previews, OAuth callbacks to
 `/sign-in/sso-callback` may be blocked — disable protection for preview or test
 on `www.anima-protocol.com` instead.
 
-## 5. Sign-in methods that work today (Production)
+## 6. Sign-in methods that work today (Production)
 
 | Method | Status | Notes |
 |--------|--------|-------|
@@ -131,7 +155,7 @@ on `www.anima-protocol.com` instead.
 
 Do **not** rely on the old duplicate “Continue with …” buttons above the Clerk form — those called a custom `signIn.sso()` path that hung on “Redirecting…” without starting OAuth. Sign-in now uses Clerk’s built-in social buttons only.
 
-## 6. Password vs email code vs GitHub
+## 7. Password vs email code vs GitHub
 
 Production Clerk may show an identifier-first form (email or username first).
 That does **not** mean every account can use a password:
@@ -145,17 +169,36 @@ That does **not** mean every account can use a password:
 Sign-up on Production may be **waitlist** mode — a brand-new Gmail signup can be
 blocked even when sign-in for an existing username works.
 
-## 7. Apple (optional)
+## 8. Apple (optional)
 
 In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
 
 1. Enable **Apple**.
-2. Follow Clerk’s Apple setup wizard (Services ID, domain verification).
-3. Add Clerk’s Authorized Redirect URI
+2. Follow Clerk’s Apple setup wizard (Services ID, Team ID, Key ID, `.p8` key).
+3. Production **must** use custom credentials — an empty Services ID / client ID
+   produces `invalid_request` / “Invalid OAuth Client Request” on
+   `appleid.apple.com` with `client_id=` blank in the authorize URL.
+4. Add Clerk’s Authorized Redirect URI
    (`https://clerk.anima-protocol.com/v1/oauth_callback`) as an Apple Return URL.
-4. Keep `/sign-in/sso-callback` / `/sign-up/sso-callback` registered under Clerk → Paths.
+5. Keep `/sign-in/sso-callback` / `/sign-up/sso-callback` registered under Clerk → Paths.
 
-## 8. Verify
+If Apple is not ready, leave the Apple SSO connection disabled in Clerk. The
+current app hides the Apple social button until credentials are ready.
+
+## 9. Troubleshooting live errors on www.anima-protocol.com
+
+| Symptom | Cause | Fix |
+|---------|--------|-----|
+| Toast: **The string did not match the expected pattern** on `*.vercel.app` | Preview/unique deploy callback not in Clerk Paths, and/or Vercel Deployment Protection | Use **https://www.anima-protocol.com/sign-in**, or register that host’s `/sign-in/sso-callback` and disable Deployment Protection for Preview |
+| Google **Error 400: redirect_uri_mismatch** | Google OAuth client missing Clerk FAPI callback | In Google Cloud Console → Credentials → the OAuth client Clerk uses (Clerk → SSO → Google shows the Client ID; also exposed as `google_one_tap_client_id` in `/v1/environment`) → Authorized redirect URIs → add `https://clerk.anima-protocol.com/v1/oauth_callback` |
+| Apple **invalid_request** / empty `client_id=` | Apple enabled in Clerk without Services ID credentials | Clerk → Production → SSO → Apple → set custom credentials, or disable Apple until ready |
+| Email/password “tries but doesn’t work” | Production email first factor is **email_code**, not password | Enter the emailed one-time code, or enable Password under Clerk → User & authentication |
+| GitHub reaches `github.com/login` | Callback is correct | Complete sign-in; if it fails after authorize, check Clerk → Paths still lists `…/sign-in/sso-callback` |
+
+Do **not** put `/sign-in/sso-callback` into Google/GitHub/Apple — that only belongs
+in Clerk → Paths.
+
+## 10. Verify
 
 Run from the repo root with the production Clerk keys in the environment:
 
@@ -181,6 +224,9 @@ directly.
 | Secret key | Vercel Production | `CLERK_SECRET_KEY` = `sk_live_*` (**not** `pk_*`) |
 | Publishable keys | Vercel Production + build | `CLERK_PUBLISHABLE_KEY` and `VITE_CLERK_PUBLISHABLE_KEY` = matching `pk_live_*` |
 | Proxy env | Vercel | `VITE_CLERK_PROXY_URL` empty (custom domain skips `/api/__clerk`) |
-| SSO providers | Clerk Production → SSO connections | Google + GitHub with **custom** OAuth credentials |
+| SSO providers | Clerk Production → SSO connections | Google + GitHub + Apple with **custom** OAuth credentials |
 | Provider redirect URI | Google / GitHub / Apple OAuth apps | `https://clerk.anima-protocol.com/v1/oauth_callback` |
 | App redirect URLs | Clerk → Paths | `…/sign-in/sso-callback` and `…/sign-up/sso-callback` per host |
+
+Deploying app code alone cannot fix `redirect_uri_mismatch` or an empty Apple
+`client_id` — those live in Google Cloud / Apple Developer / Clerk SSO settings.
