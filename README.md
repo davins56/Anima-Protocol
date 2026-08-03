@@ -131,8 +131,11 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | Variable | Used by | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
-| `OPENAI_API_KEY` | API | Required at API import time for OpenAI routes |
-| `XAI_API_KEY` | API | Optional. Enables automatic Grok (xAI) failover when OpenAI returns 429 / no credits |
+| `OPENAI_API_KEY` | API | Optional for chat when Grok/Gemini is configured; still used for image generate/edit |
+| `XAI_API_KEY` | API | Recommended. Grok (xAI) — preferred for chat under `ANIMA_LLM_PROVIDER=auto` when set |
+| `GEMINI_API_KEY` | API | Optional Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY` |
+| `ANIMA_LLM_PROVIDER` | API | `auto` (default: Grok → Gemini → OpenAI), or `xai` / `grok` / `gemini` / `openai` |
+| `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
