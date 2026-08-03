@@ -137,6 +137,7 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `ANIMA_LLM_PROVIDER` | API | Unset + `GEMINI_API_KEY` → Gemini-only. Or `auto` (Gemini → Grok → OpenAI), `xai` / `grok` / `gemini` / `openai` |
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
+| `ANIMA_GEMINI_THINKING_BUDGET` | API | Optional. Gemini thinking token budget (`0` disables on Flash; default `0` Flash / `1024` Pro) |
 | `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |

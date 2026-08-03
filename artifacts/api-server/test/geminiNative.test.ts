@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createGeminiChatCompletion,
   createGeminiChatStream,
+  extractCandidateText,
   geminiNativeBaseUrl,
+  thinkingBudgetForModel,
   toGeminiGenerateRequest,
 } from "../src/lib/geminiNative";
 
@@ -26,17 +28,68 @@ describe("geminiNativeBaseUrl", () => {
   });
 });
 
+describe("thinkingBudgetForModel", () => {
+  const SAVED = { ...process.env };
+  afterEach(() => {
+    process.env = { ...SAVED };
+  });
+
+  it("disables thinking for Flash chat models by default", () => {
+    delete process.env.ANIMA_GEMINI_THINKING_BUDGET;
+    expect(thinkingBudgetForModel("gemini-2.5-flash")).toBe(0);
+    expect(thinkingBudgetForModel("gemini-2.5-flash-lite")).toBe(0);
+  });
+
+  it("uses a modest budget for Pro (cannot fully disable)", () => {
+    delete process.env.ANIMA_GEMINI_THINKING_BUDGET;
+    expect(thinkingBudgetForModel("gemini-2.5-pro")).toBe(1024);
+  });
+
+  it("honors ANIMA_GEMINI_THINKING_BUDGET override", () => {
+    process.env.ANIMA_GEMINI_THINKING_BUDGET = "512";
+    expect(thinkingBudgetForModel("gemini-2.5-flash")).toBe(512);
+  });
+});
+
+describe("extractCandidateText", () => {
+  it("skips thought parts so only the visible reply is returned", () => {
+    expect(
+      extractCandidateText({
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: "secret reasoning", thought: true },
+                { text: "Hello there" },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toBe("Hello there");
+  });
+});
+
 describe("toGeminiGenerateRequest", () => {
+  const SAVED = { ...process.env };
+  afterEach(() => {
+    process.env = { ...SAVED };
+  });
+
   it("maps system-only prompts to a single user turn", () => {
+    delete process.env.ANIMA_GEMINI_THINKING_BUDGET;
     const body = toGeminiGenerateRequest(
       [{ role: "system", content: "You are Serenity." }],
-      { maxTokens: 1024 },
+      { maxTokens: 1024, model: "gemini-2.5-flash" },
     );
     expect(body.systemInstruction).toBeUndefined();
     expect(body.contents).toEqual([
       { role: "user", parts: [{ text: "You are Serenity." }] },
     ]);
     expect(body.generationConfig?.maxOutputTokens).toBe(1024);
+    expect(body.generationConfig?.thinkingConfig).toEqual({
+      thinkingBudget: 0,
+    });
   });
 
   it("keeps systemInstruction when user/assistant turns exist", () => {
@@ -80,6 +133,7 @@ describe("createGeminiChatCompletion / createGeminiChatStream", () => {
 
   it("sends x-goog-api-key (not Bearer) for AQ auth keys", async () => {
     process.env.GEMINI_API_KEY = "AQ.native-test-key";
+    delete process.env.ANIMA_GEMINI_THINKING_BUDGET;
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockResolvedValueOnce(
       new Response(
@@ -106,6 +160,35 @@ describe("createGeminiChatCompletion / createGeminiChatStream", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers["x-goog-api-key"]).toBe("AQ.native-test-key");
     expect(headers.Authorization).toBeUndefined();
+    const sent = JSON.parse(String(init.body)) as {
+      generationConfig?: { thinkingConfig?: { thinkingBudget?: number } };
+    };
+    expect(sent.generationConfig?.thinkingConfig?.thinkingBudget).toBe(0);
+  });
+
+  it("throws when Gemini returns MAX_TOKENS with no visible text", async () => {
+    process.env.GEMINI_API_KEY = "AQ.empty";
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          candidates: [{ finishReason: "MAX_TOKENS" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(
+      createGeminiChatCompletion({
+        model: "gemini-2.5-flash",
+        maxTokens: 128,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toMatchObject({
+      name: "GeminiApiError",
+      code: "empty_visible_text",
+      message: expect.stringMatching(/finishReason=MAX_TOKENS/i),
+    });
   });
 
   it("maps HTTP auth failures onto GeminiApiError with status", async () => {
