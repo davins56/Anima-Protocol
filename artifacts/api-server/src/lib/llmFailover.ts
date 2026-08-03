@@ -125,6 +125,7 @@ function defaultProviderMode(): LlmProviderMode {
   // Kimi alone → Kimi-only. Gemini alone → Gemini-only.
   // Force Gemini with ANIMA_FORCE_GEMINI=true (and ANIMA_LLM_PROVIDER=gemini).
   if (
+    !envFlagEnabled("ANIMA_FORCE_GEMINI") &&
     hasKimiKey() &&
     (hasGeminiKey() ||
       hasXaiKey() ||
@@ -132,6 +133,7 @@ function defaultProviderMode(): LlmProviderMode {
   ) {
     return "anima";
   }
+  if (envFlagEnabled("ANIMA_FORCE_GEMINI") && hasGeminiKey()) return "gemini";
   if (hasKimiKey()) return "kimi";
   if (hasGeminiKey()) return "gemini";
   return "auto";
