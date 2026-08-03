@@ -280,7 +280,7 @@ describe("createChatStreamWithFailover", () => {
     expect(isGeminiStickySkipped()).toBe(true);
   });
 
-  it("revives sticky skips when every provider was marked unusable", async () => {
+  it("revives sticky skips that would hide Gemini/Kimi (avoids OpenAI-only)", () => {
     recordProviderFailure("gemini", { status: 429, message: "quota exhausted" });
     recordProviderFailure("kimi", { status: 429, message: "quota exhausted" });
     recordProviderFailure("xai", {
@@ -288,17 +288,33 @@ describe("createChatStreamWithFailover", () => {
       message:
         '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/abc."',
     });
-    recordProviderFailure("openai", {
-      status: 429,
-      message: "You have no credits remaining",
+
+    // Without revive this collapsed to OpenAI-only → "tried OpenAI".
+    expect(getProviderChain()).toEqual(["gemini", "kimi", "xai", "openai"]);
+    expect(isGeminiStickySkipped()).toBe(false);
+  });
+
+  it("starts each chat turn on Gemini even after prior sticky failures", async () => {
+    recordProviderFailure("gemini", { status: 429, message: "quota exhausted" });
+    recordProviderFailure("kimi", { status: 429, message: "quota exhausted" });
+    recordProviderFailure("xai", {
+      status: 403,
+      message: "no credits or licenses https://console.x.ai/team/abc",
+    });
+    expect(isGeminiStickySkipped()).toBe(true);
+
+    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini-again"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "try again" }],
     });
 
-    expect(isGeminiStickySkipped()).toBe(true);
-    expect(isKimiStickySkipped()).toBe(true);
-    expect(isXaiStickySkipped()).toBe(true);
-    expect(isOpenAIStickySkipped()).toBe(true);
-    expect(getProviderChain()[0]).toBe("gemini");
-    expect(reviveStickySkippedProvidersIfNeeded()).toBe(false); // already cleared by getProviderChain
+    expect(result.provider).toBe("gemini");
+    expect(result.failedOver).toBe(false);
+    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it("retries Kimi standard model on model-unavailable", async () => {
