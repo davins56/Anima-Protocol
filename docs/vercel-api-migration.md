@@ -46,6 +46,8 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **If the key is valid but companions return an empty reply / no visible text:** Gemini 2.5 thinking tokens can consume `maxOutputTokens` and leave no room for the answer. Current deploys disable thinking on Flash by default (`thinkingBudget: 0`). Override with `ANIMA_GEMINI_THINKING_BUDGET` if needed, then redeploy.
 
+**If chat says “Too many requests. Please slow down” after one message:** that is the API’s own rate limiter, not Gemini. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
+
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 
 If `DATABASE_URL` or `CLERK_SECRET_KEY` is missing, `/api/*` returns **503**
