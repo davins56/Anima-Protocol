@@ -46,8 +46,11 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | Variable | Used by |
 |----------|---------|
 | `DATABASE_URL` | API + `db push` |
-| `OPENAI_API_KEY` | API (import-time check) |
-| `XAI_API_KEY` | API (optional Grok failover when OpenAI is out of credits) |
+| `OPENAI_API_KEY` | API (chat/images when OpenAI is enabled; optional if Grok/Gemini is forced) |
+| `XAI_API_KEY` | API (Grok / xAI — failover, or primary when `ANIMA_LLM_PROVIDER=xai`) |
+| `GEMINI_API_KEY` | API (optional Gemini via OpenAI-compatible endpoint; or `GOOGLE_API_KEY`) |
+| `ANIMA_LLM_PROVIDER` | API (`auto` / `openai` / `xai` / `gemini`) — set `xai` or `gemini` to skip OpenAI for chat |
+| `ANIMA_DISABLE_OPENAI` | API (`true` to block OpenAI under `auto` when credits are exhausted) |
 | `PORT` | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend `/`, mockup `/__mockup` |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) — must match `CLERK_PUBLISHABLE_KEY`; Vite build also reads `CLERK_PUBLISHABLE_KEY` if `VITE_` is unset |
