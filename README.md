@@ -133,7 +133,7 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
 | `OPENAI_API_KEY` | API | Optional for chat when Grok/Gemini is configured; still used for image generate/edit |
 | `XAI_API_KEY` | API | Optional. Grok (xAI) — used under `ANIMA_LLM_PROVIDER=auto` / `xai`, not as a Gemini-mode backup |
-| `GEMINI_API_KEY` | API | Recommended. Gemini (Google AI Studio). Default chat provider when set (Gemini-only). Also accepts `GOOGLE_API_KEY` |
+| `GEMINI_API_KEY` | API | Recommended. Gemini (Google AI Studio), including `AQ.*` auth keys via the native API. Default chat provider when set (Gemini-only). Also accepts `GOOGLE_API_KEY` |
 | `ANIMA_LLM_PROVIDER` | API | Unset + `GEMINI_API_KEY` → Gemini-only. Or `auto` (Gemini → Grok → OpenAI), `xai` / `grok` / `gemini` / `openai` |
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
