@@ -82,11 +82,11 @@ export function humanizeIdentifierError(message, code) {
   const text = asSearchText(message);
   const errCode = asSearchText(code);
   if (
-    errCode.includes("format") ||
-    errCode.includes("param") ||
-    text.includes("did not match the expected pattern") ||
-    text.includes("is invalid") ||
-    text.includes("invalid email")
+    errCode === "form_param_format_invalid" ||
+    (!errCode &&
+      (text.includes("did not match the expected pattern") ||
+        text.includes("is invalid") ||
+        text.includes("invalid email")))
   ) {
     return "That email or username looks invalid. Check for typos (for example .com, not .om) and try again.";
   }
@@ -94,41 +94,67 @@ export function humanizeIdentifierError(message, code) {
 }
 
 /**
+ * Applies identifier-format copy only while starting an email sign-in. Other
+ * Clerk flows can return `form_param_*` errors with unrelated meanings.
+ * @param {unknown} message
+ * @param {unknown} code
+ * @param {boolean} humanizeIdentifierFormat
+ */
+function formatClerkMessage(message, code, humanizeIdentifierFormat) {
+  return humanizeIdentifierFormat
+    ? humanizeIdentifierError(message, code)
+    : asDisplayMessage(message);
+}
+
+/**
  * Pick a user-facing message from a Clerk Future `{ error }` or thrown value.
  * Never throws — Clerk error shapes are inconsistent across SDK builds.
  * @param {unknown} err
+ * @param {{ humanizeIdentifierFormat?: boolean }} [options]
  */
-export function clerkErrorMessage(err) {
+export function clerkErrorMessage(err, { humanizeIdentifierFormat = false } = {}) {
   try {
     if (!err) return null;
-    if (typeof err === "string") return humanizeIdentifierError(err, null);
+    if (typeof err === "string") {
+      return formatClerkMessage(err, null, humanizeIdentifierFormat);
+    }
     if (err instanceof Error) {
-      return humanizeIdentifierError(err.message, /** @type {{ code?: unknown }} */ (err).code);
+      return formatClerkMessage(
+        err.message,
+        /** @type {{ code?: unknown }} */ (err).code,
+        humanizeIdentifierFormat,
+      );
     }
     if (typeof err === "object") {
       const direct = /** @type {{ message?: unknown, longMessage?: unknown, code?: unknown, errors?: Array<{ code?: unknown, long_message?: unknown, message?: unknown, longMessage?: unknown }> }} */ (
         err
       );
       if (direct.longMessage != null && direct.longMessage !== "") {
-        return (
-          humanizeIdentifierError(direct.longMessage, direct.code) ||
-          asDisplayMessage(direct.longMessage)
+        return formatClerkMessage(
+          direct.longMessage,
+          direct.code,
+          humanizeIdentifierFormat,
         );
       }
       if (direct.message != null && direct.message !== "" && !direct.errors) {
-        return (
-          humanizeIdentifierError(direct.message, direct.code) ||
-          asDisplayMessage(direct.message)
+        return formatClerkMessage(
+          direct.message,
+          direct.code,
+          humanizeIdentifierFormat,
         );
       }
       const first = direct.errors?.[0];
       const nested =
         first?.long_message ?? first?.longMessage ?? first?.message ?? null;
       if (nested != null && nested !== "") {
-        return humanizeIdentifierError(nested, first?.code) || asDisplayMessage(nested);
+        return formatClerkMessage(
+          nested,
+          first?.code,
+          humanizeIdentifierFormat,
+        );
       }
       // Last resort: stringify unknown object shapes without crashing.
-      return humanizeIdentifierError(direct, direct.code);
+      return formatClerkMessage(direct, direct.code, humanizeIdentifierFormat);
     }
     return null;
   } catch {
