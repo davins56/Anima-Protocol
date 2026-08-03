@@ -1,7 +1,6 @@
 /**
  * Display labels for chat LLM backends returned by the API as
- * provider: "openai" | "xai" | "kimi" (legacy "gemini" may still appear
- * briefly from older deploys) and optional brand: "anima".
+ * provider: "openai" | "xai" | "kimi" | "gemini" and optional brand: "anima".
  */
 
 /** @param {string | null | undefined} provider */
@@ -86,19 +85,25 @@ export function llmDisplayBadgeClass(provider, brand) {
   return llmProviderBadgeClass(provider);
 }
 
-/** Providers shown in Settings — Kimi preferred, Grok/OpenAI as backup. */
+/** Providers shown in Settings — Gemini-first auto chain with backups. */
 export const CONFIGURED_LLM_PROVIDERS = [
+  {
+    id: "gemini",
+    label: "Gemini",
+    env: "GEMINI_API_KEY",
+    note: "Google AI Studio — preferred chat LLM under auto",
+  },
   {
     id: "kimi",
     label: "Kimi",
     env: "KIMI_API_KEY",
-    note: "Moonshot — preferred chat LLM (fails over to Grok/OpenAI)",
+    note: "Moonshot — backup when Gemini is exhausted",
   },
   {
     id: "xai",
     label: "Grok",
     env: "XAI_API_KEY",
-    note: "xAI — backup when Kimi is exhausted",
+    note: "xAI — backup in the auto chain",
   },
   {
     id: "openai",

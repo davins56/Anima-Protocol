@@ -132,10 +132,10 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
 | `OPENAI_API_KEY` | API | Optional for chat when Kimi/Grok is configured; still used for image generate/edit |
-| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Preferred chat LLM (Moonshot / “Kiwi”). Verify via `/api/healthz/llm` |
-| `XAI_API_KEY` | API | Grok backup when Kimi is missing or exhausted |
-| `GEMINI_API_KEY` | API | Unused for chat (retired). Safe to remove from Vercel |
-| `ANIMA_LLM_PROVIDER` | API | Default `auto` = Kimi → Grok → OpenAI. `kimi` = Kimi-only. `anima` / `ensemble` enables parallel mind drafts. Do **not** paste API keys here — leftover `gemini` / `AQ.*` values are ignored |
+| `GEMINI_API_KEY` | API | Preferred chat LLM under `auto` (native Google AI Studio / AQ.* keys). Verify via `/api/healthz/llm` |
+| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Kimi (Moonshot) backup in the auto chain |
+| `XAI_API_KEY` | API | Grok backup in the auto chain |
+| `ANIMA_LLM_PROVIDER` | API | Default `auto` = Gemini → Kimi → Grok → OpenAI. Or `gemini` / `kimi` / `xai` / `openai` / `anima`. Do **not** paste API keys here |
 | `ANIMA_LLM_ENSEMBLE` | API | Set `true` to force parallel mind drafts even when provider mode is not `anima` |
 
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
