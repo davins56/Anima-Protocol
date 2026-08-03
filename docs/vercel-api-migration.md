@@ -41,6 +41,8 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI/xAI credits are empty or the key is revoked. Set a working **`GEMINI_API_KEY`** on Vercel (Google AI Studio) and redeploy — chat defaults to Gemini when that key is present. Optional: `ANIMA_LLM_PROVIDER=gemini`. Image generation still needs a funded `OPENAI_API_KEY`.
 
+**If the error says Gemini was unavailable and Grok has no team credits:** both providers failed. Fix Gemini first (check `GEMINI_API_KEY` / Google AI Studio quota), or buy xAI credits at the console link in the error. Setting `ANIMA_LLM_PROVIDER=gemini` alone will not help if Gemini already failed in that request.
+
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 
 If `DATABASE_URL` or `CLERK_SECRET_KEY` is missing, `/api/*` returns **503**

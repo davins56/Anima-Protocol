@@ -355,6 +355,72 @@ describe("createChatStreamWithFailover", () => {
     ).rejects.toThrow(/console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i);
   });
 
+  it("does not suggest ANIMA_LLM_PROVIDER=gemini when Gemini already failed before Grok credits", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    createMock
+      .mockRejectedValueOnce({
+        status: 429,
+        message: "RESOURCE_EXHAUSTED: Quota exceeded",
+      })
+      .mockRejectedValueOnce({
+        status: 403,
+        message:
+          '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+      });
+
+    const err = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(
+      /Gemini was unavailable[\s\S]*console\.x\.ai\/team\/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374/i,
+    );
+    expect((err as Error).message).not.toMatch(/ANIMA_LLM_PROVIDER=gemini/);
+  });
+
+  it("skips Grok on later turns after a no-credits failure when Gemini is configured", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    createMock
+      .mockRejectedValueOnce({
+        status: 429,
+        message: "RESOURCE_EXHAUSTED: Quota exceeded",
+      })
+      .mockRejectedValueOnce({
+        status: 403,
+        message:
+          '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
+      })
+      .mockResolvedValueOnce(fakeStream("gemini-retry"));
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "one" }],
+      }),
+    ).rejects.toThrow(/Gemini was unavailable/i);
+
+    const second = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "two" }],
+    });
+
+    expect(second.provider).toBe("gemini");
+    expect(second.failedOver).toBe(false);
+    // Turn 1: Gemini fail + xAI fail. Turn 2: Gemini only (sticky skip xAI).
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock.mock.calls[2][0].model).toBe("gemini-2.5-flash");
+  });
+
   it("falls back to Grok on OpenAI 401 status code (no body)", async () => {
     process.env.ANIMA_LLM_PROVIDER = "openai";
     createMock
