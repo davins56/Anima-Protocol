@@ -38,3 +38,14 @@ Helper: `clerkProviderOAuthCallbackUrl` in
   until Google Cloud allowlists the FAPI callback above.
 - Production account `Davins56` / `davins56@hotmail.com` has **no password**
   (`strategy_for_user_invalid`) — use email code or GitHub.
+
+## Working login paths (until Google Cloud is fixed)
+
+1. **GitHub** on `https://www.anima-protocol.com/sign-in`
+2. **Email/username + emailed verification code** (not password, unless one is set)
+
+Google and Apple buttons are CSS-hidden in `App.full.jsx` so users are not
+sent into hard provider failures. Unhide after:
+
+- Google Cloud redirects include `https://clerk.anima-protocol.com/v1/oauth_callback`
+- Apple Services ID credentials exist in Clerk Production SSO

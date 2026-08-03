@@ -61,16 +61,11 @@ export async function probeClerkConnectivity(clerkPubKey) {
     clerkProxyProbeBase(clerkPubKey) ||
     `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
 
-  let apiOk = false;
-  let proxyOk = false;
-  let scriptOk = false;
-
   try {
     const healthRes = await fetch(apiUrl('/healthz'), {
       credentials: 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
-    apiOk = healthRes.ok;
     if (!healthRes.ok) {
       hints.push(
         `API health check failed (${healthRes.status}). Set DATABASE_URL and CLERK_SECRET_KEY on Vercel.`,
@@ -85,7 +80,6 @@ export async function probeClerkConnectivity(clerkPubKey) {
       credentials: usesCustomDomain ? 'omit' : 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
-    proxyOk = clerkRes.ok;
     if (!clerkRes.ok) {
       const proxyError = await readProxyError(clerkRes);
       if (proxyError?.error === 'clerk_proxy_invalid_secret') {
@@ -145,7 +139,6 @@ export async function probeClerkConnectivity(clerkPubKey) {
         credentials: usesCustomDomain ? 'omit' : 'same-origin',
         signal: AbortSignal.timeout(8000),
       });
-      scriptOk = scriptRes.ok;
       if (!scriptRes.ok) {
         hints.push(
           usesCustomDomain
@@ -168,13 +161,15 @@ export async function probeClerkConnectivity(clerkPubKey) {
     );
   }
 
-  if (apiOk && proxyOk && scriptOk && hints.length === 0) {
-    hints.push(
-      usesCustomDomain
-        ? 'API and Clerk custom domain look healthy, but the Clerk SDK did not finish loading. Disable ad blockers, try another browser, or refresh in a few seconds.'
-        : 'API and Clerk proxy look healthy, but the Clerk SDK did not finish loading. Disable ad blockers, try another browser, or refresh in a few seconds.',
-    );
-  }
+  // Do NOT push a "healthy but SDK stalled" hint here. That message must only
+  // surface after a real Clerk load failure / stall in the UI (see CLERK_STALL_HINT).
 
   return hints;
 }
+
+/**
+ * Fallback shown only after ClerkLoading has actually stalled (or ClerkFailed),
+ * when connectivity probes themselves look healthy.
+ */
+export const CLERK_STALL_HINT =
+  'API and Clerk look reachable, but the Clerk SDK has not finished loading. Disable ad blockers, try another browser, or refresh in a few seconds.';
