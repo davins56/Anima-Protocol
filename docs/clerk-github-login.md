@@ -197,7 +197,7 @@ current app hides the Apple social button until credentials are ready.
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
-| Toast: **The string did not match the expected pattern** on `*.vercel.app` | Preview/unique deploy callback not in Clerk Paths, and/or Vercel Deployment Protection | Use **https://www.anima-protocol.com/sign-in**, or register that host’s `/sign-in/sso-callback` and disable Deployment Protection for Preview |
+| Toast / inline: **The string did not match the expected pattern** on `*.vercel.app` | Preview/unique deploy callback not in Clerk Paths, and/or Vercel Deployment Protection (or a stale preview bundle) | Close the preview tab and use **https://www.anima-protocol.com/sign-in**. The app also shows a preview banner with that link. Optionally register that host’s `/sign-in/sso-callback` and disable Deployment Protection for Preview |
 | Google **Error 400: redirect_uri_mismatch** | Google OAuth client missing Clerk FAPI callback | In Google Cloud Console → Credentials → the OAuth client Clerk uses (Clerk → SSO → Google shows the Client ID; also exposed as `google_one_tap_client_id` in `/v1/environment`) → Authorized redirect URIs → add `https://clerk.anima-protocol.com/v1/oauth_callback` |
 | Apple **invalid_request** / empty `client_id=` | Apple enabled in Clerk without Services ID credentials | Clerk → Production → SSO → Apple → set custom credentials, or disable Apple until ready |
 | Email/password “tries but doesn’t work” | Password is not a Production first factor | Use the emailed one-time **code**, or GitHub |

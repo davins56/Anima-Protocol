@@ -4,6 +4,9 @@ import { useNavigate } from "react-router-dom";
 import {
   clerkErrorMessage,
   hasEmailCodeFactor,
+  isPreviewSignInHost,
+  previewSignInHint,
+  PRODUCTION_SIGN_IN_URL,
   startGitHubOAuthSignIn,
 } from "@/lib/emailCodeSignIn";
 import { clerkOAuthCompletePath } from "@/lib/clerkOAuthPaths";
@@ -27,8 +30,24 @@ export default function EmailCodeSignIn() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend'
   const [maskedEmail, setMaskedEmail] = useState("");
+  const onPreviewHost = isPreviewSignInHost();
 
   const loading = fetchStatus === "fetching" || Boolean(busy);
+
+  const previewBanner = onPreviewHost ? (
+    <div
+      className="mb-4 rounded border border-amber-400/40 bg-amber-950/50 px-3 py-2 text-sm leading-relaxed text-amber-100"
+      role="status"
+    >
+      <p>{previewSignInHint()}</p>
+      <a
+        className="mt-1 inline-block font-medium text-amber-50 underline underline-offset-2 hover:text-white"
+        href={PRODUCTION_SIGN_IN_URL}
+      >
+        Open production sign-in
+      </a>
+    </div>
+  ) : null;
 
   const finishSignIn = async () => {
     if (signIn.status !== "complete") {
@@ -78,8 +97,10 @@ export default function EmailCodeSignIn() {
       const { error: createError } = await signIn.create({ identifier: value });
       if (createError) {
         setError(
-          clerkErrorMessage(createError, { humanizeIdentifierFormat: true }) ||
-            "Couldn't start sign-in.",
+          clerkErrorMessage(createError, {
+            humanizeIdentifierFormat: true,
+            context: "identifier",
+          }) || "Couldn't start sign-in.",
         );
         return;
       }
@@ -95,7 +116,10 @@ export default function EmailCodeSignIn() {
       stage = "send-code";
       const { error: sendError } = await signIn.emailCode.sendCode();
       if (sendError) {
-        setError(clerkErrorMessage(sendError) || "Couldn't send a verification code.");
+        setError(
+          clerkErrorMessage(sendError, { context: "identifier" }) ||
+            "Couldn't send a verification code.",
+        );
         return;
       }
 
@@ -107,8 +131,10 @@ export default function EmailCodeSignIn() {
       setCode("");
     } catch (err) {
       setError(
-        clerkErrorMessage(err, { humanizeIdentifierFormat: stage === "create" }) ||
-          "Couldn't start sign-in.",
+        clerkErrorMessage(err, {
+          humanizeIdentifierFormat: stage === "create",
+          context: "identifier",
+        }) || "Couldn't start sign-in.",
       );
     } finally {
       setBusy(null);
@@ -129,12 +155,18 @@ export default function EmailCodeSignIn() {
         code: value,
       });
       if (verifyError) {
-        setError(clerkErrorMessage(verifyError) || "Invalid verification code.");
+        setError(
+          clerkErrorMessage(verifyError, { context: "code" }) ||
+            "Invalid verification code.",
+        );
         return;
       }
       await finishSignIn();
     } catch (err) {
-      setError(clerkErrorMessage(err) || "Couldn't verify that code.");
+      setError(
+        clerkErrorMessage(err, { context: "code" }) ||
+          "Couldn't verify that code.",
+      );
     } finally {
       setBusy(null);
     }
@@ -146,11 +178,17 @@ export default function EmailCodeSignIn() {
     try {
       const { error: sendError } = await signIn.emailCode.sendCode();
       if (sendError) {
-        setError(clerkErrorMessage(sendError) || "Couldn't resend the code.");
+        setError(
+          clerkErrorMessage(sendError, { context: "code" }) ||
+            "Couldn't resend the code.",
+        );
         return;
       }
     } catch (err) {
-      setError(clerkErrorMessage(err) || "Couldn't resend the code.");
+      setError(
+        clerkErrorMessage(err, { context: "code" }) ||
+          "Couldn't resend the code.",
+      );
     } finally {
       setBusy(null);
     }
@@ -168,7 +206,10 @@ export default function EmailCodeSignIn() {
       // clerk.authenticateWithRedirect throws "is not a function".
       await startGitHubOAuthSignIn(signIn, basePath, clerk);
     } catch (err) {
-      setError(clerkErrorMessage(err) || "GitHub sign-in failed. Try again.");
+      setError(
+        clerkErrorMessage(err, { context: "oauth" }) ||
+          "GitHub sign-in failed. Try again.",
+      );
       setBusy(null);
     }
   };
@@ -185,6 +226,7 @@ export default function EmailCodeSignIn() {
   if (step === "code") {
     return (
       <div className={cardClass}>
+        {previewBanner}
         <h1 className="text-xl font-semibold tracking-wide text-cyan-200">
           Check your email
         </h1>
@@ -244,6 +286,7 @@ export default function EmailCodeSignIn() {
 
   return (
     <div className={cardClass}>
+      {previewBanner}
       <h1 className="text-xl font-semibold tracking-wide text-cyan-200">
         Re-enter the Protocol
       </h1>
