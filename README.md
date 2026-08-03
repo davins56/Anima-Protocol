@@ -135,7 +135,9 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | **Required for chat.** Kimi (Moonshot / “Kiwi”) is the only chat LLM. Verify via `/api/healthz/llm` |
 | `XAI_API_KEY` | API | Unused for chat (retired). Optional leftover |
 | `GEMINI_API_KEY` | API | Unused for chat (retired). Safe to remove from Vercel |
-| `ANIMA_LLM_PROVIDER` | API | Prefer `kimi`. Leftover `gemini` / `anima` / `auto` cannot select Gemini — chat always uses Kimi when the key is set |
+| `ANIMA_LLM_PROVIDER` | API | Prefer `kimi` (Kimi-only chat). `anima` / `ensemble` enables parallel mind drafts (Kimi/Grok/ChatGPT — never Gemini) then a combined reply. Leftover `gemini` cannot select Gemini |
+| `ANIMA_LLM_ENSEMBLE` | API | Set `true` to force parallel mind drafts even when provider mode is not `anima` |
+
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
 | `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |

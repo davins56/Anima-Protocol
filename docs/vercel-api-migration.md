@@ -45,7 +45,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **Kimi setup (required for chat):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) on Vercel **Production**, set `ANIMA_LLM_PROVIDER=kimi`, and remove leftover `ANIMA_LLM_PROVIDER=gemini` if present. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"kimi"` and `"keys":{"kimi":true,...}`. Moonshot may require a small platform balance before the key can call models.
 
-**Chat is Kimi-only:** Chat never calls Gemini / Grok / OpenAI. Without `KIMI_API_KEY`, chat fails with a clear “requires KIMI_API_KEY” error instead of falling back to Gemini.
+**Chat default is Kimi-only:** Without `KIMI_API_KEY`, chat fails with a clear setup error. Gemini is never used. With `ANIMA_LLM_PROVIDER=anima` / `ensemble` (or `ANIMA_LLM_ENSEMBLE=true`), available minds (**Kimi / Grok / ChatGPT** — not Gemini) draft in parallel, then a combined reply is streamed. Sticky provider failures are skipped on later turns; timed-out mind calls are aborted.
 
 **If chat fails with a Grok “no team credits” error:** you do not have a usable Kimi key (or are on an older deploy). Set `KIMI_API_KEY` + `ANIMA_LLM_PROVIDER=kimi`, set `ANIMA_DISABLE_XAI=true`, or buy xAI credits.
 

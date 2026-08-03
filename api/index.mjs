@@ -125432,12 +125432,24 @@ function isXaiBlocked() {
   if (preferNonXai) return true;
   return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
+function isXaiStickySkipped() {
+  return preferNonXai;
+}
+function isOpenAIStickySkipped() {
+  return preferNonOpenAI;
+}
 function providerAvailable(id) {
   if (id === "gemini") return false;
   if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
   if (id === "xai") return !isXaiBlocked() && hasXaiKey();
   if (id === "kimi") return hasKimiKey();
   return false;
+}
+function getAnimaTierProviderOrder(tier) {
+  if (tier === "heavy") {
+    return ["kimi", "xai", "openai"];
+  }
+  return ["kimi", "xai", "openai"];
 }
 function getProviderChain(_tier = "standard") {
   const mode = getConfiguredProviderMode();
@@ -125603,6 +125615,35 @@ function resolveForProvider(provider, tier) {
   if (provider === "xai") return resolveXaiModel(tier);
   if (provider === "kimi") return resolveKimiModel(tier);
   return resolveModel(tier);
+}
+function markOpenAIUnusable(err) {
+  if (isProviderUnusableError(err) && (hasXaiKey() || hasKimiKey())) {
+    preferNonOpenAI = true;
+  }
+}
+function recordProviderFailure(provider, err) {
+  if (provider === "openai") {
+    markOpenAIUnusable(err);
+    return;
+  }
+  if (provider === "xai") {
+    if (isProviderUnusableError(err) && hasKimiKey()) {
+      preferNonXai = true;
+      return;
+    }
+    markXaiUnusable(err);
+  }
+}
+function isXaiCreditsError(err) {
+  if (!isProviderUnusableError(err)) return false;
+  if (extractXaiBillingUrl(err)) return true;
+  const msg = err instanceof Error ? err.message.toLowerCase() : typeof err === "object" && err && "message" in err ? String(err.message || "").toLowerCase() : String(err || "").toLowerCase();
+  return msg.includes("credits or licenses") || msg.includes("no credits or licenses") || msg.includes("console.x.ai") && msg.includes("credit");
+}
+function markXaiUnusable(err) {
+  if (isXaiCreditsError(err) && hasKimiKey()) {
+    preferNonXai = true;
+  }
 }
 function enrichError(err, attempted) {
   const names = attempted.map(providerLabel).join(" \u2192 ");
@@ -139970,6 +140011,297 @@ var storage_default = router8;
 // src/routes/chat.ts
 var import_express15 = __toESM(require_express2(), 1);
 
+// src/lib/llmEnsemble.ts
+function envFlagEnabled2(name) {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+function mindTimeoutMs() {
+  const raw = Number(process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw >= 2e3 ? raw : 14e3;
+}
+function maxMinds() {
+  const raw = Number(process.env.ANIMA_ENSEMBLE_MAX_MINDS);
+  return Number.isFinite(raw) && raw >= 1 ? Math.min(3, Math.floor(raw)) : 3;
+}
+function isEnsembleMode() {
+  if (envFlagEnabled2("ANIMA_LLM_ENSEMBLE")) return true;
+  return isAnimaCustomMode();
+}
+function getEnsembleMinds(tier = "standard") {
+  const disableOpenAI = envFlagEnabled2("ANIMA_DISABLE_OPENAI");
+  const disableXai = envFlagEnabled2("ANIMA_DISABLE_XAI");
+  const minds = [];
+  for (const id of getAnimaTierProviderOrder(tier)) {
+    if (id === "gemini") continue;
+    if (id === "kimi" && hasKimiKey()) {
+      minds.push("kimi");
+      continue;
+    }
+    if (id === "xai" && hasXaiKey() && !disableXai && !isXaiStickySkipped()) {
+      minds.push("xai");
+      continue;
+    }
+    if (id === "openai" && hasOpenAIKey() && !disableOpenAI && !isOpenAIStickySkipped()) {
+      minds.push("openai");
+    }
+  }
+  return minds.slice(0, maxMinds());
+}
+function providerLabel2(id) {
+  if (id === "kimi") return "Kimi";
+  if (id === "xai") return "Grok";
+  return "ChatGPT";
+}
+function resolveMindModel(provider, tier) {
+  if (provider === "kimi") return resolveKimiModel(tier);
+  if (provider === "xai") return resolveXaiModel(tier);
+  return resolveModel(tier);
+}
+function clientFor2(provider) {
+  if (provider === "kimi") return getKimiClient();
+  if (provider === "xai") return getXaiClient();
+  return getOpenAIClient();
+}
+async function withAbortTimeout(run, ms, label) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await run(controller.signal);
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`${label} timed out after ${ms}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function draftFromMind(provider, tier, messages2, maxTokens, signal) {
+  const started = Date.now();
+  const draftMax = Math.min(maxTokens, 1200);
+  const resolved = resolveMindModel(provider, tier);
+  const client = clientFor2(provider);
+  if (!client) {
+    throw new Error(`${providerLabel2(provider)} client is not configured.`);
+  }
+  const completion = await client.chat.completions.create(
+    {
+      model: resolved.model,
+      max_tokens: draftMax,
+      messages: messages2,
+      temperature: 0.8
+    },
+    { signal }
+  );
+  const content = String(completion.choices[0]?.message?.content ?? "").trim();
+  if (!content) {
+    throw new Error(`${providerLabel2(provider)} returned an empty draft.`);
+  }
+  return {
+    provider,
+    model: resolved.model,
+    content,
+    latencyMs: Date.now() - started
+  };
+}
+function pickSynthesizer(drafts) {
+  const order = ["kimi", "xai", "openai"];
+  for (const id of order) {
+    if (drafts.some((d2) => d2.provider === id)) return id;
+  }
+  return drafts[0].provider;
+}
+function buildSynthesisMessages(originalMessages, drafts) {
+  const system = originalMessages.find((m2) => m2.role === "system");
+  const systemText = typeof system?.content === "string" ? system.content : "You are an in-character AI companion.";
+  const draftBlock = drafts.map(
+    (d2, i2) => `--- Mind ${i2 + 1}: ${providerLabel2(d2.provider)} (${d2.model}) ---
+${d2.content}`
+  ).join("\n\n");
+  const userTurns = originalMessages.filter((m2) => m2.role !== "system");
+  return [
+    {
+      role: "system",
+      content: `${systemText}
+
+MULTI-MIND SYNTHESIS MODE:
+Several AI minds drafted candidate replies below. Produce ONE final in-character companion reply that blends the strongest emotional truth, voice, and specificity from those drafts. Do not mention the minds, drafts, Kimi, Grok, ChatGPT, or that you are combining answers. Stay fully in character. Output only the final reply.`
+    },
+    ...userTurns,
+    {
+      role: "user",
+      content: `Here are the mind drafts to synthesize into your single reply:
+
+${draftBlock}
+
+Write the final in-character reply now.`
+    }
+  ];
+}
+async function synthesizeDrafts(synthesizer, tier, originalMessages, drafts, maxTokens, signal) {
+  const resolved = resolveMindModel(synthesizer, tier);
+  const messages2 = buildSynthesisMessages(originalMessages, drafts);
+  const client = clientFor2(synthesizer);
+  if (!client) {
+    throw new Error(`${providerLabel2(synthesizer)} client is not configured.`);
+  }
+  const completion = await client.chat.completions.create(
+    {
+      model: resolved.model,
+      max_tokens: maxTokens,
+      messages: messages2,
+      temperature: 0.7
+    },
+    { signal }
+  );
+  return {
+    content: String(completion.choices[0]?.message?.content ?? "").trim(),
+    model: resolved.model
+  };
+}
+function fastestDraft(drafts) {
+  return [...drafts].sort((a2, b2) => a2.latencyMs - b2.latencyMs)[0];
+}
+function draftFallbackResult(req, drafts, best) {
+  req.onProgress?.({
+    status: "ensemble",
+    phase: "streaming",
+    minds: drafts.map((d2) => d2.provider),
+    drafts: drafts.length,
+    synthesizer: best.provider
+  });
+  return {
+    content: best.content,
+    provider: best.provider,
+    brand: "anima",
+    model: best.model,
+    tier: req.tier,
+    minds: drafts.map((d2) => d2.provider),
+    drafts,
+    synthesizer: best.provider,
+    combined: false
+  };
+}
+async function* chunkTextAsStream(text3, chunkSize = 24) {
+  for (let i2 = 0; i2 < text3.length; i2 += chunkSize) {
+    yield { choices: [{ delta: { content: text3.slice(i2, i2 + chunkSize) } }] };
+  }
+}
+async function createEnsembleChatReply(req) {
+  const minds = getEnsembleMinds(req.tier);
+  if (minds.length === 0) {
+    throw new Error(
+      "No LLM minds configured for ensemble. Set KIMI_API_KEY (required), and optionally XAI_API_KEY / OPENAI_API_KEY."
+    );
+  }
+  req.onProgress?.({
+    status: "ensemble",
+    phase: "gathering",
+    minds
+  });
+  const timeout = mindTimeoutMs();
+  const settled = await Promise.allSettled(
+    minds.map(
+      (provider) => withAbortTimeout(
+        (signal) => draftFromMind(provider, req.tier, req.messages, req.maxTokens, signal),
+        timeout,
+        providerLabel2(provider)
+      )
+    )
+  );
+  const drafts = [];
+  for (let i2 = 0; i2 < settled.length; i2++) {
+    const result = settled[i2];
+    const provider = minds[i2];
+    if (result.status === "fulfilled") {
+      drafts.push(result.value);
+      continue;
+    }
+    const reason = result.reason;
+    if (isProviderUnusableError(reason)) {
+      recordProviderFailure(provider, reason);
+    }
+  }
+  if (drafts.length === 0) {
+    const reasons = settled.map(
+      (r2, i2) => r2.status === "rejected" ? `${providerLabel2(minds[i2])}: ${r2.reason instanceof Error ? r2.reason.message : String(r2.reason)}` : null
+    ).filter(Boolean);
+    throw new Error(
+      `All ensemble minds failed. ${reasons.join(" | ") || "No drafts returned."}`
+    );
+  }
+  if (drafts.length === 1) {
+    const only = drafts[0];
+    req.onProgress?.({
+      status: "ensemble",
+      phase: "streaming",
+      minds: [only.provider],
+      drafts: 1,
+      synthesizer: only.provider
+    });
+    return {
+      content: only.content,
+      provider: only.provider,
+      brand: "anima",
+      model: only.model,
+      tier: req.tier,
+      minds: [only.provider],
+      drafts,
+      synthesizer: only.provider,
+      combined: false
+    };
+  }
+  const synthesizer = pickSynthesizer(drafts);
+  req.onProgress?.({
+    status: "ensemble",
+    phase: "combining",
+    minds: drafts.map((d2) => d2.provider),
+    drafts: drafts.length,
+    synthesizer
+  });
+  try {
+    const synthesized = await withAbortTimeout(
+      (signal) => synthesizeDrafts(
+        synthesizer,
+        req.tier,
+        req.messages,
+        drafts,
+        req.maxTokens,
+        signal
+      ),
+      mindTimeoutMs() + 4e3,
+      `${providerLabel2(synthesizer)} synthesis`
+    );
+    if (!synthesized.content) {
+      return draftFallbackResult(req, drafts, fastestDraft(drafts));
+    }
+    req.onProgress?.({
+      status: "ensemble",
+      phase: "streaming",
+      minds: drafts.map((d2) => d2.provider),
+      drafts: drafts.length,
+      synthesizer
+    });
+    return {
+      content: synthesized.content,
+      provider: synthesizer,
+      brand: "anima",
+      model: synthesized.model,
+      tier: req.tier,
+      minds: drafts.map((d2) => d2.provider),
+      drafts,
+      synthesizer,
+      combined: true
+    };
+  } catch (err) {
+    if (isProviderUnusableError(err)) {
+      recordProviderFailure(synthesizer, err);
+    }
+    return draftFallbackResult(req, drafts, fastestDraft(drafts));
+  }
+}
+
 // src/lib/memoryRetrieval.ts
 var TYPE_SIGNALS = {
   factual: /\b(fact|learned|knows|told|mentioned|said|stated|revealed)\b/i,
@@ -141361,25 +141693,57 @@ router9.post("/messages", async (req, res) => {
   let usedProvider = "openai";
   let usedBrand;
   let failedOver = false;
+  let ensembleMinds;
+  let ensembleCombined = false;
   try {
-    const completion = await createChatStreamWithFailover({
-      tier: routed.tier,
-      model: routed.model,
-      maxTokens: routed.maxTokens,
-      messages: [{ role: "system", content: prompt }]
-    });
-    usedModel = completion.model;
-    usedTier = completion.tier;
-    usedProvider = completion.provider;
-    usedBrand = completion.brand;
-    failedOver = completion.failedOver;
-    for await (const chunk of completion.stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (!delta) continue;
-      fullResponse += delta;
-      res.write(`data: ${JSON.stringify({ content: delta })}
+    const messages2 = [{ role: "system", content: prompt }];
+    if (isEnsembleMode()) {
+      const ensemble = await createEnsembleChatReply({
+        tier: routed.tier,
+        model: routed.model,
+        maxTokens: routed.maxTokens,
+        messages: messages2,
+        onProgress: (event) => {
+          res.write(`data: ${JSON.stringify(event)}
 
 `);
+        }
+      });
+      usedModel = ensemble.model;
+      usedTier = ensemble.tier;
+      usedProvider = ensemble.provider;
+      usedBrand = ensemble.brand;
+      ensembleMinds = ensemble.minds;
+      ensembleCombined = ensemble.combined;
+      failedOver = false;
+      for await (const chunk of chunkTextAsStream(ensemble.content)) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (!delta) continue;
+        fullResponse += delta;
+        res.write(`data: ${JSON.stringify({ content: delta })}
+
+`);
+      }
+    } else {
+      const completion = await createChatStreamWithFailover({
+        tier: routed.tier,
+        model: routed.model,
+        maxTokens: routed.maxTokens,
+        messages: messages2
+      });
+      usedModel = completion.model;
+      usedTier = completion.tier;
+      usedProvider = completion.provider;
+      usedBrand = completion.brand;
+      failedOver = completion.failedOver;
+      for await (const chunk of completion.stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (!delta) continue;
+        fullResponse += delta;
+        res.write(`data: ${JSON.stringify({ content: delta })}
+
+`);
+      }
     }
     if (!String(fullResponse).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
@@ -141411,7 +141775,9 @@ router9.post("/messages", async (req, res) => {
           tier: usedTier,
           provider: usedProvider,
           brand: usedBrand,
-          failed_over: failedOver
+          failed_over: failedOver,
+          ensemble_minds: ensembleMinds,
+          ensemble_combined: ensembleCombined
         }
       });
       const sharedFact = isCrossover ? {
@@ -141475,6 +141841,8 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
         provider: usedProvider,
         brand: usedBrand,
         failed_over: failedOver,
+        ensemble_minds: ensembleMinds,
+        ensemble_combined: ensembleCombined,
         is_crossover: isCrossover,
         messages: [persistedUser, persistedAssistant].filter(Boolean)
       })}
