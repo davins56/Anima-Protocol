@@ -171,6 +171,16 @@ export function isXaiBlocked(): boolean {
   return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
 
+/** Sticky skip after a prior xAI unusable failure (independent of provider mode). */
+export function isXaiStickySkipped(): boolean {
+  return preferNonXai;
+}
+
+/** Sticky skip after a prior OpenAI unusable failure (independent of provider mode). */
+export function isOpenAIStickySkipped(): boolean {
+  return preferNonOpenAI;
+}
+
 /** Gemini is removed from chat provider selection. */
 export function isGeminiBlocked(): boolean {
   return true;
@@ -467,6 +477,30 @@ function resolveForProvider(provider: LlmProviderId, tier: ModelTier): ResolvedM
 function markOpenAIUnusable(err: unknown): void {
   if (isProviderUnusableError(err) && (hasXaiKey() || hasKimiKey())) {
     preferNonOpenAI = true;
+  }
+}
+
+/**
+ * Record a provider failure so subsequent turns (including ensemble mind
+ * selection) skip known-broken backends. Used by both sequential failover and
+ * the parallel-minds ensemble path.
+ */
+export function recordProviderFailure(
+  provider: LlmProviderId,
+  err: unknown,
+): void {
+  if (provider === "openai") {
+    markOpenAIUnusable(err);
+    return;
+  }
+  if (provider === "xai") {
+    // Ensemble drafts swallow errors via Promise.allSettled — sticky-skip xAI
+    // on any unusable failure when Kimi can cover, not only the no-credits case.
+    if (isProviderUnusableError(err) && hasKimiKey()) {
+      preferNonXai = true;
+      return;
+    }
+    markXaiUnusable(err);
   }
 }
 
