@@ -1,4 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+declare const process: { env: Record<string, string | undefined> };
+declare const Buffer: { from(input: ArrayBuffer): Uint8Array };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { text, voiceId } = req.body;
