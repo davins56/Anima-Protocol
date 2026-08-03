@@ -121,9 +121,17 @@ function envFlagEnabled(name: string): boolean {
 }
 
 function defaultProviderMode(): LlmProviderMode {
-  // Prefer Kimi when present so unpaid Moonshot setups are not blocked by a
-  // leftover / broken GEMINI_API_KEY still sitting on Vercel.
+  // Kimi + any other backend → Anima ensemble (parallel minds + combine).
+  // Kimi alone → Kimi-only. Gemini alone → Gemini-only.
   // Force Gemini with ANIMA_FORCE_GEMINI=true (and ANIMA_LLM_PROVIDER=gemini).
+  if (
+    hasKimiKey() &&
+    (hasGeminiKey() ||
+      hasXaiKey() ||
+      (hasOpenAIKey() && !envFlagEnabled("ANIMA_DISABLE_OPENAI")))
+  ) {
+    return "anima";
+  }
   if (hasKimiKey()) return "kimi";
   if (hasGeminiKey()) return "gemini";
   return "auto";
@@ -138,14 +146,14 @@ export function getConfiguredProviderMode(): LlmProviderMode {
 
   // Production previously set ANIMA_LLM_PROVIDER=gemini during unpaid Gemini
   // recovery. That mode is Gemini-only and never attempts Kimi — so a later
-  // KIMI_API_KEY was silently ignored. Prefer Kimi whenever its key is present
-  // unless the operator explicitly forces Gemini.
+  // KIMI_API_KEY was silently ignored. Upgrade to Anima ensemble (parallel
+  // minds + combined reply) whenever Kimi is present, unless Gemini is forced.
   if (
     raw === "gemini" &&
     hasKimiKey() &&
     !envFlagEnabled("ANIMA_FORCE_GEMINI")
   ) {
-    return "kimi";
+    return "anima";
   }
 
   if (
@@ -198,10 +206,14 @@ export function getLlmDiagnostics(tier: ModelTier = "standard"): {
       "KIMI_API_KEY / MOONSHOT_API_KEY is not set on this deployment — Kimi cannot be used. Add the key on Vercel Production and redeploy.";
   } else if (
     envProvider?.toLowerCase() === "gemini" &&
-    !envFlagEnabled("ANIMA_FORCE_GEMINI")
+    !envFlagEnabled("ANIMA_FORCE_GEMINI") &&
+    keys.kimi
   ) {
     hint =
-      "ANIMA_LLM_PROVIDER=gemini was overridden because KIMI_API_KEY is present. Set ANIMA_FORCE_GEMINI=true to keep Gemini-only.";
+      "ANIMA_LLM_PROVIDER=gemini was overridden to Anima ensemble because KIMI_API_KEY is present. Minds draft in parallel, then a combined reply is streamed. Set ANIMA_FORCE_GEMINI=true to keep Gemini-only.";
+  } else if (configuredMode === "anima") {
+    hint =
+      "Anima ensemble mode: available minds draft in parallel, then the app synthesizes one companion reply.";
   } else if (preferred === "kimi") {
     hint = "Kimi is the preferred chat provider for this tier.";
   }

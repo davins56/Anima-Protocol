@@ -49,6 +49,24 @@ describe("streamChatReply", () => {
     expect(onFirstToken).toHaveBeenCalledWith("A");
   });
 
+  it("forwards ensemble status events without treating them as content", async () => {
+    const onStatus = vi.fn();
+    const onDelta = vi.fn();
+    const result = await streamChatReply(
+      fromEvents([
+        { status: "ensemble", phase: "gathering", minds: ["kimi", "gemini"] },
+        { status: "ensemble", phase: "combining", minds: ["kimi", "gemini"], drafts: 2 },
+        { content: "Hi" },
+        { done: true, ensemble_combined: true },
+      ]),
+      { onStatus, onDelta },
+    );
+    expect(result.content).toBe("Hi");
+    expect(onStatus).toHaveBeenCalledTimes(2);
+    expect(onStatus.mock.calls[0][0].phase).toBe("gathering");
+    expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
+  });
+
   it("throws when the stream reports an error", async () => {
     await expect(
       streamChatReply(fromEvents([{ error: "boom" }])),

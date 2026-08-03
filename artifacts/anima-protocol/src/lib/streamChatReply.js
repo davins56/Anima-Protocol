@@ -8,11 +8,11 @@
  * onDelta receives the accumulated text so far. Updates are rAF-coalesced so
  * high-frequency token bursts don't flood React with one setState per byte.
  *
- * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string }>} events
- * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void }} [hooks]
+ * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string }>} events
+ * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void }} [hooks]
  * @returns {Promise<{ content: string, done?: object }>}
  */
-export async function streamChatReply(events, { onDelta, onFirstToken } = {}) {
+export async function streamChatReply(events, { onDelta, onFirstToken, onStatus } = {}) {
   let content = "";
   let doneEvent = null;
   let sawFirst = false;
@@ -47,6 +47,9 @@ export async function streamChatReply(events, { onDelta, onFirstToken } = {}) {
         // instead of wiping the bubble when the stream fails mid-response.
         if (content) err.partialContent = content;
         throw err;
+      }
+      if (event?.status) {
+        onStatus?.(event);
       }
       if (event?.content) {
         content += event.content;
