@@ -507,7 +507,7 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat uses these models in order. Set the matching API key on the host (Vercel) to enable each one.
+                  Chat uses Kimi only. Set KIMI_API_KEY on the host (Vercel) and redeploy.
                 </p>
                 {CONFIGURED_LLM_PROVIDERS.map((provider, index) => (
                   <div
