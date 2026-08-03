@@ -118,7 +118,7 @@ export default function Meditation() {
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 40%, #0a0a1a 100%)" }}>
+      <div className="flex-1 min-h-0 flex items-center justify-center" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 40%, #0a0a1a 100%)" }}>
         <div className="text-center space-y-3">
           <div className="text-3xl animate-spin" style={{ color: "#A78BFA" }}>⟡</div>
           <p className="font-mono text-[10px] tracking-[0.4em] uppercase animate-pulse" style={{ color: "rgba(167,139,250,0.5)" }}>
@@ -130,7 +130,7 @@ export default function Meditation() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex flex-col pb-20" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}>
+    <div className="flex-1 min-h-0 flex flex-col pb-20" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}>
 
       {/* Ambient aura glow */}
       <div className="fixed inset-0 pointer-events-none z-0">

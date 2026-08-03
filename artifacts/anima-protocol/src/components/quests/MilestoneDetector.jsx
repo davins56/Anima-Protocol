@@ -1,6 +1,10 @@
+// @ts-check
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 
+/**
+ * @param {{ sessionId?: string, onMilestoneDetected: (milestone: any) => void }} props
+ */
 export default function MilestoneDetector({ sessionId, onMilestoneDetected }) {
   const [lastMessageCount, setLastMessageCount] = useState(0);
 
@@ -29,7 +33,7 @@ export default function MilestoneDetector({ sessionId, onMilestoneDetected }) {
           });
 
           if (milestone?.data?.milestones?.length > 0) {
-            milestone.data.milestones.forEach(m => {
+            milestone.data.milestones.forEach((/** @type {any} */ m) => {
               onMilestoneDetected({
                 id: `milestone-${Date.now()}-${Math.random()}`,
                 title: m.title,

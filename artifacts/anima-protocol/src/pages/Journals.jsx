@@ -2,9 +2,13 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
 import { BookOpen, Search, Trash2, Calendar, User, ArrowLeft } from "lucide-react";
+import { useConfirm } from "@/lib/ConfirmDialog";
+import { deleteWithUndo } from "@/lib/undoableDelete";
 
 export default function Journals() {
+  const confirm = useConfirm();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
 
@@ -18,14 +22,6 @@ export default function Journals() {
   const [filterSession, setFilterSession] = useState(sessionId || "all");
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    applyFilters();
-  }, [journals, filterChar, filterSession, search]);
-
   const loadData = async () => {
     setLoading(true);
     const [j, c, s] = await Promise.all([
@@ -38,6 +34,17 @@ export default function Journals() {
     setSessions(s || []);
     setLoading(false);
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadData);
+
+  useEffect(() => {
+    applyFilters();
+  }, [journals, filterChar, filterSession, search]);
 
   const applyFilters = () => {
     let filtered = journals;
@@ -63,9 +70,20 @@ export default function Journals() {
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.CharacterJournal.delete(id);
+    const ok = await confirm({
+      title: "Delete this journal entry?",
+      message: "You'll have a few seconds to undo this.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    const item = journals.find((j) => j.id === id);
     if (selectedJournal?.id === id) setSelectedJournal(null);
-    await loadData();
+    await deleteWithUndo({
+      entity: "CharacterJournal",
+      item,
+      label: "Journal entry",
+      onChange: loadData,
+    });
   };
 
   const emotionColors = {
@@ -79,9 +97,9 @@ export default function Journals() {
   };
 
   return (
-    <div className="min-h-screen flex gap-6 p-6 bg-background">
+    <div className="flex-1 min-h-0 flex gap-6 p-6 bg-background">
       {/* Journal List */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         <div className="mb-4">
           <div className="flex items-center gap-4 mb-4">
             <Link to="/" className="text-primary/40 hover:text-primary transition-colors flex-shrink-0">
@@ -187,7 +205,7 @@ export default function Journals() {
 
       {/* Journal Detail */}
       {selectedJournal && (
-        <div className="w-full lg:w-96 border border-primary/30 bg-black/60 backdrop-blur-md flex flex-col max-h-screen overflow-hidden">
+        <div className="w-full lg:w-96 border border-primary/30 bg-black/60 backdrop-blur-md flex flex-col min-h-0 overflow-hidden">
           {/* Header */}
           <div className="flex items-start justify-between p-4 border-b border-primary/20">
             <div className="flex-1">

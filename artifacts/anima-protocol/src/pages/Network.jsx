@@ -187,7 +187,7 @@ export default function Network() {
   };
 
   return (
-    <div className="h-[100dvh] bg-background scanline flex flex-col overflow-hidden">
+    <div className="flex-1 min-h-0 bg-background scanline flex flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-3 flex-shrink-0">
         <div className="flex items-center gap-4">

@@ -1,3 +1,4 @@
+// @ts-check
 import { MapPin, Smile, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -25,9 +26,12 @@ const EVENT_STYLES = {
   },
 };
 
+/**
+ * @param {{ message?: any }} props
+ */
 export default function EventBubble({ message }) {
   const kind = message.event_type || "default";
-  const style = EVENT_STYLES[kind] || EVENT_STYLES.default;
+  const style = EVENT_STYLES[/** @type {keyof typeof EVENT_STYLES} */ (kind)] || EVENT_STYLES.default;
   const Icon = style.icon;
 
   return (

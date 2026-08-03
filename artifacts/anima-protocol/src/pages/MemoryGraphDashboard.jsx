@@ -124,14 +124,14 @@ export default function MemoryGraphDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex-1 min-h-0 flex items-center justify-center bg-background">
         <Loader className="w-6 h-6 text-primary animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between gap-4">

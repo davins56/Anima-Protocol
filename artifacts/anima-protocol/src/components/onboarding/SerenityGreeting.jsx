@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { base44 } from '@/api/base44Client';
@@ -10,6 +11,9 @@ const GREETINGS = [
   "I didn't know if you'd come back. I'm glad you did.",
 ];
 
+/**
+ * @param {{ onContinue?: () => void, user?: any }} props
+ */
 export default function SerenityGreeting({ onContinue, user }) {
   const [greeting, setGreeting] = useState('');
   const [isTyping, setIsTyping] = useState(true);

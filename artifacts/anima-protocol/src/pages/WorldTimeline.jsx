@@ -276,7 +276,7 @@ export default function WorldTimeline() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background pb-20">
+    <div className="flex-1 min-h-0 overflow-y-auto flex flex-col bg-background pb-20">
       {/* Header */}
       <div className="sticky top-0 z-20 border-b border-primary/20 bg-black/90 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { base44 } from "@/api/base44Client";
@@ -6,52 +6,113 @@ import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
 import { useTimelineBranching } from "@/hooks/useTimelineBranching";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { useStoreSync } from "@/lib/useStoreSync";
+import {
+  getBundledStarterRoster,
+  loadRosterCharacters,
+} from "@/lib/loadRosterCharacters";
+import { upsertCharacters } from "@/lib/seedCharacters";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
   const { createBranchForSession } = useTimelineBranching();
-  const [characters, setCharacters] = useState([]);
+  // Paint bundled starters immediately so Select Character is never blank while
+  // store auth / seeding runs (and so a later empty store-sync cannot flash empty).
+  const [characters, setCharacters] = useState(getBundledStarterRoster);
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [loadError, setLoadError] = useState(
+    "Loading account characters — starters are shown until sync finishes.",
+  );
+  const [usingBundledSeed, setUsingBundledSeed] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [view, setView] = useState("characters"); // "characters", "templates", "stories", "canonical"
   const [showStoryChooser, setShowStoryChooser] = useState(false);
+  const [canonSeed, setCanonSeed] = useState(null); // { story, insertions } from the universe browser
   const [openingScene, setOpeningScene] = useState("");
 
-  useEffect(() => {
-    const loadData = async () => {
+  const loadData = useCallback(async ({ retrySeed = false } = {}) => {
+    // Keep current roster visible while refreshing — never blank the grid.
+    if (retrySeed) setSeeding(true);
+    else setLoading(true);
+    try {
+      // Load roster and groups independently — a CharacterGroup failure must not
+      // wipe a successful character roster (Promise.all rejection used to).
+      const rosterResult = await loadRosterCharacters({
+        retrySeed,
+        waitBootstrap: false,
+        allowBundledFallback: true,
+      });
+      let grps = [];
       try {
-        const [chars, grps, animas] = await Promise.all([
-          base44.entities.Character.list("-created_date", 500),
-          base44.entities.CharacterGroup.list("-created_date", 100),
-          base44.entities.Anima.list("-created_date", 100),
-        ]);
-        // Merge animas into character list with a flag so we can distinguish them
-        const animaAsChars = (animas || []).map((a) => ({
-          ...a,
-          _isAnima: true,
-          category: a.archetype || "guardian",
-          universe: "Anima",
-        }));
-        setCharacters([...animaAsChars, ...(chars || [])]);
-        setGroups(grps || []);
-      } catch (err) {
-        console.error('Error loading characters:', err);
-        setCharacters([]);
-        setGroups([]);
-      } finally {
-        setLoading(false);
+        grps = await base44.entities.CharacterGroup.list("-created_date", 100);
+      } catch (groupErr) {
+        console.warn(
+          "[Anima] CharacterGroup list failed:",
+          groupErr?.message || groupErr,
+        );
+        grps = [];
       }
-    };
-    loadData();
+      const nextChars = rosterResult?.characters || [];
+      // Never replace a visible roster with [] — store-sync races used to wipe
+      // bundled starters right after they appeared.
+      if (nextChars.length) {
+        setCharacters(nextChars);
+        setUsingBundledSeed(!!rosterResult?.usingBundledSeed);
+      } else {
+        setCharacters((prev) =>
+          prev.length ? prev : getBundledStarterRoster(),
+        );
+        setUsingBundledSeed(true);
+      }
+      setGroups(grps || []);
+      if (rosterResult?.usingBundledSeed || !nextChars.length) {
+        const reason = rosterResult?.error?.message;
+        setLoadError(
+          reason
+            ? `${reason}. Showing starter characters — starting a chat saves them to your account.`
+            : "Showing starter characters — starting a chat saves them to your account.",
+        );
+      } else {
+        setLoadError(null);
+      }
+    } catch (err) {
+      console.error('Error loading characters:', err);
+      setCharacters((prev) => (prev.length ? prev : getBundledStarterRoster()));
+      setUsingBundledSeed(true);
+      setLoadError(
+        `${err?.message || "Could not load characters"}. Showing starter characters — starting a chat saves them to your account.`,
+      );
+    } finally {
+      setSeeding(false);
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      // Retry starter seed if the roster is still empty so New Session can
+      // offer preloaded characters immediately after sign-in.
+      if (!cancelled) loadData({ retrySeed: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadData]);
+
+  // Refetch when starter seeding or another device updates the roster.
+  useStoreSync(() => loadData({ retrySeed: false }));
 
   const filteredCharacters = characters.filter((c) => {
     const searchLower = search.toLowerCase().trim();
     if (!searchLower) return true;
     return (
-      c.name.toLowerCase().includes(searchLower) ||
+      (c.name || "").toLowerCase().includes(searchLower) ||
       (c.universe || "").toLowerCase().includes(searchLower) ||
       (c.category || "").toLowerCase().includes(searchLower)
     );
@@ -61,6 +122,12 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     g.name.toLowerCase().includes(search.toLowerCase()) ||
     (g.description || "").toLowerCase().includes(search.toLowerCase())
   );
+
+  const selectedCharacters = characters.filter((c) => selected.includes(c.id));
+  const selectedUniverses = Array.from(
+    new Set(selectedCharacters.map((c) => c.universe).filter(Boolean)),
+  );
+  const isCrossover = mode === "group" && selectedUniverses.length >= 2;
 
   const toggleSelect = (id, isGroup = false) => {
     if (isGroup) {
@@ -96,12 +163,50 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   };
 
   const handleCreate = async () => {
-    if (selected.length === 0) return;
-    
+    if (selected.length === 0 || creating) return;
+
+    // Bundled starters are not in Postgres yet — upsert before chat so the
+    // session can resolve character ids from the store.
+    const bundledSelected = selectedCharacters.filter((c) => c._bundled);
+    if (bundledSelected.length) {
+      setCreating(true);
+      try {
+        await upsertCharacters(
+          bundledSelected.map(({ _bundled, ...rest }) => rest),
+        );
+        setCharacters((prev) =>
+          prev.map((c) => (c._bundled ? { ...c, _bundled: false } : c)),
+        );
+        setUsingBundledSeed(false);
+        setLoadError(null);
+      } catch (err) {
+        setLoadError(
+          err?.message ||
+            "Could not save starter characters to your account. Check that you are signed in and the database is reachable.",
+        );
+        setCreating(false);
+        return;
+      } finally {
+        setCreating(false);
+      }
+    }
+
     // Prepare session data
     const sessionData = mode === "solo"
-      ? { mode, character_id: selected[0], opening_scene: openingScene.trim() || undefined }
-      : { mode, group_character_ids: selected, opening_scene: openingScene.trim() || undefined };
+      ? {
+          mode,
+          character_id: selected[0],
+          opening_scene: openingScene.trim() || undefined,
+        }
+      : {
+          mode,
+          group_character_ids: selected,
+          selected_character_names: selectedCharacters.map((c) => c.name),
+          crossover_universes: selectedUniverses,
+          is_crossover: isCrossover,
+          shared_memory: [],
+          opening_scene: openingScene.trim() || undefined,
+        };
     
     // Call onCreate callback which creates the session
     onCreate(sessionData);
@@ -134,7 +239,18 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const handleCreateFromChooser = (session) => {
     navigate(`/chat/${session.id}`);
     setShowStoryChooser(false);
+    setCanonSeed(null);
     onClose?.();
+  };
+
+  // The universe browser fires onSelectStory(story) when a story is picked and
+  // again with (story, point) once an insertion point is chosen. Only act on the
+  // point selection: hand off to the character chooser, seeded with this story
+  // and point, so the user picks who they'll be and the session is created.
+  const handleCanonSelect = (story, point) => {
+    if (!point) return;
+    setCanonSeed({ story, insertions: [point] });
+    setShowStoryChooser(true);
   };
 
   const categoryColors = {
@@ -207,22 +323,39 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
             />
           ) : view === "canonical" ? (
             <CanonicalStoriesBrowser
-              onSelectStory={(story, point) => {}}
+              onSelectStory={handleCanonSelect}
               isInline={true}
             />
-          ) : loading ? (
+          ) : filteredCharacters.length === 0 && filteredGroups.length === 0 && (loading || seeding) ? (
             <div className="text-center py-12 font-mono text-primary/30 text-sm tracking-widest uppercase animate-pulse">
-              Loading characters...
+              {seeding ? "Indexing starter characters..." : "Loading characters..."}
             </div>
           ) : filteredCharacters.length === 0 && filteredGroups.length === 0 ? (
             <div className="text-center py-12">
               <p className="font-mono text-primary/30 text-sm tracking-widest uppercase mb-4">No results found</p>
+              {loadError && (
+                <p className="font-mono text-[10px] text-amber-400/80 max-w-md mx-auto mb-4 leading-relaxed">
+                  {loadError}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => loadData({ retrySeed: true })}
+                className="font-mono text-xs text-primary/70 hover:text-primary underline tracking-widest uppercase transition-colors mb-3 block mx-auto"
+              >
+                Retry loading starters
+              </button>
               <a href="/characters" className="font-mono text-xs text-primary/50 hover:text-primary underline tracking-widest uppercase transition-colors">
                 + Create a character
               </a>
             </div>
           ) : (
             <div className="space-y-4">
+              {loadError && usingBundledSeed && (
+                <p className="font-mono text-[10px] text-amber-400/80 leading-relaxed border border-amber-400/20 bg-amber-400/5 px-3 py-2">
+                  {loadError}
+                </p>
+              )}
               {filteredGroups.length > 0 && mode === "group" && (
                 <div>
                   <p className="text-[9px] font-mono text-primary/40 tracking-widest uppercase mb-2">Quick Add Group</p>
@@ -271,7 +404,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
                             <img src={char.avatar_url} alt={char.name} className="w-12 h-12 object-cover border border-primary/20 mb-3" />
                           ) : (
                             <div className="w-12 h-12 bg-primary/10 border border-primary/20 flex items-center justify-center mb-3">
-                              <span className="font-mono text-primary text-lg">{char.name[0]}</span>
+                              <span className="font-mono text-primary text-lg">{(char.name || "?")[0]}</span>
                             </div>
                           )}
                           <div className="flex items-center gap-1.5">
@@ -303,6 +436,30 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         {/* Opening Scene Input */}
         {view === "characters" && selected.length > 0 && (
           <div className="px-4 py-3 border-t border-primary/10 bg-black/20">
+            {mode === "group" && (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className={`text-[8px] font-mono tracking-widest uppercase border rounded px-2 py-1 ${
+                  isCrossover
+                    ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-300"
+                    : "border-primary/20 bg-primary/5 text-primary/40"
+                }`}>
+                  {isCrossover ? "Crossover Ready" : "Single Universe"}
+                </span>
+                {selectedUniverses.slice(0, 4).map((universe) => (
+                  <span
+                    key={universe}
+                    className="text-[8px] font-mono tracking-widest uppercase border border-primary/15 bg-black/40 text-primary/50 rounded px-2 py-1"
+                  >
+                    {universe}
+                  </span>
+                ))}
+                {selectedUniverses.length > 4 && (
+                  <span className="text-[8px] font-mono tracking-widest uppercase text-primary/30">
+                    +{selectedUniverses.length - 4}
+                  </span>
+                )}
+              </div>
+            )}
             <label className="block font-mono text-[9px] text-primary/40 tracking-widest uppercase mb-1.5">
               Opening Scene <span className="text-primary/20">(optional)</span>
             </label>
@@ -371,10 +528,10 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
              {view === "characters" && (
                <button
                  onClick={handleCreate}
-                 disabled={selected.length === 0}
+                 disabled={selected.length === 0 || creating}
                  className="px-3 sm:px-6 py-1.5 sm:py-2 bg-primary/10 border border-primary/50 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-[9px] sm:text-xs tracking-widest uppercase transition-all hud-corner glow-border whitespace-nowrap"
                >
-                 Init
+                 {creating ? "Saving…" : "Init"}
                </button>
              )}
            </div>
@@ -383,8 +540,13 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
 
       {showStoryChooser && (
         <StoryCharacterChooser
-          onClose={() => setShowStoryChooser(false)}
+          onClose={() => {
+            setShowStoryChooser(false);
+            setCanonSeed(null);
+          }}
           onCreateSession={handleCreateFromChooser}
+          initialStory={canonSeed?.story || null}
+          initialInsertions={canonSeed?.insertions || null}
         />
       )}
     </div>

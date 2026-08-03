@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { useConfirm } from "@/lib/ConfirmDialog";
 import { ChevronDown, Check, X, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function PersistentQuestLog({ sessionId, characterId }) {
+  const confirm = useConfirm();
   const [quests, setQuests] = useState([]);
   const [expandedQuestId, setExpandedQuestId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -62,7 +64,12 @@ export default function PersistentQuestLog({ sessionId, characterId }) {
   };
 
   const handleAbandonQuest = async (questId) => {
-    if (!confirm("Are you sure you want to abandon this quest?")) return;
+    const ok = await confirm({
+      title: "Abandon this quest?",
+      message: "The quest will be marked as abandoned.",
+      confirmLabel: "Abandon",
+    });
+    if (!ok) return;
 
     try {
       await base44.entities.Quest.update(questId, { status: "abandoned" });

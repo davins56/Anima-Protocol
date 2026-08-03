@@ -1,7 +1,9 @@
+// @ts-check
 import { useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
+import AvatarUploadField from "@/components/anima/AvatarUploadField";
 
 const ARCHETYPES = [
   { name: "Guardian", emoji: "🛡️", description: "Protective and wise" },
@@ -10,11 +12,15 @@ const ARCHETYPES = [
   { name: "Trickster", emoji: "🎭", description: "Playful and clever" },
 ];
 
+/**
+ * @param {{ onComplete: (companion: any) => void, userEmail?: string }} props
+ */
 export default function CreateCompanionModal({ onComplete, userEmail }) {
   const [step, setStep] = useState("welcome"); // welcome, details, loading, done
   const [name, setName] = useState("");
   const [archetype, setArchetype] = useState("Muse");
   const [tagline, setTagline] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,9 +40,13 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         archetype,
         tagline: tagline.trim() || `Your ${archetype} companion`,
         assigned_user: userEmail,
-        avatar_url: "https://serenity-sm2kts5ggj.replit.app/serenity-default.jpg", // Default avatar
+        avatar_url: avatarUrl.trim(),
         personality: `You are ${name}, a ${archetype.toLowerCase()} companion. ${tagline || "You provide guidance and support."}`,
         speaking_style: "Warm, thoughtful, and personable",
+        emotion: "calm",
+        emotion_level: "Low",
+        intensity: 35,
+        arousal: 30,
       });
 
       setStep("done");
@@ -104,7 +114,7 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         <motion.div
           initial={{ scale: 0.9, y: 20 }}
           animate={{ scale: 1, y: 0 }}
-          className="w-full max-w-2xl bg-background border border-primary/30 rounded-xl p-8 space-y-6"
+          className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-background border border-primary/30 rounded-xl p-8 space-y-6"
         >
           <h2 className="text-2xl font-mono text-primary glow-text tracking-widest uppercase">
             Design Your Companion
@@ -122,6 +132,12 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
               className="w-full bg-black/60 border border-primary/30 text-primary/90 placeholder-primary/20 font-mono text-sm px-4 py-3 focus:outline-none focus:border-primary/60 focus:bg-primary/5 transition-all"
             />
           </div>
+
+          <AvatarUploadField
+            value={avatarUrl}
+            onChange={setAvatarUrl}
+            nameHint={name}
+          />
 
           {/* Archetype */}
           <div className="space-y-3">
@@ -225,4 +241,6 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
       </motion.div>
     );
   }
+
+  return null;
 }

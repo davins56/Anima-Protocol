@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen } from "lucide-react";
+import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
 
-export default function ChatHeader({ session, characters, mood, characterEmotions }) {
+export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -40,6 +40,17 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
     return colors[emotion] || "text-primary/60";
   };
 
+  const getEmotionPercent = (value) => {
+    if (value == null) return 0;
+    const numeric = Number(value);
+    if (Number.isNaN(numeric)) return 0;
+    return numeric <= 10 ? numeric * 10 : Math.min(100, Math.max(0, numeric));
+  };
+
+  const emotionIntensityPct = getEmotionPercent(primaryEmotion?.intensity);
+  const emotionArousalPct = primaryEmotion?.arousal != null ? getEmotionPercent(primaryEmotion.arousal) : null;
+  const emotionArousalLabel = emotionArousalPct != null ? `${emotionArousalPct}%` : null;
+
   return (
     <div className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-3 bg-transparent">
       <button
@@ -49,11 +60,18 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         <ChevronLeft className="w-4 sm:w-5 h-4 sm:h-5" />
       </button>
 
-      {/* Character Avatar(s) */}
+      {/* Character Avatar(s) — tap to open bio sheet */}
       {isGroup ? (
         <div className="flex -space-x-1.5 sm:-space-x-2">
           {activeChars.slice(0, 4).map((char, i) => (
-            <div key={char.id} className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 bg-primary/10 overflow-hidden flex-shrink-0" style={{ zIndex: 4 - i }}>
+            <button
+              key={char.id}
+              type="button"
+              onClick={() => onAvatarClick?.(char)}
+              title={`View ${char.name} bio sheet`}
+              className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 bg-primary/10 overflow-hidden flex-shrink-0 hover:border-primary/70 hover:ring-1 hover:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              style={{ zIndex: 4 - i }}
+            >
               {char.avatar_url ? (
                 <img src={char.avatar_url} alt={char.name} className="w-full h-full object-cover" />
               ) : (
@@ -61,7 +79,7 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
                   {char.name[0]}
                 </div>
               )}
-            </div>
+            </button>
           ))}
           {activeChars.length > 4 && (
             <div className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 bg-primary/10 flex items-center justify-center">
@@ -70,7 +88,12 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
           )}
         </div>
       ) : primaryChar ? (
-        <div className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => onAvatarClick?.(primaryChar)}
+          title={`View ${primaryChar.name} bio sheet`}
+          className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden flex-shrink-0 hover:border-primary/70 hover:ring-1 hover:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+        >
           {primaryChar.avatar_url ? (
             <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
           ) : (
@@ -78,7 +101,7 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
               {primaryChar.name[0]}
             </div>
           )}
-        </div>
+        </button>
       ) : null}
 
       {/* Title */}
@@ -94,15 +117,29 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
             </span>
           </div>
           {!isGroup && primaryEmotion && (
-            <div className="hidden md:flex items-center gap-1 text-[8px] sm:text-[9px] font-mono">
-              <span className="text-primary/50 tracking-widest">Feeling:</span>
-              <span className={`tracking-widest uppercase ${getEmotionColor(primaryEmotion.emotion)}`}>
-                {primaryEmotion.emotion}
-              </span>
-              <div className="w-6 h-0.5 border border-primary/20 bg-primary/10">
-                <div 
+            <div className="hidden md:flex items-center gap-2 text-[8px] sm:text-[9px] font-mono">
+              <div className="flex items-center gap-1">
+                <span className="text-primary/50 tracking-widest">Feeling:</span>
+                <span className={`tracking-widest uppercase ${getEmotionColor(primaryEmotion.emotion)}`}>
+                  {primaryEmotion.emotion}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-primary/50 tracking-widest">Level:</span>
+                <span className="uppercase tracking-widest text-primary/70">
+                  {primaryEmotion.emotion_level || primaryEmotion.level || 'Balanced'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-primary/50 tracking-widest">Arousal:</span>
+                <span className="uppercase tracking-widest text-primary/70">
+                  {emotionArousalLabel || '—'}
+                </span>
+              </div>
+              <div className="w-12 h-0.5 border border-primary/20 bg-primary/10">
+                <div
                   className="h-full bg-primary/60 transition-all"
-                  style={{ width: `${primaryEmotion.intensity}%` }}
+                  style={{ width: `${emotionIntensityPct}%` }}
                 />
               </div>
             </div>
@@ -110,6 +147,45 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
           {!isGroup && mood && <MoodIndicator mood={mood} />}
         </div>
       </div>
+
+      {/* Shows which LLM served the last reply (OpenAI primary, Grok on failover) */}
+      {llmProvider && (
+        <span
+          title={
+            llmProvider === "xai"
+              ? "Last reply from Grok (xAI) — OpenAI failover"
+              : "Last reply from OpenAI"
+          }
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${
+            llmProvider === "xai"
+              ? "border-amber-400/50 text-amber-300/90 bg-amber-400/10"
+              : "border-primary/30 text-primary/50"
+          }`}
+        >
+          {llmProvider === "xai" ? "Grok" : "OpenAI"}
+        </span>
+      )}
+
+      {/* Deep mode toggle — forces every reply onto the most capable model */}
+      {onToggleDeepMode && (
+        <button
+          onClick={onToggleDeepMode}
+          title={
+            session?.deep_mode
+              ? "Deep mode ON — replies use the most capable model"
+              : "Deep mode OFF — replies use cost-saving auto routing"
+          }
+          aria-pressed={!!session?.deep_mode}
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase transition-all ${
+            session?.deep_mode
+              ? "border-primary/60 text-primary bg-primary/10"
+              : "border-primary/20 text-primary/30 hover:text-primary/70 hover:border-primary/40"
+          }`}
+        >
+          <Sparkles className="w-2.5 h-2.5" />
+          <span className="hidden sm:inline">Deep</span>
+        </button>
+      )}
 
       {/* Story Reader button */}
       <button

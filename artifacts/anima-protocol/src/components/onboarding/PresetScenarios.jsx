@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, Heart, Zap, Shield, Microscope, Wand2, Moon, Flame, Brain } from 'lucide-react';
@@ -95,8 +96,11 @@ const SCENARIOS = [
   },
 ];
 
+/**
+ * @param {{ onSelect?: (scenario: any) => void }} props
+ */
 export default function PresetScenarios({ onSelect }) {
-  const [hoveredId, setHoveredId] = useState(null);
+  const [hoveredId, setHoveredId] = useState(/** @type {string | null} */ (null));
 
   return (
     <motion.div
@@ -124,7 +128,7 @@ export default function PresetScenarios({ onSelect }) {
               transition={{ delay: idx * 0.05 }}
               onMouseEnter={() => setHoveredId(scenario.id)}
               onMouseLeave={() => setHoveredId(null)}
-              onClick={() => onSelect(scenario)}
+              onClick={() => onSelect?.(scenario)}
               className={`relative p-4 border rounded transition-all text-left group ${
                 hoveredId === scenario.id
                   ? `${scenario.bgColor} ${scenario.borderColor} border-opacity-100`

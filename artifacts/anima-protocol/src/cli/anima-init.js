@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /* global process */
 
 import fs from 'fs';
@@ -10,6 +11,7 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
+/** @param {string} prompt */
 const question = (prompt) => new Promise(resolve => rl.question(prompt, resolve));
 
 async function main() {

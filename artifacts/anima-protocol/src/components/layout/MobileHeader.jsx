@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 
 // Routes where the back button should NOT appear
-const ROOT_ROUTES = new Set(["/", "/home", "/landing", "/onboarding"]);
+const ROOT_ROUTES = new Set(["/", "/onboarding"]);
 
 // Human-readable titles for routes
 const ROUTE_TITLES = {
@@ -10,6 +10,8 @@ const ROUTE_TITLES = {
   "/groups": "Groups",
   "/chronicles": "Chronicles",
   "/animas": "Animas",
+  "/customise-anima": "Customise Anima",
+  "/customize": "Customization",
   "/meditation": "Sacred Space",
   "/settings": "Settings",
   "/lorebook": "Lore Book",
@@ -31,6 +33,7 @@ const ROUTE_TITLES = {
   "/what-if": "What-If Scenarios",
   "/discoveries": "Discoveries",
   "/check-in": "Check-In",
+  "/codespace": "Codespace",
 };
 
 function getTitle(pathname) {
