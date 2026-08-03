@@ -70,7 +70,9 @@ export function publishableKeyFromFrontendHost(hostname, fallbackKey = '') {
   if (!host) return fallbackKey || '';
   const clerkHost = isAnimaProductionHost(host) ? ANIMA_APEX_HOST : host;
   const encodedHost = encodeClerkPublishableKeyHost(clerkHost);
-  return encodedHost ? `pk_live_${encodedHost}` : fallbackKey || '';
+  return encodedHost
+    ? `pk_live_${encodedHost.replace(/=+$/, '')}`
+    : fallbackKey || '';
 }
 
 export function ensureTrailingSlash(url) {
