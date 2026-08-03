@@ -60,18 +60,27 @@ export default function EmailCodeSignIn() {
     return true;
   };
 
+  const goToProductionSignIn = () => {
+    window.location.assign(PRODUCTION_SIGN_IN_URL);
+  };
+
   const previewBanner = onPreviewHost ? (
     <div
       className="mb-4 rounded border border-amber-400/40 bg-amber-950/50 px-3 py-2 text-sm leading-relaxed text-amber-100"
       role="status"
     >
       <p>{previewSignInHint()}</p>
-      <a
-        className="mt-1 inline-block font-medium text-amber-50 underline underline-offset-2 hover:text-white"
-        href={PRODUCTION_SIGN_IN_URL}
+      <p className="mt-1 text-amber-100/80">
+        GitHub and email login on this preview URL often show “string did not
+        match the expected pattern.” Use production instead.
+      </p>
+      <button
+        type="button"
+        className="mt-2 inline-block font-medium text-amber-50 underline underline-offset-2 hover:text-white"
+        onClick={goToProductionSignIn}
       >
         Open production sign-in
-      </a>
+      </button>
     </div>
   ) : null;
 
@@ -108,6 +117,10 @@ export default function EmailCodeSignIn() {
   const handleIdentifierSubmit = async (event) => {
     event.preventDefault();
     setError(null);
+    if (onPreviewHost) {
+      goToProductionSignIn();
+      return;
+    }
     const value = String(identifier ?? "").trim();
     if (!value) {
       setError("Enter your email or username.");
@@ -230,6 +243,10 @@ export default function EmailCodeSignIn() {
 
   const handleGitHub = async () => {
     setError(null);
+    if (onPreviewHost) {
+      goToProductionSignIn();
+      return;
+    }
     setBusy("github");
     try {
       if (isSignedIn) {
