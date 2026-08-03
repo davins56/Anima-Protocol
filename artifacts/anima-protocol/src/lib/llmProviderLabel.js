@@ -91,19 +91,19 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "anima",
     label: "Anima",
     env: "ANIMA_LLM_PROVIDER=anima",
-    note: "Custom multi-model LLM — routes across Kimi, Gemini, Grok, and ChatGPT by message tier",
+    note: "Custom multi-model LLM — Kimi-first for everyday chat; Grok for heavy; needs KIMI_API_KEY",
   },
   {
     id: "kimi",
     label: "Kimi",
     env: "KIMI_API_KEY",
-    note: "Moonshot — preferred unpaid default when set alone",
+    note: "Moonshot — lead backend under Anima mode (and default when set alone)",
   },
   {
     id: "gemini",
     label: "Gemini",
     env: "GEMINI_API_KEY",
-    note: "Google AI Studio — balanced standard-tier lead under Anima mode",
+    note: "Google AI Studio — first failover after Kimi under Anima mode",
   },
   {
     id: "xai",
