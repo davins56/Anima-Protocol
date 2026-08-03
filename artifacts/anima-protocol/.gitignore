@@ -1,0 +1,8 @@
+.env
+.env.local
+.env.*.local
+# Playwright e2e output
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/

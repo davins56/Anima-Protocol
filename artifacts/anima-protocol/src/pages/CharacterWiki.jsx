@@ -64,7 +64,7 @@ export default function CharacterWiki() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center flex-1 min-h-0">
         <p className="font-mono text-primary/50 tracking-widest uppercase text-sm">Loading wiki...</p>
       </div>
     );
@@ -76,7 +76,7 @@ export default function CharacterWiki() {
   const traits = charMemories.filter(m => m.memory_type === 'character_interaction' || m.memory_type === 'growth');
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-8">

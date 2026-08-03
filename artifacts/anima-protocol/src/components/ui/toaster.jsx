@@ -1,3 +1,4 @@
+// @ts-check
 import { useToast } from "@/components/ui/use-toast";
 import {
   Toast,

@@ -52,7 +52,7 @@ export default function WhatIfScenarios() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background p-3 sm:p-6 space-y-6 pb-safe">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-3 sm:p-6 space-y-6 pb-safe">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">

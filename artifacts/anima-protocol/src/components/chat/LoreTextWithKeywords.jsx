@@ -1,5 +1,6 @@
 import { detectLoreKeywords, createLoreSegments } from "@/utils/loreKeywordDetector";
 import LoreKeywordTooltip from "./LoreKeywordTooltip";
+import { renderItalicText } from "./renderItalicText";
 
 export default function LoreTextWithKeywords({ content, loreEntries }) {
   const matches = detectLoreKeywords(content, loreEntries);
@@ -17,7 +18,7 @@ export default function LoreTextWithKeywords({ content, loreEntries }) {
             {segment.content}
           </LoreKeywordTooltip>
         ) : (
-          <span key={idx}>{segment.content}</span>
+          <span key={idx}>{renderItalicText(segment.content)}</span>
         )
       )}
     </>

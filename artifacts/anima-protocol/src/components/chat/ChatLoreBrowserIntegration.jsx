@@ -1,7 +1,9 @@
+// @ts-check
 import { useState } from 'react';
 import { BookOpen } from 'lucide-react';
 import LoreBrowserPanel from '@/components/lore/LoreBrowserPanel';
 
+/** @param {{ sessionId: string }} props */
 export default function ChatLoreBrowserIntegration({ sessionId }) {
   const [showLorePanel, setShowLorePanel] = useState(false);
 

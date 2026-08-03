@@ -80,7 +80,7 @@ export default function QuestTrackingDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background p-4 sm:p-6 flex items-center justify-center">
         <div className="text-center space-y-3">
           <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-[0.3em] uppercase">Loading quests...</p>
@@ -91,7 +91,7 @@ export default function QuestTrackingDashboard() {
 
   if (!sessionId) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background p-4 sm:p-6 flex items-center justify-center">
         <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">No session selected</p>
       </div>
     );
@@ -106,7 +106,7 @@ export default function QuestTrackingDashboard() {
     : 0;
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="space-y-2">

@@ -1,6 +1,11 @@
+// @ts-check
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 
+/**
+ * @param {string} sessionId
+ * @param {any[]} messages
+ */
 export function useEventDrivenFlow(sessionId, messages) {
   const [flowAnalysis, setFlowAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);

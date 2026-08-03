@@ -1,7 +1,11 @@
+// @ts-check
 import { useState } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+/**
+ * @param {{ isOpen?: boolean, images?: any[], initialIndex?: number, onClose: () => void }} props
+ */
 export default function MediaLightbox({ isOpen, images, initialIndex = 0, onClose }) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 

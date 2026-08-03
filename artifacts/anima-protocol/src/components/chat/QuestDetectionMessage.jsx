@@ -1,5 +1,9 @@
+// @ts-check
 import { motion } from "framer-motion";
 
+/**
+ * @param {{ quest?: any, onAccept: (quest: any) => void, onReject: (title: string) => void }} props
+ */
 export default function QuestDetectionMessage({ quest, onAccept, onReject }) {
   return (
     <motion.div

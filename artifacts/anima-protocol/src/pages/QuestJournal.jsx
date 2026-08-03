@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
+import { useConfirm } from "@/lib/ConfirmDialog";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -235,6 +236,7 @@ function QuestRow({ quest, characters, sessions, onStatusChange, onObjectiveTogg
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function QuestJournal() {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [quests, setQuests] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -292,6 +294,12 @@ export default function QuestJournal() {
   };
 
   const handleDelete = async (questId) => {
+    const ok = await confirm({
+      title: "Delete this quest?",
+      message: "This permanently removes the quest and cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     setMutating(true);
     await base44.entities.Quest.delete(questId);
     setQuests(prev => prev.filter(q => q.id !== questId));
@@ -406,7 +414,7 @@ export default function QuestJournal() {
     });
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background pb-20">
+    <div className="flex-1 min-h-0 overflow-y-auto flex flex-col bg-background pb-20">
       {/* Header */}
       <div className="sticky top-0 z-20 border-b border-primary/20 bg-black/90 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">

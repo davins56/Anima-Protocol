@@ -64,7 +64,7 @@ export default function RelationshipAndLocationDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background p-6 flex items-center justify-center">
         <div className="text-center space-y-3">
           <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -77,7 +77,7 @@ export default function RelationshipAndLocationDashboard() {
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-background p-6 flex items-center justify-center">
         <div className="text-center space-y-4">
           <Home className="w-12 h-12 text-primary/30 mx-auto" />
           <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
@@ -97,7 +97,7 @@ export default function RelationshipAndLocationDashboard() {
   const selectedChar = characters.find((c) => c.id === selectedCharacterId);
 
   return (
-    <div className="min-h-screen bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md p-6">
         <div className="max-w-7xl mx-auto">

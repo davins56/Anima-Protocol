@@ -254,7 +254,7 @@ const getEventTypeColor = (type) => {
   };
 
   return (
-    <div className="min-h-screen bg-background overflow-x-hidden">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background overflow-x-hidden">
       <div className="w-full px-3 sm:px-6 py-4 sm:py-6">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">

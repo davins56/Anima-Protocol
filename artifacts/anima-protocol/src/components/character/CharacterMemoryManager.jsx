@@ -16,7 +16,10 @@ const MEMORY_TAGS = [
   "evolution",
 ];
 
+import { useConfirm } from "@/lib/ConfirmDialog";
+
 export default function CharacterMemoryManager({ characterId, characterName }) {
+  const confirm = useConfirm();
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -84,7 +87,12 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
   };
 
   const handleDeleteMemory = async (id) => {
-    if (!window.confirm("Delete this memory?")) return;
+    const ok = await confirm({
+      title: "Delete this memory?",
+      message: "This permanently removes the memory and cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     try {
       await base44.entities.CharacterMemory.delete(id);
       await loadMemories();

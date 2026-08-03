@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Check, ArrowLeft, Loader, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 export default function LifetimeAccess() {
   const [prices, setPrices] = useState([]);
@@ -38,7 +39,7 @@ export default function LifetimeAccess() {
 
   const handleCheckout = async (priceId) => {
     if (isInIframe) {
-      alert('Checkout is only available in the published app. Please open Anima Protocol directly.');
+      toast.error('Checkout is only available in the published app. Please open Anima Protocol directly.');
       return;
     }
 
@@ -76,7 +77,7 @@ export default function LifetimeAccess() {
   ];
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 space-y-8">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 space-y-8">
       <div className="max-w-2xl mx-auto space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between gap-4">

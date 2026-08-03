@@ -66,7 +66,7 @@ export default function TemplateHub() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline p-4 sm:p-6" style={{ paddingBottom: 'var(--tab-bar-height, 120px)' }}>
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline p-4 sm:p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between gap-4">
