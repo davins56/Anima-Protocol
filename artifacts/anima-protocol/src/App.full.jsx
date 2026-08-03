@@ -18,11 +18,11 @@ import {
   ClerkLoading,
   ClerkProvider,
   HandleSSOCallback,
-  SignIn,
   SignUp,
   Show,
   useClerk,
 } from "@clerk/react";
+import EmailCodeSignIn from "@/components/auth/EmailCodeSignIn";
 import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -458,11 +458,9 @@ function AuthFormShell({ mode, children }) {
         <ClerkLoginDiagnostics />
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
-            Working options right now: Continue with GitHub, or enter your
-            username/email and use the emailed verification code. Password
-            sign-in only works if a password is already set on this Production
-            account. Google and Apple are temporarily hidden until their
-            provider console credentials/redirect URIs are fixed.
+            Use Continue with GitHub, or enter your username/email for a
+            one-time email code. Google and Apple stay hidden until their
+            provider redirect URIs are fixed.
           </p>
         ) : null}
         {children}
@@ -494,15 +492,16 @@ function SignInPage() {
         </p>
       </ClerkFailed>
       <ClerkLoaded>
-        <SignIn
-          routing="path"
-          path={`${basePath}/sign-in`}
-          signUpUrl={`${basePath}/sign-up`}
-          oauthFlow="redirect"
-          transferable
-          fallbackRedirectUrl={authRedirectCompleteUrl}
-          forceRedirectUrl={authRedirectCompleteUrl}
-        />
+        <EmailCodeSignIn />
+        <p className="px-1 text-center text-xs text-cyan-400/45">
+          Need an account?{" "}
+          <a
+            href={`${basePath}/sign-up`}
+            className="text-cyan-300 hover:text-cyan-200"
+          >
+            Join the waitlist
+          </a>
+        </p>
       </ClerkLoaded>
     </AuthFormShell>
   );
