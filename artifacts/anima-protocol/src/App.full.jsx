@@ -357,7 +357,7 @@ function ClerkLoginDiagnostics() {
   return (
     <>
       <ClerkFailed>
-        <ClerkConnectivityHints includeStallHint={false} />
+        <ClerkFailedConnectivityHints />
       </ClerkFailed>
       <ClerkLoading>
         <ClerkStalledConnectivityHints />
@@ -366,8 +366,37 @@ function ClerkLoginDiagnostics() {
   );
 }
 
+function useClerkProbeHints() {
+  const [probeHints, setProbeHints] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await probeClerkConnectivity(clerkPubKey);
+      if (!cancelled) setProbeHints(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return probeHints;
+}
+
+function resolveConnectivityHints(probeHints, fallbackHint) {
+  if (probeHints === null) return [fallbackHint];
+  if (probeHints.length > 0) return probeHints;
+  return [fallbackHint];
+}
+
+/**
+ * Start probes as soon as ClerkLoading mounts. At the stall timeout, show the
+ * stall hint immediately (don't wait for sequential probe timeouts), then swap
+ * in specific endpoint failures when probes finish.
+ */
 function ClerkStalledConnectivityHints() {
   const [stalled, setStalled] = useState(false);
+  const probeHints = useClerkProbeHints();
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -378,32 +407,21 @@ function ClerkStalledConnectivityHints() {
   }, []);
 
   if (!stalled) return null;
-  return <ClerkConnectivityHints includeStallHint />;
+  return (
+    <ClerkDiagnosticsBanner
+      hints={resolveConnectivityHints(probeHints, CLERK_STALL_HINT)}
+    />
+  );
 }
 
-function ClerkConnectivityHints({ includeStallHint }) {
-  const [hints, setHints] = useState([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const next = await probeClerkConnectivity(clerkPubKey);
-      if (cancelled) return;
-      // When probes find no endpoint issue, still guide recovery:
-      // - stall path: SDK still loading after timeout
-      // - ClerkFailed path: SDK/browser init failed despite healthy endpoints
-      if (next.length === 0) {
-        setHints([includeStallHint ? CLERK_STALL_HINT : CLERK_FAILURE_HINT]);
-        return;
-      }
-      setHints(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [includeStallHint]);
-
-  return <ClerkDiagnosticsBanner hints={hints} />;
+/** Immediate failure fallback, upgraded with probe results when ready. */
+function ClerkFailedConnectivityHints() {
+  const probeHints = useClerkProbeHints();
+  return (
+    <ClerkDiagnosticsBanner
+      hints={resolveConnectivityHints(probeHints, CLERK_FAILURE_HINT)}
+    />
+  );
 }
 
 function AuthFormShell({ mode, children }) {
