@@ -141,7 +141,19 @@ If **Vercel Deployment Protection** is enabled on previews, OAuth callbacks to
 `/sign-in/sso-callback` may be blocked — disable protection for preview or test
 on `www.anima-protocol.com` instead.
 
-## 6. Apple (required if the Apple button is shown)
+## 6. Sign-in methods that work today (Production)
+
+| Method | Status | Notes |
+|--------|--------|-------|
+| **GitHub** (Clerk social icons) | Works | Prefer this if the account was created with GitHub |
+| **Email code / email link** | Works | Production accounts without a password (e.g. OAuth signup) only support this — not username+password |
+| **Google** | Broken until console fix | Live symptom: `Error 400: redirect_uri_mismatch`. Add `https://clerk.anima-protocol.com/v1/oauth_callback` to the Google OAuth client’s Authorized redirect URIs |
+| **Apple** | Broken until credentials | Clerk reports empty `client_id` — set Apple custom credentials in Clerk → SSO, or leave Apple disabled (the app hides the Apple button) |
+| **Password** | Only if set | Accounts that never set a password get `strategy_for_user_invalid`. Use email code, or “Forgot password” / Clerk Dashboard → Users → Set password |
+
+Do **not** rely on the old duplicate “Continue with …” buttons above the Clerk form — those called a custom `signIn.sso()` path that hung on “Redirecting…” without starting OAuth. Sign-in now uses Clerk’s built-in social buttons only.
+
+## 7. Apple (optional)
 
 In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
 
@@ -154,11 +166,10 @@ In Clerk Dashboard → Production (or Development) → Configure → SSO connect
    (`https://clerk.anima-protocol.com/v1/oauth_callback`) as an Apple Return URL.
 5. Keep `/sign-in/sso-callback` / `/sign-up/sso-callback` registered under Clerk → Paths.
 
-If Apple is not ready, disable the Apple SSO connection in Clerk (or set
-`VITE_CLERK_OAUTH_STRATEGIES=oauth_google,oauth_github`) so the broken button
-is hidden.
+If Apple is not ready, leave the Apple SSO connection disabled in Clerk. The
+current app hides the Apple social button until credentials are ready.
 
-## 7. Troubleshooting live errors on www.anima-protocol.com
+## 8. Troubleshooting live errors on www.anima-protocol.com
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
@@ -171,7 +182,7 @@ is hidden.
 Do **not** put `/sign-in/sso-callback` into Google/GitHub/Apple — that only belongs
 in Clerk → Paths.
 
-## 8. Verify
+## 9. Verify
 
 Run from the repo root with the production Clerk keys in the environment:
 
