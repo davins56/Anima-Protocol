@@ -1400,43 +1400,43 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
           ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
-      const groupChars = (
-        await Promise.all(
-          (activeSession.group_character_ids || []).map((id) => resolveCharacterById(id)),
-        )
-      ).filter(Boolean);
+        const groupChars = (
+          await Promise.all(
+            (activeSession.group_character_ids || []).map((id) => resolveCharacterById(id)),
+          )
+        ).filter(Boolean);
 
-      if (!groupChars.length) {
-        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
-      } else {
+        if (!groupChars.length) {
+          prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
+        } else {
 
-      // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
-      // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
-      const recentSpeakers = updatedMessages.slice(-6)
-        .filter(m =>
-          m.role === "assistant" &&
-          m.character_name !== "Narrator" &&
-          m.character_name !== "__typing__" &&
-          m.character_name !== "__thinking__" &&
-          !m.is_streaming
-        )
-        .map(m => m.character_name);
-      const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
+          // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
+          // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
+          const recentSpeakers = updatedMessages.slice(-6)
+            .filter(m =>
+              m.role === "assistant" &&
+              m.character_name !== "Narrator" &&
+              m.character_name !== "__typing__" &&
+              m.character_name !== "__thinking__" &&
+              !m.is_streaming
+            )
+            .map(m => m.character_name);
+          const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
 
-      const shouldOutOfTurn =
-        Math.random() < 0.35 && // 35% per request
-        groupChars.length >= 2 &&
-        !isContinue;
-        
-        const charSummaries = groupChars.map(c =>
-          `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
-        ).join("\n");
-        
-        const recentConvoSnippet = updatedMessages.slice(-6)
-          .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
-          .join("\n");
-        
-        const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
+          const shouldOutOfTurn =
+            Math.random() < 0.35 && // 35% per request
+            groupChars.length >= 2 &&
+            !isContinue;
+
+          const charSummaries = groupChars.map(c =>
+            `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
+          ).join("\n");
+
+          const recentConvoSnippet = updatedMessages.slice(-6)
+            .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
+            .join("\n");
+
+          const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
 
 Characters:
 ${charSummaries}
@@ -1454,83 +1454,83 @@ Rules:
 
 Reply with ONLY the character's exact name — nothing else.`;
 
-        let nextChar;
-        try {
-          const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
-          const chosenName = speakerResult?.trim();
-          nextChar = groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
-        } catch {}
-        
-        // Fallback: pick someone who hasn't spoken recently
-        if (!nextChar) {
-          const recentSpeakerSet = new Set(recentSpeakers);
-          nextChar = groupChars.find(c => !recentSpeakerSet.has(c.name)) || groupChars[0];
-        }
-        
-        currentGroupSpeakerRef.current = nextChar;
-        
-        const loreCtxGroup = buildLoreContext();
+          let nextChar;
+          try {
+            const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
+            const chosenName = speakerResult?.trim();
+            nextChar = groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
+          } catch {}
 
-        // Build a rich character sheet for each character
-        const allCharSheets = groupChars.map(c => {
-          const rel = getRelationshipContext(c.id);
-          return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
+          // Fallback: pick someone who hasn't spoken recently
+          if (!nextChar) {
+            const recentSpeakerSet = new Set(recentSpeakers);
+            nextChar = groupChars.find(c => !recentSpeakerSet.has(c.name)) || groupChars[0];
+          }
+
+          currentGroupSpeakerRef.current = nextChar;
+
+          const loreCtxGroup = buildLoreContext();
+
+          // Build a rich character sheet for each character
+          const allCharSheets = groupChars.map(c => {
+            const rel = getRelationshipContext(c.id);
+            return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
 ${c.personality ? `Personality: ${c.personality}` : ""}
 ${c.backstory ? `Backstory: ${c.backstory}` : ""}
 ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
-        }).join("\n\n");
+          }).join("\n\n");
 
-        // Fetch solo-session personality shifts for the next speaker (best-effort)
-        let traitModifiers = '';
-        try {
-          const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
-            character_id: nextChar.id,
-            character_name: nextChar.name,
-            max_sessions: 5,
+          // Fetch solo-session personality shifts for the next speaker (best-effort)
+          let traitModifiers = '';
+          try {
+            const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
+              character_id: nextChar.id,
+              character_name: nextChar.name,
+              max_sessions: 5,
+            });
+            traitModifiers = shiftRes?.data?.trait_modifiers || '';
+          } catch (_) { /* silently ignore — enhancement, not a requirement */ }
+
+          // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
+          // We still select a valid character, but we may interrupt the usual pacing.
+          let finalNextChar = nextChar;
+          if (shouldOutOfTurn) {
+            const recentMentioned = updatedMessages
+              .slice(-10)
+              .map(m => m.character_name)
+              .filter(Boolean);
+            const preferred = groupChars
+              .filter(c => c.name !== nextChar?.name)
+              .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
+
+            // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
+            const recentSpeakerSet = new Set(recentSpeakers);
+            const leastRecent = groupChars.find(c => !recentSpeakerSet.has(c.name) && c.name !== nextChar?.name);
+
+            finalNextChar = preferred[0] || leastRecent || groupChars.find(c => c.name !== nextChar?.name) || nextChar;
+          }
+
+          // Keep the ref in sync for later Serenity auto-address handling etc.
+          currentGroupSpeakerRef.current = finalNextChar;
+
+          // Add explicit allowance for interruption/out-of-turn to the prompt.
+          const interruptionClause = shouldOutOfTurn
+            ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
+            : "";
+
+          prompt = buildGroupPrompt({
+            nextChar: finalNextChar,
+            allCharSheets,
+            loreCtxGroup,
+            conversationHistory,
+            adultInstruction,
+            lengthGuide,
+            traitModifiers,
+            userProfileContext,
+            interruptionClause,
+            isContinue,
           });
-          traitModifiers = shiftRes?.data?.trait_modifiers || '';
-        } catch (_) { /* silently ignore — enhancement, not a requirement */ }
-
-        // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
-        // We still select a valid character, but we may interrupt the usual pacing.
-        let finalNextChar = nextChar;
-        if (shouldOutOfTurn) {
-          const recentMentioned = updatedMessages
-            .slice(-10)
-            .map(m => m.character_name)
-            .filter(Boolean);
-          const preferred = groupChars
-            .filter(c => c.name !== nextChar?.name)
-            .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
-
-          // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
-          const recentSpeakerSet = new Set(recentSpeakers);
-          const leastRecent = groupChars.find(c => !recentSpeakerSet.has(c.name) && c.name !== nextChar?.name);
-
-          finalNextChar = preferred[0] || leastRecent || groupChars.find(c => c.name !== nextChar?.name) || nextChar;
         }
-
-        // Keep the ref in sync for later Serenity auto-address handling etc.
-        currentGroupSpeakerRef.current = finalNextChar;
-
-        // Add explicit allowance for interruption/out-of-turn to the prompt.
-        const interruptionClause = shouldOutOfTurn
-          ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
-          : "";
-
-        prompt = buildGroupPrompt({
-          nextChar: finalNextChar,
-          allCharSheets,
-          loreCtxGroup,
-          conversationHistory,
-          adultInstruction,
-          lengthGuide,
-          traitModifiers,
-          userProfileContext,
-          interruptionClause,
-          isContinue,
-        });
-      }
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
       }
