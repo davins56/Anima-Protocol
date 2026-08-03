@@ -8,6 +8,7 @@ import {
   decodeClerkFrontendHost,
   ensureTrailingSlash,
   isAnimaProductionHost,
+  publishableKeyFromFrontendHost,
   publishableKeyUsesCustomDomain,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
@@ -77,6 +78,18 @@ describe('clerkProxy', () => {
   it('skips proxy for pk_test_', () => {
     expect(shouldUseClerkProxy(TEST_KEY)).toBe(false);
     expect(resolveClerkProxyUrl(TEST_KEY)).toBe('');
+  });
+
+  it('derives the apex Clerk key for anima production hosts', () => {
+    expect(publishableKeyFromFrontendHost('www.anima-protocol.com')).toBe(
+      LIVE_KEY,
+    );
+    expect(publishableKeyFromFrontendHost('anima-protocol.com')).toBe(LIVE_KEY);
+  });
+
+  it('does not derive clerk.www for the production custom domain', () => {
+    const key = publishableKeyFromFrontendHost('www.anima-protocol.com');
+    expect(decodeClerkFrontendHost(key)).toBe('clerk.anima-protocol.com');
   });
 
   it('detects anima production hosts', () => {
