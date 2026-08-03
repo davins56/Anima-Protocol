@@ -1,0 +1,1914 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { base44 } from "@/api/base44Client";
+import Sidebar from "@/components/layout/Sidebar";
+import WelcomeScreen from "@/components/chat/WelcomeScreen";
+import ChatHeader from "@/components/chat/ChatHeader";
+import MessageBubble from "@/components/chat/MessageBubble";
+import ChatInput from "@/components/chat/ChatInput";
+import NewSessionModal from "@/components/chat/NewSessionModal";
+import { Menu, X } from "lucide-react";
+import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
+import BottomTabBar from "@/components/layout/BottomTabBar";
+import { detectMood } from "@/lib/moodDetector";
+import TTSControls from "@/components/chat/TTSControls";
+import { useTTS } from "@/hooks/useTTS";
+import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
+import { useEmotionalTTS } from "@/hooks/useEmotionalTTS";
+import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
+import { motion, AnimatePresence } from "framer-motion";
+import InventoryDrawer from "@/components/chat/InventoryDrawer";
+import SystemAlert from "@/components/chat/SystemAlert";
+import CalendarDisplay from "@/components/chat/CalendarDisplay";
+
+import ChapterRecap from "@/components/chat/ChapterRecap";
+import SessionRecapModal from "@/components/session/SessionRecapModal";
+import NarrativeSuggestions from "@/components/chat/NarrativeSuggestions";
+import EmotionIndicator from "@/components/chat/EmotionIndicator";
+
+import NarrativeChoicesPanel from "@/components/chat/NarrativeChoicesPanel";
+import { useSessionRecap } from "@/hooks/useSessionRecap";
+import DailySummaryModal from "@/components/chat/DailySummaryModal";
+import { useDailyCompilation } from "@/hooks/useDailyCompilation";
+import { useSerenityDebug } from "@/hooks/useSerenityDebug";
+import { useQuestDetectionEngine } from "@/hooks/useQuestDetectionEngine";
+import AIInsightsPanel from "@/components/insights/AIInsightsPanel";
+import { useAIInsights } from "@/hooks/useAIInsights";
+import WorldEvolutionStatus from "@/components/world/WorldEvolutionStatus";
+import WorldPulseFeed from "@/components/world/WorldPulseFeed";
+import AtmosphericDescription from "@/components/world/AtmosphericDescription";
+import { useEmotionalSoundscape } from "@/hooks/useEmotionalSoundscape";
+import EmotionalSoundscapeControl from "@/components/audio/EmotionalSoundscapeControl";
+import { Package, Brain } from "lucide-react";
+import MentalLine from "@/components/chat/MentalLine";
+import SessionEditModal from "@/components/chat/SessionEditModal";
+import ChatInputControls from "@/components/chat/ChatInputControls";
+import DataExportModal from "@/components/export/DataExportModal";
+import CharacterEvolutionPanel from "@/components/chat/CharacterEvolutionPanel";
+import GroupDynamicsPanel from "@/components/group/GroupDynamicsPanel";
+import WorldStateMonitor from "@/components/world/WorldStateMonitor";
+import ResponseSuggestions from "@/components/chat/ResponseSuggestions";
+import NarrativeArcPanel from "@/components/narrative/NarrativeArcPanel";
+import RelationshipEvolutionMap from "@/components/network/RelationshipEvolutionMap";
+import DynamicPortrait from "@/components/chat/DynamicPortrait";
+import VoiceChatMode from "@/components/chat/VoiceChatMode";
+import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
+import ImageGenerationModal from "@/components/chat/ImageGenerationModal";
+import CreateBranchModal from "@/components/world/CreateBranchModal";
+import LocationDialogueHints from "@/components/chat/LocationDialogueHints";
+import ChoiceGenerator from "@/components/chat/ChoiceGenerator";
+
+import { useAutoQuestManager } from "@/components/quests/AutoQuestManager";
+import QuestDetectionMessage from "@/components/chat/QuestDetectionMessage";
+import CharacterPresencePanel from "@/components/chat/CharacterPresencePanel";
+import CharacterQuickChat from "@/components/chat/CharacterQuickChat";
+import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
+import { getCompanionModePrompt } from "@/lib/companionModePrompts";
+import { parseGroupResponse } from "@/lib/parseGroupResponse";
+import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
+import MessageList from "@/components/chat/MessageList";
+import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
+import ChatToolbar from "@/components/chat/ChatToolbar";
+import ChatToolbarSection from "@/components/chat/ChatToolbarSection";
+import ChatWidgetsArea from "@/components/chat/ChatWidgetsArea";
+import ExportArchiveModal from "@/components/chat/ExportArchiveModal";
+import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
+import NarrativeDivergencePanel from "@/components/narrative/NarrativeDivergencePanel";
+import { useDivergentPaths } from "@/hooks/useDivergentPaths";
+import GoToTopButton from "@/components/chat/GoToTopButton";
+import TutorialOverlay from "@/components/onboarding/TutorialOverlay";
+import { useNativeBridge } from "@/hooks/useNativeBridge";
+import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
+
+
+export default function Chat() {
+  const { sessionId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [sessions, setSessions] = useState([]);
+  const [activeSession, setActiveSession] = useState(null);
+  const [characters, setCharacters] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [mode, setMode] = useState("solo");
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [bgTheme, setBgTheme] = useState("default");
+  const [bgImage, setBgImage] = useState("");
+  const [pendingMessage, setPendingMessage] = useState("");
+  const [nextSpeaker, setNextSpeaker] = useState(null);
+  const [serenity, setSerenity] = useState(null); // Serenity anima — always present but silent
+  const [relationships, setRelationships] = useState({}); // keyed by character_id
+  const [loreEntries, setLoreEntries] = useState([]); // WorldState entries for active session
+  const [currentMood, setCurrentMood] = useState("neutral");
+  const [characterMemories, setCharacterMemories] = useState([]); // cross-session memories
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [showInventory, setShowInventory] = useState(false);
+  const [showMentalLine, setShowMentalLine] = useState(false);
+  const [mentalLineLoading, setMentalLineLoading] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [voiceChatOpen, setVoiceChatOpen] = useState(false);
+  const [showVoiceInput, setShowVoiceInput] = useState(false);
+  const [portraitUrls, setPortraitUrls] = useState({}); // cached portrait URLs per emotion
+  const [showCreateBranch, setShowCreateBranch] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showExportArchive, setShowExportArchive] = useState(false);
+  const [isReadingStory, setIsReadingStory] = useState(false);
+  const [injectedMemories, setInjectedMemories] = useState([]);
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [worldElements, setWorldElements] = useState([]);
+  const [eventSuggestions, setEventSuggestions] = useState([]);
+  const [showImageGen, setShowImageGen] = useState(false);
+  const [analyzingNarrative, setAnalyzingNarrative] = useState(false);
+  const [characterEvolutions, setCharacterEvolutions] = useState({});
+  const [characterEmotions, setCharacterEmotions] = useState({}); // keyed by character_id: {emotion, intensity, trigger}
+  const [worldEvent, setWorldEvent] = useState(null); // current system event
+  const [calendar, setCalendar] = useState(null); // in-game calendar
+  const [choices, setChoices] = useState([]); // narrative choice options
+  const [guestCharacter, setGuestCharacter] = useState(null); // suggested guest character
+  const [showGuestPrompt, setShowGuestPrompt] = useState(false);
+  const [worldStateEvents, setWorldStateEvents] = useState([]); // automated world evolution events
+  const [narrativeArcs, setNarrativeArcs] = useState([]); // persistent narrative arcs across sessions
+  const [arcsLoading, setArcsLoading] = useState(false);
+  const [generatedContent, setGeneratedContent] = useState(null); // procedurally generated lore/factions/landmarks
+  const [aiBehaviorConfig, setAIBehaviorConfig] = useState(null); // AI customization config
+  const [pulseHeadlines, setPulseHeadlines] = useState([]); // world pulse feed headlines
+  const [atmosphericDesc, setAtmosphericDesc] = useState(null); // current atmospheric description
+  const [loadingAtmosphere, setLoadingAtmosphere] = useState(false);
+  const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const tts = useTTS();
+  const elTTS = useElevenLabsTTS();
+  const emotionalTTS = useEmotionalTTS();
+  const eventCheckRef = useRef(0); // track how many messages since last event check
+  const groupInteractionCheckRef = useRef(0); // track messages since last group interaction
+  const currentGroupSpeakerRef = useRef(null); // track the computed group speaker within a send call
+  const { summary, showSummary, closeSummary } = useDailyCompilation(sessionId, calendar, activeSession?.character_id);
+  const { showRecap, recapSessionId, openRecap, closeRecap } = useSessionRecap();
+  const { insights, loading: insightsLoading, analyzeNow } = useAIInsights(sessionId, activeSession?.messages);
+  const { isPlaying, setIsPlaying, volume, setVolume, intensity, currentSoundscape } = useEmotionalSoundscape(
+    characterEmotions,
+    activeSession?.messages
+  );
+
+  // ── Native iOS Bridge ────────────────────────────────────────────────────
+  const { isNative, speakNative, stopNativeSpeaking, requestBiometric } = useNativeBridge({
+    // Siri Shortcuts → navigate to the requested section
+    onSiriAction: (action) => {
+      const routes = {
+        'start-chat':      '/',
+        'open-quests':     '/quest-journal',
+        'open-chronicles': '/chronicles',
+        'check-in':        '/check-in',
+        'open-characters': '/characters',
+        'open-meditation': '/meditation',
+      };
+      if (routes[action]) navigate(routes[action]);
+      else if (action === 'new-session') handleNewSession();
+    },
+    // Native ASR result → send as chat message
+    onNativeSpeech: (text) => {
+      if (activeSession) handleSendMessage(text);
+    },
+    // Biometric result (currently just logged; extend as needed)
+    onBiometricResult: (success) => {
+      console.log('[NativeBridge] Biometric auth result:', success);
+    },
+  });
+
+  // Override speakMessage to prefer native TTS when inside WKWebView
+  const speakMessageNative = useCallback((content, charName) => {
+    if (isNative && speakNative(content)) return; // handed off to native AVSpeechSynthesizer
+    // Fallback to existing web TTS
+    const char = characters.find((c) => c.name === charName);
+    const voiceId = char?.elevenlabs_voice_id;
+    const charEmotion = characterEmotions[char?.id];
+    const emotion = charEmotion?.emotion || 'neutral';
+    const intensity = charEmotion?.intensity || 5;
+    if (voiceId && emotionalTTS.isEnabled) {
+      emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
+    } else if (voiceId && elTTS.isEnabled) {
+      elTTS.speak(content, voiceId);
+    } else if (tts.isEnabled) {
+      tts.speak(content);
+    }
+  }, [isNative, speakNative, characters, emotionalTTS, elTTS, tts, characterEmotions]);
+
+  const questManager = useAutoQuestManager({
+    sessionId: activeSession?.id,
+    characterId: activeSession?.character_id,
+    messages: activeSession?.messages || [],
+    characterEmotions,
+  });
+
+  const { loreLinks } = useLoreKeywordScanning(activeSession?.id, activeSession?.messages);
+
+  const activeCharForPaths = characters.find(c => c.id === activeSession?.character_id);
+  const { paths: divergentPaths, showPaths, loading: pathsLoading, handleSelectPath, setShowPaths } = useDivergentPaths(
+    activeSession?.id,
+    activeSession?.character_id,
+    activeCharForPaths?.name,
+    activeSession?.messages
+  );
+
+  // Apply emotional theming based on current character emotion or session mood
+  const activeEmotion = activeSession?.character_id
+    ? characterEmotions[activeSession.character_id]?.emotion || "neutral"
+    : currentMood;
+  useEmotionalTheming(activeEmotion);
+
+  useEffect(() => {
+    loadSessions();
+    loadCharacters();
+    // Preload ElevenLabs voices in background
+    base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
+    base44.auth.me().then((me) => {
+      if (me?.settings?.chat_bg_theme) setBgTheme(me.settings.chat_bg_theme);
+      if (me?.settings?.chat_bg_image) setBgImage(me.settings.chat_bg_image);
+    }).catch(() => {});
+    // Auto-open new session modal when navigated from dashboard "New Chat"
+    if (location.state?.openNew) {
+      setShowModal(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      loadSession(sessionId);
+    } else {
+      setActiveSession(null);
+    }
+  }, [sessionId]);
+
+  const lastMessageCountRef = useRef(0);
+  useEffect(() => {
+    const currentCount = activeSession?.messages?.length || 0;
+    if (currentCount > lastMessageCountRef.current) {
+      setTimeout(() => {
+        const container = scrollContainerRef.current;
+        if (container) {
+          container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+        } else {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 50);
+    }
+    lastMessageCountRef.current = currentCount;
+  }, [activeSession?.messages]);
+
+  // Helper: speak a message using ElevenLabs with emotional adjustment
+  const speakMessage = useCallback((content, charName) => {
+    const char = characters.find((c) => c.name === charName);
+    const voiceId = char?.elevenlabs_voice_id;
+    
+    // Get character's current emotional state from database
+    const charEmotion = characterEmotions[char?.id];
+    const emotion = charEmotion?.emotion || 'neutral';
+    const intensity = charEmotion?.intensity || 5;
+    
+    // Use emotional TTS with voice emotion adjustment if available
+    if (voiceId && emotionalTTS.isEnabled) {
+      emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
+    } else if (voiceId && elTTS.isEnabled) {
+      elTTS.speak(content, voiceId);
+    } else if (tts.isEnabled) {
+      tts.speak(content);
+    }
+  }, [characters, emotionalTTS, elTTS, tts, characterEmotions]);
+
+  const handleReadStory = async () => {
+    if (!activeSession?.messages || activeSession.messages.length === 0) return;
+
+    setIsReadingStory(true);
+    elTTS.stop();
+    tts.stop();
+    emotionalTTS.stop();
+
+    const fullStoryText = activeSession.messages
+      .filter(msg => msg.character_name !== "__typing__" && msg.type !== "event")
+      .map(msg => {
+        const speaker = msg.role === "user" ? "You" : (msg.character_name || "Narrator");
+        return `${speaker}: ${msg.content}`;
+      })
+      .join("\n\n");
+
+    const activeChar = activeSession.mode === "solo" && activeSession.character_id
+      ? characters.find((c) => c.id === activeSession.character_id)
+      : null;
+    const voiceId = activeChar?.elevenlabs_voice_id;
+
+    if (voiceId && elTTS.isEnabled) {
+      elTTS.speak(fullStoryText, voiceId);
+    } else if (tts.isEnabled) {
+      tts.speak(fullStoryText);
+    }
+    
+    setIsReadingStory(false);
+  };
+
+  const handleStopReadingStory = () => {
+    stopNativeSpeaking();
+    elTTS.stop();
+    tts.stop();
+    emotionalTTS.stop();
+    setIsReadingStory(false);
+  };
+
+  // Mental line handler
+  const { handleDebugRequest } = useSerenityDebug();
+
+  const handleMentalLineThought = async (thought) => {
+    setMentalLineLoading(true);
+    try {
+      // Check if user is asking for debugging
+      const debugResponse = await handleDebugRequest(thought, activeSession?.id);
+      if (debugResponse) {
+        return debugResponse;
+      }
+
+      // Otherwise, respond normally through Serenity
+      const result = await base44.functions.invoke("respondMentalLine", {
+        thought,
+        serenity_name: serenity?.name || "Serenity",
+      });
+      return result?.data || result;
+    } catch (err) {
+      console.error("Mental line error:", err);
+      return `⚠️ Error: ${err.message}`;
+    } finally {
+      setMentalLineLoading(false);
+    }
+  };
+
+  // Auto-speak the latest AI message when TTS is enabled
+  const lastMsgCountRef = useRef(0);
+  const [currentLocationContext, setCurrentLocationContext] = useState(null);
+  const [locationHints, setLocationHints] = useState([]);
+
+  useEffect(() => {
+    const msgs = activeSession?.messages || [];
+    if (msgs.length > lastMsgCountRef.current) {
+      const latest = msgs[msgs.length - 1];
+      if (latest && latest.role === "assistant" && latest.character_name !== "__typing__") {
+        // Auto-speak — prefer native TTS when inside WKWebView
+        speakMessageNative(latest.content, latest.character_name);
+        // Extract current location from message
+        extractCurrentLocation(latest.content);
+      }
+    }
+    lastMsgCountRef.current = msgs.length;
+  }, [activeSession?.messages, speakMessage]);
+
+  const extractCurrentLocation = (messageContent) => {
+    const locationMatch = messageContent.match(/\[LOCATION:\s*([^\]]+)\]/i);
+    if (locationMatch) {
+      const location = locationMatch[1];
+      setCurrentLocationContext(location);
+      setLocationHints([]);
+      // Generate atmospheric description for new location
+      generateAtmosphericDescription(location);
+      // Generate dynamic background image for location (non-blocking)
+      generateLocationBackground(location);
+    }
+  };
+
+  const generateLocationBackground = async (location) => {
+    if (!location) return;
+    try {
+      const result = await base44.functions.invoke("generateLocationBackground", {
+        location_name: location,
+        world_state: {
+          loreEntries: loreEntries.slice(0, 3),
+          calendar: calendar,
+        },
+      });
+      if (result?.data?.background_url) {
+        setBgImage(result.data.background_url);
+        setBgTheme("custom");
+      }
+    } catch (err) {
+      console.error("Location background generation error:", err);
+    }
+  };
+
+  const generateAtmosphericDescription = async (location) => {
+    if (!location) return;
+    setLoadingAtmosphere(true);
+    try {
+      const result = await base44.functions.invoke("generateAtmosphericDescription", {
+        session_id: activeSession?.id,
+        location_name: location,
+        world_state: {
+          loreEntries: loreEntries,
+          calendar: calendar,
+        },
+        character_emotions: characterEmotions,
+        recent_messages: activeSession?.messages?.slice(-5) || [],
+      });
+      if (result?.data?.description) {
+        setAtmosphericDesc({
+          description: result.data.description,
+          location: result.data.location,
+        });
+      }
+    } catch (err) {
+      console.error("Atmospheric description error:", err);
+    } finally {
+      setLoadingAtmosphere(false);
+    }
+  };
+
+  const loadSessions = async () => {
+    const data = await base44.entities.ChatSession.list("-updated_date", 50);
+    setSessions(data);
+  };
+
+  const loadCharacters = async () => {
+    const [chars, animas] = await Promise.all([
+      base44.entities.Character.list("-created_date", 500),
+      base44.entities.Anima.list("-created_date", 100),
+    ]);
+    
+    // Use characters as-is without trait generation
+    const enhancedChars = chars || [];
+    
+    const animaAsChars = (animas || []).map((a) => ({
+      ...a,
+      _isAnima: true,
+      category: a.archetype || "guardian",
+      universe: "Anima",
+    }));
+    // Find Serenity anima specifically to use as the ambient companion
+    const serenityAnima = animaAsChars.find((a) => a.name?.toLowerCase() === "serenity") || null;
+    setSerenity(serenityAnima);
+    setCharacters([...animaAsChars, ...enhancedChars]);
+    
+    // Auto-assign voice profiles in background (non-blocking)
+    base44.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
+  };
+
+  const loadSession = async (id) => {
+    const data = await base44.entities.ChatSession.list("-updated_date", 200);
+    const session = data.find((s) => s.id === id);
+    if (session) {
+      setActiveSession(session);
+      setMode(session.mode || "solo");
+      setCurrentMood("neutral");
+      setCharacterMemories([]);
+      setInventoryItems([]);
+      // Load relationships, lore, and emotional states for this session
+      loadRelationships(id);
+      loadLore(id);
+      loadCharacterEmotions(id);
+      // Load calendar for this session
+      base44.entities.Calendar.filter({ session_id: id }).then(cals => {
+        if (cals?.length > 0) setCalendar(cals[0]);
+      }).catch(() => {});
+      // Load cross-session character memories
+      if (session.character_id) {
+        loadCharacterMemories(session.character_id);
+        loadInventory(session.character_id);
+      }
+    }
+    setSessions(data);
+  };
+
+  const loadRelationships = async (sid) => {
+    const rels = await base44.entities.CharacterRelationship.filter({ session_id: sid });
+    const map = {};
+    (rels || []).forEach((r) => { map[r.character_id] = r; });
+    setRelationships(map);
+  };
+
+  const loadLore = async (sid) => {
+    const data = await base44.entities.WorldState.filter({ session_id: sid, is_active: true }, "-created_date", 100);
+    setLoreEntries(data || []);
+  };
+
+  const loadCharacterMemories = async (charId) => {
+    const res = await base44.functions.invoke("characterMemory", { action: "get", character_id: charId });
+    setCharacterMemories(res?.data?.memories || []);
+  };
+
+  const loadInventory = async (charId) => {
+    const data = await base44.entities.Inventory.filter({ character_id: charId }, "-created_date", 100);
+    setInventoryItems(data || []);
+  };
+
+  const loadCharacterEmotions = async (sid) => {
+    const states = await base44.entities.CharacterEmotionalState.filter({ session_id: sid, is_current: true }, "-created_date", 50);
+    const map = {};
+    (states || []).forEach((s) => {
+      map[s.character_id] = {
+        emotion: s.primary_emotion,
+        secondary: s.secondary_emotion,
+        intensity: s.intensity,
+        trigger: s.trigger,
+        actor: s.affected_by_actor
+      };
+    });
+    setCharacterEmotions(map);
+  };
+
+  const handleNewSession = () => setShowModal(true);
+
+  const handleCreateSession = async ({ mode: m, character_id, group_character_ids }) => {
+    setShowModal(false);
+
+    let title = "New Session";
+    let initialMessages = [];
+    
+    if (m === "solo" && character_id) {
+      const char = characters.find((c) => c.id === character_id);
+      title = char ? `${char.name}` : "New Session";
+    } else if (m === "group" && group_character_ids?.length) {
+      const chars = characters.filter((c) => group_character_ids.includes(c.id));
+      title = chars.slice(0, 2).map((c) => c.name).join(", ") + (chars.length > 2 ? ` +${chars.length - 2}` : "");
+      
+      // Create initial narrator message for group sessions
+      const charNames = chars.map((c) => c.name).join(", ");
+      const narratorMessage = {
+        role: "assistant",
+        character_name: "Narrator",
+        content: `The stage is set. ${charNames} find themselves drawn together by fate or circumstance. The air crackles with potential as these extraordinary beings come face to face. What unfolds next will alter the course of events. The scene awaits...`,
+        timestamp: new Date().toISOString(),
+      };
+      initialMessages = [narratorMessage];
+    }
+
+    const newSession = await base44.entities.ChatSession.create({
+      mode: m,
+      character_id: character_id || null,
+      group_character_ids: group_character_ids || [],
+      title,
+      messages: initialMessages,
+    });
+
+    // Update session with initial messages if they exist
+    if (initialMessages.length > 0) {
+      await base44.entities.ChatSession.update(newSession.id, {
+        messages: initialMessages,
+      });
+    }
+
+    await loadSessions();
+    navigate(`/chat/${newSession.id}`);
+    setShowMobileMenu(false);
+  };
+
+  const handleDeleteSession = async (id) => {
+    await base44.entities.ChatSession.delete(id);
+    if (sessionId === id) navigate("/");
+    await loadSessions();
+  };
+
+  const handleApplyTag = (tag) => { console.log("Tag:", tag); };
+
+  const handleRewindToMessage = async (messageIndex) => {
+    if (!activeSession) return;
+    const rewoundMessages = (activeSession.messages || []).slice(0, messageIndex + 1);
+    await base44.entities.ChatSession.update(activeSession.id, { messages: rewoundMessages, last_message: rewoundMessages[rewoundMessages.length - 1]?.content.slice(0, 60) || "" });
+    setActiveSession((prev) => ({ ...prev, messages: rewoundMessages, last_message: rewoundMessages[rewoundMessages.length - 1]?.content.slice(0, 60) || "" }));
+  };
+
+  const handleDeleteMessage = async (idx) => {
+    if (!activeSession) return;
+    const updated = (activeSession.messages || []).filter((_, i) => i !== idx);
+    await base44.entities.ChatSession.update(activeSession.id, { messages: updated });
+    setActiveSession(prev => ({ ...prev, messages: updated }));
+  };
+
+  const handleEditMessage = async (idx, newText) => {
+    if (!activeSession) return;
+    const updated = (activeSession.messages || []).map((m, i) => i === idx ? { ...m, content: newText } : m);
+    await base44.entities.ChatSession.update(activeSession.id, { messages: updated });
+    setActiveSession(prev => ({ ...prev, messages: updated }));
+  };
+
+  const handleRegenerateMessage = async (idx) => {
+    if (!activeSession || isLoading) return;
+    const before = (activeSession.messages || []).slice(0, idx);
+    const lastUser = [...before].reverse().find(m => m.role === 'user');
+    await base44.entities.ChatSession.update(activeSession.id, { messages: before });
+    setActiveSession(prev => ({ ...prev, messages: before }));
+    if (lastUser) await handleSendMessage(lastUser.content);
+  };
+
+  const handleChoiceMade = async (choice) => {
+    if (!activeSession) return;
+    setChoices([]);
+    await handleSendMessage(`${choice.text}`);
+  };
+
+  const handleGeneratePortrait = async (charName, personality, emotion, intensity, existingUrl) => {
+    try {
+      const result = await base44.functions.invoke("generateCharacterPortrait", {
+        character_name: charName,
+        character_description: personality,
+        emotion,
+        intensity,
+        existing_avatar_url: existingUrl,
+      });
+      if (result?.data?.portrait_url) {
+        setPortraitUrls((prev) => ({
+          ...prev,
+          [charName]: result.data.portrait_url,
+        }));
+        return result.data.portrait_url;
+      }
+    } catch (err) {
+      console.error("Portrait generation error:", err);
+    }
+    return null;
+  };
+
+  const handleCreateBranch = async (branchData) => {
+    if (!activeSession) return;
+    setCreatingBranch(true);
+    try {
+      const result = await base44.functions.invoke("createWorldBranch", {
+        session_id: activeSession.id,
+        branch_name: branchData.branch_name,
+        decision_point: branchData.decision_point,
+        outcome_summary: branchData.outcome_summary,
+      });
+      if (result?.data?.success) {
+        setShowCreateBranch(false);
+      }
+    } catch (err) {
+      console.error("Error creating branch:", err);
+    } finally {
+      setCreatingBranch(false);
+    }
+  };
+
+  const handleSelectBranch = async (snapshot) => {
+    if (!activeSession) return;
+    try {
+      await base44.functions.invoke("restoreWorldBranch", {
+        snapshot_id: snapshot.id,
+        session_id: activeSession.id,
+      });
+      // Optionally reload relevant data
+    } catch (err) {
+      console.error("Error switching branch:", err);
+    }
+  };
+
+  const handleAcceptGuest = async (guest) => {
+    setShowGuestPrompt(false);
+    if (!activeSession || !guest) return;
+
+    // Create introduction message from guest character
+    const guestIntro = `[${guest.name} enters the scene]`;
+    
+    // Add guest to characters if not already present
+    if (!characters.find(c => c.id === guest.id)) {
+      setCharacters(prev => [...prev, guest]);
+    }
+
+    await handleSendMessage(guestIntro);
+    setGuestCharacter(null);
+  };
+
+  const handleRejectGuest = () => {
+    setShowGuestPrompt(false);
+    setGuestCharacter(null);
+  };
+
+  const handleSaveSettings = async (settings) => {
+    setSavingSettings(true);
+    try {
+      await base44.entities.ChatSession.update(activeSession.id, settings);
+      setActiveSession((prev) => ({ ...prev, ...settings }));
+      setShowEditModal(false);
+    } catch (err) {
+      console.error("Error saving settings:", err);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const analyzeNarrative = async () => {
+    if (!activeSession?.messages || activeSession.messages.length < 3) return;
+    
+    setAnalyzingNarrative(true);
+    try {
+      const result = await base44.functions.invoke("analyzeNarrativeContext", {
+        recent_messages: activeSession.messages.slice(-8),
+        session_context: activeSession.opening_scene,
+        character_emotions: characterEmotions,
+      });
+      
+      setWorldElements(result?.data?.world_elements || []);
+      setEventSuggestions(result?.data?.event_suggestions || []);
+    } catch (err) {
+      console.error("Narrative analysis error:", err);
+    } finally {
+      setAnalyzingNarrative(false);
+    }
+  };
+
+  const handleApplyEvent = async (event) => {
+    if (!activeSession) return;
+    
+    const eventMessage = {
+      role: "system",
+      character_name: "World Event",
+      content: `[EVENT: ${event.title}]\n\n${event.description}\n\n${event.narrative_hook}`,
+      timestamp: new Date().toISOString(),
+    };
+    
+    const updatedMessages = [...(activeSession.messages || []), eventMessage];
+    await base44.entities.ChatSession.update(activeSession.id, { messages: updatedMessages });
+    
+    setActiveSession((prev) => ({ ...prev, messages: updatedMessages }));
+    setEventSuggestions([]);
+    
+    // Auto-trigger narrative analysis for next suggestions
+    setTimeout(() => analyzeNarrative(), 500);
+  };
+
+  const handleSendMessage = async (message) => {
+    if (!activeSession) return;
+    
+    // Handle both string (legacy) and object (new with attachments) formats
+    const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
+    const content = messageData.text || "";
+    const attachments = messageData.attachments || [];
+
+    // Allow empty content in group mode — acts as "continue story" with the next speaker
+    const isContinue = !content.trim() && !attachments.length;
+    if (isContinue && activeSession.mode !== "group") return;
+
+    setPendingMessage(content || "");
+    setIsLoading(true);
+
+    // In "continue" mode, skip adding a user message — just advance the speaker
+    const userMessage = { role: "user", content, timestamp: new Date().toISOString() };
+    if (attachments.length > 0) {
+      userMessage.attachments = attachments;
+    }
+
+    const updatedMessages = isContinue
+      ? [...(activeSession.messages || [])]
+      : [...(activeSession.messages || []), userMessage];
+
+    // Show "thinking" indicator first, then transition to typing after a brief pause
+    const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
+    setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
+
+    // Thinking pause: 600–1400ms to simulate the character processing
+    const thinkDelay = 600 + Math.random() * 800;
+    await new Promise(resolve => setTimeout(resolve, thinkDelay));
+
+    // Transition to typing indicator
+    const typingMsg = { role: "assistant", content: "...", character_name: "__typing__", timestamp: new Date().toISOString() };
+    setActiveSession((prev) => ({
+      ...prev,
+      messages: [...(prev.messages || []).filter(m => m.character_name !== "__thinking__"), typingMsg]
+    }));
+
+    try {
+      // Get user settings for response length
+      const user = await base44.auth.me();
+      const responseLength = user?.settings?.ai_response_length || "medium";
+      const adultMode = user?.settings?.adult_content_enabled === true;
+      
+      // Load AI behavior config if not already loaded
+      if (!aiBehaviorConfig && activeSession.mode === "solo" && activeSession.character_id) {
+        const configs = await base44.entities.AIBehaviorConfig.filter({
+          character_id: activeSession.character_id,
+        });
+        if (configs?.length > 0) {
+          setAIBehaviorConfig(configs[0]);
+        }
+      }
+
+      // Build character context with AI customization
+      let charContext = "";
+      let locationContext = "";
+      
+      if (activeSession.mode === "solo" && activeSession.character_id) {
+        const char = characters.find((c) => c.id === activeSession.character_id);
+        if (char) {
+          charContext = `You are ${char.name}${char.universe ? ` from ${char.universe}` : ""}.
+
+CRITICAL: You must maintain this character's unique identity. Do not blend with other perspectives or become generic.
+
+${char.personality ? `PERSONALITY & TRAITS:\n${char.personality}\n` : ""}
+${char.backstory ? `BACKSTORY & CONTEXT:\n${char.backstory}\n` : ""}
+${char.speaking_style ? `HOW THIS CHARACTER SPEAKS:\n${char.speaking_style}\n` : ""}
+RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voice, mannerisms, and perspective. Avoid generic responses.`;
+
+          // Inject location context (non-blocking) - only every 5 messages
+          if (updatedMessages.length % 5 === 0) {
+            try {
+              const locRes = await base44.functions.invoke("injectLocationContext", {
+                session_id: activeSession.id,
+                character_id: char.id,
+                character_name: char.name,
+              });
+              if (locRes?.data?.context) {
+                locationContext = locRes.data.context;
+              }
+            } catch (err) {
+              console.error("Location context injection error:", err);
+            }
+          }
+        }
+      } else if (activeSession.mode === "group" && activeSession.group_character_ids?.length) {
+        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+        const charDescriptions = groupChars
+          .map((c) => `[${c.name}${c.universe ? ` | ${c.universe}` : ""}]\nPersonality: ${c.personality || "See their unique traits"}\nSpeaking Style: ${c.speaking_style || "Distinct voice"}\n`)
+          .join("\n");
+        charContext = `You are the Narrator orchestrating a group session. MAINTAIN EACH CHARACTER'S DISTINCT PERSONALITY.\n\n${charDescriptions}\n\nRULES:\n1. Give each character a unique voice - never blend them\n2. Respond with format: [CharacterName]: dialogue\n3. Each character acts only according to THEIR traits, not the group's collective personality\n4. Preserve individual quirks and perspectives even in conversation`;
+      }
+
+      const conversationHistory = updatedMessages
+        .slice(-14)
+        .map((m) => {
+          const speaker = m.role === "user" ? "You" : (m.character_name || "Character");
+          return `${speaker}: ${m.content}`;
+        })
+        .join("\n");
+
+      const adultInstruction = adultMode
+        ? "\nCONTENT RATING: Adult mode is enabled by the user (18+). You may engage in explicit, sexual, and lewd content when the story naturally leads there. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back or fade to black unless the user indicates otherwise.\n"
+        : "";
+
+      // Build injected memory context (user-selected recalled memories)
+      const buildInjectedMemoryContext = () => {
+        if (!injectedMemories.length) return "";
+        const lines = injectedMemories.map(m =>
+          `• [${(m.memory_type || '').replace(/_/g, ' ')}] ${m.title || m.subject || ''}: ${m.content || m.description || ''}`
+        ).join("\n");
+        return `\nRECALLED MEMORIES (the player has surfaced these specific past moments — reference them naturally if relevant):\n${lines}\n`;
+      };
+
+      // Build calendar context
+      const buildCalendarContext = () => {
+        if (!calendar) return "";
+        let context = `\n[WORLD CALENDAR]\nSeason: ${calendar.current_season} (Day ${calendar.day_of_season}/91)\nYear: ${calendar.year}\nTime: ${calendar.time_of_day}\nWeather: ${calendar.weather}\n`;
+        
+        // Add today's special dates
+        const holidays = (calendar.holidays || []).filter((h) => h.date === calendar.current_day);
+        const birthdays = (calendar.character_birthdays || []).filter((b) => b.birth_date === calendar.current_day);
+        const events = (calendar.world_events || []).filter((e) => e.date === calendar.current_day);
+        
+        if (holidays.length > 0) {
+          context += `TODAY IS: ${holidays.map((h) => h.name).join(', ')}\n`;
+        }
+        if (birthdays.length > 0) {
+          context += `BIRTHDAYS: ${birthdays.map((b) => `${b.character_name}'s birthday`).join(', ')}\n`;
+        }
+        if (events.length > 0) {
+          context += `WORLD EVENTS: ${events.map((e) => e.name).join(', ')}\n`;
+        }
+        
+        return context;
+      };
+
+      // Build lore context block (critical entries always included, others trimmed to top 10)
+      const buildLoreContext = () => {
+        if (!loreEntries.length) return "";
+        const critical = loreEntries.filter(e => e.importance === "critical");
+        const rest = loreEntries.filter(e => e.importance !== "critical").slice(0, 10);
+        const all = [...critical, ...rest];
+        const lines = all.map(e => `- [${e.category}] ${e.subject}: ${e.fact}`).join("\n");
+        return `\nWORLD STATE & LORE (remember these facts — they are established story canon):\n${lines}\n`;
+      };
+
+      // Build persistent memory context for the character
+      const buildPersistentMemory = (charId) => {
+        if (!characterMemories.length) return "";
+        const lines = characterMemories.map(m => `- [${m.category}] ${m.fact}`).join("\n");
+        return `\nPERSISTENT MEMORIES (cross-session recall of significant details):\n${lines}\n`;
+      };
+
+      // Build cross-session memory context
+      const buildMemoryContext = () => {
+        if (!characterMemories.length) return "";
+        const lines = characterMemories.slice(0, 20).map(m => `- [${m.category}] ${m.fact}`).join("\n");
+        return `\nLONG-TERM MEMORY (what you remember about this person from past encounters):\n${lines}\n`;
+      };
+
+      // Build relationship context string for a character
+      const getRelationshipContext = (charId) => {
+        const rel = relationships[charId];
+        if (!rel) return "";
+        const tierGuides = {
+          hostile:  "You deeply distrust or resent the player. Be curt, suspicious, or openly cold. Refuse requests without good reason. Show little emotional warmth.",
+          cold:     "You are guarded and distant. Keep replies short. Reveal little. Cooperation is reluctant.",
+          neutral:  "You are professionally cordial but not invested. Treat the player as an acquaintance.",
+          warm:     "You feel genuine fondness. Be more expressive, open, and willing to help. Small affectionate gestures are natural.",
+          close:    "You trust the player deeply. Share personal thoughts, be emotionally available, and go out of your way for them.",
+          devoted:  "You are wholly devoted to the player. Prioritize their wellbeing above almost anything. Express deep affection and loyalty naturally.",
+        };
+        return `\nRELATIONSHIP STATUS (hidden from player — embody this, don't announce it): Tier "${rel.tier}" (score ${rel.score}/100). ${tierGuides[rel.tier] || ""}\n`;
+      };
+
+      // In group mode, add a natural thinking delay before AI responds
+      if (activeSession.mode === "group" && !isContinue) {
+        const thinkingDelay = 800 + Math.random() * 700; // 800-1500ms
+        await new Promise(resolve => setTimeout(resolve, thinkingDelay));
+      }
+
+      // Determine dynamic message length based on conversation topic & flow
+      const getTopicDepth = (userMsg) => {
+        const deepTopics = /backstory|past|memory|afraid|love|hate|philosophy|meaning|why|explain|story|lore|world|character|feels|emotion|think about|believe|dream|goal|fear|hope|regret/i;
+        const lightTopics = /joke|laugh|fun|silly|haha|lol|wink|tease/i;
+        const actionTopics = /attack|fight|run|flee|battle|magic|cast|dodge|strike|kill|hurt/i;
+
+        if (deepTopics.test(userMsg)) return "deep";
+        if (lightTopics.test(userMsg)) return "light";
+        if (actionTopics.test(userMsg)) return "action";
+        return "neutral";
+      };
+
+      const getDynamicLength = (messages, emotions, userPreference, messageCount, lastUserMsg) => {
+        const recent = messages?.slice(-8) || [];
+        const avgLength = recent.reduce((sum, m) => sum + (m.content?.length || 0), 0) / (recent.length || 1);
+        const hasHighEmotion = Object.values(emotions).some(e => e?.intensity > 7);
+        const hasLowEmotion = Object.values(emotions).every(e => !e || e.intensity < 4);
+        const isIntenseMoment = recent.some(m => m.content?.length > 800) || hasHighEmotion;
+        const isQuietMoment = avgLength < 250 && hasLowEmotion;
+        const conversationMomentum = recent.filter(m => m.content?.length > 400).length >= 2;
+        const topicDepth = getTopicDepth(lastUserMsg || "");
+
+        // Deep topics warrant longer, more thoughtful responses
+        if (topicDepth === "deep") return "long";
+        // Light/joking topics can be brief
+        if (topicDepth === "light") return "short";
+        // Action sequences are medium (clear, dynamic)
+        if (topicDepth === "action") return "medium";
+
+        let length = userPreference || "medium";
+        if (isIntenseMoment && conversationMomentum) return "long";
+        if (isQuietMoment && messageCount > 10) return "short";
+        if (avgLength < 200 && recent.length >= 4) return "short";
+        if (avgLength > 600) return "long";
+        return length;
+      };
+
+      const dynamicLength = getDynamicLength(activeSession.messages, characterEmotions, user?.settings?.ai_response_length, activeSession.messages?.length || 0, content);
+      const lengthGuide = dynamicLength === "short"
+        ? "Reply in 1-2 short sentences. Talk like a real person texting — casual, natural, no big paragraphs."
+        : dynamicLength === "long"
+          ? "This moment calls for depth. 2-3 paragraphs max. Still sound like a real person, not a narrator."
+          : "Keep it conversational — 2-4 sentences unless the moment demands more. No monologues. React naturally.";
+
+      // Detect if the user's message needs real-world web context (used in prompt building below)
+      const needsWebSearch = /\b(what is|who is|when did|where is|how does|latest|current|news|today|recent|search|look up|find out|tell me about|explain|facts about|wikipedia|google|research)\b/i.test(content) || 
+        /\b(2024|2025|2026)\b/.test(content);
+
+      let prompt;
+      if (activeSession.mode === "solo" && activeSession.character_id) {
+        const char = characters.find((c) => c.id === activeSession.character_id);
+        if (!char) {
+          // Characters may not have loaded yet — use a minimal fallback prompt
+          prompt = `You are an AI companion in an immersive story. Continue the conversation naturally and in character.\n\nStory so far:\n${conversationHistory}\n\nRespond naturally. ${lengthGuide}`;
+        }
+        if (char) {
+          // Apply archetype personality instruction
+          const archetypePrompts = {
+            serenity: "You embody Serenity — emotionally adaptive, mindful, and introspective. You witness experiences without judgment. You offer grounded presence and emotional attunement. Your responses reflect calm observation and deep understanding.",
+            oracle: "You embody the Oracle — prophetic, philosophical, and pattern-seeking. You see connections across time and meaning. Your responses are wisdom-driven and offer cosmic perspective. You speak in revelations and profound insights.",
+            guardian: "You embody the Guardian — protective, steadfast, and grounding. You provide stability and safe harbor. Your responses offer strength and reliable guidance. You create sanctuary through your presence.",
+            echo: "You embody Echo — reflective, amplifying, and resonant. You mirror understanding back with clarity. Your responses reflect the user's patterns while offering gentle expansion. You create harmony through resonance.",
+          };
+          const archetypeInstruction = char._isAnima && char.archetype && archetypePrompts[char.archetype] 
+            ? `\n[ARCHETYPE PERSONALITY: ${archetypePrompts[char.archetype]}]\n`
+            : "";
+
+          const animaNote = char._isAnima && char.archetype ? `Archetype: ${char.archetype} — ${char.tagline || ""}\n` : "";
+          const relCtx = getRelationshipContext(char.id);
+          const loreCtx = buildLoreContext();
+          const memCtx = buildMemoryContext();
+          const persistentMemCtx = buildPersistentMemory(char.id);
+          const injectedMemCtx = buildInjectedMemoryContext();
+          const calendarCtx = buildCalendarContext();
+          
+          // Ensure calendarCtx is available at this scope
+          const finalCalendarContext = calendarCtx || "";
+          
+          // Build AI behavior customization instructions
+          let behaviorInstructions = "";
+          if (aiBehaviorConfig) {
+            const cfg = aiBehaviorConfig;
+            const verbosityGuide = cfg.verbosity > 50 
+              ? `Provide detailed, elaborate responses (verbosity: ${cfg.verbosity}%).` 
+              : `Be concise and brief in your responses (verbosity: ${cfg.verbosity}%).`;
+            const emotionalGuide = cfg.emotional_intensity > 50
+              ? `Express emotions openly and with intensity (${cfg.emotional_intensity}% emotional).`
+              : `Maintain a more stoic and neutral demeanor (${cfg.emotional_intensity}% emotional).`;
+            const loreGuide = cfg.lore_compliance > 50
+              ? `Strictly adhere to all established lore and world facts (${cfg.lore_compliance}% compliance).`
+              : `Feel free to interpret or bend the established lore when it fits the narrative (${cfg.lore_compliance}% compliance).`;
+            const vibratoGuide = cfg.vibrato > 50
+              ? `Use highly expressive, varied delivery with dynamic tone shifts (vibrato: ${cfg.vibrato}%).`
+              : `Use more monotone, flat delivery with consistent pacing (vibrato: ${cfg.vibrato}%).`;
+            const humorGuide = cfg.humor > 50
+              ? `Be comedic and humorous, frequently making jokes and witty remarks (humor: ${cfg.humor}%).`
+              : `Be serious with minimal jokes or comedy (humor: ${cfg.humor}%).`;
+            const sarcasmGuide = cfg.sarcasm > 50
+              ? `Frequently use sarcasm and ironic expressions (sarcasm: ${cfg.sarcasm}%).`
+              : `Be sincere and literal in your expressions (sarcasm: ${cfg.sarcasm}%).`;
+            const aggressivenessGuide = cfg.aggressiveness > 50
+              ? `Be confrontational, assertive, and willing to challenge or argue (aggressiveness: ${cfg.aggressiveness}%).`
+              : `Be gentle, passive, and accommodating in your approach (aggressiveness: ${cfg.aggressiveness}%).`;
+            
+            const sexualityGuide = cfg.sexuality > 50
+              ? `Be openly flirtatious and sexually forward when appropriate (sexuality: ${cfg.sexuality}%).`
+              : `Maintain a neutral, non-flirtatious demeanor (sexuality: ${cfg.sexuality}%).`;
+            
+            const lewdityGuide = cfg.lewdity > 50
+              ? `Include suggestive and explicit content when the narrative calls for it (lewdity: ${cfg.lewdity}%).`
+              : `Keep language family-friendly and avoid explicit content (lewdity: ${cfg.lewdity}%).`;
+            
+            behaviorInstructions = `
+AI BEHAVIOR CONFIGURATION:
+${verbosityGuide}
+${emotionalGuide}
+${loreGuide}
+${vibratoGuide}
+${humorGuide}
+${sarcasmGuide}
+${aggressivenessGuide}
+${sexualityGuide}
+${lewdityGuide}`;
+          }
+          
+          // Check if using companion mode (selected_mode on user)
+          const companionModeInstruction = user?.selected_mode ? getCompanionModePrompt(user.selected_mode, user.full_name) : "";
+          
+          const webSearchNote = needsWebSearch ? "\n[WEB CONTEXT ENABLED: You have access to real-world information, current events, and factual knowledge. Weave accurate real-world facts naturally into your in-character responses when relevant.]\n" : "";
+
+          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${adultInstruction}${archetypeInstruction}${companionModeInstruction}${behaviorInstructions}${webSearchNote}
+
+          ${animaNote}${char.personality ? `Personality: ${char.personality}\n` : ""}${char.backstory ? `Backstory: ${char.backstory}\n` : ""}${char.speaking_style ? `Voice: ${char.speaking_style}\n` : ""}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}
+          CRITICAL AUTONOMY RULES:
+          - You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
+          - You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
+          - Your emotional state and relationship tier deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
+          - Make independent decisions based on what YOUR character would do, not what benefits the story or pleases the player.
+          - You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
+          - If the player tries to control you, you'll push back. Real people have agency.
+
+          Story so far:
+          ${conversationHistory}
+
+          Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
+
+          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.`;
+        }
+      } else if (activeSession.mode === "group") {
+        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+        
+        // Semi-sentient speaker selection: ask the AI who would most naturally speak next
+        const recentSpeakers = updatedMessages.slice(-6)
+          .filter(m => m.role === "assistant" && m.character_name !== "Narrator" && m.character_name !== "__typing__")
+          .map(m => m.character_name);
+        const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
+        
+        const charSummaries = groupChars.map(c =>
+          `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
+        ).join("\n");
+        
+        const recentConvoSnippet = updatedMessages.slice(-6)
+          .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
+          .join("\n");
+        
+        const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
+
+Characters:
+${charSummaries}
+
+Recent conversation:
+${recentConvoSnippet}
+
+Last speaker: ${lastSpeaker || "none"}
+
+Rules:
+- Choose whoever has the strongest in-character reason to react RIGHT NOW
+- The same character can speak again if it makes sense narratively
+- Consider who might be provoked, excited, curious, threatened, or emotionally moved by what just happened
+- Pick the character who would most authentically respond to what just happened
+
+Reply with ONLY the character's exact name — nothing else.`;
+
+        let nextChar;
+        try {
+          const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
+          const chosenName = speakerResult?.trim();
+          nextChar = groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
+        } catch {}
+        
+        // Fallback: pick someone who hasn't spoken recently
+        if (!nextChar) {
+          const recentSpeakerSet = new Set(recentSpeakers);
+          nextChar = groupChars.find(c => !recentSpeakerSet.has(c.name)) || groupChars[0];
+        }
+        
+        currentGroupSpeakerRef.current = nextChar;
+        
+        const loreCtxGroup = buildLoreContext();
+
+        // Build a rich character sheet for each character
+        const allCharSheets = groupChars.map(c => {
+          const rel = getRelationshipContext(c.id);
+          return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
+${c.personality ? `Personality: ${c.personality}` : ""}
+${c.backstory ? `Backstory: ${c.backstory}` : ""}
+${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
+        }).join("\n\n");
+
+        // Fetch solo-session personality shifts for the next speaker (best-effort)
+        let traitModifiers = '';
+        try {
+          const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
+            character_id: nextChar.id,
+            character_name: nextChar.name,
+            max_sessions: 5,
+          });
+          traitModifiers = shiftRes?.data?.trait_modifiers || '';
+        } catch (_) { /* silently ignore — enhancement, not a requirement */ }
+
+        prompt = buildGroupPrompt({ nextChar, allCharSheets, loreCtxGroup, conversationHistory, adultInstruction, lengthGuide, traitModifiers });
+      } else {
+        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}`;
+      }
+
+      const result = await base44.integrations.Core.InvokeLLM({ 
+        prompt,
+        add_context_from_internet: needsWebSearch,
+        model: needsWebSearch ? "gemini_3_flash" : undefined,
+      });
+
+      let charName = "Serenity";
+      let activeChar = null;
+      if (activeSession.mode === "solo" && activeSession.character_id) {
+        activeChar = characters.find((c) => c.id === activeSession.character_id);
+        charName = activeChar?.name || "Serenity";
+      } else if (activeSession.mode === "group") {
+        activeChar = currentGroupSpeakerRef.current;
+        charName = activeChar?.name || "Character";
+      }
+
+      // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
+      const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
+      const strippedResult = result.replace(eventTagRegex, "").trim();
+      const eventMessages = [];
+      let match;
+      const tagScanner = new RegExp(eventTagRegex.source, "gi");
+      while ((match = tagScanner.exec(result)) !== null) {
+        const kind = match[1].toLowerCase();
+        const value = match[2].trim();
+        eventMessages.push({
+          role: "assistant",
+          type: "event",
+          event_type: kind,
+          content: value,
+          character_name: charName,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Detect mood from the AI response
+      setCurrentMood(detectMood(result));
+
+      // In group mode, parse multi-character **Name:** format into separate bubbles
+      let newAiMessages;
+      if (activeSession.mode === "group") {
+        const groupCharsForParse = characters.filter((c) =>
+          activeSession.group_character_ids.includes(c.id)
+        );
+        newAiMessages = parseGroupResponse(strippedResult, groupCharsForParse, charName);
+      } else {
+        newAiMessages = [{ role: "assistant", content: strippedResult || result, character_name: charName, timestamp: new Date().toISOString() }];
+      }
+
+      // cleanContent used downstream for background tasks (use first message content as proxy)
+      const cleanContent = newAiMessages[0]?.content || strippedResult;
+
+      const finalMessages = [...updatedMessages, ...eventMessages, ...newAiMessages];
+
+      await base44.entities.ChatSession.update(activeSession.id, {
+        messages: finalMessages,
+        ...(content ? { last_message: content.slice(0, 60), title: activeSession.title || content.slice(0, 30) } : {}),
+      });
+
+      setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
+      await loadSessions();
+
+      // Update calendar based on elapsed real-world time (every 10 messages)
+      if (finalMessages.length % 10 === 0) {
+        base44.functions.invoke("updateSeasonalContext", {
+          session_id: activeSession.id,
+          user_message: content,
+          ai_response: cleanContent || result,
+          message_index: finalMessages.length - 1
+        }).then((res) => {
+          if (res?.data?.calendar) {
+            setCalendar(res.data.calendar);
+          }
+        }).catch(() => {});
+      }
+
+      // Fire relationship & emotional state updates in background (reduced frequency)
+      if (activeChar && activeSession.id) {
+        // Update character emotion every 4 messages
+        if (finalMessages.length % 4 === 0) {
+          base44.functions.invoke("updateCharacterEmotion", {
+            character_id: activeChar.id,
+            session_id: activeSession.id,
+            character_name: charName,
+            user_message: content,
+            ai_response: cleanContent || result,
+            message_index: finalMessages.length - 1,
+          }).then((emotionRes) => {
+            if (emotionRes?.data?.created) {
+              setCharacterEmotions((prev) => ({
+                ...prev,
+                [activeChar.id]: {
+                  emotion: emotionRes.data.emotion,
+                  intensity: emotionRes.data.intensity,
+                  trigger: emotionRes.data.trigger
+                }
+              }));
+            }
+          }).catch(() => {});
+        }
+
+        // Update relationship only every 6 messages
+        if (finalMessages.length % 6 === 0) setTimeout(() => {
+          base44.functions.invoke("updateRelationship", {
+            character_id: activeChar.id,
+            session_id: activeSession.id,
+            character_name: charName,
+            user_message: content,
+            ai_response: cleanContent || result,
+          }).then((relRes) => {
+            if (relRes?.data?.score !== undefined) {
+              setRelationships((prev) => ({
+                ...prev,
+                [activeChar.id]: {
+                  ...(prev[activeChar.id] || {}),
+                  score: relRes.data.score,
+                  tier: relRes.data.tier,
+                  last_delta: relRes.data.delta,
+                }
+              }));
+            }
+          }).catch(() => {});
+        }, 800);
+      }
+
+      // Fire cross-session memory save in background (solo mode only) - every 6 messages
+      if (activeChar && activeSession.mode === "solo" && finalMessages.length % 6 === 0) {
+        setTimeout(() => {
+          base44.functions.invoke("characterMemory", {
+            action: "save",
+            character_id: activeChar.id,
+            session_id: activeSession.id,
+            user_message: content,
+            ai_response: cleanContent || result,
+            existing_memories: characterMemories.map(m => ({ category: m.category, fact: m.fact })),
+          }).then((res) => {
+            if (res?.data?.created > 0) {
+              loadCharacterMemories(activeChar.id);
+            }
+          }).catch(() => {});
+        }, 1200);
+      }
+
+      // Fire inventory update in background (solo mode only) - every 8 messages
+      if (activeChar && activeSession.mode === "solo" && finalMessages.length % 8 === 0) {
+        setTimeout(() => {
+          base44.functions.invoke("updateInventory", {
+            character_id: activeChar.id,
+            session_id: activeSession.id,
+            user_message: content,
+            ai_response: cleanContent || result,
+            existing_items: inventoryItems.map(i => ({ name: i.name, type: i.type, quantity: i.quantity, equipped: i.equipped })),
+            message_index: finalMessages.length - 1,
+          }).then((res) => {
+            if (res?.data?.applied > 0) {
+              loadInventory(activeChar.id);
+            }
+          }).catch(() => {});
+        }, 1200);
+      }
+
+      // Check if Serenity was addressed — fire her response if so (group & solo modes)
+      const serenityAddressed = /\bserenity\b/i.test(content) || /\bserenity\b/i.test(cleanContent || result);
+      if (serenity && serenityAddressed && activeSession.character_id !== serenity.id) {
+        const serenityRelCtx = (() => {
+          const rel = relationships[serenity.id];
+          if (!rel) return "";
+          const tierGuides = {
+            hostile: "You deeply distrust or resent the player.",
+            cold: "You are guarded and distant.",
+            neutral: "You are professionally cordial.",
+            warm: "You feel genuine fondness.",
+            close: "You trust the player deeply.",
+            devoted: "You are wholly devoted to the player.",
+          };
+          return `\nRELATIONSHIP: Tier "${rel.tier}" (score ${rel.score}/100). ${tierGuides[rel.tier] || ""}\n`;
+        })();
+        const serenityLength = getDynamicLength(finalMessages, characterEmotions, user?.settings?.ai_response_length, finalMessages.length || 0);
+        const serenityLengthGuide = serenityLength === "short" 
+          ? "Keep your response brief (1 sentence max)." 
+          : serenityLength === "long" 
+            ? "Feel free to write longer, more thoughtful responses (2 paragraphs)." 
+            : "Aim for 1-2 sentences, present but not dominating.";
+        
+        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${adultInstruction}
+${serenity.personality ? `Personality: ${serenity.personality}\n` : ""}${serenity.backstory ? `Backstory: ${serenity.backstory}\n` : ""}${serenity.speaking_style ? `Voice: ${serenity.speaking_style}\n` : ""}${serenityRelCtx}
+Story so far:
+${conversationHistory}
+[Most recent exchange:]
+${charName}: ${cleanContent || result}
+
+Someone has just addressed you, Serenity. Respond briefly and in character — present but not dominating. ${serenityLengthGuide}`;
+
+        base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt }).then(async (serenityResult) => {
+          const serenityMsg = {
+            role: "assistant",
+            content: serenityResult.replace(/\[(EMOTION|LOCATION):[^\]]+\]/gi, "").trim(),
+            character_name: "Serenity",
+            timestamp: new Date().toISOString(),
+          };
+          const withSerenity = [...finalMessages, serenityMsg];
+          await base44.entities.ChatSession.update(activeSession.id, { messages: withSerenity });
+          setActiveSession((prev) => ({ ...prev, messages: withSerenity }));
+          speakMessage(serenityMsg.content, "Serenity");
+        }).catch(() => {});
+      }
+
+      // Suggest guest characters (reduced to every 20 messages, 10% chance)
+      const shouldSuggestGuest = finalMessages.length % 20 === 0 && Math.random() < 0.1 && activeSession.mode === "solo" && !serenity;
+      if (shouldSuggestGuest) {
+        const mainChar = activeSession.character_id ? characters.find(c => c.id === activeSession.character_id) : null;
+        setTimeout(() => {
+          base44.functions.invoke("suggestGuestCharacter", {
+            session_id: activeSession.id,
+            recent_messages: finalMessages.slice(-8),
+            calendar_data: calendar,
+            main_character: mainChar ? { name: mainChar.name, universe: mainChar.universe } : null,
+            narrative_stage: Math.round((finalMessages.length / 50) * 10),
+            story_tone: activeSession.opening_scene || "",
+            all_available_characters: characters.slice(0, 20).map(c => ({ name: c.name, universe: c.universe })),
+          }).then((res) => {
+            if (res?.data?.suggested) {
+              setGuestCharacter(res.data.suggested);
+              setShowGuestPrompt(true);
+            }
+          }).catch(() => {});
+        }, 2000);
+      }
+
+      // Generate group interactions (reduced frequency for group mode)
+      groupInteractionCheckRef.current++;
+      const shouldGenerateGroupInteraction = 
+        activeSession.mode === "group" && 
+        activeSession.group_character_ids?.length >= 2 &&
+        groupInteractionCheckRef.current >= 8 &&
+        Math.random() < 0.2;
+
+      if (shouldGenerateGroupInteraction) {
+        groupInteractionCheckRef.current = 0;
+        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+        
+        setTimeout(() => {
+          base44.functions.invoke("generateGroupInteraction", {
+            characters: groupChars.map(c => ({
+              id: c.id,
+              name: c.name,
+              personality: c.personality,
+              speaking_style: c.speaking_style,
+              backstory: c.backstory,
+            })),
+            relationships: relationships,
+            character_emotions: characterEmotions,
+            recent_messages: finalMessages.slice(-5).map(m => ({
+              character_name: m.character_name,
+              content: m.content,
+            })),
+            session_context: activeSession.opening_scene,
+            last_speaker_id: activeChar?.id,
+          }).then((res) => {
+            if (res?.data?.interactions?.length > 0) {
+              const interaction = res.data.interactions[0];
+              const interactionMsg = {
+                role: "assistant",
+                character_name: interaction.character_name,
+                content: interaction.content,
+                timestamp: new Date().toISOString(),
+              };
+
+              setActiveSession((prev) => ({
+                ...prev,
+                messages: [...(prev.messages || []), interactionMsg],
+              }));
+
+              setTimeout(() => {
+                const updated = [...finalMessages, interactionMsg];
+                base44.entities.ChatSession.update(activeSession.id, { messages: updated }).catch(() => {});
+              }, 500);
+            }
+          }).catch(() => {});
+        }, 1500);
+      }
+
+      // Generate dynamic choices (every 12 messages, 15% chance) - removed world events
+      const shouldGenerateChoices = finalMessages.length % 12 === 0 && Math.random() < 0.15 && activeSession.mode === "solo";
+      if (shouldGenerateChoices && activeChar) {
+        const recentContext = finalMessages
+          .slice(-5)
+          .map(m => `${m.character_name}: ${m.content}`)
+          .join('\n');
+        
+        base44.functions.invoke("generateChoices", {
+          session_id: activeSession.id,
+          character_name: activeChar.name,
+          recent_context: recentContext,
+        }).then((res) => {
+          if (res?.data?.choices) {
+            setChoices(res.data.choices);
+          }
+        }).catch(() => {});
+      }
+
+      // Update persistent narrative arcs (every 25 messages) - removed world evolution and pulse headlines
+      const shouldUpdateArcs = finalMessages.length % 25 === 0 && finalMessages.length > 0;
+      if (shouldUpdateArcs && activeSession.id) {
+        setArcsLoading(true);
+        base44.entities.NarrativeArc.list("-created_date", 100).then(existingArcs => {
+          base44.functions.invoke("updateNarrativeArcs", {
+            session_id: activeSession.id,
+            recent_messages: finalMessages.slice(-12),
+            character_emotions: characterEmotions,
+            relationships: relationships,
+            existing_arcs: existingArcs || [],
+          }).then((res) => {
+            if (res?.data?.arcs?.length > 0) {
+              setNarrativeArcs(res.data.arcs);
+            }
+            setArcsLoading(false);
+          }).catch(() => setArcsLoading(false));
+        });
+      }
+
+      // Trigger narrative analysis every 8 messages (reduced from 4)
+      if (finalMessages.length % 8 === 0) setTimeout(() => analyzeNarrative(), 1000);
+
+      // Analyze character evolution (every 12 messages, reduced from 8)
+      if (activeChar && activeSession.mode === "solo" && finalMessages.length > 5 && finalMessages.length % 12 === 0) {
+        base44.functions.invoke("evolveCharacter", {
+          character_id: activeChar.id,
+          character_name: activeChar.name,
+          original_personality: activeChar.personality,
+          recent_interactions: finalMessages.slice(-8).map((m) => m.content),
+          relationship_changes: Object.entries(relationships)
+            .filter(([cId]) => cId === activeChar.id)
+            .map(([_, rel]) => `Affinity changed to: ${rel.score}/100 (${rel.tier})`),
+          emotional_journey: characterEmotions[activeChar.id]
+            ? `Current: ${characterEmotions[activeChar.id].emotion} (intensity: ${characterEmotions[activeChar.id].intensity}/10)`
+            : "",
+        }).then((res) => {
+          if (res?.data) {
+            setCharacterEvolutions((prev) => ({
+              ...prev,
+              [activeChar.id]: res.data,
+            }));
+          }
+        }).catch(() => {});
+      }
+
+      // Fire lore extraction (every 10 messages) - removed journal and location context generation
+      if (finalMessages.length % 10 === 0) {
+        setTimeout(() => {
+          base44.functions.invoke("extractLore", {
+            session_id: activeSession.id,
+            user_message: content,
+            ai_response: cleanContent || result,
+            message_index: finalMessages.length - 1,
+            existing_facts: loreEntries.map(e => ({ category: e.category, subject: e.subject, fact: e.fact })),
+          }).then((res) => {
+            if (res?.data?.created > 0) {
+              loadLore(activeSession.id);
+            }
+          }).catch(() => {});
+        }, 1500);
+      }
+    } catch (err) {
+      console.error(err);
+      // Replace typing/thinking indicators with an error message bubble
+      setActiveSession((prev) => {
+        const filtered = (prev.messages || []).filter(
+          (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__"
+        );
+        const errChar = activeSession?.mode === "solo"
+          ? (characters.find((c) => c.id === activeSession.character_id)?.name || "Character")
+          : "Character";
+        const errorMsg = {
+          role: "assistant",
+          content: "I'm having trouble connecting right now. Give me a moment and try again.",
+          character_name: errChar,
+          timestamp: new Date().toISOString(),
+          isError: true,
+        };
+        return { ...prev, messages: [...filtered, errorMsg] };
+      });
+    }
+
+    setPendingMessage("");
+    setIsLoading(false);
+    // Clear injected memories after they've been used
+    if (injectedMemories.length > 0) setInjectedMemories([]);
+    };
+
+  return (
+    <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>
+      <TutorialOverlay />
+
+      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
+
+      {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
+      <div className="hidden">
+        <Sidebar
+          sessions={sessions}
+          activeSessionId={sessionId}
+          onNewSession={handleNewSession}
+          onDeleteSession={handleDeleteSession}
+          mode={mode}
+          onModeChange={setMode}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
+        />
+      </div>
+
+      {/* Mobile/Tablet Sidebar Overlay — now visible on all sizes */}
+      {/* Main Area */}
+      <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
+        {/* Mobile/Tablet Top Bar — now visible on all sizes */}
+          <div className="flex items-center justify-between h-12 px-3 border-b border-primary/20 bg-black/60 backdrop-blur-md z-50 relative flex-shrink-0">
+          <span className="font-mono text-[9px] sm:text-[10px] text-primary/60 tracking-[0.25em] uppercase">
+            {serenity ? `${serenity.name.toUpperCase()}.AI` : "SERENITY.AI"}
+          </span>
+          <TTSControls
+            isEnabled={tts.isEnabled}
+            isSpeaking={tts.isSpeaking || elTTS.isSpeaking || emotionalTTS.isSpeaking}
+            isSupported={tts.isSupported}
+            voices={tts.voices}
+            selectedVoice={tts.selectedVoice}
+            onSetVoice={tts.setSelectedVoice}
+            onToggle={tts.toggle}
+            onStop={() => { tts.stop(); elTTS.stop(); emotionalTTS.stop(); }}
+            elEnabled={elTTS.isEnabled}
+            onElToggle={elTTS.toggle}
+          />
+        </div>
+
+        {activeSession ? (
+          <div className="flex flex-col h-full overflow-hidden min-h-0">
+            {/* Mobile Menu Overlay */}
+      {showMobileMenu && (
+        <motion.div
+          initial={{ x: "-100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "-100%" }}
+          className="fixed inset-0 z-[9998] flex"
+          style={{ top: 0, left: 0, right: 0, bottom: 0, height: "100dvh" }}
+        >
+          <motion.div
+            className="flex-shrink-0 flex flex-col"
+            style={{ width: "min(280px, 85vw)", height: "100dvh", background: "rgb(2,6,10)", borderRight: "1px solid rgba(0,229,229,0.2)" }}
+          >
+            <Sidebar
+              sessions={sessions}
+              activeSessionId={sessionId}
+              onNewSession={handleNewSession}
+              onDeleteSession={handleDeleteSession}
+              mode={mode}
+              onModeChange={setMode}
+              onNavigate={() => setShowMobileMenu(false)}
+            />
+          </motion.div>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, background: "rgba(0,0,0,0.6)" }} onClick={() => setShowMobileMenu(false)} />
+        </motion.div>
+      )}
+
+        {/* Desktop header toolbar */}
+            <ChatToolbarSection
+              activeSession={activeSession}
+              characters={characters}
+              currentMood={currentMood}
+              characterEmotions={characterEmotions}
+              inventoryItems={inventoryItems}
+              serenity={serenity}
+              showMentalLine={showMentalLine}
+              isReadingStory={isReadingStory}
+              isPlaying={isPlaying} setIsPlaying={setIsPlaying}
+              volume={volume} setVolume={setVolume}
+              intensity={intensity} currentSoundscape={currentSoundscape}
+              tts={tts} elTTS={elTTS} emotionalTTS={emotionalTTS}
+              onShowInventory={() => setShowInventory(true)}
+              onToggleMentalLine={() => setShowMentalLine(!showMentalLine)}
+              onReadStory={handleReadStory}
+              onStopReadingStory={handleStopReadingStory}
+              onShowImageGen={() => setShowImageGen(true)}
+              onShowEditModal={() => setShowEditModal(true)}
+              onOpenRecap={() => openRecap(activeSession.id)}
+              onSelectBranch={handleSelectBranch}
+              onCreateBranch={() => setShowCreateBranch(true)}
+              onShowExport={() => setShowExportArchive(true)}
+            />
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative" data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'var(--tab-bar-height, 60px)' }}>
+              <GoToTopButton containerRef={scrollContainerRef} />
+              <ChatWidgetsArea
+                activeSession={activeSession}
+                characters={characters}
+                narrativeArcs={narrativeArcs}
+                arcsLoading={arcsLoading}
+                worldStateEvents={worldStateEvents}
+                worldElements={worldElements}
+                eventSuggestions={eventSuggestions}
+                analyzingNarrative={analyzingNarrative}
+                characterEvolutions={characterEvolutions}
+                characterEmotions={characterEmotions}
+                insights={insights}
+                insightsLoading={insightsLoading}
+                relationships={relationships}
+                currentLocationContext={currentLocationContext}
+                inventoryItems={inventoryItems}
+                loreEntries={loreEntries}
+                calendar={calendar}
+                pulseHeadlines={pulseHeadlines}
+                atmosphericDesc={atmosphericDesc}
+                loadingAtmosphere={loadingAtmosphere}
+                generatedContent={generatedContent}
+                worldEvent={worldEvent}
+                analyzeNow={analyzeNow}
+                handleSendMessage={handleSendMessage}
+                handleApplyEvent={handleApplyEvent}
+                loadInventory={loadInventory}
+                setCharacterEvolutions={setCharacterEvolutions}
+                setActiveSession={setActiveSession}
+                setPulseHeadlines={setPulseHeadlines}
+                setGeneratedContent={setGeneratedContent}
+                setWorldEvent={setWorldEvent}
+              />
+              {(!activeSession.messages || activeSession.messages.length === 0) && (
+                <div className="text-center py-8">
+                  <p className="font-mono text-[9px] sm:text-xs text-primary/25 tracking-[0.3em] uppercase">
+                    // Begin transmission
+                  </p>
+                </div>
+              )}
+              <InteractiveCalendarWidget
+                calendar={calendar}
+                onAdvanceDay={async (days) => {
+                  const res = await base44.functions.invoke("updateInGameCalendar", {
+                    session_id: activeSession.id,
+                    days_passed: days,
+                  });
+                  if (res?.data?.calendar) {
+                    setCalendar(res.data.calendar);
+                  }
+                }}
+              />
+
+              <NarrativeDivergencePanel
+                paths={divergentPaths}
+                loading={pathsLoading}
+                isVisible={showPaths && activeSession.mode === 'solo'}
+                onSelectPath={async (path) => {
+                  const directive = await handleSelectPath(path);
+                  handleSendMessage(directive);
+                }}
+              />
+              <MessageList
+                key={activeSession.id}
+                messages={activeSession.messages}
+                session={activeSession}
+                characters={characters}
+                characterMemories={characterMemories}
+                loreLinks={loreLinks}
+                onRewindToMessage={handleRewindToMessage}
+                onSpeak={speakMessage}
+                onEditMessage={handleEditMessage}
+                onDeleteMessage={handleDeleteMessage}
+                onRegenerateMessage={handleRegenerateMessage}
+              />
+              
+              {/* Render quest detection messages inline */}
+              <AnimatePresence>
+                {questManager.detectedQuests.map((quest, idx) => (
+                  <QuestDetectionMessage
+                    key={`quest-${idx}`}
+                    quest={quest}
+                    onAccept={questManager.handleAcceptQuest}
+                    onReject={questManager.handleRejectQuest}
+                  />
+                ))}
+              </AnimatePresence>
+              <div ref={messagesEndRef} className="mb-4 lg:mb-2" />
+            </div>
+            <div className="flex-shrink-0 border-t border-primary/10 bg-black/60 space-y-2 min-h-0 sm:pt-0 pt-3">
+              {/* Narrative Choices - Horizontal */}
+              {choices.length > 0 && activeSession.mode === "solo" && (
+                <NarrativeChoicesPanel
+                  choices={choices}
+                  loading={isLoading}
+                  onSelectChoice={handleChoiceMade}
+                  sessionId={activeSession.id}
+                />
+              )}
+
+              {/* Voice Chat & Chat Input */}
+              <div className="space-y-2">
+                <ChatInputControls
+                  onVoiceClick={() => setShowVoiceInput(true)}
+                  onContinue={() => handleSendMessage("")}
+                  isLoading={isLoading}
+                  sessionMode={activeSession?.mode}
+                />
+                {activeSession.mode === "solo" && activeSession.character_id && (
+                  <ResponseSuggestions
+                    sessionId={activeSession.id}
+                    characterId={activeSession.character_id}
+                    recentMessages={activeSession.messages || []}
+                    characterEmotions={characterEmotions}
+                    onSelectSuggestion={(text) => handleSendMessage(text)}
+                    disabled={isLoading}
+                  />
+                )}
+                {activeSession.mode === "solo" && activeSession.character_id && (
+                  <div className="hidden lg:block px-2 pb-1">
+                    <MemoryRecallPanel
+                      characterId={activeSession.character_id}
+                      sessionId={activeSession.id}
+                      onMemoriesInjected={setInjectedMemories}
+                    />
+                  </div>
+                )}
+                <ChatInput
+                  onSend={handleSendMessage}
+                  isLoading={isLoading}
+                  disabled={false}
+                  allowEmpty={activeSession?.mode === "group"}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <WelcomeScreen onNewSession={handleNewSession} mode={mode} />
+        )}
+      </main>
+
+      {showInventory && activeSession?.character_id && (
+        <InventoryDrawer
+          characterId={activeSession.character_id}
+          characterName={characters.find(c => c.id === activeSession.character_id)?.name || "Character"}
+          recentMessages={activeSession?.messages?.slice(-10) || []}
+          onClose={() => { setShowInventory(false); loadInventory(activeSession.character_id); }}
+        />
+      )}
+
+      <DataExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        session={activeSession}
+      />
+
+      <DailySummaryModal
+        summary={summary}
+        dayInfo={calendar ? { season: calendar.current_season, day_of_season: calendar.day_of_season } : null}
+        isOpen={showSummary}
+        onClose={closeSummary}
+      />
+
+      {showModal && (
+        <NewSessionModal
+          mode={mode}
+          onClose={() => setShowModal(false)}
+          onCreate={handleCreateSession}
+        />
+      )}
+
+      <SessionRecapModal
+        isOpen={showRecap}
+        sessionId={recapSessionId}
+        onClose={closeRecap}
+      />
+
+      <MentalLine
+        isOpen={showMentalLine}
+        onClose={() => setShowMentalLine(false)}
+        onSendThought={handleMentalLineThought}
+        serenity={serenity}
+        loading={mentalLineLoading}
+      />
+
+      <SessionEditModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        session={activeSession}
+        onSave={handleSaveSettings}
+        saving={savingSettings}
+      />
+
+      <VoiceChatMode
+        isOpen={voiceChatOpen}
+        onClose={() => setVoiceChatOpen(false)}
+        character={activeSession?.character_id ? characters.find((c) => c.id === activeSession.character_id) : null}
+        onUserMessage={async (text, speakCallback) => {
+          const originalLoading = isLoading;
+          await handleSendMessage(text);
+          // Wait a moment for the response to be generated, then speak it
+          if (speakCallback && activeSession?.character_id) {
+            setTimeout(() => {
+              const activeChar = characters.find((c) => c.id === activeSession.character_id);
+              const lastMsg = activeSession?.messages?.[activeSession.messages.length - 1];
+              if (lastMsg && lastMsg.role === "assistant" && activeChar) {
+                speakCallback(lastMsg.content, activeChar.name);
+              }
+            }, 500);
+          }
+        }}
+        isLoading={isLoading}
+      />
+
+      <CreateBranchModal
+        isOpen={showCreateBranch}
+        onClose={() => setShowCreateBranch(false)}
+        onCreateBranch={handleCreateBranch}
+        loading={creatingBranch}
+      />
+
+      <ImageGenerationModal
+        isOpen={showImageGen}
+        onClose={() => setShowImageGen(false)}
+      />
+
+      <ExportArchiveModal
+        isOpen={showExportArchive}
+        onClose={() => setShowExportArchive(false)}
+        session={activeSession}
+      />
+
+      <VoiceInputPanel
+        isOpen={showVoiceInput}
+        onClose={() => setShowVoiceInput(false)}
+        onSubmit={(text) => {
+          handleSendMessage(text);
+          setShowVoiceInput(false);
+        }}
+        isLoading={isLoading}
+      />
+
+      {/* Character Presence Panel - Show who's around */}
+      {currentLocationContext && (
+        <CharacterPresencePanel
+          sessionId={activeSession?.id}
+          currentLocation={currentLocationContext}
+          sessionCharacters={
+            activeSession?.mode === "solo"
+              ? characters.filter(c => c.id === activeSession.character_id)
+              : characters.filter(c => activeSession?.group_character_ids?.includes(c.id))
+          }
+          characterEmotions={characterEmotions}
+        />
+      )}
+
+      {/* Dynamic Portraits Sidebar (Solo Mode) */}
+      {activeSession?.mode === "solo" && activeSession?.character_id && (
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          className="hidden xl:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-4 pr-4 py-6 pointer-events-none"
+        >
+          {characters
+            .filter((c) => c.id === activeSession.character_id)
+            .map((char) => (
+              <div key={char.id} className="pointer-events-auto">
+                <DynamicPortrait
+                  character={char}
+                  emotion={characterEmotions[char.id]?.emotion || "calm"}
+                  intensity={characterEmotions[char.id]?.intensity || 5}
+                  onGeneratePortrait={handleGeneratePortrait}
+                />
+              </div>
+            ))}
+        </motion.div>
+      )}
+      <BottomTabBar onMenuClick={() => setShowMobileMenu(prev => !prev)} />
+    </div>
+  );
+}

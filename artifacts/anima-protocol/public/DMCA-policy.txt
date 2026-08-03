@@ -1,0 +1,171 @@
+DMCA TAKEDOWN POLICY
+Echoes of Eden Inc. - Anima Protocol
+Last Updated: May 8, 2026
+
+================================================================================
+REPORTING INTELLECTUAL PROPERTY INFRINGEMENT
+================================================================================
+
+If you believe content on the Anima Protocol platform infringes your copyright,
+trademark, or other intellectual property rights, please submit a DMCA takedown
+notice to:
+
+EMAIL: legal@echoesofedenai.com
+SUBJECT: [DMCA TAKEDOWN] - [Your Name]
+
+================================================================================
+REQUIRED INFORMATION
+================================================================================
+
+Your takedown notice MUST include:
+
+1. YOUR CONTACT INFORMATION
+   - Full name
+   - Address
+   - Email address
+   - Phone number
+
+2. IDENTIFICATION OF THE COPYRIGHTED WORK
+   - Title of the copyrighted work
+   - Description of the work
+   - Date of creation/publication
+   - Proof of ownership (copyright certificate, license agreement, etc.)
+
+3. IDENTIFICATION OF INFRINGING CONTENT
+   - Specific scenario URL or content ID
+   - User who created/posted the content
+   - Exact location within the Platform where infringement occurs
+   - Clear description of how it infringes
+
+4. GOOD FAITH STATEMENT
+   "I have a good faith belief that the use of this content is not authorized
+   by the copyright holder, its agent, or the law, and that this notice is
+   accurate under penalty of perjury."
+
+5. YOUR SIGNATURE
+   - Handwritten or electronic signature acceptable
+   - Type your full name as signature
+
+6. OPTIONAL BUT HELPFUL
+   - Screenshots or copies of infringing content
+   - Documentation of your copyright/trademark registration
+   - Previous takedown notices (if applicable)
+
+================================================================================
+RESPONSE TIMELINE
+================================================================================
+
+Upon receipt of a valid DMCA notice, Echoes of Eden Inc. will:
+
+1. Within 24 hours: Acknowledge receipt of the notice
+2. Within 5 business days: Review and assess the claim
+3. Within 10 business days: 
+   - Remove infringing content if claim is valid
+   - Notify the content creator (counter-notice opportunity)
+   - Notify you of action taken
+
+================================================================================
+REPEAT INFRINGER POLICY
+================================================================================
+
+Users who repeatedly upload infringing content will:
+
+- First violation: Warning
+- Second violation: 7-day account suspension + content removal
+- Third violation: Permanent account termination
+- Severe/commercial violations: Immediate termination
+
+================================================================================
+COUNTER-NOTICE PROCEDURE
+================================================================================
+
+If your content was removed and you believe it was removed in error, you may
+file a counter-notice:
+
+EMAIL: legal@echoesofedenai.com
+SUBJECT: [DMCA COUNTER-NOTICE] - [Your Username]
+
+Your counter-notice must include:
+
+1. Identification of the removed content
+2. Declaration under penalty of perjury that:
+   - You are the content creator, or
+   - You have authorization from the copyright holder
+3. Explanation of why you believe the content does NOT infringe
+4. Your contact information
+5. Your signature
+
+After receipt of a valid counter-notice:
+- We will notify the claimant
+- If they don't file suit within 10 days, we restore the content
+- Disputes are resolved through courts (we don't arbitrate)
+
+================================================================================
+LIMITATIONS
+================================================================================
+
+This policy applies to:
+✓ User-generated scenarios and content
+✓ Community-created companion interactions
+✓ User-uploaded assets
+
+This policy does NOT protect:
+✗ Anima Protocol's original content (Serenity, Anima lore)
+✗ Echoes of Eden Inc.'s proprietary technology
+✗ Licensed content we have permission to host
+
+================================================================================
+FAIR USE CONSIDERATIONS
+================================================================================
+
+Content may qualify for fair use protection if it:
+- Is transformative (new meaning, message, or expression)
+- Doesn't substitute for the original work commercially
+- Uses only the amount needed for the purpose
+- Doesn't harm the original's market value
+
+Examples of likely fair use:
+✓ Parody or satire
+✓ Transformative fan works
+✓ Critical commentary
+✓ Educational use
+
+Examples of likely infringement:
+✗ Direct character replication with trademarked names
+✗ Dialogue copied from copyrighted works
+✗ Commercial use of copyrighted material
+✗ Substantial copying of plot/characters
+
+================================================================================
+DISPUTES AND LEGAL ACTION
+================================================================================
+
+Disagreements about takedown notices are resolved through:
+
+1. Direct communication (we encourage this)
+2. Legal process (courts decide disputed claims)
+3. NOT mediation or binding arbitration
+
+Echoes of Eden Inc. is NOT a judge of copyright disputes—we defer to courts.
+
+================================================================================
+CONTACT INFORMATION
+================================================================================
+
+DMCA Notices:     legal@echoesofedenai.com
+Security Issues:  security@echoesofedenai.com
+General Support:  support@echoesofedenai.com
+Abuse Reports:    abuse@echoesofedenai.com
+
+================================================================================
+DISCLAIMER
+================================================================================
+
+This policy is provided for informational purposes and does not constitute
+legal advice. Submitting false DMCA notices can result in legal liability.
+
+Consult with a lawyer if you have questions about copyright infringement,
+fair use, or intellectual property rights.
+
+================================================================================
+© 2026 Echoes of Eden Inc. All rights reserved.

@@ -2,24 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compileOnSave": false,
   "files": [],
-  "compilerOptions": {
-    "types": [
-      "node"
-    ],
-    "noEmitOnError": false,
-    "lib": [
-      "es2022",
-      "dom",
-      "dom.iterable"
-    ]
-  },
   "references": [
-    {
-      "path": "./artifacts/api-server"
-    },
-    {
-      "path": "./artifacts/mockup-sandbox"
-    },
     {
       "path": "./lib/db"
     },
@@ -28,6 +11,12 @@
     },
     {
       "path": "./lib/api-zod"
+    },
+    {
+      "path": "./lib/integrations-openai-ai-server"
+    },
+    {
+      "path": "./lib/integrations-openai-ai-react"
     }
   ]
 }

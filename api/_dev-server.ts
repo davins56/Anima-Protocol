@@ -6,7 +6,6 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-declare const process: { env: Record<string, string | undefined> };
 
 function loadEnvFile(filePath: string) {
   try {
