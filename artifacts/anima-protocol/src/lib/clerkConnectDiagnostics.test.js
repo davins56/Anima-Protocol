@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLERK_FAILURE_HINT,
   CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -108,18 +109,48 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
-  it('returns no proxy stall hint when probes succeed (stall copy is UI-gated)', async () => {
+it('does not emit a false-positive stall hint when probes succeed', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ status: 'ok' }), {
-        status: 200,
-      })),
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ auth_config: {} }), { status: 200 });
+      }),
     );
 
-    // Healthy probes must stay quiet — CLERK_STALL_HINT is shown by the UI
-    // only after ClerkLoading actually stalls / ClerkFailed.
-    await expect(probeClerkConnectivity(PROXY_LIVE_KEY)).resolves.toEqual([]);
-    expect(CLERK_STALL_HINT).toMatch(/SDK has not finished loading/i);
+    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
+    expect(hints).toEqual([]);
+    // Recovery copy is UI-only (ClerkFailed / stalled ClerkLoading).
+    expect(CLERK_STALL_HINT).toMatch(/has not finished loading/);
+    expect(CLERK_FAILURE_HINT).toMatch(/failed to initialize/);
+  });
+
+  it('surfaces custom-domain 400 with Clerk error codes instead of blaming DNS only', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+        }
+        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [{ code: 'invalid_request', message: 'bad request' }],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toContain('failed (400)');
+    expect(hints[0]).toContain('invalid_request');
+    expect(hints[0]).not.toMatch(/Confirm clerk\.anima-protocol\.com DNS in Clerk/);
   });
 
   it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
@@ -226,29 +257,8 @@ describe('probeClerkConnectivity', () => {
     const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
 
     expect(hints).toEqual([
-      'Clerk custom domain failed (400) at https://clerk.anima-protocol.com: Custom domain is not fully provisioned. Confirm clerk.anima-protocol.com is verified in Clerk → Domains and DNS CNAMEs to frontend-api.clerk.services.',
+      'Clerk custom domain failed (400) at https://clerk.anima-protocol.com: Custom domain is not fully provisioned. Clerk error: something_else. Confirm clerk.anima-protocol.com is verified in Clerk → Domains and DNS CNAMEs to frontend-api.clerk.services.',
     ]);
-  });
-
-  it('returns no hints when probes succeed (stall copy is UI-gated)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url) => {
-        if (String(url).endsWith('/api/healthz')) {
-          return new Response(JSON.stringify({ status: 'ok' }), {
-            status: 200,
-          });
-        }
-        return new Response('{}', { status: 200 });
-      }),
-    );
-
-    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
-
-    // Healthy probes must stay quiet — CLERK_STALL_HINT is shown by the UI
-    // only after ClerkLoading actually stalls / ClerkFailed.
-    expect(hints).toEqual([]);
-    expect(CLERK_STALL_HINT).toMatch(/SDK has not finished loading/i);
   });
 });
 
