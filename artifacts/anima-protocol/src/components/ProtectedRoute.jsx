@@ -1,3 +1,4 @@
+// @ts-check
 import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
@@ -9,6 +10,9 @@ const DefaultFallback = () => (
   </div>
 );
 
+/**
+ * @param {{ fallback?: import('react').ReactNode, unauthenticatedElement?: import('react').ReactNode }} props
+ */
 export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthenticatedElement }) {
   const { isAuthenticated, isLoadingAuth, authChecked, authError, checkUserAuth } = useAuth();
 

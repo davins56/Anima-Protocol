@@ -1,13 +1,34 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "@/api/base44Client";
-import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader } from "lucide-react";
+import { useStoreSync } from "@/lib/useStoreSync";
+import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
+import {
+  autoAssignCharacterPhoto,
+  getStarterRoster,
+  photoNeedsLookup,
+  retryStarterSeed,
+} from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
 import { Link } from "react-router-dom";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/lib/ConfirmDialog";
+import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { notifyStoreChanged } from "@/api/base44Client";
+import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
+import CharacterBioSheet from "@/components/character/CharacterBioSheet";
+
+/** True when /api/store failed because Postgres is down / unreachable. */
+function isStoreDatabaseError(err) {
+  const status = err?.status;
+  if (status === 503) return true;
+  const msg = String(err?.message || "");
+  return /database|postgres|unavailable|unreachable|connection/i.test(msg);
+}
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -42,6 +63,8 @@ const defaultForm = {
 
 export default function Characters() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const confirm = useConfirm();
   const [characters, setCharacters] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingChar, setEditingChar] = useState(null);
@@ -51,17 +74,87 @@ export default function Characters() {
   const [fetchingBio, setFetchingBio] = useState(false);
   const [longPressTimer, setLongPressTimer] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [photoLoadingId, setPhotoLoadingId] = useState(null);
+  const [photoMsg, setPhotoMsg] = useState(null);
+  const [brokenPhotoIds, setBrokenPhotoIds] = useState(() => new Set());
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [showSeriesModal, setShowSeriesModal] = useState(false);
+  const [bioCharacter, setBioCharacter] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  // When the account store (Postgres) is unreachable, show the bundled starter
+  // roster from src/lib/seedCharacters.js so the library is still browsable.
+  const [usingBundledSeed, setUsingBundledSeed] = useState(false);
+
+  const existingCharacterIds = useMemo(
+    () => new Set(characters.map((c) => c.id)),
+    [characters],
+  );
+
+  const loadCharacters = async ({ retrySeed = false } = {}) => {
+    setLoadError(null);
+    setUsingBundledSeed(false);
+    setLoading(true);
+    try {
+      let data = await base44.entities.Character.list("-created_date", 100);
+      if (!data?.length && retrySeed) {
+        setSeeding(true);
+        try {
+          await retryStarterSeed();
+          notifyStoreChanged();
+          data = await base44.entities.Character.list("-created_date", 100);
+        } finally {
+          setSeeding(false);
+        }
+      }
+      setCharacters(data || []);
+    } catch (err) {
+      const message = err?.message || "Could not load characters.";
+      if (isStoreDatabaseError(err)) {
+        // seedCharacters.js (package root) seeds Supabase and is NOT read by the
+        // UI. The live roster is src/lib/seedCharacters.js → /api/store → Postgres.
+        // When Postgres is down, surface that bundled roster so the list is not empty.
+        const bundled = getStarterRoster();
+        setCharacters(bundled);
+        setUsingBundledSeed(true);
+        setLoadError(
+          `${message}. Showing the bundled starter roster (${bundled.length}) — not saved to your account until the database is reachable.`,
+        );
+      } else {
+        setLoadError(message);
+        setCharacters([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    loadCharacters();
+    let cancelled = false;
+    whenBootstrapReady().then(() => {
+      if (!cancelled) loadCharacters({ retrySeed: true });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadCharacters = async () => {
-    const data = await base44.entities.Character.list("-created_date", 100);
-    setCharacters(data);
-  };
+  // Open the create form directly when arrived via "Create a companion" (e.g.
+  // the home-screen button navigates here with ?create=1). Clear the param so a
+  // refresh or back-navigation doesn't re-open the form.
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setEditingChar(null);
+      setForm(defaultForm);
+      setShowForm(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Live cross-device sync: refetch when another device changes our data.
+  useStoreSync(loadCharacters);
 
   const handleEdit = (char) => {
     setEditingChar(char);
@@ -80,17 +173,26 @@ export default function Characters() {
   };
 
   const handleDelete = async (id) => {
+    const ok = await confirm({
+      title: "Delete this character?",
+      message: "You'll have a few seconds to undo this.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     setDeletingId(id);
-    await base44.entities.Character.delete(id);
-    await loadCharacters();
+    const item = characters.find((c) => c.id === id);
+    await deleteWithUndo({
+      entity: "Character",
+      item,
+      label: "Character",
+      onChange: loadCharacters,
+    });
     setDeletingId(null);
   };
 
   const handleLongPressStart = (id) => {
     const timer = setTimeout(() => {
-      if (confirm("Delete this character?")) {
-        handleDelete(id);
-      }
+      handleDelete(id);
     }, 500);
     setLongPressTimer(timer);
   };
@@ -108,7 +210,9 @@ export default function Characters() {
     try {
       let finalForm = form;
       
-      // If creating new character with universe but missing personality/backstory/speaking_style, auto-generate
+      // If creating a new character with a universe but missing
+      // personality/backstory/speaking_style, scour the web for their
+      // mannerisms and speech patterns to populate the gaps.
       if (!editingChar && form.universe && (!form.personality || !form.backstory || !form.speaking_style)) {
         const generated = await base44.functions.invoke('generateCharacterTraits', {
           name: form.name,
@@ -126,7 +230,13 @@ export default function Characters() {
       if (editingChar) {
         await base44.entities.Character.update(editingChar.id, finalForm);
       } else {
-        await base44.entities.Character.create(finalForm);
+        const created = await base44.entities.Character.create(finalForm);
+        // No photo provided? Auto-search one in the background.
+        if (created && !finalForm.avatar_url) {
+          autoAssignCharacterPhoto(created)
+            .then(() => loadCharacters())
+            .catch(() => {});
+        }
       }
       await loadCharacters();
       setShowForm(false);
@@ -136,6 +246,34 @@ export default function Characters() {
       console.error('Error saving character:', err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // On-demand photo lookup for a card with no avatar. autoAssignCharacterPhoto
+  // throws on transient (network/server) failures and returns null when the
+  // service gave a definitive "no match" — surface those two cases distinctly.
+  const handleFindPhoto = async (char) => {
+    if (photoLoadingId) return;
+    setPhotoLoadingId(char.id);
+    setPhotoMsg(null);
+    try {
+      const url = await autoAssignCharacterPhoto(char);
+      if (url) {
+        setBrokenPhotoIds((prev) => {
+          if (!prev.has(char.id)) return prev;
+          const next = new Set(prev);
+          next.delete(char.id);
+          return next;
+        });
+        await loadCharacters();
+      } else {
+        setPhotoMsg({ id: char.id, text: "No photo found" });
+      }
+    } catch (err) {
+      console.error("Photo lookup failed:", err);
+      setPhotoMsg({ id: char.id, text: "Lookup failed — try again" });
+    } finally {
+      setPhotoLoadingId(null);
     }
   };
 
@@ -152,12 +290,11 @@ export default function Characters() {
     if (!form.name.trim()) return;
     setFetchingBio(true);
     try {
-      const result = await base44.functions.invoke("fetchCharacterBioFromWikipedia", {
-        character_name: form.name,
-        character_universe: form.universe || null,
+      const bioData = await base44.functions.invoke("generateCharacterTraits", {
+        name: form.name,
+        universe: form.universe || null,
       });
-      if (result?.data?.data) {
-        const bioData = result.data.data;
+      if (bioData) {
         setForm(prev => ({
           ...prev,
           personality: bioData.personality || prev.personality,
@@ -166,7 +303,7 @@ export default function Characters() {
         }));
       }
     } catch (err) {
-      console.error("Error fetching Wikipedia bio:", err);
+      console.error("Error researching character:", err);
     } finally {
       setFetchingBio(false);
     }
@@ -175,8 +312,12 @@ export default function Characters() {
   const handleDeleteAll = async () => {
     setDeletingAll(true);
     try {
-      await Promise.all(characters.map((c) => base44.entities.Character.delete(c.id)));
-      setCharacters([]);
+      await deleteAllWithUndo({
+        entity: "Character",
+        items: characters,
+        label: "characters",
+        onChange: loadCharacters,
+      });
       setShowDeleteAll(false);
     } catch (err) {
       console.error('Error deleting all characters:', err);
@@ -192,7 +333,7 @@ export default function Characters() {
   };
 
   return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-background scanline">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background scanline">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
@@ -205,7 +346,11 @@ export default function Characters() {
                 // Character Library
               </h1>
               <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-                {characters.length} entities indexed
+                {loading || seeding
+                  ? "syncing roster..."
+                  : usingBundledSeed
+                    ? `${characters.length} bundled starters (offline)`
+                    : `${characters.length} entities indexed`}
               </p>
             </div>
           </div>
@@ -226,6 +371,15 @@ export default function Characters() {
               Manage Groups
             </Link>
             <button
+              type="button"
+              onClick={() => setShowSeriesModal(true)}
+              className="flex items-center gap-2 px-5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-all font-mono text-xs tracking-widest uppercase hud-corner glow-border"
+            >
+              <Library className="w-4 h-4" />
+              <span className="hidden sm:inline">Add From Series</span>
+              <span className="sm:hidden">Series</span>
+            </button>
+            <button
               onClick={() => setShowForm(true)}
               className="flex items-center gap-2 px-5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-all font-mono text-xs tracking-widest uppercase hud-corner glow-border"
             >
@@ -236,22 +390,75 @@ export default function Characters() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6" style={{ WebkitOverflowScrolling: 'touch', overflowY: 'scroll', paddingBottom: 'var(--tab-bar-height, 120px)' }}>
+      <div className="flex-1 overflow-y-auto p-6" style={{ WebkitOverflowScrolling: 'touch', overflowY: 'scroll' }}>
         <div className="max-w-6xl mx-auto space-y-6">
-          {characters.length === 0 ? (
+          {loading || seeding ? (
             <div className="text-center py-24">
-              <p className="font-mono text-primary/20 text-sm tracking-[0.3em] uppercase mb-6">
-                No characters indexed
+              <Loader className="w-8 h-8 text-primary/40 animate-spin mx-auto mb-4" />
+              <p className="font-mono text-primary/30 text-sm tracking-[0.3em] uppercase">
+                {seeding ? "Indexing starter characters..." : "Loading character library..."}
+              </p>
+            </div>
+          ) : loadError && !usingBundledSeed ? (
+            <div className="text-center py-24">
+              <p className="font-mono text-destructive/80 text-sm tracking-wider mb-4 max-w-md mx-auto">
+                {loadError}
               </p>
               <button
-                onClick={() => setShowForm(true)}
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  loadCharacters({ retrySeed: true });
+                }}
                 className="px-8 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
               >
-                + Create First Character
+                Retry
               </button>
+            </div>
+          ) : characters.length === 0 ? (
+            <div className="text-center py-24">
+              <p className="font-mono text-primary/20 text-sm tracking-[0.3em] uppercase mb-2">
+                No characters indexed
+              </p>
+              <p className="font-mono text-primary/25 text-[10px] tracking-wider max-w-md mx-auto mb-8 leading-relaxed">
+                Add preloaded characters from Korra, Marvel, Guardians of the Galaxy, or Invincible — or create your own.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSeriesModal(true)}
+                  className="px-8 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
+                >
+                  + Add From Series
+                </button>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="px-8 py-3 border border-primary/25 text-primary/60 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all"
+                >
+                  Create Custom Character
+                </button>
+              </div>
             </div>
           ) : (
             <>
+            {usingBundledSeed && (
+              <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="font-mono text-destructive/90 text-xs tracking-wider leading-relaxed max-w-2xl">
+                  {loadError ||
+                    "Account database unreachable. Showing bundled starters from src/lib/seedCharacters.js — edits will not save until the store is back."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoading(true);
+                    loadCharacters({ retrySeed: true });
+                  }}
+                  className="shrink-0 px-5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
+                >
+                  Retry sync
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {characters.map((char) => (
               <div
@@ -280,13 +487,55 @@ export default function Characters() {
                   </button>
                 </div>
 
-                {/* Avatar */}
+                {/* Avatar — tap photo to open bio sheet */}
                 <div className="relative">
-                  {char.avatar_url ? (
-                    <img src={char.avatar_url} alt={char.name} className="w-full aspect-square object-cover" />
+                  {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
+                    <button
+                      type="button"
+                      className="w-full block focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                      onClick={() => setBioCharacter(char)}
+                      title={`View ${char.name} bio sheet`}
+                    >
+                      <img
+                        src={char.avatar_url}
+                        alt={char.name}
+                        className="w-full aspect-square object-cover"
+                        onError={() =>
+                          setBrokenPhotoIds((prev) =>
+                            prev.has(char.id) ? prev : new Set(prev).add(char.id)
+                          )
+                        }
+                      />
+                    </button>
                   ) : (
-                    <div className="w-full aspect-square bg-primary/5 flex items-center justify-center">
-                      <span className="font-mono text-primary/30 text-4xl">{char.name[0]}</span>
+                    <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
+                      <button
+                        type="button"
+                        onClick={() => setBioCharacter(char)}
+                        title={`View ${char.name} bio sheet`}
+                        className="font-mono text-primary/30 text-4xl hover:text-primary/60 transition-colors focus:outline-none"
+                      >
+                        {char.name[0]}
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); handleFindPhoto(char); }}
+                        disabled={!!photoLoadingId}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 border border-primary/30 text-primary/60 hover:text-primary hover:border-primary/60 font-mono text-[9px] tracking-[0.2em] uppercase transition-colors disabled:opacity-60 disabled:cursor-default"
+                      >
+                        {photoLoadingId === char.id ? (
+                          <><Loader className="w-3 h-3 animate-spin" /> Searching</>
+                        ) : (
+                          <><ImagePlus className="w-3 h-3" /> Find photo</>
+                        )}
+                      </button>
+                      {photoMsg?.id === char.id && (
+                        <span className="font-mono text-[8px] tracking-wider text-amber-400/80 text-center px-1">
+                          {photoMsg.text}
+                        </span>
+                      )}
                     </div>
                   )}
                   {/* Status dot */}
@@ -359,13 +608,13 @@ export default function Characters() {
               </div>
 
               {/* Name & Universe */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Character Name *" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder="e.g. Serenity" />
                 <Field label="Universe / Series" value={form.universe} onChange={(v) => setForm((f) => ({ ...f, universe: v }))} placeholder="e.g. Original" />
               </div>
 
               {/* Category & Status */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <SelectField label="Category" value={form.category} options={CATEGORIES} onChange={(v) => setForm((f) => ({ ...f, category: v }))} />
                 <SelectField label="Status" value={form.status} options={STATUSES} onChange={(v) => setForm((f) => ({ ...f, status: v }))} />
               </div>
@@ -428,7 +677,7 @@ export default function Characters() {
                 ) : (
                   <>
                     <BookOpen className="w-3 h-3" />
-                    Fetch from Wikipedia
+                    Research from Web
                   </>
                 )}
               </button>
@@ -450,6 +699,15 @@ export default function Characters() {
             </div>
             )}
 
+      <AddSeriesCharactersModal
+        open={showSeriesModal}
+        existingIds={existingCharacterIds}
+        onClose={() => setShowSeriesModal(false)}
+        onAdded={async () => {
+          await loadCharacters();
+        }}
+      />
+
       {/* Delete All Confirmation Modal */}
       {showDeleteAll && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -459,7 +717,7 @@ export default function Characters() {
               <h2 className="font-mono text-destructive tracking-[0.2em] uppercase text-sm">Delete All Characters</h2>
             </div>
             <p className="font-mono text-xs text-primary/60 leading-relaxed">
-              This will permanently delete all <span className="text-destructive font-bold">{characters.length} characters</span>. This cannot be undone.
+              This will delete all <span className="text-destructive font-bold">{characters.length} characters</span>. You'll have a few seconds to undo.
             </p>
             <div className="flex gap-3 pt-2">
               <button
@@ -480,6 +738,12 @@ export default function Characters() {
           </div>
         </div>
       )}
+
+      <CharacterBioSheet
+        character={bioCharacter}
+        open={!!bioCharacter}
+        onClose={() => setBioCharacter(null)}
+      />
     </div>
   );
 }

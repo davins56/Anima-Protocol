@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import ContextualInventorySuggestions from "../inventory/ContextualInventorySuggestions";
 import { X, Package, Plus, Trash2, Shield, Sword, Zap, Star, Edit2, Check } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import { deleteWithUndo } from "@/lib/undoableDelete";
 
 const TYPE_ICONS = {
   gear: Shield,
@@ -66,8 +67,14 @@ export default function InventoryDrawer({ characterId, characterName, onClose, r
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.Inventory.delete(id);
-    setItems(prev => prev.filter(i => i.id !== id));
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    await deleteWithUndo({
+      entity: "Inventory",
+      item,
+      label: "Item",
+      onChange: loadItems,
+    });
   };
 
   const handleEditSave = async () => {

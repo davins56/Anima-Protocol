@@ -24,6 +24,7 @@ import AtmosphericDescription from "@/components/world/AtmosphericDescription";
 import SystemAlert from "./SystemAlert";
 import NarrativeImpactDashboard from "@/components/dashboard/NarrativeImpactDashboard";
 import { base44 } from "@/api/base44Client";
+import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 
 export default function ChatWidgetsArea({
   activeSession,
@@ -176,9 +177,14 @@ export default function ChatWidgetsArea({
                 character={sessionActiveChar}
                 evolution={characterEvolutions[sessionActiveChar.id]}
                 onApplyEvolution={(evolution) => {
+                  let newPersonality = evolution.evolved_personality || sessionActiveChar.personality;
+                  if (evolution.growth_areas?.length) newPersonality += `\nGrowth: ${evolution.growth_areas.join(', ')}`;
+                  if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
+                  if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
+                  
                   const updates = {
-                    personality: evolution.evolved_personality || sessionActiveChar.personality,
-                    speaking_style: evolution.speaking_style_evolution || sessionActiveChar.speaking_style,
+                    personality: newPersonality,
+                    speaking_style: sessionActiveChar.speaking_style,
                   };
                   base44.entities.Character.update(sessionActiveChar.id, updates);
                   setCharacterEvolutions(prev => {
@@ -220,9 +226,14 @@ export default function ChatWidgetsArea({
                   content: `⚔️ Side Quest Accepted: "${quest.title}"\n${quest.description}`,
                   timestamp: new Date().toISOString(),
                 };
-                const updated = [...(activeSession.messages || []), qMsg];
-                base44.entities.ChatSession.update(sessionId, { messages: updated }).catch(() => {});
-                setActiveSession(prev => ({ ...prev, messages: updated }));
+                // Append only — replace against a possibly-stale messages
+                // snapshot can delete concurrent turns.
+                appendAmbientMessage({
+                  appendMessage: base44.messages.append,
+                  sessionId,
+                  message: qMsg,
+                  setActiveSession,
+                }).catch(() => {});
               }}
             />
           )}
@@ -233,6 +244,8 @@ export default function ChatWidgetsArea({
             <EmotionIndicator
               emotion={characterEmotions[characterId].emotion}
               intensity={characterEmotions[characterId].intensity}
+              level={characterEmotions[characterId].emotion_level || characterEmotions[characterId].level}
+              arousal={characterEmotions[characterId].arousal}
               trigger={characterEmotions[characterId].trigger}
               compact={false}
             />

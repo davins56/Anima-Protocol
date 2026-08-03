@@ -1,30 +1,33 @@
 import { useRef, useState, useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
-import { appParams } from '@/lib/app-params';
+import { apiUrl } from '@/lib/apiOrigin';
 
-async function fetchTTSAudio(functionName, payload) {
-  const { appId, appBaseUrl, functionsVersion } = appParams;
-  const baseUrl = appBaseUrl || '';
-  const version = functionsVersion || 'v3';
-  const url = `${baseUrl}/api/apps/${appId}/functions/${version}/${functionName}`;
+function stripMarkup(text) {
+  return text
+    .replace(/\*[^*]*\*/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .trim();
+}
 
-  const token = localStorage.getItem('base44_access_token') || localStorage.getItem('token');
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const response = await fetch(url, {
+async function fetchTTSAudio(payload) {
+  const res = await fetch(apiUrl('/tts'), {
     method: 'POST',
-    headers,
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    credentials: 'include',
   });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`TTS failed: ${response.status} ${errText}`);
+  if (!res.ok) {
+    let msg = `${res.status}`;
+    try {
+      const j = await res.json();
+      if (j?.error) msg = j.error;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(`TTS failed: ${msg}`);
   }
 
-  return response.blob();
+  return res.blob();
 }
 
 export function useEmotionalTTS() {
@@ -41,34 +44,22 @@ export function useEmotionalTTS() {
     setIsSpeaking(false);
   }, []);
 
+  // Emotion + intensity are forwarded to the server, which maps them to
+  // ElevenLabs voice_settings (stability / style) for an expressive delivery.
   const speakWithEmotion = useCallback(async (content, voiceId, emotion = 'neutral', intensity = 5) => {
-    if (!isEnabled || !voiceId || !content) return;
+    if (!isEnabled || !content) return;
     stop();
 
-    const clean = content
-      .replace(/\*[^*]*\*/g, '')
-      .replace(/\[[^\]]*\]/g, '')
-      .replace(/#{1,6}\s/g, '')
-      .trim();
-
+    const clean = stripMarkup(content);
     if (!clean) return;
 
     setIsSpeaking(true);
     try {
-      // Get emotion-adjusted voice parameters
-      let voiceParams = {};
-      try {
-        const paramRes = await base44.functions.invoke('adjustVoiceForEmotion', { emotion, intensity });
-        voiceParams = paramRes.data?.voice_params || {};
-      } catch (e) {
-        console.warn('Could not get emotion voice params, using defaults');
-      }
-
-      const blob = await fetchTTSAudio('elevenLabsTTS', {
+      const blob = await fetchTTSAudio({
         text: clean,
-        voice_id: voiceId,
-        stability: voiceParams.stability || 0.5,
-        similarity_boost: voiceParams.similarity || 0.75,
+        voice_id: voiceId || null,
+        emotion,
+        intensity,
       });
 
       const url = URL.createObjectURL(blob);
@@ -100,5 +91,5 @@ export function useEmotionalTTS() {
     });
   }, [stop]);
 
-  return { speakWithEmotion, stop, isEnabled, isSpeaking, toggle };
+  return { isEnabled, isSpeaking, speakWithEmotion, stop, toggle };
 }

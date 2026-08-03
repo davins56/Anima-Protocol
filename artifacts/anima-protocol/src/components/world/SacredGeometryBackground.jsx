@@ -1,3 +1,4 @@
+// @ts-check
 import { useRef, useEffect } from 'react';
 import { useSacredGeometryAnimation } from '@/hooks/useSacredGeometryAnimation';
 

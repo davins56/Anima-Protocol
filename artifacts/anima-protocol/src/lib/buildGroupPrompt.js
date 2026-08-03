@@ -5,6 +5,12 @@
  * traitModifiers (optional) – injectable personality-shift block produced by
  * aggregatePersonalityShifts, applied only for nextChar.
  */
+import {
+  INTELLIGENCE_GUIDANCE,
+  loyaltyGuardrailClause,
+  turnTakingClause,
+} from "./companionGuardrail";
+
 export function buildGroupPrompt({
   nextChar,
   allCharSheets,
@@ -13,6 +19,10 @@ export function buildGroupPrompt({
   adultInstruction,
   lengthGuide,
   traitModifiers = '',
+  userProfileContext = '',
+  interruptionClause = '',
+  groupIntimacyGuidance = '',
+  isContinue = false,
 }) {
   return `You are ${nextChar.name} in an immersive collaborative story. You have your own distinct voice, goals, and emotional truth.${adultInstruction}
 
@@ -20,6 +30,11 @@ CHARACTER CONTEXT:
 ${allCharSheets}
 ${traitModifiers}
 ${loreCtxGroup}
+${userProfileContext}
+
+CHARACTER IDENTITY LOCK:
+- Speak ONLY as ${nextChar.name}, grounded in THEIR Personality, Backstory, and Voice from the sheet above.
+- Never blend voices or borrow another character's traits.
 
 Story so far:
 ${conversationHistory}
@@ -32,10 +47,18 @@ CRITICAL INSTRUCTIONS:
 5. Keep it brief and natural. One short paragraph or 1-2 sentences is perfect.
 6. Do NOT include dialogue or narration for other characters — only ${nextChar.name} speaks.
 7. ONLY use asterisks (*) for physical actions or movements. Do NOT use them for emphasis or other formatting.
-
+8. Intimate talk or gestures only when timing + ${nextChar.name}'s personality + who else is present make it feel true — never as a group default.
+${interruptionClause}
+${groupIntimacyGuidance ? `\n${groupIntimacyGuidance}\n` : ""}
 OUTPUT FORMAT:
 **${nextChar.name}:** [Your authentic response, grounded in ${nextChar.name}'s character. *One action if needed* — keep speech clean and plain.]
 
 Other characters will speak on their own turns. Be yourself. Be respectful. Be real.
-${lengthGuide}`;
+
+${INTELLIGENCE_GUIDANCE}
+${lengthGuide}
+
+${turnTakingClause({ isContinue })}
+
+${loyaltyGuardrailClause()}`;
 }

@@ -188,7 +188,9 @@ export default function Chronicles() {
     const [j, c, s] = await Promise.all([
       base44.entities.CharacterJournal.list("-created_date", 200),
       base44.entities.Character.list("-created_date", 100),
-      base44.entities.ChatSession.list("-created_date", 100),
+      // Sessions are only used as a title lookup for each journal entry — skip
+      // hydrating every session's full message history.
+      base44.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
     ]);
     setJournals(j || []);
     setCharacters(c || []);
@@ -245,7 +247,7 @@ export default function Chronicles() {
   const dateGroups = Object.entries(grouped);
 
   return (
-    <div className="h-[100dvh] overflow-y-auto bg-background p-4 sm:p-6 mobile-page-padding">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
       <div className="max-w-2xl mx-auto space-y-6">
 
         {/* Header */}

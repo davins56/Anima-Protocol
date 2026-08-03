@@ -1,6 +1,11 @@
+// @ts-check
 import { base44 } from '@/api/base44Client';
 
 export function useSerenityDebug() {
+  /**
+   * @param {string} thought
+   * @param {string} [activeSessionId]
+   */
   const handleDebugRequest = async (thought, activeSessionId) => {
     const isDebugRequest = /debug|diagnose|check|health|status|what.?s wrong/i.test(thought);
     
@@ -25,7 +30,7 @@ export function useSerenityDebug() {
           return debugResponse;
         }
       } catch (err) {
-        return `⚠️ Debug error: ${err.message}`;
+        return `⚠️ Debug error: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
     

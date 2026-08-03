@@ -1,7 +1,11 @@
+// @ts-check
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 
+/**
+ * @param {{ onComplete: () => void }} props
+ */
 export default function TimeslipthkIntro({ onComplete }) {
   const [phase, setPhase] = useState(0);
   const [skip, setSkip] = useState(false);

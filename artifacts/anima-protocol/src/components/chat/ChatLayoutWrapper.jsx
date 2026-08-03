@@ -1,5 +1,9 @@
+// @ts-check
 import QuestTrackerSidebar from "@/components/quests/QuestTrackerSidebar";
 
+/**
+ * @param {{ activeSession?: any, children?: import('react').ReactNode }} props
+ */
 export default function ChatLayoutWrapper({ activeSession, children }) {
   return (
     <div className="flex w-full h-full overflow-hidden relative">

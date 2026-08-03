@@ -1,8 +1,12 @@
+// @ts-check
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { Upload, Loader, LogOut, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+/**
+ * @param {{ onStoriesLoaded?: (...args: any[]) => void }} props
+ */
 export default function YnLoginSection({ onStoriesLoaded }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");

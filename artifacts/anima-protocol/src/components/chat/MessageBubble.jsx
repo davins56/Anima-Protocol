@@ -16,7 +16,7 @@ import { useLoreDetection } from "@/hooks/useLoreDetection";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [] }) {
+export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
@@ -50,22 +50,41 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const isUser = message.role === "user";
   const isTyping = message.character_name === "__typing__";
   const isThinking = message.character_name === "__thinking__";
+  const isStreaming = message.is_streaming === true;
   const time = message.timestamp ? format(new Date(message.timestamp), "HH:mm") : "";
 
   const avatarUrl = !isUser && character?.avatar_url;
   const avatarInitial = !isUser && (character?.name?.[0] || message.character_name?.[0] || "?");
 
+  // Intensity-reactive styling for the companion's voice: soft cyan glow when
+  // tender/devotional, sharper electric edges when emotions run high.
+  const intensity = Number(characterEmotionIntensity) || 0;
+  const intensityGlow =
+    !isUser && !isTyping && !isThinking && !isMemoryReference
+      ? intensity >= 8
+        ? "border-cyan-300/70 shadow-[0_0_24px_rgba(34,211,238,0.38)]"
+        : intensity >= 5
+        ? "shadow-[0_0_16px_rgba(34,211,238,0.18)]"
+        : "shadow-[0_0_10px_rgba(34,211,238,0.10)]"
+      : "";
+
   return (
     <div className={`flex gap-2 sm:gap-3 group ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-      {/* Avatar */}
+      {/* Avatar — tap to open bio sheet */}
       {!isUser && (
-        <div className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4">
+        <button
+          type="button"
+          onClick={() => character && onAvatarClick?.(character)}
+          disabled={!character || !onAvatarClick}
+          title={character ? `View ${character.name} bio sheet` : undefined}
+          className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4 disabled:cursor-default hover:enabled:border-primary/70 hover:enabled:ring-1 hover:enabled:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+        >
           {avatarUrl ? (
             <img src={avatarUrl} alt={character?.name} className="w-full h-full object-cover" />
           ) : (
             <span className="font-mono text-primary text-[10px] sm:text-xs">{avatarInitial}</span>
           )}
-        </div>
+        </button>
       )}
 
       <div className={`max-w-[80%] sm:max-w-[75%] flex flex-col gap-0.5 sm:gap-1 ${isUser ? "items-end" : "items-start"}`}>
@@ -75,13 +94,13 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           </span>
         )}
         <div
-          className={`relative px-3 sm:px-4 py-2 sm:py-3 font-mono text-xs sm:text-sm leading-relaxed hud-corner transition-all ${
+          className={`relative px-3 sm:px-4 py-2 sm:py-3 font-mono text-xs sm:text-sm leading-relaxed hud-corner transition-all duration-500 ${
             isMemoryReference
               ? "border-amber-400/60 bg-black/40 shadow-[0_0_20px_rgba(251,191,36,0.15)]"
               : isUser
               ? "bg-primary/10 border border-primary/30 text-primary/90 text-right"
               : "bg-black/60 border border-primary/20 text-primary/80"
-          }`}
+          } ${intensityGlow}`}
         >
           <MemoryCallout memory={memoryDetail} isVisible={isMemoryReference} />
           {isThinking ? (
@@ -122,7 +141,15 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           ) : !isUser && loreEntries.length > 0 ? (
            <LoreTextWithKeywords content={message.content} loreEntries={loreEntries} />
           ) : (
-           renderMessageWithActions(message.content)
+           <>
+             {renderMessageWithActions(message.content)}
+             {isStreaming && (
+               <span
+                 className="inline-block w-[0.45em] h-[1em] ml-0.5 align-[-0.1em] bg-primary/55 animate-pulse"
+                 aria-hidden="true"
+               />
+             )}
+           </>
            )}
 
            {/* Media attachments */}
@@ -155,7 +182,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
            )}
 
            {/* Rewind button */}
-          {canRewind && onRewind && !isTyping && !isEditing && (
+          {canRewind && onRewind && !isTyping && !isStreaming && !isEditing && (
             <button
               onClick={onRewind}
               className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 opacity-0 group-hover:opacity-100 transition-opacity w-4 sm:w-5 h-4 sm:h-5 bg-black/90 border border-primary/40 text-primary/50 hover:text-primary flex items-center justify-center"
@@ -164,7 +191,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
               <RotateCcw className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
             </button>
           )}
-          {!isUser && !isTyping && character?.id && !isEditing && (
+          {!isUser && !isTyping && !isStreaming && character?.id && !isEditing && (
             <div className="absolute -bottom-1.5 -right-1.5 sm:-bottom-2 sm:-right-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <EmotionalVoiceSynthesis
                 content={message.content}
@@ -178,7 +205,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
         </div>
 
         {/* Action bar — edit, delete, regenerate */}
-        {!isTyping && !isThinking && !isEditing && (
+        {!isTyping && !isThinking && !isStreaming && !isEditing && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
             {isUser && onEditMessage && (
               <button
@@ -210,7 +237,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           </div>
         )}
 
-        {time && !isTyping && !isThinking && (
+        {time && !isTyping && !isThinking && !isStreaming && (
           <span className="text-[7px] sm:text-[9px] font-mono text-primary/20 tracking-widest">{time}</span>
         )}
       </div>

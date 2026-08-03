@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Visual Identity System
  * 

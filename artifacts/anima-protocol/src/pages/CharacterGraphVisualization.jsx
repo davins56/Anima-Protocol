@@ -23,7 +23,7 @@ export default function CharacterGraphVisualization() {
   }, [sessionId]);
 
   return (
-    <div className="min-h-screen bg-background scanline flex flex-col">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline flex flex-col">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md p-6">
         <div className="flex items-center justify-between gap-4 mb-4">

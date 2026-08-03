@@ -4,7 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 
+import { useConfirm } from "@/lib/ConfirmDialog";
+
 export default function UserContextPanel({ onContextUpdated }) {
+  const confirm = useConfirm();
   const [contexts, setContexts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
@@ -41,7 +44,12 @@ export default function UserContextPanel({ onContextUpdated }) {
   };
 
   const handleDelete = async (docId) => {
-    if (!window.confirm('Delete this document? This cannot be undone.')) return;
+    const ok = await confirm({
+      title: "Delete this document?",
+      message: "This cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     setDeleting(docId);
     try {
       await base44.entities.UserContext.delete(docId);

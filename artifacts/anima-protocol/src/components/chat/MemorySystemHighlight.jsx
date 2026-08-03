@@ -1,3 +1,4 @@
+// @ts-check
 import { Brain, Zap, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
 

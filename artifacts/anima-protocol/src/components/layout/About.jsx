@@ -1,3 +1,4 @@
+// @ts-check
 export default function About() {
   return (
     <div className="space-y-12 max-w-4xl mx-auto px-6 py-12">

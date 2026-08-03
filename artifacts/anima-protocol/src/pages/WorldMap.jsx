@@ -225,7 +225,7 @@ export default function WorldMap() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="flex-1 min-h-0 flex flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-primary/20 bg-black/40">
         <div className="flex items-center gap-4">

@@ -1,3 +1,4 @@
+// @ts-check
 // Color scheme preference management
 export const initializeColorScheme = () => {
   // Check system preference
@@ -22,13 +23,16 @@ export const initializeColorScheme = () => {
 
   return {
     getTheme: () => localStorage.getItem('app-color-scheme') || (prefersDark ? 'dark' : 'light'),
-    setTheme: (newTheme) => {
+    setTheme: (/** @type {string} */ newTheme) => {
       localStorage.setItem('app-color-scheme', newTheme);
       applyTheme(newTheme);
     },
   };
 };
 
+/**
+ * @param {string} theme
+ */
 export const applyTheme = (theme) => {
   const html = document.documentElement;
   if (theme === 'light') {
