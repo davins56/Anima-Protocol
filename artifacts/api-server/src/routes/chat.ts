@@ -638,6 +638,12 @@ router.post("/messages", async (req, res) => {
       res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
     }
 
+    // An empty completion used to look like a successful turn on the client
+    // (thinking/typing cleared, no visible reply). Fail loudly instead.
+    if (!String(fullResponse).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
+    }
+
     let persistedAssistant: MsgData | null = null;
     if (shouldPersist) {
       const assistantMessage: MsgData = {
