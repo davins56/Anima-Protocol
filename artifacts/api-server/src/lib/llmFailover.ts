@@ -115,10 +115,15 @@ export function resetLlmFailoverStateForTests(): void {
   preferNonXai = false;
 }
 
+function envFlagEnabled(name: string): boolean {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 function defaultProviderMode(): LlmProviderMode {
   // Prefer Kimi when present so unpaid Moonshot setups are not blocked by a
   // leftover / broken GEMINI_API_KEY still sitting on Vercel.
-  // Force Gemini with ANIMA_LLM_PROVIDER=gemini when that is intentional.
+  // Force Gemini with ANIMA_FORCE_GEMINI=true (and ANIMA_LLM_PROVIDER=gemini).
   if (hasKimiKey()) return "kimi";
   if (hasGeminiKey()) return "gemini";
   return "auto";
@@ -130,6 +135,19 @@ export function getConfiguredProviderMode(): LlmProviderMode {
   if (raw === "grok") return "xai";
   if (raw === "moonshot") return "kimi";
   if (raw === "custom" || raw === "ensemble") return "anima";
+
+  // Production previously set ANIMA_LLM_PROVIDER=gemini during unpaid Gemini
+  // recovery. That mode is Gemini-only and never attempts Kimi — so a later
+  // KIMI_API_KEY was silently ignored. Prefer Kimi whenever its key is present
+  // unless the operator explicitly forces Gemini.
+  if (
+    raw === "gemini" &&
+    hasKimiKey() &&
+    !envFlagEnabled("ANIMA_FORCE_GEMINI")
+  ) {
+    return "kimi";
+  }
+
   if (
     raw === "xai" ||
     raw === "openai" ||
@@ -147,9 +165,58 @@ export function isAnimaCustomMode(): boolean {
   return getConfiguredProviderMode() === "anima";
 }
 
-function envFlagEnabled(name: string): boolean {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+/** Public, secret-free snapshot of which chat LLM backends are wired up. */
+export function getLlmDiagnostics(tier: ModelTier = "standard"): {
+  status: "ok";
+  configuredMode: LlmProviderMode;
+  envProvider: string | null;
+  keys: {
+    kimi: boolean;
+    gemini: boolean;
+    xai: boolean;
+    openai: boolean;
+  };
+  chain: LlmProviderId[];
+  preferred: LlmProviderId;
+  brand: LlmBrand | null;
+  forceGemini: boolean;
+  hint: string;
+} {
+  const envProvider = (process.env.ANIMA_LLM_PROVIDER || "").trim() || null;
+  const keys = {
+    kimi: hasKimiKey(),
+    gemini: hasGeminiKey(),
+    xai: hasXaiKey(),
+    openai: hasOpenAIKey(),
+  };
+  const configuredMode = getConfiguredProviderMode();
+  const chain = getProviderChain(tier);
+  const preferred = getPreferredProvider(tier);
+  let hint = "Chat will use the preferred provider in `chain`.";
+  if (!keys.kimi) {
+    hint =
+      "KIMI_API_KEY / MOONSHOT_API_KEY is not set on this deployment — Kimi cannot be used. Add the key on Vercel Production and redeploy.";
+  } else if (
+    envProvider?.toLowerCase() === "gemini" &&
+    !envFlagEnabled("ANIMA_FORCE_GEMINI")
+  ) {
+    hint =
+      "ANIMA_LLM_PROVIDER=gemini was overridden because KIMI_API_KEY is present. Set ANIMA_FORCE_GEMINI=true to keep Gemini-only.";
+  } else if (preferred === "kimi") {
+    hint = "Kimi is the preferred chat provider for this tier.";
+  }
+
+  return {
+    status: "ok",
+    configuredMode,
+    envProvider,
+    keys,
+    chain,
+    preferred,
+    brand: configuredMode === "anima" ? "anima" : null,
+    forceGemini: envFlagEnabled("ANIMA_FORCE_GEMINI"),
+    hint,
+  };
 }
 
 export function isOpenAIBlocked(): boolean {
