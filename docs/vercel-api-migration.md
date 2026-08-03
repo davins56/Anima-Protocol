@@ -29,9 +29,14 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `DATABASE_URL` | Yes | Postgres connection string (Replit DB still works remotely) |
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
-| `OPENAI_API_KEY` | Yes | For chat / AI features (Customise Anima → Generate Look). Must be a valid key from https://platform.openai.com/account/api-keys — a revoked or mistyped key surfaces as image generation unavailable (OpenAI 401). Paste without quotes. Redeploy after changing. |
-| `XAI_API_KEY` | No | Optional. When set, chat auto-fails over to Grok (xAI) if OpenAI returns 429 / no credits remaining. |
+| `OPENAI_API_KEY` | Recommended | For chat / AI features when OpenAI is enabled, and for image edit/generate (Customise Anima → Generate Look). Must be a valid key from https://platform.openai.com/account/api-keys — a revoked or mistyped key surfaces as image generation unavailable (OpenAI 401). Paste without quotes. Redeploy after changing. Optional for chat if you force Grok/Gemini below. |
+| `XAI_API_KEY` | Recommended when OpenAI is out of credits | Grok (xAI). Chat fails over here on OpenAI 429 / no credits, or use as primary via `ANIMA_LLM_PROVIDER`. |
+| `GEMINI_API_KEY` | No | Optional Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Used as failover or primary via `ANIMA_LLM_PROVIDER=gemini`. |
+| `ANIMA_LLM_PROVIDER` | No | `auto` (default), `openai`, `xai`/`grok`, or `gemini`. Set to `xai` or `gemini` to **block OpenAI for chat** and stop credit errors. |
+| `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely (same effect as forcing xAI/Gemini when those keys exist). |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
+
+**If OpenAI keeps saying “no credits remaining”:** set `ANIMA_LLM_PROVIDER=xai` (and `XAI_API_KEY`) or `ANIMA_LLM_PROVIDER=gemini` (and `GEMINI_API_KEY`) on Vercel, then redeploy. Chat will never call OpenAI. Image generation still needs a funded `OPENAI_API_KEY`.
 
 If `DATABASE_URL` or `CLERK_SECRET_KEY` is missing, `/api/*` returns **503**
 (with a JSON body) instead of crashing the Vercel function.
