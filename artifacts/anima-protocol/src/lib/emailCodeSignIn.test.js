@@ -4,10 +4,12 @@ import {
   clerkErrorMessage,
   hasEmailCodeFactor,
   humanizeIdentifierError,
+  isAlreadySignedInError,
   isPatternFormatError,
   isPreviewSignInHost,
   previewSignInHint,
   PRODUCTION_SIGN_IN_URL,
+  recoverExistingClerkSession,
   startGitHubOAuthSignIn,
 } from "./emailCodeSignIn";
 
@@ -190,6 +192,61 @@ describe("clerkErrorMessage", () => {
   it("returns null for empty values", () => {
     expect(clerkErrorMessage(null)).toBeNull();
     expect(clerkErrorMessage({})).toBeNull();
+  });
+});
+
+describe("isAlreadySignedInError", () => {
+  it("detects Clerk session_exists and identifier_already_signed_in", () => {
+    expect(
+      isAlreadySignedInError({
+        errors: [{ code: "session_exists", message: "Session already exists" }],
+      }),
+    ).toBe(true);
+    expect(
+      isAlreadySignedInError({
+        errors: [
+          {
+            code: "identifier_already_signed_in",
+            message: "You're already signed in",
+            meta: { sessionId: "sess_123" },
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      isAlreadySignedInError({
+        errors: [{ code: "form_identifier_not_found", message: "Nope" }],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("recoverExistingClerkSession", () => {
+  it("activates the session id from the Clerk error meta", async () => {
+    const setActive = vi.fn(async () => {});
+    const sessionId = await recoverExistingClerkSession(
+      { setActive, client: { lastActiveSessionId: "sess_fallback" } },
+      {
+        errors: [
+          {
+            code: "identifier_already_signed_in",
+            meta: { sessionId: "sess_from_error" },
+          },
+        ],
+      },
+    );
+    expect(sessionId).toBe("sess_from_error");
+    expect(setActive).toHaveBeenCalledWith({ session: "sess_from_error" });
+  });
+
+  it("falls back to the client last active session", async () => {
+    const setActive = vi.fn(async () => {});
+    const sessionId = await recoverExistingClerkSession(
+      { setActive, client: { lastActiveSessionId: "sess_last" } },
+      { errors: [{ code: "session_exists" }] },
+    );
+    expect(sessionId).toBe("sess_last");
+    expect(setActive).toHaveBeenCalledWith({ session: "sess_last" });
   });
 });
 

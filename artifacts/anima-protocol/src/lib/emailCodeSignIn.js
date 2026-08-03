@@ -106,6 +106,75 @@ export function isPatternFormatError(message, code) {
 }
 
 /**
+ * Clerk single-session mode: starting a new sign-in while a session is active.
+ * @param {unknown} err
+ */
+export function isAlreadySignedInError(err) {
+  const codes = [];
+  const messages = [];
+  const collect = (value) => {
+    if (!value || typeof value !== "object") {
+      if (typeof value === "string") messages.push(value);
+      return;
+    }
+    const obj = /** @type {{ code?: unknown, message?: unknown, longMessage?: unknown, long_message?: unknown, errors?: unknown[] }} */ (
+      value
+    );
+    if (obj.code != null) codes.push(asSearchText(obj.code));
+    if (obj.message != null) messages.push(asSearchText(obj.message));
+    if (obj.longMessage != null) messages.push(asSearchText(obj.longMessage));
+    if (obj.long_message != null) messages.push(asSearchText(obj.long_message));
+    if (Array.isArray(obj.errors)) obj.errors.forEach(collect);
+  };
+  collect(err);
+  if (err instanceof Error) messages.push(asSearchText(err.message));
+
+  if (
+    codes.some(
+      (code) => code === "session_exists" || code === "identifier_already_signed_in",
+    )
+  ) {
+    return true;
+  }
+  const joined = messages.join(" ");
+  return (
+    joined.includes("already signed in") ||
+    joined.includes("session already exists") ||
+    joined.includes("sessions already exists")
+  );
+}
+
+/**
+ * Activate an existing Clerk session from a session_exists /
+ * identifier_already_signed_in error, or from the client’s last active session.
+ *
+ * @param {{ setActive?: Function, client?: { lastActiveSessionId?: string | null, sessions?: Array<{ id?: string }> } } | null | undefined} clerk
+ * @param {unknown} [err]
+ * @returns {Promise<string | null>} session id when activation was attempted
+ */
+export async function recoverExistingClerkSession(clerk, err) {
+  if (!clerk || typeof clerk.setActive !== "function") return null;
+
+  let sessionId = null;
+  const first = /** @type {{ errors?: Array<{ code?: string, meta?: { sessionId?: string, session_id?: string } }>, meta?: { sessionId?: string, session_id?: string } }} */ (
+    err && typeof err === "object" ? err : null
+  );
+  const nested = first?.errors?.[0];
+  sessionId =
+    nested?.meta?.sessionId ||
+    nested?.meta?.session_id ||
+    first?.meta?.sessionId ||
+    first?.meta?.session_id ||
+    clerk.client?.lastActiveSessionId ||
+    clerk.client?.sessions?.[0]?.id ||
+    null;
+
+  if (!sessionId) return null;
+  await clerk.setActive({ session: sessionId });
+  return sessionId;
+}
+
+/**
  * Friendlier copy when Clerk/browser reject a mistyped email pattern.
  * @param {unknown} message
  * @param {unknown} code
@@ -164,6 +233,14 @@ function formatClerkMessage(message, code, options) {
 
   const text = asSearchText(message);
   const errCode = asSearchText(code);
+  if (
+    errCode === "session_exists" ||
+    errCode === "identifier_already_signed_in" ||
+    text.includes("already signed in") ||
+    text.includes("session already exists")
+  ) {
+    return "You're already signed in. Opening the app…";
+  }
   if (
     errCode === "form_identifier_not_found" ||
     text.includes("couldn't find your account")

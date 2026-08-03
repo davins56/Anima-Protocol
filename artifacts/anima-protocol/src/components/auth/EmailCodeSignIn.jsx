@@ -1,12 +1,14 @@
-import { useState } from "react";
-import { useClerk, useSignIn } from "@clerk/react";
+import { useEffect, useState } from "react";
+import { useClerk, useSignIn, useUser } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
 import {
   clerkErrorMessage,
   hasEmailCodeFactor,
+  isAlreadySignedInError,
   isPreviewSignInHost,
   previewSignInHint,
   PRODUCTION_SIGN_IN_URL,
+  recoverExistingClerkSession,
   startGitHubOAuthSignIn,
 } from "@/lib/emailCodeSignIn";
 import { clerkOAuthCompletePath } from "@/lib/clerkOAuthPaths";
@@ -21,6 +23,7 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  */
 export default function EmailCodeSignIn() {
   const { signIn, fetchStatus } = useSignIn();
+  const { isLoaded: userLoaded, isSignedIn } = useUser();
   const clerk = useClerk();
   const navigate = useNavigate();
 
@@ -28,11 +31,34 @@ export default function EmailCodeSignIn() {
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend'
+  const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend' | 'signout'
   const [maskedEmail, setMaskedEmail] = useState("");
   const onPreviewHost = isPreviewSignInHost();
 
   const loading = fetchStatus === "fetching" || Boolean(busy);
+
+  // Single-session Clerk instances reject a second sign-in. Send signed-in
+  // users into the app instead of leaving them stuck on this form.
+  useEffect(() => {
+    if (!userLoaded || !isSignedIn) return;
+    navigate(basePath || "/", { replace: true });
+  }, [userLoaded, isSignedIn, navigate]);
+
+  const resumeExistingSession = async (err) => {
+    try {
+      const sessionId = await recoverExistingClerkSession(clerk, err);
+      if (sessionId) {
+        navigate(basePath || "/", { replace: true });
+        return true;
+      }
+    } catch {
+      // Fall through to a user-facing message.
+    }
+    setError(
+      "You're already signed in in this browser. Open the app, or sign out and try again.",
+    );
+    return true;
+  };
 
   const previewBanner = onPreviewHost ? (
     <div
@@ -96,6 +122,10 @@ export default function EmailCodeSignIn() {
     try {
       const { error: createError } = await signIn.create({ identifier: value });
       if (createError) {
+        if (isAlreadySignedInError(createError)) {
+          await resumeExistingSession(createError);
+          return;
+        }
         setError(
           clerkErrorMessage(createError, {
             humanizeIdentifierFormat: true,
@@ -130,6 +160,10 @@ export default function EmailCodeSignIn() {
       setStep("code");
       setCode("");
     } catch (err) {
+      if (isAlreadySignedInError(err)) {
+        await resumeExistingSession(err);
+        return;
+      }
       setError(
         clerkErrorMessage(err, {
           humanizeIdentifierFormat: stage === "create",
@@ -198,6 +232,10 @@ export default function EmailCodeSignIn() {
     setError(null);
     setBusy("github");
     try {
+      if (isSignedIn) {
+        navigate(basePath || "/", { replace: true });
+        return;
+      }
       if (!signIn) {
         setError("Sign-in is still loading. Wait a moment and try GitHub again.");
         return;
@@ -206,10 +244,28 @@ export default function EmailCodeSignIn() {
       // clerk.authenticateWithRedirect throws "is not a function".
       await startGitHubOAuthSignIn(signIn, basePath, clerk);
     } catch (err) {
+      if (isAlreadySignedInError(err)) {
+        await resumeExistingSession(err);
+        setBusy(null);
+        return;
+      }
       setError(
         clerkErrorMessage(err, { context: "oauth" }) ||
           "GitHub sign-in failed. Try again.",
       );
+      setBusy(null);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setBusy("signout");
+    setError(null);
+    try {
+      if (typeof clerk?.signOut === "function") {
+        await clerk.signOut({ redirectUrl: `${window.location.origin}${basePath}/sign-in` });
+      }
+    } catch (err) {
+      setError(clerkErrorMessage(err) || "Couldn't sign out. Refresh and try again.");
       setBusy(null);
     }
   };
@@ -222,6 +278,37 @@ export default function EmailCodeSignIn() {
     "w-full rounded border border-cyan-400/50 bg-cyan-400/15 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:opacity-50";
   const secondaryBtnClass =
     "w-full rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50";
+
+  if (userLoaded && isSignedIn) {
+    return (
+      <div className={cardClass}>
+        {previewBanner}
+        <h1 className="text-xl font-semibold tracking-wide text-cyan-200">
+          You're already signed in
+        </h1>
+        <p className="mt-1 text-sm text-cyan-400/60">
+          This browser already has an Anima Protocol session. Continue into the
+          app, or sign out if you meant to switch accounts.
+        </p>
+        <button
+          type="button"
+          className={`${primaryBtnClass} mt-5`}
+          onClick={() => navigate(basePath || "/", { replace: true })}
+          disabled={loading}
+        >
+          Continue to app
+        </button>
+        <button
+          type="button"
+          className={`${secondaryBtnClass} mt-2`}
+          onClick={handleSignOut}
+          disabled={loading}
+        >
+          {busy === "signout" ? "Signing out…" : "Sign out"}
+        </button>
+      </div>
+    );
+  }
 
   if (step === "code") {
     return (
