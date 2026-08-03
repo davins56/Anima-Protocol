@@ -41,7 +41,13 @@ export async function streamChatReply(events, { onDelta, onFirstToken } = {}) {
 
   try {
     for await (const event of events) {
-      if (event?.error) throw new Error(event.error);
+      if (event?.error) {
+        const err = new Error(event.error);
+        // Preserve tokens already painted so callers can keep a partial reply
+        // instead of wiping the bubble when the stream fails mid-response.
+        if (content) err.partialContent = content;
+        throw err;
+      }
       if (event?.content) {
         content += event.content;
         if (!sawFirst) {

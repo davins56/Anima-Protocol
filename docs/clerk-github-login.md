@@ -117,15 +117,17 @@ If **Vercel Deployment Protection** is enabled on previews, OAuth callbacks to
 `/sign-in/sso-callback` may be blocked — disable protection for preview or test
 on `www.anima-protocol.com` instead.
 
-## 5. Apple (optional)
+## 5. Sign-in methods that work today (Production)
 
-In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
+| Method | Status | Notes |
+|--------|--------|-------|
+| **GitHub** (Clerk social icons) | Works | Prefer this if the account was created with GitHub |
+| **Email code / email link** | Works | Production accounts without a password (e.g. OAuth signup) only support this — not username+password |
+| **Google** | Broken until console fix | Live symptom: `Error 400: redirect_uri_mismatch`. Add `https://clerk.anima-protocol.com/v1/oauth_callback` to the Google OAuth client’s Authorized redirect URIs |
+| **Apple** | Broken until credentials | Clerk reports empty `client_id` — set Apple custom credentials in Clerk → SSO, or leave Apple disabled (the app hides the Apple button) |
+| **Password** | Only if set | Accounts that never set a password get `strategy_for_user_invalid`. Use email code, or “Forgot password” / Clerk Dashboard → Users → Set password |
 
-1. Enable **Apple**.
-2. Follow Clerk’s Apple setup wizard (Services ID, domain verification).
-3. Add Clerk’s Authorized Redirect URI
-   (`https://clerk.anima-protocol.com/v1/oauth_callback`) as an Apple Return URL.
-4. Keep `/sign-in/sso-callback` / `/sign-up/sso-callback` registered under Clerk → Paths.
+Do **not** rely on the old duplicate “Continue with …” buttons above the Clerk form — those called a custom `signIn.sso()` path that hung on “Redirecting…” without starting OAuth. Sign-in now uses Clerk’s built-in social buttons only.
 
 ## 6. Password vs email code vs GitHub
 
@@ -138,9 +140,20 @@ That does **not** mean every account can use a password:
 | After username, only “Check your email” / OTP — no password field | Account has **no password** (common for GitHub/OAuth signups). Clerk returns `strategy_for_user_invalid` for `password` | Enter the email code, or **Continue with GitHub**. After you’re in, set a password in Clerk account settings if you want password next time |
 | Want password for an existing OAuth user | Password never set in Production | Clerk Dashboard → Users → user → **Set password**, or user sets one after OTP/GitHub sign-in |
 
-Sign-up on Production may be **waitlist** mode — a brand-new Gmail signup can be blocked even when sign-in for an existing username works.
+Sign-up on Production may be **waitlist** mode — a brand-new Gmail signup can be
+blocked even when sign-in for an existing username works.
 
-## 7. Verify
+## 7. Apple (optional)
+
+In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
+
+1. Enable **Apple**.
+2. Follow Clerk’s Apple setup wizard (Services ID, domain verification).
+3. Add Clerk’s Authorized Redirect URI
+   (`https://clerk.anima-protocol.com/v1/oauth_callback`) as an Apple Return URL.
+4. Keep `/sign-in/sso-callback` / `/sign-up/sso-callback` registered under Clerk → Paths.
+
+## 8. Verify
 
 Run from the repo root with the production Clerk keys in the environment:
 
