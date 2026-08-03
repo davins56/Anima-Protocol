@@ -19,8 +19,9 @@ router.get("/healthz", (_req, res) => {
 });
 
 /**
- * Public LLM routing probe (no secrets). Shows which chat provider will be used
- * so we can confirm Kimi-only deploys without reading Vercel env UI.
+ * Public LLM routing probe (no secrets). Shows which chat provider chain will
+ * be used so we can confirm Kimi-first / failover deploys without reading
+ * Vercel env UI. API-key-like ANIMA_LLM_PROVIDER values are redacted.
  */
 router.get("/healthz/llm", (_req, res) => {
   const routing = getLlmRoutingStatus("standard");

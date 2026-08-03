@@ -21,6 +21,7 @@ import {
 import {
   getAnimaTierProviderOrder,
   isAnimaCustomMode,
+  isKimiStickySkipped,
   isOpenAIStickySkipped,
   isProviderUnusableError,
   isXaiStickySkipped,
@@ -104,7 +105,7 @@ export function getEnsembleMinds(tier: ModelTier = "standard"): EnsembleMindId[]
 
   for (const id of getAnimaTierProviderOrder(tier)) {
     if (id === "gemini") continue;
-    if (id === "kimi" && hasKimiKey()) {
+    if (id === "kimi" && hasKimiKey() && !isKimiStickySkipped()) {
       minds.push("kimi");
       continue;
     }
