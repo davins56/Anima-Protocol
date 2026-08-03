@@ -106,8 +106,6 @@ describe('probeClerkConnectivity', () => {
       expect.anything(),
     );
   });
-
-  
   it('does not emit a false-positive stall hint when probes succeed', async () => {
     vi.stubGlobal(
       'fetch',
@@ -144,12 +142,12 @@ describe('probeClerkConnectivity', () => {
 
     const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
     expect(hints).toHaveLength(1);
-    expect(hints[0]).toContain('returned 400');
+    expect(hints[0]).toContain('failed (400)');
     expect(hints[0]).toContain('invalid_request');
     expect(hints[0]).not.toMatch(/Confirm clerk\.anima-protocol\.com DNS in Clerk/);
   });
 
-it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
+  it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {
@@ -186,6 +184,75 @@ it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
       ),
       expect.anything(),
     );
+  });
+
+  it('surfaces custom-domain host_invalid with Domains guidance', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+          });
+        }
+        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: 'host_invalid',
+                  message: 'Invalid host',
+                  long_message:
+                    'We were unable to attribute this request to an instance running on Clerk.',
+                },
+              ],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
+
+    expect(hints).toEqual([
+      'Clerk custom domain host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key for clerk.anima-protocol.com, and that domain is verified in Clerk → Domains.',
+    ]);
+  });
+
+  it('includes Clerk error detail for generic custom-domain failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+          });
+        }
+        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: 'something_else',
+                  message: 'Bad request',
+                  long_message: 'Custom domain is not fully provisioned.',
+                },
+              ],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
+
+    expect(hints).toEqual([
+      'Clerk custom domain failed (400) at https://clerk.anima-protocol.com: Custom domain is not fully provisioned. Clerk error: something_else. Confirm clerk.anima-protocol.com is verified in Clerk → Domains and DNS CNAMEs to frontend-api.clerk.services.',
+    ]);
   });
 });
 
