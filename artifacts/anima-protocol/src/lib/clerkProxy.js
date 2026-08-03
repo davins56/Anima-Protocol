@@ -52,11 +52,14 @@ export function isAnimaProductionHost(hostname) {
 
 function encodeClerkPublishableKeyHost(hostname) {
   const payload = `clerk.${hostname}$`;
-  if (typeof btoa === 'function') return btoa(payload);
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(payload, 'utf8').toString('base64');
+  // Clerk publishable keys omit base64 padding (`=`).
+  let encoded = '';
+  if (typeof btoa === 'function') {
+    encoded = btoa(payload);
+  } else if (typeof Buffer !== 'undefined') {
+    encoded = Buffer.from(payload, 'utf8').toString('base64');
   }
-  return '';
+  return encoded.replace(/=+$/, '');
 }
 
 /**
@@ -70,9 +73,7 @@ export function publishableKeyFromFrontendHost(hostname, fallbackKey = '') {
   if (!host) return fallbackKey || '';
   const clerkHost = isAnimaProductionHost(host) ? ANIMA_APEX_HOST : host;
   const encodedHost = encodeClerkPublishableKeyHost(clerkHost);
-  return encodedHost
-    ? `pk_live_${encodedHost.replace(/=+$/, '')}`
-    : fallbackKey || '';
+  return encodedHost ? `pk_live_${encodedHost}` : fallbackKey || '';
 }
 
 export function ensureTrailingSlash(url) {
