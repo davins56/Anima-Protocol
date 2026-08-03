@@ -1,9 +1,14 @@
 {
-<<<<<<< HEAD
   "extends": "./tsconfig.base.json",
   "compileOnSave": false,
   "files": [],
   "references": [
+    {
+      "path": "./artifacts/api-server"
+    },
+    {
+      "path": "./artifacts/mockup-sandbox"
+    },
     {
       "path": "./lib/db"
     },
@@ -12,36 +17,6 @@
     },
     {
       "path": "./lib/api-zod"
-    },
-    {
-      "path": "./lib/integrations-openai-ai-server"
-    },
-    {
-      "path": "./lib/integrations-openai-ai-react"
     }
   ]
-=======
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
-  "include": ["src"]
->>>>>>> 5f387c89b6d948ad920b0237e828644e4bb014fa
 }
