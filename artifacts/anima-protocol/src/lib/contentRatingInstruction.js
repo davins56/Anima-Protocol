@@ -50,10 +50,12 @@ const NEVER_STOP_INTIMACY_RE =
 
 /**
  * Affirmative / keep-going cues for soft-continue after a heated window.
+ * Intentionally excludes bare politeness/redirect words (`please`, `more`,
+ * `continue`, `go on`) that often appear in non-sexual redirects after heat.
  * "don't stop" lives here so HOLD short-circuit does not fire on it.
  */
 const CONTINUE_CUE_RE =
-  /\b(yes|yeah|yep|yup|please|more|harder|deeper|keep going|go on|don'?t stop|dont stop|never (want you to )?stop|please continue|continue|don'?t you (dare )?stop|mmm+)\b/i;
+  /\b(yes|yeah|yep|yup|harder|deeper|keep going|don'?t stop|dont stop|never (want you to )?stop|please continue|keep (it )?going|don'?t you (dare )?stop|mmm+)\b/i;
 
 /**
  * Strong sexual-invite cues only. Ambiguous phrases (want you / need you /
@@ -102,11 +104,23 @@ export function isClearRefusal(latest = "") {
 /**
  * Judge whether this beat is a right or wrong time for lewd/sexual escalation.
  *
- * @param {{ userMessage?: string, recentMessages?: Array<{ role?: string, content?: string }> }} [ctx]
+ * @param {{
+ *   userMessage?: string,
+ *   recentMessages?: Array<{ role?: string, content?: string }>,
+ *   isContinue?: boolean,
+ * }} [ctx]
  * @returns {LewdTiming}
  */
-export function assessLewdTiming({ userMessage = "", recentMessages = [] } = {}) {
+export function assessLewdTiming({
+  userMessage = "",
+  recentMessages = [],
+  isContinue = false,
+} = {}) {
   const latest = String(userMessage || "");
+  const recentWindow = (recentMessages || [])
+    .slice(-6)
+    .map((m) => String(m?.content || ""))
+    .filter(Boolean);
 
   // 1) Crisis / trauma / logistics — never escalate.
   if (CRISIS_RE.test(latest) || HOLD_CONTEXT_RE.test(latest)) return "hold";
@@ -114,26 +128,37 @@ export function assessLewdTiming({ userMessage = "", recentMessages = [] } = {})
   // 2) Clear refusals win before invite matching and soft-continue.
   if (isClearRefusal(latest)) return "hold";
 
+  // Recent crisis / clear refusal in the window blocks soft-continue inheritance.
+  // A later "yes" must not resume heat seeded by a crisis-bearing prior turn.
+  const recentBlocksHeat = recentWindow.some(
+    (text) => CRISIS_RE.test(text) || isClearRefusal(text),
+  );
+  if (recentBlocksHeat && !INVITE_RE.test(latest)) return "hold";
+
   // 3) Strong invite cues on the current turn.
   if (INVITE_RE.test(latest)) return "invite";
 
-  const recentText = (recentMessages || [])
-    .slice(-6)
-    .map((m) => String(m?.content || ""))
-    .filter((text) =>
-      text &&
-      !CRISIS_RE.test(text) &&
-      !HOLD_CONTEXT_RE.test(text) &&
-      !isClearRefusal(text),
+  const recentText = recentWindow
+    .filter(
+      (text) =>
+        !CRISIS_RE.test(text) &&
+        !HOLD_CONTEXT_RE.test(text) &&
+        !isClearRefusal(text),
     )
     .join("\n");
   const recentWasHeated =
     INVITE_RE.test(recentText) || HEAT_RE.test(recentText);
 
-  // 4) Soft-continue only when THIS turn shows continuation intent or heat.
+  // 4) Soft-continue when THIS turn shows continuation intent/heat, OR the user
+  // tapped Continue after an already-heated window (no literal "continue" token).
   // Do not inherit consent from prior heated messages alone (neutral "okay"/"thanks" → hold).
   if (recentWasHeated) {
-    if (CONTINUE_CUE_RE.test(latest) || HEAT_RE.test(latest) || INVITE_RE.test(latest)) {
+    if (
+      isContinue ||
+      CONTINUE_CUE_RE.test(latest) ||
+      HEAT_RE.test(latest) ||
+      INVITE_RE.test(latest)
+    ) {
       return "continue";
     }
     return "hold";

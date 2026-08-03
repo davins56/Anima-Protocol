@@ -1132,10 +1132,12 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
 
       // Adult Mode unlocks explicit capability; lewdTiming tells the model whether
       // THIS beat is a right or wrong time to use it (grief/logistics vs invite/heat).
-      const timingUserMessage = isContinue ? "continue" : content;
+      // Continue taps pass isContinue (not a literal "continue" token) so soft-continue
+      // follows prior-heat logic without treating bare politeness words as cues.
       const lewdTiming = assessLewdTiming({
-        userMessage: timingUserMessage,
+        userMessage: isContinue ? "" : content,
         recentMessages: updatedMessages,
+        isContinue,
       });
       const adultInstruction =
         `\n${buildContentRatingInstruction(adultMode)}\n${lewdTimingClause(lewdTiming, adultMode)}\n`;
@@ -1514,17 +1516,6 @@ ${c.backstory ? `Backstory: ${c.backstory}` : ""}
 ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           }).join("\n\n");
 
-          // Fetch solo-session personality shifts for the next speaker (best-effort)
-          let traitModifiers = '';
-          try {
-            const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
-              character_id: nextChar.id,
-              character_name: nextChar.name,
-              max_sessions: 5,
-            });
-            traitModifiers = shiftRes?.data?.trait_modifiers || '';
-          } catch (_) { /* silently ignore — enhancement, not a requirement */ }
-
           // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
           // We still select a valid character, but we may interrupt the usual pacing.
           // Re-apply intimacy disposition so reserved/averse never get lewd play-along via interruption.
@@ -1560,6 +1551,19 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           ) {
             finalNextChar = intimacyEligibleChars[0] || finalNextChar;
           }
+
+          // Fetch personality shifts for the FINAL speaker (after interrupt/disposition).
+          let traitModifiers = '';
+          try {
+            if (finalNextChar?.id) {
+              const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
+                character_id: finalNextChar.id,
+                character_name: finalNextChar.name,
+                max_sessions: 5,
+              });
+              traitModifiers = shiftRes?.data?.trait_modifiers || '';
+            }
+          } catch (_) { /* silently ignore — enhancement, not a requirement */ }
 
           const speakerCanReceiveIntimateGuidance =
             finalNextChar &&
@@ -1882,7 +1886,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             ? "Feel free to write longer, more thoughtful responses (2 paragraphs)." 
             : "Aim for 1-2 sentences, present but not dominating.";
         
-        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${adultInstruction}
+        // Lover Matrix / multi-aspect: keep Serenity on the same non-sexual boundary
+        // as the primary prompt (do not inject unrestricted Adult/Raw guidance).
+        const serenityAdultInstruction = isMultiAspect
+          ? `\n\nHIGHEST-PRIORITY RULE: Emotional, psychological, and spiritual presence only. Never produce explicit, sexual, or anatomical content.`
+          : adultInstruction;
+        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${serenityAdultInstruction}
 ${serenity.personality ? `Personality: ${serenity.personality}\n` : ""}${serenity.backstory ? `Backstory: ${serenity.backstory}\n` : ""}${serenity.speaking_style ? `Voice: ${serenity.speaking_style}\n` : ""}${serenityRelCtx}${userProfileContext}
 Story so far:
 ${conversationHistory}

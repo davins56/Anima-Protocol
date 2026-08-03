@@ -208,6 +208,78 @@ describe("assessLewdTiming", () => {
         ],
       }),
     ).toBe("hold");
+    // Heat earlier in the window must not survive a later crisis/refusal.
+    expect(
+      assessLewdTiming({
+        userMessage: "yes",
+        recentMessages: [
+          { role: "user", content: "kiss me" },
+          { role: "user", content: "I'm suicidal" },
+        ],
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "yes",
+        recentMessages: [
+          { role: "user", content: "kiss me" },
+          { role: "user", content: "stop" },
+        ],
+      }),
+    ).toBe("hold");
+  });
+
+  it("does not soft-continue on bare please / more / go on redirects", () => {
+    const heated = [
+      { role: "user", content: "Kiss me like you mean it" },
+      { role: "assistant", content: "*pulls you closer* Tell me what you need." },
+    ];
+    expect(
+      assessLewdTiming({
+        userMessage: "please change the subject",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "please tell me about your family",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "tell me more about the lore",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+    expect(
+      assessLewdTiming({
+        userMessage: "go on with the battle plan",
+        recentMessages: heated,
+      }),
+    ).toBe("hold");
+  });
+
+  it("treats Continue taps as soft-continue after heat without a continue token", () => {
+    expect(
+      assessLewdTiming({
+        userMessage: "",
+        isContinue: true,
+        recentMessages: [
+          { role: "user", content: "Kiss me like you mean it" },
+          { role: "assistant", content: "*pulls you closer*" },
+        ],
+      }),
+    ).toBe("continue");
+    expect(
+      assessLewdTiming({
+        userMessage: "",
+        isContinue: true,
+        recentMessages: [
+          { role: "user", content: "How was your day?" },
+        ],
+      }),
+    ).toBe("hold");
   });
 
   it("holds when user redirects away from heat", () => {

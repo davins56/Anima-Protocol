@@ -108,6 +108,20 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
+  it('returns no proxy stall hint when probes succeed (stall copy is UI-gated)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ status: 'ok' }), {
+        status: 200,
+      })),
+    );
+
+    // Healthy probes must stay quiet — CLERK_STALL_HINT is shown by the UI
+    // only after ClerkLoading actually stalls / ClerkFailed.
+    await expect(probeClerkConnectivity(PROXY_LIVE_KEY)).resolves.toEqual([]);
+    expect(CLERK_STALL_HINT).toMatch(/SDK has not finished loading/i);
+  });
+
   it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
     vi.stubGlobal(
       'fetch',

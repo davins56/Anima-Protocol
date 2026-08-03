@@ -49,6 +49,10 @@ import {
   type SynchroState,
 } from "../lib/synchroEngine";
 import { getOpenAIClient } from "../lib/openaiClient";
+import {
+  resolveActiveCharacterId,
+  resolveActiveCharacterName,
+} from "../lib/chatParticipants";
 
 const router = Router();
 
@@ -506,9 +510,15 @@ router.post("/messages", async (req, res) => {
   // Prefer the client-selected speaker (id, then name). Do NOT fall back to
   // characterIds[0] for multi-character sessions — that rebinds identity to the
   // wrong companion and conflicts with the client's group prompt.
+  // Non-participant assistant_character_id values are ignored so prompt context
+  // and persisted speaker attribution stay aligned.
+  const requestedParticipantId =
+    requestedAssistantId && characterIds.includes(requestedAssistantId)
+      ? resolveActiveCharacterId(requestedAssistantId, characterIds)
+      : null;
   const activeChar =
-    (requestedAssistantId
-      ? adaptedChars.find((c) => c.id === String(requestedAssistantId))
+    (requestedParticipantId
+      ? adaptedChars.find((c) => c.id === String(requestedParticipantId))
       : undefined) ||
     (requestedAssistantName
       ? adaptedChars.find(
@@ -519,6 +529,12 @@ router.post("/messages", async (req, res) => {
       : undefined) ||
     (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
   const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
+  const activeCharacterName = resolveActiveCharacterName({
+    requestedId: requestedParticipantId,
+    resolvedId: activeCharacterId,
+    requestedName: requestedAssistantName,
+    loadedName: activeChar?.name ?? null,
+  });
   const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
     activeCharacterId
       ? loadEvolution(activeCharacterId, userId)
@@ -649,8 +665,8 @@ router.post("/messages", async (req, res) => {
       const assistantMessage: MsgData = {
         role: "assistant",
         content: fullResponse,
-        character_id: body.assistant_character_id ?? body.character_id ?? null,
-        character_name: body.assistant_character_name ?? null,
+        character_id: activeCharacterId,
+        character_name: activeCharacterName,
         timestamp: new Date().toISOString(),
       };
       persistedAssistant = await appendStoreMessage(
@@ -663,8 +679,8 @@ router.post("/messages", async (req, res) => {
         sessionId,
         role: "assistant",
         content: fullResponse,
-        characterId: body.assistant_character_id ?? body.character_id ?? null,
-        characterName: body.assistant_character_name ?? null,
+        characterId: activeCharacterId,
+        characterName: activeCharacterName,
         isCrossover,
         metadata: { model: usedModel, tier: usedTier },
       });

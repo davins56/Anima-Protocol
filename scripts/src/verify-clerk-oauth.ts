@@ -5,6 +5,11 @@
  *   pnpm --filter @workspace/scripts run verify:clerk-oauth
  *   pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
  *   pnpm --filter @workspace/scripts run verify:clerk-oauth -- --require-apple
+ *
+ * Clerk-side “enabled” is not enough for Production. Google/Apple/GitHub apps
+ * must allowlist the Clerk Frontend API callback
+ * (`https://clerk…/v1/oauth_callback`). Google `redirect_uri_mismatch` and
+ * Apple `invalid_request` with an empty `client_id` are provider-console issues.
  */
 
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY?.trim();
@@ -121,7 +126,74 @@ async function fetchEnvironment(publishableKey: string) {
       identification_strategies?: string[];
       first_factors?: string[];
     };
+    display_config?: {
+      google_one_tap_client_id?: string | null;
+      instance_environment_type?: string;
+    };
+    user_settings?: {
+      social?: Record<
+        string,
+        {
+          enabled?: boolean;
+          authenticatable?: boolean;
+          name?: string;
+        }
+      >;
+    };
   }>;
+}
+
+function printProviderConsoleChecklist(options: {
+  publishableKey: string;
+  providerCallback: string | null;
+  googleClientId: string | null;
+  isProduction: boolean;
+}): void {
+  const { providerCallback, googleClientId, isProduction } = options;
+  if (!providerCallback) return;
+
+  console.log("\nProvider console checklist (required for social login):");
+  console.log(`  Authorized redirect / callback URI:`);
+  console.log(`    ${providerCallback}`);
+  if (googleClientId) {
+    console.log(`  Google OAuth client ID (from Clerk):`);
+    console.log(`    ${googleClientId}`);
+    console.log(
+      "  Google Cloud Console → APIs & Services → Credentials → that OAuth client",
+    );
+    console.log(`    → Authorized redirect URIs → add exactly:`);
+    console.log(`      ${providerCallback}`);
+    console.log(
+      "    → Authorized JavaScript origins: https://www.anima-protocol.com",
+    );
+    console.log(
+      "    (Error 400 redirect_uri_mismatch means this URI is missing.)",
+    );
+  } else if (isProduction) {
+    console.log(
+      "  Google: open Clerk → Production → SSO → Google and copy Client ID,",
+    );
+    console.log(
+      `    then allowlist ${providerCallback} on that Google OAuth client.`,
+    );
+  }
+  console.log(
+    `  GitHub OAuth App → Authorization callback URL: ${providerCallback}`,
+  );
+  console.log(
+    `  Apple Return URL (Services ID): ${providerCallback}`,
+  );
+  if (isProduction) {
+    console.log(
+      "  Apple: Production requires a real Services ID / client ID in Clerk.",
+    );
+    console.log(
+      "    Empty client_id on appleid.apple.com → invalid_request means",
+    );
+    console.log(
+      "    Apple SSO is enabled in Clerk but custom credentials are missing.",
+    );
+  }
 }
 
 async function listRedirectUrls(): Promise<string[]> {
@@ -241,6 +313,9 @@ async function main(): Promise<void> {
   const environment = await fetchEnvironment(publishableKey);
   const strategies = environment.auth_config?.identification_strategies ?? [];
   const firstFactors = environment.auth_config?.first_factors ?? [];
+  const isProduction = instanceLabel(publishableKey) === "Production";
+  const googleClientId =
+    environment.display_config?.google_one_tap_client_id?.trim() || null;
 
   console.log("\nIdentification strategies:", strategies.join(", ") || "(none)");
   console.log("First factors:", firstFactors.join(", ") || "(none)");
@@ -252,7 +327,7 @@ async function main(): Promise<void> {
     const enabled =
       strategies.includes(strategy) || firstFactors.includes(strategy);
     console.log(
-      enabled ? `✓ ${strategy} is enabled` : `✗ ${strategy} is NOT enabled`,
+      enabled ? `✓ ${strategy} is enabled in Clerk` : `✗ ${strategy} is NOT enabled in Clerk`,
     );
     if (!enabled) {
       missingRequiredStrategies.push(strategy);
@@ -276,8 +351,15 @@ async function main(): Promise<void> {
     }
   }
 
+  printProviderConsoleChecklist({
+    publishableKey,
+    providerCallback,
+    googleClientId,
+    isProduction,
+  });
+
   const existingRedirects = await listRedirectUrls();
-  console.log("\nRedirect URLs registered:", existingRedirects.length);
+  console.log("\nApp redirect URLs registered in Clerk (Paths):", existingRedirects.length);
   for (const url of existingRedirects.sort()) {
     console.log(`  • ${url}`);
   }
@@ -290,7 +372,7 @@ async function main(): Promise<void> {
   );
 
   if (missingRedirects.length > 0) {
-    console.log("\nMissing redirect URLs:");
+    console.log("\nMissing app redirect URLs:");
     for (const url of missingRedirects) {
       console.log(`  • ${url}`);
     }
@@ -302,7 +384,7 @@ async function main(): Promise<void> {
       }
     }
   } else {
-    console.log("\n✓ All default redirect URLs are registered");
+    console.log("\n✓ All default app redirect URLs are registered in Clerk");
   }
 
   if (!oauthOk) {
@@ -339,6 +421,20 @@ async function main(): Promise<void> {
   if (!requireApple) {
     console.log(
       "  (Apple left optional — re-run with --require-apple to enforce Apple readiness.)",
+    );
+  }
+  if (isProduction && providerCallback) {
+    console.log(
+      "⚠ Production still needs provider consoles to allowlist the callback above.",
+    );
+    console.log(
+      "  Manual check: open www.anima-protocol.com/sign-in and try each button.",
+    );
+    console.log(
+      "  Google Error 400 redirect_uri_mismatch → fix Google Cloud redirect URI.",
+    );
+    console.log(
+      "  Apple invalid_request with empty client_id → set Apple credentials in Clerk.",
     );
   }
 }
