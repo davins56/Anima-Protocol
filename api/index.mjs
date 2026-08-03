@@ -125444,8 +125444,6 @@ var openaiClient = null;
 var openaiClientKey = null;
 var xaiClient = null;
 var xaiClientKey = null;
-var geminiClient = null;
-var geminiClientKey = null;
 function normalizeApiKey(raw) {
   if (!raw) return null;
   let key = raw.trim();
@@ -125488,17 +125486,251 @@ function getXaiClient() {
   }
   return xaiClient;
 }
-function getGeminiClient() {
-  const apiKey = normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY);
-  if (!apiKey) return null;
-  if (!geminiClient || geminiClientKey !== apiKey) {
-    geminiClient = new openai_default({
-      apiKey,
-      baseURL: process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta/openai/"
-    });
-    geminiClientKey = apiKey;
+
+// src/lib/geminiNative.ts
+var GeminiApiError = class extends Error {
+  status;
+  code;
+  constructor(message, opts) {
+    super(message, opts?.cause !== void 0 ? { cause: opts.cause } : void 0);
+    this.name = "GeminiApiError";
+    this.status = opts?.status;
+    this.code = opts?.code;
   }
-  return geminiClient;
+};
+function geminiApiKey() {
+  const key = normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY);
+  if (!key) {
+    throw new GeminiApiError(
+      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
+      { status: 401, code: "missing_api_key" }
+    );
+  }
+  return key;
+}
+function geminiNativeBaseUrl() {
+  const raw = process.env.GEMINI_NATIVE_BASE_URL?.trim() || process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta";
+  return raw.replace(/\/openai\/?$/i, "").replace(/\/+$/, "");
+}
+function messageText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => {
+    if (typeof part === "string") return part;
+    if (part && typeof part === "object" && "type" in part) {
+      if (part.type === "text" && "text" in part) return String(part.text || "");
+    }
+    return "";
+  }).filter(Boolean).join("\n");
+}
+function toGeminiGenerateRequest(messages2, opts) {
+  const systemChunks = [];
+  const contents = [];
+  for (const message of messages2) {
+    const text3 = messageText(message.content).trim();
+    if (!text3) continue;
+    if (message.role === "system" || message.role === "developer") {
+      systemChunks.push(text3);
+      continue;
+    }
+    const role = message.role === "assistant" ? "model" : "user";
+    const last = contents[contents.length - 1];
+    if (last && last.role === role) {
+      last.parts.push({ text: text3 });
+    } else {
+      contents.push({ role, parts: [{ text: text3 }] });
+    }
+  }
+  const systemText = systemChunks.join("\n\n").trim();
+  let systemAsUserContent = false;
+  if (contents.length === 0) {
+    if (!systemText) {
+      throw new GeminiApiError("Gemini request has no message content.", {
+        status: 400,
+        code: "empty_messages"
+      });
+    }
+    contents.push({ role: "user", parts: [{ text: systemText }] });
+    systemAsUserContent = true;
+  }
+  if (contents[0]?.role === "model") {
+    contents.unshift({
+      role: "user",
+      parts: [{ text: "(continue)" }]
+    });
+  }
+  const body = { contents };
+  if (systemText && !systemAsUserContent) {
+    body.systemInstruction = { parts: [{ text: systemText }] };
+  }
+  const generationConfig = {};
+  if (typeof opts?.maxTokens === "number" && opts.maxTokens > 0) {
+    generationConfig.maxOutputTokens = opts.maxTokens;
+  }
+  if (typeof opts?.temperature === "number") {
+    generationConfig.temperature = opts.temperature;
+  }
+  if (Object.keys(generationConfig).length > 0) {
+    body.generationConfig = generationConfig;
+  }
+  return body;
+}
+function extractCandidateText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const candidates = payload.candidates;
+  if (!Array.isArray(candidates) || !candidates[0]) return "";
+  const content = candidates[0].content;
+  const parts = content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts.map(
+    (part) => part && typeof part === "object" && "text" in part ? String(part.text || "") : ""
+  ).join("");
+}
+async function readErrorBody(res) {
+  const raw = await res.text().catch(() => "");
+  if (!raw) {
+    return { message: `${res.status} status code (no body)` };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const message = parsed.error?.message || parsed.message || raw;
+    const code = typeof parsed.error?.status === "string" ? parsed.error.status : typeof parsed.error?.code === "string" ? parsed.error.code : void 0;
+    return { message: String(message), code };
+  } catch {
+    return { message: raw };
+  }
+}
+async function geminiFetch(url3, init2) {
+  try {
+    return await fetch(url3, init2);
+  } catch (err) {
+    throw new GeminiApiError(
+      err instanceof Error ? err.message : `Gemini request failed: ${String(err)}`,
+      { status: 502, code: "network_error", cause: err }
+    );
+  }
+}
+function openaiChunk(content) {
+  return {
+    id: "gemini-native",
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1e3),
+    model: "gemini",
+    choices: [
+      {
+        index: 0,
+        delta: { content },
+        finish_reason: null
+      }
+    ]
+  };
+}
+function openaiCompletion(content, model) {
+  return {
+    id: "gemini-native",
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1e3),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content, refusal: null },
+        finish_reason: "stop",
+        logprobs: null
+      }
+    ]
+  };
+}
+async function* parseGeminiSse(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const dataLines = frame.split("\n").filter((line3) => line3.startsWith("data:")).map((line3) => line3.slice(5).trimStart());
+      if (dataLines.length === 0) continue;
+      const data = dataLines.join("\n").trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const payload = JSON.parse(data);
+        const text3 = extractCandidateText(payload);
+        if (text3) yield openaiChunk(text3);
+      } catch {
+      }
+    }
+  }
+}
+async function createGeminiChatCompletion(opts) {
+  if (!hasGeminiKey()) {
+    throw new GeminiApiError(
+      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
+      { status: 401, code: "missing_api_key" }
+    );
+  }
+  const apiKey = geminiApiKey();
+  const body = toGeminiGenerateRequest(opts.messages, {
+    maxTokens: opts.maxTokens,
+    temperature: opts.temperature
+  });
+  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:generateContent`;
+  const res = await geminiFetch(url3, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await readErrorBody(res);
+    throw new GeminiApiError(err.message, {
+      status: res.status,
+      code: err.code
+    });
+  }
+  const payload = await res.json();
+  return openaiCompletion(extractCandidateText(payload), opts.model);
+}
+async function createGeminiChatStream(opts) {
+  if (!hasGeminiKey()) {
+    throw new GeminiApiError(
+      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
+      { status: 401, code: "missing_api_key" }
+    );
+  }
+  const apiKey = geminiApiKey();
+  const body = toGeminiGenerateRequest(opts.messages, {
+    maxTokens: opts.maxTokens
+  });
+  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:streamGenerateContent?alt=sse`;
+  const res = await geminiFetch(url3, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await readErrorBody(res);
+    throw new GeminiApiError(err.message, {
+      status: res.status,
+      code: err.code
+    });
+  }
+  if (!res.body) {
+    throw new GeminiApiError("Gemini stream returned an empty body.", {
+      status: 502,
+      code: "empty_stream"
+    });
+  }
+  return parseGeminiSse(res.body);
 }
 
 // src/lib/llmFailover.ts
@@ -125648,15 +125880,6 @@ function clientFor(provider) {
     }
     return client;
   }
-  if (provider === "gemini") {
-    const client = getGeminiClient();
-    if (!client) {
-      throw new Error(
-        "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider."
-      );
-    }
-    return client;
-  }
   return getOpenAIClient();
 }
 function resolveForProvider(provider, tier) {
@@ -125679,7 +125902,7 @@ function enrichError(err, attempted) {
     });
     const uniqueKeys = [...new Set(keyHints)].join(" / ");
     return new Error(
-      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. To skip OpenAI, set ANIMA_LLM_PROVIDER=xai (with XAI_API_KEY) or gemini (with GEMINI_API_KEY).`
+      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("gemini") ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. " : "") + "To skip OpenAI, set ANIMA_LLM_PROVIDER=xai (with XAI_API_KEY) or gemini (with GEMINI_API_KEY)."
     );
   }
   if (isProviderUnusableError(err)) {
@@ -125701,6 +125924,13 @@ function enrichError(err, attempted) {
   return err instanceof Error ? err : new Error(String(err));
 }
 async function createStream(provider, resolved, messages2) {
+  if (provider === "gemini") {
+    return createGeminiChatStream({
+      model: resolved.model,
+      maxTokens: resolved.maxTokens,
+      messages: messages2
+    });
+  }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
     max_tokens: resolved.maxTokens,
@@ -125709,6 +125939,14 @@ async function createStream(provider, resolved, messages2) {
   });
 }
 async function createCompletion(provider, resolved, messages2, temperature) {
+  if (provider === "gemini") {
+    return createGeminiChatCompletion({
+      model: resolved.model,
+      maxTokens: resolved.maxTokens,
+      messages: messages2,
+      temperature
+    });
+  }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
     max_tokens: resolved.maxTokens,
