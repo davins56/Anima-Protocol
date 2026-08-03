@@ -50,6 +50,14 @@ describe("humanizeIdentifierError", () => {
     ).toMatch(/typos/i);
   });
 
+  it("preserves non-format Clerk parameter messages", () => {
+    const clerkMessage = "This parameter is invalid for the requested strategy.";
+
+    expect(
+      humanizeIdentifierError(clerkMessage, "form_param_value_invalid"),
+    ).toBe(clerkMessage);
+  });
+
   it("does not throw when message/code are objects", () => {
     expect(() =>
       humanizeIdentifierError(
@@ -73,6 +81,16 @@ describe("clerkErrorMessage", () => {
         errors: [{ code: "form_identifier_not_found", message: "Couldn't find your account." }],
       }),
     ).toBe("Couldn't find your account.");
+  });
+
+  it("preserves nested non-format Clerk parameter errors", () => {
+    const clerkMessage = "This parameter is invalid for the requested strategy.";
+
+    expect(
+      clerkErrorMessage({
+        errors: [{ code: "form_param_value_invalid", message: clerkMessage }],
+      }),
+    ).toBe(clerkMessage);
   });
 
   it("reads Future API longMessage", () => {

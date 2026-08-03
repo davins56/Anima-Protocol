@@ -81,12 +81,13 @@ export function asDisplayMessage(value) {
 export function humanizeIdentifierError(message, code) {
   const text = asSearchText(message);
   const errCode = asSearchText(code);
+  const isIdentifierFormatError = errCode === "form_param_format_invalid";
   if (
-    errCode.includes("format") ||
-    errCode.includes("param") ||
-    text.includes("did not match the expected pattern") ||
-    text.includes("is invalid") ||
-    text.includes("invalid email")
+    isIdentifierFormatError ||
+    (!errCode &&
+      (text.includes("did not match the expected pattern") ||
+        text.includes("is invalid") ||
+        text.includes("invalid email")))
   ) {
     return "That email or username looks invalid. Check for typos (for example .com, not .om) and try again.";
   }
