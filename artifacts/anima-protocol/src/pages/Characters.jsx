@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
@@ -281,9 +282,20 @@ export default function Characters() {
     const file = e.target.files[0];
     if (!file) return;
     setUploadingAvatar(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setForm((f) => ({ ...f, avatar_url: file_url }));
-    setUploadingAvatar(false);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      if (file_url) {
+        setForm((f) => ({ ...f, avatar_url: file_url }));
+      } else {
+        toast.error("Avatar upload failed. Try another image.");
+      }
+    } catch (err) {
+      console.error("Avatar upload failed:", err);
+      toast.error(err?.message || "Avatar upload failed. Try another image.");
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = "";
+    }
   };
 
   const handleFetchWikipediaBio = async () => {
