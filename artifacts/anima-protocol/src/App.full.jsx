@@ -23,7 +23,6 @@ import {
   Show,
   useClerk,
 } from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -50,6 +49,8 @@ import {
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  isVercelPreviewHost,
+  publishableKeyFromFrontendHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
@@ -225,7 +226,7 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
     return envKey;
   }
 
-  return publishableKeyFromHost(hostname, envKey || undefined);
+  return publishableKeyFromFrontendHost(hostname, envKey);
 }
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
@@ -300,6 +301,16 @@ const clerkAppearance = {
     // Apple Production SSO has empty client_id — hide until credentials are set.
     socialButtonsBlockButton__apple: "!hidden",
     socialButtonsProviderIcon__apple: "!hidden",
+    // Google Production still returns redirect_uri_mismatch until Google Cloud
+    // allowlists https://clerk.anima-protocol.com/v1/oauth_callback — hide so
+    // users are not sent into a hard failure; use GitHub or email code instead.
+    socialButtonsBlockButton__google: "!hidden",
+    socialButtonsProviderIcon__google: "!hidden",
+    socialButtonsBlockButton__google_one_tap: "!hidden",
+    socialButtonsProviderIcon__google_one_tap: "!hidden",
+    // Prefer GitHub while Google/Apple are ops-blocked.
+    socialButtonsBlockButton__github:
+      "!border-cyan-400/40 !bg-cyan-400/10 hover:!bg-cyan-400/15",
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -333,8 +344,11 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
-/** Delay before probing Clerk connectivity so healthy loads never show a warning. */
+/** Delay before showing stall diagnostics so healthy loads never flash a warning. */
 const CLERK_DIAGNOSTICS_STALL_MS = 4000;
+
+const VERCEL_PREVIEW_SIGNIN_HINT =
+  "This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use https://www.anima-protocol.com/sign-in instead.";
 
 function ClerkDiagnosticsBanner({ hints }) {
   if (!hints?.length) return null;
@@ -383,9 +397,22 @@ function useClerkProbeHints() {
   return probeHints;
 }
 
+function withPreviewHostHint(hints) {
+  // Only append preview guidance after a real probe failure — never on healthy
+  // stall/failure fallbacks alone.
+  if (
+    hints.length > 0 &&
+    typeof window !== "undefined" &&
+    isVercelPreviewHost(window.location.hostname)
+  ) {
+    return [...hints, VERCEL_PREVIEW_SIGNIN_HINT];
+  }
+  return hints;
+}
+
 function resolveConnectivityHints(probeHints, fallbackHint) {
   if (probeHints === null) return [fallbackHint];
-  if (probeHints.length > 0) return probeHints;
+  if (probeHints.length > 0) return withPreviewHostHint(probeHints);
   return [fallbackHint];
 }
 
@@ -431,10 +458,11 @@ function AuthFormShell({ mode, children }) {
         <ClerkLoginDiagnostics />
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
-            Password only works if one is set on this account. Otherwise enter
-            your username or email and use the email code — or continue with
-            GitHub below. Google sign-in needs its OAuth redirect URI allowlisted
-            in Google Cloud before it will work.
+            Working options right now: Continue with GitHub, or enter your
+            username/email and use the emailed verification code. Password
+            sign-in only works if a password is already set on this Production
+            account. Google and Apple are temporarily hidden until their
+            provider console credentials/redirect URIs are fixed.
           </p>
         ) : null}
         {children}

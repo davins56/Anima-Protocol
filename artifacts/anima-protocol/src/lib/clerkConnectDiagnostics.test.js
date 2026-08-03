@@ -109,7 +109,7 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
-  it('does not emit a false-positive stall hint when probes succeed', async () => {
+it('does not emit a false-positive stall hint when probes succeed', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {
