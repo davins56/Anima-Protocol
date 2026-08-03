@@ -118662,145 +118662,6 @@ function databaseTargetHint(rawUrl = process.env.DATABASE_URL) {
   }
 }
 
-// src/routes/health.ts
-var router2 = (0, import_express3.Router)();
-if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
-if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
-router2.get("/healthz", (_req, res) => {
-  const data = HealthCheckResponse.parse({ status: "ok" });
-  res.json(data);
-});
-router2.get("/healthz/db", async (_req, res) => {
-  const target = databaseTargetHint();
-  try {
-    const result = await getPool().query("select 1::int as ok");
-    let schema;
-    try {
-      schema = await inspectSchema();
-    } catch (schemaErr) {
-      const info = classifyDbError(schemaErr);
-      res.status(503).json({
-        status: "error",
-        db: true,
-        ok: result.rows?.[0]?.ok === 1,
-        schema: { ok: false, error: info.safeMessage, code: info.code },
-        target
-      });
-      return;
-    }
-    const healthy = schema.ok;
-    res.status(healthy ? 200 : 503).json({
-      status: healthy ? "ok" : "error",
-      db: true,
-      ok: result.rows?.[0]?.ok === 1,
-      schema: {
-        ok: schema.ok,
-        missingTables: schema.missingTables,
-        presentTables: schema.presentTables,
-        hasPgTrgm: schema.hasPgTrgm
-      },
-      target
-    });
-  } catch (err) {
-    const info = classifyDbError(err);
-    res.status(503).json({
-      status: "error",
-      db: false,
-      error: info.safeMessage,
-      code: info.code,
-      target
-    });
-  }
-});
-router2.get("/healthz/schema", async (_req, res) => {
-  const target = databaseTargetHint();
-  try {
-    const schema = await inspectSchema();
-    res.status(schema.ok ? 200 : 503).json({
-      status: schema.ok ? "ok" : "error",
-      schema,
-      target
-    });
-  } catch (err) {
-    const info = classifyDbError(err);
-    res.status(503).json({
-      status: "error",
-      error: info.safeMessage,
-      code: info.code,
-      target
-    });
-  }
-});
-router2.post("/healthz/schema", async (_req, res) => {
-  const target = databaseTargetHint();
-  try {
-    const result = await ensureSchemaOnce();
-    res.status(result.ok ? 200 : 503).json({
-      status: result.ok ? "ok" : "error",
-      ensured: result,
-      target
-    });
-  } catch (err) {
-    const info = classifyDbError(err);
-    res.status(503).json({
-      status: "error",
-      error: info.safeMessage,
-      code: info.code,
-      target
-    });
-  }
-});
-var health_default = router2;
-
-// src/routes/index.ts
-var import_express18 = __toESM(require_express2(), 1);
-
-// src/routes/openai/index.ts
-var import_express5 = __toESM(require_express2(), 1);
-
-// src/lib/rateLimit.ts
-var DEFAULT_WINDOW_MS = 6e4;
-var DEFAULT_MAX_REQUESTS = 120;
-var counts = /* @__PURE__ */ new Map();
-function rateLimitKey(req, name = "default") {
-  try {
-    const { userId } = getAuth(req);
-    if (userId) return `${name}:user:${userId}`;
-  } catch {
-  }
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
-  const realIp = String(req.headers["x-real-ip"] || "").trim();
-  const ip = (req.ip || realIp || forwarded || req.socket.remoteAddress || "unknown").replace(/:\d+$/, "");
-  return `${name}:ip:${ip || "unknown"}`;
-}
-function createRateLimit(options = {}) {
-  const max = options.max ?? DEFAULT_MAX_REQUESTS;
-  const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
-  const name = options.name ?? "default";
-  return function rateLimit2(req, res, next) {
-    const key = rateLimitKey(req, name);
-    const now = Date.now();
-    const entry = counts.get(key);
-    if (!entry || now > entry.resetAt) {
-      counts.set(key, { count: 1, resetAt: now + windowMs });
-      return next();
-    }
-    entry.count += 1;
-    if (entry.count > max) {
-      const retryAfterSec = Math.max(1, Math.ceil((entry.resetAt - now) / 1e3));
-      res.setHeader("Retry-After", String(retryAfterSec));
-      res.status(429).json({
-        error: `Too many requests. Please slow down and retry in about ${retryAfterSec}s.`,
-        code: "rate_limit",
-        retry_after_seconds: retryAfterSec
-      });
-      return;
-    }
-    next();
-  };
-}
-var rateLimit = createRateLimit();
-
 // src/lib/modelRouter.ts
 var DEFAULT_MODELS = {
   light: "gpt-4.1-mini",
@@ -125829,6 +125690,10 @@ async function createGeminiChatStream(opts) {
 // src/lib/llmFailover.ts
 var preferNonOpenAI = false;
 var preferNonXai = false;
+function envFlagEnabled(name) {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
 function defaultProviderMode() {
   if (hasKimiKey()) return "kimi";
   if (hasGeminiKey()) return "gemini";
@@ -125840,6 +125705,9 @@ function getConfiguredProviderMode() {
   if (raw === "grok") return "xai";
   if (raw === "moonshot") return "kimi";
   if (raw === "custom" || raw === "ensemble") return "anima";
+  if (raw === "gemini" && hasKimiKey() && !envFlagEnabled("ANIMA_FORCE_GEMINI")) {
+    return "kimi";
+  }
   if (raw === "xai" || raw === "openai" || raw === "gemini" || raw === "kimi" || raw === "anima" || raw === "auto") {
     return raw;
   }
@@ -125848,9 +125716,36 @@ function getConfiguredProviderMode() {
 function isAnimaCustomMode() {
   return getConfiguredProviderMode() === "anima";
 }
-function envFlagEnabled(name) {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+function getLlmDiagnostics(tier = "standard") {
+  const envProvider = (process.env.ANIMA_LLM_PROVIDER || "").trim() || null;
+  const keys = {
+    kimi: hasKimiKey(),
+    gemini: hasGeminiKey(),
+    xai: hasXaiKey(),
+    openai: hasOpenAIKey()
+  };
+  const configuredMode = getConfiguredProviderMode();
+  const chain = getProviderChain(tier);
+  const preferred = getPreferredProvider(tier);
+  let hint = "Chat will use the preferred provider in `chain`.";
+  if (!keys.kimi) {
+    hint = "KIMI_API_KEY / MOONSHOT_API_KEY is not set on this deployment \u2014 Kimi cannot be used. Add the key on Vercel Production and redeploy.";
+  } else if (envProvider?.toLowerCase() === "gemini" && !envFlagEnabled("ANIMA_FORCE_GEMINI")) {
+    hint = "ANIMA_LLM_PROVIDER=gemini was overridden because KIMI_API_KEY is present. Set ANIMA_FORCE_GEMINI=true to keep Gemini-only.";
+  } else if (preferred === "kimi") {
+    hint = "Kimi is the preferred chat provider for this tier.";
+  }
+  return {
+    status: "ok",
+    configuredMode,
+    envProvider,
+    keys,
+    chain,
+    preferred,
+    brand: configuredMode === "anima" ? "anima" : null,
+    forceGemini: envFlagEnabled("ANIMA_FORCE_GEMINI"),
+    hint
+  };
 }
 function isOpenAIBlocked() {
   const mode = getConfiguredProviderMode();
@@ -125918,6 +125813,14 @@ function getProviderChain(tier = "standard") {
     push2("openai");
   }
   return chain;
+}
+function getPreferredProvider(tier = "standard") {
+  const chain = getProviderChain(tier);
+  if (chain[0]) return chain[0];
+  if (hasKimiKey()) return "kimi";
+  if (hasGeminiKey()) return "gemini";
+  if (hasXaiKey()) return "xai";
+  return "openai";
 }
 function isProviderAuthError(err) {
   if (!err || typeof err !== "object") return false;
@@ -126236,6 +126139,148 @@ async function createChatCompletionWithFailover(req) {
   }
   throw enrichError(lastErr, attempted);
 }
+
+// src/routes/health.ts
+var router2 = (0, import_express3.Router)();
+if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
+if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
+router2.get("/healthz", (_req, res) => {
+  const data = HealthCheckResponse.parse({ status: "ok" });
+  res.json(data);
+});
+router2.get("/healthz/llm", (_req, res) => {
+  res.json(getLlmDiagnostics("standard"));
+});
+router2.get("/healthz/db", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const result = await getPool().query("select 1::int as ok");
+    let schema;
+    try {
+      schema = await inspectSchema();
+    } catch (schemaErr) {
+      const info = classifyDbError(schemaErr);
+      res.status(503).json({
+        status: "error",
+        db: true,
+        ok: result.rows?.[0]?.ok === 1,
+        schema: { ok: false, error: info.safeMessage, code: info.code },
+        target
+      });
+      return;
+    }
+    const healthy = schema.ok;
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "error",
+      db: true,
+      ok: result.rows?.[0]?.ok === 1,
+      schema: {
+        ok: schema.ok,
+        missingTables: schema.missingTables,
+        presentTables: schema.presentTables,
+        hasPgTrgm: schema.hasPgTrgm
+      },
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      db: false,
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+router2.get("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const schema = await inspectSchema();
+    res.status(schema.ok ? 200 : 503).json({
+      status: schema.ok ? "ok" : "error",
+      schema,
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+router2.post("/healthz/schema", async (_req, res) => {
+  const target = databaseTargetHint();
+  try {
+    const result = await ensureSchemaOnce();
+    res.status(result.ok ? 200 : 503).json({
+      status: result.ok ? "ok" : "error",
+      ensured: result,
+      target
+    });
+  } catch (err) {
+    const info = classifyDbError(err);
+    res.status(503).json({
+      status: "error",
+      error: info.safeMessage,
+      code: info.code,
+      target
+    });
+  }
+});
+var health_default = router2;
+
+// src/routes/index.ts
+var import_express18 = __toESM(require_express2(), 1);
+
+// src/routes/openai/index.ts
+var import_express5 = __toESM(require_express2(), 1);
+
+// src/lib/rateLimit.ts
+var DEFAULT_WINDOW_MS = 6e4;
+var DEFAULT_MAX_REQUESTS = 120;
+var counts = /* @__PURE__ */ new Map();
+function rateLimitKey(req, name = "default") {
+  try {
+    const { userId } = getAuth(req);
+    if (userId) return `${name}:user:${userId}`;
+  } catch {
+  }
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
+  const realIp = String(req.headers["x-real-ip"] || "").trim();
+  const ip = (req.ip || realIp || forwarded || req.socket.remoteAddress || "unknown").replace(/:\d+$/, "");
+  return `${name}:ip:${ip || "unknown"}`;
+}
+function createRateLimit(options = {}) {
+  const max = options.max ?? DEFAULT_MAX_REQUESTS;
+  const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
+  const name = options.name ?? "default";
+  return function rateLimit2(req, res, next) {
+    const key = rateLimitKey(req, name);
+    const now = Date.now();
+    const entry = counts.get(key);
+    if (!entry || now > entry.resetAt) {
+      counts.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      const retryAfterSec = Math.max(1, Math.ceil((entry.resetAt - now) / 1e3));
+      res.setHeader("Retry-After", String(retryAfterSec));
+      res.status(429).json({
+        error: `Too many requests. Please slow down and retry in about ${retryAfterSec}s.`,
+        code: "rate_limit",
+        retry_after_seconds: retryAfterSec
+      });
+      return;
+    }
+    next();
+  };
+}
+var rateLimit = createRateLimit();
 
 // src/routes/openai/index.ts
 var router3 = (0, import_express5.Router)();
