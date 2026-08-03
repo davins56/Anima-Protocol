@@ -155,7 +155,7 @@ on `www.anima-protocol.com` instead.
 
 Do **not** rely on the old duplicate “Continue with …” buttons above the Clerk form — those called a custom `signIn.sso()` path that hung on “Redirecting…” without starting OAuth. Sign-in now uses Clerk’s built-in social buttons only.
 
-## 6. Password vs email code vs GitHub
+## 7. Password vs email code vs GitHub
 
 Production Clerk may show an identifier-first form (email or username first).
 That does **not** mean every account can use a password:
@@ -169,7 +169,7 @@ That does **not** mean every account can use a password:
 Sign-up on Production may be **waitlist** mode — a brand-new Gmail signup can be
 blocked even when sign-in for an existing username works.
 
-## 7. Apple (optional)
+## 8. Apple (optional)
 
 In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
 
@@ -185,7 +185,7 @@ In Clerk Dashboard → Production (or Development) → Configure → SSO connect
 If Apple is not ready, leave the Apple SSO connection disabled in Clerk. The
 current app hides the Apple social button until credentials are ready.
 
-## 8. Troubleshooting live errors on www.anima-protocol.com
+## 9. Troubleshooting live errors on www.anima-protocol.com
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
@@ -198,7 +198,7 @@ current app hides the Apple social button until credentials are ready.
 Do **not** put `/sign-in/sso-callback` into Google/GitHub/Apple — that only belongs
 in Clerk → Paths.
 
-## 9. Verify
+## 10. Verify
 
 Run from the repo root with the production Clerk keys in the environment:
 
