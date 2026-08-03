@@ -217,12 +217,13 @@ export default function Characters() {
         const generated = await base44.functions.invoke('generateCharacterTraits', {
           name: form.name,
           universe: form.universe
-        }) || {};
+        });
+        const generatedTraits = generated?.data || generated || {};
         finalForm = {
           ...form,
-          personality: form.personality || generated.personality || "",
-          backstory: form.backstory || generated.backstory || "",
-          speaking_style: form.speaking_style || generated.speaking_style || ""
+          personality: generatedTraits.personality || form.personality,
+          backstory: generatedTraits.backstory || form.backstory,
+          speaking_style: generatedTraits.speaking_style || form.speaking_style
         };
       }
 
