@@ -7,7 +7,10 @@
  * stuck on "Check your email". Prefer `email_code` so users can type an OTP.
  */
 
+import { isVercelPreviewHost } from "./clerkProxy";
 import { clerkOAuthRedirectPaths } from "./clerkOAuthPaths";
+
+export const PRODUCTION_SIGN_IN_URL = "https://www.anima-protocol.com/sign-in";
 
 /** @param {Array<{ strategy?: string }> | null | undefined} factors */
 export function hasEmailCodeFactor(factors) {
@@ -73,56 +76,131 @@ export function asDisplayMessage(value) {
   return null;
 }
 
+/** @param {string | null | undefined} [hostname] */
+export function isPreviewSignInHost(hostname) {
+  if (hostname) return isVercelPreviewHost(hostname);
+  if (typeof window === "undefined") return false;
+  return isVercelPreviewHost(window.location.hostname);
+}
+
+/**
+ * Copy shown on Vercel preview hosts — OAuth + email often fail there because
+ * unique deploy URLs are not registered in Clerk Paths / Deployment Protection.
+ */
+export function previewSignInHint() {
+  return `Preview sign-in is unreliable. Use ${PRODUCTION_SIGN_IN_URL} instead.`;
+}
+
+/**
+ * @param {unknown} message
+ * @param {unknown} code
+ */
+export function isPatternFormatError(message, code) {
+  const text = asSearchText(message);
+  const errCode = asSearchText(code);
+  return (
+    errCode === "form_param_format_invalid" ||
+    text.includes("did not match the expected pattern") ||
+    text.includes("form_param_format_invalid")
+  );
+}
+
 /**
  * Friendlier copy when Clerk/browser reject a mistyped email pattern.
  * @param {unknown} message
  * @param {unknown} code
  */
 export function humanizeIdentifierError(message, code) {
+  if (isPatternFormatError(message, code)) {
+    return "That email or username looks invalid. Check for typos (for example .com, not .om) and try again.";
+  }
   const text = asSearchText(message);
   const errCode = asSearchText(code);
   if (
-    errCode === "form_param_format_invalid" ||
-    (!errCode &&
-      (text.includes("did not match the expected pattern") ||
-        text.includes("is invalid") ||
-        text.includes("invalid email")))
+    errCode === "form_identifier_not_found" ||
+    text.includes("couldn't find your account")
   ) {
-    return "That email or username looks invalid. Check for typos (for example .com, not .om) and try again.";
+    return "Couldn't find your account. Try the email or username on this Clerk account, or Continue with GitHub.";
   }
   return asDisplayMessage(message);
 }
 
 /**
- * Applies identifier-format copy only while starting an email sign-in. Other
- * Clerk flows can return `form_param_*` errors with unrelated meanings.
+ * Rewrite cryptic Clerk/browser pattern errors for the active sign-in stage.
  * @param {unknown} message
  * @param {unknown} code
- * @param {boolean} humanizeIdentifierFormat
+ * @param {{ humanizeIdentifierFormat?: boolean, context?: 'identifier' | 'oauth' | 'code' | 'generic', previewHost?: boolean }} options
  */
-function formatClerkMessage(message, code, humanizeIdentifierFormat) {
-  return humanizeIdentifierFormat
-    ? humanizeIdentifierError(message, code)
-    : asDisplayMessage(message);
+function formatClerkMessage(message, code, options) {
+  const {
+    humanizeIdentifierFormat = false,
+    context = "generic",
+    previewHost = false,
+  } = options;
+
+  if (previewHost && isPatternFormatError(message, code)) {
+    return previewSignInHint();
+  }
+
+  if (context === "oauth" && isPatternFormatError(message, code)) {
+    return previewHost
+      ? previewSignInHint()
+      : `GitHub sign-in could not start (redirect URL rejected). Use ${PRODUCTION_SIGN_IN_URL}.`;
+  }
+
+  if (humanizeIdentifierFormat) {
+    return humanizeIdentifierError(message, code);
+  }
+
+  // Pattern errors outside identifier create are still cryptic — never show raw.
+  if (isPatternFormatError(message, code)) {
+    if (context === "code") {
+      return "That verification code looks invalid. Check the digits and try again.";
+    }
+    return previewHost
+      ? previewSignInHint()
+      : `Sign-in could not continue (unexpected format). Use ${PRODUCTION_SIGN_IN_URL}, or Continue with GitHub.`;
+  }
+
+  const text = asSearchText(message);
+  const errCode = asSearchText(code);
+  if (
+    errCode === "form_identifier_not_found" ||
+    text.includes("couldn't find your account")
+  ) {
+    return "Couldn't find your account. Try the email or username on this Clerk account, or Continue with GitHub.";
+  }
+
+  return asDisplayMessage(message);
 }
 
 /**
  * Pick a user-facing message from a Clerk Future `{ error }` or thrown value.
  * Never throws — Clerk error shapes are inconsistent across SDK builds.
  * @param {unknown} err
- * @param {{ humanizeIdentifierFormat?: boolean }} [options]
+ * @param {{ humanizeIdentifierFormat?: boolean, context?: 'identifier' | 'oauth' | 'code' | 'generic', previewHost?: boolean }} [options]
  */
-export function clerkErrorMessage(err, { humanizeIdentifierFormat = false } = {}) {
+export function clerkErrorMessage(
+  err,
+  {
+    humanizeIdentifierFormat = false,
+    context = "generic",
+    previewHost = typeof window !== "undefined"
+      ? isPreviewSignInHost()
+      : false,
+  } = {},
+) {
+  const options = { humanizeIdentifierFormat, context, previewHost };
   try {
     if (!err) return null;
     if (typeof err === "string") {
-      return formatClerkMessage(err, null, humanizeIdentifierFormat);
+      return formatClerkMessage(err, null, options);
     }
     if (err instanceof Error) {
       return formatClerkMessage(
         err.message,
         /** @type {{ code?: unknown }} */ (err).code,
-        humanizeIdentifierFormat,
+        options,
       );
     }
     if (typeof err === "object") {
@@ -130,31 +208,19 @@ export function clerkErrorMessage(err, { humanizeIdentifierFormat = false } = {}
         err
       );
       if (direct.longMessage != null && direct.longMessage !== "") {
-        return formatClerkMessage(
-          direct.longMessage,
-          direct.code,
-          humanizeIdentifierFormat,
-        );
+        return formatClerkMessage(direct.longMessage, direct.code, options);
       }
       if (direct.message != null && direct.message !== "" && !direct.errors) {
-        return formatClerkMessage(
-          direct.message,
-          direct.code,
-          humanizeIdentifierFormat,
-        );
+        return formatClerkMessage(direct.message, direct.code, options);
       }
       const first = direct.errors?.[0];
       const nested =
         first?.long_message ?? first?.longMessage ?? first?.message ?? null;
       if (nested != null && nested !== "") {
-        return formatClerkMessage(
-          nested,
-          first?.code,
-          humanizeIdentifierFormat,
-        );
+        return formatClerkMessage(nested, first?.code, options);
       }
       // Last resort: stringify unknown object shapes without crashing.
-      return formatClerkMessage(direct, direct.code, humanizeIdentifierFormat);
+      return formatClerkMessage(direct, direct.code, options);
     }
     return null;
   } catch {
@@ -210,6 +276,6 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk) {
   }
 
   throw new Error(
-    "GitHub sign-in is unavailable in this Clerk SDK build. Refresh and try again, or use an email code on https://www.anima-protocol.com/sign-in.",
+    `GitHub sign-in is unavailable in this Clerk SDK build. Refresh and try again, or use an email code on ${PRODUCTION_SIGN_IN_URL}.`,
   );
 }

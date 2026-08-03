@@ -4,6 +4,10 @@ import {
   clerkErrorMessage,
   hasEmailCodeFactor,
   humanizeIdentifierError,
+  isPatternFormatError,
+  isPreviewSignInHost,
+  previewSignInHint,
+  PRODUCTION_SIGN_IN_URL,
   startGitHubOAuthSignIn,
 } from "./emailCodeSignIn";
 
@@ -43,6 +47,25 @@ describe("asSearchText", () => {
   });
 });
 
+describe("isPatternFormatError", () => {
+  it("detects Clerk format-invalid codes and pattern text", () => {
+    expect(
+      isPatternFormatError("The string did not match the expected pattern.", null),
+    ).toBe(true);
+    expect(
+      isPatternFormatError("x", "form_param_format_invalid"),
+    ).toBe(true);
+    expect(isPatternFormatError("Couldn't find your account.", null)).toBe(false);
+  });
+});
+
+describe("isPreviewSignInHost", () => {
+  it("detects vercel preview hosts", () => {
+    expect(isPreviewSignInHost("anima-protocol-abc.vercel.app")).toBe(true);
+    expect(isPreviewSignInHost("www.anima-protocol.com")).toBe(false);
+  });
+});
+
 describe("humanizeIdentifierError", () => {
   it("rewrites pattern / format failures into actionable copy", () => {
     expect(
@@ -64,6 +87,12 @@ describe("humanizeIdentifierError", () => {
       ),
     ).toMatch(/typos/i);
   });
+
+  it("guides missing accounts toward username or GitHub", () => {
+    expect(
+      humanizeIdentifierError("Couldn't find your account.", "form_identifier_not_found"),
+    ).toMatch(/GitHub/i);
+  });
 });
 
 describe("clerkErrorMessage", () => {
@@ -72,7 +101,7 @@ describe("clerkErrorMessage", () => {
       clerkErrorMessage({
         errors: [{ code: "form_identifier_not_found", message: "Couldn't find your account." }],
       }),
-    ).toBe("Couldn't find your account.");
+    ).toMatch(/GitHub/i);
   });
 
   it("preserves non-format Clerk parameter errors", () => {
@@ -101,12 +130,33 @@ describe("clerkErrorMessage", () => {
       ],
     };
 
-    expect(clerkErrorMessage(error)).toBe(
-      "The string did not match the expected pattern.",
-    );
     expect(
-      clerkErrorMessage(error, { humanizeIdentifierFormat: true }),
+      clerkErrorMessage(error, { previewHost: false, context: "generic" }),
+    ).toMatch(/unexpected format|production sign-in/i);
+    expect(
+      clerkErrorMessage(error, {
+        humanizeIdentifierFormat: true,
+        previewHost: false,
+        context: "identifier",
+      }),
     ).toMatch(/typos/i);
+  });
+
+  it("rewrites pattern errors on preview hosts to the production URL", () => {
+    expect(
+      clerkErrorMessage(
+        {
+          errors: [
+            {
+              code: "form_param_format_invalid",
+              message: "The string did not match the expected pattern.",
+            },
+          ],
+        },
+        { previewHost: true, context: "oauth" },
+      ),
+    ).toBe(previewSignInHint());
+    expect(previewSignInHint()).toContain(PRODUCTION_SIGN_IN_URL);
   });
 
   it("handles object-shaped message fields without crashing", () => {
@@ -116,22 +166,25 @@ describe("clerkErrorMessage", () => {
           message: { message: "The string did not match the expected pattern." },
           code: "form_param_format_invalid",
         },
-        { humanizeIdentifierFormat: true },
+        { humanizeIdentifierFormat: true, previewHost: false },
       ),
     ).toMatch(/typos/i);
   });
 
-  it("keeps a format error from another flow as Clerk's own message", () => {
+  it("keeps a non-pattern code-flow message as Clerk's own text", () => {
     expect(
-      clerkErrorMessage({
-        errors: [
-          {
-            code: "form_param_format_invalid",
-            message: "The verification code must contain six digits.",
-          },
-        ],
-      }),
-    ).toBe("The verification code must contain six digits.");
+      clerkErrorMessage(
+        {
+          errors: [
+            {
+              code: "form_code_incorrect",
+              message: "Incorrect code",
+            },
+          ],
+        },
+        { context: "code", previewHost: false },
+      ),
+    ).toBe("Incorrect code");
   });
 
   it("returns null for empty values", () => {
