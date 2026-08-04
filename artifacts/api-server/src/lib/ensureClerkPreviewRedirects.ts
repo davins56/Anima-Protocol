@@ -81,5 +81,8 @@ export async function ensureClerkPreviewRedirects(): Promise<void> {
     logger.warn({ err, origin }, "Could not auto-register Clerk preview redirect URLs");
   }
 }
+<<<<<<< HEAD
 
 void ensureClerkPreviewRedirects();
+=======
+>>>>>>> origin/main

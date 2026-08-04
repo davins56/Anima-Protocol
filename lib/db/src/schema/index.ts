@@ -238,3 +238,28 @@ export const userProfiles = pgTable("user_profiles", {
 });
 
 export type UserProfile = typeof userProfiles.$inferSelect;
+<<<<<<< HEAD
+=======
+
+/**
+ * Portable avatar / image uploads for Vercel (no Replit object-storage sidecar).
+ * Served at GET /api/storage/objects/uploads/:id
+ */
+export const uploadedImages = pgTable(
+  "uploaded_images",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    contentType: text("content_type").notNull(),
+    // Raw base64 payload (no data: URL prefix).
+    dataBase64: text("data_base64").notNull(),
+    byteSize: integer("byte_size").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdx: index("uploaded_images_user_idx").on(table.userId),
+  }),
+);
+
+export type UploadedImage = typeof uploadedImages.$inferSelect;
+>>>>>>> origin/main

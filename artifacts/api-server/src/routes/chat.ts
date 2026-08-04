@@ -9,18 +9,33 @@ import {
   chatSessions,
   companionMemories,
   db,
+<<<<<<< HEAD
+=======
+  ensureSchemaOnce,
+>>>>>>> origin/main
   makeId,
   migrateSessionMessages,
   sessionIdEq,
   userEntities,
   type MsgData,
 } from "@workspace/db";
+<<<<<<< HEAD
 import { rateLimit } from "../lib/rateLimit";
 import {
   isModelUnavailableError,
   resolveModel,
   routeModel,
 } from "../lib/modelRouter";
+=======
+import { createRateLimit } from "../lib/rateLimit";
+import { routeModel } from "../lib/modelRouter";
+import { createChatStreamWithFailover } from "../lib/llmFailover";
+import {
+  chunkTextAsStream,
+  createEnsembleChatReply,
+  isEnsembleMode,
+} from "../lib/llmEnsemble";
+>>>>>>> origin/main
 import {
   buildCompanionPrompt,
   type CompanionMemoryRecord,
@@ -47,11 +62,37 @@ import {
   serializeSynchroState,
   type SynchroState,
 } from "../lib/synchroEngine";
+<<<<<<< HEAD
 import { createModelProvider, getProviderFallbackChain } from "../lib/modelProvider";
 
 const router = Router();
 
 router.use(rateLimit);
+=======
+import {
+  resolveActiveCharacterId,
+  resolveActiveCharacterName,
+} from "../lib/chatParticipants";
+
+const router = Router();
+
+// Only throttle the expensive LLM stream. Lightweight context/memory GETs must
+// not burn the same budget (and must not share a collapsed proxy-IP bucket).
+router.use(
+  "/messages",
+  createRateLimit({ name: "chat-messages", max: 60, windowMs: 60_000 }),
+);
+
+// Same self-heal as /api/store — chat dual-writes chat_sessions / companion_memories.
+router.use(async (_req, _res, next) => {
+  try {
+    await ensureSchemaOnce();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+>>>>>>> origin/main
 
 function requireUser(req: Request, res: Response): string | null {
   const { userId } = getAuth(req);
@@ -95,11 +136,39 @@ async function loadCharacters(userId: string, characterIds: string[]) {
     .where(
       and(
         eq(userEntities.userId, userId),
+<<<<<<< HEAD
         eq(userEntities.entityName, "Character"),
         inArray(userEntities.entityId, characterIds),
       ),
     );
   return rows.map((row) => asObject(row.data));
+=======
+        inArray(userEntities.entityName, ["Character", "Anima"]),
+        inArray(userEntities.entityId, characterIds),
+      ),
+    );
+  // Prefer Character rows when both exist for the same id; mark Animas clearly
+  // so the prompt builder can apply archetype/identity locks.
+  const byId = new Map<string, MsgData>();
+  for (const row of rows) {
+    const data = asObject(row.data);
+    const id = String(row.entityId || data.id || "");
+    if (!id) continue;
+    if (row.entityName === "Anima") {
+      const animaData: MsgData = {
+        ...data,
+        id: data.id || id,
+        _isAnima: true,
+        universe: data.universe || "Anima",
+        category: data.category || data.archetype || "guardian",
+      };
+      if (!byId.has(id)) byId.set(id, animaData);
+      continue;
+    }
+    byId.set(id, data);
+  }
+  return characterIds.map((id) => byId.get(String(id))).filter(Boolean) as MsgData[];
+>>>>>>> origin/main
 }
 
 async function readRecentStoreMessages(
@@ -424,7 +493,10 @@ router.post("/messages", async (req, res) => {
     deep_mode?: boolean;
     persist?: boolean;
     metadata?: Record<string, unknown>;
+<<<<<<< HEAD
     scenario?: Record<string, unknown> | null;
+=======
+>>>>>>> origin/main
   };
   const sessionId = body.session_id;
   if (!sessionId) {
@@ -459,6 +531,7 @@ router.post("/messages", async (req, res) => {
     readRecentStoreMessages(userId, sessionId, 24),
   ]);
 
+<<<<<<< HEAD
   const activeCharacterId = characterIds.length > 0 ? characterIds[0] : null;
   const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
     activeCharacterId
@@ -472,6 +545,14 @@ router.post("/messages", async (req, res) => {
       : Promise.resolve(null),
   ]);
 
+=======
+  const requestedAssistantId = body.assistant_character_id
+    ? String(body.assistant_character_id)
+    : null;
+  const requestedAssistantName = body.assistant_character_name
+    ? String(body.assistant_character_name).trim()
+    : "";
+>>>>>>> origin/main
 
   const distinctUniverses = new Set(
     characters.map((c) => c.universe).filter(Boolean).map(String),
@@ -480,7 +561,49 @@ router.post("/messages", async (req, res) => {
   // Initialize and evolve synchro state for the active character
   const adaptedMemories = adaptMemories(memories);
   const adaptedChars = adaptCharacters(characters);
+<<<<<<< HEAD
   const activeChar = adaptedChars.length === 1 ? adaptedChars[0] : undefined;
+=======
+  // Prefer the client-selected speaker (id, then name). Do NOT fall back to
+  // characterIds[0] for multi-character sessions — that rebinds identity to the
+  // wrong companion and conflicts with the client's group prompt.
+  // Non-participant assistant_character_id values are ignored so prompt context
+  // and persisted speaker attribution stay aligned.
+  const requestedParticipantId =
+    requestedAssistantId && characterIds.includes(requestedAssistantId)
+      ? resolveActiveCharacterId(requestedAssistantId, characterIds)
+      : null;
+  const activeChar =
+    (requestedParticipantId
+      ? adaptedChars.find((c) => c.id === String(requestedParticipantId))
+      : undefined) ||
+    (requestedAssistantName
+      ? adaptedChars.find(
+          (c) =>
+            String(c.name || "").toLowerCase() ===
+            requestedAssistantName.toLowerCase(),
+        )
+      : undefined) ||
+    (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
+  const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
+  const activeCharacterName = resolveActiveCharacterName({
+    requestedId: requestedParticipantId,
+    resolvedId: activeCharacterId,
+    requestedName: requestedAssistantName,
+    loadedName: activeChar?.name ?? null,
+  });
+  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
+    activeCharacterId
+      ? loadEvolution(activeCharacterId, userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadRelationshipState(activeCharacterId, userId)
+      : Promise.resolve(null),
+    activeCharacterId
+      ? loadArcState(activeCharacterId, userId)
+      : Promise.resolve(null),
+  ]);
+>>>>>>> origin/main
   let synchroState: SynchroState | null = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
@@ -497,6 +620,7 @@ router.post("/messages", async (req, res) => {
   }
   const prompt = buildCompanionPrompt({
     systemPrompt: body.system_prompt,
+<<<<<<< HEAD
     scenario: body.scenario
       ? {
           id: typeof body.scenario.id === "string" ? body.scenario.id : undefined,
@@ -511,6 +635,8 @@ router.post("/messages", async (req, res) => {
             typeof body.scenario.description === "string" ? body.scenario.description : undefined,
         }
       : null,
+=======
+>>>>>>> origin/main
     characters: adaptedChars,
     activeCharacter: activeChar,
     memories: adaptedMemories,
@@ -529,10 +655,14 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
+<<<<<<< HEAD
   const standard = resolveModel("standard");
   const shouldPersist = body.persist !== false;
   const providers = getProviderFallbackChain().providers;
   const providerNames = providers.filter((name, index) => providers.indexOf(name) === index);
+=======
+  const shouldPersist = body.persist !== false;
+>>>>>>> origin/main
 
   await syncTypedSession({
     userId,
@@ -573,6 +703,7 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
+<<<<<<< HEAD
 
   try {
     let lastError: unknown;
@@ -627,6 +758,66 @@ router.post("/messages", async (req, res) => {
       );
     } catch {
       // Ignore write errors after the response body has begun.
+=======
+  let usedProvider: "openai" | "xai" | "gemini" | "kimi" | "gateway" = "openai";
+  let usedBrand: "anima" | undefined;
+  let failedOver = false;
+  let ensembleMinds: string[] | undefined;
+  let ensembleCombined = false;
+
+  try {
+    const messages = [{ role: "system" as const, content: prompt }];
+
+    if (isEnsembleMode()) {
+      const ensemble = await createEnsembleChatReply({
+        tier: routed.tier,
+        model: routed.model,
+        maxTokens: routed.maxTokens,
+        messages,
+        onProgress: (event) => {
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+        },
+      });
+      usedModel = ensemble.model;
+      usedTier = ensemble.tier;
+      usedProvider = ensemble.provider;
+      usedBrand = ensemble.brand;
+      ensembleMinds = ensemble.minds;
+      ensembleCombined = ensemble.combined;
+      failedOver = false;
+
+      for await (const chunk of chunkTextAsStream(ensemble.content)) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (!delta) continue;
+        fullResponse += delta;
+        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+      }
+    } else {
+      const completion = await createChatStreamWithFailover({
+        tier: routed.tier,
+        model: routed.model,
+        maxTokens: routed.maxTokens,
+        messages,
+      });
+      usedModel = completion.model;
+      usedTier = completion.tier;
+      usedProvider = completion.provider;
+      usedBrand = completion.brand;
+      failedOver = completion.failedOver;
+
+      for await (const chunk of completion.stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (!delta) continue;
+        fullResponse += delta;
+        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+      }
+    }
+
+    // An empty completion used to look like a successful turn on the client
+    // (thinking/typing cleared, no visible reply). Fail loudly instead.
+    if (!String(fullResponse).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
+>>>>>>> origin/main
     }
 
     let persistedAssistant: MsgData | null = null;
@@ -634,8 +825,13 @@ router.post("/messages", async (req, res) => {
       const assistantMessage: MsgData = {
         role: "assistant",
         content: fullResponse,
+<<<<<<< HEAD
         character_id: body.assistant_character_id ?? body.character_id ?? null,
         character_name: body.assistant_character_name ?? null,
+=======
+        character_id: activeCharacterId,
+        character_name: activeCharacterName,
+>>>>>>> origin/main
         timestamp: new Date().toISOString(),
       };
       persistedAssistant = await appendStoreMessage(
@@ -648,10 +844,25 @@ router.post("/messages", async (req, res) => {
         sessionId,
         role: "assistant",
         content: fullResponse,
+<<<<<<< HEAD
         characterId: body.assistant_character_id ?? body.character_id ?? null,
         characterName: body.assistant_character_name ?? null,
         isCrossover,
         metadata: { model: usedModel, tier: usedTier },
+=======
+        characterId: activeCharacterId,
+        characterName: activeCharacterName,
+        isCrossover,
+        metadata: {
+          model: usedModel,
+          tier: usedTier,
+          provider: usedProvider,
+          brand: usedBrand,
+          failed_over: failedOver,
+          ensemble_minds: ensembleMinds,
+          ensemble_combined: ensembleCombined,
+        },
+>>>>>>> origin/main
       });
       const sharedFact = isCrossover
         ? {
@@ -730,6 +941,14 @@ router.post("/messages", async (req, res) => {
         done: true,
         model: usedModel,
         tier: usedTier,
+<<<<<<< HEAD
+=======
+        provider: usedProvider,
+        brand: usedBrand,
+        failed_over: failedOver,
+        ensemble_minds: ensembleMinds,
+        ensemble_combined: ensembleCombined,
+>>>>>>> origin/main
         is_crossover: isCrossover,
         messages: [persistedUser, persistedAssistant].filter(Boolean),
       })}\n\n`,

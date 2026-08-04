@@ -1,10 +1,23 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+<<<<<<< HEAD
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
 import { autoAssignCharacterPhoto, photoNeedsLookup } from "@/lib/seedCharacters";
+=======
+import { toast } from "sonner";
+import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
+import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
+import {
+  autoAssignCharacterPhoto,
+  getStarterRoster,
+  photoNeedsLookup,
+  retryStarterSeed,
+} from "@/lib/seedCharacters";
+>>>>>>> origin/main
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
 import { Link } from "react-router-dom";
@@ -13,9 +26,23 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+<<<<<<< HEAD
 import { retryStarterSeed } from "@/lib/seedCharacters";
 import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
+=======
+import { notifyStoreChanged } from "@/api/base44Client";
+import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
+import CharacterBioSheet from "@/components/character/CharacterBioSheet";
+
+/** True when /api/store failed because Postgres is down / unreachable. */
+function isStoreDatabaseError(err) {
+  const status = err?.status;
+  if (status === 503) return true;
+  const msg = String(err?.message || "");
+  return /database|postgres|unavailable|unreachable|connection/i.test(msg);
+}
+>>>>>>> origin/main
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -67,9 +94,19 @@ export default function Characters() {
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [showSeriesModal, setShowSeriesModal] = useState(false);
+<<<<<<< HEAD
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [loadError, setLoadError] = useState(null);
+=======
+  const [bioCharacter, setBioCharacter] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  // When the account store (Postgres) is unreachable, show the bundled starter
+  // roster from src/lib/seedCharacters.js so the library is still browsable.
+  const [usingBundledSeed, setUsingBundledSeed] = useState(false);
+>>>>>>> origin/main
 
   const existingCharacterIds = useMemo(
     () => new Set(characters.map((c) => c.id)),
@@ -78,6 +115,10 @@ export default function Characters() {
 
   const loadCharacters = async ({ retrySeed = false } = {}) => {
     setLoadError(null);
+<<<<<<< HEAD
+=======
+    setUsingBundledSeed(false);
+>>>>>>> origin/main
     setLoading(true);
     try {
       let data = await base44.entities.Character.list("-created_date", 100);
@@ -93,8 +134,26 @@ export default function Characters() {
       }
       setCharacters(data || []);
     } catch (err) {
+<<<<<<< HEAD
       setLoadError(err?.message || "Could not load characters.");
       setCharacters([]);
+=======
+      const message = err?.message || "Could not load characters.";
+      if (isStoreDatabaseError(err)) {
+        // seedCharacters.js (package root) seeds Supabase and is NOT read by the
+        // UI. The live roster is src/lib/seedCharacters.js → /api/store → Postgres.
+        // When Postgres is down, surface that bundled roster so the list is not empty.
+        const bundled = getStarterRoster();
+        setCharacters(bundled);
+        setUsingBundledSeed(true);
+        setLoadError(
+          `${message}. Showing the bundled starter roster (${bundled.length}) — not saved to your account until the database is reachable.`,
+        );
+      } else {
+        setLoadError(message);
+        setCharacters([]);
+      }
+>>>>>>> origin/main
     } finally {
       setLoading(false);
     }
@@ -186,12 +245,22 @@ export default function Characters() {
         const generated = await base44.functions.invoke('generateCharacterTraits', {
           name: form.name,
           universe: form.universe
+<<<<<<< HEAD
         }) || {};
         finalForm = {
           ...form,
           personality: form.personality || generated.personality || "",
           backstory: form.backstory || generated.backstory || "",
           speaking_style: form.speaking_style || generated.speaking_style || ""
+=======
+        });
+        const generatedTraits = generated?.data || generated || {};
+        finalForm = {
+          ...form,
+          personality: generatedTraits.personality || form.personality,
+          backstory: generatedTraits.backstory || form.backstory,
+          speaking_style: generatedTraits.speaking_style || form.speaking_style
+>>>>>>> origin/main
         };
       }
 
@@ -249,9 +318,26 @@ export default function Characters() {
     const file = e.target.files[0];
     if (!file) return;
     setUploadingAvatar(true);
+<<<<<<< HEAD
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
     setForm((f) => ({ ...f, avatar_url: file_url }));
     setUploadingAvatar(false);
+=======
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      if (file_url) {
+        setForm((f) => ({ ...f, avatar_url: file_url }));
+      } else {
+        toast.error("Avatar upload failed. Try another image.");
+      }
+    } catch (err) {
+      console.error("Avatar upload failed:", err);
+      toast.error(err?.message || "Avatar upload failed. Try another image.");
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = "";
+    }
+>>>>>>> origin/main
   };
 
   const handleFetchWikipediaBio = async () => {
@@ -316,7 +402,13 @@ export default function Characters() {
               <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
                 {loading || seeding
                   ? "syncing roster..."
+<<<<<<< HEAD
                   : `${characters.length} entities indexed`}
+=======
+                  : usingBundledSeed
+                    ? `${characters.length} bundled starters (offline)`
+                    : `${characters.length} entities indexed`}
+>>>>>>> origin/main
               </p>
             </div>
           </div>
@@ -365,7 +457,11 @@ export default function Characters() {
                 {seeding ? "Indexing starter characters..." : "Loading character library..."}
               </p>
             </div>
+<<<<<<< HEAD
           ) : loadError ? (
+=======
+          ) : loadError && !usingBundledSeed ? (
+>>>>>>> origin/main
             <div className="text-center py-24">
               <p className="font-mono text-destructive/80 text-sm tracking-wider mb-4 max-w-md mx-auto">
                 {loadError}
@@ -407,6 +503,27 @@ export default function Characters() {
             </div>
           ) : (
             <>
+<<<<<<< HEAD
+=======
+            {usingBundledSeed && (
+              <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="font-mono text-destructive/90 text-xs tracking-wider leading-relaxed max-w-2xl">
+                  {loadError ||
+                    "Account database unreachable. Showing bundled starters from src/lib/seedCharacters.js — edits will not save until the store is back."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoading(true);
+                    loadCharacters({ retrySeed: true });
+                  }}
+                  className="shrink-0 px-5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase hud-corner glow-border transition-all"
+                >
+                  Retry sync
+                </button>
+              </div>
+            )}
+>>>>>>> origin/main
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {characters.map((char) => (
               <div
@@ -435,6 +552,7 @@ export default function Characters() {
                   </button>
                 </div>
 
+<<<<<<< HEAD
                 {/* Avatar */}
                 <div className="relative">
                   {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
@@ -451,6 +569,38 @@ export default function Characters() {
                   ) : (
                     <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
                       <span className="font-mono text-primary/30 text-4xl">{char.name[0]}</span>
+=======
+                {/* Avatar — tap photo to open bio sheet */}
+                <div className="relative">
+                  {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
+                    <button
+                      type="button"
+                      className="w-full block focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                      onClick={() => setBioCharacter(char)}
+                      title={`View ${char.name} bio sheet`}
+                    >
+                      <img
+                        src={char.avatar_url}
+                        alt={char.name}
+                        className="w-full aspect-square object-cover"
+                        onError={() =>
+                          setBrokenPhotoIds((prev) =>
+                            prev.has(char.id) ? prev : new Set(prev).add(char.id)
+                          )
+                        }
+                      />
+                    </button>
+                  ) : (
+                    <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
+                      <button
+                        type="button"
+                        onClick={() => setBioCharacter(char)}
+                        title={`View ${char.name} bio sheet`}
+                        className="font-mono text-primary/30 text-4xl hover:text-primary/60 transition-colors focus:outline-none"
+                      >
+                        {char.name[0]}
+                      </button>
+>>>>>>> origin/main
                       <button
                         type="button"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -672,6 +822,15 @@ export default function Characters() {
           </div>
         </div>
       )}
+<<<<<<< HEAD
+=======
+
+      <CharacterBioSheet
+        character={bioCharacter}
+        open={!!bioCharacter}
+        onClose={() => setBioCharacter(null)}
+      />
+>>>>>>> origin/main
     </div>
   );
 }

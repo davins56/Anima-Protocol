@@ -56,6 +56,13 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("Serenity");
     expect(prompt).toContain("HIGHEST-PRIORITY RULE");
     expect(prompt).toContain("RESONANCE STATE");
+<<<<<<< HEAD
+=======
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+    expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic angel with sovereign grace");
+    expect(prompt).toContain("TURN TAKING");
+    expect(prompt).toMatch(/STOP and wait for the user/i);
+>>>>>>> origin/main
     expect(prompt).toContain("I think I'm ready to talk about my mother again");
   });
 
@@ -125,6 +132,7 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("SHADOW MODE");
   });
 
+<<<<<<< HEAD
   it("injects the Anima Protocol companion profile", () => {
     const prompt = buildCompanionPrompt({
       characters: [baseCharacter],
@@ -158,6 +166,8 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("deeply trusted");
   });
 
+=======
+>>>>>>> origin/main
   it("handles empty characters gracefully", () => {
     const prompt = buildCompanionPrompt({
       characters: [],
@@ -188,6 +198,30 @@ describe("buildGroupCompanionPrompt", () => {
     expect(prompt).toContain("ONLY SERENITY THIS TURN");
     expect(prompt).toContain("**Serenity:**");
   });
+<<<<<<< HEAD
+=======
+
+  it("does not bind group TURN RULES to characters[0] when speaker is missing", () => {
+    const char1 = { id: "c1", name: "Serenity", universe: "Eden" };
+    const char2 = { id: "c2", name: "Linda", universe: "Fallen" };
+
+    const prompt = buildCompanionPrompt({
+      systemPrompt: "YOU ARE ONLY LINDA THIS TURN.\nOUTPUT FORMAT: **Linda:** ...",
+      characters: [char1, char2],
+      activeCharacter: undefined,
+      memories: [],
+      recentMessages: [],
+      mode: "group",
+      content: "What do you think?",
+      isCrossover: true,
+    });
+
+    // Client prompt remains authoritative; do not inject conflicting Serenity rules.
+    expect(prompt).toContain("YOU ARE ONLY LINDA THIS TURN");
+    expect(prompt).not.toContain("ONLY SERENITY THIS TURN");
+    expect(prompt).not.toContain("CHARACTER:\n");
+  });
+>>>>>>> origin/main
 });
 
 describe("memoryRetrieval", () => {

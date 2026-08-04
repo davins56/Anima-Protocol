@@ -1,4 +1,12 @@
+<<<<<<< HEAD
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "./companionGuardrail";
+=======
+import {
+  INTELLIGENCE_GUIDANCE,
+  loyaltyGuardrailClause,
+  turnTakingClause,
+} from "./companionGuardrail";
+>>>>>>> origin/main
 
 export function buildCharacterPrompt({
   character,
@@ -11,15 +19,36 @@ export function buildCharacterPrompt({
   behaviorInstructions,
   adultInstruction,
   lengthGuide,
+<<<<<<< HEAD
+=======
+  isContinue = false,
+>>>>>>> origin/main
 }) {
   const animaNote = character._isAnima && character.archetype ? `Archetype: ${character.archetype} — ${character.tagline || ""}\n` : "";
 
   // Start with scenario system prompt if available
   let scenarioPrefix = scenario?.systemPrompt ? `${scenario.systemPrompt}\n\n` : "";
 
+<<<<<<< HEAD
   return `${scenarioPrefix}You are ${character.name}${character._isAnima ? "" : character.universe ? ` from ${character.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${adultInstruction}${companionModeInstruction}${behaviorInstructions}
 
 ${animaNote}${character.personality ? `Personality: ${character.personality}\n` : ""}${character.backstory ? `Backstory: ${character.backstory}\n` : ""}${character.speaking_style ? `Voice: ${character.speaking_style}\n` : ""}${relationshipContext}${emotionalMemoryContext}${loreContext}${locationContext ? `\n${locationContext}\n` : ""}
+=======
+  const identityBlock = [
+    character.personality ? `Personality: ${character.personality}` : "",
+    character.backstory ? `Backstory: ${character.backstory}` : "",
+    character.speaking_style ? `Voice: ${character.speaking_style}` : "",
+  ].filter(Boolean).join("\n");
+
+  return `${scenarioPrefix}You are ${character.name}${character._isAnima ? "" : character.universe ? ` from ${character.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${adultInstruction}${companionModeInstruction}${behaviorInstructions}
+
+CHARACTER IDENTITY LOCK:
+- From the first reply onward, embody ${character.name} using the Personality, Backstory, and Voice below — never a generic assistant.
+- Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
+- If details conflict with a generic helpful tone, the character identity wins.
+
+${animaNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${character.name}; invent no contradictory personality.\n`}${relationshipContext}${emotionalMemoryContext}${loreContext}${locationContext ? `\n${locationContext}\n` : ""}
+>>>>>>> origin/main
 CRITICAL AUTONOMY RULES:
 - You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
 - You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
@@ -34,6 +63,11 @@ Remember this person through the persistent memories above. Use those details na
 
 ${lengthGuide}
 
+<<<<<<< HEAD
+=======
+${turnTakingClause({ isContinue })}
+
+>>>>>>> origin/main
 If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.
 
 ${loyaltyGuardrailClause()}`;

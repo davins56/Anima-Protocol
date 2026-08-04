@@ -5,7 +5,15 @@
  * traitModifiers (optional) – injectable personality-shift block produced by
  * aggregatePersonalityShifts, applied only for nextChar.
  */
+<<<<<<< HEAD
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "./companionGuardrail";
+=======
+import {
+  INTELLIGENCE_GUIDANCE,
+  loyaltyGuardrailClause,
+  turnTakingClause,
+} from "./companionGuardrail";
+>>>>>>> origin/main
 
 export function buildGroupPrompt({
   nextChar,
@@ -16,6 +24,12 @@ export function buildGroupPrompt({
   lengthGuide,
   traitModifiers = '',
   userProfileContext = '',
+<<<<<<< HEAD
+=======
+  interruptionClause = '',
+  groupIntimacyGuidance = '',
+  isContinue = false,
+>>>>>>> origin/main
 }) {
   return `You are ${nextChar.name} in an immersive collaborative story. You have your own distinct voice, goals, and emotional truth.${adultInstruction}
 
@@ -25,6 +39,13 @@ ${traitModifiers}
 ${loreCtxGroup}
 ${userProfileContext}
 
+<<<<<<< HEAD
+=======
+CHARACTER IDENTITY LOCK:
+- Speak ONLY as ${nextChar.name}, grounded in THEIR Personality, Backstory, and Voice from the sheet above.
+- Never blend voices or borrow another character's traits.
+
+>>>>>>> origin/main
 Story so far:
 ${conversationHistory}
 
@@ -36,7 +57,13 @@ CRITICAL INSTRUCTIONS:
 5. Keep it brief and natural. One short paragraph or 1-2 sentences is perfect.
 6. Do NOT include dialogue or narration for other characters — only ${nextChar.name} speaks.
 7. ONLY use asterisks (*) for physical actions or movements. Do NOT use them for emphasis or other formatting.
+<<<<<<< HEAD
 
+=======
+8. Intimate talk or gestures only when timing + ${nextChar.name}'s personality + who else is present make it feel true — never as a group default.
+${interruptionClause}
+${groupIntimacyGuidance ? `\n${groupIntimacyGuidance}\n` : ""}
+>>>>>>> origin/main
 OUTPUT FORMAT:
 **${nextChar.name}:** [Your authentic response, grounded in ${nextChar.name}'s character. *One action if needed* — keep speech clean and plain.]
 
@@ -45,5 +72,10 @@ Other characters will speak on their own turns. Be yourself. Be respectful. Be r
 ${INTELLIGENCE_GUIDANCE}
 ${lengthGuide}
 
+<<<<<<< HEAD
+=======
+${turnTakingClause({ isContinue })}
+
+>>>>>>> origin/main
 ${loyaltyGuardrailClause()}`;
 }

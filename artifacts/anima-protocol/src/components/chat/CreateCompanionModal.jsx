@@ -3,6 +3,10 @@ import { useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
+<<<<<<< HEAD
+=======
+import AvatarUploadField from "@/components/anima/AvatarUploadField";
+>>>>>>> origin/main
 
 const ARCHETYPES = [
   { name: "Guardian", emoji: "🛡️", description: "Protective and wise" },
@@ -19,6 +23,10 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
   const [name, setName] = useState("");
   const [archetype, setArchetype] = useState("Muse");
   const [tagline, setTagline] = useState("");
+<<<<<<< HEAD
+=======
+  const [avatarUrl, setAvatarUrl] = useState("");
+>>>>>>> origin/main
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -38,7 +46,11 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         archetype,
         tagline: tagline.trim() || `Your ${archetype} companion`,
         assigned_user: userEmail,
+<<<<<<< HEAD
         avatar_url: "https://serenity-sm2kts5ggj.replit.app/serenity-default.jpg", // Default avatar
+=======
+        avatar_url: avatarUrl.trim(),
+>>>>>>> origin/main
         personality: `You are ${name}, a ${archetype.toLowerCase()} companion. ${tagline || "You provide guidance and support."}`,
         speaking_style: "Warm, thoughtful, and personable",
         emotion: "calm",
@@ -112,7 +124,11 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         <motion.div
           initial={{ scale: 0.9, y: 20 }}
           animate={{ scale: 1, y: 0 }}
+<<<<<<< HEAD
           className="w-full max-w-2xl bg-background border border-primary/30 rounded-xl p-8 space-y-6"
+=======
+          className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-background border border-primary/30 rounded-xl p-8 space-y-6"
+>>>>>>> origin/main
         >
           <h2 className="text-2xl font-mono text-primary glow-text tracking-widest uppercase">
             Design Your Companion
@@ -131,6 +147,15 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
             />
           </div>
 
+<<<<<<< HEAD
+=======
+          <AvatarUploadField
+            value={avatarUrl}
+            onChange={setAvatarUrl}
+            nameHint={name}
+          />
+
+>>>>>>> origin/main
           {/* Archetype */}
           <div className="space-y-3">
             <label className="text-xs font-mono text-primary/60 tracking-widest uppercase">
@@ -235,4 +260,8 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
   }
 
   return null;
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> origin/main

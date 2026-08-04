@@ -3,8 +3,18 @@ import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles } from "l
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
+<<<<<<< HEAD
 
 export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode }) {
+=======
+import {
+  llmDisplayBadgeClass,
+  llmDisplayLabel,
+  llmDisplayTitle,
+} from "@/lib/llmProviderLabel";
+
+export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand }) {
+>>>>>>> origin/main
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -60,11 +70,26 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         <ChevronLeft className="w-4 sm:w-5 h-4 sm:h-5" />
       </button>
 
+<<<<<<< HEAD
       {/* Character Avatar(s) */}
       {isGroup ? (
         <div className="flex -space-x-1.5 sm:-space-x-2">
           {activeChars.slice(0, 4).map((char, i) => (
             <div key={char.id} className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 bg-primary/10 overflow-hidden flex-shrink-0" style={{ zIndex: 4 - i }}>
+=======
+      {/* Character Avatar(s) — tap to open bio sheet */}
+      {isGroup ? (
+        <div className="flex -space-x-1.5 sm:-space-x-2">
+          {activeChars.slice(0, 4).map((char, i) => (
+            <button
+              key={char.id}
+              type="button"
+              onClick={() => onAvatarClick?.(char)}
+              title={`View ${char.name} bio sheet`}
+              className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 bg-primary/10 overflow-hidden flex-shrink-0 hover:border-primary/70 hover:ring-1 hover:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              style={{ zIndex: 4 - i }}
+            >
+>>>>>>> origin/main
               {char.avatar_url ? (
                 <img src={char.avatar_url} alt={char.name} className="w-full h-full object-cover" />
               ) : (
@@ -72,7 +97,11 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
                   {char.name[0]}
                 </div>
               )}
+<<<<<<< HEAD
             </div>
+=======
+            </button>
+>>>>>>> origin/main
           ))}
           {activeChars.length > 4 && (
             <div className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 bg-primary/10 flex items-center justify-center">
@@ -81,7 +110,16 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
           )}
         </div>
       ) : primaryChar ? (
+<<<<<<< HEAD
         <div className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden flex-shrink-0">
+=======
+        <button
+          type="button"
+          onClick={() => onAvatarClick?.(primaryChar)}
+          title={`View ${primaryChar.name} bio sheet`}
+          className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden flex-shrink-0 hover:border-primary/70 hover:ring-1 hover:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+        >
+>>>>>>> origin/main
           {primaryChar.avatar_url ? (
             <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
           ) : (
@@ -89,7 +127,11 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
               {primaryChar.name[0]}
             </div>
           )}
+<<<<<<< HEAD
         </div>
+=======
+        </button>
+>>>>>>> origin/main
       ) : null}
 
       {/* Title */}
@@ -136,6 +178,19 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         </div>
       </div>
 
+<<<<<<< HEAD
+=======
+      {/* Shows Anima custom LLM brand, or the concrete backend that served the reply */}
+      {llmProvider && (
+        <span
+          title={llmDisplayTitle(llmProvider, llmBrand)}
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${llmDisplayBadgeClass(llmProvider, llmBrand)}`}
+        >
+          {llmDisplayLabel(llmProvider, llmBrand) || llmProvider}
+        </span>
+      )}
+
+>>>>>>> origin/main
       {/* Deep mode toggle — forces every reply onto the most capable model */}
       {onToggleDeepMode && (
         <button

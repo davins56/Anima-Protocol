@@ -3,6 +3,10 @@ import "dotenv/config";
 
 import path from "node:path";
 import app from "./app";
+<<<<<<< HEAD
+=======
+import { ensureClerkPreviewRedirects } from "./lib/ensureClerkPreviewRedirects";
+>>>>>>> origin/main
 import { logger } from "./lib/logger";
 
 // If the repo is run from a different CWD, dotenv/config may not find artifacts/api-server/.env.
@@ -23,6 +27,14 @@ function requireEnv(name: string): string {
 requireEnv("DATABASE_URL");
 requireEnv("CLERK_SECRET_KEY");
 
+<<<<<<< HEAD
+=======
+// Register this preview deployment's Clerk callback URLs on cold start. Vercel
+// preview hosts are unique per deployment, and Clerk does not allow wildcard
+// redirect URLs.
+void ensureClerkPreviewRedirects();
+
+>>>>>>> origin/main
 // CLERK_WEBHOOK_SECRET is only consumed by the optional /api/webhooks/clerk svix
 // verification route. It is NOT provisioned in this project's environments
 // (development or production) and the app functions without it, so requiring it

@@ -1,10 +1,18 @@
 import { useState, useEffect } from "react";
+<<<<<<< HEAD
 import { Link, useNavigate } from "react-router-dom";
+=======
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+>>>>>>> origin/main
 import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
+<<<<<<< HEAD
   ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle
+=======
+  ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle, Wand2, Palette
+>>>>>>> origin/main
 } from "lucide-react";
 import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
 import {
@@ -17,8 +25,22 @@ import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
+<<<<<<< HEAD
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
+=======
+import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
+
+const SECTION = {
+  ACCOUNT: "account",
+  CUSTOMISE_ANIMA: "customise-anima",
+  BACKGROUND: "background",
+  AI: "ai",
+  INTERFACE: "interface",
+  DATA: "data",
+  LEGAL: "legal",
+};
+>>>>>>> origin/main
 
 const defaultPrefs = {
   ai_creativity: 0.7,
@@ -319,6 +341,10 @@ export default function Settings() {
 
   const navItems = [
     { id: SECTION.ACCOUNT, label: "Account", icon: User },
+<<<<<<< HEAD
+=======
+    { id: SECTION.CUSTOMISE_ANIMA, label: "Customise Anima", icon: Wand2 },
+>>>>>>> origin/main
     { id: SECTION.BACKGROUND, label: "Background", icon: BookOpen },
     { id: SECTION.AI, label: "AI Behavior", icon: Bot },
     { id: SECTION.INTERFACE, label: "Interface", icon: Sliders },
@@ -388,6 +414,26 @@ export default function Settings() {
                 </div>
               </button>
 
+<<<<<<< HEAD
+=======
+              <SectionTitle>Customise Anima</SectionTitle>
+              <button
+                onClick={() => navigate("/customise-anima")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  Shape their look • hair, outfit, eyes & style
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Wand2 className="w-4 h-4 text-primary/60" />
+                    Open Customise Anima
+                  </span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+
+>>>>>>> origin/main
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
                 <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
@@ -414,6 +460,60 @@ export default function Settings() {
             </div>
           )}
 
+<<<<<<< HEAD
+=======
+          {/* ── CUSTOMISE ANIMA ── */}
+          {section === SECTION.CUSTOMISE_ANIMA && (
+            <div className="space-y-4">
+              <SectionTitle>Customise Anima</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 border border-primary/30 bg-primary/5 flex items-center justify-center flex-shrink-0">
+                    <Palette className="w-5 h-5 text-primary/70" />
+                  </div>
+                  <div className="space-y-2 min-w-0">
+                    <p className="font-mono text-sm text-primary tracking-wider">
+                      Personalise the look of your companion
+                    </p>
+                    <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
+                      Choose hair, outfit, eyes, setting, mood, and art style, then generate a new
+                      portrait for your personal Anima. Theme accent colour is saved with the look.
+                    </p>
+                  </div>
+                </div>
+                <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
+                  <li>• Hair, outfit, eyes, background, expression, art style</li>
+                  <li>• AI-generated portrait from your descriptions</li>
+                  <li>• Theme accent colour for your companion</li>
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => navigate("/customise-anima")}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  Open Customise Anima
+                </button>
+              </div>
+
+              <SectionTitle>Personality</SectionTitle>
+              <button
+                type="button"
+                onClick={() => navigate("/customize?tab=animas")}
+                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+              >
+                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                  Name, tagline, voice & behaviour
+                </div>
+                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
+                  <span>Edit Anima personality</span>
+                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
+                </div>
+              </button>
+            </div>
+          )}
+
+>>>>>>> origin/main
           {/* ── BACKGROUND CONTEXT ── */}
           {section === SECTION.BACKGROUND && (
             <div className="space-y-4">
@@ -426,6 +526,35 @@ export default function Settings() {
           {/* ── AI BEHAVIOR ── */}
           {section === SECTION.AI && (
             <div className="space-y-4">
+<<<<<<< HEAD
+=======
+              <SectionTitle>LLM Providers</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
+                <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
+                  Chat prefers Gemini, then fails over to Kimi / Grok / OpenAI / AI Gateway. Set GEMINI_API_KEY (or AI_GATEWAY_API_KEY) on the host (Vercel) and redeploy.
+                </p>
+                {CONFIGURED_LLM_PROVIDERS.map((provider, index) => (
+                  <div
+                    key={provider.id}
+                    className="flex items-start justify-between gap-3 border border-primary/10 bg-black/30 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs text-primary/80 tracking-wider uppercase">
+                        {index + 1}. {provider.label}
+                        {index === 0 ? (
+                          <span className="ml-2 text-[8px] text-sky-300/80 tracking-widest">Primary</span>
+                        ) : null}
+                      </p>
+                      <p className="text-[9px] font-mono text-primary/35 mt-0.5">{provider.note}</p>
+                    </div>
+                    <span className="flex-shrink-0 font-mono text-[8px] text-primary/40 tracking-widest uppercase">
+                      {provider.env}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+>>>>>>> origin/main
               <SectionTitle>AI Behavior</SectionTitle>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-5">
@@ -546,10 +675,17 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
+<<<<<<< HEAD
                       Enables explicit, lewd, and sexual roleplay content. By enabling this you confirm you are 18 years of age or older.
                     </p>
                     {prefs.adult_content_enabled && (
                       <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — explicit content permitted</p>
+=======
+                      Enables explicit, lewd, and sexual roleplay. Characters escalate when the moment invites it — and hold back during grief, support, or non-intimate beats. By enabling this you confirm you are 18 years of age or older.
+                    </p>
+                    {prefs.adult_content_enabled && (
+                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — heat when the beat is right</p>
+>>>>>>> origin/main
                     )}
                   </div>
                   <button
@@ -954,7 +1090,14 @@ export default function Settings() {
               <SectionTitle>About</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
+<<<<<<< HEAD
                 <InfoRow label="AI Engine" value="Core LLM" />
+=======
+                <InfoRow
+                  label="AI Engine"
+                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(" → ")}
+                />
+>>>>>>> origin/main
                 <InfoRow label="Platform" value="Base44" />
               </div>
             </div>

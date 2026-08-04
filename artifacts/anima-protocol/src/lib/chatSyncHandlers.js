@@ -38,11 +38,27 @@ export async function syncActiveMessages({ sessionId, activeSessionRef, setActiv
   if (!cur || cur.id !== sessionId) return true; // navigated away; new session loads fresh
   // Never clobber a thread whose optimistic thinking/typing bubbles or
   // streaming reply are in flight — signal a retry instead.
+<<<<<<< HEAD
   const hasPending = (cur.messages || []).some(
     (m) =>
       m.character_name === "__typing__" || m.character_name === "__thinking__",
   );
   if (hasPending) return false;
+=======
+  const localMessages = cur.messages || [];
+  const hasPending = localMessages.some(
+    (m) =>
+      m.character_name === "__typing__" ||
+      m.character_name === "__thinking__" ||
+      m.is_streaming === true,
+  );
+  // Also protect an optimistic tip that has not been persisted yet (no server
+  // id). After a failed pre-token turn the thinking bubble is removed but the
+  // user's just-sent line may still be local-only; a deferred sync would wipe it.
+  const tail = localMessages[localMessages.length - 1];
+  const hasOptimisticTail = Boolean(tail && (tail.id == null || tail.id === ""));
+  if (hasPending || hasOptimisticTail) return false;
+>>>>>>> origin/main
   setActiveSession((prev) =>
     prev && prev.id === sessionId ? { ...prev, messages } : prev,
   );
