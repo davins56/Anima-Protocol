@@ -4,44 +4,50 @@
  * Single source of truth for "which model runs Anima", organized by
  * provider × tier:
  *
- *   Provider (runtime)   openai | groq | ollama | mock
+ *   Provider (runtime)   openai | groq | ollama | vllm | mock
  *   Tier (cost/quality)  light  | standard | heavy
  *
  * The registry is pure — no I/O, no network — so it can be unit-tested and
  * shared between the api-server and the build/fine-tuning tooling.
  *
- * The api-server keeps OpenAI as the default provider, so existing behavior is
- * unchanged unless `ANIMA_LLM_PROVIDER` is set. Setting it to `ollama` runs the
- * same Anima app against a local, self-hosted model on your own infrastructure
- * ("built into the scaffolding").
+ * Primary local target: fine-tuned Qwen3.6-27B (or equivalent) served via
+ * vLLM (OpenAI-compatible) or Ollama. Cloud providers remain available as a
+ * hybrid safety net while the local model is tuned.
  *
  * Environment overrides (all optional):
- *   ANIMA_LLM_PROVIDER           provider to use: openai | groq | ollama | mock
+ *   ANIMA_LLM_PROVIDER           openai | groq | ollama | vllm | mock
  *   ANIMA_MODEL_LIGHT            global model override for the light tier
  *   ANIMA_MODEL_STANDARD         global model override for the standard tier
  *   ANIMA_MODEL_HEAVY            global model override for the heavy tier
- *   ANIMA_<PROVIDER>_MODEL_<T>   per-provider override, e.g. ANIMA_OLLAMA_MODEL_STANDARD
- *
- * The global `ANIMA_MODEL_<TIER>` override keys intentionally mirror the
- * api-server's existing modelRouter convention so tuning the lineup stays a
- * one-line env change.
+ *   ANIMA_<PROVIDER>_MODEL_<T>   per-provider override, e.g. ANIMA_VLLM_MODEL_STANDARD
  */
 
-export type ProviderName = "openai" | "groq" | "ollama" | "mock";
+export type ProviderName = "openai" | "groq" | "ollama" | "vllm" | "mock";
 export type ModelTier = "light" | "standard" | "heavy";
 
-export const PROVIDER_NAMES: ProviderName[] = ["openai", "groq", "ollama", "mock"];
+export const PROVIDER_NAMES: ProviderName[] = [
+  "openai",
+  "groq",
+  "ollama",
+  "vllm",
+  "mock",
+];
 export const MODEL_TIERS: ModelTier[] = ["light", "standard", "heavy"];
 export const DEFAULT_PROVIDER: ProviderName = "openai";
+
+/** Canonical fine-tune / serve target for Anima companions. */
+export const ANIMA_PRIMARY_MODEL = "Qwen/Qwen3.6-27B";
+/** Memory summarization / compression specialist (optional smaller model). */
+export const ANIMA_MEMORY_SPECIALIST_MODEL = "Qwen/Qwen2.5-7B-Instruct";
 
 /** Sampling / decoding parameters applied to a model call. */
 export interface SamplingPreset {
   temperature: number;
-  /** OpenAI/Groq: top_p — nucleus sampling. */
+  /** OpenAI/Groq/vLLM: top_p — nucleus sampling. */
   topP?: number;
-  /** OpenAI/Groq: frequency_penalty. */
+  /** OpenAI/Groq/vLLM: frequency_penalty. */
   frequencyPenalty?: number;
-  /** OpenAI/Groq: presence_penalty. */
+  /** OpenAI/Groq/vLLM: presence_penalty. */
   presencePenalty?: number;
   /** Ollama/llama.cpp: repeat_penalty. */
   repeatPenalty?: number;
@@ -70,7 +76,7 @@ interface TierDefaults {
   description: string;
 }
 
-// --- OpenAI managed lineup (default) ----------------------------------------
+// --- OpenAI managed lineup (default cloud) ----------------------------------
 const OPENAI_DEFAULTS: Record<ModelTier, TierDefaults> = {
   light: { model: "gpt-4.1-mini", maxTokens: 4096, description: "Cheap tier for greetings and small talk" },
   standard: { model: "gpt-4o", maxTokens: 8192, description: "Routine conversational turns" },
@@ -83,7 +89,7 @@ const OPENAI_SAMPLING: Record<ModelTier, SamplingPreset> = {
   heavy: { temperature: 1.0, topP: 0.95 },
 };
 
-// --- Groq managed lineup (fast, cheap hosted alternative) --------------------
+// --- Groq managed lineup (fast hosted alternative) --------------------------
 const GROQ_DEFAULTS: Record<ModelTier, TierDefaults> = {
   light: { model: "llama-3.1-8b-instant", maxTokens: 4096, description: "Fast cheap tier on Groq" },
   standard: { model: "llama-3.3-70b-versatile", maxTokens: 8192, description: "Routine conversational turns on Groq" },
@@ -96,13 +102,28 @@ const GROQ_SAMPLING: Record<ModelTier, SamplingPreset> = {
   heavy: { temperature: 1.0, topP: 0.95 },
 };
 
-// --- Ollama self-hosted lineup (the "run your own Anima" path) ---------------
-// Quantized GGUF models served locally. The aliases are the Anima-branded
-// presets; `model` is the Ollama tag to `ollama pull`.
+// --- Ollama self-hosted lineup ----------------------------------------------
+// Quantized GGUF models. After fine-tuning, point ANIMA_OLLAMA_MODEL_* at your
+// Anima-branded Modelfile tag (e.g. anima-qwen27b).
 const OLLAMA_DEFAULTS: Record<ModelTier, TierDefaults> = {
-  light: { model: "qwen2.5:3b", alias: "anima-mini", maxTokens: 4096, description: "Self-hosted mini model (~2 GB)" },
-  standard: { model: "llama3.1:8b", alias: "anima-base", maxTokens: 8192, description: "Default self-hosted Anima model (~4.7 GB)" },
-  heavy: { model: "qwen2.5:14b", alias: "anima-pro", maxTokens: 8192, description: "Largest self-hosted preset (~9 GB)" },
+  light: {
+    model: "qwen2.5:7b",
+    alias: "anima-mini",
+    maxTokens: 4096,
+    description: "Self-hosted mini / memory specialist (~4–5 GB Q4)",
+  },
+  standard: {
+    model: "anima-qwen27b",
+    alias: "anima-base",
+    maxTokens: 8192,
+    description: "Fine-tuned Qwen3.6-27B Q4_K_M / Q5 (~16–20 GB)",
+  },
+  heavy: {
+    model: "anima-qwen27b",
+    alias: "anima-pro",
+    maxTokens: 8192,
+    description: "Same 27B at higher ctx / sampling for deep turns",
+  },
 };
 
 const OLLAMA_SAMPLING: Record<ModelTier, SamplingPreset> = {
@@ -111,7 +132,37 @@ const OLLAMA_SAMPLING: Record<ModelTier, SamplingPreset> = {
   heavy: { temperature: 0.9, topP: 0.92, repeatPenalty: 1.15, numCtx: 32768 },
 };
 
-// --- Mock (deterministic offline, for tests / demos) -------------------------
+// --- vLLM OpenAI-compatible local serve -------------------------------------
+// Best throughput for a single-GPU / multi-GPU box. Expose at
+// ANIMA_LOCAL_LLM_BASE_URL (default http://localhost:8000/v1).
+const VLLM_DEFAULTS: Record<ModelTier, TierDefaults> = {
+  light: {
+    model: ANIMA_MEMORY_SPECIALIST_MODEL,
+    alias: "anima-memory",
+    maxTokens: 4096,
+    description: "Optional 7B specialist for memory summarization",
+  },
+  standard: {
+    model: ANIMA_PRIMARY_MODEL,
+    alias: "anima-base",
+    maxTokens: 8192,
+    description: "Primary fine-tuned Qwen3.6-27B conversational model",
+  },
+  heavy: {
+    model: ANIMA_PRIMARY_MODEL,
+    alias: "anima-pro",
+    maxTokens: 8192,
+    description: "Primary model with richer sampling for deep turns",
+  },
+};
+
+const VLLM_SAMPLING: Record<ModelTier, SamplingPreset> = {
+  light: { temperature: 0.7, topP: 0.9 },
+  standard: { temperature: 0.85, topP: 0.92, presencePenalty: 0.1 },
+  heavy: { temperature: 0.95, topP: 0.95, presencePenalty: 0.15 },
+};
+
+// --- Mock (deterministic offline, for tests / demos) ------------------------
 const MOCK_DEFAULTS: Record<ModelTier, TierDefaults> = {
   light: { model: "mock-local", maxTokens: 1024, description: "Deterministic offline mock" },
   standard: { model: "mock-local", maxTokens: 1024, description: "Deterministic offline mock" },
@@ -128,6 +179,7 @@ const LINEUPS: Record<ProviderName, Record<ModelTier, TierDefaults>> = {
   openai: OPENAI_DEFAULTS,
   groq: GROQ_DEFAULTS,
   ollama: OLLAMA_DEFAULTS,
+  vllm: VLLM_DEFAULTS,
   mock: MOCK_DEFAULTS,
 };
 
@@ -135,6 +187,7 @@ const SAMPLINGS: Record<ProviderName, Record<ModelTier, SamplingPreset>> = {
   openai: OPENAI_SAMPLING,
   groq: GROQ_SAMPLING,
   ollama: OLLAMA_SAMPLING,
+  vllm: VLLM_SAMPLING,
   mock: MOCK_SAMPLING,
 };
 
@@ -147,7 +200,11 @@ export function resolveProvider(envValue?: string | null): ProviderName {
   const raw = (envValue ?? process.env.ANIMA_LLM_PROVIDER ?? "")
     .trim()
     .toLowerCase();
-  if (raw === "groq" || raw === "ollama" || raw === "mock") return raw;
+  if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
+    return raw;
+  }
+  // local / local-first map to vLLM OpenAI-compatible serving by default.
+  if (raw === "local" || raw === "local-first") return "vllm";
   return "openai";
 }
 
@@ -209,7 +266,7 @@ export function samplingFor(spec: ModelSpec): Record<string, number> {
   return out;
 }
 
-/** OpenAI/Groq chat.completions sampling params (snake_case). */
+/** OpenAI/Groq/vLLM chat.completions sampling params (snake_case). */
 export function samplingForOpenAI(spec: ModelSpec): Record<string, number> {
   const out: Record<string, number> = { temperature: spec.sampling.temperature };
   if (spec.sampling.topP !== undefined) out.top_p = spec.sampling.topP;
@@ -232,5 +289,3 @@ export function describeModel(spec: ModelSpec): string {
   const alias = spec.alias ? ` (${spec.alias})` : "";
   return `[${spec.id}] ${spec.model}${alias} — ${spec.description}`;
 }
-
-

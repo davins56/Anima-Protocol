@@ -6,4 +6,5 @@
  * lean api-server bundle never pulls the training tooling.
  */
 export * from "./registry";
-
+export * from "./embeddings";
+export * from "./memory/retrieval";

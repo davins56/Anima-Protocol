@@ -18,7 +18,11 @@ import {
 } from "@workspace/db";
 import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
-import { createChatStreamWithFailover } from "../lib/llmFailover";
+import {
+  createChatStreamWithFailover,
+  type LlmProviderId,
+} from "../lib/llmFailover";
+import { attachStoredEmbeddings } from "../lib/memoryEmbeddings";
 import {
   chunkTextAsStream,
   createEnsembleChatReply,
@@ -510,8 +514,12 @@ router.post("/messages", async (req, res) => {
     characters.map((c) => c.universe).filter(Boolean).map(String),
   ).size;
   const isCrossover = mode === "group" && distinctUniverses >= 2;
-  // Initialize and evolve synchro state for the active character
-  const adaptedMemories = adaptMemories(memories);
+  // Initialize and evolve synchro state for the active character.
+  // Attach stored embeddings so promptBuilder's retrieval can blend semantics.
+  const adaptedMemories = await attachStoredEmbeddings(
+    userId,
+    adaptMemories(memories),
+  );
   const adaptedChars = adaptCharacters(characters);
   // Prefer the client-selected speaker (id, then name). Do NOT fall back to
   // characterIds[0] for multi-character sessions — that rebinds identity to the
@@ -627,7 +635,7 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-  let usedProvider: "openai" | "xai" | "gemini" | "kimi" | "gateway" = "openai";
+  let usedProvider: LlmProviderId = "openai";
   let usedBrand: "anima" | undefined;
   let failedOver = false;
   let ensembleMinds: string[] | undefined;
