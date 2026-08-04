@@ -126,6 +126,80 @@ describe("isProviderUnusableError", () => {
   });
 });
 
+describe("isModelUnavailableError (via Gemini retired-model failover)", () => {
+  const SAVED = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...SAVED };
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.XAI_API_KEY = "xai-test";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    process.env.KIMI_API_KEY = "kimi-test";
+    process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_GEMINI_MODEL;
+    delete process.env.ANIMA_GEMINI_MODEL_LIGHT;
+    delete process.env.ANIMA_GEMINI_MODEL_STANDARD;
+    resetLlmFailoverStateForTests();
+    createMock.mockReset();
+    geminiStreamMock.mockReset();
+  });
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmFailoverStateForTests();
+  });
+
+  it("fails over to Gateway when Gemini model is retired for new users (404)", async () => {
+    // Every Gemini candidate (routed + rescue) is unavailable — must NOT abort
+    // the chain before Kimi/xAI/OpenAI/Gateway.
+    geminiStreamMock.mockRejectedValue({
+      status: 404,
+      code: "NOT_FOUND",
+      message:
+        "This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use a newer model",
+    });
+    createMock
+      .mockRejectedValueOnce({ status: 429, message: "kimi quota gone" })
+      .mockRejectedValueOnce({ status: 403, message: "xai no credits" })
+      .mockRejectedValueOnce({ status: 429, message: "openai quota gone" })
+      .mockResolvedValueOnce(fakeStream("gateway-ok"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "light",
+      model: "gpt-4.1-mini",
+      maxTokens: 4096,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(result.provider).toBe("gateway");
+    expect(result.failedOver).toBe(true);
+    expect(geminiStreamMock.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("rescues Gemini onto gemini-2.5-flash when light model is blocked", async () => {
+    process.env.ANIMA_GEMINI_MODEL_LIGHT = "gemini-2.5-flash-lite";
+    geminiStreamMock
+      .mockRejectedValueOnce({
+        status: 404,
+        message:
+          "This model models/gemini-2.5-flash-lite is no longer available to new users",
+      })
+      .mockResolvedValueOnce(fakeStream("flash-ok"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "light",
+      model: "gpt-4.1-mini",
+      maxTokens: 4096,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(result.provider).toBe("gemini");
+    expect(result.model).toBe("gemini-2.5-flash");
+    expect(createMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("sanitizeProviderEnv", () => {
   it("rejects Gemini AQ keys pasted into ANIMA_LLM_PROVIDER", () => {
     expect(
@@ -147,9 +221,11 @@ describe("resolve models", () => {
     delete process.env.ANIMA_KIMI_MODEL;
     delete process.env.ANIMA_XAI_MODEL;
     delete process.env.ANIMA_GATEWAY_MODEL;
+    expect(resolveGeminiModel("light").model).toBe("gemini-3.1-flash-lite");
     expect(resolveGeminiModel("standard").model).toBe("gemini-2.5-flash");
     expect(resolveKimiModel("standard").model).toBe("kimi-k2.6");
     expect(resolveXaiModel("standard").model).toBe("grok-3");
+    expect(resolveGatewayModel("light").model).toBe("google/gemini-3.1-flash-lite");
     expect(resolveGatewayModel("standard").model).toBe("google/gemini-2.5-flash");
   });
 });

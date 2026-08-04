@@ -38,6 +38,7 @@ describe("thinkingBudgetForModel", () => {
     delete process.env.ANIMA_GEMINI_THINKING_BUDGET;
     expect(thinkingBudgetForModel("gemini-2.5-flash")).toBe(0);
     expect(thinkingBudgetForModel("gemini-2.5-flash-lite")).toBe(0);
+    expect(thinkingBudgetForModel("gemini-3.1-flash-lite")).toBe(0);
   });
 
   it("uses a modest budget for Pro (cannot fully disable)", () => {
