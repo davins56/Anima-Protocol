@@ -17,6 +17,8 @@ vi.mock("../src/lib/openaiClient", () => {
       Boolean(
         process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
       ),
+    hasLocalLlm: () => Boolean(process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()),
+    localLlmBaseUrl: () => process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || null,
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () => null,
@@ -28,6 +30,8 @@ vi.mock("../src/lib/openaiClient", () => {
       process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim()
         ? client
         : null,
+    getLocalLlmClient: () =>
+      process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ? client : null,
     normalizeApiKey: (raw: string | undefined) => {
       if (!raw) return null;
       return raw.trim() || null;
