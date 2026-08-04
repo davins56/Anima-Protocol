@@ -52,8 +52,6 @@ async function loadSeedModule() {
   return import("@/lib/seedCharacters");
 }
 
-<<<<<<< HEAD
-=======
 describe("getStarterRoster", () => {
   it("returns a non-empty bundled roster the Characters page can show offline", async () => {
     const { getStarterRoster } = await loadSeedModule();
@@ -65,7 +63,6 @@ describe("getStarterRoster", () => {
   });
 });
 
->>>>>>> origin/main
 describe("seedCharactersIfNeeded", () => {
   it("skips seeding when the full starter roster is already present", async () => {
     const { seedCharactersIfNeeded, getStarterRoster } = await loadSeedModule();

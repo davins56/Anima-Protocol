@@ -1,22 +1,16 @@
 import {
   isDevelopmentFromPublishableKey,
-<<<<<<< HEAD
-=======
   isPublishableKey,
   isProductionFromPublishableKey,
->>>>>>> origin/main
   publishableKeyFromHost,
 } from "@clerk/shared/keys";
 import type { IncomingHttpHeaders } from "http";
 
 export const CLERK_PROXY_PATH = "/api/__clerk";
 
-<<<<<<< HEAD
-=======
 /** Apex host — Clerk custom domain FAPI is clerk.anima-protocol.com. */
 export const ANIMA_APEX_HOST = "anima-protocol.com";
 
->>>>>>> origin/main
 /** Public hosts that mint Clerk sessions for this product (apex + www). */
 export const KNOWN_PUBLIC_HOSTS = new Set([
   "www.anima-protocol.com",
@@ -73,8 +67,6 @@ export function canonicalClerkProxyHeaderHost(host: string | undefined): string 
   return host?.split(",")[0]?.trim() || "";
 }
 
-<<<<<<< HEAD
-=======
 export function isAnimaProductionHost(hostname: string): boolean {
   const host = normalizeHostname(hostname);
   return (
@@ -92,7 +84,6 @@ export function isAnimaProductionHost(hostname: string): boolean {
  * `clerk.www.anima-protocol.com`, so anima public hosts must keep an explicit
  * `pk_live_` fallback (or derive from the apex host).
  */
->>>>>>> origin/main
 export function resolveClerkPublishableKey(
   host: string | undefined,
   fallbackKey: string | undefined,
@@ -104,11 +95,9 @@ export function resolveClerkPublishableKey(
   if (fallbackKey?.startsWith("pk_live_") && isLocalDevHost(hostname)) {
     return fallbackKey;
   }
-<<<<<<< HEAD
   return publishableKeyFromHost(hostname, fallbackKey);
 }
 
-=======
   if (
     fallbackKey &&
     isPublishableKey(fallbackKey) &&
@@ -153,7 +142,6 @@ export function resolveRuntimePublishableKey(req: {
   return undefined;
 }
 
->>>>>>> origin/main
 export function getClerkProxyHost(req: {
   headers: IncomingHttpHeaders;
 }): string | undefined {

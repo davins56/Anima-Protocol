@@ -5,12 +5,9 @@
  * configured in the Clerk dashboard exactly (production uses www.anima-protocol.com).
  */
 
-<<<<<<< HEAD
 const ANIMA_WWW = 'https://www.anima-protocol.com';
-=======
 export const ANIMA_APEX_HOST = 'anima-protocol.com';
 const ANIMA_WWW = `https://www.${ANIMA_APEX_HOST}`;
->>>>>>> origin/main
 
 function clerkProxyEnvValue() {
   return typeof import.meta.env.VITE_CLERK_PROXY_URL === 'string'
@@ -46,7 +43,6 @@ export function isVercelPreviewHost(hostname) {
 }
 
 export function isAnimaProductionHost(hostname) {
-<<<<<<< HEAD
   const host = (hostname || '').toLowerCase();
   return (
     host === 'anima-protocol.com' ||
@@ -55,7 +51,6 @@ export function isAnimaProductionHost(hostname) {
   );
 }
 
-=======
   const host = (hostname || '').toLowerCase().replace(/:\d+$/, '');
   return (
     host === ANIMA_APEX_HOST ||
@@ -90,7 +85,6 @@ export function publishableKeyFromFrontendHost(hostname, fallbackKey = '') {
   return encodedHost ? `pk_live_${encodedHost}` : fallbackKey || '';
 }
 
->>>>>>> origin/main
 export function ensureTrailingSlash(url) {
   if (!url) return '';
   return url.endsWith('/') ? url : `${url}/`;
@@ -130,8 +124,6 @@ export function clerkFrontendApiProbeBase(clerkPubKey) {
 }
 
 /**
-<<<<<<< HEAD
-=======
  * OAuth provider callback URL (Google / GitHub / Apple), not the app SSO path.
  *
  * With a Clerk custom domain this is `https://clerk…/v1/oauth_callback`.
@@ -145,7 +137,6 @@ export function clerkProviderOAuthCallbackUrl(clerkPubKey) {
 }
 
 /**
->>>>>>> origin/main
  * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
  */
 export function animaProductionClerkProxyUrl() {

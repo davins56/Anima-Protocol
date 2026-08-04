@@ -3,18 +3,12 @@ import {
   animaProductionClerkProxyUrl,
   clerkFrontendApiProbeBase,
   clerkJsScriptProbeUrl,
-<<<<<<< HEAD
-=======
   clerkProviderOAuthCallbackUrl,
->>>>>>> origin/main
   clerkProxyProbeBase,
   decodeClerkFrontendHost,
   ensureTrailingSlash,
   isAnimaProductionHost,
-<<<<<<< HEAD
-=======
   publishableKeyFromFrontendHost,
->>>>>>> origin/main
   publishableKeyUsesCustomDomain,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
@@ -71,8 +65,6 @@ describe('clerkProxy', () => {
     );
   });
 
-<<<<<<< HEAD
-=======
   it('derives the provider OAuth callback from the Clerk FAPI host', () => {
     expect(clerkProviderOAuthCallbackUrl(LIVE_KEY)).toBe(
       'https://clerk.anima-protocol.com/v1/oauth_callback',
@@ -83,14 +75,11 @@ describe('clerkProxy', () => {
     expect(clerkProviderOAuthCallbackUrl('')).toBe('');
   });
 
->>>>>>> origin/main
   it('skips proxy for pk_test_', () => {
     expect(shouldUseClerkProxy(TEST_KEY)).toBe(false);
     expect(resolveClerkProxyUrl(TEST_KEY)).toBe('');
   });
 
-<<<<<<< HEAD
-=======
   it('derives the apex Clerk key for anima production hosts', () => {
     expect(publishableKeyFromFrontendHost('www.anima-protocol.com')).toBe(
       LIVE_KEY,
@@ -103,7 +92,6 @@ describe('clerkProxy', () => {
     expect(decodeClerkFrontendHost(key)).toBe('clerk.anima-protocol.com');
   });
 
->>>>>>> origin/main
   it('detects anima production hosts', () => {
     expect(isAnimaProductionHost('www.anima-protocol.com')).toBe(true);
     expect(isAnimaProductionHost('anima-protocol.com')).toBe(true);

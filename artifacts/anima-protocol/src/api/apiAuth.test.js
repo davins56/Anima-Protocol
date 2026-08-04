@@ -36,8 +36,6 @@ describe('API auth bridge', () => {
     expect(options.headers['X-Anima-Public-Host']).toBe(window.location.host);
     expect(options.credentials).toBe('same-origin');
   });
-<<<<<<< HEAD
-=======
 
   it('unwraps a double-wrapped token getter instead of stringifying the function', async () => {
     // Classic mistake: treating setAuthTokenGetter like React setState.
@@ -58,5 +56,4 @@ describe('API auth bridge', () => {
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBeUndefined();
   });
->>>>>>> origin/main
 });

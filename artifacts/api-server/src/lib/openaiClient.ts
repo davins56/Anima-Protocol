@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 
-<<<<<<< HEAD
 let client: OpenAI | null = null;
 let clientKey: string | null = null;
 
@@ -14,7 +13,6 @@ export function getOpenAIClient(): OpenAI {
     clientKey = apiKey;
   }
   return client;
-=======
 let openaiClient: OpenAI | null = null;
 let openaiClientKey: string | null = null;
 
@@ -185,5 +183,4 @@ export function resetLlmClientsForTests(): void {
   kimiClientKey = null;
   gatewayClient = null;
   gatewayClientKey = null;
->>>>>>> origin/main
 }

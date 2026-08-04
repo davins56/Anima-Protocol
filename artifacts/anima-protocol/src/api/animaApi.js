@@ -1,9 +1,6 @@
 import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
-<<<<<<< HEAD
-=======
 import { readSseJsonStream } from '@/lib/readSseJsonStream';
->>>>>>> origin/main
 
 async function request(path, options = {}) {
   const headers = await authHeaders(options.headers);
@@ -43,7 +40,6 @@ export const animaApi = {
       }
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-<<<<<<< HEAD
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -66,9 +62,7 @@ export const animaApi = {
         }
       }
     }
-=======
     yield* readSseJsonStream(res.body);
->>>>>>> origin/main
   },
 
   chat: {
@@ -84,10 +78,7 @@ export const animaApi = {
       deepMode,
       persist = true,
       metadata,
-<<<<<<< HEAD
       scenario,
-=======
->>>>>>> origin/main
     }) {
       const res = await fetch(apiUrl('/chat/messages'), {
         method: "POST",
@@ -105,7 +96,6 @@ export const animaApi = {
           deep_mode: !!deepMode,
           persist,
           metadata,
-<<<<<<< HEAD
           scenario,
         }),
       });
@@ -131,7 +121,6 @@ export const animaApi = {
           }
         }
       }
-=======
         }),
       });
       if (!res.ok) {
@@ -139,7 +128,6 @@ export const animaApi = {
         throw new Error(err.error || `API error: ${res.status}`);
       }
       yield* readSseJsonStream(res.body);
->>>>>>> origin/main
     },
 
     completeMessage: async (payload) => {

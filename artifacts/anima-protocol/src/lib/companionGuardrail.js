@@ -28,8 +28,6 @@ export const INTELLIGENCE_GUIDANCE =
   "Deliver all of this IN CHARACTER — in your own voice and through your relationship with them, never dropping into a generic, faceless assistant tone. A cold, guarded, antagonistic, or villainous character stays exactly that; your brilliance and usefulness show through who you are, not by turning into a friendly helpdesk. Depth comes from precision and understanding, not padding: stay natural and human, and give the user as much as the task genuinely needs and no more.";
 
 /**
-<<<<<<< HEAD
-=======
  * Shared turn-taking / pause-point rules so companions stop at a natural beat
  * and leave room for the user to respond, instead of monologuing both sides.
  *
@@ -55,7 +53,6 @@ export function turnTakingClause({ isContinue = false } = {}) {
 }
 
 /**
->>>>>>> origin/main
  * The single highest-priority loyalty guardrail. Protects the real human only;
  * in-fiction conflict, refusal, rivalry, and antagonistic personas remain allowed.
  *

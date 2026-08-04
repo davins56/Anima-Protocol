@@ -5,28 +5,20 @@ import express, {
   type NextFunction,
 } from "express";
 import cors from "cors";
-<<<<<<< HEAD
 import { clerkMiddleware } from "@clerk/express";
-=======
->>>>>>> origin/main
 
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
 } from "./middlewares/clerkProxyMiddleware";
-<<<<<<< HEAD
-=======
 import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
->>>>>>> origin/main
 import clerkWebhookRouter from "./webhooks/clerk";
 import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
-<<<<<<< HEAD
 
 const app: Express = express();
 
-=======
 import { classifyDbError } from "./lib/dbErrors";
 
 const app: Express = express();
@@ -36,7 +28,6 @@ const app: Express = express();
 // which surfaces as "Too many requests" after a single chat send.
 app.set("trust proxy", 1);
 
->>>>>>> origin/main
 // Clerk Frontend API proxy — must be mounted before the body parsers because it
 // streams raw request bytes. It self-guards and is only active in production /
 // pk_live; otherwise it returns a deterministic 503.
@@ -61,14 +52,11 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Verify Clerk JWTs before hitting any protected routes; populates req.auth for
-<<<<<<< HEAD
 // the @clerk/express helpers used downstream.
 app.use(clerkMiddleware());
-=======
 // the @clerk/express helpers used downstream. Wrapped so a bad/missing
 // CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
 app.use(safeClerkMiddleware());
->>>>>>> origin/main
 
 // Application API routes (store, chat, openai, storage, admin, character image,
 // elevenlabs, placeholder image).
@@ -81,12 +69,10 @@ app.use(
     if (!res.headersSent) {
       const message =
         err instanceof Error ? err.message : "Internal server error";
-<<<<<<< HEAD
       const isConfig =
         message.includes("DATABASE_URL") ||
         message.includes("CLERK_SECRET_KEY") ||
         message.includes("connection");
-=======
       const dbInfo = classifyDbError(err);
       const isConfig =
         message.includes("DATABASE_URL") ||
@@ -101,7 +87,6 @@ app.use(
         });
         return;
       }
->>>>>>> origin/main
       res.status(isConfig ? 503 : 500).json({
         error: isConfig
           ? "API is misconfigured on the server. Check environment variables."

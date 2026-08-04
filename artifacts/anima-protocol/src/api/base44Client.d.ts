@@ -80,16 +80,13 @@ export interface Base44Auth {
 
 export interface Base44Integrations {
   Core: {
-<<<<<<< HEAD
     InvokeLLM(args: { prompt: string; systemPrompt?: string }): Promise<string>;
-=======
     InvokeLLM(args: {
       prompt: string;
       systemPrompt?: string;
       deepMode?: boolean;
       history?: unknown[];
     }): Promise<string>;
->>>>>>> origin/main
     GenerateImage(...args: any[]): Promise<any>;
     UploadFile(...args: any[]): Promise<{ url: string | null }>;
     GetStripeLifetimePrices(...args: any[]): Promise<{ prices: any[] }>;

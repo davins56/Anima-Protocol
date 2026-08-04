@@ -28,24 +28,18 @@ function deferred() {
 }
 
 const SESSION_ID = "s1";
-<<<<<<< HEAD
 const userMsg = { role: "user", content: "hi" };
-=======
 const userMsg = { id: "m-user", role: "user", content: "hi" };
->>>>>>> origin/main
 const thinkingBubble = { character_name: "__thinking__", content: "" };
 const typingBubble = { character_name: "__typing__", content: "" };
 
 // The remote messages another device produced, as the server would return them.
 function remoteMessages() {
   return [
-<<<<<<< HEAD
     { role: "user", content: "hi" },
     { role: "assistant", content: "remote reply" },
-=======
     { id: "m-user", role: "user", content: "hi" },
     { id: "m-remote", role: "assistant", content: "remote reply" },
->>>>>>> origin/main
   ];
 }
 
@@ -99,13 +93,10 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
   it.each([
     ["__thinking__", thinkingBubble],
     ["__typing__", typingBubble],
-<<<<<<< HEAD
-=======
     [
       "streaming reply",
       { role: "assistant", character_name: "Serenity", content: "Hel", is_streaming: true },
     ],
->>>>>>> origin/main
   ])(
     "never clobbers a thread with an optimistic %s bubble and asks to retry",
     async (_label, bubble) => {
@@ -125,8 +116,6 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
     },
   );
 
-<<<<<<< HEAD
-=======
   it("never clobbers an optimistic user turn that has not been persisted yet", async () => {
     const optimisticUser = { role: "user", content: "just typed" }; // no id
     const h = makeHarness([userMsg, optimisticUser]);
@@ -143,7 +132,6 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
     expect(h.session.messages).toContain(optimisticUser);
   });
 
->>>>>>> origin/main
   it("reads the LATEST committed session after the await (a reply that started during the fetch is not clobbered)", async () => {
     // Starts idle, so the pending-bubble check would pass on the render-closure
     // snapshot — but a reply begins while the fetch is in flight.
@@ -375,11 +363,8 @@ describe("the dropped-update race (remote change mid-reply, second send mid-catc
     //    reply). The settle effect fires, but its fetch is left in flight.
     h.session = {
       id: SESSION_ID,
-<<<<<<< HEAD
       messages: [userMsg, { role: "assistant", content: "first reply" }],
-=======
       messages: [userMsg, { id: "m-a1", role: "assistant", content: "first reply" }],
->>>>>>> origin/main
     };
     const fetch1 = deferred();
     base44.messages.list.mockReturnValueOnce(fetch1.promise);
@@ -418,15 +403,12 @@ describe("the dropped-update race (remote change mid-reply, second send mid-catc
       id: SESSION_ID,
       messages: [
         userMsg,
-<<<<<<< HEAD
         { role: "assistant", content: "first reply" },
         { role: "user", content: "again" },
         { role: "assistant", content: "second reply" },
-=======
         { id: "m-a1", role: "assistant", content: "first reply" },
         { id: "m-u2", role: "user", content: "again" },
         { id: "m-a2", role: "assistant", content: "second reply" },
->>>>>>> origin/main
       ],
     };
     base44.messages.list.mockResolvedValueOnce(remoteMessages());

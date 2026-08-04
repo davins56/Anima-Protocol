@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-<<<<<<< HEAD
-=======
   CLERK_FAILURE_HINT,
   CLERK_STALL_HINT,
->>>>>>> origin/main
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from './clerkConnectDiagnostics';
@@ -112,8 +109,6 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
-<<<<<<< HEAD
-=======
 it('does not emit a false-positive stall hint when probes succeed', async () => {
     vi.stubGlobal(
       'fetch',
@@ -158,7 +153,6 @@ it('does not emit a false-positive stall hint when probes succeed', async () => 
     expect(hints[0]).not.toMatch(/Confirm clerk\.anima-protocol\.com DNS in Clerk/);
   });
 
->>>>>>> origin/main
   it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
     vi.stubGlobal(
       'fetch',
@@ -197,8 +191,6 @@ it('does not emit a false-positive stall hint when probes succeed', async () => 
       expect.anything(),
     );
   });
-<<<<<<< HEAD
-=======
 
   it('surfaces custom-domain host_invalid with Domains guidance', async () => {
     vi.stubGlobal(
@@ -268,7 +260,6 @@ it('does not emit a false-positive stall hint when probes succeed', async () => 
       'Clerk custom domain failed (400) at https://clerk.anima-protocol.com: Custom domain is not fully provisioned. Clerk error: something_else. Confirm clerk.anima-protocol.com is verified in Clerk → Domains and DNS CNAMEs to frontend-api.clerk.services.',
     ]);
   });
->>>>>>> origin/main
 });
 
 describe('isClerkProxyHealthy', () => {

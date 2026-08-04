@@ -1,9 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
-<<<<<<< HEAD
 import { getOpenAIClient } from "./openaiClient";
-=======
 import { createChatCompletionWithFailover } from "./llmFailover";
->>>>>>> origin/main
 import { db } from "../db/index";
 import { animaEvolution } from "../db/schema";
 
@@ -149,24 +146,18 @@ OUTPUT SCHEMA:
 }
 `;
 
-<<<<<<< HEAD
   const completion = await getOpenAIClient().chat.completions.create({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-=======
   const completion = await createChatCompletionWithFailover({
     tier: "light",
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
     maxTokens: 2048,
->>>>>>> origin/main
     temperature: 0.4,
     messages: [{ role: "system", content: evolutionPrompt }],
   });
 
-<<<<<<< HEAD
   const raw = completion.choices[0]?.message?.content ?? "";
-=======
   const raw = completion.content;
->>>>>>> origin/main
   let parsed: EvolutionDelta | null = null;
   try {
     parsed = JSON.parse(raw) as EvolutionDelta;

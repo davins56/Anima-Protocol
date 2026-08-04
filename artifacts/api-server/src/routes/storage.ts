@@ -3,24 +3,19 @@ import { Readable } from "stream";
 import { getAuth } from "@clerk/express";
 import { rateLimit } from "../lib/rateLimit";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-<<<<<<< HEAD
-=======
 import {
   getUploadedImage,
   isDbUploadObjectPath,
   storeUploadedImage,
 } from "../lib/imageUploads";
->>>>>>> origin/main
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-<<<<<<< HEAD
 // Limit the presigned-URL endpoint
 router.use("/storage/uploads/request-url", rateLimit);
 
 // POST /storage/uploads/request-url
-=======
 router.use("/storage/uploads", rateLimit);
 
 /**
@@ -66,7 +61,6 @@ router.post("/storage/uploads", async (req: Request, res: Response) => {
 
 // Legacy Replit/GCS presigned URL flow — kept for environments that still have
 // the sidecar. On Vercel this usually 500s; clients should prefer POST /uploads.
->>>>>>> origin/main
 router.post(
   "/storage/uploads/request-url",
   async (req: Request, res: Response) => {
@@ -92,17 +86,14 @@ router.post(
       const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
       res.json({ uploadURL, objectPath });
     } catch (error) {
-<<<<<<< HEAD
       console.error("Error generating upload URL:", error);   // ← Fixed
       res.status(500).json({ error: "Failed to generate upload URL" });
-=======
       console.error("Error generating upload URL:", error);
       res.status(500).json({
         error:
           "Object storage is unavailable. Use the direct /api/storage/uploads endpoint (Postgres-backed) instead.",
         code: "object_storage_unavailable",
       });
->>>>>>> origin/main
     }
   },
 );
@@ -114,13 +105,10 @@ function pipeDownload(
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
   if (response.body) {
-<<<<<<< HEAD
     const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
-=======
     const nodeStream = Readable.fromWeb(
       response.body as ReadableStream<Uint8Array>,
     );
->>>>>>> origin/main
     nodeStream.pipe(res);
   } else {
     res.end();
@@ -133,8 +121,6 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
     const raw = (req.params as Record<string, string | string[]>).path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
-<<<<<<< HEAD
-=======
 
     // Prefer Postgres-backed uploads (Vercel path).
     if (isDbUploadObjectPath(objectPath)) {
@@ -151,7 +137,6 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
       return;
     }
 
->>>>>>> origin/main
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
     const response = await objectStorageService.downloadObject(objectFile);
     pipeDownload(res, response);
@@ -160,11 +145,8 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
       res.status(404).json({ error: "Object not found" });
       return;
     }
-<<<<<<< HEAD
     console.error("Error serving object:", error);   // ← Fixed
-=======
     console.error("Error serving object:", error);
->>>>>>> origin/main
     res.status(500).json({ error: "Failed to serve object" });
   }
 });
@@ -184,18 +166,12 @@ router.get(
       const response = await objectStorageService.downloadObject(file);
       pipeDownload(res, response);
     } catch (error) {
-<<<<<<< HEAD
       console.error("Error serving public object:", error);   // ← Fixed
-=======
       console.error("Error serving public object:", error);
->>>>>>> origin/main
       res.status(500).json({ error: "Failed to serve public object" });
     }
   },
 );
 
-<<<<<<< HEAD
 export default router;
-=======
 export default router;
->>>>>>> origin/main
