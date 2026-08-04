@@ -58,8 +58,9 @@ export function thinkingBudgetForModel(model: string): number | undefined {
     if (Number.isFinite(n)) return Math.trunc(n);
   }
   const m = model.toLowerCase();
-  if (m.includes("pro")) return 1024;
-  // flash, flash-lite, and unknown chat models: disable thinking by default
+  if (m.includes("pro") && !m.includes("flash")) return 1024;
+  // flash, flash-lite (2.5 / 3.1 / 3.5), and unknown chat models: disable
+  // thinking by default so maxOutputTokens is spent on visible reply text.
   return 0;
 }
 
