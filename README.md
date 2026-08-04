@@ -131,9 +131,6 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | Variable | Used by | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
-<<<<<<< HEAD
-| `OPENAI_API_KEY` | API | Required at API import time for OpenAI routes |
-=======
 | `OPENAI_API_KEY` | API | Optional for chat when Kimi/Grok is configured; still used for image generate/edit |
 | `GEMINI_API_KEY` | API | Preferred chat LLM under `auto` (native Google AI Studio / AQ.* keys). Verify via `/api/healthz/llm` |
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Kimi (Moonshot) backup in the auto chain |
@@ -146,7 +143,6 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
 | `ANIMA_DISABLE_GATEWAY` | API | Set `true` under `auto` to skip AI Gateway |
 | `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
->>>>>>> origin/main
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
 | `CLERK_PUBLISHABLE_KEY` | API | Fallback publishable key for Clerk middleware |
@@ -157,11 +153,7 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
 | `ELEVENLABS_API_KEY` | API | Optional TTS routes |
 
-<<<<<<< HEAD
-Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard; callbacks use `/sign-in/sso-callback` and `/sign-up/sso-callback`.
-=======
 Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback`; Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`.
->>>>>>> origin/main
 
 ## Validation
 

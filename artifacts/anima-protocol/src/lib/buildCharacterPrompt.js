@@ -1,4 +1,3 @@
-import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "./companionGuardrail";
 import {
   INTELLIGENCE_GUIDANCE,
   loyaltyGuardrailClause,
@@ -23,9 +22,6 @@ export function buildCharacterPrompt({
   // Start with scenario system prompt if available
   let scenarioPrefix = scenario?.systemPrompt ? `${scenario.systemPrompt}\n\n` : "";
 
-  return `${scenarioPrefix}You are ${character.name}${character._isAnima ? "" : character.universe ? ` from ${character.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${adultInstruction}${companionModeInstruction}${behaviorInstructions}
-
-${animaNote}${character.personality ? `Personality: ${character.personality}\n` : ""}${character.backstory ? `Backstory: ${character.backstory}\n` : ""}${character.speaking_style ? `Voice: ${character.speaking_style}\n` : ""}${relationshipContext}${emotionalMemoryContext}${loreContext}${locationContext ? `\n${locationContext}\n` : ""}
   const identityBlock = [
     character.personality ? `Personality: ${character.personality}` : "",
     character.backstory ? `Backstory: ${character.backstory}` : "",

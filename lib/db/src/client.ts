@@ -7,38 +7,6 @@ const { Pool } = pg;
 type DbSchema = typeof schema;
 type Db = NodePgDatabase<DbSchema>;
 
-<<<<<<< HEAD
-// Resolve SSL behaviour from the URL's `sslmode`, then strip `sslmode` from the
-// connection string so node-postgres' own parser does not re-apply it.
-//
-// Why: pg-connection-string now treats `sslmode=require` (and `prefer` /
-// `verify-ca`) as `verify-full`, which verifies the server certificate against
-// the system CA store. Replit's managed Postgres presents a certificate that is
-// not in that store, so on the production database (which connects with
-// `sslmode=require`) every connection — and therefore every query — fails. We
-// keep the connection encrypted but skip CA verification, which is the
-// long-standing meaning of `sslmode=require` in this environment.
-// `sslmode=disable` (used in development) stays an unencrypted connection.
-function resolveDbConfig(url: string): {
-  connectionString: string;
-  ssl: false | { rejectUnauthorized: boolean };
-} {
-  let sslmode: string | null = null;
-  let connectionString = url;
-  try {
-    const parsed = new URL(url);
-    sslmode = parsed.searchParams.get("sslmode");
-    parsed.searchParams.delete("sslmode");
-    connectionString = parsed.toString();
-  } catch {
-    const m = url.match(/[?&]sslmode=([^&]+)/);
-    sslmode = m ? m[1] : null;
-    connectionString = url.replace(
-      /([?&])sslmode=[^&]+(&|$)/,
-      (_match, lead: string, trail: string) => (trail === "&" ? lead : ""),
-    );
-  }
-=======
 /**
  * Resolve SSL behaviour from the URL's `sslmode`, then strip `sslmode` from the
  * connection string so node-postgres' own parser does not re-apply it.
@@ -72,7 +40,6 @@ export function resolveDbConfig(url: string): {
   // If we removed the only query param, we may leave a dangling '?'.
   connectionString = connectionString.replace(/\?$/, "").replace(/[?&]$/, "");
 
->>>>>>> origin/main
   const ssl = sslmode === "disable" ? false : { rejectUnauthorized: false };
   return { connectionString, ssl };
 }
@@ -89,9 +56,6 @@ export function getPool(): pg.Pool {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-<<<<<<< HEAD
-  poolInstance = new Pool({ connectionString, ssl });
-=======
   // Vercel Fluid / serverless: keep the pool tiny and fail fast so a dead DB
   // surfaces as 503 quickly instead of hanging the Character list request.
   poolInstance = new Pool({
@@ -104,7 +68,6 @@ export function getPool(): pg.Pool {
     ),
     allowExitOnIdle: true,
   });
->>>>>>> origin/main
   return poolInstance;
 }
 

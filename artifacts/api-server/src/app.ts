@@ -5,7 +5,6 @@ import express, {
   type NextFunction,
 } from "express";
 import cors from "cors";
-import { clerkMiddleware } from "@clerk/express";
 
 import {
   CLERK_PROXY_PATH,
@@ -16,9 +15,6 @@ import clerkWebhookRouter from "./webhooks/clerk";
 import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
-
-const app: Express = express();
-
 import { classifyDbError } from "./lib/dbErrors";
 
 const app: Express = express();
@@ -52,8 +48,6 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Verify Clerk JWTs before hitting any protected routes; populates req.auth for
-// the @clerk/express helpers used downstream.
-app.use(clerkMiddleware());
 // the @clerk/express helpers used downstream. Wrapped so a bad/missing
 // CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
 app.use(safeClerkMiddleware());
@@ -69,10 +63,6 @@ app.use(
     if (!res.headersSent) {
       const message =
         err instanceof Error ? err.message : "Internal server error";
-      const isConfig =
-        message.includes("DATABASE_URL") ||
-        message.includes("CLERK_SECRET_KEY") ||
-        message.includes("connection");
       const dbInfo = classifyDbError(err);
       const isConfig =
         message.includes("DATABASE_URL") ||

@@ -6,25 +6,6 @@ import {
   getClerkProxyHost,
   resolveClerkPublishableKey,
 } from "./clerkProxyMiddleware";
-
-/** Minimal signed-out auth so @clerk/express getAuth() never throws. */
-function attachSignedOutAuth(req: Request): void {
-  Object.assign(req, {
-    auth: () => ({
-      userId: null,
-      sessionId: null,
-      sessionClaims: null,
-      orgId: null,
-      orgRole: null,
-      orgSlug: null,
-      orgPermissions: null,
-      factorVerificationAge: null,
-      getToken: async () => null,
-      has: () => false,
-      debug: () => ({}),
-    }),
-  });
-}
 import { attachSignedOutAuth } from "./clerkAuthFallback";
 
 function expressToWebRequest(req: Request): globalThis.Request {

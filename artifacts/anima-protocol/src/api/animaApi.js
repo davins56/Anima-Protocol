@@ -40,28 +40,6 @@ export const animaApi = {
       }
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            yield data;
-          } catch {
-            // ignore parse errors
-          }
-        }
-      }
-    }
     yield* readSseJsonStream(res.body);
   },
 
@@ -78,7 +56,6 @@ export const animaApi = {
       deepMode,
       persist = true,
       metadata,
-      scenario,
     }) {
       const res = await fetch(apiUrl('/chat/messages'), {
         method: "POST",
@@ -96,31 +73,6 @@ export const animaApi = {
           deep_mode: !!deepMode,
           persist,
           metadata,
-          scenario,
-        }),
-      });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              yield JSON.parse(line.slice(6));
-            } catch {
-              // ignore parse errors
-            }
-          }
-        }
-      }
         }),
       });
       if (!res.ok) {

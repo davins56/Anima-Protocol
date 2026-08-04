@@ -12,10 +12,6 @@ import {
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-// Limit the presigned-URL endpoint
-router.use("/storage/uploads/request-url", rateLimit);
-
-// POST /storage/uploads/request-url
 router.use("/storage/uploads", rateLimit);
 
 /**
@@ -86,8 +82,6 @@ router.post(
       const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
       res.json({ uploadURL, objectPath });
     } catch (error) {
-      console.error("Error generating upload URL:", error);   // ← Fixed
-      res.status(500).json({ error: "Failed to generate upload URL" });
       console.error("Error generating upload URL:", error);
       res.status(500).json({
         error:
@@ -105,7 +99,6 @@ function pipeDownload(
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
   if (response.body) {
-    const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
     const nodeStream = Readable.fromWeb(
       response.body as ReadableStream<Uint8Array>,
     );
@@ -145,7 +138,6 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
       res.status(404).json({ error: "Object not found" });
       return;
     }
-    console.error("Error serving object:", error);   // ← Fixed
     console.error("Error serving object:", error);
     res.status(500).json({ error: "Failed to serve object" });
   }
@@ -166,12 +158,10 @@ router.get(
       const response = await objectStorageService.downloadObject(file);
       pipeDownload(res, response);
     } catch (error) {
-      console.error("Error serving public object:", error);   // ← Fixed
       console.error("Error serving public object:", error);
       res.status(500).json({ error: "Failed to serve public object" });
     }
   },
 );
 
-export default router;
 export default router;

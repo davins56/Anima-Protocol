@@ -159,8 +159,6 @@ export function routeModel(content: string, ctx: RouteContext = {}): ResolvedMod
 
 // True only when an error means the requested model itself is unavailable to
 // this account (unknown model, no access). Such errors are worth retrying on the
-// standard model; quota / rate-limit / transient errors are not and should
-// surface to the caller as-is.
 // standard model within the same provider.
 //
 // Quota / rate-limit / billing errors are intentionally NOT matched here —

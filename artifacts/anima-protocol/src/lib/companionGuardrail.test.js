@@ -1,8 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "./companionGuardrail";
-import { buildCharacterPrompt } from "./buildCharacterPrompt";
-import { buildGroupPrompt } from "./buildGroupPrompt";
-
 import {
   INTELLIGENCE_GUIDANCE,
   loyaltyGuardrailClause,
@@ -56,9 +52,6 @@ describe("loyaltyGuardrailClause", () => {
 });
 
 describe("guardrail assembly across prompt surfaces", () => {
-  const character = { name: "Serenity", persona: "calm keeper", _isAnima: false };
-
-  it("solo character builder appends intelligence guidance and the loyalty guardrail", () => {
   const character = {
     name: "Serenity",
     persona: "calm keeper",
@@ -89,10 +82,6 @@ describe("guardrail assembly across prompt surfaces", () => {
     expect(prompt.trimEnd().endsWith(loyaltyGuardrailClause())).toBe(true);
   });
 
-  it("group builder appends intelligence guidance and the loyalty guardrail", () => {
-    const prompt = buildGroupPrompt({
-      nextChar: character,
-      allCharSheets: "Serenity: calm keeper",
   it("group builder locks identity, turn-taking, and the loyalty guardrail", () => {
     const prompt = buildGroupPrompt({
       nextChar: character,

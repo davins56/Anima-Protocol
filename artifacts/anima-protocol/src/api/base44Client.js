@@ -107,17 +107,6 @@ function storeError(res, message) {
   return e;
 }
 
-// AI photo edit. Sends a base64 image data URL + a text prompt to the
-// api-server (gpt-image-1 edit) and returns the transformed image as a data
-// URL. Used by the home-page "add photo" AI edit feature.
-export async function editImage({ image, prompt, signal }) {
-  const headers = await authHeaders();
-  let res;
-  try {
-    res = await fetch(apiUrl('/openai/image-edit'), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ image, prompt }),
 // Shared helper for image API calls (edit / generate). Surfaces abort vs
 // network vs server errors the same way so UI can branch consistently.
 async function postImageApi(path, body, signal) {
@@ -186,28 +175,6 @@ function readFileAsDataUrl(file) {
   });
 }
 
-// Upload an image blob via a presigned PUT and return the served object path.
-async function uploadBlob(blob) {
-  const headers = await authHeaders();
-  const res = await fetch(apiUrl('/storage/uploads/request-url'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ contentType: blob.type, size: blob.size }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
-  }
-  const { uploadURL, objectPath } = await res.json();
-  const putRes = await fetch(uploadURL, {
-    method: 'PUT',
-    headers: { 'Content-Type': blob.type },
-    body: blob,
-  });
-  if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
-  // Root-relative path so the avatar resolves against the current origin and
-  // stays portable across domains (dev preview, deployment, custom domains).
-  return `/api/storage${objectPath}`;
 // Convert a Blob to a base64 payload (no data: prefix) for the direct upload API.
 async function blobToBase64(blob) {
   const buffer = await blob.arrayBuffer();
@@ -1235,7 +1202,6 @@ export const base44 = {
   integrations: {
     Core: {
       InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
-        // Create/reuse a conversation for LLM calls
         // Create/reuse a conversation for LLM calls — routes through the
         // api-server (api/index.mjs on Vercel) with auth + provider failover.
         let convId = sessionStorage.getItem('anima_llm_conv_id');
@@ -1259,9 +1225,6 @@ export const base44 = {
         return result;
       },
 
-      GenerateImage: async () => {
-        console.warn('GenerateImage not implemented in Replit environment');
-        return null;
       // Generate (or re-style) an image. When existing_image_urls is provided,
       // prefers the image-edit path so the current portrait is transformed;
       // otherwise generates from the prompt alone. Returns { url } as a data URL.
