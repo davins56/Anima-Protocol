@@ -507,7 +507,7 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat prefers Gemini, then fails over to Kimi / Grok / OpenAI. Set GEMINI_API_KEY on the host (Vercel) and redeploy.
+                  Chat prefers Gemini, then fails over to Kimi / Grok / OpenAI / AI Gateway. Set GEMINI_API_KEY (or AI_GATEWAY_API_KEY) on the host (Vercel) and redeploy.
                 </p>
                 {CONFIGURED_LLM_PROVIDERS.map((provider, index) => (
                   <div

@@ -15,6 +15,10 @@ vi.mock("../src/lib/openaiClient", () => {
       Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
     hasKimiKey: () =>
       Boolean(process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()),
+    hasGatewayAuth: () =>
+      Boolean(
+        process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
+      ),
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () =>
@@ -23,6 +27,10 @@ vi.mock("../src/lib/openaiClient", () => {
         : null,
     getKimiClient: () =>
       process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()
+        ? client
+        : null,
+    getGatewayClient: () =>
+      process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim()
         ? client
         : null,
     normalizeApiKey: (raw: string | undefined) => {
@@ -58,6 +66,7 @@ import {
   isProviderUnusableError,
   recordProviderFailure,
   resetLlmFailoverStateForTests,
+  resolveGatewayModel,
   resolveGeminiModel,
   resolveKimiModel,
   resolveXaiModel,
@@ -129,13 +138,15 @@ describe("resolve models", () => {
     process.env = { ...SAVED };
   });
 
-  it("defaults Gemini / Kimi / xAI models per tier", () => {
+  it("defaults Gemini / Kimi / xAI / Gateway models per tier", () => {
     delete process.env.ANIMA_GEMINI_MODEL;
     delete process.env.ANIMA_KIMI_MODEL;
     delete process.env.ANIMA_XAI_MODEL;
+    delete process.env.ANIMA_GATEWAY_MODEL;
     expect(resolveGeminiModel("standard").model).toBe("gemini-2.5-flash");
     expect(resolveKimiModel("standard").model).toBe("kimi-k2.6");
     expect(resolveXaiModel("standard").model).toBe("grok-3");
+    expect(resolveGatewayModel("standard").model).toBe("google/gemini-2.5-flash");
   });
 });
 
@@ -148,9 +159,11 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     process.env.XAI_API_KEY = "xai-test";
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
+    process.env.AI_GATEWAY_API_KEY = "gateway-test";
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_DISABLE_XAI;
+    delete process.env.ANIMA_DISABLE_GATEWAY;
     resetLlmFailoverStateForTests();
   });
 
@@ -159,10 +172,16 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("defaults to Gemini-first auto chain (the last working unpaid path)", () => {
+  it("defaults to Gemini-first auto chain with AI Gateway last resort", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
     expect(getConfiguredProviderMode()).toBe("auto");
-    expect(getProviderChain()).toEqual(["gemini", "kimi", "xai", "openai"]);
+    expect(getProviderChain()).toEqual([
+      "gemini",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+    ]);
     expect(getPreferredProvider()).toBe("gemini");
   });
 
@@ -190,10 +209,16 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(status.note).toMatch(/Gemini/i);
   });
 
-  it("auto without Gemini uses Kimi → Grok → OpenAI", () => {
+  it("auto without Gemini uses Kimi → Grok → OpenAI → Gateway", () => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
-    expect(getProviderChain()).toEqual(["kimi", "xai", "openai"]);
+    expect(getProviderChain()).toEqual(["kimi", "xai", "openai", "gateway"]);
+  });
+
+  it("uses gateway-only when ANIMA_LLM_PROVIDER=gateway", () => {
+    process.env.ANIMA_LLM_PROVIDER = "gateway";
+    expect(getConfiguredProviderMode()).toBe("gateway");
+    expect(getProviderChain()).toEqual(["gateway"]);
   });
 
   it("treats anima mode as auto chain with brand chip", () => {
@@ -214,8 +239,10 @@ describe("createChatStreamWithFailover", () => {
     process.env.XAI_API_KEY = "xai-test";
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
+    process.env.AI_GATEWAY_API_KEY = "gateway-test";
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
+    delete process.env.ANIMA_DISABLE_GATEWAY;
     resetLlmFailoverStateForTests();
     createMock.mockReset();
     geminiStreamMock.mockReset();
@@ -290,8 +317,58 @@ describe("createChatStreamWithFailover", () => {
     });
 
     // Without revive this collapsed to OpenAI-only → "tried OpenAI".
-    expect(getProviderChain()).toEqual(["gemini", "kimi", "xai", "openai"]);
+    expect(getProviderChain()).toEqual([
+      "gemini",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+    ]);
     expect(isGeminiStickySkipped()).toBe(false);
+  });
+
+  it("fails over to AI Gateway when every BYOK provider is exhausted", async () => {
+    geminiStreamMock.mockRejectedValueOnce({
+      status: 429,
+      message: "quota exhausted",
+    });
+    createMock
+      .mockRejectedValueOnce({ status: 429, message: "quota exhausted" }) // kimi
+      .mockRejectedValueOnce({ status: 403, message: "no credits or licenses" }) // xai
+      .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" }) // openai
+      .mockResolvedValueOnce(fakeStream("gateway-ok")); // gateway
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("gateway");
+    expect(result.failedOver).toBe(true);
+    expect(result.model).toBe("google/gemini-2.5-flash");
+  });
+
+  it("includes per-provider details when the whole chain is exhausted", async () => {
+    geminiStreamMock.mockRejectedValueOnce({
+      status: 429,
+      message: "gemini quota gone",
+    });
+    createMock
+      .mockRejectedValueOnce({ status: 429, message: "kimi quota gone" })
+      .mockRejectedValueOnce({ status: 403, message: "xai no credits" })
+      .mockRejectedValueOnce({ status: 429, message: "openai quota gone" })
+      .mockRejectedValueOnce({ status: 402, message: "gateway budget exceeded" });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/Details:.*Gemini:.*Kimi/i);
   });
 
   it("starts each chat turn on Gemini even after prior sticky failures", async () => {
@@ -350,6 +427,7 @@ describe("createChatCompletionWithFailover", () => {
     process.env.XAI_API_KEY = "xai-test";
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
+    process.env.AI_GATEWAY_API_KEY = "gateway-test";
     delete process.env.ANIMA_LLM_PROVIDER;
     resetLlmFailoverStateForTests();
     createMock.mockReset();

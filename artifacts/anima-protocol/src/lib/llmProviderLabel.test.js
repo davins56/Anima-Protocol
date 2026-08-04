@@ -10,12 +10,13 @@ import {
 } from "./llmProviderLabel";
 
 describe("llmProviderLabel", () => {
-  it("labels Kimi, Grok, and OpenAI (Gemini kept only as legacy)", () => {
+  it("labels Gemini, Kimi, Grok, OpenAI, and AI Gateway", () => {
     expect(llmProviderShortLabel("anima")).toBe("Anima");
     expect(llmProviderShortLabel("kimi")).toBe("Kimi");
     expect(llmProviderShortLabel("xai")).toBe("Grok");
     expect(llmProviderShortLabel("openai")).toBe("OpenAI");
     expect(llmProviderShortLabel("gemini")).toBe("Gemini");
+    expect(llmProviderShortLabel("gateway")).toBe("Gateway");
     expect(llmProviderShortLabel(null)).toBeNull();
   });
 
@@ -27,14 +28,22 @@ describe("llmProviderLabel", () => {
     expect(llmDisplayBadgeClass("openai", "anima")).toMatch(/rose/);
   });
 
-  it("lists Kimi as the sole chat LLM (no Gemini)", () => {
-    expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual(["kimi"]);
+  it("lists Gemini-first auto chain providers including AI Gateway", () => {
+    expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
+      "gemini",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+    ]);
   });
 
   it("returns distinct badge classes", () => {
     expect(llmProviderBadgeClass("anima")).toMatch(/rose/);
     expect(llmProviderBadgeClass("kimi")).toMatch(/emerald/);
     expect(llmProviderBadgeClass("xai")).toMatch(/amber/);
+    expect(llmProviderBadgeClass("gateway")).toMatch(/violet/);
     expect(llmProviderTitle("kimi")).toMatch(/Kimi/i);
+    expect(llmProviderTitle("gateway")).toMatch(/Gateway/i);
   });
 });
