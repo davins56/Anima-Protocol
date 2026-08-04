@@ -107,7 +107,6 @@ function storeError(res, message) {
   return e;
 }
 
-<<<<<<< HEAD
 // AI photo edit. Sends a base64 image data URL + a text prompt to the
 // api-server (gpt-image-1 edit) and returns the transformed image as a data
 // URL. Used by the home-page "add photo" AI edit feature.
@@ -119,7 +118,6 @@ export async function editImage({ image, prompt, signal }) {
       method: 'POST',
       headers,
       body: JSON.stringify({ image, prompt }),
-=======
 // Shared helper for image API calls (edit / generate). Surfaces abort vs
 // network vs server errors the same way so UI can branch consistently.
 async function postImageApi(path, body, signal) {
@@ -130,7 +128,6 @@ async function postImageApi(path, body, signal) {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
->>>>>>> origin/main
       signal,
     });
   } catch (err) {
@@ -151,8 +148,6 @@ async function postImageApi(path, body, signal) {
   return res.json();
 }
 
-<<<<<<< HEAD
-=======
 // AI photo edit. Sends a base64 image data URL + a text prompt to the
 // api-server (gpt-image-1 edit) and returns the transformed image as a data
 // URL. Used by the home-page "add photo" AI edit feature.
@@ -166,7 +161,6 @@ export async function generateImage({ prompt, signal }) {
   return postImageApi('/openai/image-generate', { prompt }, signal);
 }
 
->>>>>>> origin/main
 // --- file uploads (object storage) ------------------------------------------
 // User-picked and AI-edited portraits are stored as real files in object
 // storage (not base64 in the DB). The flow is: downscale to a small JPEG ->
@@ -192,7 +186,6 @@ function readFileAsDataUrl(file) {
   });
 }
 
-<<<<<<< HEAD
 // Upload an image blob via a presigned PUT and return the served object path.
 async function uploadBlob(blob) {
   const headers = await authHeaders();
@@ -215,7 +208,6 @@ async function uploadBlob(blob) {
   // Root-relative path so the avatar resolves against the current origin and
   // stays portable across domains (dev preview, deployment, custom domains).
   return `/api/storage${objectPath}`;
-=======
 // Convert a Blob to a base64 payload (no data: prefix) for the direct upload API.
 async function blobToBase64(blob) {
   const buffer = await blob.arrayBuffer();
@@ -256,7 +248,6 @@ async function uploadBlob(blob) {
     return `/api/storage${payload.objectPath}`;
   }
   throw new Error('Upload failed — no file URL returned.');
->>>>>>> origin/main
 }
 
 // Downscale a data URL to a small JPEG and upload it. Returns the served path.
@@ -1244,12 +1235,9 @@ export const base44 = {
   integrations: {
     Core: {
       InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
-<<<<<<< HEAD
         // Create/reuse a conversation for LLM calls
-=======
         // Create/reuse a conversation for LLM calls — routes through the
         // api-server (api/index.mjs on Vercel) with auth + provider failover.
->>>>>>> origin/main
         let convId = sessionStorage.getItem('anima_llm_conv_id');
         if (!convId) {
           const conv = await animaApi.conversations.create('LLM session');
@@ -1271,11 +1259,9 @@ export const base44 = {
         return result;
       },
 
-<<<<<<< HEAD
       GenerateImage: async () => {
         console.warn('GenerateImage not implemented in Replit environment');
         return null;
-=======
       // Generate (or re-style) an image. When existing_image_urls is provided,
       // prefers the image-edit path so the current portrait is transformed;
       // otherwise generates from the prompt alone. Returns { url } as a data URL.
@@ -1304,7 +1290,6 @@ export const base44 = {
         const result = await generateImage({ prompt, signal });
         if (!result?.image) throw new Error('No image was returned.');
         return { url: result.image };
->>>>>>> origin/main
       },
 
       UploadFile: async ({ file } = {}) => {

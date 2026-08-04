@@ -1,8 +1,6 @@
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
-<<<<<<< HEAD
 import { getConfiguredProviderName, getProviderFallbackChain } from "../lib/modelProvider";
-=======
 import {
   ensureSchemaOnce,
   getPool,
@@ -10,7 +8,6 @@ import {
 } from "@workspace/db";
 import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
 import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
->>>>>>> origin/main
 
 const router: IRouter = Router();
 
@@ -19,7 +16,6 @@ if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
 
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
-<<<<<<< HEAD
   const fallbackChain = getProviderFallbackChain();
   res.json({
     ...data,
@@ -29,7 +25,6 @@ router.get("/healthz", (_req, res) => {
       mock_available: fallbackChain.providers.includes("mock"),
     },
   });
-=======
   res.json(data);
 });
 
@@ -171,7 +166,6 @@ router.post("/healthz/schema", async (_req, res) => {
       target,
     });
   }
->>>>>>> origin/main
 });
 
 export default router;

@@ -3,7 +3,6 @@ import { toFile } from "openai";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-<<<<<<< HEAD
 import { rateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
@@ -11,7 +10,6 @@ import { getOpenAIClient } from "../../lib/openaiClient";
 
 const router = Router();
 router.use(rateLimit);
-=======
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
@@ -21,7 +19,6 @@ import { getOpenAIClient } from "../../lib/openaiClient";
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
 router.use(createRateLimit({ name: "openai-functions", max: 180 }));
->>>>>>> origin/main
 router.use((req, res, next) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -32,26 +29,20 @@ router.use((req, res, next) => {
 });
 
 async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
-<<<<<<< HEAD
   const resp = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     max_tokens: maxTokens,
-=======
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
     maxTokens,
->>>>>>> origin/main
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
   });
-<<<<<<< HEAD
   return resp.choices[0]?.message?.content ?? "";
-=======
   return result.content;
->>>>>>> origin/main
 }
 
 // Web-grounded LLM call: uses the OpenAI Responses API with the web_search
@@ -222,16 +213,13 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 // Reads an uploaded photo with a vision model: OCRs any visible text and
 // describes the image, then distills it into the same ContextAnalysis shape.
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
-<<<<<<< HEAD
   const resp = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     max_tokens: 1500,
-=======
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
     maxTokens: 1500,
->>>>>>> origin/main
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },
       {
@@ -248,11 +236,8 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
       },
     ],
   });
-<<<<<<< HEAD
   return parseContextAnalysis(resp.choices[0]?.message?.content ?? "");
-=======
   return parseContextAnalysis(result.content);
->>>>>>> origin/main
 }
 
 // Merge the extracted analysis onto the user's existing UserContext row (the
@@ -1074,12 +1059,10 @@ export function mapImageEditError(err: unknown): {
     };
   }
 
-<<<<<<< HEAD
   return {
     status: upstreamStatus ?? 500,
     code: "server_error",
     error: rawMessage,
-=======
   // Invalid / missing OpenAI API key — never echo the key material OpenAI
   // includes in the raw 401 message (e.g. "Incorrect API key provided: sk-…").
   if (
@@ -1105,7 +1088,6 @@ export function mapImageEditError(err: unknown): {
     status: upstreamStatus ?? 500,
     code: "server_error",
     error: safeMessage,
->>>>>>> origin/main
   };
 }
 
@@ -1167,8 +1149,6 @@ router.post("/image-edit", async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
-=======
 // AI image generation from a text prompt (gpt-image-1). Used by Customise Anima
 // / Appearance Forge when creating a look from scratch (no source portrait).
 // Auth is enforced by the router-level middleware above.
@@ -1198,5 +1178,4 @@ router.post("/image-generate", async (req, res) => {
   }
 });
 
->>>>>>> origin/main
 export default router;

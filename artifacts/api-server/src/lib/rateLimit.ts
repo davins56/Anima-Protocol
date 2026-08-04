@@ -1,5 +1,4 @@
 import type { Request, Response, NextFunction } from "express";
-<<<<<<< HEAD
 
 const windowMs = 60_000;
 const maxRequests = 30;
@@ -24,7 +23,6 @@ export function rateLimit(req: Request, res: Response, next: NextFunction) {
 
   next();
 }
-=======
 import { getAuth } from "@clerk/express";
 
 const DEFAULT_WINDOW_MS = 60_000;
@@ -106,4 +104,3 @@ export function createRateLimit(options: RateLimitOptions = {}) {
 
 /** Default limiter used by chat / openai / storage / TTS routers. */
 export const rateLimit = createRateLimit();
->>>>>>> origin/main

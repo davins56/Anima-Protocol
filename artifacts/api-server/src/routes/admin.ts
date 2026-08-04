@@ -1,14 +1,11 @@
 import { Router, type Request, type Response } from "express";
-<<<<<<< HEAD
 import { migrateUserData } from "@workspace/db";
-=======
 import {
   ensureSchema,
   inspectSchema,
   migrateUserData,
   resetEnsureSchemaLatch,
 } from "@workspace/db";
->>>>>>> origin/main
 
 const router = Router();
 
@@ -74,8 +71,6 @@ router.post(
   },
 );
 
-<<<<<<< HEAD
-=======
 /**
  * Force-apply the idempotent store schema (same DDL as POST /api/healthz/schema).
  * Clears the process latch so a prior failed ensure can be retried.
@@ -101,5 +96,4 @@ router.post(
   },
 );
 
->>>>>>> origin/main
 export default router;

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 // ============================================
 // 1. IMPORTS
 // ============================================ 
@@ -696,7 +695,6 @@ async function seed() {
 // ============================================
 seed().catch(console.error);
 
-=======
 #!/usr/bin/env node
 /**
  * Character seed entrypoint (CLI).
@@ -825,4 +823,3 @@ Edit the roster in: src/lib/seedCharacters.js
 }
 
 main();
->>>>>>> origin/main

@@ -1,17 +1,11 @@
 import { describe, expect, it } from "vitest";
-<<<<<<< HEAD
-=======
 import { publishableKeyFromHost } from "@clerk/shared/keys";
->>>>>>> origin/main
 import {
   canonicalClerkProxyHeaderHost,
   getClerkAuthHostCandidates,
   getClerkProxyHost,
   resolveClerkPublishableKey,
-<<<<<<< HEAD
-=======
   resolveRuntimePublishableKey,
->>>>>>> origin/main
 } from "../src/middlewares/clerkProxyMiddleware";
 
 describe("getClerkProxyHost", () => {
@@ -128,7 +122,6 @@ describe("resolveClerkPublishableKey", () => {
     );
   });
 
-<<<<<<< HEAD
   it("uses host-based key for production custom domains", () => {
     const prodKey =
       "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
@@ -139,7 +132,6 @@ describe("resolveClerkPublishableKey", () => {
   it("uses the live fallback on localhost for local dev proxy", () => {
     const prodKey =
       "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
-=======
   it("keeps the custom-domain pk_live_ key on www (not clerk.www.*)", () => {
     const prodKey = publishableKeyFromHost("anima-protocol.com");
     expect(resolveClerkPublishableKey("www.anima-protocol.com", prodKey)).toBe(
@@ -152,14 +144,11 @@ describe("resolveClerkPublishableKey", () => {
 
   it("uses the live fallback on localhost for local dev proxy", () => {
     const prodKey = publishableKeyFromHost("anima-protocol.com");
->>>>>>> origin/main
     expect(resolveClerkPublishableKey("127.0.0.1:23660", prodKey)).toBe(
       prodKey,
     );
   });
 });
-<<<<<<< HEAD
-=======
 
 describe("resolveRuntimePublishableKey", () => {
   const apexKey = publishableKeyFromHost("anima-protocol.com");
@@ -195,4 +184,3 @@ describe("resolveRuntimePublishableKey", () => {
   });
 });
 
->>>>>>> origin/main
