@@ -1,15 +1,16 @@
 // Cross-provider chat completion with automatic failover.
 //
-// Chat LLM policy (restored 2026-08): Gemini is back in the auto chain — it was
-// the last unpaid path that served chat reliably before Kimi-only PRs removed
-// it. Kimi remains available; depleted keys sticky-skip and fall through.
+// Chat LLM policy (2026-08): Gemini-first BYOK chain, with Vercel AI Gateway as
+// a last-resort unpaid path when every direct key is out of credits. Depleted
+// keys sticky-skip within a turn and fall through.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - (unset) / auto    — Gemini → Kimi → Grok → OpenAI
+//   - (unset) / auto    — Gemini → Kimi → Grok → OpenAI → AI Gateway
 //   - gemini            — Gemini only
 //   - kimi / moonshot   — Kimi only (no backup)
 //   - xai / grok        — Grok primary (Gemini / Kimi backup)
 //   - openai            — OpenAI primary (Gemini / Kimi / Grok backup)
+//   - gateway           — Vercel AI Gateway only (OIDC or AI_GATEWAY_API_KEY)
 //   - anima / custom / ensemble — sequential path uses auto chain; ensemble
 //                                 path fans out via llmEnsemble.ts
 //
@@ -19,6 +20,7 @@
 //
 // ANIMA_DISABLE_OPENAI=true blocks OpenAI under `auto`.
 // ANIMA_DISABLE_XAI=true blocks Grok under `auto` / `openai`.
+// ANIMA_DISABLE_GATEWAY=true blocks AI Gateway under `auto`.
 //
 // Intra-provider "model unavailable" fallback (routed → standard) is preserved
 // and still gated by isModelUnavailableError — that path must NOT fire on 429.
@@ -36,9 +38,11 @@ import {
   type ResolvedModel,
 } from "./modelRouter";
 import {
+  getGatewayClient,
   getKimiClient,
   getOpenAIClient,
   getXaiClient,
+  hasGatewayAuth,
   hasGeminiKey,
   hasKimiKey,
   hasOpenAIKey,
@@ -46,7 +50,7 @@ import {
 } from "./openaiClient";
 
 /** Chat providers selected by failover / ensemble. */
-export type LlmProviderId = "openai" | "xai" | "gemini" | "kimi";
+export type LlmProviderId = "openai" | "xai" | "gemini" | "kimi" | "gateway";
 
 export type LlmProviderMode =
   | "auto"
@@ -54,6 +58,7 @@ export type LlmProviderMode =
   | "xai"
   | "gemini"
   | "kimi"
+  | "gateway"
   | "anima";
 
 /** Brand for the custom multi-model stack (when ANIMA_LLM_PROVIDER=anima|custom). */
@@ -71,11 +76,24 @@ export interface LlmRoutingStatus {
     openai: boolean;
     xai: boolean;
     gemini: boolean;
+    gateway: boolean;
   };
   /** Always false — Gemini is selectable again when GEMINI_API_KEY is set. */
   geminiRetiredForChat: false;
   rawProviderEnv: string | null;
   note: string;
+}
+
+/** Secret-free per-provider live probe result (for /api/healthz/llm?probe=1). */
+export interface LlmProviderProbeResult {
+  provider: LlmProviderId;
+  configured: boolean;
+  ok: boolean;
+  status?: number;
+  errorKind?: "auth" | "quota" | "other";
+  message?: string;
+  model?: string;
+  latencyMs?: number;
 }
 
 export interface ChatStreamRequest {
@@ -127,11 +145,15 @@ let preferNonKimi = false;
 // Sticky skip after Gemini quota/auth failure in this process.
 let preferNonGemini = false;
 
+// Sticky skip after Vercel AI Gateway quota/auth failure in this process.
+let preferNonGateway = false;
+
 function clearAllStickySkips(): void {
   preferNonOpenAI = false;
   preferNonXai = false;
   preferNonKimi = false;
   preferNonGemini = false;
+  preferNonGateway = false;
 }
 
 /** Test helper — clears sticky failover preference. */
@@ -180,6 +202,7 @@ export function getConfiguredProviderMode(): LlmProviderMode {
   if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
   if (raw === "moonshot") return "kimi";
+  if (raw === "ai-gateway" || raw === "vercel-gateway") return "gateway";
   if (raw === "custom" || raw === "ensemble" || raw === "anima") {
     // Sequential chat uses the auto chain; ensemble is handled separately.
     return "auto";
@@ -189,7 +212,8 @@ export function getConfiguredProviderMode(): LlmProviderMode {
     raw === "openai" ||
     raw === "kimi" ||
     raw === "auto" ||
-    raw === "gemini"
+    raw === "gemini" ||
+    raw === "gateway"
   ) {
     return raw;
   }
@@ -204,15 +228,31 @@ export function isAnimaCustomMode(): boolean {
 /** True when OpenAI is blocked by config (mode / ANIMA_DISABLE_OPENAI), not sticky. */
 export function isOpenAIBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  if (mode === "xai" || mode === "kimi" || mode === "gemini") return true;
+  if (mode === "xai" || mode === "kimi" || mode === "gemini" || mode === "gateway") {
+    return true;
+  }
   return envFlagEnabled("ANIMA_DISABLE_OPENAI");
 }
 
 /** True when Grok is blocked by config (mode / ANIMA_DISABLE_XAI), not sticky. */
 export function isXaiBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  if (mode === "kimi" || mode === "gemini") return true;
+  if (mode === "kimi" || mode === "gemini" || mode === "gateway") return true;
   return envFlagEnabled("ANIMA_DISABLE_XAI");
+}
+
+/** True when AI Gateway is blocked by config / ANIMA_DISABLE_GATEWAY. */
+export function isGatewayBlocked(): boolean {
+  const mode = getConfiguredProviderMode();
+  if (
+    mode === "kimi" ||
+    mode === "gemini" ||
+    mode === "xai" ||
+    mode === "openai"
+  ) {
+    return true;
+  }
+  return envFlagEnabled("ANIMA_DISABLE_GATEWAY");
 }
 
 export function isKimiBlocked(): boolean {
@@ -239,12 +279,29 @@ export function isGeminiStickySkipped(): boolean {
   return preferNonGemini;
 }
 
+/** Sticky skip after a prior AI Gateway unusable failure. */
+export function isGatewayStickySkipped(): boolean {
+  return preferNonGateway;
+}
+
 function hasAnyStickySkip(): boolean {
-  return preferNonKimi || preferNonXai || preferNonOpenAI || preferNonGemini;
+  return (
+    preferNonKimi ||
+    preferNonXai ||
+    preferNonOpenAI ||
+    preferNonGemini ||
+    preferNonGateway
+  );
 }
 
 function hasAnyChatKey(): boolean {
-  return hasGeminiKey() || hasKimiKey() || hasXaiKey() || hasOpenAIKey();
+  return (
+    hasGeminiKey() ||
+    hasKimiKey() ||
+    hasXaiKey() ||
+    hasOpenAIKey() ||
+    hasGatewayAuth()
+  );
 }
 
 /**
@@ -260,7 +317,10 @@ export function reviveStickySkippedProvidersIfNeeded(): boolean {
   const kimiOk = hasKimiKey() && !preferNonKimi && !isKimiConfigBlocked();
   const xaiOk = hasXaiKey() && !isXaiBlocked() && !preferNonXai;
   const openaiOk = hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
-  const nothingLeft = !geminiOk && !kimiOk && !xaiOk && !openaiOk;
+  const gatewayOk =
+    hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
+  const nothingLeft =
+    !geminiOk && !kimiOk && !xaiOk && !openaiOk && !gatewayOk;
   const hidingPreferred =
     (preferNonGemini && hasGeminiKey() && !isGeminiConfigBlocked()) ||
     (preferNonKimi && hasKimiKey() && !isKimiConfigBlocked());
@@ -271,15 +331,15 @@ export function reviveStickySkippedProvidersIfNeeded(): boolean {
   return true;
 }
 
-/** Config-only Gemini block (mode=kimi|xai|openai can still leave Gemini out of chain). */
+/** Config-only Gemini block (mode=kimi|xai|openai|gateway can leave Gemini out). */
 function isGeminiConfigBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  return mode === "kimi" || mode === "xai" || mode === "openai";
+  return mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway";
 }
 
 function isKimiConfigBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  return mode === "gemini";
+  return mode === "gemini" || mode === "gateway";
 }
 
 /** Gemini is selectable when a key is present (no longer retired). */
@@ -299,6 +359,9 @@ function providerAvailable(id: LlmProviderId): boolean {
   }
   if (id === "kimi") {
     return hasKimiKey() && !isKimiConfigBlocked() && !preferNonKimi;
+  }
+  if (id === "gateway") {
+    return hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
   }
   return false;
 }
@@ -329,11 +392,17 @@ export function getProviderChain(_tier: ModelTier = "standard"): LlmProviderId[]
     return chain;
   }
 
+  if (mode === "gateway") {
+    push("gateway");
+    return chain;
+  }
+
   if (mode === "openai") {
     push("openai");
     push("gemini");
     push("kimi");
     push("xai");
+    push("gateway");
     return chain;
   }
 
@@ -341,14 +410,16 @@ export function getProviderChain(_tier: ModelTier = "standard"): LlmProviderId[]
     push("xai");
     push("gemini");
     push("kimi");
+    push("gateway");
     return chain;
   }
 
-  // auto — Gemini first (last known working unpaid path), then Kimi → Grok → OpenAI.
+  // auto — Gemini first, then Kimi → Grok → OpenAI, then AI Gateway as unpaid last resort.
   push("gemini");
   push("kimi");
   push("xai");
   push("openai");
+  push("gateway");
   return chain;
 }
 
@@ -358,7 +429,8 @@ export function getPreferredProvider(tier: ModelTier = "standard"): LlmProviderI
   if (hasGeminiKey()) return "gemini";
   if (hasKimiKey()) return "kimi";
   if (hasXaiKey()) return "xai";
-  return "openai";
+  if (hasOpenAIKey()) return "openai";
+  return "gateway";
 }
 
 /** Secret-free routing diagnostic for operators and the chat UI. */
@@ -371,7 +443,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   const noteParts: string[] = [];
   if (rawInput && !sanitized) {
     noteParts.push(
-      "ANIMA_LLM_PROVIDER looks like an API key and was ignored — set it to auto|gemini|kimi|xai|openai (put the Gemini key in GEMINI_API_KEY).",
+      "ANIMA_LLM_PROVIDER looks like an API key and was ignored — set it to auto|gemini|kimi|xai|openai|gateway (put the Gemini key in GEMINI_API_KEY).",
     );
   }
   if (preferNonGemini) {
@@ -380,21 +452,30 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   if (preferNonKimi) {
     noteParts.push("Kimi sticky-skipped after a prior quota/auth failure this process.");
   }
+  if (preferNonGateway) {
+    noteParts.push(
+      "AI Gateway sticky-skipped after a prior quota/auth failure this process.",
+    );
+  }
   if (mode === "auto") {
     noteParts.push(
-      "Chat prefers Gemini, then fails over to Kimi → Grok → OpenAI on quota or auth errors.",
+      "Chat prefers Gemini, then fails over to Kimi → Grok → OpenAI → AI Gateway on quota or auth errors.",
     );
   } else if (mode === "gemini") {
     noteParts.push("Chat is Gemini-only (ANIMA_LLM_PROVIDER=gemini).");
   } else if (mode === "kimi") {
     noteParts.push(
-      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=auto for Gemini/Grok/OpenAI backup.",
+      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=auto for Gemini/Grok/OpenAI/Gateway backup.",
+    );
+  } else if (mode === "gateway") {
+    noteParts.push(
+      "Chat is AI Gateway-only (ANIMA_LLM_PROVIDER=gateway). Uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN.",
     );
   } else if (preferred) {
     noteParts.push("Chat uses the configured provider chain.");
   } else {
     noteParts.push(
-      "No chat LLM key configured. Set GEMINI_API_KEY, KIMI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY on Vercel and redeploy.",
+      "No chat LLM key configured. Set GEMINI_API_KEY, KIMI_API_KEY, XAI_API_KEY, OPENAI_API_KEY, or AI_GATEWAY_API_KEY on Vercel and redeploy.",
     );
   }
 
@@ -409,6 +490,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       openai: hasOpenAIKey(),
       xai: hasXaiKey(),
       gemini: hasGeminiKey(),
+      gateway: hasGatewayAuth(),
     },
     geminiRetiredForChat: false,
     // Never echo API-key-like values that were pasted into the wrong field.
@@ -554,6 +636,19 @@ const KIMI_ENV_KEYS: Record<ModelTier, string> = {
   heavy: "ANIMA_KIMI_MODEL_HEAVY",
 };
 
+// Vercel AI Gateway model slugs (provider/model). Cheap Gemini path by default.
+const DEFAULT_GATEWAY_MODELS: Record<ModelTier, string> = {
+  light: "google/gemini-2.5-flash-lite",
+  standard: "google/gemini-2.5-flash",
+  heavy: "google/gemini-2.5-pro",
+};
+
+const GATEWAY_ENV_KEYS: Record<ModelTier, string> = {
+  light: "ANIMA_GATEWAY_MODEL_LIGHT",
+  standard: "ANIMA_GATEWAY_MODEL_STANDARD",
+  heavy: "ANIMA_GATEWAY_MODEL_HEAVY",
+};
+
 export function resolveXaiModel(tier: ModelTier): ResolvedModel {
   const override =
     process.env[XAI_ENV_KEYS[tier]]?.trim() ||
@@ -590,10 +685,23 @@ export function resolveKimiModel(tier: ModelTier): ResolvedModel {
   };
 }
 
+export function resolveGatewayModel(tier: ModelTier): ResolvedModel {
+  const override =
+    process.env[GATEWAY_ENV_KEYS[tier]]?.trim() ||
+    process.env.ANIMA_GATEWAY_MODEL?.trim();
+  const openaiResolved = resolveModel(tier);
+  return {
+    tier,
+    model: override || DEFAULT_GATEWAY_MODELS[tier],
+    maxTokens: openaiResolved.maxTokens,
+  };
+}
+
 function providerLabel(id: LlmProviderId): string {
   if (id === "xai") return "Grok (xAI)";
   if (id === "gemini") return "Gemini";
   if (id === "kimi") return "Kimi (Moonshot)";
+  if (id === "gateway") return "AI Gateway";
   return "OpenAI";
 }
 
@@ -614,6 +722,15 @@ function clientFor(provider: Exclude<LlmProviderId, "gemini">): OpenAI {
     }
     return client;
   }
+  if (provider === "gateway") {
+    const client = getGatewayClient();
+    if (!client) {
+      throw new Error(
+        "AI_GATEWAY_API_KEY (or VERCEL_OIDC_TOKEN) must be set to use AI Gateway.",
+      );
+    }
+    return client;
+  }
   return getOpenAIClient();
 }
 
@@ -621,6 +738,7 @@ function resolveForProvider(provider: LlmProviderId, tier: ModelTier): ResolvedM
   if (provider === "gemini") return resolveGeminiModel(tier);
   if (provider === "xai") return resolveXaiModel(tier);
   if (provider === "kimi") return resolveKimiModel(tier);
+  if (provider === "gateway") return resolveGatewayModel(tier);
   return resolveModel(tier);
 }
 
@@ -629,6 +747,7 @@ function otherVendorAvailable(excluding: LlmProviderId): boolean {
   if (excluding !== "kimi" && hasKimiKey()) return true;
   if (excluding !== "xai" && hasXaiKey()) return true;
   if (excluding !== "openai" && hasOpenAIKey()) return true;
+  if (excluding !== "gateway" && hasGatewayAuth()) return true;
   return false;
 }
 
@@ -671,6 +790,10 @@ export function recordProviderFailure(
     markGeminiUnusable(err);
     return;
   }
+  if (provider === "gateway") {
+    markGatewayUnusable(err);
+    return;
+  }
   if (provider === "xai") {
     if (isProviderUnusableError(err) && otherVendorAvailable("xai")) {
       preferNonXai = true;
@@ -678,6 +801,30 @@ export function recordProviderFailure(
     }
     markXaiUnusable(err);
   }
+}
+
+function summarizeProviderError(err: unknown): string {
+  if (!err) return "unknown error";
+  if (typeof err === "string") return err.slice(0, 160);
+  if (err instanceof Error) return err.message.slice(0, 160);
+  if (typeof err === "object") {
+    const e = err as { status?: number; code?: string; message?: unknown };
+    const parts: string[] = [];
+    if (typeof e.status === "number") parts.push(`HTTP ${e.status}`);
+    if (e.code) parts.push(String(e.code));
+    if (e.message) parts.push(String(e.message).slice(0, 120));
+    if (parts.length) return parts.join(": ");
+  }
+  return String(err).slice(0, 160);
+}
+
+function formatFailureTrail(
+  failures: Array<{ provider: LlmProviderId; err: unknown }>,
+): string {
+  if (failures.length === 0) return "";
+  return failures
+    .map((f) => `${providerLabel(f.provider)}: ${summarizeProviderError(f.err)}`)
+    .join(" | ");
 }
 
 function isXaiCreditsError(err: unknown): boolean {
@@ -704,13 +851,26 @@ function markXaiUnusable(err: unknown): void {
   }
 }
 
-function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
+function markGatewayUnusable(err: unknown): void {
+  if (isProviderUnusableError(err) && otherVendorAvailable("gateway")) {
+    preferNonGateway = true;
+  }
+}
+
+function enrichError(
+  err: unknown,
+  attempted: LlmProviderId[],
+  failures: Array<{ provider: LlmProviderId; err: unknown }> = [],
+): Error {
   const names = attempted.map(providerLabel).join(" → ");
+  const trail = formatFailureTrail(failures);
+  const trailSuffix = trail ? ` Details: ${trail}` : "";
   if (isProviderAuthError(err)) {
     const keyHints = attempted.map((id) => {
       if (id === "xai") return "XAI_API_KEY";
       if (id === "kimi") return "KIMI_API_KEY";
       if (id === "gemini") return "GEMINI_API_KEY";
+      if (id === "gateway") return "AI_GATEWAY_API_KEY";
       return "OPENAI_API_KEY";
     });
     const uniqueKeys = [...new Set(keyHints)].join(" / ");
@@ -723,7 +883,11 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
         (attempted.includes("kimi")
           ? "Kimi uses Moonshot keys from https://platform.kimi.ai. "
           : "") +
-        "Set ANIMA_LLM_PROVIDER=auto to allow multi-provider failover.",
+        (attempted.includes("gateway")
+          ? "AI Gateway uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN (https://vercel.com/docs/ai-gateway). "
+          : "") +
+        "Set ANIMA_LLM_PROVIDER=auto to allow multi-provider failover." +
+        trailSuffix,
     );
   }
   if (isProviderUnusableError(err)) {
@@ -736,22 +900,33 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
             ? ", or set ANIMA_LLM_PROVIDER=gemini / auto to use Gemini."
             : hasKimiKey()
               ? ", or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead."
-              : ". Set GEMINI_API_KEY or KIMI_API_KEY for backup chat."),
+              : hasGatewayAuth()
+                ? ", or set ANIMA_LLM_PROVIDER=gateway / auto to use AI Gateway."
+                : ". Set GEMINI_API_KEY, KIMI_API_KEY, or AI_GATEWAY_API_KEY for backup chat.") +
+          trailSuffix,
       );
     }
     if (attempted.length === 1 && attempted[0] === "gemini") {
       return new Error(
         `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` +
-          (hasKimiKey() || hasXaiKey() || hasOpenAIKey()
-            ? " Or set ANIMA_LLM_PROVIDER=auto to allow Kimi/Grok/OpenAI failover."
-            : ""),
+          (hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth()
+            ? " Or set ANIMA_LLM_PROVIDER=auto to allow Kimi/Grok/OpenAI/Gateway failover."
+            : "") +
+          trailSuffix,
       );
     }
     if (attempted.length === 1 && attempted[0] === "kimi") {
       return new Error(
         `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). ` +
           `Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, ` +
-          `or set ANIMA_LLM_PROVIDER=auto so Gemini/Grok/OpenAI can cover, then redeploy.`,
+          `or set ANIMA_LLM_PROVIDER=auto so Gemini/Grok/OpenAI/Gateway can cover, then redeploy.` +
+          trailSuffix,
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "gateway") {
+      return new Error(
+        `AI Gateway credits/quota exhausted (or auth failed). Check AI_GATEWAY_API_KEY / Vercel AI Gateway credits at https://vercel.com/docs/ai-gateway, then redeploy.` +
+          trailSuffix,
       );
     }
     const hints: string[] = [];
@@ -759,15 +934,22 @@ function enrichError(err: unknown, attempted: LlmProviderId[]): Error {
     if (!hasKimiKey()) hints.push("Set KIMI_API_KEY for Kimi");
     if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
     if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
+    if (!hasGatewayAuth()) {
+      hints.push("Set AI_GATEWAY_API_KEY (or deploy on Vercel with OIDC)");
+    }
     const hint =
       hints.length > 0
-        ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|kimi|xai.`
-        : " All configured providers failed. Check GEMINI_API_KEY / KIMI_API_KEY, or fund XAI_API_KEY / OPENAI_API_KEY.";
+        ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|kimi|xai|gateway.`
+        : " All configured providers failed. Fund GEMINI_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY, or top up AI Gateway credits.";
     return new Error(
-      `LLM credits/quota exhausted (tried ${names}).${hint}`,
+      `LLM credits/quota exhausted (tried ${names}).${hint}${trailSuffix}`,
     );
   }
-  return err instanceof Error ? err : new Error(String(err));
+  const base = err instanceof Error ? err : new Error(String(err));
+  if (trail && !base.message.includes("Details:")) {
+    return new Error(`${base.message}${trailSuffix}`);
+  }
+  return base;
 }
 
 async function createStream(
@@ -840,6 +1022,7 @@ function requireProviderChain(): LlmProviderId[] {
     if (!hasKimiKey()) missing.push("KIMI_API_KEY");
     if (!hasXaiKey()) missing.push("XAI_API_KEY");
     if (!hasOpenAIKey()) missing.push("OPENAI_API_KEY");
+    if (!hasGatewayAuth()) missing.push("AI_GATEWAY_API_KEY");
     const configNote = isOpenAIBlocked()
       ? " OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI."
       : "";
@@ -849,10 +1032,12 @@ function requireProviderChain(): LlmProviderId[] {
         ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY."
         : mode === "gemini"
           ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY."
-          : "";
+          : mode === "gateway"
+            ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN."
+            : "";
     throw new Error(
-      missing.length === 4
-        ? `No LLM provider configured. Set GEMINI_API_KEY (preferred), KIMI_API_KEY, XAI_API_KEY, or OPENAI_API_KEY on Vercel Production, then redeploy.${configNote}${modeNote}`
+      missing.length >= 4
+        ? `No LLM provider configured. Set GEMINI_API_KEY (preferred), KIMI_API_KEY, XAI_API_KEY, OPENAI_API_KEY, or AI_GATEWAY_API_KEY on Vercel Production, then redeploy.${configNote}${modeNote}`
         : `No usable LLM provider right now.${configNote}${modeNote} Check key values on Vercel Production and redeploy.`,
     );
   }
@@ -873,6 +1058,7 @@ export async function createChatStreamWithFailover(
   const chain = requireProviderChain();
   const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
   const attempted: LlmProviderId[] = [];
+  const failures: Array<{ provider: LlmProviderId; err: unknown }> = [];
   let lastErr: unknown;
 
   for (let i = 0; i < chain.length; i++) {
@@ -901,15 +1087,16 @@ export async function createChatStreamWithFailover(
       };
     } catch (err) {
       lastErr = err;
+      failures.push({ provider, err });
       recordProviderFailure(provider, err);
       if (!isProviderUnusableError(err)) {
-        throw enrichError(err, attempted);
+        throw enrichError(err, attempted, failures);
       }
       // Try next provider in chain.
     }
   }
 
-  throw enrichError(lastErr, attempted);
+  throw enrichError(lastErr, attempted, failures);
 }
 
 /**
@@ -923,6 +1110,7 @@ export async function createChatCompletionWithFailover(
   const chain = requireProviderChain();
   const brand: LlmBrand | undefined = isAnimaCustomMode() ? "anima" : undefined;
   const attempted: LlmProviderId[] = [];
+  const failures: Array<{ provider: LlmProviderId; err: unknown }> = [];
   let lastErr: unknown;
 
   for (let i = 0; i < chain.length; i++) {
@@ -952,12 +1140,83 @@ export async function createChatCompletionWithFailover(
       };
     } catch (err) {
       lastErr = err;
+      failures.push({ provider, err });
       recordProviderFailure(provider, err);
       if (!isProviderUnusableError(err)) {
-        throw enrichError(err, attempted);
+        throw enrichError(err, attempted, failures);
       }
     }
   }
 
-  throw enrichError(lastErr, attempted);
+  throw enrichError(lastErr, attempted, failures);
+}
+
+/**
+ * Live-probe every configured chat provider with a tiny completion.
+ * Secret-free — only returns status / short error kind for operators.
+ */
+export async function probeLlmProviders(
+  tier: ModelTier = "standard",
+): Promise<LlmProviderProbeResult[]> {
+  const candidates: LlmProviderId[] = [
+    "gemini",
+    "kimi",
+    "xai",
+    "openai",
+    "gateway",
+  ];
+  const results: LlmProviderProbeResult[] = [];
+
+  for (const provider of candidates) {
+    const configured =
+      (provider === "gemini" && hasGeminiKey()) ||
+      (provider === "kimi" && hasKimiKey()) ||
+      (provider === "xai" && hasXaiKey()) ||
+      (provider === "openai" && hasOpenAIKey()) ||
+      (provider === "gateway" && hasGatewayAuth());
+
+    if (!configured) {
+      results.push({ provider, configured: false, ok: false });
+      continue;
+    }
+
+    const resolved = resolveForProvider(provider, tier);
+    const started = Date.now();
+    try {
+      await createCompletion(
+        provider,
+        { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
+        [{ role: "user", content: "Reply with the single word: ok" }],
+        0,
+      );
+      results.push({
+        provider,
+        configured: true,
+        ok: true,
+        model: resolved.model,
+        latencyMs: Date.now() - started,
+      });
+    } catch (err) {
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? Number((err as { status?: unknown }).status)
+          : undefined;
+      results.push({
+        provider,
+        configured: true,
+        ok: false,
+        status: Number.isFinite(status) ? status : undefined,
+        errorKind: isProviderAuthError(err)
+          ? "auth"
+          : isProviderUnusableError(err)
+            ? "quota"
+            : "other",
+        message: summarizeProviderError(err),
+        model: resolved.model,
+        latencyMs: Date.now() - started,
+      });
+    }
+  }
+
+  return results;
 }

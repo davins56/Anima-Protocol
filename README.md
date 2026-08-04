@@ -135,11 +135,13 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `GEMINI_API_KEY` | API | Preferred chat LLM under `auto` (native Google AI Studio / AQ.* keys). Verify via `/api/healthz/llm` |
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Kimi (Moonshot) backup in the auto chain |
 | `XAI_API_KEY` | API | Grok backup in the auto chain |
-| `ANIMA_LLM_PROVIDER` | API | Default `auto` = Gemini → Kimi → Grok → OpenAI. Or `gemini` / `kimi` / `xai` / `openai` / `anima`. Do **not** paste API keys here |
+| `AI_GATEWAY_API_KEY` | API | Vercel AI Gateway last-resort unpaid path (or use `VERCEL_OIDC_TOKEN` on Vercel). Live-test with `/api/healthz/llm?probe=1` |
+| `ANIMA_LLM_PROVIDER` | API | Default `auto` = Gemini → Kimi → Grok → OpenAI → AI Gateway. Or `gemini` / `kimi` / `xai` / `openai` / `gateway` / `anima`. Do **not** paste API keys here |
 | `ANIMA_LLM_ENSEMBLE` | API | Set `true` to force parallel mind drafts even when provider mode is not `anima` |
 
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
+| `ANIMA_DISABLE_GATEWAY` | API | Set `true` under `auto` to skip AI Gateway |
 | `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |

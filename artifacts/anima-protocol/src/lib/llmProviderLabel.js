@@ -1,6 +1,6 @@
 /**
  * Display labels for chat LLM backends returned by the API as
- * provider: "openai" | "xai" | "kimi" | "gemini" and optional brand: "anima".
+ * provider: "openai" | "xai" | "kimi" | "gemini" | "gateway" and optional brand: "anima".
  */
 
 /** @param {string | null | undefined} provider */
@@ -9,8 +9,8 @@ export function llmProviderShortLabel(provider) {
   if (provider === "kimi") return "Kimi";
   if (provider === "xai") return "Grok";
   if (provider === "openai") return "OpenAI";
-  // Legacy label for responses from older deploys that still returned gemini.
   if (provider === "gemini") return "Gemini";
+  if (provider === "gateway") return "Gateway";
   return null;
 }
 
@@ -39,7 +39,10 @@ export function llmProviderTitle(provider) {
     return "Last reply from OpenAI";
   }
   if (provider === "gemini") {
-    return "Last reply from Gemini (retired for chat)";
+    return "Last reply from Gemini";
+  }
+  if (provider === "gateway") {
+    return "Last reply from Vercel AI Gateway";
   }
   return "Last reply LLM";
 }
@@ -72,6 +75,9 @@ export function llmProviderBadgeClass(provider) {
   }
   if (provider === "gemini") {
     return "border-sky-400/50 text-sky-300/90 bg-sky-400/10";
+  }
+  if (provider === "gateway") {
+    return "border-violet-400/50 text-violet-200/90 bg-violet-400/10";
   }
   return "border-primary/30 text-primary/50";
 }
@@ -110,5 +116,11 @@ export const CONFIGURED_LLM_PROVIDERS = [
     label: "ChatGPT",
     env: "OPENAI_API_KEY",
     note: "OpenAI — backup + image generation",
+  },
+  {
+    id: "gateway",
+    label: "AI Gateway",
+    env: "AI_GATEWAY_API_KEY",
+    note: "Vercel AI Gateway — unpaid last resort when BYOK keys are exhausted",
   },
 ];

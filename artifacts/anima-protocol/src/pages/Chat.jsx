@@ -142,7 +142,7 @@ export default function Chat() {
   const [activeSession, setActiveSession] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" */
+  /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
   const [llmBrand, setLlmBrand] = useState(null);
@@ -1761,6 +1761,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       } else if (resultPayload.failed_over && resultPayload.provider === "openai") {
         toast.success("Switched to ChatGPT — previous LLMs were unavailable.", {
           description: resultPayload.model ? `Now using ${resultPayload.model}` : undefined,
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "gateway") {
+        toast.success("Switched to AI Gateway — previous LLMs were unavailable.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Vercel AI Gateway failover active",
         });
       }
 
