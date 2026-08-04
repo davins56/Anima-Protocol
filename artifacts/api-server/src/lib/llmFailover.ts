@@ -937,10 +937,13 @@ function enrichError(
     if (!hasGatewayAuth()) {
       hints.push("Set AI_GATEWAY_API_KEY (or deploy on Vercel with OIDC)");
     }
+    // When every BYOK/gateway slot is already configured, the env values can look
+    // "correct" in Vercel while every upstream still rejects (quota / billing /
+    // revoked key). Do not tell operators to re-check missing vars in that case.
     const hint =
       hints.length > 0
         ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|kimi|xai|gateway.`
-        : " All configured providers failed. Fund GEMINI_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY, or top up AI Gateway credits.";
+        : " Keys are present on the server, but every provider rejected the request (quota, billing, or revoked key) — re-checking env values will not fix this. Add credits in Google AI Studio / Moonshot / xAI / OpenAI, or top up AI Gateway. Live-check: /api/healthz/llm?probe=1.";
     return new Error(
       `LLM credits/quota exhausted (tried ${names}).${hint}${trailSuffix}`,
     );
