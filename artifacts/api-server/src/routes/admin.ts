@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from "express";
-import { migrateUserData } from "@workspace/db";
 import {
   ensureSchema,
   inspectSchema,

@@ -38,11 +38,6 @@ export async function syncActiveMessages({ sessionId, activeSessionRef, setActiv
   if (!cur || cur.id !== sessionId) return true; // navigated away; new session loads fresh
   // Never clobber a thread whose optimistic thinking/typing bubbles or
   // streaming reply are in flight — signal a retry instead.
-  const hasPending = (cur.messages || []).some(
-    (m) =>
-      m.character_name === "__typing__" || m.character_name === "__thinking__",
-  );
-  if (hasPending) return false;
   const localMessages = cur.messages || [];
   const hasPending = localMessages.some(
     (m) =>
