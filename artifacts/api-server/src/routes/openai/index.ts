@@ -2,13 +2,6 @@ import { Router } from "express";
 import { db, conversations, messages } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
-import { rateLimit } from "../../lib/rateLimit";
-import { isModelUnavailableError, resolveModel, routeModel } from "../../lib/modelRouter";
-import { getOpenAIClient } from "../../lib/openaiClient";
-
-const router = Router();
-
-router.use(rateLimit);
 import { createRateLimit } from "../../lib/rateLimit";
 import { routeModel } from "../../lib/modelRouter";
 import { createChatStreamWithFailover } from "../../lib/llmFailover";
@@ -106,37 +99,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
     // context: an explicit deep-mode toggle, and how deep this thread already is
     // (history includes the user message we just inserted).
     const routed = routeModel(content, { deepMode, conversationDepth: history.length });
-    const standard = resolveModel("standard");
-    let usedModel = routed.model;
-    let usedTier = routed.tier;
-
-    let stream;
-    try {
-      stream = await getOpenAIClient().chat.completions.create({
-        model: routed.model,
-        max_tokens: routed.maxTokens,
-        messages: chatMessages,
-        stream: true,
-      });
-    } catch (modelErr) {
-      // Only fall back when the routed model itself is unavailable to this
-      // account; quota / rate-limit / transient errors surface as-is so we don't
-      // burn a second call or hide the real cause.
-      if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
-        usedModel = standard.model;
-        usedTier = standard.tier;
-        stream = await getOpenAIClient().chat.completions.create({
-          model: standard.model,
-          max_tokens: standard.maxTokens,
-          messages: chatMessages,
-          stream: true,
-        });
-      } else {
-        throw modelErr;
-      }
-    }
-
-    for await (const chunk of stream) {
     const completion = await createChatStreamWithFailover({
       tier: routed.tier,
       model: routed.model,
@@ -153,7 +115,6 @@ router.post("/conversations/:id/messages", async (req, res) => {
     }
 
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
-    res.write(`data: ${JSON.stringify({ done: true, model: usedModel, tier: usedTier })}\n\n`);
     res.write(
       `data: ${JSON.stringify({
         done: true,

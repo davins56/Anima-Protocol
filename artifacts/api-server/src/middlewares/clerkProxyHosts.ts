@@ -95,9 +95,6 @@ export function resolveClerkPublishableKey(
   if (fallbackKey?.startsWith("pk_live_") && isLocalDevHost(hostname)) {
     return fallbackKey;
   }
-  return publishableKeyFromHost(hostname, fallbackKey);
-}
-
   if (
     fallbackKey &&
     isPublishableKey(fallbackKey) &&

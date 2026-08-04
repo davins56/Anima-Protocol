@@ -2,11 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronDown } from 'lucide-react';
 
-<<<<<<< HEAD
-export default function CharacterAvatarRow({ session, characters }) {
-=======
 export default function CharacterAvatarRow({ session, characters, onAvatarClick }) {
->>>>>>> origin/main
   const [showExpanded, setShowExpanded] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
 
@@ -91,11 +87,6 @@ export default function CharacterAvatarRow({ session, characters, onAvatarClick 
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {sessionCharacters.map((char) => (
-<<<<<<< HEAD
-                  <div
-                    key={char.id}
-                    className="border border-primary/15 bg-black/40 hover:border-primary/30 p-4 rounded transition-all"
-=======
                   <button
                     type="button"
                     key={char.id}
@@ -105,7 +96,6 @@ export default function CharacterAvatarRow({ session, characters, onAvatarClick 
                     }}
                     className="border border-primary/15 bg-black/40 hover:border-primary/40 p-4 rounded transition-all text-left w-full"
                     title={`View ${char.name} bio sheet`}
->>>>>>> origin/main
                   >
                     {char.avatar_url ? (
                       <img
@@ -137,11 +127,7 @@ export default function CharacterAvatarRow({ session, characters, onAvatarClick 
                         {char.personality}
                       </p>
                     )}
-<<<<<<< HEAD
-                  </div>
-=======
                   </button>
->>>>>>> origin/main
                 ))}
               </div>
             </motion.div>

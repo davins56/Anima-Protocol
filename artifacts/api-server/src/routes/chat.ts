@@ -16,12 +16,6 @@ import {
   userEntities,
   type MsgData,
 } from "@workspace/db";
-import { rateLimit } from "../lib/rateLimit";
-import {
-  isModelUnavailableError,
-  resolveModel,
-  routeModel,
-} from "../lib/modelRouter";
 import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import { createChatStreamWithFailover } from "../lib/llmFailover";
@@ -56,11 +50,6 @@ import {
   serializeSynchroState,
   type SynchroState,
 } from "../lib/synchroEngine";
-import { createModelProvider, getProviderFallbackChain } from "../lib/modelProvider";
-
-const router = Router();
-
-router.use(rateLimit);
 import {
   resolveActiveCharacterId,
   resolveActiveCharacterName,
@@ -127,11 +116,6 @@ async function loadCharacters(userId: string, characterIds: string[]) {
     .where(
       and(
         eq(userEntities.userId, userId),
-        eq(userEntities.entityName, "Character"),
-        inArray(userEntities.entityId, characterIds),
-      ),
-    );
-  return rows.map((row) => asObject(row.data));
         inArray(userEntities.entityName, ["Character", "Anima"]),
         inArray(userEntities.entityId, characterIds),
       ),
@@ -481,7 +465,6 @@ router.post("/messages", async (req, res) => {
     deep_mode?: boolean;
     persist?: boolean;
     metadata?: Record<string, unknown>;
-    scenario?: Record<string, unknown> | null;
   };
   const sessionId = body.session_id;
   if (!sessionId) {
@@ -516,19 +499,6 @@ router.post("/messages", async (req, res) => {
     readRecentStoreMessages(userId, sessionId, 24),
   ]);
 
-  const activeCharacterId = characterIds.length > 0 ? characterIds[0] : null;
-  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
-    activeCharacterId
-      ? loadEvolution(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadRelationshipState(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadArcState(String(activeCharacterId), userId)
-      : Promise.resolve(null),
-  ]);
-
   const requestedAssistantId = body.assistant_character_id
     ? String(body.assistant_character_id)
     : null;
@@ -543,7 +513,6 @@ router.post("/messages", async (req, res) => {
   // Initialize and evolve synchro state for the active character
   const adaptedMemories = adaptMemories(memories);
   const adaptedChars = adaptCharacters(characters);
-  const activeChar = adaptedChars.length === 1 ? adaptedChars[0] : undefined;
   // Prefer the client-selected speaker (id, then name). Do NOT fall back to
   // characterIds[0] for multi-character sessions — that rebinds identity to the
   // wrong companion and conflicts with the client's group prompt.
@@ -599,20 +568,6 @@ router.post("/messages", async (req, res) => {
   }
   const prompt = buildCompanionPrompt({
     systemPrompt: body.system_prompt,
-    scenario: body.scenario
-      ? {
-          id: typeof body.scenario.id === "string" ? body.scenario.id : undefined,
-          label: typeof body.scenario.label === "string" ? body.scenario.label : undefined,
-          systemPrompt:
-            typeof body.scenario.systemPrompt === "string"
-              ? body.scenario.systemPrompt
-              : typeof body.scenario.system_prompt === "string"
-                ? body.scenario.system_prompt
-                : undefined,
-          description:
-            typeof body.scenario.description === "string" ? body.scenario.description : undefined,
-        }
-      : null,
     characters: adaptedChars,
     activeCharacter: activeChar,
     memories: adaptedMemories,
@@ -631,10 +586,6 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
-  const standard = resolveModel("standard");
-  const shouldPersist = body.persist !== false;
-  const providers = getProviderFallbackChain().providers;
-  const providerNames = providers.filter((name, index) => providers.indexOf(name) === index);
   const shouldPersist = body.persist !== false;
 
   await syncTypedSession({
@@ -676,60 +627,6 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-
-  try {
-    let lastError: unknown;
-    let assistantText = "";
-
-    for (const providerName of providerNames) {
-      const provider = createModelProvider(providerName);
-      try {
-        const response = await provider.generate({
-          prompt: content,
-          systemPrompt: prompt,
-          maxTokens: routed.maxTokens,
-          model: routed.model,
-        });
-
-        if (response?.text?.trim()) {
-          assistantText = response.text;
-          usedModel = provider.name === "mock" ? `${provider.name}/${routed.model}` : response.model;
-          break;
-        }
-
-        lastError = new Error("Provider returned an empty response.");
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    if (!assistantText.trim()) {
-      if (lastError) {
-        throw lastError;
-      }
-      assistantText = "I’m not able to respond right now. Please try again in a moment.";
-      usedModel = `mock/${routed.model}`;
-    }
-
-    fullResponse = assistantText;
-    for (const delta of assistantText.split(/(\s+)/)) {
-      if (!delta) continue;
-      try {
-        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
-      } catch {
-        break;
-      }
-    }
-
-    try {
-      res.write(
-        `data: ${JSON.stringify({
-          provider: usedModel,
-          provider_status: "ok",
-        })}\n\n`,
-      );
-    } catch {
-      // Ignore write errors after the response body has begun.
   let usedProvider: "openai" | "xai" | "gemini" | "kimi" | "gateway" = "openai";
   let usedBrand: "anima" | undefined;
   let failedOver = false;
@@ -795,8 +692,6 @@ router.post("/messages", async (req, res) => {
       const assistantMessage: MsgData = {
         role: "assistant",
         content: fullResponse,
-        character_id: body.assistant_character_id ?? body.character_id ?? null,
-        character_name: body.assistant_character_name ?? null,
         character_id: activeCharacterId,
         character_name: activeCharacterName,
         timestamp: new Date().toISOString(),
@@ -811,10 +706,6 @@ router.post("/messages", async (req, res) => {
         sessionId,
         role: "assistant",
         content: fullResponse,
-        characterId: body.assistant_character_id ?? body.character_id ?? null,
-        characterName: body.assistant_character_name ?? null,
-        isCrossover,
-        metadata: { model: usedModel, tier: usedTier },
         characterId: activeCharacterId,
         characterName: activeCharacterName,
         isCrossover,

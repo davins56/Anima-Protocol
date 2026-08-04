@@ -10,11 +10,8 @@ const ROUTE_TITLES = {
   "/groups": "Groups",
   "/chronicles": "Chronicles",
   "/animas": "Animas",
-<<<<<<< HEAD
-=======
   "/customise-anima": "Customise Anima",
   "/customize": "Customization",
->>>>>>> origin/main
   "/meditation": "Sacred Space",
   "/settings": "Settings",
   "/lorebook": "Lore Book",
