@@ -39,7 +39,9 @@ router.get("/healthz/llm", async (req, res) => {
   }
 
   try {
-    const probes = await probeLlmProviders("light");
+    // Probe the routine chat tier (standard). Light used to report Gemini as
+    // dead solely because gemini-2.5-flash-lite is blocked for new AI Studio keys.
+    const probes = await probeLlmProviders("standard");
     const anyOk = probes.some((p) => p.ok);
     res.status(anyOk || routing.status === "ok" ? 200 : 503).json({
       ...routing,

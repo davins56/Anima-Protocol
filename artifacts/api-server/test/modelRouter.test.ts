@@ -123,6 +123,13 @@ describe("isModelUnavailableError", () => {
     expect(isModelUnavailableError({ status: 404, message: "The model does not exist" })).toBe(true);
     expect(isModelUnavailableError({ code: "model_not_found" })).toBe(true);
     expect(isModelUnavailableError({ message: "You do not have access to model gpt-4.1" })).toBe(true);
+    expect(
+      isModelUnavailableError({
+        status: 404,
+        message:
+          "This model models/gemini-2.5-flash-lite is no longer available to new users",
+      }),
+    ).toBe(true);
   });
 
   it("does not treat quota / rate-limit / transient errors as model-unavailable", () => {
