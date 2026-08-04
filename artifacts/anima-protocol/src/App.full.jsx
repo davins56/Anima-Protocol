@@ -18,6 +18,7 @@ import {
   ClerkLoading,
   ClerkProvider,
   HandleSSOCallback,
+<<<<<<< HEAD
   SignIn,
   SignUp,
   Show,
@@ -28,6 +29,15 @@ import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
 import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
 import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
+=======
+  SignUp,
+  Show,
+  useClerk,
+} from "@clerk/react";
+import EmailCodeSignIn from "@/components/auth/EmailCodeSignIn";
+import { dark } from "@clerk/themes";
+import { Suspense, lazy, useRef, useEffect, useState } from "react";
+>>>>>>> origin/main
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
@@ -46,11 +56,17 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
+<<<<<<< HEAD
+=======
+  CLERK_FAILURE_HINT,
+  CLERK_STALL_HINT,
+>>>>>>> origin/main
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
   isVercelPreviewHost,
+<<<<<<< HEAD
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
@@ -64,6 +80,19 @@ const Chat = lazy(() => import("./pages/Chat"));
 const NucleusDemo = lazy(() => import("./pages/NucleusDemo"));
 const Codespace = lazy(() => import("./pages/Codespace"));
 const Landing = lazy(() => import("./pages/Landing"));
+=======
+  publishableKeyFromFrontendHost,
+  resolveClerkProxyUrl,
+  shouldUseClerkProxy,
+} from "@/lib/clerkProxy";
+
+// Title screen is eager so cold opens paint Landing immediately (no spinner).
+import Landing from "./pages/Landing";
+
+// Lazy-loaded pages for code splitting
+const Chat = lazy(() => import("./pages/Chat"));
+const Codespace = lazy(() => import("./pages/Codespace"));
+>>>>>>> origin/main
 const MainHome = lazy(() => import("./pages/MainHome"));
 const NewChat = lazy(() => import("./pages/NewChat"));
 
@@ -141,6 +170,10 @@ const QuestTrackingDashboard = lazy(
 const CharacterLookCustomizer = lazy(
   () => import("./pages/CharacterLookCustomizer"),
 );
+<<<<<<< HEAD
+=======
+const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"));
+>>>>>>> origin/main
 const AIBehaviorSettings = lazy(() => import("./pages/AIBehaviorSettings"));
 const RelationshipAndLocationDashboard = lazy(
   () => import("./pages/RelationshipAndLocationDashboard"),
@@ -228,7 +261,11 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
     return envKey;
   }
 
+<<<<<<< HEAD
   return publishableKeyFromHost(hostname, envKey || undefined);
+=======
+  return publishableKeyFromFrontendHost(hostname, envKey);
+>>>>>>> origin/main
 }
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
@@ -236,6 +273,7 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
+<<<<<<< HEAD
 function isDevClerkKey(key) {
   const builtIn =
     typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
@@ -245,11 +283,14 @@ function isDevClerkKey(key) {
   return typeof key === "string" && key.startsWith("pk_test_");
 }
 
+=======
+>>>>>>> origin/main
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
+<<<<<<< HEAD
 const CLERK_SSO_DASHBOARD_URL =
   "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
 
@@ -270,6 +311,8 @@ const socialAuthProviders = [
     Icon: FaGithub,
   },
 ];
+=======
+>>>>>>> origin/main
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -329,6 +372,22 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
+<<<<<<< HEAD
+=======
+    // Apple Production SSO has empty client_id — hide until credentials are set.
+    socialButtonsBlockButton__apple: "!hidden",
+    socialButtonsProviderIcon__apple: "!hidden",
+    // Google Production still returns redirect_uri_mismatch until Google Cloud
+    // allowlists https://clerk.anima-protocol.com/v1/oauth_callback — hide so
+    // users are not sent into a hard failure; use GitHub or email code instead.
+    socialButtonsBlockButton__google: "!hidden",
+    socialButtonsProviderIcon__google: "!hidden",
+    socialButtonsBlockButton__google_one_tap: "!hidden",
+    socialButtonsProviderIcon__google_one_tap: "!hidden",
+    // Prefer GitHub while Google/Apple are ops-blocked.
+    socialButtonsBlockButton__github:
+      "!border-cyan-400/40 !bg-cyan-400/10 hover:!bg-cyan-400/15",
+>>>>>>> origin/main
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -362,6 +421,7 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
+<<<<<<< HEAD
 function formatClerkOAuthError(error) {
   if (error?.errors?.length) {
     return error.errors
@@ -643,6 +703,18 @@ function ClerkLoginDiagnostics() {
 
   return (
     <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+=======
+/** Delay before showing stall diagnostics so healthy loads never flash a warning. */
+const CLERK_DIAGNOSTICS_STALL_MS = 4000;
+
+const VERCEL_PREVIEW_SIGNIN_HINT =
+  "This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use https://www.anima-protocol.com/sign-in instead.";
+
+function ClerkDiagnosticsBanner({ hints }) {
+  if (!hints?.length) return null;
+  return (
+    <div className="rounded-md border border-amber-400/35 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-100">
+>>>>>>> origin/main
       {hints.map((hint) => (
         <p key={hint} className="mt-1 first:mt-0">
           {hint}
@@ -652,11 +724,103 @@ function ClerkLoginDiagnostics() {
   );
 }
 
+<<<<<<< HEAD
+=======
+/**
+ * Connectivity hints only when Clerk failed, or is still loading after a stall
+ * timeout. Avoids always-on false positives when sign-in is already working.
+ */
+function ClerkLoginDiagnostics() {
+  return (
+    <>
+      <ClerkFailed>
+        <ClerkFailedConnectivityHints />
+      </ClerkFailed>
+      <ClerkLoading>
+        <ClerkStalledConnectivityHints />
+      </ClerkLoading>
+    </>
+  );
+}
+
+function useClerkProbeHints() {
+  const [probeHints, setProbeHints] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await probeClerkConnectivity(clerkPubKey);
+      if (!cancelled) setProbeHints(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return probeHints;
+}
+
+function withPreviewHostHint(hints) {
+  // Only append preview guidance after a real probe failure — never on healthy
+  // stall/failure fallbacks alone.
+  if (
+    hints.length > 0 &&
+    typeof window !== "undefined" &&
+    isVercelPreviewHost(window.location.hostname)
+  ) {
+    return [...hints, VERCEL_PREVIEW_SIGNIN_HINT];
+  }
+  return hints;
+}
+
+function resolveConnectivityHints(probeHints, fallbackHint) {
+  if (probeHints === null) return [fallbackHint];
+  if (probeHints.length > 0) return withPreviewHostHint(probeHints);
+  return [fallbackHint];
+}
+
+/**
+ * Start probes as soon as ClerkLoading mounts. At the stall timeout, show the
+ * stall hint immediately (don't wait for sequential probe timeouts), then swap
+ * in specific endpoint failures when probes finish.
+ */
+function ClerkStalledConnectivityHints() {
+  const [stalled, setStalled] = useState(false);
+  const probeHints = useClerkProbeHints();
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setStalled(true),
+      CLERK_DIAGNOSTICS_STALL_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!stalled) return null;
+  return (
+    <ClerkDiagnosticsBanner
+      hints={resolveConnectivityHints(probeHints, CLERK_STALL_HINT)}
+    />
+  );
+}
+
+/** Immediate failure fallback, upgraded with probe results when ready. */
+function ClerkFailedConnectivityHints() {
+  const probeHints = useClerkProbeHints();
+  return (
+    <ClerkDiagnosticsBanner
+      hints={resolveConnectivityHints(probeHints, CLERK_FAILURE_HINT)}
+    />
+  );
+}
+
+>>>>>>> origin/main
 function AuthFormShell({ mode, children }) {
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
         <ClerkLoginDiagnostics />
+<<<<<<< HEAD
         <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
           <SocialAuthButtons mode={mode} />
           <p className="mt-3 text-center text-xs text-cyan-400/45">
@@ -665,6 +829,15 @@ function AuthFormShell({ mode, children }) {
               : "Or continue with email below."}
           </p>
         </div>
+=======
+        {mode === "sign-in" ? (
+          <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
+            Prefer Continue with GitHub, or the username/email already on your
+            account for a one-time code. Google and Apple stay hidden until
+            their provider redirect URIs are fixed.
+          </p>
+        ) : null}
+>>>>>>> origin/main
         {children}
       </div>
     </div>
@@ -694,6 +867,7 @@ function SignInPage() {
         </p>
       </ClerkFailed>
       <ClerkLoaded>
+<<<<<<< HEAD
         <SignIn
           routing="path"
           path={`${basePath}/sign-in`}
@@ -703,6 +877,18 @@ function SignInPage() {
           fallbackRedirectUrl={authRedirectCompleteUrl}
           forceRedirectUrl={authRedirectCompleteUrl}
         />
+=======
+        <EmailCodeSignIn />
+        <p className="px-1 text-center text-xs text-cyan-400/45">
+          Need an account?{" "}
+          <a
+            href={`${basePath}/sign-up`}
+            className="text-cyan-300 hover:text-cyan-200"
+          >
+            Join the waitlist
+          </a>
+        </p>
+>>>>>>> origin/main
       </ClerkLoaded>
     </AuthFormShell>
   );
@@ -815,6 +1001,7 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
+<<<<<<< HEAD
   const { isLoadingAuth, authStalled } = useAuth();
 
   // Clerk <Show> renders nothing until the SDK loads. If Clerk stalls, fall back
@@ -825,6 +1012,14 @@ function HomeGate() {
         <Landing />
       </Suspense>
     );
+=======
+  const { isLoadingAuth } = useAuth();
+
+  // Clerk <Show> renders nothing until the SDK loads. Show the title screen
+  // immediately so cold starts never sit on a blank/initialising spinner.
+  if (isLoadingAuth) {
+    return <Landing />;
+>>>>>>> origin/main
   }
 
   return (
@@ -833,9 +1028,13 @@ function HomeGate() {
         <SignedInHome />
       </Show>
       <Show when="signed-out">
+<<<<<<< HEAD
         <Suspense fallback={<PageLoader />}>
           <Landing />
         </Suspense>
+=======
+        <Landing />
+>>>>>>> origin/main
       </Show>
     </>
   );
@@ -864,7 +1063,15 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
+<<<<<<< HEAD
   const [useProxy, setUseProxy] = useState(null);
+=======
+  // Skip the null/health-check wait when no proxy is configured so Clerk and
+  // the title screen mount on the first paint.
+  const [useProxy, setUseProxy] = useState(() =>
+    initialClerkProxyUrl ? null : false,
+  );
+>>>>>>> origin/main
   const [providerKey, setProviderKey] = useState(0);
 
   useEffect(() => {
@@ -905,8 +1112,15 @@ function ClerkProviderWithRoutes({ children }) {
     setProviderKey((key) => key + 1);
   };
 
+<<<<<<< HEAD
   if (useProxy === null) {
     return <PageLoader />;
+=======
+  // While the proxy health check runs, paint the title screen instead of a
+  // spinner so cold opens go straight to Landing.
+  if (useProxy === null) {
+    return <Landing />;
+>>>>>>> origin/main
   }
 
   return (
@@ -1106,17 +1320,32 @@ const AuthenticatedApp = () => {
     }
   }
 
+<<<<<<< HEAD
   // Wait for Clerk to resolve the session before deciding what to show.
   if (isLoadingAuth && !authStalled) {
     return <PageLoader />;
   }
 
+=======
+>>>>>>> origin/main
   // Gate protected routes: signed-out users are sent to the public Landing.
   const pathname = location.pathname;
   const isPublicPath =
     pathname === "/" ||
     PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+<<<<<<< HEAD
   if (!isAuthenticated && !isPublicPath) {
+=======
+
+  // While Clerk boots, render public routes (especially `/` → title screen)
+  // immediately. Protected routes still wait on a short loader; if auth stalls,
+  // send guests to the title screen instead of a blank/protected view.
+  if (isLoadingAuth && !authStalled) {
+    if (!isPublicPath) {
+      return <PageLoader />;
+    }
+  } else if (!isAuthenticated && !isPublicPath) {
+>>>>>>> origin/main
     return <Navigate to="/" replace />;
   }
 
@@ -1181,6 +1410,7 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+<<<<<<< HEAD
                 path="/nucleus"
                 element={
                   <Suspense fallback={<PageLoader />}>
@@ -1189,6 +1419,8 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+=======
+>>>>>>> origin/main
                 path="/codespace"
                 element={
                   <Suspense fallback={<PageLoader />}>
@@ -1434,8 +1666,12 @@ const AuthenticatedApp = () => {
               <Route
                 path="/locationsmap"
                 element={
+<<<<<<< HEAD
                   <Suspense fallba
                   ßck={<PageLoader />}>
+=======
+                  <Suspense fallback={<PageLoader />}>
+>>>>>>> origin/main
                     <LocationsMap />
                   </Suspense>
                 }
@@ -1601,6 +1837,17 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+<<<<<<< HEAD
+=======
+                path="/customise-anima"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CustomiseAnima />
+                  </Suspense>
+                }
+              />
+              <Route
+>>>>>>> origin/main
                 path="/orchestrate/:sessionId"
                 element={
                   <Suspense fallback={<PageLoader />}>
@@ -1949,6 +2196,7 @@ const AuthenticatedApp = () => {
 function App() {
   useViewportHeight();
 
+<<<<<<< HEAD
   // Guard against rare “black screen” failure modes during auth/clerk
   // initialization by always rendering a visible background + message while
   // providers settle.
@@ -1989,6 +2237,11 @@ function App() {
           </div>
         )}
 
+=======
+  return (
+    <QueryClientProvider client={queryClientInstance}>
+      <Router>
+>>>>>>> origin/main
         <ErrorBoundary resetKey={window.location?.pathname || "init"}>
           <ClerkProviderWithRoutes>
             <AuthProvider>

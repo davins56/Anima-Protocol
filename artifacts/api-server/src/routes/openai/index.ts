@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, conversations, messages } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
+<<<<<<< HEAD
 import { rateLimit } from "../../lib/rateLimit";
 import { isModelUnavailableError, resolveModel, routeModel } from "../../lib/modelRouter";
 import { getOpenAIClient } from "../../lib/openaiClient";
@@ -9,6 +10,15 @@ import { getOpenAIClient } from "../../lib/openaiClient";
 const router = Router();
 
 router.use(rateLimit);
+=======
+import { createRateLimit } from "../../lib/rateLimit";
+import { routeModel } from "../../lib/modelRouter";
+import { createChatStreamWithFailover } from "../../lib/llmFailover";
+
+const router = Router();
+
+router.use(createRateLimit({ name: "openai-chat", max: 60 }));
+>>>>>>> origin/main
 
 router.get("/conversations", async (req, res) => {
   const { userId } = getAuth(req);
@@ -99,6 +109,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
     // context: an explicit deep-mode toggle, and how deep this thread already is
     // (history includes the user message we just inserted).
     const routed = routeModel(content, { deepMode, conversationDepth: history.length });
+<<<<<<< HEAD
     const standard = resolveModel("standard");
     let usedModel = routed.model;
     let usedTier = routed.tier;
@@ -130,6 +141,16 @@ router.post("/conversations/:id/messages", async (req, res) => {
     }
 
     for await (const chunk of stream) {
+=======
+    const completion = await createChatStreamWithFailover({
+      tier: routed.tier,
+      model: routed.model,
+      maxTokens: routed.maxTokens,
+      messages: chatMessages,
+    });
+
+    for await (const chunk of completion.stream) {
+>>>>>>> origin/main
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
@@ -138,7 +159,19 @@ router.post("/conversations/:id/messages", async (req, res) => {
     }
 
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
+<<<<<<< HEAD
     res.write(`data: ${JSON.stringify({ done: true, model: usedModel, tier: usedTier })}\n\n`);
+=======
+    res.write(
+      `data: ${JSON.stringify({
+        done: true,
+        model: completion.model,
+        tier: completion.tier,
+        provider: completion.provider,
+        failed_over: completion.failedOver,
+      })}\n\n`,
+    );
+>>>>>>> origin/main
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);

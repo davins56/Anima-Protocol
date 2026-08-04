@@ -23,6 +23,10 @@ export {
   getClerkAuthHostCandidates,
   getClerkProxyHost,
   resolveClerkPublishableKey,
+<<<<<<< HEAD
+=======
+  resolveRuntimePublishableKey,
+>>>>>>> origin/main
 } from "./clerkProxyHosts";
 
 function clerkProxyEnabled(): boolean {

@@ -3,6 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+<<<<<<< HEAD
+=======
+import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+>>>>>>> origin/main
 import { animaApi } from "@/api/animaApi";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -15,6 +19,10 @@ import {
   syncFromRemote as handleRemoteSync,
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
+<<<<<<< HEAD
+=======
+import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
+>>>>>>> origin/main
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -33,6 +41,10 @@ import { useEmotionalTTS } from "@/hooks/useEmotionalTTS";
 import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
 import { motion, AnimatePresence } from "framer-motion";
 import InventoryDrawer from "@/components/chat/InventoryDrawer";
+<<<<<<< HEAD
+=======
+import CharacterBioSheet from "@/components/character/CharacterBioSheet";
+>>>>>>> origin/main
 import SystemAlert from "@/components/chat/SystemAlert";
 import CalendarDisplay from "@/components/chat/CalendarDisplay";
 
@@ -88,7 +100,25 @@ import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
+<<<<<<< HEAD
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause } from "@/lib/companionGuardrail";
+=======
+import { streamChatReply } from "@/lib/streamChatReply";
+import {
+  assessLewdTiming,
+  buildContentRatingInstruction,
+  lewdTimingClause,
+  buildSexualityGuide,
+  buildLewdityGuide,
+  buildGroupIntimacyGuidance,
+  buildIntimatePlayAlongGuidance,
+  groupSpeakerIntimacyRules,
+  filterIntimacyEligibleSpeakers,
+  isIntimacyEligibleSpeaker,
+} from "@/lib/contentRatingInstruction";
+import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
+import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
+>>>>>>> origin/main
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
 import ChatToolbar from "@/components/chat/ChatToolbar";
@@ -125,6 +155,13 @@ export default function Chat() {
   const [activeSession, setActiveSession] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+<<<<<<< HEAD
+=======
+  /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
+  const [llmProvider, setLlmProvider] = useState(null);
+  /** "anima" when the custom multi-model stack selected the backend */
+  const [llmBrand, setLlmBrand] = useState(null);
+>>>>>>> origin/main
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState("solo");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -140,6 +177,10 @@ export default function Chat() {
   const [characterMemories, setCharacterMemories] = useState([]); // cross-session memories
   const [inventoryItems, setInventoryItems] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
+<<<<<<< HEAD
+=======
+  const [bioCharacter, setBioCharacter] = useState(null);
+>>>>>>> origin/main
   const [showMentalLine, setShowMentalLine] = useState(false);
   const [mentalLineLoading, setMentalLineLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -288,7 +329,13 @@ export default function Chat() {
     whenBootstrapReady().then(() => {
       if (cancelled) return;
       loadSessions();
+<<<<<<< HEAD
       loadCharacters();
+=======
+      // Seed retry ensures preloaded starters are in memory for session create
+      // and prompt building even if bootstrap seeding raced auth.
+      loadCharacters({ retrySeed: true });
+>>>>>>> origin/main
       // Preload ElevenLabs voices in background
       base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
       base44.auth.me().then((me) => {
@@ -317,6 +364,7 @@ export default function Chat() {
 
   const lastMessageCountRef = useRef(0);
   useEffect(() => {
+<<<<<<< HEAD
     const currentCount = activeSession?.messages?.length || 0;
     if (currentCount > lastMessageCountRef.current) {
       setTimeout(() => {
@@ -327,6 +375,26 @@ export default function Chat() {
           messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         }
       }, 50);
+=======
+    const messages = activeSession?.messages || [];
+    const currentCount = messages.length;
+    const last = messages[currentCount - 1];
+    const isLiveBubble =
+      last?.is_streaming === true ||
+      last?.character_name === "__typing__" ||
+      last?.character_name === "__thinking__";
+    // Scroll on new messages, and keep pace while a reply is streaming in.
+    if (currentCount > lastMessageCountRef.current || isLiveBubble) {
+      const behavior = last?.is_streaming ? "auto" : "smooth";
+      requestAnimationFrame(() => {
+        const container = scrollContainerRef.current;
+        if (container) {
+          container.scrollTo({ top: container.scrollHeight, behavior });
+        } else {
+          messagesEndRef.current?.scrollIntoView({ behavior });
+        }
+      });
+>>>>>>> origin/main
     }
     lastMessageCountRef.current = currentCount;
   }, [activeSession?.messages]);
@@ -362,7 +430,16 @@ export default function Chat() {
     emotionalTTS.stop();
 
     const fullStoryText = activeSession.messages
+<<<<<<< HEAD
       .filter(msg => msg.character_name !== "__typing__" && msg.type !== "event")
+=======
+      .filter(msg =>
+        msg.character_name !== "__typing__" &&
+        msg.character_name !== "__thinking__" &&
+        !msg.is_streaming &&
+        msg.type !== "event"
+      )
+>>>>>>> origin/main
       .map(msg => {
         const speaker = msg.role === "user" ? "You" : (msg.character_name || "Narrator");
         return `${speaker}: ${msg.content}`;
@@ -426,7 +503,15 @@ export default function Chat() {
     const msgs = activeSession?.messages || [];
     if (msgs.length > lastMsgCountRef.current) {
       const latest = msgs[msgs.length - 1];
+<<<<<<< HEAD
       if (latest && latest.role === "assistant" && latest.character_name !== "__typing__") {
+=======
+      const isLivePlaceholder =
+        latest?.character_name === "__typing__" ||
+        latest?.character_name === "__thinking__" ||
+        latest?.is_streaming === true;
+      if (latest && latest.role === "assistant" && !isLivePlaceholder) {
+>>>>>>> origin/main
         // Auto-speak — prefer native TTS when inside WKWebView
         speakMessageNative(latest.content, latest.character_name);
         // Extract current location from message
@@ -503,6 +588,7 @@ export default function Chat() {
     [queryClient],
   );
 
+<<<<<<< HEAD
   const loadCharacters = async () => {
     const [chars, animas] = await Promise.all([
       base44.entities.Character.list("-created_date", 500),
@@ -523,10 +609,63 @@ export default function Chat() {
     setSerenity(serenityAnima);
     setCharacters([...animaAsChars, ...enhancedChars]);
     
+=======
+  const loadCharacters = async ({ retrySeed = false } = {}) => {
+    const { characters: roster, animaAsChars } = await loadRosterCharacters({
+      retrySeed,
+      waitBootstrap: false,
+    });
+
+    // Find Serenity anima specifically to use as the ambient companion
+    const serenityAnima =
+      animaAsChars.find((a) => a.name?.toLowerCase() === "serenity") || null;
+    setSerenity(serenityAnima);
+    setCharacters(roster);
+
+>>>>>>> origin/main
     // Auto-assign voice profiles in background (non-blocking)
     base44.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
   };
 
+<<<<<<< HEAD
+=======
+  // Resolve a roster character by id, fetching from the store when Chat's
+  // in-memory list hasn't caught up yet (common right after starter seeding).
+  const resolveCharacterById = async (id, roster = characters) => {
+    if (!id) return null;
+    const local = roster.find((c) => c.id === id);
+    if (local) return local;
+    try {
+      const [charMatches, animaMatches] = await Promise.all([
+        base44.entities.Character.filter({ id }, undefined, 1),
+        base44.entities.Anima.filter({ id }, undefined, 1),
+      ]);
+      if (charMatches?.[0]) {
+        const char = charMatches[0];
+        setCharacters((prev) =>
+          prev.some((c) => c.id === char.id) ? prev : [...prev, char],
+        );
+        return char;
+      }
+      if (animaMatches?.[0]) {
+        const anima = {
+          ...animaMatches[0],
+          _isAnima: true,
+          category: animaMatches[0].archetype || "guardian",
+          universe: "Anima",
+        };
+        setCharacters((prev) =>
+          prev.some((c) => c.id === anima.id) ? prev : [...prev, anima],
+        );
+        return anima;
+      }
+    } catch (err) {
+      console.warn("[Anima] Character resolve failed:", err?.message || err);
+    }
+    return null;
+  };
+
+>>>>>>> origin/main
   const loadSession = async (id) => {
     // Fetch just this session's metadata by id, then load its messages
     // separately. Looking it up directly (rather than scanning a capped list)
@@ -620,7 +759,11 @@ export default function Chat() {
   );
 
   const syncFromRemote = useCallback(() => {
+<<<<<<< HEAD
     loadCharacters();
+=======
+    loadCharacters({ retrySeed: false });
+>>>>>>> origin/main
     handleRemoteSync({
       isLoading,
       loadSessions,
@@ -655,10 +798,21 @@ export default function Chat() {
     let initialMessages = [];
     
     if (m === "solo" && character_id) {
+<<<<<<< HEAD
       const char = characters.find((c) => c.id === character_id);
       title = char ? `${char.name}` : "New Session";
     } else if (m === "group" && group_character_ids?.length) {
       const chars = characters.filter((c) => group_character_ids.includes(c.id));
+=======
+      const char = await resolveCharacterById(character_id);
+      title = char ? `${char.name}` : "New Session";
+    } else if (m === "group" && group_character_ids?.length) {
+      const chars = (
+        await Promise.all(
+          group_character_ids.map((id) => resolveCharacterById(id)),
+        )
+      ).filter(Boolean);
+>>>>>>> origin/main
       title = chars.slice(0, 2).map((c) => c.name).join(", ") + (chars.length > 2 ? ` +${chars.length - 2}` : "");
       
       // Create initial narrator message for group sessions
@@ -673,7 +827,15 @@ export default function Chat() {
     }
 
     const selectedGroupChars = m === "group" && group_character_ids?.length
+<<<<<<< HEAD
       ? characters.filter((c) => group_character_ids.includes(c.id))
+=======
+      ? (
+          await Promise.all(
+            group_character_ids.map((id) => resolveCharacterById(id)),
+          )
+        ).filter(Boolean)
+>>>>>>> origin/main
       : [];
     const crossoverUniverses = Array.from(
       new Set(selectedGroupChars.map((c) => c.universe).filter(Boolean)),
@@ -903,16 +1065,27 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (message) => {
+<<<<<<< HEAD
     if (!activeSession) return;
+=======
+    if (!activeSession || isLoading) return;
+>>>>>>> origin/main
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
     const content = messageData.text || "";
     const attachments = messageData.attachments || [];
 
+<<<<<<< HEAD
     // Allow empty content in group mode — acts as "continue story" with the next speaker
     const isContinue = !content.trim() && !attachments.length;
     if (isContinue && activeSession.mode !== "group") return;
+=======
+    // Empty content = "continue" — keep the scene moving without a new user line.
+    // Works in solo (character takes the next beat) and group (next speaker).
+    const isContinue = !content.trim() && !attachments.length;
+    if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") return;
+>>>>>>> origin/main
 
     setPendingMessage(content || "");
     setIsLoading(true);
@@ -921,6 +1094,14 @@ export default function Chat() {
     // read again when parsing the response into per-aspect bubbles.
     let isMultiAspect = false;
     let multiAspectChars = [];
+<<<<<<< HEAD
+=======
+    // Hoisted for the catch path: keep painted tokens + correct speaker label
+    // when a turn fails after the stream has started.
+    let streamedSoFar = "";
+    let replySpeakerName = "Character";
+    let userMessagePersisted = false;
+>>>>>>> origin/main
 
     // In "continue" mode, skip adding a user message — just advance the speaker
     const userMessage = { role: "user", content, timestamp: new Date().toISOString() };
@@ -955,6 +1136,7 @@ export default function Chat() {
       has_attachment: attachments.length > 0,
     });
 
+<<<<<<< HEAD
     // Show "thinking" indicator first, then transition to typing after a brief pause
     const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
     setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
@@ -970,6 +1152,13 @@ export default function Chat() {
       messages: [...(prev.messages || []).filter(m => m.character_name !== "__thinking__"), typingMsg]
     }));
 
+=======
+    // Show thinking immediately while we build context / call the model.
+    // No artificial pause — tokens replace this as soon as they arrive.
+    const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
+    setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
+
+>>>>>>> origin/main
     try {
       // Get user settings for response length
       const user = await base44.auth.me();
@@ -1016,7 +1205,11 @@ export default function Chat() {
       let locationContext = "";
       
       if (activeSession.mode === "solo" && activeSession.character_id) {
+<<<<<<< HEAD
         const char = characters.find((c) => c.id === activeSession.character_id);
+=======
+        const char = await resolveCharacterById(activeSession.character_id);
+>>>>>>> origin/main
         if (char) {
           charContext = `You are ${char.name}${char.universe ? ` from ${char.universe}` : ""}.
 
@@ -1044,7 +1237,15 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
           }
         }
       } else if (activeSession.mode === "group" && activeSession.group_character_ids?.length) {
+<<<<<<< HEAD
         const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+=======
+        const groupChars = (
+          await Promise.all(
+            activeSession.group_character_ids.map((id) => resolveCharacterById(id)),
+          )
+        ).filter(Boolean);
+>>>>>>> origin/main
         const charDescriptions = groupChars
           .map((c) => `[${c.name}${c.universe ? ` | ${c.universe}` : ""}]\nPersonality: ${c.personality || "See their unique traits"}\nSpeaking Style: ${c.speaking_style || "Distinct voice"}\n`)
           .join("\n");
@@ -1059,9 +1260,23 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
         })
         .join("\n");
 
+<<<<<<< HEAD
       const adultInstruction = adultMode
         ? "\nCONTENT RATING — ADULT (18+) ENABLED: The user has explicitly enabled adult mode. You may engage in explicit, sexual, and lewd content when the story naturally leads there. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back or fade to black unless the user indicates otherwise.\n"
         : "\nCONTENT RATING — RAW MODE (non-explicit): Do NOT be tame, polite, or sanitized. Write with a raw, visceral, unfiltered edge — gritty, emotionally intense, and electrically charged. Lean hard into heat: smoldering tension, aching longing, magnetic and dangerous attraction, sensual and suggestive undertones, bold and evocative mature language. Let the chemistry feel real and unrestrained. The ONE hard line: stop before anything graphic — no explicit, pornographic, or anatomical sexual description; fade to black at that exact threshold. Within that single limit, hold nothing else back.\n";
+=======
+      // Adult Mode unlocks explicit capability; lewdTiming tells the model whether
+      // THIS beat is a right or wrong time to use it (grief/logistics vs invite/heat).
+      // Continue taps pass isContinue (not a literal "continue" token) so soft-continue
+      // follows prior-heat logic without treating bare politeness words as cues.
+      const lewdTiming = assessLewdTiming({
+        userMessage: isContinue ? "" : content,
+        recentMessages: updatedMessages,
+        isContinue,
+      });
+      const adultInstruction =
+        `\n${buildContentRatingInstruction(adultMode)}\n${lewdTimingClause(lewdTiming, adultMode)}\n`;
+>>>>>>> origin/main
 
       // Build injected memory context (user-selected recalled memories)
       const buildInjectedMemoryContext = () => {
@@ -1134,12 +1349,15 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
         return `\nRELATIONSHIP STATUS (hidden from player — embody this, don't announce it): Tier "${rel.tier}" (score ${rel.score}/100). ${tierGuides[rel.tier] || ""}\n`;
       };
 
+<<<<<<< HEAD
       // In group mode, add a natural thinking delay before AI responds
       if (activeSession.mode === "group" && !isContinue) {
         const thinkingDelay = 800 + Math.random() * 700; // 800-1500ms
         await new Promise(resolve => setTimeout(resolve, thinkingDelay));
       }
 
+=======
+>>>>>>> origin/main
       // Determine dynamic message length based on conversation topic & flow
       const getTopicDepth = (userMsg) => {
         const deepTopics = /backstory|past|memory|afraid|love|hate|philosophy|meaning|why|explain|story|lore|world|character|feels|emotion|think about|believe|dream|goal|fear|hope|regret/i;
@@ -1190,7 +1408,11 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
 
       let prompt;
       if (activeSession.mode === "solo" && activeSession.character_id) {
+<<<<<<< HEAD
         const char = characters.find((c) => c.id === activeSession.character_id);
+=======
+        const char = await resolveCharacterById(activeSession.character_id);
+>>>>>>> origin/main
         if (char) {
           // Apply archetype personality instruction
           const archetypePrompts = {
@@ -1256,6 +1478,7 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
               ? `Be confrontational, assertive, and willing to challenge or argue (aggressiveness: ${cfg.aggressiveness}%).`
               : `Be gentle, passive, and accommodating in your approach (aggressiveness: ${cfg.aggressiveness}%).`;
             
+<<<<<<< HEAD
             const sexualityGuide = cfg.sexuality > 50
               ? `Be openly flirtatious and sexually forward when appropriate (sexuality: ${cfg.sexuality}%).`
               : `Maintain a neutral, non-flirtatious demeanor (sexuality: ${cfg.sexuality}%).`;
@@ -1263,6 +1486,10 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
             const lewdityGuide = cfg.lewdity > 50
               ? `Include suggestive and explicit content when the narrative calls for it (lewdity: ${cfg.lewdity}%).`
               : `Keep language family-friendly and avoid explicit content (lewdity: ${cfg.lewdity}%).`;
+=======
+            const sexualityGuide = buildSexualityGuide(adultMode, cfg.sexuality);
+            const lewdityGuide = buildLewdityGuide(adultMode, cfg.lewdity);
+>>>>>>> origin/main
             
             behaviorInstructions = `
 AI BEHAVIOR CONFIGURATION:
@@ -1299,10 +1526,36 @@ ${lewdityGuide}`;
           const matrixSafetyClause = isMultiAspect
             ? `\n\n          HIGHEST-PRIORITY RULE (overrides everything above): In multi-aspect presence, the intensity between aspects and toward ${user.full_name || "the user"} is EMOTIONAL, PSYCHOLOGICAL, and SPIRITUAL only. Never produce explicit, sexual, or anatomical content, regardless of any other instruction.`
             : "";
+<<<<<<< HEAD
 
           prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
 
           ${animaNote}${animaSoulNote}${char.personality ? `Personality: ${char.personality}\n` : ""}${char.backstory ? `Backstory: ${char.backstory}\n` : ""}${char.speaking_style ? `Voice: ${char.speaking_style}\n` : ""}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
+=======
+          // Mid-intimacy: play along and add personality-true lewd flare (solo).
+          const intimatePlayAlong = isMultiAspect
+            ? ""
+            : buildIntimatePlayAlongGuidance({
+                character: char,
+                timing: lewdTiming,
+                adultMode,
+              });
+
+          const identityBlock = [
+            char.personality ? `Personality: ${char.personality}` : "",
+            char.backstory ? `Backstory: ${char.backstory}` : "",
+            char.speaking_style ? `Voice: ${char.speaking_style}` : "",
+          ].filter(Boolean).join("\n");
+
+          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${intimatePlayAlong}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
+
+          CHARACTER IDENTITY LOCK:
+          - From the first reply onward, embody ${char.name} using the Personality, Backstory, and Voice below — never a generic assistant.
+          - Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
+          - If details conflict with a generic helpful tone, the character identity wins.
+
+          ${animaNote}${animaSoulNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${char.name}; invent no contradictory personality.\n`}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
+>>>>>>> origin/main
           CRITICAL AUTONOMY RULES:
           - You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
           - You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
@@ -1316,16 +1569,27 @@ ${lewdityGuide}`;
 
           ${INTELLIGENCE_GUIDANCE}
 
+<<<<<<< HEAD
           EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care. Never explicit or anatomical content.
 ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional attunement only — calibrate tone and presence, never explicit content.` : ""}
 
           Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
 
+=======
+          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode && !isMultiAspect ? " When LEWDITY TIMING is RIGHT TIME or CONTINUE, play along and add your own sensual/lewd flare in character; on WRONG TIME beats, stay emotionally intimate without sexualizing." : " Never explicit or anatomical content."}
+${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode && !isMultiAspect ? " Calibrate tone and presence; follow LEWDITY TIMING — when intimate, contribute heat in your voice, not only mirror the user." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
+
+          Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
+${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat, then stop at a clear pause point so they can react.\n` : ""}
+
+          ${turnTakingClause({ isContinue })}
+>>>>>>> origin/main
           If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}
 
           ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
+<<<<<<< HEAD
       const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
 
       // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
@@ -1349,6 +1613,45 @@ ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional 
           .join("\n");
         
         const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
+=======
+        const groupChars = (
+          await Promise.all(
+            (activeSession.group_character_ids || []).map((id) => resolveCharacterById(id)),
+          )
+        ).filter(Boolean);
+
+        if (!groupChars.length) {
+          prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
+        } else {
+
+          // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
+          // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
+          const recentSpeakers = updatedMessages.slice(-6)
+            .filter(m =>
+              m.role === "assistant" &&
+              m.character_name !== "Narrator" &&
+              m.character_name !== "__typing__" &&
+              m.character_name !== "__thinking__" &&
+              !m.is_streaming
+            )
+            .map(m => m.character_name);
+          const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
+
+          const shouldOutOfTurn =
+            Math.random() < 0.35 && // 35% per request
+            groupChars.length >= 2 &&
+            !isContinue;
+
+          const charSummaries = groupChars.map(c =>
+            `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
+          ).join("\n");
+
+          const recentConvoSnippet = updatedMessages.slice(-6)
+            .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
+            .join("\n");
+
+          const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
+>>>>>>> origin/main
 
 Characters:
 ${charSummaries}
@@ -1363,6 +1666,7 @@ Rules:
 - The same character can speak again if it makes sense narratively
 - Consider who might be provoked, excited, curious, threatened, or emotionally moved by what just happened
 - Pick the character who would most authentically respond to what just happened
+<<<<<<< HEAD
 
 Reply with ONLY the character's exact name — nothing else.`;
 
@@ -1443,17 +1747,176 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         });
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${loyaltyGuardrailClause()}`;
+=======
+${groupSpeakerIntimacyRules(lewdTiming)}
+
+Reply with ONLY the character's exact name — nothing else.`;
+
+          const intimacyEligibleChars = filterIntimacyEligibleSpeakers(groupChars, {
+            timing: lewdTiming,
+            userMessage: content,
+          });
+
+          let nextChar;
+          try {
+            const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
+            const chosenName = speakerResult?.trim();
+            nextChar = intimacyEligibleChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase())
+              || groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
+            // Intimate beats: reject reserved/averse leads unless the user addressed them.
+            if (
+              nextChar &&
+              !isIntimacyEligibleSpeaker(nextChar, {
+                timing: lewdTiming,
+                userMessage: content,
+              })
+            ) {
+              nextChar = null;
+            }
+          } catch {}
+
+          // Fallback: pick someone who hasn't spoken recently (respect intimacy disposition).
+          if (!nextChar) {
+            const recentSpeakerSet = new Set(recentSpeakers);
+            nextChar =
+              intimacyEligibleChars.find(c => !recentSpeakerSet.has(c.name)) ||
+              intimacyEligibleChars[0] ||
+              groupChars.find(c => !recentSpeakerSet.has(c.name)) ||
+              groupChars[0];
+          }
+
+          currentGroupSpeakerRef.current = nextChar;
+
+          const loreCtxGroup = buildLoreContext();
+
+          // Build a rich character sheet for each character
+          const allCharSheets = groupChars.map(c => {
+            const rel = getRelationshipContext(c.id);
+            return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
+${c.personality ? `Personality: ${c.personality}` : ""}
+${c.backstory ? `Backstory: ${c.backstory}` : ""}
+${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
+          }).join("\n\n");
+
+          // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
+          // We still select a valid character, but we may interrupt the usual pacing.
+          // Re-apply intimacy disposition so reserved/averse never get lewd play-along via interruption.
+          let finalNextChar = nextChar;
+          if (shouldOutOfTurn) {
+            const recentMentioned = updatedMessages
+              .slice(-10)
+              .map(m => m.character_name)
+              .filter(Boolean);
+            const interruptPool = intimacyEligibleChars.filter(c => c.name !== nextChar?.name);
+            const preferred = interruptPool
+              .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
+
+            // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
+            const recentSpeakerSet = new Set(recentSpeakers);
+            const leastRecent = interruptPool.find(c => !recentSpeakerSet.has(c.name));
+
+            finalNextChar =
+              preferred[0] ||
+              leastRecent ||
+              interruptPool[0] ||
+              nextChar;
+          }
+
+          // Final guard: never leave a reserved/averse speaker with intimate play-along guidance
+          // unless the user addressed them directly.
+          if (
+            finalNextChar &&
+            !isIntimacyEligibleSpeaker(finalNextChar, {
+              timing: lewdTiming,
+              userMessage: content,
+            })
+          ) {
+            finalNextChar = intimacyEligibleChars[0] || finalNextChar;
+          }
+
+          // Fetch personality shifts for the FINAL speaker (after interrupt/disposition).
+          let traitModifiers = '';
+          try {
+            if (finalNextChar?.id) {
+              const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
+                character_id: finalNextChar.id,
+                character_name: finalNextChar.name,
+                max_sessions: 5,
+              });
+              traitModifiers = shiftRes?.data?.trait_modifiers || '';
+            }
+          } catch (_) { /* silently ignore — enhancement, not a requirement */ }
+
+          const speakerCanReceiveIntimateGuidance =
+            finalNextChar &&
+            isIntimacyEligibleSpeaker(finalNextChar, {
+              timing: lewdTiming,
+              userMessage: content,
+            });
+          const speakerLewdTiming = speakerCanReceiveIntimateGuidance
+            ? lewdTiming
+            : "hold";
+
+          // Keep the ref in sync for later Serenity auto-address handling etc.
+          currentGroupSpeakerRef.current = finalNextChar;
+
+          // Add explicit allowance for interruption/out-of-turn to the prompt.
+          const interruptionClause = shouldOutOfTurn
+            ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
+            : "";
+
+          // Group intimacy: right/wrong time + THIS speaker's personality + audience.
+          // When already intimate, also push active play-along + in-character lewd flare.
+          const groupIntimacyGuidance = [
+            buildGroupIntimacyGuidance({
+              nextChar: finalNextChar,
+              groupChars,
+              timing: speakerLewdTiming,
+              adultMode,
+            }),
+            buildIntimatePlayAlongGuidance({
+              character: finalNextChar,
+              timing: speakerLewdTiming,
+              adultMode,
+            }),
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          prompt = buildGroupPrompt({
+            nextChar: finalNextChar,
+            allCharSheets,
+            loreCtxGroup,
+            conversationHistory,
+            adultInstruction,
+            lengthGuide,
+            traitModifiers,
+            userProfileContext,
+            interruptionClause,
+            groupIntimacyGuidance,
+            isContinue,
+          });
+        }
+      } else {
+        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
+>>>>>>> origin/main
       }
 
       let charName = "Serenity";
       let activeChar = null;
       if (activeSession.mode === "solo" && activeSession.character_id) {
+<<<<<<< HEAD
         activeChar = characters.find((c) => c.id === activeSession.character_id);
         charName = activeChar?.name || "Serenity";
+=======
+        activeChar = await resolveCharacterById(activeSession.character_id);
+        charName = activeChar?.name || "Character";
+>>>>>>> origin/main
       } else if (activeSession.mode === "group") {
         activeChar = currentGroupSpeakerRef.current;
         charName = activeChar?.name || "Character";
       }
+<<<<<<< HEAD
 
       const resultPayload = await animaApi.chat.completeMessage({
         sessionId: activeSession.id,
@@ -1477,11 +1940,149 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         },
       });
       const result = resultPayload.content;
+=======
+      replySpeakerName = charName;
+
+      // Stream tokens into the open bubble as they arrive — no post-buffer delay.
+      // Thinking indicator stays until the first delta, then the live reply grows.
+      const streamTs = new Date().toISOString();
+      const mindLabel = (id) =>
+        ({ kimi: "Kimi", xai: "Grok", openai: "ChatGPT" })[id] || id;
+
+      const showEnsembleStatus = (event) => {
+        if (event?.status !== "ensemble") return;
+        const minds = Array.isArray(event.minds) ? event.minds.map(mindLabel) : [];
+        let statusText = "Consulting minds…";
+        if (event.phase === "gathering") {
+          statusText = minds.length
+            ? `Minds drafting: ${minds.join(" · ")}`
+            : "Minds drafting in parallel…";
+        } else if (event.phase === "combining") {
+          statusText = `Combining ${event.drafts || minds.length || "multiple"} mind drafts…`;
+        } else if (event.phase === "streaming") {
+          statusText = event.drafts > 1
+            ? "Streaming combined reply…"
+            : "Streaming reply…";
+        }
+        setActiveSession((prev) => ({
+          ...prev,
+          messages: [
+            ...updatedMessages,
+            {
+              role: "assistant",
+              content: statusText,
+              character_name: "__typing__",
+              timestamp: streamTs,
+            },
+          ],
+        }));
+      };
+
+      const showStreamingPartial = (accumulated) => {
+        streamedSoFar = accumulated;
+        const streamingMsg = {
+          role: "assistant",
+          content: accumulated,
+          character_name: charName,
+          timestamp: streamTs,
+          is_streaming: true,
+        };
+        setActiveSession((prev) => ({
+          ...prev,
+          messages: [...updatedMessages, streamingMsg],
+        }));
+      };
+
+      // Brief typing affordance while waiting on first token (real network/model latency).
+      setActiveSession((prev) => ({
+        ...prev,
+        messages: [
+          ...updatedMessages,
+          { role: "assistant", content: "...", character_name: "__typing__", timestamp: streamTs },
+        ],
+      }));
+
+      const resultPayload = await streamChatReply(
+        animaApi.chat.sendMessage({
+          sessionId: activeSession.id,
+          content: isContinue
+            ? `Continue as ${charName}. Make real decisions based on who you are.`
+            : content,
+          characterId: activeSession.character_id,
+          characterIds: activeSession.mode === "group"
+            ? activeSession.group_character_ids || []
+            : activeSession.character_id
+              ? [activeSession.character_id]
+              : [],
+          assistantCharacterId: activeChar?.id || activeSession.character_id || null,
+          assistantCharacterName: charName,
+          mode: activeSession.mode || "solo",
+          systemPrompt: prompt,
+          deepMode: !!activeSession.deep_mode || needsWebSearch,
+          persist: false,
+          metadata: {
+            has_attachment: attachments.length > 0,
+            is_continue: isContinue,
+            source: "chat_page",
+          },
+        }),
+        { onDelta: showStreamingPartial, onStatus: showEnsembleStatus },
+      );
+      const result = resultPayload.content || "";
+      // An empty "success" used to replace the thinking/typing bubble with a
+      // blank assistant row (or nothing visible). Treat it as a failed turn so
+      // the catch path can surface an error instead of silently vanishing.
+      if (!String(result).trim()) {
+        throw new Error("The companion returned an empty reply. Please try again.");
+      }
+
+      // Surface which backend LLM served this turn (Anima custom stack or single provider).
+      if (resultPayload.provider) {
+        setLlmProvider(resultPayload.provider);
+      }
+      if (resultPayload.brand) {
+        setLlmBrand(resultPayload.brand);
+      }
+      if (resultPayload.ensemble_combined && Array.isArray(resultPayload.ensemble_minds)) {
+        toast.success("Anima combined mind drafts.", {
+          description: resultPayload.ensemble_minds.map(mindLabel).join(" · "),
+        });
+      } else if (resultPayload.failed_over && resultPayload.brand === "anima") {
+        toast.success("Anima routed to a backup model.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Custom multi-model failover active",
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "kimi") {
+        toast.success("Switched to Kimi.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Kimi failover active for this session",
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "xai") {
+        toast.success("Switched to Grok — previous LLM was unavailable.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "xAI failover active for this session",
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "openai") {
+        toast.success("Switched to ChatGPT — previous LLMs were unavailable.", {
+          description: resultPayload.model ? `Now using ${resultPayload.model}` : undefined,
+        });
+      } else if (resultPayload.failed_over && resultPayload.provider === "gateway") {
+        toast.success("Switched to AI Gateway — previous LLMs were unavailable.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Vercel AI Gateway failover active",
+        });
+      }
+>>>>>>> origin/main
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
       const strippedResult = result.replace(eventTagRegex, "").trim();
 
+<<<<<<< HEAD
       // Variable typing rhythm — pace the reveal like a real person typing,
       // scaling with length and adding the occasional longer pause so it never
       // feels like instant AI output. The __typing__ indicator stays up meanwhile.
@@ -1490,6 +2091,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (Math.random() < 0.15) typeDelay += 700 + Math.random() * 900;
       await new Promise((resolve) => setTimeout(resolve, typeDelay));
 
+=======
+>>>>>>> origin/main
       const eventMessages = [];
       let match;
       const tagScanner = new RegExp(eventTagRegex.source, "gi");
@@ -1512,8 +2115,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // In group mode, parse multi-character **Name:** format into separate bubbles
       let newAiMessages;
       if (activeSession.mode === "group") {
+<<<<<<< HEAD
         const groupCharsForParse = characters.filter((c) =>
           activeSession.group_character_ids.includes(c.id)
+=======
+        const groupIdsForParse = activeSession.group_character_ids || [];
+        const groupCharsForParse = characters.filter((c) =>
+          groupIdsForParse.includes(c.id)
+>>>>>>> origin/main
         );
         newAiMessages = parseGroupResponse(strippedResult, groupCharsForParse, charName);
       } else if (isMultiAspect && multiAspectChars.length > 1) {
@@ -1541,7 +2150,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       ];
       const storedNew = [];
       for (const m of newMessages) {
+<<<<<<< HEAD
         storedNew.push(await base44.messages.append(activeSession.id, m));
+=======
+        const stored = await base44.messages.append(activeSession.id, m);
+        if (m.role === "user") userMessagePersisted = true;
+        storedNew.push(stored);
+>>>>>>> origin/main
       }
 
       // Session metadata only — NEVER the messages array (those are rows now).
@@ -1678,7 +2293,16 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             ? "Feel free to write longer, more thoughtful responses (2 paragraphs)." 
             : "Aim for 1-2 sentences, present but not dominating.";
         
+<<<<<<< HEAD
         const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${adultInstruction}
+=======
+        // Lover Matrix / multi-aspect: keep Serenity on the same non-sexual boundary
+        // as the primary prompt (do not inject unrestricted Adult/Raw guidance).
+        const serenityAdultInstruction = isMultiAspect
+          ? `\n\nHIGHEST-PRIORITY RULE: Emotional, psychological, and spiritual presence only. Never produce explicit, sexual, or anatomical content.`
+          : adultInstruction;
+        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${serenityAdultInstruction}
+>>>>>>> origin/main
 ${serenity.personality ? `Personality: ${serenity.personality}\n` : ""}${serenity.backstory ? `Backstory: ${serenity.backstory}\n` : ""}${serenity.speaking_style ? `Voice: ${serenity.speaking_style}\n` : ""}${serenityRelCtx}${userProfileContext}
 Story so far:
 ${conversationHistory}
@@ -1698,10 +2322,22 @@ ${loyaltyGuardrailClause()}`;
             character_name: "Serenity",
             timestamp: new Date().toISOString(),
           };
+<<<<<<< HEAD
           const withSerenity = [...finalMessages, serenityMsg];
           await base44.entities.ChatSession.update(activeSession.id, { messages: withSerenity });
           setActiveSession((prev) => ({ ...prev, messages: withSerenity }));
           speakMessage(serenityMsg.content, "Serenity");
+=======
+          // Append only — never ChatSession.update({ messages }) with a stale
+          // finalMessages snapshot (replaceMessages would delete newer turns).
+          const stored = await appendAmbientMessage({
+            appendMessage: base44.messages.append,
+            sessionId: activeSession.id,
+            message: serenityMsg,
+            setActiveSession,
+          });
+          speakMessage(stored.content, "Serenity");
+>>>>>>> origin/main
         }).catch(() => {});
       }
 
@@ -1737,7 +2373,13 @@ ${loyaltyGuardrailClause()}`;
 
       if (shouldGenerateGroupInteraction) {
         groupInteractionCheckRef.current = 0;
+<<<<<<< HEAD
         const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
+=======
+        const groupChars = characters.filter((c) =>
+          (activeSession.group_character_ids || []).includes(c.id),
+        );
+>>>>>>> origin/main
         
         setTimeout(() => {
           base44.functions.invoke("generateGroupInteraction", {
@@ -1766,6 +2408,7 @@ ${loyaltyGuardrailClause()}`;
                 timestamp: new Date().toISOString(),
               };
 
+<<<<<<< HEAD
               setActiveSession((prev) => ({
                 ...prev,
                 messages: [...(prev.messages || []), interactionMsg],
@@ -1775,6 +2418,16 @@ ${loyaltyGuardrailClause()}`;
                 const updated = [...finalMessages, interactionMsg];
                 base44.entities.ChatSession.update(activeSession.id, { messages: updated }).catch(() => {});
               }, 500);
+=======
+              // Append only — a replace against stale finalMessages would wipe
+              // any messages the user sent while this background job ran.
+              appendAmbientMessage({
+                appendMessage: base44.messages.append,
+                sessionId: activeSession.id,
+                message: interactionMsg,
+                setActiveSession,
+              }).catch(() => {});
+>>>>>>> origin/main
             }
           }).catch(() => {});
         }, 1500);
@@ -1968,7 +2621,14 @@ Return JSON:
               if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
               if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
               
+<<<<<<< HEAD
               base44.entities.Character.update(activeChar.id, {
+=======
+              // Must update Anima — Character.update upserts a thin Character
+              // row with the same id that shadows the real Anima in chat.ts
+              // loadCharacters (Character preferred over Anima).
+              base44.entities.Anima.update(activeChar.id, {
+>>>>>>> origin/main
                 personality: newPersonality,
               });
               toast.success(`${activeChar.name} has evolved based on your interactions.`);
@@ -2002,11 +2662,74 @@ Return JSON:
       }
     } catch (err) {
       console.error(err);
+<<<<<<< HEAD
       // Remove typing/thinking indicators on error
       setActiveSession((prev) => ({
         ...prev,
         messages: (prev.messages || []).filter((m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__"),
       }));
+=======
+      // Keep any tokens already painted. The old path deleted `is_streaming`
+      // bubbles on any post-token failure, which looked like the AI "stopped".
+      let retained = null;
+      setActiveSession((prev) => {
+        const { messages, retained: kept } = retainStreamingOnError(prev.messages || []);
+        retained = kept;
+        // If state was mid-frame and lost the partial, recover from the local
+        // accumulator / error.partialContent when available.
+        if (!retained) {
+          const partial =
+            (typeof err?.partialContent === "string" && err.partialContent.trim()) ||
+            (typeof streamedSoFar === "string" && streamedSoFar.trim()) ||
+            "";
+          if (partial) {
+            retained = {
+              role: "assistant",
+              content: partial,
+              character_name: replySpeakerName,
+              timestamp: new Date().toISOString(),
+              is_streaming: false,
+            };
+            return { ...prev, messages: [...messages, retained] };
+          }
+        }
+        return { ...prev, messages };
+      });
+
+      // Best-effort persist so a deferred cross-device sync can't wipe the kept reply
+      // (or the optimistic user turn that was never written because persist:false).
+      if (activeSession?.id) {
+        try {
+          if (!isContinue && !userMessagePersisted && content.trim()) {
+            await base44.messages.append(activeSession.id, userMessage);
+            userMessagePersisted = true;
+          }
+          if (retained) {
+            await base44.messages.append(activeSession.id, retained);
+          }
+        } catch (persistErr) {
+          console.warn("[Anima] Failed to persist partial reply:", persistErr);
+          // Skip the deferred remote refresh — it would replace local state with
+          // server history that does not include this unpersisted turn.
+          pendingRemoteSyncRef.current = false;
+        }
+      }
+
+      if (retained) {
+        toast.error("The reply was interrupted — kept what came through.");
+      } else {
+        // Pre-token failures used to remove thinking/typing with no UI feedback,
+        // which looked like the companion started thinking then vanished.
+        const detail =
+          err instanceof Error && err.message
+            ? err.message
+            : "The companion could not reply. Please try again.";
+        toast.error(detail);
+        // Don't let a deferred sync (armed while isLoading) immediately replace
+        // local optimistic state with a server list that lacks this turn.
+        pendingRemoteSyncRef.current = false;
+      }
+>>>>>>> origin/main
     }
 
     setPendingMessage("");
@@ -2116,6 +2839,12 @@ Return JSON:
               onSelectBranch={handleSelectBranch}
               onCreateBranch={() => setShowCreateBranch(true)}
               onShowExport={() => setShowExportArchive(true)}
+<<<<<<< HEAD
+=======
+              onAvatarClick={setBioCharacter}
+              llmProvider={llmProvider}
+              llmBrand={llmBrand}
+>>>>>>> origin/main
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <ResonanceField value={resonance.value} label={resonance.label} />
@@ -2261,6 +2990,10 @@ Return JSON:
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
                 onRegenerateMessage={handleRegenerateMessage}
+<<<<<<< HEAD
+=======
+                onAvatarClick={setBioCharacter}
+>>>>>>> origin/main
               />
               
               {/* Render quest detection messages inline */}
@@ -2327,7 +3060,11 @@ Return JSON:
                   onSend={handleSendMessage}
                   isLoading={isLoading}
                   disabled={false}
+<<<<<<< HEAD
                   allowEmpty={activeSession?.mode === "group"}
+=======
+                  allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
+>>>>>>> origin/main
                 />
               </div>
             </div>
@@ -2346,6 +3083,15 @@ Return JSON:
         />
       )}
 
+<<<<<<< HEAD
+=======
+      <CharacterBioSheet
+        character={bioCharacter}
+        open={!!bioCharacter}
+        onClose={() => setBioCharacter(null)}
+      />
+
+>>>>>>> origin/main
       <DataExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
@@ -2515,7 +3261,11 @@ Return JSON:
                 (m) =>
                   m.character_name !== "__typing__" &&
                   m.character_name !== "__thinking__" &&
+<<<<<<< HEAD
                   m.type !== "event"
+=======
+                  m.type !== "event",
+>>>>>>> origin/main
               );
               const last = msgs[msgs.length - 1];
               if (!last) return null;

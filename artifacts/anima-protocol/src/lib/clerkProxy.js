@@ -5,7 +5,12 @@
  * configured in the Clerk dashboard exactly (production uses www.anima-protocol.com).
  */
 
+<<<<<<< HEAD
 const ANIMA_WWW = 'https://www.anima-protocol.com';
+=======
+export const ANIMA_APEX_HOST = 'anima-protocol.com';
+const ANIMA_WWW = `https://www.${ANIMA_APEX_HOST}`;
+>>>>>>> origin/main
 
 function clerkProxyEnvValue() {
   return typeof import.meta.env.VITE_CLERK_PROXY_URL === 'string'
@@ -41,6 +46,7 @@ export function isVercelPreviewHost(hostname) {
 }
 
 export function isAnimaProductionHost(hostname) {
+<<<<<<< HEAD
   const host = (hostname || '').toLowerCase();
   return (
     host === 'anima-protocol.com' ||
@@ -49,6 +55,42 @@ export function isAnimaProductionHost(hostname) {
   );
 }
 
+=======
+  const host = (hostname || '').toLowerCase().replace(/:\d+$/, '');
+  return (
+    host === ANIMA_APEX_HOST ||
+    host === `www.${ANIMA_APEX_HOST}` ||
+    host.endsWith(`.${ANIMA_APEX_HOST}`)
+  );
+}
+
+function encodeClerkPublishableKeyHost(hostname) {
+  const payload = `clerk.${hostname}$`;
+  // Clerk publishable keys omit base64 padding (`=`).
+  let encoded = '';
+  if (typeof btoa === 'function') {
+    encoded = btoa(payload);
+  } else if (typeof Buffer !== 'undefined') {
+    encoded = Buffer.from(payload, 'utf8').toString('base64');
+  }
+  return encoded.replace(/=+$/, '');
+}
+
+/**
+ * Build a Clerk publishable key from a browser host without importing Clerk's
+ * private internals. The production app uses a Clerk custom domain at the apex;
+ * deriving from `www.anima-protocol.com` would point Clerk at the invalid
+ * `clerk.www.anima-protocol.com` host and prevent clerk-js from loading.
+ */
+export function publishableKeyFromFrontendHost(hostname, fallbackKey = '') {
+  const host = (hostname || '').toLowerCase().replace(/:\d+$/, '');
+  if (!host) return fallbackKey || '';
+  const clerkHost = isAnimaProductionHost(host) ? ANIMA_APEX_HOST : host;
+  const encodedHost = encodeClerkPublishableKeyHost(clerkHost);
+  return encodedHost ? `pk_live_${encodedHost}` : fallbackKey || '';
+}
+
+>>>>>>> origin/main
 export function ensureTrailingSlash(url) {
   if (!url) return '';
   return url.endsWith('/') ? url : `${url}/`;
@@ -88,6 +130,22 @@ export function clerkFrontendApiProbeBase(clerkPubKey) {
 }
 
 /**
+<<<<<<< HEAD
+=======
+ * OAuth provider callback URL (Google / GitHub / Apple), not the app SSO path.
+ *
+ * With a Clerk custom domain this is `https://clerk…/v1/oauth_callback`.
+ * That exact URI must be allowlisted in each provider's OAuth app settings.
+ * Do NOT use `/sign-in/sso-callback` there — that is only Clerk → app.
+ */
+export function clerkProviderOAuthCallbackUrl(clerkPubKey) {
+  const host = decodeClerkFrontendHost(clerkPubKey);
+  if (!host) return '';
+  return `https://${host}/v1/oauth_callback`;
+}
+
+/**
+>>>>>>> origin/main
  * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
  */
 export function animaProductionClerkProxyUrl() {

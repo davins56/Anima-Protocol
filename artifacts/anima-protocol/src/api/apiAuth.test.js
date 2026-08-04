@@ -36,4 +36,27 @@ describe('API auth bridge', () => {
     expect(options.headers['X-Anima-Public-Host']).toBe(window.location.host);
     expect(options.credentials).toBe('same-origin');
   });
+<<<<<<< HEAD
+=======
+
+  it('unwraps a double-wrapped token getter instead of stringifying the function', async () => {
+    // Classic mistake: treating setAuthTokenGetter like React setState.
+    setAuthTokenGetter(() => async () => 'unwrapped-token');
+
+    await base44.functions.invoke('debugApp', {});
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBe('Bearer unwrapped-token');
+    expect(String(options.headers.Authorization)).not.toContain('async');
+  });
+
+  it('omits Authorization when the getter returns a non-string', async () => {
+    setAuthTokenGetter(() => ({ not: 'a-token' }));
+
+    await base44.functions.invoke('debugApp', {});
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBeUndefined();
+  });
+>>>>>>> origin/main
 });

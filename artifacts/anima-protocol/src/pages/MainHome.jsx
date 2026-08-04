@@ -342,6 +342,7 @@ export default function MainHome() {
           <p className="text-[9px] tracking-[0.3em] text-cyan-800 mt-2 uppercase">// AI COMPANION SYSTEM</p>
         </motion.div>
 
+<<<<<<< HEAD
         {/* Greeting box — tap to customise the active Anima */}
         <motion.button
           type="button"
@@ -358,11 +359,23 @@ export default function MainHome() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
           className="relative w-full text-left border border-cyan-500/20 hover:border-cyan-400/50 bg-cyan-950/5 hover:bg-cyan-950/10 p-5 group cursor-pointer transition-colors"
+=======
+        {/* Greeting box */}
+        <motion.div
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2 }}
+          className="relative w-full text-left border border-cyan-500/20 bg-cyan-950/5 p-5"
+>>>>>>> origin/main
         >
           <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
           <div className="space-y-3 text-[11px] tracking-wider leading-relaxed font-mono">
+<<<<<<< HEAD
             <p className="text-cyan-400/60 italic pr-24">{greeting}</p>
+=======
+            <p className="text-cyan-400/60 italic">{greeting}</p>
+>>>>>>> origin/main
             <p className="text-cyan-400">
               I am {anima?.name || "your Anima"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
             </p>
@@ -370,6 +383,7 @@ export default function MainHome() {
               Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
             </p>
           </div>
+<<<<<<< HEAD
           <div className="absolute top-4 right-4 flex items-center gap-1.5">
             <span className="font-mono text-[7px] tracking-widest uppercase text-cyan-900 group-hover:text-cyan-400/70 transition-colors">
               Customise
@@ -377,6 +391,56 @@ export default function MainHome() {
             <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
           </div>
         </motion.button>
+=======
+        </motion.div>
+
+        {/* Customise Anima — dedicated look section */}
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22 }}
+          aria-labelledby="customise-anima-heading"
+        >
+          <SectionHeader label="Customise Anima" />
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                anima?.id
+                  ? `/customise-anima?anima=${anima.id}`
+                  : "/customise-anima",
+              )
+            }
+            className="w-full text-left border border-primary/25 hover:border-primary/50 bg-primary/5 hover:bg-primary/10 p-4 sm:p-5 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 border border-primary/30 bg-black/40 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                {anima?.avatar_url ? (
+                  <img
+                    src={anima.avatar_url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Wand2 className="w-6 h-6 text-primary/40" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <h2
+                  id="customise-anima-heading"
+                  className="font-mono text-sm text-primary tracking-[0.15em] uppercase"
+                >
+                  Customise Anima
+                </h2>
+                <p className="font-mono text-[11px] text-primary/55 leading-relaxed">
+                  Reshape {anima?.name || "your companion"}&apos;s look — hair, outfit, eyes, art style, and theme.
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-primary/30 group-hover:text-primary transition-colors flex-shrink-0" />
+            </div>
+          </button>
+        </motion.section>
+>>>>>>> origin/main
 
         {/* Serenity's rare, legendary presence (first day / evolution / update) */}
         <SerenityPresence anima={anima} />
@@ -651,6 +715,21 @@ export default function MainHome() {
               highlight={!lastCheckIn}
               onClick={() => navigate("/check-in")}
             />
+<<<<<<< HEAD
+=======
+            <QuickAction
+              icon={Wand2}
+              label="Customise Anima"
+              desc="Shape their look"
+              onClick={() =>
+                navigate(
+                  anima?.id
+                    ? `/customise-anima?anima=${anima.id}`
+                    : "/customise-anima",
+                )
+              }
+            />
+>>>>>>> origin/main
             <QuickAction icon={UserCircle} label="Profile" desc="About you" onClick={() => navigate("/profile")} />
             <QuickAction icon={BookOpen} label="Journal" desc="Your entries" onClick={() => navigate("/journals")} />
             <QuickAction icon={Stars} label="Constellation" desc="Your sky" onClick={() => navigate("/constellation")} />

@@ -12,6 +12,10 @@ import {
   asObject,
   sessionIdEq,
   migrateSessionMessages,
+<<<<<<< HEAD
+=======
+  ensureSchemaOnce,
+>>>>>>> origin/main
   type MsgData,
 } from "@workspace/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
@@ -47,6 +51,42 @@ function requireUser(
 
 router.use(requireUser);
 
+<<<<<<< HEAD
+=======
+// Self-heal a blank / partially migrated Postgres on first authenticated store
+// hit. Idempotent CREATE IF NOT EXISTS; cached per process after success so
+// warm instances pay at most one information_schema round-trip + DDL burst.
+async function ensureSchemaMiddleware(
+  _req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const result = await ensureSchemaOnce();
+    if (!result.ok) {
+      logger.error(
+        {
+          missingBefore: result.missingBefore,
+          createdTables: result.createdTables,
+          errors: result.errors,
+        },
+        "Store schema ensure left required tables missing",
+      );
+    } else if (result.createdTables.length > 0) {
+      logger.info(
+        { createdTables: result.createdTables },
+        "Store schema ensure created missing tables",
+      );
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+router.use(ensureSchemaMiddleware);
+
+>>>>>>> origin/main
 
 
 function getUserId(req: Request): string {

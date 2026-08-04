@@ -6,6 +6,7 @@ import {
   getClerkProxyHost,
   resolveClerkPublishableKey,
 } from "./clerkProxyMiddleware";
+<<<<<<< HEAD
 
 /** Minimal signed-out auth so @clerk/express getAuth() never throws. */
 function attachSignedOutAuth(req: Request): void {
@@ -25,6 +26,9 @@ function attachSignedOutAuth(req: Request): void {
     }),
   });
 }
+=======
+import { attachSignedOutAuth } from "./clerkAuthFallback";
+>>>>>>> origin/main
 
 function expressToWebRequest(req: Request): globalThis.Request {
   const host = getClerkProxyHost(req) || req.headers.host || "localhost";

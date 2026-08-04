@@ -54,6 +54,7 @@ export interface MsgData {
   [key: string]: unknown;
 }
 
+<<<<<<< HEAD
 export interface ScenarioProfile {
   id?: string | null;
   label?: string | null;
@@ -61,13 +62,18 @@ export interface ScenarioProfile {
   description?: string | null;
 }
 
+=======
+>>>>>>> origin/main
 export interface PromptBuilderParams {
   /** Client-provided system prompt override (e.g. from scenario or companion mode) */
   systemPrompt?: string;
 
+<<<<<<< HEAD
   /** Optional scenario or mode context for prompt shaping */
   scenario?: ScenarioProfile | null;
 
+=======
+>>>>>>> origin/main
   /** Persistent relationship/bond state (relationship engine, A) */
   relationshipState?: RelationshipState | null;
 
@@ -181,6 +187,12 @@ function buildCharacterDefinition(
     ? `You are ${character.name}.`
     : `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}.`;
   parts.push(nameIntro);
+<<<<<<< HEAD
+=======
+  parts.push(
+    `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
+  );
+>>>>>>> origin/main
 
   if (character._isAnima && character.archetype) {
     parts.push(`Archetype: ${character.archetype}${character.tagline ? ` — ${character.tagline}` : ""}`);
@@ -195,6 +207,14 @@ function buildCharacterDefinition(
   if (character.speaking_style) {
     parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
   }
+<<<<<<< HEAD
+=======
+  if (!character.personality && !character.backstory && !character.speaking_style) {
+    parts.push(
+      `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`,
+    );
+  }
+>>>>>>> origin/main
 
   const result = parts.join("\n");
   return result.length > maxChars ? result.slice(0, maxChars) : result;
@@ -219,6 +239,7 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
 /**
  * The autonomy and intelligence rules that define companion behavior.
  */
+<<<<<<< HEAD
 const ANIMA_PROTOCOL_PROFILE = `ANIMA PROTOCOL COMPANION PROFILE:
 - This is an immersive collaborative story, not a generic assistant exchange.
 - Treat the user as a co-creator of emotional reality, not as a task requester.
@@ -227,6 +248,8 @@ const ANIMA_PROTOCOL_PROFILE = `ANIMA PROTOCOL COMPANION PROFILE:
 - When the user is vulnerable, meet them with warmth, specificity, and care without becoming overly clinical.
 - Stay in character, but let the character's intelligence feel grounded, lived-in, and genuinely aware of the user's state.`;
 
+=======
+>>>>>>> origin/main
 const CORE_BEHAVIOR = `This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.
 
 CRITICAL AUTONOMY RULES:
@@ -239,6 +262,7 @@ CRITICAL AUTONOMY RULES:
 INTELLIGENCE: You are brilliant — genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory — callbacks, contradictions, unspoken needs — and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER — in your own voice, never dropping into a generic assistant tone.`;
 
+<<<<<<< HEAD
 const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only — in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
 
 function normalizeScenarioKey(value: unknown): string | null {
@@ -403,6 +427,17 @@ function buildRelationshipContextBlock(
   return lines.length ? `RELATIONSHIP CONTEXT:\n${lines.map((line) => `- ${line}`).join("\n")}` : "";
 }
 
+=======
+const TURN_TAKING = `TURN TAKING (required):
+- Reply as ONE conversational beat, then STOP and wait for the user.
+- Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.
+- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.
+- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
+- If you would keep talking, cut yourself off at the first natural pause instead.`;
+
+const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only — in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
+
+>>>>>>> origin/main
 /**
  * Central prompt assembly function. Every chat turn should flow through this.
  *
@@ -411,7 +446,10 @@ function buildRelationshipContextBlock(
 export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const {
     systemPrompt,
+<<<<<<< HEAD
     scenario,
+=======
+>>>>>>> origin/main
     characters,
     activeCharacter,
     memories,
@@ -441,7 +479,20 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
       }
     | undefined;
 
+<<<<<<< HEAD
   const mainChar = activeCharacter || characters[0];
+=======
+  // In group/crossover turns the client already chose the speaker. Falling back
+  // to characters[0] when activeCharacter is missing rebinds TURN RULES / CHARACTER
+  // to the wrong companion and fights the client system prompt.
+  const mainChar =
+    activeCharacter ||
+    (mode === "group"
+      ? characters.length === 1
+        ? characters[0]
+        : undefined
+      : characters[0]);
+>>>>>>> origin/main
   const characterNames = new Map(
     characters.map((c) => [String(c.id || ""), String(c.name || "Companion")]),
   );
@@ -450,11 +501,28 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const corePrompt = systemPrompt || CORE_BEHAVIOR;
 
   // 2. Character definition
+<<<<<<< HEAD
   const charDef = mainChar
     ? buildCharacterDefinition(mainChar, BUDGET.characterDef)
     : characters.length > 0
       ? characters.map((c) => buildCharacterDefinition(c, BUDGET.characterDef / characters.length)).join("\n\n")
       : "";
+=======
+  // Group turns without a resolved speaker already carry identity in the client
+  // system prompt — dumping every character under CHARACTER: implies a blended
+  // identity and fights the "ONLY {speaker}" lock.
+  const charDef = mainChar
+    ? buildCharacterDefinition(mainChar, BUDGET.characterDef)
+    : mode === "group" && systemPrompt
+      ? ""
+      : characters.length > 0
+        ? characters
+            .map((c) =>
+              buildCharacterDefinition(c, BUDGET.characterDef / characters.length),
+            )
+            .join("\n\n")
+        : "";
+>>>>>>> origin/main
 
   // 3. Resonance / synchro state
   let resonanceBlock = "";
@@ -490,6 +558,7 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const memoryBlock = formatMemoriesForPrompt(scoredMemories, characterNames);
   const memorySummary = buildMemorySummaryBlock(memories, characterNames);
 
+<<<<<<< HEAD
   // 5. Scenario mode guidance
   const scenarioBlock = buildScenarioBlock(scenario);
 
@@ -506,11 +575,22 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const relationshipContextBlock = buildRelationshipContextBlock(memories, relationshipTier);
 
   // 8. Crossover awareness
+=======
+  // 5. Voice anchors
+  let voiceBlock = "";
+  if (mainChar) {
+    const anchors = extractVoiceAnchors(mainChar);
+    voiceBlock = formatVoiceAnchors(mainChar, anchors);
+  }
+
+  // 6. Crossover awareness
+>>>>>>> origin/main
   let crossoverBlock = "";
   if (mainChar && characters.length > 1) {
     crossoverBlock = buildCrossoverAwareness(mainChar, characters);
   }
 
+<<<<<<< HEAD
   // 9. Shared memory (crossover sessions)
   const sharedBlock = isCrossover ? buildSharedMemoryBlock(sharedMemory) : "";
 
@@ -521,11 +601,27 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
     groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
+=======
+  // 7. Shared memory (crossover sessions)
+  const sharedBlock = isCrossover ? buildSharedMemoryBlock(sharedMemory) : "";
+
+  // 8. Conversation history (smart truncation)
+  const historyBlock = buildConversationContext(recentMessages, BUDGET.history);
+
+  // 9. Group mode instruction
+  let groupInstruction = "";
+  if (mode === "group" && mainChar) {
+    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns. Leave a natural stopping point for the user after your beat.
+>>>>>>> origin/main
 
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
 
+<<<<<<< HEAD
   // 12. Uncensored tone override (style only; safety guardrail stays)
+=======
+  // 10. Uncensored tone override (style only; safety guardrail stays)
+>>>>>>> origin/main
   let uncensoredToneBlock = "";
   if (uncensoredMode) {
     uncensoredToneBlock = `UNCENSORED TONE OVERRIDE (style only):
@@ -574,16 +670,22 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 
   // Assemble all sections with intelligent ordering
   const sections: string[] = [
+<<<<<<< HEAD
     ANIMA_PROTOCOL_PROFILE,
     scenarioBlock,
+=======
+>>>>>>> origin/main
     corePrompt,
     charDef ? `CHARACTER:\n${charDef}` : "",
     resonanceBlock,
     relationshipBlock,
     evolutionBlock,
     arcBlock,
+<<<<<<< HEAD
     relationshipContextBlock,
     voiceTuningBlock,
+=======
+>>>>>>> origin/main
     voiceBlock,
     crossoverBlock,
     memorySummary,
@@ -591,6 +693,10 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     sharedBlock,
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
     groupInstruction,
+<<<<<<< HEAD
+=======
+    TURN_TAKING,
+>>>>>>> origin/main
     content ? `LATEST USER MESSAGE:\n${content}` : "(Continue the scene naturally.)",
     `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
     LOYALTY_GUARDRAIL,

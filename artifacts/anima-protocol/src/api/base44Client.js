@@ -107,6 +107,7 @@ function storeError(res, message) {
   return e;
 }
 
+<<<<<<< HEAD
 // AI photo edit. Sends a base64 image data URL + a text prompt to the
 // api-server (gpt-image-1 edit) and returns the transformed image as a data
 // URL. Used by the home-page "add photo" AI edit feature.
@@ -118,6 +119,18 @@ export async function editImage({ image, prompt, signal }) {
       method: 'POST',
       headers,
       body: JSON.stringify({ image, prompt }),
+=======
+// Shared helper for image API calls (edit / generate). Surfaces abort vs
+// network vs server errors the same way so UI can branch consistently.
+async function postImageApi(path, body, signal) {
+  const headers = await authHeaders();
+  let res;
+  try {
+    res = await fetch(apiUrl(path), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+>>>>>>> origin/main
       signal,
     });
   } catch (err) {
@@ -138,6 +151,22 @@ export async function editImage({ image, prompt, signal }) {
   return res.json();
 }
 
+<<<<<<< HEAD
+=======
+// AI photo edit. Sends a base64 image data URL + a text prompt to the
+// api-server (gpt-image-1 edit) and returns the transformed image as a data
+// URL. Used by the home-page "add photo" AI edit feature.
+export async function editImage({ image, prompt, signal }) {
+  return postImageApi('/openai/image-edit', { image, prompt }, signal);
+}
+
+// AI image generation from a text prompt (no source image). Returns a PNG
+// data URL. Used by Customise Anima when forging a look from scratch.
+export async function generateImage({ prompt, signal }) {
+  return postImageApi('/openai/image-generate', { prompt }, signal);
+}
+
+>>>>>>> origin/main
 // --- file uploads (object storage) ------------------------------------------
 // User-picked and AI-edited portraits are stored as real files in object
 // storage (not base64 in the DB). The flow is: downscale to a small JPEG ->
@@ -163,6 +192,7 @@ function readFileAsDataUrl(file) {
   });
 }
 
+<<<<<<< HEAD
 // Upload an image blob via a presigned PUT and return the served object path.
 async function uploadBlob(blob) {
   const headers = await authHeaders();
@@ -185,6 +215,48 @@ async function uploadBlob(blob) {
   // Root-relative path so the avatar resolves against the current origin and
   // stays portable across domains (dev preview, deployment, custom domains).
   return `/api/storage${objectPath}`;
+=======
+// Convert a Blob to a base64 payload (no data: prefix) for the direct upload API.
+async function blobToBase64(blob) {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Upload an image blob and return the served object path.
+ *
+ * Uses the Postgres-backed POST /api/storage/uploads endpoint so avatar upload
+ * works on Vercel (the legacy Replit GCS sidecar is unavailable there).
+ */
+async function uploadBlob(blob) {
+  const headers = await authHeaders();
+  const dataBase64 = await blobToBase64(blob);
+  const res = await fetch(apiUrl('/storage/uploads'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      contentType: blob.type || 'image/jpeg',
+      dataBase64,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText || `Upload failed (${res.status})`);
+  }
+  const payload = await res.json();
+  if (payload?.file_url) return payload.file_url;
+  if (payload?.objectPath) {
+    // Root-relative path so the avatar resolves against the current origin.
+    return `/api/storage${payload.objectPath}`;
+  }
+  throw new Error('Upload failed — no file URL returned.');
+>>>>>>> origin/main
 }
 
 // Downscale a data URL to a small JPEG and upload it. Returns the served path.
@@ -1172,7 +1244,12 @@ export const base44 = {
   integrations: {
     Core: {
       InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
+<<<<<<< HEAD
         // Create/reuse a conversation for LLM calls
+=======
+        // Create/reuse a conversation for LLM calls — routes through the
+        // api-server (api/index.mjs on Vercel) with auth + provider failover.
+>>>>>>> origin/main
         let convId = sessionStorage.getItem('anima_llm_conv_id');
         if (!convId) {
           const conv = await animaApi.conversations.create('LLM session');
@@ -1194,9 +1271,40 @@ export const base44 = {
         return result;
       },
 
+<<<<<<< HEAD
       GenerateImage: async () => {
         console.warn('GenerateImage not implemented in Replit environment');
         return null;
+=======
+      // Generate (or re-style) an image. When existing_image_urls is provided,
+      // prefers the image-edit path so the current portrait is transformed;
+      // otherwise generates from the prompt alone. Returns { url } as a data URL.
+      GenerateImage: async ({ prompt, existing_image_urls, signal } = {}) => {
+        if (typeof prompt !== 'string' || !prompt.trim()) {
+          throw new Error('A generation prompt is required.');
+        }
+        const existing = Array.isArray(existing_image_urls)
+          ? existing_image_urls.find((u) => typeof u === 'string' && u.trim())
+          : null;
+
+        if (existing) {
+          try {
+            const dataUrl = await urlToDataUrl(existing);
+            const result = await editImage({ image: dataUrl, prompt, signal });
+            if (result?.image) return { url: result.image };
+          } catch (err) {
+            // Fall through to pure generation if the source can't be loaded
+            // or edit fails for a non-policy reason — generation still gives
+            // the user a portrait from their feature prompts.
+            if (err?.code === 'content_policy') throw err;
+            console.warn('GenerateImage edit path failed, falling back to generate:', err?.message);
+          }
+        }
+
+        const result = await generateImage({ prompt, signal });
+        if (!result?.image) throw new Error('No image was returned.');
+        return { url: result.image };
+>>>>>>> origin/main
       },
 
       UploadFile: async ({ file } = {}) => {

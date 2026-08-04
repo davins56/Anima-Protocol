@@ -24,6 +24,10 @@ import AtmosphericDescription from "@/components/world/AtmosphericDescription";
 import SystemAlert from "./SystemAlert";
 import NarrativeImpactDashboard from "@/components/dashboard/NarrativeImpactDashboard";
 import { base44 } from "@/api/base44Client";
+<<<<<<< HEAD
+=======
+import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
+>>>>>>> origin/main
 
 export default function ChatWidgetsArea({
   activeSession,
@@ -225,9 +229,20 @@ export default function ChatWidgetsArea({
                   content: `⚔️ Side Quest Accepted: "${quest.title}"\n${quest.description}`,
                   timestamp: new Date().toISOString(),
                 };
+<<<<<<< HEAD
                 const updated = [...(activeSession.messages || []), qMsg];
                 base44.entities.ChatSession.update(sessionId, { messages: updated }).catch(() => {});
                 setActiveSession(prev => ({ ...prev, messages: updated }));
+=======
+                // Append only — replace against a possibly-stale messages
+                // snapshot can delete concurrent turns.
+                appendAmbientMessage({
+                  appendMessage: base44.messages.append,
+                  sessionId,
+                  message: qMsg,
+                  setActiveSession,
+                }).catch(() => {});
+>>>>>>> origin/main
               }}
             />
           )}
