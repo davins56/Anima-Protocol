@@ -118662,71 +118662,6 @@ function databaseTargetHint(rawUrl = process.env.DATABASE_URL) {
   }
 }
 
-// src/lib/modelRouter.ts
-var DEFAULT_MODELS = {
-  light: "gpt-4.1-mini",
-  standard: "gpt-4o",
-  heavy: "gpt-4.1"
-};
-var MAX_TOKENS = {
-  light: 4096,
-  standard: 8192,
-  heavy: 8192
-};
-var ENV_KEYS = {
-  light: "ANIMA_MODEL_LIGHT",
-  standard: "ANIMA_MODEL_STANDARD",
-  heavy: "ANIMA_MODEL_HEAVY"
-};
-var DEEP_CONVERSATION_DEPTH = (() => {
-  const raw = Number(process.env.ANIMA_DEEP_CONVERSATION_DEPTH);
-  return Number.isFinite(raw) && raw > 0 ? raw : 24;
-})();
-function resolveModel(tier) {
-  const override = process.env[ENV_KEYS[tier]]?.trim();
-  return {
-    tier,
-    model: override || DEFAULT_MODELS[tier],
-    maxTokens: MAX_TOKENS[tier]
-  };
-}
-var GREETING_RE = /^(hi+|hey+|hello+|yo|sup|hiya|howdy|good\s?(morning|afternoon|evening|night)|gm|gn|thanks(\s?you)?|thank\s?you|thx|ty|ok(ay)?|k|cool|nice|great|awesome|lol|lmao|haha+|yes|no|yep|nope|yeah|nah|sure|got\s?it|np|wow|aww?)[\s!.,?❤️🙂😊]*$/i;
-var SMALL_TALK_RE = /^(bye+|goodbye|see\s?(you|ya|u)(\s?(soon|later|around|tomorrow))?|cya|talk\s?(to\s?you\s?)?(later|soon)|later|ttyl|take\s?care|sweet\s?dreams|night+|brb|g2g|gtg)[\s!.,?❤️🙂😊]*$/i;
-var EMOTIONAL_RE = /\b(love|hate|miss|lonely|alone|scared|afraid|fear|anxious|anxiety|depress\w*|sad|cry|crying|hurt\w*|pain|painful|awful|terrible|horrible|worst|rough|stress\w*|overwhelm\w*|breakup|broke up|grief|grieving|heartbroken|need you|need someone|leave me|hopeless|worthless|panic|trauma|abuse|suicid\w*|kill myself)\b/i;
-var ANALYTICAL_RE = /\b(explain|compare|contrast|analy[sz]e|debug|fix|code|coding|program|programming|summari[sz]e|translate|calculate|solve|prove|derive|plan|strateg\w*|write|compose|draft|essay|poem|story|argue|evaluate|elaborate|brainstorm|how\s+(do|does|can|to)|why\s+(do|does|is|are)|step.by.step|pros and cons)\b/i;
-var CODE_RE = /(=>|[{}]|`|console\.|;\s|\b(function|const|let|var|def|class)\s+[\w$]+\s*[=(])/;
-function isHighStakesMessage(text3) {
-  if (text3.includes("?")) return true;
-  if (EMOTIONAL_RE.test(text3)) return true;
-  if (ANALYTICAL_RE.test(text3)) return true;
-  if (CODE_RE.test(text3)) return true;
-  const words = text3.split(/\s+/).filter(Boolean).length;
-  if (words >= 30 || text3.length >= 200) return true;
-  return false;
-}
-function classifyComplexity(content, ctx = {}) {
-  const text3 = (content || "").trim();
-  if (!text3) return "standard";
-  if (GREETING_RE.test(text3) || SMALL_TALK_RE.test(text3)) return "light";
-  if (isHighStakesMessage(text3)) return "heavy";
-  if (ctx.deepMode) return "heavy";
-  if ((ctx.conversationDepth ?? 0) >= DEEP_CONVERSATION_DEPTH) return "heavy";
-  return "standard";
-}
-function routeModel(content, ctx = {}) {
-  return resolveModel(classifyComplexity(content, ctx));
-}
-function isModelUnavailableError(err) {
-  if (!err || typeof err !== "object") return false;
-  const e2 = err;
-  const code = (e2.code || e2.type || "").toLowerCase();
-  if (code.includes("model_not_found") || code.includes("model_not_available")) return true;
-  const msg = (e2.message || "").toLowerCase();
-  if (msg.includes("does not exist") || msg.includes("do not have access")) return true;
-  if (e2.status === 404) return true;
-  return false;
-}
-
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/internal/qs/formats.mjs
 var default_format = "RFC3986";
 var formatters = {
@@ -125330,6 +125265,8 @@ var xaiClient = null;
 var xaiClientKey = null;
 var kimiClient = null;
 var kimiClientKey = null;
+var gatewayClient = null;
+var gatewayClientKey = null;
 function normalizeApiKey(raw) {
   if (!raw) return null;
   let key = raw.trim();
@@ -125337,6 +125274,9 @@ function normalizeApiKey(raw) {
     key = key.slice(1, -1).trim();
   }
   return key || null;
+}
+function gatewayAuthToken() {
+  return normalizeApiKey(process.env.AI_GATEWAY_API_KEY) || normalizeApiKey(process.env.VERCEL_OIDC_TOKEN);
 }
 function hasOpenAIKey() {
   return Boolean(normalizeApiKey(process.env.OPENAI_API_KEY));
@@ -125353,6 +125293,9 @@ function hasKimiKey() {
   return Boolean(
     normalizeApiKey(process.env.KIMI_API_KEY) || normalizeApiKey(process.env.MOONSHOT_API_KEY)
   );
+}
+function hasGatewayAuth() {
+  return Boolean(gatewayAuthToken());
 }
 function getOpenAIClient() {
   const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
@@ -125391,46 +125334,448 @@ function getKimiClient() {
   }
   return kimiClient;
 }
+function getGatewayClient() {
+  const apiKey = gatewayAuthToken();
+  if (!apiKey) return null;
+  if (!gatewayClient || gatewayClientKey !== apiKey) {
+    gatewayClient = new openai_default({
+      apiKey,
+      baseURL: process.env.AI_GATEWAY_BASE_URL?.trim() || "https://ai-gateway.vercel.sh/v1",
+      maxRetries: 0
+    });
+    gatewayClientKey = apiKey;
+  }
+  return gatewayClient;
+}
+
+// src/lib/geminiNative.ts
+var GeminiApiError = class extends Error {
+  status;
+  code;
+  constructor(message, opts) {
+    super(message, opts?.cause !== void 0 ? { cause: opts.cause } : void 0);
+    this.name = "GeminiApiError";
+    this.status = opts?.status;
+    this.code = opts?.code;
+  }
+};
+function thinkingBudgetForModel(model) {
+  const raw = process.env.ANIMA_GEMINI_THINKING_BUDGET?.trim();
+  if (raw !== void 0 && raw !== "") {
+    const n2 = Number(raw);
+    if (Number.isFinite(n2)) return Math.trunc(n2);
+  }
+  const m2 = model.toLowerCase();
+  if (m2.includes("pro")) return 1024;
+  return 0;
+}
+function geminiApiKey() {
+  const key = normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY);
+  if (!key) {
+    throw new GeminiApiError(
+      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
+      { status: 401, code: "missing_api_key" }
+    );
+  }
+  return key;
+}
+function geminiNativeBaseUrl() {
+  const raw = process.env.GEMINI_NATIVE_BASE_URL?.trim() || process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta";
+  return raw.replace(/\/openai\/?$/i, "").replace(/\/+$/, "");
+}
+function messageText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => {
+    if (typeof part === "string") return part;
+    if (part && typeof part === "object" && "type" in part) {
+      if (part.type === "text" && "text" in part) return String(part.text || "");
+    }
+    return "";
+  }).filter(Boolean).join("\n");
+}
+function toGeminiGenerateRequest(messages2, opts) {
+  const systemChunks = [];
+  const contents = [];
+  for (const message of messages2) {
+    const text3 = messageText(message.content).trim();
+    if (!text3) continue;
+    if (message.role === "system" || message.role === "developer") {
+      systemChunks.push(text3);
+      continue;
+    }
+    const role = message.role === "assistant" ? "model" : "user";
+    const last = contents[contents.length - 1];
+    if (last && last.role === role) {
+      last.parts.push({ text: text3 });
+    } else {
+      contents.push({ role, parts: [{ text: text3 }] });
+    }
+  }
+  const systemText = systemChunks.join("\n\n").trim();
+  let systemAsUserContent = false;
+  if (contents.length === 0) {
+    if (!systemText) {
+      throw new GeminiApiError("Gemini request has no message content.", {
+        status: 400,
+        code: "empty_messages"
+      });
+    }
+    contents.push({ role: "user", parts: [{ text: systemText }] });
+    systemAsUserContent = true;
+  }
+  if (contents[0]?.role === "model") {
+    contents.unshift({
+      role: "user",
+      parts: [{ text: "(continue)" }]
+    });
+  }
+  const body = { contents };
+  if (systemText && !systemAsUserContent) {
+    body.systemInstruction = { parts: [{ text: systemText }] };
+  }
+  const generationConfig = {};
+  if (typeof opts?.maxTokens === "number" && opts.maxTokens > 0) {
+    generationConfig.maxOutputTokens = opts.maxTokens;
+  }
+  if (typeof opts?.temperature === "number") {
+    generationConfig.temperature = opts.temperature;
+  }
+  const thinkingBudget = thinkingBudgetForModel(opts?.model || "");
+  if (typeof thinkingBudget === "number") {
+    generationConfig.thinkingConfig = { thinkingBudget };
+  }
+  if (Object.keys(generationConfig).length > 0) {
+    body.generationConfig = generationConfig;
+  }
+  return body;
+}
+function extractCandidateText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const candidates = payload.candidates;
+  if (!Array.isArray(candidates) || !candidates[0]) return "";
+  const content = candidates[0].content;
+  const parts = content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts.map((part) => {
+    if (!part || typeof part !== "object") return "";
+    if ("thought" in part && part.thought) {
+      return "";
+    }
+    return "text" in part ? String(part.text || "") : "";
+  }).join("");
+}
+function extractFinishReason(payload) {
+  if (!payload || typeof payload !== "object") return void 0;
+  const candidates = payload.candidates;
+  if (!Array.isArray(candidates) || !candidates[0]) return void 0;
+  const reason = candidates[0].finishReason;
+  return typeof reason === "string" ? reason : void 0;
+}
+async function readErrorBody(res) {
+  const raw = await res.text().catch(() => "");
+  if (!raw) {
+    return { message: `${res.status} status code (no body)` };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const message = parsed.error?.message || parsed.message || raw;
+    const code = typeof parsed.error?.status === "string" ? parsed.error.status : typeof parsed.error?.code === "string" ? parsed.error.code : void 0;
+    return { message: String(message), code };
+  } catch {
+    return { message: raw };
+  }
+}
+async function geminiFetch(url3, init2) {
+  try {
+    return await fetch(url3, init2);
+  } catch (err) {
+    throw new GeminiApiError(
+      err instanceof Error ? err.message : `Gemini request failed: ${String(err)}`,
+      { status: 502, code: "network_error", cause: err }
+    );
+  }
+}
+function openaiChunk(content) {
+  return {
+    id: "gemini-native",
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1e3),
+    model: "gemini",
+    choices: [
+      {
+        index: 0,
+        delta: { content },
+        finish_reason: null
+      }
+    ]
+  };
+}
+function openaiCompletion(content, model) {
+  return {
+    id: "gemini-native",
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1e3),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content, refusal: null },
+        finish_reason: "stop",
+        logprobs: null
+      }
+    ]
+  };
+}
+async function* parseGeminiSse(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let emittedText = false;
+  let lastFinishReason;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const dataLines = frame.split("\n").filter((line3) => line3.startsWith("data:")).map((line3) => line3.slice(5).trimStart());
+      if (dataLines.length === 0) continue;
+      const data = dataLines.join("\n").trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const payload = JSON.parse(data);
+        const finish = extractFinishReason(payload);
+        if (finish) lastFinishReason = finish;
+        const text3 = extractCandidateText(payload);
+        if (text3) {
+          emittedText = true;
+          yield openaiChunk(text3);
+        }
+      } catch {
+      }
+    }
+  }
+  if (!emittedText) {
+    const reason = lastFinishReason || "EMPTY";
+    throw new GeminiApiError(
+      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
+      { status: 502, code: "empty_visible_text" }
+    );
+  }
+}
+async function createGeminiChatCompletion(opts) {
+  if (!hasGeminiKey()) {
+    throw new GeminiApiError(
+      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
+      { status: 401, code: "missing_api_key" }
+    );
+  }
+  const apiKey = geminiApiKey();
+  const body = toGeminiGenerateRequest(opts.messages, {
+    maxTokens: opts.maxTokens,
+    temperature: opts.temperature,
+    model: opts.model
+  });
+  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:generateContent`;
+  const res = await geminiFetch(url3, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await readErrorBody(res);
+    throw new GeminiApiError(err.message, {
+      status: res.status,
+      code: err.code
+    });
+  }
+  const payload = await res.json();
+  const text3 = extractCandidateText(payload);
+  if (!text3.trim()) {
+    const reason = extractFinishReason(payload) || "EMPTY";
+    throw new GeminiApiError(
+      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
+      { status: 502, code: "empty_visible_text" }
+    );
+  }
+  return openaiCompletion(text3, opts.model);
+}
+async function createGeminiChatStream(opts) {
+  if (!hasGeminiKey()) {
+    throw new GeminiApiError(
+      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
+      { status: 401, code: "missing_api_key" }
+    );
+  }
+  const apiKey = geminiApiKey();
+  const body = toGeminiGenerateRequest(opts.messages, {
+    maxTokens: opts.maxTokens,
+    model: opts.model
+  });
+  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:streamGenerateContent?alt=sse`;
+  const res = await geminiFetch(url3, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await readErrorBody(res);
+    throw new GeminiApiError(err.message, {
+      status: res.status,
+      code: err.code
+    });
+  }
+  if (!res.body) {
+    throw new GeminiApiError("Gemini stream returned an empty body.", {
+      status: 502,
+      code: "empty_stream"
+    });
+  }
+  return parseGeminiSse(res.body);
+}
+
+// src/lib/modelRouter.ts
+var DEFAULT_MODELS = {
+  light: "gpt-4.1-mini",
+  standard: "gpt-4o",
+  heavy: "gpt-4.1"
+};
+var MAX_TOKENS = {
+  light: 4096,
+  standard: 8192,
+  heavy: 8192
+};
+var ENV_KEYS = {
+  light: "ANIMA_MODEL_LIGHT",
+  standard: "ANIMA_MODEL_STANDARD",
+  heavy: "ANIMA_MODEL_HEAVY"
+};
+var DEEP_CONVERSATION_DEPTH = (() => {
+  const raw = Number(process.env.ANIMA_DEEP_CONVERSATION_DEPTH);
+  return Number.isFinite(raw) && raw > 0 ? raw : 24;
+})();
+function resolveModel(tier) {
+  const override = process.env[ENV_KEYS[tier]]?.trim();
+  return {
+    tier,
+    model: override || DEFAULT_MODELS[tier],
+    maxTokens: MAX_TOKENS[tier]
+  };
+}
+var GREETING_RE = /^(hi+|hey+|hello+|yo|sup|hiya|howdy|good\s?(morning|afternoon|evening|night)|gm|gn|thanks(\s?you)?|thank\s?you|thx|ty|ok(ay)?|k|cool|nice|great|awesome|lol|lmao|haha+|yes|no|yep|nope|yeah|nah|sure|got\s?it|np|wow|aww?)[\s!.,?❤️🙂😊]*$/i;
+var SMALL_TALK_RE = /^(bye+|goodbye|see\s?(you|ya|u)(\s?(soon|later|around|tomorrow))?|cya|talk\s?(to\s?you\s?)?(later|soon)|later|ttyl|take\s?care|sweet\s?dreams|night+|brb|g2g|gtg)[\s!.,?❤️🙂😊]*$/i;
+var EMOTIONAL_RE = /\b(love|hate|miss|lonely|alone|scared|afraid|fear|anxious|anxiety|depress\w*|sad|cry|crying|hurt\w*|pain|painful|awful|terrible|horrible|worst|rough|stress\w*|overwhelm\w*|breakup|broke up|grief|grieving|heartbroken|need you|need someone|leave me|hopeless|worthless|panic|trauma|abuse|suicid\w*|kill myself)\b/i;
+var ANALYTICAL_RE = /\b(explain|compare|contrast|analy[sz]e|debug|fix|code|coding|program|programming|summari[sz]e|translate|calculate|solve|prove|derive|plan|strateg\w*|write|compose|draft|essay|poem|story|argue|evaluate|elaborate|brainstorm|how\s+(do|does|can|to)|why\s+(do|does|is|are)|step.by.step|pros and cons)\b/i;
+var CODE_RE = /(=>|[{}]|`|console\.|;\s|\b(function|const|let|var|def|class)\s+[\w$]+\s*[=(])/;
+function isHighStakesMessage(text3) {
+  if (text3.includes("?")) return true;
+  if (EMOTIONAL_RE.test(text3)) return true;
+  if (ANALYTICAL_RE.test(text3)) return true;
+  if (CODE_RE.test(text3)) return true;
+  const words = text3.split(/\s+/).filter(Boolean).length;
+  if (words >= 30 || text3.length >= 200) return true;
+  return false;
+}
+function classifyComplexity(content, ctx = {}) {
+  const text3 = (content || "").trim();
+  if (!text3) return "standard";
+  if (GREETING_RE.test(text3) || SMALL_TALK_RE.test(text3)) return "light";
+  if (isHighStakesMessage(text3)) return "heavy";
+  if (ctx.deepMode) return "heavy";
+  if ((ctx.conversationDepth ?? 0) >= DEEP_CONVERSATION_DEPTH) return "heavy";
+  return "standard";
+}
+function routeModel(content, ctx = {}) {
+  return resolveModel(classifyComplexity(content, ctx));
+}
+function isModelUnavailableError(err) {
+  if (!err || typeof err !== "object") return false;
+  const e2 = err;
+  const code = (e2.code || e2.type || "").toLowerCase();
+  if (code.includes("model_not_found") || code.includes("model_not_available")) return true;
+  const msg = (e2.message || "").toLowerCase();
+  if (msg.includes("does not exist") || msg.includes("do not have access")) return true;
+  if (e2.status === 404) return true;
+  return false;
+}
 
 // src/lib/llmFailover.ts
 var preferNonOpenAI = false;
 var preferNonXai = false;
+var preferNonKimi = false;
+var preferNonGemini = false;
+var preferNonGateway = false;
+function clearAllStickySkips() {
+  preferNonOpenAI = false;
+  preferNonXai = false;
+  preferNonKimi = false;
+  preferNonGemini = false;
+  preferNonGateway = false;
+}
+function beginChatProviderTurn() {
+  clearAllStickySkips();
+}
 function envFlagEnabled(name) {
   const raw = (process.env[name] || "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
+function sanitizeProviderEnv(raw) {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(trimmed) || trimmed.length > 32) {
+    return null;
+  }
+  return trimmed.toLowerCase();
+}
 function defaultProviderMode() {
-  if (hasKimiKey()) return "kimi";
   return "auto";
 }
 function getConfiguredProviderMode() {
-  if (hasKimiKey()) return "kimi";
-  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
-  if (raw === "moonshot" || raw === "custom" || raw === "ensemble" || raw === "anima") {
-    return "kimi";
+  if (raw === "moonshot") return "kimi";
+  if (raw === "ai-gateway" || raw === "vercel-gateway") return "gateway";
+  if (raw === "custom" || raw === "ensemble" || raw === "anima") {
+    return "auto";
   }
-  if (raw === "gemini") return "auto";
-  if (raw === "xai" || raw === "openai" || raw === "kimi" || raw === "auto") {
+  if (raw === "xai" || raw === "openai" || raw === "kimi" || raw === "auto" || raw === "gemini" || raw === "gateway") {
     return raw;
   }
   return defaultProviderMode();
 }
 function isAnimaCustomMode() {
-  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   return raw === "anima" || raw === "custom" || raw === "ensemble";
 }
 function isOpenAIBlocked() {
   const mode = getConfiguredProviderMode();
-  if (mode === "xai" || mode === "kimi") return true;
+  if (mode === "xai" || mode === "kimi" || mode === "gemini" || mode === "gateway") {
+    return true;
+  }
   return envFlagEnabled("ANIMA_DISABLE_OPENAI");
 }
 function isXaiBlocked() {
   const mode = getConfiguredProviderMode();
-  if (mode === "kimi") return true;
-  if (preferNonXai) return true;
+  if (mode === "kimi" || mode === "gemini" || mode === "gateway") return true;
   return envFlagEnabled("ANIMA_DISABLE_XAI");
+}
+function isGatewayBlocked() {
+  const mode = getConfiguredProviderMode();
+  if (mode === "kimi" || mode === "gemini" || mode === "xai" || mode === "openai") {
+    return true;
+  }
+  return envFlagEnabled("ANIMA_DISABLE_GATEWAY");
 }
 function isXaiStickySkipped() {
   return preferNonXai;
@@ -125438,20 +125783,60 @@ function isXaiStickySkipped() {
 function isOpenAIStickySkipped() {
   return preferNonOpenAI;
 }
+function isKimiStickySkipped() {
+  return preferNonKimi;
+}
+function hasAnyStickySkip() {
+  return preferNonKimi || preferNonXai || preferNonOpenAI || preferNonGemini || preferNonGateway;
+}
+function hasAnyChatKey() {
+  return hasGeminiKey() || hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth();
+}
+function reviveStickySkippedProvidersIfNeeded() {
+  if (!hasAnyStickySkip()) return false;
+  if (!hasAnyChatKey()) return false;
+  const geminiOk = hasGeminiKey() && !preferNonGemini && !isGeminiConfigBlocked();
+  const kimiOk = hasKimiKey() && !preferNonKimi && !isKimiConfigBlocked();
+  const xaiOk = hasXaiKey() && !isXaiBlocked() && !preferNonXai;
+  const openaiOk = hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
+  const gatewayOk = hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
+  const nothingLeft = !geminiOk && !kimiOk && !xaiOk && !openaiOk && !gatewayOk;
+  const hidingPreferred = preferNonGemini && hasGeminiKey() && !isGeminiConfigBlocked() || preferNonKimi && hasKimiKey() && !isKimiConfigBlocked();
+  if (!nothingLeft && !hidingPreferred) return false;
+  clearAllStickySkips();
+  return true;
+}
+function isGeminiConfigBlocked() {
+  const mode = getConfiguredProviderMode();
+  return mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway";
+}
+function isKimiConfigBlocked() {
+  const mode = getConfiguredProviderMode();
+  return mode === "gemini" || mode === "gateway";
+}
 function providerAvailable(id) {
-  if (id === "gemini") return false;
-  if (id === "openai") return !isOpenAIBlocked() && hasOpenAIKey();
-  if (id === "xai") return !isXaiBlocked() && hasXaiKey();
-  if (id === "kimi") return hasKimiKey();
+  if (id === "gemini") {
+    return hasGeminiKey() && !isGeminiConfigBlocked() && !preferNonGemini;
+  }
+  if (id === "openai") {
+    return hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
+  }
+  if (id === "xai") {
+    return hasXaiKey() && !isXaiBlocked() && !preferNonXai;
+  }
+  if (id === "kimi") {
+    return hasKimiKey() && !isKimiConfigBlocked() && !preferNonKimi;
+  }
+  if (id === "gateway") {
+    return hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
+  }
   return false;
 }
-function getAnimaTierProviderOrder(tier) {
-  if (tier === "heavy") {
-    return ["kimi", "xai", "openai"];
-  }
-  return ["kimi", "xai", "openai"];
+function getAnimaTierProviderOrder(_tier) {
+  return ["gemini", "kimi", "xai", "openai"];
 }
 function getProviderChain(_tier = "standard") {
+  reviveStickySkippedProvidersIfNeeded();
   const mode = getConfiguredProviderMode();
   const chain = [];
   const push2 = (id) => {
@@ -125461,33 +125846,80 @@ function getProviderChain(_tier = "standard") {
     push2("kimi");
     return chain;
   }
+  if (mode === "gemini") {
+    push2("gemini");
+    return chain;
+  }
+  if (mode === "gateway") {
+    push2("gateway");
+    return chain;
+  }
   if (mode === "openai") {
     push2("openai");
+    push2("gemini");
     push2("kimi");
     push2("xai");
+    push2("gateway");
     return chain;
   }
   if (mode === "xai") {
     push2("xai");
+    push2("gemini");
     push2("kimi");
+    push2("gateway");
     return chain;
   }
-  const preferAlt = preferNonOpenAI || isOpenAIBlocked() || hasXaiKey() || hasKimiKey();
-  if (preferAlt) {
-    push2("kimi");
-    push2("xai");
-    push2("openai");
-  } else {
-    push2("openai");
-  }
+  push2("gemini");
+  push2("kimi");
+  push2("xai");
+  push2("openai");
+  push2("gateway");
   return chain;
 }
 function getLlmRoutingStatus(tier = "standard") {
-  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim() || null;
+  const rawInput = (process.env.ANIMA_LLM_PROVIDER || "").trim() || null;
+  const sanitized = sanitizeProviderEnv(rawInput);
   const mode = getConfiguredProviderMode();
   const chain = getProviderChain(tier);
   const preferred = chain[0] ?? null;
-  const kimi = hasKimiKey();
+  const noteParts = [];
+  if (rawInput && !sanitized) {
+    noteParts.push(
+      "ANIMA_LLM_PROVIDER looks like an API key and was ignored \u2014 set it to auto|gemini|kimi|xai|openai|gateway (put the Gemini key in GEMINI_API_KEY)."
+    );
+  }
+  if (preferNonGemini) {
+    noteParts.push("Gemini sticky-skipped after a prior quota/auth failure this process.");
+  }
+  if (preferNonKimi) {
+    noteParts.push("Kimi sticky-skipped after a prior quota/auth failure this process.");
+  }
+  if (preferNonGateway) {
+    noteParts.push(
+      "AI Gateway sticky-skipped after a prior quota/auth failure this process."
+    );
+  }
+  if (mode === "auto") {
+    noteParts.push(
+      "Chat prefers Gemini, then fails over to Kimi \u2192 Grok \u2192 OpenAI \u2192 AI Gateway on quota or auth errors."
+    );
+  } else if (mode === "gemini") {
+    noteParts.push("Chat is Gemini-only (ANIMA_LLM_PROVIDER=gemini).");
+  } else if (mode === "kimi") {
+    noteParts.push(
+      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=auto for Gemini/Grok/OpenAI/Gateway backup."
+    );
+  } else if (mode === "gateway") {
+    noteParts.push(
+      "Chat is AI Gateway-only (ANIMA_LLM_PROVIDER=gateway). Uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN."
+    );
+  } else if (preferred) {
+    noteParts.push("Chat uses the configured provider chain.");
+  } else {
+    noteParts.push(
+      "No chat LLM key configured. Set GEMINI_API_KEY, KIMI_API_KEY, XAI_API_KEY, OPENAI_API_KEY, or AI_GATEWAY_API_KEY on Vercel and redeploy."
+    );
+  }
   return {
     status: preferred ? "ok" : "error",
     mode,
@@ -125495,14 +125927,16 @@ function getLlmRoutingStatus(tier = "standard") {
     chain,
     brand: isAnimaCustomMode() ? "anima" : null,
     keys: {
-      kimi,
+      kimi: hasKimiKey(),
       openai: hasOpenAIKey(),
       xai: hasXaiKey(),
-      gemini: hasGeminiKey()
+      gemini: hasGeminiKey(),
+      gateway: hasGatewayAuth()
     },
-    geminiRetiredForChat: true,
-    rawProviderEnv: raw,
-    note: kimi ? "Chat is Kimi-only. Gemini/Grok/OpenAI are not used for chat while KIMI_API_KEY is set." : preferred ? "KIMI_API_KEY is missing \u2014 chat falls back to Grok/OpenAI. Gemini is never used for chat." : "No chat LLM key configured. Set KIMI_API_KEY on Vercel and redeploy."
+    geminiRetiredForChat: false,
+    // Never echo API-key-like values that were pasted into the wrong field.
+    rawProviderEnv: sanitized,
+    note: noteParts.join(" ")
   };
 }
 function isProviderAuthError(err) {
@@ -125526,10 +125960,10 @@ function isProviderUnusableError(err) {
   const e2 = err;
   const code = (e2.code || e2.type || "").toLowerCase();
   const msg = (e2.message || "").toLowerCase();
-  if (code.includes("insufficient_quota") || code.includes("billing_not_active") || code.includes("billing_hard_limit") || code.includes("account_deactivated")) {
+  if (code.includes("insufficient_quota") || code.includes("billing_not_active") || code.includes("billing_hard_limit") || code.includes("account_deactivated") || code.includes("resource_exhausted")) {
     return true;
   }
-  if (msg.includes("no credits remaining") || msg.includes("doesn't have any credits") || msg.includes("does not have any credits") || msg.includes("no credits or licenses") || msg.includes("credits or licenses") || msg.includes("insufficient_quota") || msg.includes("exceeded your current quota") || msg.includes("billing") && msg.includes("limit") || msg.includes("add credits") || msg.includes("purchase those") || msg.includes("payment required") || msg.includes("console.x.ai")) {
+  if (msg.includes("no credits remaining") || msg.includes("doesn't have any credits") || msg.includes("does not have any credits") || msg.includes("no credits or licenses") || msg.includes("credits or licenses") || msg.includes("insufficient_quota") || msg.includes("exceeded your current quota") || msg.includes("resource_exhausted") || msg.includes("billing") && msg.includes("limit") || msg.includes("add credits") || msg.includes("purchase those") || msg.includes("payment required") || msg.includes("console.x.ai") || msg.includes("platform.kimi.ai") || msg.includes("quota exhausted") || msg.includes("quota exceeded")) {
     return true;
   }
   if (e2.status === 429) return true;
@@ -125555,6 +125989,16 @@ var XAI_ENV_KEYS = {
   standard: "ANIMA_XAI_MODEL_STANDARD",
   heavy: "ANIMA_XAI_MODEL_HEAVY"
 };
+var DEFAULT_GEMINI_MODELS = {
+  light: "gemini-2.5-flash-lite",
+  standard: "gemini-2.5-flash",
+  heavy: "gemini-2.5-pro"
+};
+var GEMINI_ENV_KEYS = {
+  light: "ANIMA_GEMINI_MODEL_LIGHT",
+  standard: "ANIMA_GEMINI_MODEL_STANDARD",
+  heavy: "ANIMA_GEMINI_MODEL_HEAVY"
+};
 var DEFAULT_KIMI_MODELS = {
   light: "kimi-k2.6",
   standard: "kimi-k2.6",
@@ -125565,12 +126009,31 @@ var KIMI_ENV_KEYS = {
   standard: "ANIMA_KIMI_MODEL_STANDARD",
   heavy: "ANIMA_KIMI_MODEL_HEAVY"
 };
+var DEFAULT_GATEWAY_MODELS = {
+  light: "google/gemini-2.5-flash-lite",
+  standard: "google/gemini-2.5-flash",
+  heavy: "google/gemini-2.5-pro"
+};
+var GATEWAY_ENV_KEYS = {
+  light: "ANIMA_GATEWAY_MODEL_LIGHT",
+  standard: "ANIMA_GATEWAY_MODEL_STANDARD",
+  heavy: "ANIMA_GATEWAY_MODEL_HEAVY"
+};
 function resolveXaiModel(tier) {
   const override = process.env[XAI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_XAI_MODEL?.trim();
   const openaiResolved = resolveModel(tier);
   return {
     tier,
     model: override || DEFAULT_XAI_MODELS[tier],
+    maxTokens: openaiResolved.maxTokens
+  };
+}
+function resolveGeminiModel(tier) {
+  const override = process.env[GEMINI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GEMINI_MODEL?.trim();
+  const openaiResolved = resolveModel(tier);
+  return {
+    tier,
+    model: override || DEFAULT_GEMINI_MODELS[tier],
     maxTokens: openaiResolved.maxTokens
   };
 }
@@ -125583,10 +126046,20 @@ function resolveKimiModel(tier) {
     maxTokens: openaiResolved.maxTokens
   };
 }
+function resolveGatewayModel(tier) {
+  const override = process.env[GATEWAY_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GATEWAY_MODEL?.trim();
+  const openaiResolved = resolveModel(tier);
+  return {
+    tier,
+    model: override || DEFAULT_GATEWAY_MODELS[tier],
+    maxTokens: openaiResolved.maxTokens
+  };
+}
 function providerLabel(id) {
   if (id === "xai") return "Grok (xAI)";
-  if (id === "gemini") return "Gemini (retired)";
+  if (id === "gemini") return "Gemini";
   if (id === "kimi") return "Kimi (Moonshot)";
+  if (id === "gateway") return "AI Gateway";
   return "OpenAI";
 }
 function clientFor(provider) {
@@ -125606,19 +126079,45 @@ function clientFor(provider) {
     }
     return client;
   }
+  if (provider === "gateway") {
+    const client = getGatewayClient();
+    if (!client) {
+      throw new Error(
+        "AI_GATEWAY_API_KEY (or VERCEL_OIDC_TOKEN) must be set to use AI Gateway."
+      );
+    }
+    return client;
+  }
   return getOpenAIClient();
 }
 function resolveForProvider(provider, tier) {
-  if (provider === "gemini") {
-    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
-  }
+  if (provider === "gemini") return resolveGeminiModel(tier);
   if (provider === "xai") return resolveXaiModel(tier);
   if (provider === "kimi") return resolveKimiModel(tier);
+  if (provider === "gateway") return resolveGatewayModel(tier);
   return resolveModel(tier);
 }
+function otherVendorAvailable(excluding) {
+  if (excluding !== "gemini" && hasGeminiKey()) return true;
+  if (excluding !== "kimi" && hasKimiKey()) return true;
+  if (excluding !== "xai" && hasXaiKey()) return true;
+  if (excluding !== "openai" && hasOpenAIKey()) return true;
+  if (excluding !== "gateway" && hasGatewayAuth()) return true;
+  return false;
+}
 function markOpenAIUnusable(err) {
-  if (isProviderUnusableError(err) && (hasXaiKey() || hasKimiKey())) {
+  if (isProviderUnusableError(err) && otherVendorAvailable("openai")) {
     preferNonOpenAI = true;
+  }
+}
+function markKimiUnusable(err) {
+  if (isProviderUnusableError(err) && otherVendorAvailable("kimi")) {
+    preferNonKimi = true;
+  }
+}
+function markGeminiUnusable(err) {
+  if (isProviderUnusableError(err) && otherVendorAvailable("gemini")) {
+    preferNonGemini = true;
   }
 }
 function recordProviderFailure(provider, err) {
@@ -125626,13 +126125,43 @@ function recordProviderFailure(provider, err) {
     markOpenAIUnusable(err);
     return;
   }
+  if (provider === "kimi") {
+    markKimiUnusable(err);
+    return;
+  }
+  if (provider === "gemini") {
+    markGeminiUnusable(err);
+    return;
+  }
+  if (provider === "gateway") {
+    markGatewayUnusable(err);
+    return;
+  }
   if (provider === "xai") {
-    if (isProviderUnusableError(err) && hasKimiKey()) {
+    if (isProviderUnusableError(err) && otherVendorAvailable("xai")) {
       preferNonXai = true;
       return;
     }
     markXaiUnusable(err);
   }
+}
+function summarizeProviderError(err) {
+  if (!err) return "unknown error";
+  if (typeof err === "string") return err.slice(0, 160);
+  if (err instanceof Error) return err.message.slice(0, 160);
+  if (typeof err === "object") {
+    const e2 = err;
+    const parts = [];
+    if (typeof e2.status === "number") parts.push(`HTTP ${e2.status}`);
+    if (e2.code) parts.push(String(e2.code));
+    if (e2.message) parts.push(String(e2.message).slice(0, 120));
+    if (parts.length) return parts.join(": ");
+  }
+  return String(err).slice(0, 160);
+}
+function formatFailureTrail(failures) {
+  if (failures.length === 0) return "";
+  return failures.map((f2) => `${providerLabel(f2.provider)}: ${summarizeProviderError(f2.err)}`).join(" | ");
 }
 function isXaiCreditsError(err) {
   if (!isProviderUnusableError(err)) return false;
@@ -125641,49 +126170,80 @@ function isXaiCreditsError(err) {
   return msg.includes("credits or licenses") || msg.includes("no credits or licenses") || msg.includes("console.x.ai") && msg.includes("credit");
 }
 function markXaiUnusable(err) {
-  if (isXaiCreditsError(err) && hasKimiKey()) {
+  if (isXaiCreditsError(err) && otherVendorAvailable("xai")) {
     preferNonXai = true;
   }
 }
-function enrichError(err, attempted) {
+function markGatewayUnusable(err) {
+  if (isProviderUnusableError(err) && otherVendorAvailable("gateway")) {
+    preferNonGateway = true;
+  }
+}
+function enrichError(err, attempted, failures = []) {
   const names = attempted.map(providerLabel).join(" \u2192 ");
+  const trail = formatFailureTrail(failures);
+  const trailSuffix = trail ? ` Details: ${trail}` : "";
   if (isProviderAuthError(err)) {
     const keyHints = attempted.map((id) => {
       if (id === "xai") return "XAI_API_KEY";
       if (id === "kimi") return "KIMI_API_KEY";
+      if (id === "gemini") return "GEMINI_API_KEY";
+      if (id === "gateway") return "AI_GATEWAY_API_KEY";
       return "OPENAI_API_KEY";
     });
     const uniqueKeys = [...new Set(keyHints)].join(" / ");
     return new Error(
-      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("kimi") ? "Kimi uses Moonshot keys from https://platform.kimi.ai (KIMI_API_KEY or MOONSHOT_API_KEY). " : "") + "Chat uses Kimi when KIMI_API_KEY is set (Gemini is not used for chat)."
+      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("gemini") ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. " : "") + (attempted.includes("kimi") ? "Kimi uses Moonshot keys from https://platform.kimi.ai. " : "") + (attempted.includes("gateway") ? "AI Gateway uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN (https://vercel.com/docs/ai-gateway). " : "") + "Set ANIMA_LLM_PROVIDER=auto to allow multi-provider failover." + trailSuffix
     );
   }
   if (isProviderUnusableError(err)) {
     const xaiBilling = extractXaiBillingUrl(err);
-    if (xaiBilling && attempted.includes("xai")) {
+    if (xaiBilling && attempted.includes("xai") && attempted.length === 1) {
       return new Error(
-        `Grok (xAI) has no team credits/licenses yet (tried ${names}). Buy credits at ${xaiBilling}` + (hasKimiKey() ? ", or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead." : ". Set KIMI_API_KEY for Kimi chat.")
+        `Grok (xAI) has no team credits/licenses yet (tried ${names}). Buy credits at ${xaiBilling}` + (hasGeminiKey() ? ", or set ANIMA_LLM_PROVIDER=gemini / auto to use Gemini." : hasKimiKey() ? ", or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead." : hasGatewayAuth() ? ", or set ANIMA_LLM_PROVIDER=gateway / auto to use AI Gateway." : ". Set GEMINI_API_KEY, KIMI_API_KEY, or AI_GATEWAY_API_KEY for backup chat.") + trailSuffix
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "gemini") {
+      return new Error(
+        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` + (hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth() ? " Or set ANIMA_LLM_PROVIDER=auto to allow Kimi/Grok/OpenAI/Gateway failover." : "") + trailSuffix
       );
     }
     if (attempted.length === 1 && attempted[0] === "kimi") {
       return new Error(
-        `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, then redeploy.`
+        `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, or set ANIMA_LLM_PROVIDER=auto so Gemini/Grok/OpenAI/Gateway can cover, then redeploy.` + trailSuffix
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "gateway") {
+      return new Error(
+        `AI Gateway credits/quota exhausted (or auth failed). Check AI_GATEWAY_API_KEY / Vercel AI Gateway credits at https://vercel.com/docs/ai-gateway, then redeploy.` + trailSuffix
       );
     }
     const hints = [];
+    if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
     if (!hasKimiKey()) hints.push("Set KIMI_API_KEY for Kimi");
     if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
     if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
-    const hint = hints.length > 0 ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=kimi|xai to skip OpenAI.` : " All configured providers failed. Check KIMI_API_KEY at https://platform.kimi.ai, or fund XAI_API_KEY / OPENAI_API_KEY.";
+    if (!hasGatewayAuth()) {
+      hints.push("Set AI_GATEWAY_API_KEY (or deploy on Vercel with OIDC)");
+    }
+    const hint = hints.length > 0 ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|kimi|xai|gateway.` : " All configured providers failed. Fund GEMINI_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY, or top up AI Gateway credits.";
     return new Error(
-      `LLM credits/quota exhausted (tried ${names}).${hint}`
+      `LLM credits/quota exhausted (tried ${names}).${hint}${trailSuffix}`
     );
   }
-  return err instanceof Error ? err : new Error(String(err));
+  const base = err instanceof Error ? err : new Error(String(err));
+  if (trail && !base.message.includes("Details:")) {
+    return new Error(`${base.message}${trailSuffix}`);
+  }
+  return base;
 }
 async function createStream(provider, resolved, messages2) {
   if (provider === "gemini") {
-    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
+    return createGeminiChatStream({
+      model: resolved.model,
+      maxTokens: resolved.maxTokens,
+      messages: messages2
+    });
   }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
@@ -125694,7 +126254,12 @@ async function createStream(provider, resolved, messages2) {
 }
 async function createCompletion(provider, resolved, messages2, temperature) {
   if (provider === "gemini") {
-    throw new Error("Gemini is retired for chat. Set KIMI_API_KEY and redeploy.");
+    return createGeminiChatCompletion({
+      model: resolved.model,
+      maxTokens: resolved.maxTokens,
+      messages: messages2,
+      temperature
+    });
   }
   return clientFor(provider).chat.completions.create({
     model: resolved.model,
@@ -125714,58 +126279,147 @@ async function withModelFallback(provider, preferred, run) {
     throw modelErr;
   }
 }
-async function createChatStreamWithFailover(req) {
-  if (!hasKimiKey()) {
+function requireProviderChain() {
+  const chain = getProviderChain();
+  if (chain.length === 0) {
+    const missing = [];
+    if (!hasGeminiKey()) missing.push("GEMINI_API_KEY");
+    if (!hasKimiKey()) missing.push("KIMI_API_KEY");
+    if (!hasXaiKey()) missing.push("XAI_API_KEY");
+    if (!hasOpenAIKey()) missing.push("OPENAI_API_KEY");
+    if (!hasGatewayAuth()) missing.push("AI_GATEWAY_API_KEY");
+    const configNote = isOpenAIBlocked() ? " OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI." : "";
+    const mode = getConfiguredProviderMode();
+    const modeNote = mode === "kimi" ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY." : mode === "gemini" ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY." : mode === "gateway" ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN." : "";
     throw new Error(
-      "Chat requires KIMI_API_KEY (or MOONSHOT_API_KEY) on Vercel. Gemini is retired for chat \u2014 remove ANIMA_LLM_PROVIDER=gemini if set, add your Moonshot key from https://platform.kimi.ai, then redeploy."
+      missing.length >= 4 ? `No LLM provider configured. Set GEMINI_API_KEY (preferred), KIMI_API_KEY, XAI_API_KEY, OPENAI_API_KEY, or AI_GATEWAY_API_KEY on Vercel Production, then redeploy.${configNote}${modeNote}` : `No usable LLM provider right now.${configNote}${modeNote} Check key values on Vercel Production and redeploy.`
     );
   }
+  return chain;
+}
+async function createChatStreamWithFailover(req) {
+  beginChatProviderTurn();
+  const chain = requireProviderChain();
   const brand = isAnimaCustomMode() ? "anima" : void 0;
-  const preferredModel = resolveKimiModel(req.tier);
-  try {
-    const { value: stream, resolved } = await withModelFallback(
-      "kimi",
-      preferredModel,
-      (m2) => createStream("kimi", m2, req.messages)
-    );
-    return {
-      stream,
-      provider: "kimi",
-      brand,
-      model: resolved.model,
-      tier: resolved.tier,
-      failedOver: false
-    };
-  } catch (err) {
-    throw enrichError(err, ["kimi"]);
+  const attempted = [];
+  const failures = [];
+  let lastErr;
+  for (let i2 = 0; i2 < chain.length; i2++) {
+    const provider = chain[i2];
+    attempted.push(provider);
+    const routed = resolveForProvider(provider, req.tier);
+    const preferredModel = provider === "openai" ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens } : routed;
+    try {
+      const { value: stream, resolved } = await withModelFallback(
+        provider,
+        preferredModel,
+        (m2) => createStream(provider, m2, req.messages)
+      );
+      return {
+        stream,
+        provider,
+        brand,
+        model: resolved.model,
+        tier: resolved.tier,
+        failedOver: i2 > 0,
+        previousProvider: i2 > 0 ? chain[0] : void 0
+      };
+    } catch (err) {
+      lastErr = err;
+      failures.push({ provider, err });
+      recordProviderFailure(provider, err);
+      if (!isProviderUnusableError(err)) {
+        throw enrichError(err, attempted, failures);
+      }
+    }
   }
+  throw enrichError(lastErr, attempted, failures);
 }
 async function createChatCompletionWithFailover(req) {
-  if (!hasKimiKey()) {
-    throw new Error(
-      "Chat requires KIMI_API_KEY (or MOONSHOT_API_KEY) on Vercel. Gemini is retired for chat \u2014 remove ANIMA_LLM_PROVIDER=gemini if set, add your Moonshot key from https://platform.kimi.ai, then redeploy."
-    );
-  }
+  beginChatProviderTurn();
+  const chain = requireProviderChain();
   const brand = isAnimaCustomMode() ? "anima" : void 0;
-  const preferredModel = resolveKimiModel(req.tier);
-  try {
-    const { value: completion, resolved } = await withModelFallback(
-      "kimi",
-      preferredModel,
-      (m2) => createCompletion("kimi", m2, req.messages, req.temperature)
-    );
-    const content = completion.choices?.[0]?.message?.content ?? "";
-    return {
-      content: typeof content === "string" ? content : "",
-      provider: "kimi",
-      brand,
-      model: resolved.model,
-      tier: resolved.tier,
-      failedOver: false
-    };
-  } catch (err) {
-    throw enrichError(err, ["kimi"]);
+  const attempted = [];
+  const failures = [];
+  let lastErr;
+  for (let i2 = 0; i2 < chain.length; i2++) {
+    const provider = chain[i2];
+    attempted.push(provider);
+    const routed = resolveForProvider(provider, req.tier);
+    const preferredModel = provider === "openai" && req.model ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens } : routed;
+    try {
+      const { value: completion, resolved } = await withModelFallback(
+        provider,
+        preferredModel,
+        (m2) => createCompletion(provider, m2, req.messages, req.temperature)
+      );
+      const content = completion.choices?.[0]?.message?.content ?? "";
+      return {
+        content: typeof content === "string" ? content : "",
+        provider,
+        brand,
+        model: resolved.model,
+        tier: resolved.tier,
+        failedOver: i2 > 0,
+        previousProvider: i2 > 0 ? chain[0] : void 0
+      };
+    } catch (err) {
+      lastErr = err;
+      failures.push({ provider, err });
+      recordProviderFailure(provider, err);
+      if (!isProviderUnusableError(err)) {
+        throw enrichError(err, attempted, failures);
+      }
+    }
   }
+  throw enrichError(lastErr, attempted, failures);
+}
+async function probeLlmProviders(tier = "standard") {
+  const candidates = [
+    "gemini",
+    "kimi",
+    "xai",
+    "openai",
+    "gateway"
+  ];
+  const results = [];
+  for (const provider of candidates) {
+    const configured = provider === "gemini" && hasGeminiKey() || provider === "kimi" && hasKimiKey() || provider === "xai" && hasXaiKey() || provider === "openai" && hasOpenAIKey() || provider === "gateway" && hasGatewayAuth();
+    if (!configured) {
+      results.push({ provider, configured: false, ok: false });
+      continue;
+    }
+    const resolved = resolveForProvider(provider, tier);
+    const started = Date.now();
+    try {
+      await createCompletion(
+        provider,
+        { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
+        [{ role: "user", content: "Reply with the single word: ok" }],
+        0
+      );
+      results.push({
+        provider,
+        configured: true,
+        ok: true,
+        model: resolved.model,
+        latencyMs: Date.now() - started
+      });
+    } catch (err) {
+      const status = err && typeof err === "object" && "status" in err ? Number(err.status) : void 0;
+      results.push({
+        provider,
+        configured: true,
+        ok: false,
+        status: Number.isFinite(status) ? status : void 0,
+        errorKind: isProviderAuthError(err) ? "auth" : isProviderUnusableError(err) ? "quota" : "other",
+        message: summarizeProviderError(err),
+        model: resolved.model,
+        latencyMs: Date.now() - started
+      });
+    }
+  }
+  return results;
 }
 
 // src/routes/health.ts
@@ -125776,9 +126430,28 @@ router2.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
   res.json(data);
 });
-router2.get("/healthz/llm", (_req, res) => {
+router2.get("/healthz/llm", async (req, res) => {
   const routing = getLlmRoutingStatus("standard");
-  res.status(routing.status === "ok" ? 200 : 503).json(routing);
+  const wantProbe = req.query.probe === "1" || req.query.probe === "true" || req.query.probe === "yes";
+  if (!wantProbe) {
+    res.status(routing.status === "ok" ? 200 : 503).json(routing);
+    return;
+  }
+  try {
+    const probes = await probeLlmProviders("light");
+    const anyOk = probes.some((p2) => p2.ok);
+    res.status(anyOk || routing.status === "ok" ? 200 : 503).json({
+      ...routing,
+      probes,
+      probeOk: anyOk
+    });
+  } catch (err) {
+    res.status(503).json({
+      ...routing,
+      probeOk: false,
+      probeError: err instanceof Error ? err.message : String(err)
+    });
+  }
 });
 router2.get("/healthz/db", async (_req, res) => {
   const target = databaseTargetHint();
@@ -140029,12 +140702,13 @@ function isEnsembleMode() {
   return isAnimaCustomMode();
 }
 function getEnsembleMinds(tier = "standard") {
+  reviveStickySkippedProvidersIfNeeded();
   const disableOpenAI = envFlagEnabled2("ANIMA_DISABLE_OPENAI");
   const disableXai = envFlagEnabled2("ANIMA_DISABLE_XAI");
   const minds = [];
   for (const id of getAnimaTierProviderOrder(tier)) {
     if (id === "gemini") continue;
-    if (id === "kimi" && hasKimiKey()) {
+    if (id === "kimi" && hasKimiKey() && !isKimiStickySkipped()) {
       minds.push("kimi");
       continue;
     }
@@ -140189,6 +140863,7 @@ async function* chunkTextAsStream(text3, chunkSize = 24) {
   }
 }
 async function createEnsembleChatReply(req) {
+  beginChatProviderTurn();
   const minds = getEnsembleMinds(req.tier);
   if (minds.length === 0) {
     throw new Error(

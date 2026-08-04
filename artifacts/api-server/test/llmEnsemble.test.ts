@@ -13,11 +13,19 @@ vi.mock("../src/lib/openaiClient", () => {
       Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
     hasKimiKey: () =>
       Boolean(process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()),
+    hasGatewayAuth: () =>
+      Boolean(
+        process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
+      ),
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () => null,
     getKimiClient: () =>
       process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()
+        ? client
+        : null,
+    getGatewayClient: () =>
+      process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim()
         ? client
         : null,
     normalizeApiKey: (raw: string | undefined) => {

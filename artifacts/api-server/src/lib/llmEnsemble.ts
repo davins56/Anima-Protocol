@@ -36,7 +36,7 @@ import {
 import { resolveModel, type ModelTier } from "./modelRouter";
 
 /** Providers that may participate in ensemble drafts. */
-type EnsembleMindId = Exclude<LlmProviderId, "gemini">;
+type EnsembleMindId = Exclude<LlmProviderId, "gemini" | "gateway">;
 
 export interface MindDraft {
   provider: EnsembleMindId;

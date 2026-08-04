@@ -12,6 +12,9 @@ let geminiClientKey: string | null = null;
 let kimiClient: OpenAI | null = null;
 let kimiClientKey: string | null = null;
 
+let gatewayClient: OpenAI | null = null;
+let gatewayClientKey: string | null = null;
+
 /** Normalize env keys that were pasted with surrounding quotes or whitespace. */
 export function normalizeApiKey(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -23,6 +26,17 @@ export function normalizeApiKey(raw: string | undefined): string | null {
     key = key.slice(1, -1).trim();
   }
   return key || null;
+}
+
+/**
+ * Auth for Vercel AI Gateway (OpenAI-compatible). Prefers AI_GATEWAY_API_KEY;
+ * on Vercel deployments falls back to the auto-injected OIDC token.
+ */
+export function gatewayAuthToken(): string | null {
+  return (
+    normalizeApiKey(process.env.AI_GATEWAY_API_KEY) ||
+    normalizeApiKey(process.env.VERCEL_OIDC_TOKEN)
+  );
 }
 
 export function hasOpenAIKey(): boolean {
@@ -46,6 +60,11 @@ export function hasKimiKey(): boolean {
     normalizeApiKey(process.env.KIMI_API_KEY) ||
       normalizeApiKey(process.env.MOONSHOT_API_KEY),
   );
+}
+
+/** True when Vercel AI Gateway can authenticate (API key or OIDC). */
+export function hasGatewayAuth(): boolean {
+  return Boolean(gatewayAuthToken());
 }
 
 export function getOpenAIClient(): OpenAI {
@@ -119,6 +138,26 @@ export function getKimiClient(): OpenAI | null {
   return kimiClient;
 }
 
+/**
+ * OpenAI-compatible Vercel AI Gateway client.
+ * Uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN. Returns null when neither is set.
+ */
+export function getGatewayClient(): OpenAI | null {
+  const apiKey = gatewayAuthToken();
+  if (!apiKey) return null;
+  if (!gatewayClient || gatewayClientKey !== apiKey) {
+    gatewayClient = new OpenAI({
+      apiKey,
+      baseURL:
+        process.env.AI_GATEWAY_BASE_URL?.trim() ||
+        "https://ai-gateway.vercel.sh/v1",
+      maxRetries: 0,
+    });
+    gatewayClientKey = apiKey;
+  }
+  return gatewayClient;
+}
+
 /** Test helper — clears cached SDK clients between cases. */
 export function resetLlmClientsForTests(): void {
   openaiClient = null;
@@ -129,4 +168,6 @@ export function resetLlmClientsForTests(): void {
   geminiClientKey = null;
   kimiClient = null;
   kimiClientKey = null;
+  gatewayClient = null;
+  gatewayClientKey = null;
 }
