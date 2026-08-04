@@ -691,11 +691,21 @@ const XAI_ENV_KEYS: Record<ModelTier, string> = {
   heavy: "ANIMA_XAI_MODEL_HEAVY",
 };
 
+// gemini-2.5-flash-lite is blocked for many new AI Studio keys ("no longer
+// available to new users"). Prefer 3.1 Flash-Lite for light turns; keep 2.5
+// Flash/Pro for standard/heavy until those lanes retire.
 const DEFAULT_GEMINI_MODELS: Record<ModelTier, string> = {
-  light: "gemini-2.5-flash-lite",
+  light: "gemini-3.1-flash-lite",
   standard: "gemini-2.5-flash",
   heavy: "gemini-2.5-pro",
 };
+
+/** Extra Gemini model IDs to try after the routed tier fails as unavailable. */
+const GEMINI_RESCUE_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-flash-latest",
+] as const;
 
 const GEMINI_ENV_KEYS: Record<ModelTier, string> = {
   light: "ANIMA_GEMINI_MODEL_LIGHT",
@@ -717,12 +727,18 @@ const KIMI_ENV_KEYS: Record<ModelTier, string> = {
   heavy: "ANIMA_KIMI_MODEL_HEAVY",
 };
 
-// Vercel AI Gateway model slugs (provider/model). Cheap Gemini path by default.
+// Vercel AI Gateway model slugs (provider/model). Avoid retired Flash-Lite 2.5.
 const DEFAULT_GATEWAY_MODELS: Record<ModelTier, string> = {
-  light: "google/gemini-2.5-flash-lite",
+  light: "google/gemini-3.1-flash-lite",
   standard: "google/gemini-2.5-flash",
   heavy: "google/gemini-2.5-pro",
 };
+
+const GATEWAY_RESCUE_MODELS = [
+  "google/gemini-3.1-flash-lite",
+  "google/gemini-2.5-flash",
+  "google/gemini-flash-latest",
+] as const;
 
 const GATEWAY_ENV_KEYS: Record<ModelTier, string> = {
   light: "ANIMA_GATEWAY_MODEL_LIGHT",
@@ -871,9 +887,26 @@ function markKimiUnusable(err: unknown): void {
 }
 
 function markGeminiUnusable(err: unknown): void {
-  if (isProviderUnusableError(err) && otherVendorAvailable("gemini")) {
+  // Quota/auth *and* retired-model 404s — otherwise a dead Gemini model ID
+  // sticky-blocks the whole chain from reaching Kimi / Gateway.
+  if (
+    (isProviderUnusableError(err) || isModelUnavailableError(err)) &&
+    otherVendorAvailable("gemini")
+  ) {
     preferNonGemini = true;
   }
+}
+
+/**
+ * After intra-provider model fallback fails, continue to the next vendor for
+ * quota/auth *and* retired/unknown model IDs. A Gemini 404 used to abort the
+ * whole chain before AI Gateway could answer.
+ */
+function shouldTryNextProvider(err: unknown): boolean {
+  if (isProviderUnusableError(err) || isModelUnavailableError(err)) return true;
+  if (!err || typeof err !== "object") return false;
+  const code = String((err as { code?: unknown }).code || "").toLowerCase();
+  return code === "empty_visible_text" || code === "empty_stream";
 }
 
 /**
@@ -966,7 +999,10 @@ function markXaiUnusable(err: unknown): void {
 }
 
 function markGatewayUnusable(err: unknown): void {
-  if (isProviderUnusableError(err) && otherVendorAvailable("gateway")) {
+  if (
+    (isProviderUnusableError(err) || isModelUnavailableError(err)) &&
+    otherVendorAvailable("gateway")
+  ) {
     preferNonGateway = true;
   }
 }
@@ -1113,23 +1149,55 @@ async function createCompletion(
   });
 }
 
+function rescueModelsForProvider(
+  provider: LlmProviderId,
+  preferred: ResolvedModel,
+): ResolvedModel[] {
+  const seen = new Set<string>();
+  const out: ResolvedModel[] = [];
+  const push = (model: string) => {
+    const id = model.trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ ...preferred, model: id });
+  };
+
+  push(preferred.model);
+  push(resolveForProvider(provider, "standard").model);
+  push(resolveForProvider(provider, "light").model);
+
+  if (provider === "gemini") {
+    for (const model of GEMINI_RESCUE_MODELS) push(model);
+  } else if (provider === "gateway") {
+    for (const model of GATEWAY_RESCUE_MODELS) push(model);
+  }
+
+  return out;
+}
+
 async function withModelFallback<T>(
   provider: LlmProviderId,
   preferred: ResolvedModel,
   run: (resolved: ResolvedModel) => Promise<T>,
 ): Promise<{ value: T; resolved: ResolvedModel }> {
-  try {
-    return { value: await run(preferred), resolved: preferred };
-  } catch (modelErr) {
-    const standard = resolveForProvider(provider, "standard");
-    if (
-      preferred.model !== standard.model &&
-      isModelUnavailableError(modelErr)
-    ) {
-      return { value: await run(standard), resolved: standard };
+  const candidates = rescueModelsForProvider(provider, preferred);
+  let lastErr: unknown;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]!;
+    try {
+      return { value: await run(candidate), resolved: candidate };
+    } catch (modelErr) {
+      lastErr = modelErr;
+      const hasNext = i < candidates.length - 1;
+      if (!hasNext || !isModelUnavailableError(modelErr)) {
+        throw modelErr;
+      }
+      // Retired / unknown model → try the next candidate on this provider.
     }
-    throw modelErr;
   }
+
+  throw lastErr;
 }
 
 function requireProviderChain(): LlmProviderId[] {
@@ -1211,7 +1279,8 @@ export async function createChatStreamWithFailover(
       failures.push({ provider, err });
       recordProviderFailure(provider, err);
       // Local endpoint down / wrong model → always try the hybrid cloud chain.
-      if (provider !== "local" && !isProviderUnusableError(err)) {
+      // Retired Gemini model IDs (404) must also fall through to Gateway.
+      if (provider !== "local" && !shouldTryNextProvider(err)) {
         throw enrichError(err, attempted, failures);
       }
       // Try next provider in chain.
@@ -1264,7 +1333,7 @@ export async function createChatCompletionWithFailover(
       lastErr = err;
       failures.push({ provider, err });
       recordProviderFailure(provider, err);
-      if (provider !== "local" && !isProviderUnusableError(err)) {
+      if (provider !== "local" && !shouldTryNextProvider(err)) {
         throw enrichError(err, attempted, failures);
       }
     }
@@ -1307,17 +1376,24 @@ export async function probeLlmProviders(
     const resolved = resolveForProvider(provider, tier);
     const started = Date.now();
     try {
-      await createCompletion(
+      // Same intra-provider model rescue chat uses, so a retired light model
+      // does not report the whole Gemini/Gateway slot as dead.
+      const { resolved: used } = await withModelFallback(
         provider,
         { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
-        [{ role: "user", content: "Reply with the single word: ok" }],
-        0,
+        (m) =>
+          createCompletion(
+            provider,
+            m,
+            [{ role: "user", content: "Reply with the single word: ok" }],
+            0,
+          ),
       );
       results.push({
         provider,
         configured: true,
         ok: true,
-        model: resolved.model,
+        model: used.model,
         latencyMs: Date.now() - started,
       });
     } catch (err) {

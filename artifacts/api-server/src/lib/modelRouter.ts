@@ -168,11 +168,27 @@ export function isModelUnavailableError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { status?: number; code?: string; type?: string; message?: string };
   const code = (e.code || e.type || "").toLowerCase();
-  if (code.includes("model_not_found") || code.includes("model_not_available")) return true;
+  if (
+    code.includes("model_not_found") ||
+    code.includes("model_not_available") ||
+    code.includes("not_found")
+  ) {
+    return true;
+  }
   const msg = (e.message || "").toLowerCase();
-  if (msg.includes("does not exist") || msg.includes("do not have access")) return true;
-  // 404 = unknown model. 403 only counts when the message points at the model,
-  // not at billing/region/permission unrelated to model access.
+  if (
+    msg.includes("does not exist") ||
+    msg.includes("do not have access") ||
+    msg.includes("no longer available") ||
+    msg.includes("not available to new users") ||
+    msg.includes("please update your code to use a newer model") ||
+    msg.includes("is not found") ||
+    msg.includes("model not found")
+  ) {
+    return true;
+  }
+  // 404 = unknown / retired model. 403 only counts when the message points at
+  // the model, not at billing/region/permission unrelated to model access.
   if (e.status === 404) return true;
   return false;
 }
