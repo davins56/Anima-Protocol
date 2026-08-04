@@ -61,6 +61,7 @@ import {
 
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
+const NucleusDemo = lazy(() => import("./pages/NucleusDemo"));
 const Codespace = lazy(() => import("./pages/Codespace"));
 const Landing = lazy(() => import("./pages/Landing"));
 const MainHome = lazy(() => import("./pages/MainHome"));
@@ -1176,6 +1177,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <Chat />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/nucleus"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NucleusDemo />
                   </Suspense>
                 }
               />

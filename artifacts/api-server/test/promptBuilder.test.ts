@@ -125,6 +125,39 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("SHADOW MODE");
   });
 
+  it("injects the Anima Protocol companion profile", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Tell me what you notice about me today.",
+    });
+
+    expect(prompt).toContain("ANIMA PROTOCOL COMPANION PROFILE");
+    expect(prompt).toContain("collaborative story");
+    expect(prompt).toContain("emotional reality");
+  });
+
+  it("shapes prompts for a scenario and relationship context", () => {
+    const prompt = buildCompanionPrompt({
+      scenario: { id: "guardian", label: "Guardian AI", systemPrompt: "Protect the user" },
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [baseMemory],
+      recentMessages: [],
+      mode: "solo",
+      content: "I need guidance tonight.",
+      relationshipTier: "devoted",
+    });
+
+    expect(prompt).toContain("SCENARIO MODE: Guardian AI");
+    expect(prompt).toContain("protective, practical");
+    expect(prompt).toContain("RELATIONSHIP CONTEXT");
+    expect(prompt).toContain("deeply trusted");
+  });
+
   it("handles empty characters gracefully", () => {
     const prompt = buildCompanionPrompt({
       characters: [],

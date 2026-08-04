@@ -76,6 +76,7 @@ export const animaApi = {
       deepMode,
       persist = true,
       metadata,
+      scenario,
     }) {
       const res = await fetch(apiUrl('/chat/messages'), {
         method: "POST",
@@ -93,6 +94,7 @@ export const animaApi = {
           deep_mode: !!deepMode,
           persist,
           metadata,
+          scenario,
         }),
       });
       if (!res.ok) throw new Error(`API error: ${res.status}`);
