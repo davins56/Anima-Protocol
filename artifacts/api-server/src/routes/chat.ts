@@ -47,7 +47,7 @@ import {
   serializeSynchroState,
   type SynchroState,
 } from "../lib/synchroEngine";
-import { getOpenAIClient } from "../lib/openaiClient";
+import { createModelProvider, getProviderFallbackChain } from "../lib/modelProvider";
 
 const router = Router();
 
@@ -424,6 +424,7 @@ router.post("/messages", async (req, res) => {
     deep_mode?: boolean;
     persist?: boolean;
     metadata?: Record<string, unknown>;
+    scenario?: Record<string, unknown> | null;
   };
   const sessionId = body.session_id;
   if (!sessionId) {
@@ -496,6 +497,20 @@ router.post("/messages", async (req, res) => {
   }
   const prompt = buildCompanionPrompt({
     systemPrompt: body.system_prompt,
+    scenario: body.scenario
+      ? {
+          id: typeof body.scenario.id === "string" ? body.scenario.id : undefined,
+          label: typeof body.scenario.label === "string" ? body.scenario.label : undefined,
+          systemPrompt:
+            typeof body.scenario.systemPrompt === "string"
+              ? body.scenario.systemPrompt
+              : typeof body.scenario.system_prompt === "string"
+                ? body.scenario.system_prompt
+                : undefined,
+          description:
+            typeof body.scenario.description === "string" ? body.scenario.description : undefined,
+        }
+      : null,
     characters: adaptedChars,
     activeCharacter: activeChar,
     memories: adaptedMemories,
@@ -516,6 +531,8 @@ router.post("/messages", async (req, res) => {
   });
   const standard = resolveModel("standard");
   const shouldPersist = body.persist !== false;
+  const providers = getProviderFallbackChain().providers;
+  const providerNames = providers.filter((name, index) => providers.indexOf(name) === index);
 
   await syncTypedSession({
     userId,
@@ -558,34 +575,58 @@ router.post("/messages", async (req, res) => {
   let usedTier = routed.tier;
 
   try {
-    let stream;
-    try {
-      stream = await getOpenAIClient().chat.completions.create({
-        model: routed.model,
-        max_tokens: routed.maxTokens,
-        messages: [{ role: "system", content: prompt }],
-        stream: true,
-      });
-    } catch (modelErr) {
-      if (routed.model !== standard.model && isModelUnavailableError(modelErr)) {
-        usedModel = standard.model;
-        usedTier = standard.tier;
-        stream = await getOpenAIClient().chat.completions.create({
-          model: standard.model,
-          max_tokens: standard.maxTokens,
-          messages: [{ role: "system", content: prompt }],
-          stream: true,
+    let lastError: unknown;
+    let assistantText = "";
+
+    for (const providerName of providerNames) {
+      const provider = createModelProvider(providerName);
+      try {
+        const response = await provider.generate({
+          prompt: content,
+          systemPrompt: prompt,
+          maxTokens: routed.maxTokens,
+          model: routed.model,
         });
-      } else {
-        throw modelErr;
+
+        if (response?.text?.trim()) {
+          assistantText = response.text;
+          usedModel = provider.name === "mock" ? `${provider.name}/${routed.model}` : response.model;
+          break;
+        }
+
+        lastError = new Error("Provider returned an empty response.");
+      } catch (err) {
+        lastError = err;
       }
     }
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
+    if (!assistantText.trim()) {
+      if (lastError) {
+        throw lastError;
+      }
+      assistantText = "I’m not able to respond right now. Please try again in a moment.";
+      usedModel = `mock/${routed.model}`;
+    }
+
+    fullResponse = assistantText;
+    for (const delta of assistantText.split(/(\s+)/)) {
       if (!delta) continue;
-      fullResponse += delta;
-      res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+      try {
+        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+      } catch {
+        break;
+      }
+    }
+
+    try {
+      res.write(
+        `data: ${JSON.stringify({
+          provider: usedModel,
+          provider_status: "ok",
+        })}\n\n`,
+      );
+    } catch {
+      // Ignore write errors after the response body has begun.
     }
 
     let persistedAssistant: MsgData | null = null;
