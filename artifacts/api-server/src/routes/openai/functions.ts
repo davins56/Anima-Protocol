@@ -8,6 +8,7 @@ import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { getOpenAIClient } from "../../lib/openaiClient";
+import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
 
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
@@ -725,7 +726,30 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "searchMemoriesSemantically": {
-        result = { memories: [] };
+        const { userId } = getAuth(req) as { userId: string };
+        const query =
+          typeof data.query === "string"
+            ? data.query
+            : typeof data.text === "string"
+              ? data.text
+              : "";
+        const characterId =
+          typeof data.character_id === "string" ? data.character_id : undefined;
+        const topK =
+          typeof data.top_k === "number" && data.top_k > 0
+            ? Math.min(48, data.top_k)
+            : 12;
+        if (!query.trim()) {
+          result = { memories: [] };
+          break;
+        }
+        const memories = await searchMemoriesSemantically({
+          userId,
+          characterId,
+          query,
+          topK,
+        });
+        result = { memories };
         break;
       }
 

@@ -1,6 +1,6 @@
 import { getOpenAIClient } from "./openaiClient";
 
-export type ProviderName = "groq" | "openai" | "ollama" | "mock";
+export type ProviderName = "groq" | "openai" | "ollama" | "vllm" | "mock";
 
 export interface ModelRequest {
   prompt: string;
@@ -47,7 +47,7 @@ function createMockProvider(): ModelProvider {
   };
 }
 
-async function fetchJson(url: string, init?: RequestInit) {
+async function fetchJson(url: string, init?: RequestInit): Promise<any> {
   const response = await fetch(url, init);
   if (!response.ok) {
     const text = await response.text();
@@ -118,13 +118,13 @@ function createOllamaProvider(): ModelProvider {
       return {
         text: chunks.join(""),
         provider: "ollama",
-        model: request.model ?? "llama3.1:8b",
+        model: request.model ?? "anima-qwen27b",
       };
     },
     async *generateStream({ prompt, systemPrompt, maxTokens, model }) {
       const baseUrl = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
       const payload = {
-        model: model ?? "llama3.1:8b",
+        model: model ?? "anima-qwen27b",
         prompt: `${systemPrompt ? `${systemPrompt}\n\n` : ""}${prompt}`,
         stream: false,
         options: {
@@ -141,6 +141,63 @@ function createOllamaProvider(): ModelProvider {
       });
 
       const text = data?.response ?? "";
+      if (typeof text === "string" && text) {
+        for (const chunk of text.split(/(\s+)/)) {
+          if (chunk) {
+            yield chunk;
+          }
+        }
+      }
+    },
+  };
+}
+
+/** OpenAI-compatible vLLM (or any /v1 chat.completions server). */
+function createVllmProvider(): ModelProvider {
+  return {
+    name: "vllm",
+    async generate(request) {
+      const chunks: string[] = [];
+      for await (const chunk of this.generateStream(request)) {
+        chunks.push(chunk);
+      }
+      return {
+        text: chunks.join(""),
+        provider: "vllm",
+        model: request.model ?? "Qwen/Qwen3.6-27B",
+      };
+    },
+    async *generateStream({ prompt, systemPrompt, maxTokens, model }) {
+      const baseUrl = (
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim() ||
+        "http://localhost:8000/v1"
+      ).replace(/\/$/, "");
+      const apiKey =
+        process.env.ANIMA_LOCAL_LLM_API_KEY?.trim() ||
+        process.env.VLLM_API_KEY?.trim() ||
+        "local";
+
+      const payload = {
+        model: model ?? "Qwen/Qwen3.6-27B",
+        messages: [
+          { role: "system", content: systemPrompt ?? "" },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: maxTokens ?? 1024,
+        stream: false,
+      };
+
+      const data = await fetchJson(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const text = data?.choices?.[0]?.message?.content ?? "";
       if (typeof text === "string" && text) {
         for (const chunk of text.split(/(\s+)/)) {
           if (chunk) {
@@ -190,9 +247,10 @@ function createOpenAIProvider(): ModelProvider {
 
 export function getConfiguredProviderName(): ProviderName {
   const value = process.env.ANIMA_LLM_PROVIDER?.trim().toLowerCase();
-  if (value === "groq" || value === "openai" || value === "ollama" || value === "mock") {
+  if (value === "groq" || value === "openai" || value === "ollama" || value === "vllm" || value === "mock") {
     return value;
   }
+  if (value === "local" || value === "local-first") return "vllm";
   return "mock";
 }
 
@@ -213,7 +271,14 @@ export function getProviderFallbackChain(): ProviderFallbackChain {
     raw
       .split(",")
       .map((item) => item.trim().toLowerCase())
-      .filter((item): item is ProviderName => item === "groq" || item === "openai" || item === "ollama" || item === "mock")
+      .filter(
+        (item): item is ProviderName =>
+          item === "groq" ||
+          item === "openai" ||
+          item === "ollama" ||
+          item === "vllm" ||
+          item === "mock",
+      )
       .forEach(addProvider);
   }
 
@@ -231,6 +296,8 @@ export function createModelProvider(name: ProviderName = getConfiguredProviderNa
       return createOpenAIProvider();
     case "ollama":
       return createOllamaProvider();
+    case "vllm":
+      return createVllmProvider();
     case "mock":
     default:
       return createMockProvider();

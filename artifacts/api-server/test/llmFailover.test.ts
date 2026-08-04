@@ -19,6 +19,8 @@ vi.mock("../src/lib/openaiClient", () => {
       Boolean(
         process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
       ),
+    hasLocalLlm: () => Boolean(process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()),
+    localLlmBaseUrl: () => process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || null,
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () =>
@@ -33,6 +35,8 @@ vi.mock("../src/lib/openaiClient", () => {
       process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim()
         ? client
         : null,
+    getLocalLlmClient: () =>
+      process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ? client : null,
     normalizeApiKey: (raw: string | undefined) => {
       if (!raw) return null;
       return raw.trim() || null;
@@ -227,6 +231,29 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(isAnimaCustomMode()).toBe(true);
     expect(getProviderChain()[0]).toBe("gemini");
     expect(getAnimaTierProviderOrder("standard")).toContain("gemini");
+  });
+
+  it("uses local-only when ANIMA_LLM_PROVIDER=local", () => {
+    process.env.ANIMA_LLM_PROVIDER = "local";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    expect(getConfiguredProviderMode()).toBe("local");
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(isOpenAIBlocked()).toBe(true);
+  });
+
+  it("uses local-first hybrid chain when ANIMA_LLM_PROVIDER=local-first", () => {
+    process.env.ANIMA_LLM_PROVIDER = "local-first";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    expect(getConfiguredProviderMode()).toBe("local-first");
+    expect(getProviderChain()).toEqual([
+      "local",
+      "gemini",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+    ]);
+    expect(getLlmRoutingStatus().keys.local).toBe(true);
   });
 });
 

@@ -36,7 +36,8 @@ import {
 import { resolveModel, type ModelTier } from "./modelRouter";
 
 /** Providers that may participate in ensemble drafts. */
-type EnsembleMindId = Exclude<LlmProviderId, "gemini" | "gateway">;
+// Parallel minds stay on cloud vendors; local Qwen is used via sequential failover.
+type EnsembleMindId = Exclude<LlmProviderId, "gemini" | "gateway" | "local">;
 
 export interface MindDraft {
   provider: EnsembleMindId;
