@@ -8,7 +8,13 @@
     "build": "pnpm --filter @workspace/api-server run build && PORT=${PORT:-23660} BASE_PATH=${BASE_PATH:-/} VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_placeholder} pnpm --filter @workspace/anima-protocol run build && rm -rf dist && cp -R artifacts/anima-protocol/dist/public dist",
     "build:all": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "llm:cli": "pnpm --filter @workspace/llm run cli",
+    "llm:prepare-finetune": "pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt",
+    "llm:export-turns": "pnpm --filter @workspace/llm run cli -- export-turns",
+    "llm:list-models": "pnpm --filter @workspace/llm run cli -- list-models --provider vllm",
+    "llm:serve-hint": "pnpm --filter @workspace/llm run cli -- serve-hint",
+    "llm:test": "pnpm --filter @workspace/llm run test"
   },
   "private": true,
   "devDependencies": {
@@ -21,7 +27,8 @@
     "overrides": { 
             "qs@6.15.1": "6.15.2",
       "esbuild": "^0.28.1",
-      "uuid": "^11.1.1"
+      "uuid": "^11.1.1",
+      "pg": "8.20.0"
     }
   },
   "dependencies": {

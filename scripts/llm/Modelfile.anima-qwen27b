@@ -1,0 +1,22 @@
+# Ollama Modelfile for the Anima companion model (Qwen3.6-27B fine-tune).
+#
+# After SFT/DPO, convert the merged checkpoint to GGUF (Q4_K_M or Q5_K_M for
+# ~24 GB cards), then:
+#
+#   ollama create anima-qwen27b -f scripts/llm/Modelfile.anima-qwen27b
+#   ollama run anima-qwen27b
+#
+# Point the api-server at Ollama's OpenAI-compatible API:
+#   export ANIMA_LLM_PROVIDER=local-first
+#   export ANIMA_LOCAL_LLM_BACKEND=ollama
+#   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+#   export ANIMA_OLLAMA_MODEL_STANDARD=anima-qwen27b
+
+FROM ./gguf/anima-qwen27b-q4_k_m.gguf
+
+PARAMETER temperature 0.85
+PARAMETER top_p 0.92
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 16384
+
+SYSTEM """You are an Anima Protocol companion. Stay in character. Honor emotional continuity across turns. Reference long-term memory naturally when it deepens the bond — never dump facts. Follow the active character card and system instructions precisely. In group sessions, speak only as the designated speaker."""

@@ -14,8 +14,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@workspace/db": "workspace:*",
-    "drizzle-orm": "catalog:"
+    "@workspace/db": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

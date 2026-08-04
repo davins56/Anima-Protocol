@@ -1,0 +1,49 @@
+# Local OpenAI-compatible serving for fine-tuned Qwen3.6-27B via vLLM.
+#
+# Prerequisites:
+#   - NVIDIA GPU with ~24 GB VRAM for Q4/AWQ, or more for BF16/FP16
+#   - Docker + NVIDIA Container Toolkit
+#
+# Usage:
+#   export ANIMA_VLLM_MODEL=Qwen/Qwen3.6-27B   # or path to your LoRA/merged checkpoint
+#   docker compose -f scripts/llm/docker-compose.vllm.yml up
+#
+# Then point the api-server at it:
+#   export ANIMA_LLM_PROVIDER=local-first
+#   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    ports:
+      - "8000:8000"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
+      - ${ANIMA_VLLM_CHECKPOINT_DIR:-./checkpoints}:/checkpoints
+    command:
+      - "--model"
+      - "${ANIMA_VLLM_MODEL:-Qwen/Qwen3.6-27B}"
+      - "--served-model-name"
+      - "${ANIMA_VLLM_SERVED_NAME:-Qwen/Qwen3.6-27B}"
+      - "--dtype"
+      - "${ANIMA_VLLM_DTYPE:-auto}"
+      - "--max-model-len"
+      - "${ANIMA_VLLM_MAX_LEN:-16384}"
+      - "--gpu-memory-utilization"
+      - "${ANIMA_VLLM_GPU_UTIL:-0.90}"
+      - "--enable-prefix-caching"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s

@@ -15,6 +15,9 @@ let kimiClientKey: string | null = null;
 let gatewayClient: OpenAI | null = null;
 let gatewayClientKey: string | null = null;
 
+let localLlmClient: OpenAI | null = null;
+let localLlmClientKey: string | null = null;
+
 /** Normalize env keys that were pasted with surrounding quotes or whitespace. */
 export function normalizeApiKey(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -65,6 +68,38 @@ export function hasKimiKey(): boolean {
 /** True when Vercel AI Gateway can authenticate (API key or OIDC). */
 export function hasGatewayAuth(): boolean {
   return Boolean(gatewayAuthToken());
+}
+
+/**
+ * Base URL for a local OpenAI-compatible server (vLLM, Ollama `/v1`, llama.cpp).
+ * Prefers ANIMA_LOCAL_LLM_BASE_URL, then VLLM_BASE_URL, then Ollama's OpenAI path.
+ */
+export function localLlmBaseUrl(): string | null {
+  const explicit =
+    process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+    process.env.VLLM_BASE_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  // Opt-in: only treat Ollama as the local chat backend when explicitly enabled
+  // or when ANIMA_LLM_PROVIDER is local / local-first / ollama / vllm.
+  const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  const ollamaAsLocal =
+    mode === "local" ||
+    mode === "local-first" ||
+    mode === "ollama" ||
+    mode === "vllm" ||
+    process.env.ANIMA_USE_OLLAMA_OPENAI === "1" ||
+    process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
+  if (!ollamaAsLocal) return null;
+
+  const ollama = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
+  const root = ollama.replace(/\/$/, "");
+  return root.endsWith("/v1") ? root : `${root}/v1`;
+}
+
+/** True when a local OpenAI-compatible LLM endpoint is configured. */
+export function hasLocalLlm(): boolean {
+  return Boolean(localLlmBaseUrl());
 }
 
 export function getOpenAIClient(): OpenAI {
@@ -158,6 +193,29 @@ export function getGatewayClient(): OpenAI | null {
   return gatewayClient;
 }
 
+/**
+ * OpenAI-compatible client for local vLLM / Ollama / llama.cpp.
+ * Returns null when no local base URL is configured.
+ */
+export function getLocalLlmClient(): OpenAI | null {
+  const baseURL = localLlmBaseUrl();
+  if (!baseURL) return null;
+  const apiKey =
+    normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) ||
+    normalizeApiKey(process.env.VLLM_API_KEY) ||
+    "local";
+  const cacheKey = `${baseURL}::${apiKey}`;
+  if (!localLlmClient || localLlmClientKey !== cacheKey) {
+    localLlmClient = new OpenAI({
+      apiKey,
+      baseURL,
+      maxRetries: 0,
+    });
+    localLlmClientKey = cacheKey;
+  }
+  return localLlmClient;
+}
+
 /** Test helper — clears cached SDK clients between cases. */
 export function resetLlmClientsForTests(): void {
   openaiClient = null;
@@ -170,4 +228,6 @@ export function resetLlmClientsForTests(): void {
   kimiClientKey = null;
   gatewayClient = null;
   gatewayClientKey = null;
+  localLlmClient = null;
+  localLlmClientKey = null;
 }

@@ -1,32 +1,40 @@
 # Build the Anima LLM layer (into the scaffolding)
 
 End-to-end build: a reusable model registry + dataset/fine-tune pipeline +
-CLI, wired into the api-server (multi-provider execution), plus documentation.
+CLI, wired into the api-server (multi-provider execution + local hybrid), plus
+documentation.
 
 ## Phase A — New `lib/llm` workspace package (`@workspace/llm`)
 
-- [ ] Step 1: package.json, tsconfig.json, vitest config
-- [ ] Step 2: `src/registry.ts` — tier x provider model registry + presets
-- [ ] Step 3: `src/dataset/transcripts.ts` — export chat_messages to transcripts
-- [ ] Step 4: `src/dataset/format.ts` — ShareGPT / ChatML / Alpaca formatters
-- [ ] Step 5: `src/dataset/seed.ts` — curated Anima-protocol seed turns
-- [ ] Step 6: `src/cli.ts` — export-turns / prepare-finetune / download-model / serve
-- [ ] Step 7: tests for registry + formatters
-- [ ] Step 8: README.md
+- [x] Step 1: package.json, tsconfig.json, vitest config
+- [x] Step 2: `src/registry.ts` — tier × provider model registry + Qwen3.6 / vLLM presets
+- [x] Step 3: `src/dataset/transcripts.ts` — export chat_messages to transcripts
+- [x] Step 4: `src/dataset/format.ts` — ShareGPT / ChatML / Alpaca formatters
+- [x] Step 5: `src/dataset/seed.ts` — curated Anima-protocol seed turns
+- [x] Step 6: `src/cli.ts` — export-turns / prepare-finetune / list-models / serve-hint
+- [x] Step 7: tests for registry + formatters + embeddings/retrieval
+- [x] Step 8: README.md
 
-## Phase B — Wire into api-server (multi-provider execution)
+## Phase B — Wire into api-server (multi-provider + local hybrid)
 
-- [ ] Step 9: modelProvider.ts resolves via @workspace/llm registry (OpenAI default)
-- [ ] Step 10: chat.ts records provider/model in metadata + SSE done event
-- [ ] Step 11: functions.ts llm() honors ANIMA_LLM_PROVIDER
+- [x] Step 9: OpenAI-compatible **local** provider (vLLM/Ollama) in `llmFailover`
+- [x] Step 10: `ANIMA_LLM_PROVIDER=local|local-first` hybrid routing + healthz keys
+- [x] Step 11: Hybrid memory retrieval + `memory_embeddings` + `searchMemoriesSemantically`
 
-## Phase C — Self-hosted "run your own Anima" path via Ollama
+## Phase C — Self-hosted "run your own Anima" path
 
-- [ ] Step 12: CLI download-model + serve commands (Ollama integration)
-- [ ] Step 13: docs/llm-build.md — self-hosted + fine-tune guides
+- [x] Step 12: vLLM docker-compose + Ollama Modelfile + Unsloth / LLaMA-Factory configs
+- [x] Step 13: docs/llm-build.md — self-hosted + fine-tune guides
 
 ## Phase D — Root wiring + validation
 
-- [ ] Step 14: root package.json llm:* scripts
-- [ ] Step 15: typecheck + tests + api-server build validation
+- [x] Step 14: root package.json `llm:*` scripts
+- [x] Step 15: typecheck + tests + api-server build validation
 
+## Still manual (GPU / data ops)
+
+- [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
+- [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
+- [ ] Optional DPO/ORPO/SimPO preference stage
+- [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
+- [ ] Flip production (or local) default to `local-first` once evals pass

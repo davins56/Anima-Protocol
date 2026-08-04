@@ -10,6 +10,7 @@ export const REQUIRED_TABLES = [
   "chat_sessions",
   "chat_messages",
   "companion_memories",
+  "memory_embeddings",
   "uploaded_images",
 ] as const;
 
@@ -212,6 +213,23 @@ export async function ensureSchema(
     "table:companion_memories",
   );
 
+  await run(
+    `CREATE TABLE IF NOT EXISTS "memory_embeddings" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "character_id" text NOT NULL,
+      "fact_id" text NOT NULL,
+      "text" text NOT NULL,
+      "memory_type" text DEFAULT 'unknown' NOT NULL,
+      "embedding" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "model" text DEFAULT 'hash-bow-v1' NOT NULL,
+      "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:memory_embeddings",
+  );
+
   // Column default added after initial conversations table existed in prod.
   await run(
     `ALTER TABLE "conversations" ALTER COLUMN "user_id" SET DEFAULT ''`,
@@ -309,6 +327,17 @@ export async function ensureSchema(
     `CREATE INDEX IF NOT EXISTS "companion_memories_user_idx"
        ON "companion_memories" USING btree ("user_id")`,
     "index:companion_memories_user_idx",
+  );
+
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "memory_embeddings_user_char_fact_uq"
+       ON "memory_embeddings" USING btree ("user_id","character_id","fact_id")`,
+    "index:memory_embeddings_user_char_fact_uq",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "memory_embeddings_user_char_idx"
+       ON "memory_embeddings" USING btree ("user_id","character_id")`,
+    "index:memory_embeddings_user_char_idx",
   );
 
   const after = await inspectSchema(db);

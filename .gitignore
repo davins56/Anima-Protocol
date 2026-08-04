@@ -57,6 +57,12 @@ blob-report/
 .vercel/
 .netlify/
 
+# Local LLM fine-tune artifacts (checkpoints, GGUF, exported JSONL)
+scripts/llm/checkpoints/
+scripts/llm/gguf/
+scripts/llm/output/*.jsonl
+!scripts/llm/output/dataset_info.json
+
 # OS and editor state
 .DS_Store
 Thumbs.db
