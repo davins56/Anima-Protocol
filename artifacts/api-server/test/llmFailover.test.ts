@@ -368,7 +368,7 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toThrow(/Details:.*Gemini:.*Kimi/i);
+    ).rejects.toThrow(/Keys are present on the server[\s\S]*Details:.*Gemini:.*Kimi/i);
   });
 
   it("starts each chat turn on Gemini even after prior sticky failures", async () => {
