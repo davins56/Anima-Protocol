@@ -45,6 +45,8 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **If chat fails for every companion with “no credits” or `401 status code (no body)`:** Prefer a working **`GEMINI_API_KEY`**, keep `ANIMA_LLM_PROVIDER=auto`, ensure backups (`KIMI_API_KEY` / `XAI_API_KEY` / `OPENAI_API_KEY`) are funded, **or** set `AI_GATEWAY_API_KEY` so the unpaid AI Gateway last resort can cover. Also check that `ANIMA_LLM_PROVIDER` is a mode name (`auto` / `gemini` / …), not an API key. Image generation still needs a funded `OPENAI_API_KEY`.
 
+**If `/api/healthz/llm` already shows `"keys": { …: true }` for every provider:** the env values are present — the failure is upstream rejection (quota/billing/revoked), not a missing Vercel variable. Open each provider console and fund/repair the account, or set `AI_GATEWAY_API_KEY`. Confirm with `?probe=1` (look for at least one `"ok": true`).
+
 **Gemini setup (recommended):** Create a key at Google AI Studio, set `GEMINI_API_KEY` on Vercel **Production**, set `ANIMA_LLM_PROVIDER=auto` (or `gemini`), and move any `AQ.*` value out of `ANIMA_LLM_PROVIDER` into `GEMINI_API_KEY`. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"gemini"` and a chain like `["gemini","kimi","xai","openai","gateway"]`. Live-test keys with `?probe=1`.
 
 **Chat default is Gemini-first with failover:** Without any chat keys, chat fails with a clear setup error. With `ANIMA_LLM_PROVIDER=anima` / `ensemble` (or `ANIMA_LLM_ENSEMBLE=true`), available minds (**Kimi / Grok / ChatGPT**) draft in parallel, then a combined reply is streamed. Sticky provider failures are skipped on later turns; timed-out mind calls are aborted.
