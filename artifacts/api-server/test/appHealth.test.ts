@@ -39,7 +39,6 @@ describe("app health checks", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ status: "ok" });
   });
-});
 
   it("does not 500 Character store reads when Clerk publishable key is invalid", async () => {
     const response = await fetch(`${baseUrl}/api/store/Character`);

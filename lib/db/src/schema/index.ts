@@ -238,8 +238,6 @@ export const userProfiles = pgTable("user_profiles", {
 });
 
 export type UserProfile = typeof userProfiles.$inferSelect;
-<<<<<<< HEAD
-=======
 
 /**
  * Portable avatar / image uploads for Vercel (no Replit object-storage sidecar).
@@ -262,4 +260,3 @@ export const uploadedImages = pgTable(
 );
 
 export type UploadedImage = typeof uploadedImages.$inferSelect;
->>>>>>> origin/main

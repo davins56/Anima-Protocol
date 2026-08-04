@@ -5,7 +5,6 @@
  * configured in the Clerk dashboard exactly (production uses www.anima-protocol.com).
  */
 
-const ANIMA_WWW = 'https://www.anima-protocol.com';
 export const ANIMA_APEX_HOST = 'anima-protocol.com';
 const ANIMA_WWW = `https://www.${ANIMA_APEX_HOST}`;
 
@@ -43,14 +42,6 @@ export function isVercelPreviewHost(hostname) {
 }
 
 export function isAnimaProductionHost(hostname) {
-  const host = (hostname || '').toLowerCase();
-  return (
-    host === 'anima-protocol.com' ||
-    host === 'www.anima-protocol.com' ||
-    host.endsWith('.anima-protocol.com')
-  );
-}
-
   const host = (hostname || '').toLowerCase().replace(/:\d+$/, '');
   return (
     host === ANIMA_APEX_HOST ||

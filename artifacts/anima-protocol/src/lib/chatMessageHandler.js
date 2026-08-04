@@ -24,7 +24,6 @@ export async function sendChatMessage({
   if (!activeSession) return;
 
   const isContinue = !content || !content.trim();
-  if (isContinue && activeSession.mode !== "group") return;
   if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") return;
 
   const updatedMessages = isContinue

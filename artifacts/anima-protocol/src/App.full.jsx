@@ -18,18 +18,6 @@ import {
   ClerkLoading,
   ClerkProvider,
   HandleSSOCallback,
-<<<<<<< HEAD
-  SignIn,
-  SignUp,
-  Show,
-  useClerk,
-  useSignIn,
-} from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
-import { dark } from "@clerk/themes";
-import { FaApple, FaGithub, FaGoogle } from "react-icons/fa";
-import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
-=======
   SignUp,
   Show,
   useClerk,
@@ -37,7 +25,6 @@ import { Suspense, lazy, useRef, useEffect, useMemo, useState } from "react";
 import EmailCodeSignIn from "@/components/auth/EmailCodeSignIn";
 import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
->>>>>>> origin/main
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
@@ -56,31 +43,13 @@ import {
 } from "@/lib/syncBootstrap";
 import { base44 } from "@/api/base44Client";
 import {
-<<<<<<< HEAD
-=======
   CLERK_FAILURE_HINT,
   CLERK_STALL_HINT,
->>>>>>> origin/main
   isClerkProxyHealthy,
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
   isVercelPreviewHost,
-<<<<<<< HEAD
-  resolveClerkProxyUrl,
-  shouldUseClerkProxy,
-} from "@/lib/clerkProxy";
-import {
-  clerkOAuthCallbackAbsolute,
-  clerkOAuthRedirectPaths,
-} from "@/lib/clerkOAuthPaths";
-
-// Lazy-loaded pages for code splitting
-const Chat = lazy(() => import("./pages/Chat"));
-const NucleusDemo = lazy(() => import("./pages/NucleusDemo"));
-const Codespace = lazy(() => import("./pages/Codespace"));
-const Landing = lazy(() => import("./pages/Landing"));
-=======
   publishableKeyFromFrontendHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
@@ -92,7 +61,6 @@ import Landing from "./pages/Landing";
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
 const Codespace = lazy(() => import("./pages/Codespace"));
->>>>>>> origin/main
 const MainHome = lazy(() => import("./pages/MainHome"));
 const NewChat = lazy(() => import("./pages/NewChat"));
 
@@ -170,10 +138,7 @@ const QuestTrackingDashboard = lazy(
 const CharacterLookCustomizer = lazy(
   () => import("./pages/CharacterLookCustomizer"),
 );
-<<<<<<< HEAD
-=======
 const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"));
->>>>>>> origin/main
 const AIBehaviorSettings = lazy(() => import("./pages/AIBehaviorSettings"));
 const RelationshipAndLocationDashboard = lazy(
   () => import("./pages/RelationshipAndLocationDashboard"),
@@ -261,11 +226,7 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
     return envKey;
   }
 
-<<<<<<< HEAD
-  return publishableKeyFromHost(hostname, envKey || undefined);
-=======
   return publishableKeyFromFrontendHost(hostname, envKey);
->>>>>>> origin/main
 }
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
@@ -273,46 +234,11 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
   viteClerkPublishableKey,
 );
 
-<<<<<<< HEAD
-function isDevClerkKey(key) {
-  const builtIn =
-    typeof import.meta.env.VITE_CLERK_PUBLISHABLE_KEY === "string"
-      ? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-      : "";
-  if (builtIn.startsWith("pk_test_")) return true;
-  return typeof key === "string" && key.startsWith("pk_test_");
-}
-
-=======
->>>>>>> origin/main
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
-<<<<<<< HEAD
-const CLERK_SSO_DASHBOARD_URL =
-  "https://dashboard.clerk.com/last-active?path=user-authentication/sso-connections";
-
-const socialAuthProviders = [
-  {
-    label: "Continue with Google",
-    strategy: "oauth_google",
-    Icon: FaGoogle,
-  },
-  {
-    label: "Continue with Apple",
-    strategy: "oauth_apple",
-    Icon: FaApple,
-  },
-  {
-    label: "Continue with GitHub",
-    strategy: "oauth_github",
-    Icon: FaGithub,
-  },
-];
-=======
->>>>>>> origin/main
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -372,8 +298,6 @@ const clerkAppearance = {
     socialButtonsBlockButton:
       "!border-cyan-400/30 !bg-cyan-400/5 hover:!bg-cyan-400/10",
     socialButtonsBlockButtonText: "!text-cyan-100",
-<<<<<<< HEAD
-=======
     // Apple Production SSO has empty client_id — hide until credentials are set.
     socialButtonsBlockButton__apple: "!hidden",
     socialButtonsProviderIcon__apple: "!hidden",
@@ -387,7 +311,6 @@ const clerkAppearance = {
     // Prefer GitHub while Google/Apple are ops-blocked.
     socialButtonsBlockButton__github:
       "!border-cyan-400/40 !bg-cyan-400/10 hover:!bg-cyan-400/15",
->>>>>>> origin/main
     dividerLine: "!bg-cyan-400/20",
     dividerText: "!text-cyan-400/50",
     formFieldLabel: "!text-cyan-300/80",
@@ -421,289 +344,6 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
-<<<<<<< HEAD
-function formatClerkOAuthError(error) {
-  if (error?.errors?.length) {
-    return error.errors
-      .map((entry) => entry.longMessage || entry.message)
-      .filter(Boolean)
-      .join(" ");
-  }
-  return error?.longMessage || error?.message || "";
-}
-
-function clerkInstanceLabel() {
-  if (typeof clerkPubKey !== "string") return "Clerk";
-  return clerkPubKey.startsWith("pk_test_") ? "Development" : "Production";
-}
-
-function clerkInstanceSlug() {
-  if (typeof clerkPubKey !== "string") return null;
-  const match = clerkPubKey.match(/^pk_(?:test|live)_(.+)$/);
-  if (!match) return null;
-  try {
-    const decoded = atob(match[1]);
-    return decoded.split(".")[0]?.replace(/\$$/, "") ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function providerShortName(strategy) {
-  return strategy.replace(/^oauth_/, "").replace(/^\w/, (c) => c.toUpperCase());
-}
-
-function getEnabledOAuthStrategies(clerk) {
-  const environment =
-    clerk?.__internal_environment ?? clerk?.environment ?? null;
-  const strategies =
-    environment?.userSettings?.authenticatableSocialStrategies ?? null;
-  if (Array.isArray(strategies) && strategies.length > 0) {
-    return strategies;
-  }
-
-  const social = environment?.userSettings?.social;
-  if (social && typeof social === "object") {
-    const fromSocial = Object.values(social)
-      .filter((provider) => provider?.enabled)
-      .map((provider) => provider.strategy)
-      .filter(Boolean);
-    if (fromSocial.length > 0) {
-      return fromSocial;
-    }
-  }
-
-  return null;
-}
-
-function filterProvidersByEnvList(providers) {
-  const envList = import.meta.env.VITE_CLERK_OAUTH_STRATEGIES;
-  if (typeof envList !== "string" || !envList.trim()) {
-    return providers;
-  }
-
-  const allowed = new Set(
-    envList
-      .split(",")
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  return providers.filter((provider) =>
-    allowed.has(provider.strategy.toLowerCase()) ||
-    allowed.has(provider.strategy.replace(/^oauth_/, "").toLowerCase()),
-  );
-}
-
-function clerkSsoSetupHint(providerName) {
-  const instance = clerkInstanceLabel();
-  const slug = clerkInstanceSlug();
-  const instanceNote = slug ? ` (${slug})` : "";
-  if (instance === "Development") {
-    return (
-      `Enable ${providerName} in Clerk Dashboard → Development${instanceNote} → ` +
-      "SSO connections → Add connection → For all users → " +
-      `${providerName}. Leave “Use custom credentials” OFF.`
-    );
-  }
-  return (
-    `Enable ${providerName} in Clerk Dashboard → Production${instanceNote} → ` +
-    "SSO connections with custom OAuth credentials, Proxy URL " +
-    "https://www.anima-protocol.com/api/__clerk, and sign-in/sso-callback redirect URLs."
-  );
-}
-
-function SocialAuthButtons({ mode }) {
-  const clerk = useClerk();
-  const { signIn, fetchStatus } = useSignIn();
-  const [pendingStrategy, setPendingStrategy] = useState(null);
-  const [enabledStrategies, setEnabledStrategies] = useState(null);
-
-  useEffect(() => {
-    if (!clerk.loaded) {
-      setEnabledStrategies(null);
-      return;
-    }
-    const syncStrategies = () => {
-      setEnabledStrategies(getEnabledOAuthStrategies(clerk));
-    };
-    syncStrategies();
-    return clerk.addListener(syncStrategies);
-  }, [clerk, clerk.loaded]);
-
-  const providers = useMemo(() => {
-    if (!clerk.loaded) return [];
-    const configuredProviders = filterProvidersByEnvList(socialAuthProviders);
-    if (isDevClerkKey(clerkPubKey) || !Array.isArray(enabledStrategies)) {
-      return configuredProviders.map((provider) => ({
-        ...provider,
-        isEnabled: true,
-      }));
-    }
-    return configuredProviders.map((provider) => ({
-      ...provider,
-      isEnabled: enabledStrategies.includes(provider.strategy),
-    }));
-  }, [clerk.loaded, enabledStrategies]);
-
-  const missingProviderNames = useMemo(
-    () =>
-      providers
-        .filter((provider) => !provider.isEnabled)
-        .map((provider) => providerShortName(provider.strategy)),
-    [providers],
-  );
-
-  const handleOAuth = async (strategy) => {
-    if (!clerk.loaded || fetchStatus === "fetching") {
-      return;
-    }
-    setPendingStrategy(strategy);
-    // Clerk requires relative same-origin paths — absolute URLs fail validation.
-    const { redirectCallbackUrl, redirectUrl } = clerkOAuthRedirectPaths(
-      basePath,
-      mode,
-    );
-    const redirectCallbackAbsolute = clerkOAuthCallbackAbsolute(
-      window.location.origin,
-      basePath,
-      mode,
-    );
-    try {
-      // OAuth sign-up/sign-in share one transferable flow; always start from signIn.
-      const { error } = await signIn.sso({
-        strategy,
-        redirectCallbackUrl,
-        redirectUrl,
-      });
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      console.error("OAuth redirect failed", error);
-      const providerName =
-        socialAuthProviders.find((provider) => provider.strategy === strategy)
-          ?.label ?? "That provider";
-      const detail = formatClerkOAuthError(error);
-      const shortName = providerShortName(strategy);
-      const instanceHint =
-        clerkInstanceLabel() === "Development"
-          ? "Enable Google and GitHub under Clerk Dashboard → Development → Configure → SSO connections, and set VITE_CLERK_PUBLISHABLE_KEY + CLERK_PUBLISHABLE_KEY to the same pk_test_ value on Vercel."
-          : "Enable Google and GitHub under Clerk Dashboard → Production → SSO connections with custom OAuth credentials (see docs/clerk-github-login.md). Development settings do not apply to pk_live_.";
-      const previewNote = isVercelPreviewHost(window.location.hostname)
-        ? " Vercel preview URLs change on each deploy — redeploy (or restart the API) so redirect URLs auto-register, or run pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects --preview-host=" +
-          window.location.host +
-          "."
-        : "";
-      const redirectHint = `Add ${redirectCallbackAbsolute} under Clerk → Paths → Redirect URLs.${previewNote}`;
-      toast.error(
-        detail
-          ? `${detail} ${instanceHint} ${redirectHint}`
-          : `${providerName} is not available for this Clerk ${clerkInstanceLabel()} instance. ${clerkSsoSetupHint(shortName)} ${instanceHint} ${redirectHint}`,
-      );
-      setPendingStrategy(null);
-    }
-  };
-
-  return (
-    <div className="w-full space-y-2">
-      {!clerk.loaded ? (
-        <p className="py-2 text-center text-sm text-cyan-400/50">
-          Loading sign-in options…
-        </p>
-      ) : providers.length === 0 ? (
-        <div className="space-y-2 py-2 text-center text-sm text-cyan-400/50">
-          <p>Google and GitHub sign-in are not enabled in Clerk yet.</p>
-          <p className="text-xs leading-relaxed text-cyan-400/40">
-            Add OAuth credentials under Clerk → Production → SSO connections
-            (see docs/clerk-github-login.md). Email sign-in below still works
-            when Clerk connects.
-          </p>
-        </div>
-      ) : (
-        providers.map(({ label, strategy, Icon, isEnabled }) => (
-          <button
-            key={strategy}
-            type="button"
-            disabled={
-              isEnabled &&
-              (Boolean(pendingStrategy) || fetchStatus === "fetching")
-            }
-            title={
-              isEnabled
-                ? undefined
-                : clerkSsoSetupHint(providerShortName(strategy))
-            }
-            onClick={() => {
-              if (!isEnabled) {
-                toast.error(clerkSsoSetupHint(providerShortName(strategy)));
-                return;
-              }
-              handleOAuth(strategy);
-            }}
-            className={`flex h-10 w-full items-center justify-center gap-2 rounded border px-4 text-sm font-semibold transition ${
-              isEnabled
-                ? "border-cyan-400/30 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
-                : "cursor-pointer border-amber-400/20 bg-amber-400/5 text-amber-200/70 hover:bg-amber-400/10"
-            }`}
-          >
-            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="text-left">
-              {pendingStrategy === strategy
-                ? "Redirecting..."
-                : isEnabled
-                  ? label
-                  : `${label} (not set up in Clerk)`}
-            </span>
-          </button>
-        ))
-      )}
-      {missingProviderNames.length > 0 ? (
-        <div className="pt-2 text-center text-xs leading-relaxed text-amber-300/80">
-          <p>
-            Only{" "}
-            {providers
-              .filter((provider) => provider.isEnabled)
-              .map((provider) => providerShortName(provider.strategy))
-              .join(", ") || "email"}{" "}
-            is active in Clerk {clerkInstanceLabel()}
-            {clerkInstanceSlug() ? ` (${clerkInstanceSlug()})` : ""}. To enable{" "}
-            {missingProviderNames.join(" and ")}: Clerk Dashboard →{" "}
-            {clerkInstanceLabel()} → SSO connections → Add connection → For all
-            users.
-          </p>
-          <a
-            href={CLERK_SSO_DASHBOARD_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 inline-block text-cyan-300 underline hover:text-cyan-200"
-          >
-            Open Clerk SSO settings
-          </a>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ClerkLoginDiagnostics() {
-  const [hints, setHints] = useState([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const next = await probeClerkConnectivity(clerkPubKey);
-      if (!cancelled) setHints(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (hints.length === 0) return null;
-
-  return (
-    <div className="rounded-md border border-amber-400/35 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
-=======
 /** Delay before showing stall diagnostics so healthy loads never flash a warning. */
 const CLERK_DIAGNOSTICS_STALL_MS = 4000;
 
@@ -714,7 +354,6 @@ function ClerkDiagnosticsBanner({ hints }) {
   if (!hints?.length) return null;
   return (
     <div className="rounded-md border border-amber-400/35 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-100">
->>>>>>> origin/main
       {hints.map((hint) => (
         <p key={hint} className="mt-1 first:mt-0">
           {hint}
@@ -724,8 +363,6 @@ function ClerkDiagnosticsBanner({ hints }) {
   );
 }
 
-<<<<<<< HEAD
-=======
 /**
  * Connectivity hints only when Clerk failed, or is still loading after a stall
  * timeout. Avoids always-on false positives when sign-in is already working.
@@ -814,22 +451,11 @@ function ClerkFailedConnectivityHints() {
   );
 }
 
->>>>>>> origin/main
 function AuthFormShell({ mode, children }) {
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
         <ClerkLoginDiagnostics />
-<<<<<<< HEAD
-        <div className="rounded-md border border-cyan-400/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
-          <SocialAuthButtons mode={mode} />
-          <p className="mt-3 text-center text-xs text-cyan-400/45">
-            {mode === "sign-in"
-              ? "Use GitHub if that is how you created your account. You can also sign in with email below."
-              : "Or continue with email below."}
-          </p>
-        </div>
-=======
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
             Prefer Continue with GitHub, or the username/email already on your
@@ -837,7 +463,6 @@ function AuthFormShell({ mode, children }) {
             their provider redirect URIs are fixed.
           </p>
         ) : null}
->>>>>>> origin/main
         {children}
       </div>
     </div>
@@ -867,17 +492,6 @@ function SignInPage() {
         </p>
       </ClerkFailed>
       <ClerkLoaded>
-<<<<<<< HEAD
-        <SignIn
-          routing="path"
-          path={`${basePath}/sign-in`}
-          signUpUrl={`${basePath}/sign-up`}
-          oauthFlow="redirect"
-          transferable
-          fallbackRedirectUrl={authRedirectCompleteUrl}
-          forceRedirectUrl={authRedirectCompleteUrl}
-        />
-=======
         <EmailCodeSignIn />
         <p className="px-1 text-center text-xs text-cyan-400/45">
           Need an account?{" "}
@@ -888,7 +502,6 @@ function SignInPage() {
             Join the waitlist
           </a>
         </p>
->>>>>>> origin/main
       </ClerkLoaded>
     </AuthFormShell>
   );
@@ -1001,25 +614,12 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
-<<<<<<< HEAD
-  const { isLoadingAuth, authStalled } = useAuth();
-
-  // Clerk <Show> renders nothing until the SDK loads. If Clerk stalls, fall back
-  // to the public landing so production never shows a blank screen.
-  if (isLoadingAuth && authStalled) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <Landing />
-      </Suspense>
-    );
-=======
   const { isLoadingAuth } = useAuth();
 
   // Clerk <Show> renders nothing until the SDK loads. Show the title screen
   // immediately so cold starts never sit on a blank/initialising spinner.
   if (isLoadingAuth) {
     return <Landing />;
->>>>>>> origin/main
   }
 
   return (
@@ -1028,13 +628,7 @@ function HomeGate() {
         <SignedInHome />
       </Show>
       <Show when="signed-out">
-<<<<<<< HEAD
-        <Suspense fallback={<PageLoader />}>
-          <Landing />
-        </Suspense>
-=======
         <Landing />
->>>>>>> origin/main
       </Show>
     </>
   );
@@ -1063,15 +657,11 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-<<<<<<< HEAD
-  const [useProxy, setUseProxy] = useState(null);
-=======
   // Skip the null/health-check wait when no proxy is configured so Clerk and
   // the title screen mount on the first paint.
   const [useProxy, setUseProxy] = useState(() =>
     initialClerkProxyUrl ? null : false,
   );
->>>>>>> origin/main
   const [providerKey, setProviderKey] = useState(0);
 
   useEffect(() => {
@@ -1112,15 +702,10 @@ function ClerkProviderWithRoutes({ children }) {
     setProviderKey((key) => key + 1);
   };
 
-<<<<<<< HEAD
-  if (useProxy === null) {
-    return <PageLoader />;
-=======
   // While the proxy health check runs, paint the title screen instead of a
   // spinner so cold opens go straight to Landing.
   if (useProxy === null) {
     return <Landing />;
->>>>>>> origin/main
   }
 
   return (
@@ -1320,22 +905,11 @@ const AuthenticatedApp = () => {
     }
   }
 
-<<<<<<< HEAD
-  // Wait for Clerk to resolve the session before deciding what to show.
-  if (isLoadingAuth && !authStalled) {
-    return <PageLoader />;
-  }
-
-=======
->>>>>>> origin/main
   // Gate protected routes: signed-out users are sent to the public Landing.
   const pathname = location.pathname;
   const isPublicPath =
     pathname === "/" ||
     PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
-<<<<<<< HEAD
-  if (!isAuthenticated && !isPublicPath) {
-=======
 
   // While Clerk boots, render public routes (especially `/` → title screen)
   // immediately. Protected routes still wait on a short loader; if auth stalls,
@@ -1345,7 +919,6 @@ const AuthenticatedApp = () => {
       return <PageLoader />;
     }
   } else if (!isAuthenticated && !isPublicPath) {
->>>>>>> origin/main
     return <Navigate to="/" replace />;
   }
 
@@ -1410,17 +983,6 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
-<<<<<<< HEAD
-                path="/nucleus"
-                element={
-                  <Suspense fallback={<PageLoader />}>
-                    <NucleusDemo />
-                  </Suspense>
-                }
-              />
-              <Route
-=======
->>>>>>> origin/main
                 path="/codespace"
                 element={
                   <Suspense fallback={<PageLoader />}>
@@ -1666,12 +1228,7 @@ const AuthenticatedApp = () => {
               <Route
                 path="/locationsmap"
                 element={
-<<<<<<< HEAD
-                  <Suspense fallba
-                  ßck={<PageLoader />}>
-=======
                   <Suspense fallback={<PageLoader />}>
->>>>>>> origin/main
                     <LocationsMap />
                   </Suspense>
                 }
@@ -1837,8 +1394,6 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
-<<<<<<< HEAD
-=======
                 path="/customise-anima"
                 element={
                   <Suspense fallback={<PageLoader />}>
@@ -1847,7 +1402,6 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
->>>>>>> origin/main
                 path="/orchestrate/:sessionId"
                 element={
                   <Suspense fallback={<PageLoader />}>
@@ -2196,52 +1750,9 @@ const AuthenticatedApp = () => {
 function App() {
   useViewportHeight();
 
-<<<<<<< HEAD
-  // Guard against rare “black screen” failure modes during auth/clerk
-  // initialization by always rendering a visible background + message while
-  // providers settle.
-  const [stallVisible, setStallVisible] = useState(true);
-  useEffect(() => {
-    const t = setTimeout(() => setStallVisible(false), 10_000);
-    return () => clearTimeout(t);
-  }, []);
-
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>
-        {stallVisible && (
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-background"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="w-full max-w-md px-4">
-              <div className="rounded-md border border-primary/30 bg-[#090912] p-4 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-primary/50">
-                      Initializing
-                    </p>
-                    <p className="mt-2 text-sm text-primary/90">
-                      The app is still starting up. If this persists, check Clerk
-                      connectivity / console errors.
-                    </p>
-                  </div>
-                  <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-                </div>
-                <p className="mt-3 text-xs leading-relaxed text-primary/40">
-                  Current environment: auth + routing providers are loading.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-=======
-  return (
-    <QueryClientProvider client={queryClientInstance}>
-      <Router>
->>>>>>> origin/main
         <ErrorBoundary resetKey={window.location?.pathname || "init"}>
           <ClerkProviderWithRoutes>
             <AuthProvider>

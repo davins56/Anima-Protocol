@@ -20,10 +20,7 @@ import {
   Settings,
   Zap,
   Scroll,
-<<<<<<< HEAD
-=======
   Palette,
->>>>>>> origin/main
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,10 +33,7 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
 
   const menuItems = [
     { icon: Settings, label: "Settings", path: "/settings", title: "Settings" },
-<<<<<<< HEAD
-=======
     { icon: Palette, label: "Customise Anima", path: "/customise-anima", title: "Customise Anima look" },
->>>>>>> origin/main
     { icon: BookMarked, label: "Storyboard", path: "/storyboard", title: "Storyboard" },
     { icon: BookOpen, label: "Lore Book", path: "/lorebook", title: "Lore Book" },
     { icon: Newspaper, label: "Journals", path: "/journals", title: "Journals" },

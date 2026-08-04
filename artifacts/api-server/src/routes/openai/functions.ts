@@ -3,13 +3,6 @@ import { toFile } from "openai";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { rateLimit } from "../../lib/rateLimit";
-import { notifyUser } from "../../lib/storeEvents";
-import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
-import { getOpenAIClient } from "../../lib/openaiClient";
-
-const router = Router();
-router.use(rateLimit);
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
@@ -29,9 +22,6 @@ router.use((req, res, next) => {
 });
 
 async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
-  const resp = await getOpenAIClient().chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: maxTokens,
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
@@ -41,7 +31,6 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
       { role: "user", content: userPrompt },
     ],
   });
-  return resp.choices[0]?.message?.content ?? "";
   return result.content;
 }
 
@@ -213,9 +202,6 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 // Reads an uploaded photo with a vision model: OCRs any visible text and
 // describes the image, then distills it into the same ContextAnalysis shape.
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
-  const resp = await getOpenAIClient().chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 1500,
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
@@ -236,7 +222,6 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
       },
     ],
   });
-  return parseContextAnalysis(resp.choices[0]?.message?.content ?? "");
   return parseContextAnalysis(result.content);
 }
 
@@ -1059,10 +1044,6 @@ export function mapImageEditError(err: unknown): {
     };
   }
 
-  return {
-    status: upstreamStatus ?? 500,
-    code: "server_error",
-    error: rawMessage,
   // Invalid / missing OpenAI API key — never echo the key material OpenAI
   // includes in the raw 401 message (e.g. "Incorrect API key provided: sk-…").
   if (

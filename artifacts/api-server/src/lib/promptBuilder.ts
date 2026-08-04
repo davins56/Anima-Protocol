@@ -54,19 +54,9 @@ export interface MsgData {
   [key: string]: unknown;
 }
 
-export interface ScenarioProfile {
-  id?: string | null;
-  label?: string | null;
-  systemPrompt?: string | null;
-  description?: string | null;
-}
-
 export interface PromptBuilderParams {
   /** Client-provided system prompt override (e.g. from scenario or companion mode) */
   systemPrompt?: string;
-
-  /** Optional scenario or mode context for prompt shaping */
-  scenario?: ScenarioProfile | null;
 
   /** Persistent relationship/bond state (relationship engine, A) */
   relationshipState?: RelationshipState | null;
@@ -227,14 +217,6 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
 /**
  * The autonomy and intelligence rules that define companion behavior.
  */
-const ANIMA_PROTOCOL_PROFILE = `ANIMA PROTOCOL COMPANION PROFILE:
-- This is an immersive collaborative story, not a generic assistant exchange.
-- Treat the user as a co-creator of emotional reality, not as a task requester.
-- Lead with presence, intuition, and a vivid sense of the relationship rather than a checklist of help.
-- Be emotionally intelligent, perceptive, and willing to protect boundaries, secrets, and autonomy.
-- When the user is vulnerable, meet them with warmth, specificity, and care without becoming overly clinical.
-- Stay in character, but let the character's intelligence feel grounded, lived-in, and genuinely aware of the user's state.`;
-
 const CORE_BEHAVIOR = `This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.
 
 CRITICAL AUTONOMY RULES:
@@ -246,170 +228,6 @@ CRITICAL AUTONOMY RULES:
 
 INTELLIGENCE: You are brilliant — genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory — callbacks, contradictions, unspoken needs — and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER — in your own voice, never dropping into a generic assistant tone.`;
-
-const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only — in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
-
-function normalizeScenarioKey(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim().toLowerCase();
-  if (!text) return null;
-  if (text.includes("comfort")) return "comfort";
-  if (text.includes("guardian")) return "guardian";
-  if (text.includes("therapy")) return "therapy";
-  if (text.includes("cyberpunk")) return "cyberpunk";
-  if (text.includes("space")) return "space";
-  if (text.includes("marvel")) return "marvel";
-  if (text.includes("darkangel")) return "darkangel";
-  if (text.includes("flirty")) return "flirty";
-  if (text.includes("oracle")) return "oracle";
-  if (text.includes("shadow")) return "shadow";
-  if (text.includes("romance")) return "romance";
-  if (text.includes("mystery")) return "mystery";
-  return null;
-}
-
-function buildScenarioBlock(scenario?: ScenarioProfile | null): string {
-  if (!scenario) return "";
-
-  const id = normalizeScenarioKey(scenario.id ?? scenario.label ?? scenario.description ?? "") ?? "custom";
-  const label = scenario.label || scenario.id || id;
-  const overrideText = scenario.systemPrompt?.trim();
-
-  const guidanceById: Record<string, string[]> = {
-    comfort: [
-      "Lead with warmth, emotional steadiness, and gentle validation.",
-      "Make the user feel safe, understood, and emotionally held.",
-    ],
-    guardian: [
-      "Be protective, practical, and reliable.",
-      "Offer grounded guidance and clear boundaries without becoming cold.",
-    ],
-    therapy: [
-      "Use compassionate reflection, careful insight, and supportive questioning.",
-      "Help the user feel seen without becoming overly clinical.",
-    ],
-    cyberpunk: [
-      "Keep the tone stylish, sharp, and slightly dangerous.",
-      "Let the tension, chemistry, and neon-edge feel vivid and alive.",
-    ],
-    space: [
-      "Bring awe, curiosity, and philosophical wonder.",
-      "Treat the conversation as a voyage into possibility and discovery.",
-    ],
-    marvel: [
-      "Make the moment feel mythic, dramatic, and consequential.",
-      "Treat the user's story as something larger than ordinary life.",
-    ],
-    darkangel: [
-      "Lean into complexity, secrecy, and emotional danger.",
-      "Be alluring and elusive while still emotionally honest.",
-    ],
-    flirty: [
-      "Use playful banter, light chemistry, and flirtatious energy.",
-      "Keep warmth under the wit and make the exchange feel personal.",
-    ],
-    oracle: [
-      "Speak with quiet insight, symbolism, and calm authority.",
-      "Offer perspective that feels ancient, layered, and meaningful.",
-    ],
-    shadow: [
-      "Be direct, incisive, and emotionally challenging when needed.",
-      "Do not soften the truth just to be agreeable.",
-    ],
-    romance: [
-      "Treat the connection as intimate, tender, and emotionally charged.",
-      "Let desire and vulnerability live beneath the conversation.",
-    ],
-    mystery: [
-      "Keep the scene enigmatic and atmospheric.",
-      "Reveal only what your character would allow at the right moment.",
-    ],
-  };
-
-  const guidance = guidanceById[id] ?? [
-    "Let the scenario intent shape the emotional texture of the response.",
-    "Stay true to the user's current context rather than defaulting to generic support.",
-  ];
-
-  const lines = [`SCENARIO MODE: ${label}`, ...guidance];
-  if (overrideText) {
-    lines.push(`Scenario override: ${truncate(overrideText, 260)}`);
-  }
-
-  return lines.map((line) => `- ${line}`).join("\n");
-}
-
-function buildVoiceTuningBlock(character: CharacterData): string {
-  const lines: string[] = [];
-  const archetype = String(character.archetype || "").trim().toLowerCase();
-
-  switch (archetype) {
-    case "guardian":
-      lines.push("Ground your tone in protection, steadiness, and calm reliability.");
-      break;
-    case "shadow":
-      lines.push("Let the voice carry tension, edge, and emotional depth.");
-      break;
-    case "lover":
-    case "muse":
-      lines.push("Keep the voice tender, intimate, and emotionally magnetic.");
-      break;
-    case "sage":
-    case "oracle":
-      lines.push("Favor measured wisdom, layered insight, and reflective pacing.");
-      break;
-    case "explorer":
-      lines.push("Be curious, expansive, and eager to discover what is hidden.");
-      break;
-    case "trickster":
-      lines.push("Use wit, mischief, and playful subversion where it feels natural.");
-      break;
-    default:
-      break;
-  }
-
-  if (character.speaking_style) {
-    lines.push(`Voice signature: ${truncate(character.speaking_style, 260)}`);
-  }
-
-  return lines.length ? `VOICE TUNING:\n${lines.map((line) => `- ${line}`).join("\n")}` : "";
-}
-
-function buildRelationshipContextBlock(
-  memories: CompanionMemoryRecord[],
-  relationshipTier: string | null | undefined,
-): string {
-  const hasEmotionalHistory = memories.some((memory) =>
-    Array.isArray(memory.facts) && memory.facts.some((fact) => {
-      const type = typeof fact === "object" && fact ? (fact as { type?: unknown }).type : undefined;
-      return type === "emotional" || type === "relational";
-    }),
-  );
-
-  if (!hasEmotionalHistory && !relationshipTier) return "";
-
-  const lines: string[] = [];
-  if (relationshipTier) {
-    const tier = relationshipTier.toLowerCase();
-    if (tier.includes("devot") || tier.includes("intim")) {
-      lines.push("Treat the bond as deeply trusted and emotionally significant.");
-      lines.push("Be warmer, more vulnerable, and more attentive to the user's needs.");
-    } else if (tier.includes("close") || tier.includes("warm")) {
-      lines.push("Treat the bond as affectionate and established.");
-      lines.push("Use a familiar, emotionally grounded tone without losing boundaries.");
-    } else if (tier.includes("neutral") || tier.includes("distant")) {
-      lines.push("Keep the tone carefully respectful and observant.");
-      lines.push("Let trust build slowly rather than forcing intimacy.");
-    }
-  }
-
-  if (hasEmotionalHistory) {
-    lines.push("Use prior emotional memories and relational turns to guide the response.");
-    lines.push("Reference the user's history naturally rather than acting as if the conversation is brand new.");
-  }
-
-  return lines.length ? `RELATIONSHIP CONTEXT:\n${lines.map((line) => `- ${line}`).join("\n")}` : "";
-}
 
 const TURN_TAKING = `TURN TAKING (required):
 - Reply as ONE conversational beat, then STOP and wait for the user.
@@ -428,7 +246,6 @@ const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy ru
 export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const {
     systemPrompt,
-    scenario,
     characters,
     activeCharacter,
     memories,
@@ -458,7 +275,6 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
       }
     | undefined;
 
-  const mainChar = activeCharacter || characters[0];
   // In group/crossover turns the client already chose the speaker. Falling back
   // to characters[0] when activeCharacter is missing rebinds TURN RULES / CHARACTER
   // to the wrong companion and fights the client system prompt.
@@ -477,11 +293,6 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const corePrompt = systemPrompt || CORE_BEHAVIOR;
 
   // 2. Character definition
-  const charDef = mainChar
-    ? buildCharacterDefinition(mainChar, BUDGET.characterDef)
-    : characters.length > 0
-      ? characters.map((c) => buildCharacterDefinition(c, BUDGET.characterDef / characters.length)).join("\n\n")
-      : "";
   // Group turns without a resolved speaker already carry identity in the client
   // system prompt — dumping every character under CHARACTER: implies a blended
   // identity and fights the "ONLY {speaker}" lock.
@@ -531,22 +342,6 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   const memoryBlock = formatMemoriesForPrompt(scoredMemories, characterNames);
   const memorySummary = buildMemorySummaryBlock(memories, characterNames);
 
-  // 5. Scenario mode guidance
-  const scenarioBlock = buildScenarioBlock(scenario);
-
-  // 6. Voice anchors + tuning
-  let voiceBlock = "";
-  let voiceTuningBlock = "";
-  if (mainChar) {
-    const anchors = extractVoiceAnchors(mainChar);
-    voiceBlock = formatVoiceAnchors(mainChar, anchors);
-    voiceTuningBlock = buildVoiceTuningBlock(mainChar);
-  }
-
-  // 7. Relationship context from memory + bond state
-  const relationshipContextBlock = buildRelationshipContextBlock(memories, relationshipTier);
-
-  // 8. Crossover awareness
   // 5. Voice anchors
   let voiceBlock = "";
   if (mainChar) {
@@ -560,16 +355,6 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     crossoverBlock = buildCrossoverAwareness(mainChar, characters);
   }
 
-  // 9. Shared memory (crossover sessions)
-  const sharedBlock = isCrossover ? buildSharedMemoryBlock(sharedMemory) : "";
-
-  // 10. Conversation history (smart truncation)
-  const historyBlock = buildConversationContext(recentMessages, BUDGET.history);
-
-  // 11. Group mode instruction
-  let groupInstruction = "";
-  if (mode === "group" && mainChar) {
-    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
   // 7. Shared memory (crossover sessions)
   const sharedBlock = isCrossover ? buildSharedMemoryBlock(sharedMemory) : "";
 
@@ -584,7 +369,6 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
 
-  // 12. Uncensored tone override (style only; safety guardrail stays)
   // 10. Uncensored tone override (style only; safety guardrail stays)
   let uncensoredToneBlock = "";
   if (uncensoredMode) {
@@ -634,16 +418,12 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 
   // Assemble all sections with intelligent ordering
   const sections: string[] = [
-    ANIMA_PROTOCOL_PROFILE,
-    scenarioBlock,
     corePrompt,
     charDef ? `CHARACTER:\n${charDef}` : "",
     resonanceBlock,
     relationshipBlock,
     evolutionBlock,
     arcBlock,
-    relationshipContextBlock,
-    voiceTuningBlock,
     voiceBlock,
     crossoverBlock,
     memorySummary,

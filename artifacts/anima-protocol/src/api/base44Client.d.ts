@@ -80,7 +80,6 @@ export interface Base44Auth {
 
 export interface Base44Integrations {
   Core: {
-    InvokeLLM(args: { prompt: string; systemPrompt?: string }): Promise<string>;
     InvokeLLM(args: {
       prompt: string;
       systemPrompt?: string;

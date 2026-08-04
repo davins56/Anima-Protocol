@@ -7,10 +7,7 @@ export default function ChatUIContainer({
   characters,
   onSpeak,
   normalModeContent,
-<<<<<<< HEAD
-=======
   onAvatarClick,
->>>>>>> origin/main
 }) {
   const { isFocusMode, toggleFocusMode } = useFocusMode();
 
@@ -33,10 +30,7 @@ export default function ChatUIContainer({
               characters={characters}
               isFocusMode={true}
               onSpeak={onSpeak}
-<<<<<<< HEAD
-=======
               onAvatarClick={onAvatarClick}
->>>>>>> origin/main
             />
           </div>
         ) : (

@@ -1,31 +1,20 @@
-<<<<<<< HEAD
-import { useState } from "react";
-import { Plus, Zap, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
-=======
 import { useRef, useState } from "react";
 import { Plus, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
->>>>>>> origin/main
 import SessionSummary from "../sidebar/SessionSummary";
 
 import SidebarFooterMenu from "./SidebarFooterMenu";
 
-<<<<<<< HEAD
-=======
 const SWIPE_DELETE_THRESHOLD = -80;
 const SWIPE_REVEAL_THRESHOLD = -40;
 
->>>>>>> origin/main
 export default function Sidebar({ sessions, activeSessionId, onNewSession, onDeleteSession, mode, onModeChange, onNavigate, collapsed, onToggleCollapse, hasMore, currentPage, onNextPage, onPrevPage }) {
 
   const paged = typeof currentPage === "number";
   const showPager = paged && (hasMore || currentPage > 0);
 
   const navigate = useNavigate();
-<<<<<<< HEAD
-=======
   const [swipeStart, setSwipeStart] = useState({});
   const [swipeOffset, setSwipeOffset] = useState({});
   const swipeAxisRef = useRef({});
@@ -69,7 +58,6 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
     setSwipeOffset({});
     delete swipeAxisRef.current[sessionId];
   };
->>>>>>> origin/main
 
   if (collapsed) {
     return (
@@ -149,58 +137,12 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
       </div>
 
       {/* Sessions List */}
-<<<<<<< HEAD
-      <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 min-h-0">
-=======
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 min-h-0" data-no-swipe>
->>>>>>> origin/main
         {sessions.length === 0 && (
           <p className="text-center text-primary/20 font-mono text-[10px] py-8 tracking-widest uppercase">
             No sessions
           </p>
         )}
-<<<<<<< HEAD
-        {sessions.map((session) => (
-
-          <div key={session.id}>
-            <div
-              className={`group relative flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-all ${
-                activeSessionId === session.id
-                  ? "bg-primary/10 border border-primary/30 text-primary"
-                  : "text-primary/40 hover:bg-primary/5 hover:text-primary/70 border border-transparent"
-              }`}
-              onClick={() => {
-                navigate(`/chat/${session.id}`);
-                onNavigate?.();
-              }}
-            >
-              <MessageSquare className="w-3 h-3 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="font-mono text-[9px] sm:text-[10px] tracking-wider uppercase truncate">
-                    {session.title || "Untitled"}
-                  </p>
-                  {session.deep_mode && (
-                    <span
-                      title="Deep mode ON — replies use the most capable model"
-                      className="flex items-center gap-0.5 flex-shrink-0 px-1 py-0.5 border border-primary/40 text-primary bg-primary/10 font-mono text-[7px] sm:text-[8px] tracking-widest uppercase"
-                    >
-                      <Sparkles className="w-2 h-2" />
-                      <span>Deep</span>
-                    </span>
-                  )}
-                </div>
-                {session.last_message && (
-                  <p className="text-[8px] sm:text-[9px] text-primary/30 truncate mt-0.5">{session.last_message}</p>
-                )}
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }}
-                className="opacity-0 group-hover:opacity-100 text-primary/30 hover:text-destructive transition-all"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-=======
         {sessions.map((session) => {
           const offset = swipeOffset[session.id] || 0;
 
@@ -266,18 +208,13 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
               >
                 <Trash2 className="w-4 h-4 text-red-400" />
               </motion.div>
->>>>>>> origin/main
             </div>
             {activeSessionId === session.id && (
               <SessionSummary sessionId={session.id} characterId={session.character_id} />
             )}
           </div>
-<<<<<<< HEAD
-        ))}
-=======
           );
         })}
->>>>>>> origin/main
 
         {showPager && (
           <div className="flex items-center justify-between gap-2 pt-2 mt-1 border-t border-primary/10">
@@ -326,8 +263,4 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
 
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> origin/main
