@@ -6,7 +6,7 @@ import {
   inspectSchema,
 } from "@workspace/db";
 import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
-import { getLlmRoutingStatus } from "../lib/llmFailover";
+import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
 
 const router: IRouter = Router();
 
@@ -22,10 +22,37 @@ router.get("/healthz", (_req, res) => {
  * Public LLM routing probe (no secrets). Shows which chat provider chain will
  * be used so we can confirm Gemini-first / failover deploys without reading
  * Vercel env UI. API-key-like ANIMA_LLM_PROVIDER values are redacted.
+ *
+ * Add `?probe=1` to live-test each configured provider with a tiny completion
+ * and return secret-free per-provider ok/auth/quota results.
  */
-router.get("/healthz/llm", (_req, res) => {
+router.get("/healthz/llm", async (req, res) => {
   const routing = getLlmRoutingStatus("standard");
-  res.status(routing.status === "ok" ? 200 : 503).json(routing);
+  const wantProbe =
+    req.query.probe === "1" ||
+    req.query.probe === "true" ||
+    req.query.probe === "yes";
+
+  if (!wantProbe) {
+    res.status(routing.status === "ok" ? 200 : 503).json(routing);
+    return;
+  }
+
+  try {
+    const probes = await probeLlmProviders("light");
+    const anyOk = probes.some((p) => p.ok);
+    res.status(anyOk || routing.status === "ok" ? 200 : 503).json({
+      ...routing,
+      probes,
+      probeOk: anyOk,
+    });
+  } catch (err) {
+    res.status(503).json({
+      ...routing,
+      probeOk: false,
+      probeError: err instanceof Error ? err.message : String(err),
+    });
+  }
 });
 
 /**

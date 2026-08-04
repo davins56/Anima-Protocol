@@ -627,7 +627,7 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-  let usedProvider: "openai" | "xai" | "gemini" | "kimi" = "openai";
+  let usedProvider: "openai" | "xai" | "gemini" | "kimi" | "gateway" = "openai";
   let usedBrand: "anima" | undefined;
   let failedOver = false;
   let ensembleMinds: string[] | undefined;
