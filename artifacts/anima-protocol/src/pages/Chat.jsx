@@ -100,7 +100,6 @@ import {
   buildLewdityGuide,
   buildGroupIntimacyGuidance,
   buildIntimatePlayAlongGuidance,
-  groupSpeakerIntimacyRules,
   filterIntimacyEligibleSpeakers,
   isIntimacyEligibleSpeaker,
 } from "@/lib/contentRatingInstruction";
@@ -1431,85 +1430,77 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
           prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
         } else {
 
-          // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
-          // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
-          const recentSpeakers = updatedMessages.slice(-6)
-            .filter(m =>
-              m.role === "assistant" &&
-              m.character_name !== "Narrator" &&
-              m.character_name !== "__typing__" &&
-              m.character_name !== "__thinking__" &&
-              !m.is_streaming
-            )
-            .map(m => m.character_name);
-          const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
-
-          const shouldOutOfTurn =
-            Math.random() < 0.35 && // 35% per request
-            groupChars.length >= 2 &&
-            !isContinue;
-
-          const charSummaries = groupChars.map(c =>
-            `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
-          ).join("\n");
-
-          const recentConvoSnippet = updatedMessages.slice(-6)
-            .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
-            .join("\n");
-
-          const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
-
-Characters:
-${charSummaries}
-
-Recent conversation:
-${recentConvoSnippet}
-
-Last speaker: ${lastSpeaker || "none"}
-
-Rules:
-- Choose whoever has the strongest in-character reason to react RIGHT NOW
-- The same character can speak again if it makes sense narratively
-- Consider who might be provoked, excited, curious, threatened, or emotionally moved by what just happened
-- Pick the character who would most authentically respond to what just happened
-${groupSpeakerIntimacyRules(lewdTiming)}
-
-Reply with ONLY the character's exact name — nothing else.`;
-
+          // Scene Mind: server-owned director picks who speaks next (force /
+          // @address / LLM director / least-recent / interrupt). Intimacy
+          // disposition still filters the eligible pool on the client.
           const intimacyEligibleChars = filterIntimacyEligibleSpeakers(groupChars, {
             timing: lewdTiming,
             userMessage: content,
           });
+          const eligibleIds = (intimacyEligibleChars.length
+            ? intimacyEligibleChars
+            : groupChars
+          ).map((c) => c.id).filter(Boolean);
 
-          let nextChar;
+          let finalNextChar = null;
+          let sceneMindInterrupted = false;
           try {
-            const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
-            const chosenName = speakerResult?.trim();
-            nextChar = intimacyEligibleChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase())
-              || groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
-            // Intimate beats: reject reserved/averse leads unless the user addressed them.
-            if (
-              nextChar &&
-              !isIntimacyEligibleSpeaker(nextChar, {
-                timing: lewdTiming,
-                userMessage: content,
-              })
-            ) {
-              nextChar = null;
-            }
-          } catch {}
-
-          // Fallback: pick someone who hasn't spoken recently (respect intimacy disposition).
-          if (!nextChar) {
-            const recentSpeakerSet = new Set(recentSpeakers);
-            nextChar =
-              intimacyEligibleChars.find(c => !recentSpeakerSet.has(c.name)) ||
+            const forcedId =
+              nextSpeaker ||
+              activeSession.next_speaker_id ||
+              null;
+            const decision = await animaApi.chat.selectSpeaker({
+              sessionId: activeSession.id,
+              content: isContinue ? "" : content,
+              characterIds: activeSession.group_character_ids || [],
+              forceCharacterId: forcedId,
+              eligibleCharacterIds: eligibleIds,
+              useDirector: true,
+              isContinue,
+            });
+            finalNextChar =
+              groupChars.find((c) => c.id === decision?.character_id) ||
+              groupChars.find(
+                (c) =>
+                  c.name?.toLowerCase() ===
+                  String(decision?.character_name || "").toLowerCase(),
+              ) ||
+              null;
+            sceneMindInterrupted = Boolean(decision?.interrupted);
+          } catch {
+            // Offline / API failure: least-recent among intimacy-eligible.
+            const recentSpeakerSet = new Set(
+              updatedMessages
+                .slice(-6)
+                .filter(
+                  (m) =>
+                    m.role === "assistant" &&
+                    m.character_name !== "Narrator" &&
+                    m.character_name !== "__typing__" &&
+                    m.character_name !== "__thinking__" &&
+                    !m.is_streaming,
+                )
+                .map((m) => m.character_name),
+            );
+            finalNextChar =
+              intimacyEligibleChars.find((c) => !recentSpeakerSet.has(c.name)) ||
               intimacyEligibleChars[0] ||
-              groupChars.find(c => !recentSpeakerSet.has(c.name)) ||
               groupChars[0];
           }
 
-          currentGroupSpeakerRef.current = nextChar;
+          // Final guard: never leave a reserved/averse speaker with intimate play-along
+          // guidance unless the user addressed them directly.
+          if (
+            finalNextChar &&
+            !isIntimacyEligibleSpeaker(finalNextChar, {
+              timing: lewdTiming,
+              userMessage: content,
+            })
+          ) {
+            finalNextChar = intimacyEligibleChars[0] || finalNextChar;
+          }
+
+          currentGroupSpeakerRef.current = finalNextChar;
 
           const loreCtxGroup = buildLoreContext();
 
@@ -1522,43 +1513,7 @@ ${c.backstory ? `Backstory: ${c.backstory}` : ""}
 ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           }).join("\n\n");
 
-          // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
-          // We still select a valid character, but we may interrupt the usual pacing.
-          // Re-apply intimacy disposition so reserved/averse never get lewd play-along via interruption.
-          let finalNextChar = nextChar;
-          if (shouldOutOfTurn) {
-            const recentMentioned = updatedMessages
-              .slice(-10)
-              .map(m => m.character_name)
-              .filter(Boolean);
-            const interruptPool = intimacyEligibleChars.filter(c => c.name !== nextChar?.name);
-            const preferred = interruptPool
-              .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
-
-            // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
-            const recentSpeakerSet = new Set(recentSpeakers);
-            const leastRecent = interruptPool.find(c => !recentSpeakerSet.has(c.name));
-
-            finalNextChar =
-              preferred[0] ||
-              leastRecent ||
-              interruptPool[0] ||
-              nextChar;
-          }
-
-          // Final guard: never leave a reserved/averse speaker with intimate play-along guidance
-          // unless the user addressed them directly.
-          if (
-            finalNextChar &&
-            !isIntimacyEligibleSpeaker(finalNextChar, {
-              timing: lewdTiming,
-              userMessage: content,
-            })
-          ) {
-            finalNextChar = intimacyEligibleChars[0] || finalNextChar;
-          }
-
-          // Fetch personality shifts for the FINAL speaker (after interrupt/disposition).
+          // Fetch personality shifts for the FINAL speaker (after Scene Mind).
           let traitModifiers = '';
           try {
             if (finalNextChar?.id) {
@@ -1585,7 +1540,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           currentGroupSpeakerRef.current = finalNextChar;
 
           // Add explicit allowance for interruption/out-of-turn to the prompt.
-          const interruptionClause = shouldOutOfTurn
+          const interruptionClause = sceneMindInterrupted
             ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
             : "";
 
@@ -1620,6 +1575,23 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             groupIntimacyGuidance,
             isContinue,
           });
+
+          // Clear a one-shot forced speaker after it was consumed.
+          const consumedForce =
+            (nextSpeaker && finalNextChar?.id === nextSpeaker) ||
+            (activeSession.next_speaker_id &&
+              finalNextChar?.id === activeSession.next_speaker_id);
+          if (consumedForce) {
+            setNextSpeaker(null);
+            try {
+              await base44.entities.ChatSession.update(activeSession.id, {
+                next_speaker_id: null,
+              });
+              setActiveSession((prev) =>
+                prev ? { ...prev, next_speaker_id: null } : prev,
+              );
+            } catch (_) { /* non-fatal */ }
+          }
         }
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
@@ -1709,6 +1681,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               : [],
           assistantCharacterId: activeChar?.id || activeSession.character_id || null,
           assistantCharacterName: charName,
+          // Speaker already chosen by Scene Mind above; don't re-run on /messages.
+          useSceneMind: false,
+          isContinue,
           mode: activeSession.mode || "solo",
           systemPrompt: prompt,
           deepMode: !!activeSession.deep_mode || needsWebSearch,
@@ -1717,6 +1692,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             has_attachment: attachments.length > 0,
             is_continue: isContinue,
             source: "chat_page",
+            scene_mind_speaker_id: activeChar?.id || null,
           },
         }),
         { onDelta: showStreamingPartial, onStatus: showEnsembleStatus },
