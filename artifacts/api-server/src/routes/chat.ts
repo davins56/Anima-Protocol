@@ -58,6 +58,12 @@ import {
   resolveActiveCharacterId,
   resolveActiveCharacterName,
 } from "../lib/chatParticipants";
+import {
+  selectNextSpeaker,
+  type SceneMindCharacter,
+  type SceneMindDecision,
+} from "../lib/sceneMind";
+import { createChatCompletionWithFailover } from "../lib/llmFailover";
 
 const router = Router();
 
@@ -453,6 +459,171 @@ router.get("/memories/:characterId", async (req, res) => {
   res.json({ memory: memory ?? null });
 });
 
+function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
+  return characters
+    .map((c) => ({
+      id: String(c.id || ""),
+      name: String(c.name || ""),
+      universe: c.universe ? String(c.universe) : null,
+      personality: c.personality ? String(c.personality) : null,
+    }))
+    .filter((c) => c.id && c.name);
+}
+
+async function runSceneMindDirector(prompt: string): Promise<string | null> {
+  try {
+    const routed = routeModel("who speaks next", { deepMode: false });
+    const result = await createChatCompletionWithFailover({
+      tier: "light",
+      model: routed.model,
+      maxTokens: 32,
+      temperature: 0.4,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a narrative director. Reply with ONLY one character's exact name.",
+        },
+        { role: "user", content: prompt },
+      ],
+    });
+    const name = String(result.content || "")
+      .trim()
+      .split(/\n/)[0]
+      ?.replace(/^["'\s]+|["'\s.]+$/g, "");
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scene Mind: pick which companion speaks next in a group / crossover chat.
+ * Client can call this before assembling a group prompt, or rely on
+ * /chat/messages to auto-select when assistant_character_id is omitted.
+ */
+router.post("/scene-mind", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+
+  const body = req.body as {
+    session_id?: string;
+    content?: string;
+    character_ids?: string[];
+    force_character_id?: string | null;
+    eligible_character_ids?: string[];
+    use_director?: boolean;
+    is_continue?: boolean;
+    interrupt_chance?: number;
+  };
+
+  const sessionId = body.session_id;
+  if (!sessionId) {
+    res.status(400).json({ error: "session_id is required" });
+    return;
+  }
+
+  const session = await loadStoreSession(userId, sessionId);
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
+  const sessionData = asObject(session.data);
+  const sessionCharacterIds = [
+    ...asStringArray(sessionData.group_character_ids),
+    ...(sessionData.character_id ? [String(sessionData.character_id)] : []),
+  ];
+  const characterIds = [
+    ...new Set(
+      (body.character_ids?.length
+        ? asStringArray(body.character_ids)
+        : sessionCharacterIds
+      ).filter(Boolean),
+    ),
+  ];
+
+  if (characterIds.length === 0) {
+    res.status(400).json({ error: "No characters in session" });
+    return;
+  }
+
+  const [characters, recentMessages] = await Promise.all([
+    loadCharacters(userId, characterIds),
+    readRecentStoreMessages(userId, sessionId, 24),
+  ]);
+
+  const sceneChars = toSceneMindCharacters(characters);
+  const useDirector = body.use_director !== false;
+  const decision = await selectNextSpeaker({
+    characters: sceneChars,
+    recentMessages,
+    userMessage: String(body.content ?? ""),
+    forceCharacterId: body.force_character_id
+      ? String(body.force_character_id)
+      : null,
+    eligibleCharacterIds: body.eligible_character_ids?.length
+      ? asStringArray(body.eligible_character_ids)
+      : null,
+    useDirector,
+    askDirector: useDirector ? runSceneMindDirector : undefined,
+    isContinue: Boolean(body.is_continue),
+    interruptChance:
+      typeof body.interrupt_chance === "number"
+        ? body.interrupt_chance
+        : undefined,
+  });
+
+  if (!decision) {
+    res.status(400).json({ error: "Unable to select a speaker" });
+    return;
+  }
+
+  // Persist last_speaker hint on the session blob for orchestrator / next turns.
+  const [row] = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_SESSION),
+        eq(userEntities.entityId, sessionId),
+      ),
+    )
+    .limit(1);
+  if (row) {
+    const data = asObject(row.data);
+    await db
+      .update(userEntities)
+      .set({
+        data: {
+          ...data,
+          last_speaker_id: decision.characterId,
+          last_speaker_name: decision.characterName,
+          scene_mind: {
+            reason: decision.reason,
+            interrupted: decision.interrupted,
+            preferred_character_id: decision.preferredCharacterId,
+            at: new Date().toISOString(),
+          },
+          updated_date: new Date().toISOString(),
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(userEntities.id, row.id));
+  }
+
+  res.json({
+    character_id: decision.characterId,
+    character_name: decision.characterName,
+    reason: decision.reason,
+    interrupted: decision.interrupted,
+    preferred_character_id: decision.preferredCharacterId,
+    last_speaker_id: decision.lastSpeakerId,
+    last_speaker_name: decision.lastSpeakerName,
+  });
+});
+
 router.post("/messages", async (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -464,6 +635,10 @@ router.post("/messages", async (req, res) => {
     character_ids?: string[];
     assistant_character_id?: string | null;
     assistant_character_name?: string | null;
+    force_character_id?: string | null;
+    eligible_character_ids?: string[];
+    use_scene_mind?: boolean;
+    is_continue?: boolean;
     mode?: string;
     system_prompt?: string;
     deep_mode?: boolean;
@@ -526,13 +701,48 @@ router.post("/messages", async (req, res) => {
   // wrong companion and conflicts with the client's group prompt.
   // Non-participant assistant_character_id values are ignored so prompt context
   // and persisted speaker attribution stay aligned.
+  // When group mode has no usable speaker, Scene Mind picks one.
+  const forcedSpeakerId = body.force_character_id
+    ? String(body.force_character_id)
+    : null;
   const requestedParticipantId =
-    requestedAssistantId && characterIds.includes(requestedAssistantId)
+    (forcedSpeakerId && characterIds.includes(forcedSpeakerId)
+      ? resolveActiveCharacterId(forcedSpeakerId, characterIds)
+      : null) ||
+    (requestedAssistantId && characterIds.includes(requestedAssistantId)
       ? resolveActiveCharacterId(requestedAssistantId, characterIds)
-      : null;
+      : null);
+
+  let sceneMindDecision: SceneMindDecision | null = null;
+  const needsSceneMind =
+    mode === "group" &&
+    adaptedChars.length > 1 &&
+    !requestedParticipantId &&
+    !requestedAssistantName &&
+    body.use_scene_mind !== false;
+
+  if (needsSceneMind) {
+    sceneMindDecision = await selectNextSpeaker({
+      characters: toSceneMindCharacters(characters),
+      recentMessages,
+      userMessage: content,
+      forceCharacterId: forcedSpeakerId,
+      eligibleCharacterIds: body.eligible_character_ids?.length
+        ? asStringArray(body.eligible_character_ids)
+        : null,
+      useDirector: true,
+      askDirector: runSceneMindDirector,
+      isContinue: Boolean(body.is_continue),
+    });
+  }
+
+  const sceneMindId = sceneMindDecision?.characterId ?? null;
   const activeChar =
     (requestedParticipantId
       ? adaptedChars.find((c) => c.id === String(requestedParticipantId))
+      : undefined) ||
+    (sceneMindId
+      ? adaptedChars.find((c) => c.id === String(sceneMindId))
       : undefined) ||
     (requestedAssistantName
       ? adaptedChars.find(
@@ -544,9 +754,10 @@ router.post("/messages", async (req, res) => {
     (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
   const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
   const activeCharacterName = resolveActiveCharacterName({
-    requestedId: requestedParticipantId,
+    requestedId: requestedParticipantId || sceneMindId,
     resolvedId: activeCharacterId,
-    requestedName: requestedAssistantName,
+    requestedName:
+      requestedAssistantName || sceneMindDecision?.characterName || "",
     loadedName: activeChar?.name ?? null,
   });
   const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
@@ -810,6 +1021,15 @@ router.post("/messages", async (req, res) => {
         ensemble_minds: ensembleMinds,
         ensemble_combined: ensembleCombined,
         is_crossover: isCrossover,
+        assistant_character_id: activeCharacterId,
+        assistant_character_name: activeCharacterName,
+        scene_mind: sceneMindDecision
+          ? {
+              reason: sceneMindDecision.reason,
+              interrupted: sceneMindDecision.interrupted,
+              preferred_character_id: sceneMindDecision.preferredCharacterId,
+            }
+          : null,
         messages: [persistedUser, persistedAssistant].filter(Boolean),
       })}\n\n`,
     );

@@ -44,6 +44,38 @@ export const animaApi = {
   },
 
   chat: {
+    /**
+     * Scene Mind — pick which group companion speaks next.
+     * Returns { character_id, character_name, reason, interrupted, ... }.
+     */
+    selectSpeaker: async ({
+      sessionId,
+      content = "",
+      characterIds,
+      forceCharacterId,
+      eligibleCharacterIds,
+      useDirector = true,
+      isContinue = false,
+      interruptChance,
+    }) => {
+      const res = await request("/chat/scene-mind", {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: sessionId,
+          content,
+          character_ids: characterIds,
+          force_character_id: forceCharacterId || null,
+          eligible_character_ids: eligibleCharacterIds,
+          use_director: useDirector !== false,
+          is_continue: !!isContinue,
+          ...(typeof interruptChance === "number"
+            ? { interrupt_chance: interruptChance }
+            : {}),
+        }),
+      });
+      return res.json();
+    },
+
     sendMessage: async function* ({
       sessionId,
       content,
@@ -51,6 +83,10 @@ export const animaApi = {
       characterIds,
       assistantCharacterId,
       assistantCharacterName,
+      forceCharacterId,
+      eligibleCharacterIds,
+      useSceneMind,
+      isContinue,
       mode,
       systemPrompt,
       deepMode,
@@ -68,6 +104,10 @@ export const animaApi = {
           character_ids: characterIds,
           assistant_character_id: assistantCharacterId,
           assistant_character_name: assistantCharacterName,
+          force_character_id: forceCharacterId || null,
+          eligible_character_ids: eligibleCharacterIds,
+          use_scene_mind: useSceneMind,
+          is_continue: !!isContinue,
           mode,
           system_prompt: systemPrompt,
           deep_mode: !!deepMode,
