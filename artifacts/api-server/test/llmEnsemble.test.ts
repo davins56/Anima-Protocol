@@ -73,7 +73,7 @@ describe("llmEnsemble", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.GROQ_API_KEY = "gsk-test";
     process.env.OPENAI_API_KEY = "sk-test";
-    process.env.ANIMA_LLM_PROVIDER = "anima";
+    process.env.ANIMA_LLM_PROVIDER = "ensemble";
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_DISABLE_GROQ;
     delete process.env.ANIMA_LLM_ENSEMBLE;
@@ -88,7 +88,14 @@ describe("llmEnsemble", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("lists Gemini + Groq + ChatGPT as Anima minds", () => {
+  it("does not enable ensemble for custom/anima self-hosted modes", () => {
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    expect(isEnsembleMode()).toBe(false);
+    process.env.ANIMA_LLM_PROVIDER = "anima";
+    expect(isEnsembleMode()).toBe(false);
+  });
+
+  it("lists Gemini + Groq + ChatGPT as opt-in ensemble minds", () => {
     expect(getEnsembleMinds("standard")).toEqual(["gemini", "groq", "openai"]);
     expect(isEnsembleMode()).toBe(true);
   });

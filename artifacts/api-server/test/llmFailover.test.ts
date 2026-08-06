@@ -338,16 +338,17 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(getProviderChain()).toEqual(["gateway"]);
   });
 
-  it("treats anima mode as auto chain with Gemini/Groq/ChatGPT brand minds", () => {
-    process.env.ANIMA_LLM_PROVIDER = "anima";
-    expect(getConfiguredProviderMode()).toBe("auto");
-    expect(isAnimaCustomMode()).toBe(true);
-    expect(getProviderChain()[0]).toBe("gemini");
-    expect(getAnimaTierProviderOrder("standard")).toEqual([
-      "gemini",
-      "groq",
-      "openai",
-    ]);
+  it("treats custom/anima as self-hosted Anima LLM (no cloud BYOK)", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    for (const mode of ["custom", "anima"] as const) {
+      process.env.ANIMA_LLM_PROVIDER = mode;
+      expect(getConfiguredProviderMode()).toBe("local");
+      expect(isAnimaCustomMode()).toBe(true);
+      expect(getProviderChain()).toEqual(["local"]);
+      expect(isOpenAIBlocked()).toBe(true);
+      expect(getLlmRoutingStatus().brand).toBe("anima");
+      expect(getLlmRoutingStatus().note).toMatch(/self-hosted Anima LLM/i);
+    }
   });
 
   it("uses local-only when ANIMA_LLM_PROVIDER=local", () => {
@@ -356,6 +357,7 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(getConfiguredProviderMode()).toBe("local");
     expect(getProviderChain()).toEqual(["local"]);
     expect(isOpenAIBlocked()).toBe(true);
+    expect(isAnimaCustomMode()).toBe(true);
   });
 
   it("uses local-first hybrid chain when ANIMA_LLM_PROVIDER=local-first", () => {
