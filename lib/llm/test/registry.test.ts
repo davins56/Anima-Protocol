@@ -25,9 +25,10 @@ describe("registry", () => {
     expect(resolveProvider("local-first")).toBe("vllm");
   });
 
-  it("lists vllm lineup with Qwen3.6-27B as standard/heavy", () => {
+  it("lists vllm lineup with Ministral 3 8B as standard/heavy", () => {
     const models = listModels("vllm");
     expect(models).toHaveLength(3);
+    expect(ANIMA_PRIMARY_MODEL).toContain("Ministral");
     expect(models.find((m) => m.tier === "standard")?.model).toBe(ANIMA_PRIMARY_MODEL);
     expect(models.find((m) => m.tier === "heavy")?.model).toBe(ANIMA_PRIMARY_MODEL);
   });

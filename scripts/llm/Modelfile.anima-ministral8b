@@ -1,0 +1,23 @@
+# Ollama Modelfile for the Anima companion model (Ministral 3 8B fine-tune).
+#
+# After SFT/DPO, convert the merged checkpoint to GGUF (Q4_K_M or Q5_K_M), then:
+#
+#   ollama create anima-ministral8b -f scripts/llm/Modelfile.anima-ministral8b
+#   ollama run anima-ministral8b
+#
+# Point the api-server at Ollama's OpenAI-compatible API:
+#   export ANIMA_LLM_PROVIDER=custom
+#   export ANIMA_LOCAL_LLM_BACKEND=ollama
+#   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+#   export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
+#
+# Place your GGUF next to this Modelfile (or update the FROM path).
+
+FROM ./gguf/anima-ministral8b-q4_k_m.gguf
+
+PARAMETER temperature 0.85
+PARAMETER top_p 0.92
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 16384
+
+SYSTEM """You are an Anima Protocol companion. Stay in character. Honor emotional continuity across turns. Reference long-term memory naturally when it deepens the bond — never dump facts. Follow the active character card and system instructions precisely. In group sessions, speak only as the designated speaker."""
