@@ -37,4 +37,5 @@ documentation.
 - [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
 - [ ] Optional DPO/ORPO/SimPO preference stage
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
-- [ ] Flip production (or local) default to `local-first` once evals pass
+- [x] `ANIMA_LLM_PROVIDER=custom|anima|local` = self-hosted Anima LLM (no cloud BYOK)
+- [ ] Flip production default to `custom` once GPU hosting + evals are ready

@@ -18,7 +18,9 @@ describe("registry", () => {
     expect(resolveProvider(null)).toBe("openai");
   });
 
-  it("maps local / local-first to vllm", () => {
+  it("maps custom / anima / local / local-first to vllm", () => {
+    expect(resolveProvider("custom")).toBe("vllm");
+    expect(resolveProvider("anima")).toBe("vllm");
     expect(resolveProvider("local")).toBe("vllm");
     expect(resolveProvider("local-first")).toBe("vllm");
   });

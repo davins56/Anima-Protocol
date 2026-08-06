@@ -4,8 +4,9 @@
 // synthesizes those drafts into one in-character companion reply and streams
 // it to the client. Sticky failover blocks from llmFailover are honored.
 //
-// Enabled when ANIMA_LLM_PROVIDER is anima | custom | ensemble (see
-// isAnimaCustomMode), or when ANIMA_LLM_ENSEMBLE=true under other modes.
+// Opt-in only: ANIMA_LLM_PROVIDER=ensemble or ANIMA_LLM_ENSEMBLE=true.
+// The recommended custom path (ANIMA_LLM_PROVIDER=custom|anima|local) does NOT
+// use this module — it talks to your self-hosted vLLM/Ollama model instead.
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { createGeminiChatCompletion } from "./geminiNative";
@@ -19,7 +20,6 @@ import {
 import {
   beginChatProviderTurn,
   getAnimaTierProviderOrder,
-  isAnimaCustomMode,
   isGeminiStickySkipped,
   isGroqStickySkipped,
   isOpenAIStickySkipped,
@@ -28,6 +28,7 @@ import {
   resolveGeminiModel,
   resolveGroqModel,
   reviveStickySkippedProvidersIfNeeded,
+  sanitizeProviderEnv,
   type LlmBrand,
   type LlmProviderId,
 } from "./llmFailover";
@@ -87,10 +88,11 @@ function maxMinds(): number {
   return Number.isFinite(raw) && raw >= 1 ? Math.min(3, Math.floor(raw)) : 3;
 }
 
-/** True when chat should gather parallel minds + combine (not sequential failover). */
+/** True when chat should gather parallel cloud minds + combine (opt-in only). */
 export function isEnsembleMode(): boolean {
   if (envFlagEnabled("ANIMA_LLM_ENSEMBLE")) return true;
-  return isAnimaCustomMode();
+  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
+  return raw === "ensemble";
 }
 
 /**

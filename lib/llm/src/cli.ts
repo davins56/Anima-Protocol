@@ -124,19 +124,21 @@ Local serving options:
 
 1) vLLM (recommended throughput, OpenAI-compatible):
    docker compose -f scripts/llm/docker-compose.vllm.yml up
-   export ANIMA_LLM_PROVIDER=local-first
+   export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
    export ANIMA_VLLM_MODEL_STANDARD=${ANIMA_PRIMARY_MODEL}
 
 2) Ollama (simpler single-user):
    ollama create anima-qwen27b -f scripts/llm/Modelfile.anima-qwen27b
-   export ANIMA_LLM_PROVIDER=local-first
+   export ANIMA_LLM_PROVIDER=custom
+   export ANIMA_LOCAL_LLM_BACKEND=ollama
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
-   export ANIMA_VLLM_MODEL_STANDARD=anima-qwen27b
+   export ANIMA_OLLAMA_MODEL_STANDARD=anima-qwen27b
 
-Hybrid safety net:
-  ANIMA_LLM_PROVIDER=local-first   # try local, fall back to Gemini→Kimi→Grok→OpenAI
-  ANIMA_LLM_PROVIDER=local         # local only
+Modes:
+  ANIMA_LLM_PROVIDER=custom   # self-hosted Anima LLM only (recommended)
+  ANIMA_LLM_PROVIDER=local    # same as custom
+  ANIMA_LLM_PROVIDER=local-first  # local, then optional cloud BYOK if keys exist
 `);
 }
 

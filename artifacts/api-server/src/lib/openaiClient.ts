@@ -88,11 +88,13 @@ export function localLlmBaseUrl(): string | null {
     process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
 
-  // Opt-in: only treat Ollama as the local chat backend when explicitly enabled
-  // or when ANIMA_LLM_PROVIDER is local / local-first / ollama / vllm.
+  // Opt-in: treat Ollama as the local chat backend when custom/local modes are
+  // selected (or ANIMA_USE_OLLAMA_OPENAI is set).
   const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
   const ollamaAsLocal =
     mode === "local" ||
+    mode === "custom" ||
+    mode === "anima" ||
     mode === "local-first" ||
     mode === "ollama" ||
     mode === "vllm" ||

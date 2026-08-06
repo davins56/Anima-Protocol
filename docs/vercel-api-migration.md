@@ -35,7 +35,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Optional | Kimi / Moonshot backup. Base URL `https://api.moonshot.ai/v1`. |
 | `XAI_API_KEY` | Optional | Grok (xAI) backup in the auto chain. |
 | `AI_GATEWAY_API_KEY` | Recommended | Vercel AI Gateway last-resort unpaid path (also uses `VERCEL_OIDC_TOKEN` on Vercel). |
-| `ANIMA_LLM_PROVIDER` | No | Unset / `auto`: **Gemini → Groq → Kimi → Grok → OpenAI → AI Gateway**. Or `gemini` / `groq` / `kimi` / `xai` / `openai` / `gateway` / `anima` (ensemble: Gemini+Groq+ChatGPT). **Never paste an API key here** — put Gemini keys in `GEMINI_API_KEY`. |
+| `ANIMA_LLM_PROVIDER` | No | Prefer **`custom`** for a self-hosted Anima LLM (`ANIMA_LOCAL_LLM_BASE_URL` required; no Gemini/Groq/Kimi/Grok/Gateway). Unset / `auto`: cloud BYOK chain. **Never paste an API key here**. See `docs/custom-llm.md`. |
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
 | `ANIMA_DISABLE_GROQ` | No | Set `true` under `auto` / `openai` to skip Groq. |
 | `ANIMA_DISABLE_XAI` | No | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits. |
