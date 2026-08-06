@@ -36,4 +36,5 @@ Full guide: [`docs/llm-build.md`](../../docs/llm-build.md).
 |------|-------|-------|
 | Primary chat | Fine-tuned Qwen3.6-27B | Q4_K_M / Q5 on 24 GB |
 | Memory specialist (optional) | Qwen2.5-7B Instruct | Summarize / compress |
-| Cloud safety net | Gemini → Kimi → Grok → OpenAI | `local-first` failover |
+| Cloud safety net | Gemini → Groq → Kimi → Grok → OpenAI | `local-first` failover |
+| Anima ensemble | Gemini + Groq + ChatGPT minds | `ANIMA_LLM_PROVIDER=anima` |
