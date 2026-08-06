@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-Unsloth QLoRA SFT for Anima's Qwen3.6-27B (or equivalent).
+Unsloth QLoRA SFT for Anima's Ministral 3 8B companion model.
 
-Install (CUDA machine):
+Install (CUDA machine, ~12–16 GB VRAM for QLoRA):
   pip install "unsloth[colab-new]" transformers datasets trl
 
 Prepare data first:
   pnpm llm:prepare-finetune
   # → scripts/llm/output/finetune-sharegpt.jsonl
 
-Run:
+Run (defaults to Ministral 3 8B Base for fine-tuning):
   python scripts/llm/finetune/unsloth_sft.py \\
     --data scripts/llm/output/finetune-sharegpt.jsonl \\
-    --base Qwen/Qwen3.6-27B \\
-    --out scripts/llm/checkpoints/anima-qwen27b-qlora
+    --base mistralai/Ministral-3-8B-Base-2512 \\
+    --out scripts/llm/checkpoints/anima-ministral8b-qlora
 
 Then merge / convert to GGUF or serve the adapter with vLLM LoRA.
+Accept Hugging Face terms for mistralai/* and set HUGGING_FACE_HUB_TOKEN if needed.
 """
 
 from __future__ import annotations
@@ -23,6 +24,9 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+
+DEFAULT_BASE = "mistralai/Ministral-3-8B-Base-2512"
+DEFAULT_OUT = "scripts/llm/checkpoints/anima-ministral8b-qlora"
 
 
 def load_sharegpt(path: Path) -> list[dict]:
@@ -51,15 +55,17 @@ def load_sharegpt(path: Path) -> list[dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Unsloth QLoRA SFT for Anima")
+    parser = argparse.ArgumentParser(
+        description="Unsloth QLoRA SFT for Anima (Ministral 3 8B)"
+    )
     parser.add_argument("--data", required=True, type=Path)
-    parser.add_argument("--base", default="Qwen/Qwen3.6-27B")
-    parser.add_argument("--out", default="scripts/llm/checkpoints/anima-qwen27b-qlora")
+    parser.add_argument("--base", default=DEFAULT_BASE)
+    parser.add_argument("--out", default=DEFAULT_OUT)
     parser.add_argument("--max-seq-len", type=int, default=4096)
     parser.add_argument("--epochs", type=float, default=1.0)
     parser.add_argument("--lr", type=float, default=2e-4)
-    parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--grad-accum", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--lora-r", type=int, default=16)
     args = parser.parse_args()
 

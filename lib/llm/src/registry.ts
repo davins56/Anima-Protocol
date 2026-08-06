@@ -10,9 +10,9 @@
  * The registry is pure — no I/O, no network — so it can be unit-tested and
  * shared between the api-server and the build/fine-tuning tooling.
  *
- * Primary local target: fine-tuned Qwen3.6-27B (or equivalent) served via
- * vLLM (OpenAI-compatible) or Ollama. Cloud providers remain available as a
- * hybrid safety net while the local model is tuned.
+ * Primary local target: fine-tuned **Ministral 3 8B** (Mistral) served via
+ * vLLM (OpenAI-compatible) or Ollama. Optional cloud BYOK remains available
+ * via ANIMA_LLM_PROVIDER=auto / local-first.
  *
  * Environment overrides (all optional):
  *   ANIMA_LLM_PROVIDER           openai | groq | ollama | vllm | mock
@@ -35,10 +35,21 @@ export const PROVIDER_NAMES: ProviderName[] = [
 export const MODEL_TIERS: ModelTier[] = ["light", "standard", "heavy"];
 export const DEFAULT_PROVIDER: ProviderName = "openai";
 
-/** Canonical fine-tune / serve target for Anima companions. */
-export const ANIMA_PRIMARY_MODEL = "Qwen/Qwen3.6-27B";
-/** Memory summarization / compression specialist (optional smaller model). */
-export const ANIMA_MEMORY_SPECIALIST_MODEL = "Qwen/Qwen2.5-7B-Instruct";
+/**
+ * Canonical serve target for Anima companions (Ministral 3 8B Instruct).
+ * After LoRA merge, point ANIMA_VLLM_MODEL_* at your checkpoint instead.
+ */
+export const ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
+/**
+ * Recommended base weights for LoRA/QLoRA SFT (BF16 Base, not FP8 Instruct).
+ * Unsloth / LLaMA-Factory scripts default here.
+ */
+export const ANIMA_FINETUNE_BASE_MODEL = "mistralai/Ministral-3-8B-Base-2512";
+/** Memory summarization / compression specialist (Ministral 3 3B). */
+export const ANIMA_MEMORY_SPECIALIST_MODEL =
+  "mistralai/Ministral-3-3B-Instruct-2512";
+/** Ollama tag after `ollama create` from Modelfile.anima-ministral8b. */
+export const ANIMA_OLLAMA_TAG = "anima-ministral8b";
 
 /** Sampling / decoding parameters applied to a model call. */
 export interface SamplingPreset {
@@ -104,25 +115,25 @@ const GROQ_SAMPLING: Record<ModelTier, SamplingPreset> = {
 
 // --- Ollama self-hosted lineup ----------------------------------------------
 // Quantized GGUF models. After fine-tuning, point ANIMA_OLLAMA_MODEL_* at your
-// Anima-branded Modelfile tag (e.g. anima-qwen27b).
+// Anima-branded Modelfile tag (anima-ministral8b).
 const OLLAMA_DEFAULTS: Record<ModelTier, TierDefaults> = {
   light: {
-    model: "qwen2.5:7b",
+    model: "ministral-3:3b",
     alias: "anima-mini",
     maxTokens: 4096,
-    description: "Self-hosted mini / memory specialist (~4–5 GB Q4)",
+    description: "Ministral 3 3B memory / light tier (~2–3 GB Q4)",
   },
   standard: {
-    model: "anima-qwen27b",
+    model: ANIMA_OLLAMA_TAG,
     alias: "anima-base",
     maxTokens: 8192,
-    description: "Fine-tuned Qwen3.6-27B Q4_K_M / Q5 (~16–20 GB)",
+    description: "Fine-tuned Ministral 3 8B Q4_K_M / Q5 (~5–8 GB)",
   },
   heavy: {
-    model: "anima-qwen27b",
+    model: ANIMA_OLLAMA_TAG,
     alias: "anima-pro",
     maxTokens: 8192,
-    description: "Same 27B at higher ctx / sampling for deep turns",
+    description: "Same 8B at higher ctx / sampling for deep turns",
   },
 };
 
@@ -140,19 +151,19 @@ const VLLM_DEFAULTS: Record<ModelTier, TierDefaults> = {
     model: ANIMA_MEMORY_SPECIALIST_MODEL,
     alias: "anima-memory",
     maxTokens: 4096,
-    description: "Optional 7B specialist for memory summarization",
+    description: "Optional Ministral 3 3B specialist for memory summarization",
   },
   standard: {
     model: ANIMA_PRIMARY_MODEL,
     alias: "anima-base",
     maxTokens: 8192,
-    description: "Primary fine-tuned Qwen3.6-27B conversational model",
+    description: "Primary fine-tuned Ministral 3 8B conversational model",
   },
   heavy: {
     model: ANIMA_PRIMARY_MODEL,
     alias: "anima-pro",
     maxTokens: 8192,
-    description: "Primary model with richer sampling for deep turns",
+    description: "Primary Ministral 8B with richer sampling for deep turns",
   },
 };
 
