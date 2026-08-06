@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
+const geminiCompletionMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
   const client = {
@@ -11,6 +12,7 @@ vi.mock("../src/lib/openaiClient", () => {
     hasXaiKey: () => Boolean(process.env.XAI_API_KEY?.trim()),
     hasGeminiKey: () =>
       Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
+    hasGroqKey: () => Boolean(process.env.GROQ_API_KEY?.trim()),
     hasKimiKey: () =>
       Boolean(process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()),
     hasGatewayAuth: () =>
@@ -22,6 +24,7 @@ vi.mock("../src/lib/openaiClient", () => {
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () => null,
+    getGroqClient: () => (process.env.GROQ_API_KEY?.trim() ? client : null),
     getKimiClient: () =>
       process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()
         ? client
@@ -40,6 +43,11 @@ vi.mock("../src/lib/openaiClient", () => {
   };
 });
 
+vi.mock("../src/lib/geminiNative", () => ({
+  createGeminiChatCompletion: (...args: unknown[]) => geminiCompletionMock(...args),
+  createGeminiChatStream: vi.fn(),
+}));
+
 import {
   chunkTextAsStream,
   createEnsembleChatReply,
@@ -48,7 +56,7 @@ import {
   withAbortTimeout,
 } from "../src/lib/llmEnsemble";
 import {
-  isXaiStickySkipped,
+  isGroqStickySkipped,
   recordProviderFailure,
   resetLlmFailoverStateForTests,
 } from "../src/lib/llmFailover";
@@ -62,17 +70,17 @@ describe("llmEnsemble", () => {
 
   beforeEach(() => {
     process.env = { ...SAVED };
-    process.env.KIMI_API_KEY = "kimi-test";
     process.env.GEMINI_API_KEY = "gemini-test";
-    process.env.XAI_API_KEY = "xai-test";
+    process.env.GROQ_API_KEY = "gsk-test";
     process.env.OPENAI_API_KEY = "sk-test";
-    process.env.ANIMA_LLM_PROVIDER = "anima";
+    process.env.ANIMA_LLM_PROVIDER = "ensemble";
     delete process.env.ANIMA_DISABLE_OPENAI;
-    delete process.env.ANIMA_DISABLE_XAI;
+    delete process.env.ANIMA_DISABLE_GROQ;
     delete process.env.ANIMA_LLM_ENSEMBLE;
     process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS = "5000";
     resetLlmFailoverStateForTests();
     createMock.mockReset();
+    geminiCompletionMock.mockReset();
   });
 
   afterEach(() => {
@@ -80,29 +88,35 @@ describe("llmEnsemble", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("lists available minds without Gemini", () => {
-    expect(getEnsembleMinds("standard")).toEqual(["kimi", "xai", "openai"]);
-    expect(getEnsembleMinds("standard")).not.toContain("gemini");
+  it("does not enable ensemble for custom/anima self-hosted modes", () => {
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    expect(isEnsembleMode()).toBe(false);
+    process.env.ANIMA_LLM_PROVIDER = "anima";
+    expect(isEnsembleMode()).toBe(false);
+  });
+
+  it("lists Gemini + Groq + ChatGPT as opt-in ensemble minds", () => {
+    expect(getEnsembleMinds("standard")).toEqual(["gemini", "groq", "openai"]);
     expect(isEnsembleMode()).toBe(true);
   });
 
-  it("skips sticky-blocked xAI when selecting minds", () => {
-    recordProviderFailure("xai", {
-      status: 403,
-      message:
-        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/abc."',
+  it("skips sticky-blocked Groq when selecting minds", () => {
+    recordProviderFailure("groq", {
+      status: 429,
+      message: "quota exhausted",
     });
-    expect(isXaiStickySkipped()).toBe(true);
-    expect(getEnsembleMinds("standard")).toEqual(["kimi", "openai"]);
-    expect(getEnsembleMinds("standard")).not.toContain("xai");
+    expect(isGroqStickySkipped()).toBe(true);
+    expect(getEnsembleMinds("standard")).toEqual(["gemini", "openai"]);
+    expect(getEnsembleMinds("standard")).not.toContain("groq");
   });
 
   it("gathers parallel drafts and synthesizes a combined reply", async () => {
-    createMock
-      .mockResolvedValueOnce(fakeCompletion("Kimi draft about longing."))
-      .mockResolvedValueOnce(fakeCompletion("Grok draft with wit."))
-      .mockResolvedValueOnce(fakeCompletion("ChatGPT draft with clarity."))
+    geminiCompletionMock
+      .mockResolvedValueOnce(fakeCompletion("Gemini draft about longing."))
       .mockResolvedValueOnce(fakeCompletion("Combined in-character reply."));
+    createMock
+      .mockResolvedValueOnce(fakeCompletion("Groq draft with speed."))
+      .mockResolvedValueOnce(fakeCompletion("ChatGPT draft with clarity."));
 
     const progress: string[] = [];
     const result = await createEnsembleChatReply({
@@ -119,18 +133,20 @@ describe("llmEnsemble", () => {
     expect(result.combined).toBe(true);
     expect(result.brand).toBe("anima");
     expect(result.content).toBe("Combined in-character reply.");
-    expect(result.minds.sort()).toEqual(["kimi", "openai", "xai"].sort());
+    expect(result.minds.sort()).toEqual(["gemini", "groq", "openai"].sort());
     expect(result.drafts).toHaveLength(3);
-    expect(result.provider).toBe("kimi");
+    expect(result.provider).toBe("gemini");
     expect(progress).toContain("gathering");
     expect(progress).toContain("combining");
     expect(progress).toContain("streaming");
   });
 
   it("uses a single successful mind without synthesis", async () => {
-    process.env.ANIMA_DISABLE_XAI = "true";
+    process.env.ANIMA_DISABLE_GROQ = "true";
     process.env.ANIMA_DISABLE_OPENAI = "true";
-    createMock.mockResolvedValueOnce(fakeCompletion("Only Kimi answered."));
+    geminiCompletionMock.mockResolvedValueOnce(
+      fakeCompletion("Only Gemini answered."),
+    );
 
     const result = await createEnsembleChatReply({
       tier: "standard",
@@ -140,22 +156,21 @@ describe("llmEnsemble", () => {
     });
 
     expect(result.combined).toBe(false);
-    expect(result.provider).toBe("kimi");
-    expect(result.content).toBe("Only Kimi answered.");
-    expect(result.minds).toEqual(["kimi"]);
-    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(result.provider).toBe("gemini");
+    expect(result.content).toBe("Only Gemini answered.");
+    expect(result.minds).toEqual(["gemini"]);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(geminiCompletionMock).toHaveBeenCalledTimes(1);
   });
 
   it("records sticky failure when a mind returns unusable error", async () => {
+    geminiCompletionMock.mockResolvedValueOnce(fakeCompletion("Gemini draft."));
     createMock
-      .mockResolvedValueOnce(fakeCompletion("Kimi draft."))
       .mockRejectedValueOnce({
-        status: 403,
-        message: "no credits or licenses yet https://console.x.ai/team/abc",
+        status: 429,
+        message: "groq quota exhausted",
       })
-      .mockRejectedValueOnce({ status: 401, message: "openai dead" })
-      // Only Kimi survived → no synthesis
-      ;
+      .mockRejectedValueOnce({ status: 401, message: "openai dead" });
 
     const result = await createEnsembleChatReply({
       tier: "standard",
@@ -165,9 +180,9 @@ describe("llmEnsemble", () => {
     });
 
     expect(result.combined).toBe(false);
-    expect(result.provider).toBe("kimi");
-    expect(isXaiStickySkipped()).toBe(true);
-    expect(getEnsembleMinds("standard")).not.toContain("xai");
+    expect(result.provider).toBe("gemini");
+    expect(isGroqStickySkipped()).toBe(true);
+    expect(getEnsembleMinds("standard")).not.toContain("groq");
   });
 
   it("aborts timed-out work via AbortSignal", async () => {
@@ -191,12 +206,12 @@ describe("llmEnsemble", () => {
   });
 
   it("reports draft fallback metadata when synthesis returns empty", async () => {
-    createMock
-      .mockResolvedValueOnce(fakeCompletion("Kimi draft."))
-      .mockResolvedValueOnce(fakeCompletion("Grok draft."))
-      .mockResolvedValueOnce(fakeCompletion("ChatGPT draft."))
-      // Kimi synthesis returns empty → fallback to a draft
+    geminiCompletionMock
+      .mockResolvedValueOnce(fakeCompletion("Gemini draft."))
       .mockResolvedValueOnce(fakeCompletion(""));
+    createMock
+      .mockResolvedValueOnce(fakeCompletion("Groq draft."))
+      .mockResolvedValueOnce(fakeCompletion("ChatGPT draft."));
 
     const result = await createEnsembleChatReply({
       tier: "standard",
@@ -206,7 +221,7 @@ describe("llmEnsemble", () => {
     });
 
     expect(result.combined).toBe(false);
-    expect(["kimi", "xai", "openai"]).toContain(result.provider);
+    expect(["gemini", "groq", "openai"]).toContain(result.provider);
     expect(result.content.length).toBeGreaterThan(0);
     expect(result.synthesizer).toBe(result.provider);
   });

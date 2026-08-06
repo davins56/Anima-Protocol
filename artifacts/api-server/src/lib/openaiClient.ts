@@ -12,6 +12,9 @@ let geminiClientKey: string | null = null;
 let kimiClient: OpenAI | null = null;
 let kimiClientKey: string | null = null;
 
+let groqClient: OpenAI | null = null;
+let groqClientKey: string | null = null;
+
 let gatewayClient: OpenAI | null = null;
 let gatewayClientKey: string | null = null;
 
@@ -65,6 +68,11 @@ export function hasKimiKey(): boolean {
   );
 }
 
+/** Groq Cloud OpenAI-compatible key (`GROQ_API_KEY`). */
+export function hasGroqKey(): boolean {
+  return Boolean(normalizeApiKey(process.env.GROQ_API_KEY));
+}
+
 /** True when Vercel AI Gateway can authenticate (API key or OIDC). */
 export function hasGatewayAuth(): boolean {
   return Boolean(gatewayAuthToken());
@@ -80,11 +88,13 @@ export function localLlmBaseUrl(): string | null {
     process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
 
-  // Opt-in: only treat Ollama as the local chat backend when explicitly enabled
-  // or when ANIMA_LLM_PROVIDER is local / local-first / ollama / vllm.
+  // Opt-in: treat Ollama as the local chat backend when custom/local modes are
+  // selected (or ANIMA_USE_OLLAMA_OPENAI is set).
   const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
   const ollamaAsLocal =
     mode === "local" ||
+    mode === "custom" ||
+    mode === "anima" ||
     mode === "local-first" ||
     mode === "ollama" ||
     mode === "vllm" ||
@@ -174,6 +184,25 @@ export function getKimiClient(): OpenAI | null {
 }
 
 /**
+ * OpenAI-compatible Groq Cloud client.
+ * Uses GROQ_API_KEY. Returns null when unset.
+ */
+export function getGroqClient(): OpenAI | null {
+  const apiKey = normalizeApiKey(process.env.GROQ_API_KEY);
+  if (!apiKey) return null;
+  if (!groqClient || groqClientKey !== apiKey) {
+    groqClient = new OpenAI({
+      apiKey,
+      baseURL:
+        process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai/v1",
+      maxRetries: 0,
+    });
+    groqClientKey = apiKey;
+  }
+  return groqClient;
+}
+
+/**
  * OpenAI-compatible Vercel AI Gateway client.
  * Uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN. Returns null when neither is set.
  */
@@ -226,6 +255,8 @@ export function resetLlmClientsForTests(): void {
   geminiClientKey = null;
   kimiClient = null;
   kimiClientKey = null;
+  groqClient = null;
+  groqClientKey = null;
   gatewayClient = null;
   gatewayClientKey = null;
   localLlmClient = null;

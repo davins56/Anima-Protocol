@@ -1,43 +1,41 @@
 // Parallel "minds" ensemble for the Anima custom LLM.
 //
-// Available backends draft a reply in parallel; the app synthesizes those
-// drafts into one in-character companion reply and streams it to the client.
+// Core stack: Gemini + Groq + ChatGPT (OpenAI) draft in parallel; the app
+// synthesizes those drafts into one in-character companion reply and streams
+// it to the client. Sticky failover blocks from llmFailover are honored.
 //
-// Sequential chat can use Gemini; ensemble minds currently fan out across
-// Kimi / Grok / ChatGPT. Sticky failover blocks from llmFailover are honored.
-//
-// Enabled when ANIMA_LLM_PROVIDER is anima | custom | ensemble (see
-// isAnimaCustomMode), or when ANIMA_LLM_ENSEMBLE=true under other modes.
+// Opt-in only: ANIMA_LLM_PROVIDER=ensemble or ANIMA_LLM_ENSEMBLE=true.
+// The recommended custom path (ANIMA_LLM_PROVIDER=custom|anima|local) does NOT
+// use this module — it talks to your self-hosted vLLM/Ollama model instead.
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { createGeminiChatCompletion } from "./geminiNative";
 import {
-  getKimiClient,
+  getGroqClient,
   getOpenAIClient,
-  getXaiClient,
-  hasKimiKey,
+  hasGeminiKey,
+  hasGroqKey,
   hasOpenAIKey,
-  hasXaiKey,
 } from "./openaiClient";
 import {
   beginChatProviderTurn,
   getAnimaTierProviderOrder,
-  isAnimaCustomMode,
-  isKimiStickySkipped,
+  isGeminiStickySkipped,
+  isGroqStickySkipped,
   isOpenAIStickySkipped,
   isProviderUnusableError,
-  isXaiStickySkipped,
   recordProviderFailure,
-  resolveKimiModel,
-  resolveXaiModel,
+  resolveGeminiModel,
+  resolveGroqModel,
   reviveStickySkippedProvidersIfNeeded,
+  sanitizeProviderEnv,
   type LlmBrand,
   type LlmProviderId,
 } from "./llmFailover";
 import { resolveModel, type ModelTier } from "./modelRouter";
 
-/** Providers that may participate in ensemble drafts. */
-// Parallel minds stay on cloud vendors; local Qwen is used via sequential failover.
-type EnsembleMindId = Exclude<LlmProviderId, "gemini" | "gateway" | "local">;
+/** Providers that may participate in ensemble drafts (Anima core trio). */
+type EnsembleMindId = Extract<LlmProviderId, "gemini" | "groq" | "openai">;
 
 export interface MindDraft {
   provider: EnsembleMindId;
@@ -90,37 +88,41 @@ function maxMinds(): number {
   return Number.isFinite(raw) && raw >= 1 ? Math.min(3, Math.floor(raw)) : 3;
 }
 
-/** True when chat should gather parallel minds + combine (not sequential failover). */
+/** True when chat should gather parallel cloud minds + combine (opt-in only). */
 export function isEnsembleMode(): boolean {
   if (envFlagEnabled("ANIMA_LLM_ENSEMBLE")) return true;
-  return isAnimaCustomMode();
+  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
+  return raw === "ensemble";
 }
 
 /**
  * Backends that can draft a mind reply right now.
- * Honors sticky unusable skips + ANIMA_DISABLE_* flags. Gemini drafts stay on
- * the sequential failover path for now (native streaming client).
+ * Honors sticky unusable skips + ANIMA_DISABLE_* flags.
+ * Core Anima minds: Gemini, Groq, ChatGPT.
  */
 export function getEnsembleMinds(tier: ModelTier = "standard"): EnsembleMindId[] {
   reviveStickySkippedProvidersIfNeeded();
 
   const disableOpenAI = envFlagEnabled("ANIMA_DISABLE_OPENAI");
-  const disableXai = envFlagEnabled("ANIMA_DISABLE_XAI");
+  const disableGroq = envFlagEnabled("ANIMA_DISABLE_GROQ");
   const minds: EnsembleMindId[] = [];
 
   for (const id of getAnimaTierProviderOrder(tier)) {
-    if (id === "gemini") continue;
-    if (id === "kimi" && hasKimiKey() && !isKimiStickySkipped()) {
-      minds.push("kimi");
+    if (
+      id === "gemini" &&
+      hasGeminiKey() &&
+      !isGeminiStickySkipped()
+    ) {
+      minds.push("gemini");
       continue;
     }
     if (
-      id === "xai" &&
-      hasXaiKey() &&
-      !disableXai &&
-      !isXaiStickySkipped()
+      id === "groq" &&
+      hasGroqKey() &&
+      !disableGroq &&
+      !isGroqStickySkipped()
     ) {
-      minds.push("xai");
+      minds.push("groq");
       continue;
     }
     if (
@@ -137,21 +139,15 @@ export function getEnsembleMinds(tier: ModelTier = "standard"): EnsembleMindId[]
 }
 
 function providerLabel(id: EnsembleMindId): string {
-  if (id === "kimi") return "Kimi";
-  if (id === "xai") return "Grok";
+  if (id === "gemini") return "Gemini";
+  if (id === "groq") return "Groq";
   return "ChatGPT";
 }
 
 function resolveMindModel(provider: EnsembleMindId, tier: ModelTier) {
-  if (provider === "kimi") return resolveKimiModel(tier);
-  if (provider === "xai") return resolveXaiModel(tier);
+  if (provider === "gemini") return resolveGeminiModel(tier);
+  if (provider === "groq") return resolveGroqModel(tier);
   return resolveModel(tier);
-}
-
-function clientFor(provider: EnsembleMindId) {
-  if (provider === "kimi") return getKimiClient();
-  if (provider === "xai") return getXaiClient();
-  return getOpenAIClient();
 }
 
 /**
@@ -188,21 +184,35 @@ async function draftFromMind(
   // Keep mind drafts shorter so parallel fan-out stays inside the Vercel budget.
   const draftMax = Math.min(maxTokens, 1200);
   const resolved = resolveMindModel(provider, tier);
-  const client = clientFor(provider);
-  if (!client) {
-    throw new Error(`${providerLabel(provider)} client is not configured.`);
-  }
 
-  const completion = await client.chat.completions.create(
-    {
+  let content = "";
+  if (provider === "gemini") {
+    const completion = await createGeminiChatCompletion({
       model: resolved.model,
-      max_tokens: draftMax,
+      maxTokens: draftMax,
       messages,
       temperature: 0.8,
-    },
-    { signal },
-  );
-  const content = String(completion.choices[0]?.message?.content ?? "").trim();
+      signal,
+    });
+    content = String(completion.choices[0]?.message?.content ?? "").trim();
+  } else {
+    const client =
+      provider === "groq" ? getGroqClient() : getOpenAIClient();
+    if (!client) {
+      throw new Error(`${providerLabel(provider)} client is not configured.`);
+    }
+    const completion = await client.chat.completions.create(
+      {
+        model: resolved.model,
+        max_tokens: draftMax,
+        messages,
+        temperature: 0.8,
+      },
+      { signal },
+    );
+    content = String(completion.choices[0]?.message?.content ?? "").trim();
+  }
+
   if (!content) {
     throw new Error(`${providerLabel(provider)} returned an empty draft.`);
   }
@@ -216,7 +226,7 @@ async function draftFromMind(
 }
 
 function pickSynthesizer(drafts: MindDraft[]): EnsembleMindId {
-  const order: EnsembleMindId[] = ["kimi", "xai", "openai"];
+  const order: EnsembleMindId[] = ["gemini", "groq", "openai"];
   for (const id of order) {
     if (drafts.some((d) => d.provider === id)) return id;
   }
@@ -250,7 +260,7 @@ function buildSynthesisMessages(
         `MULTI-MIND SYNTHESIS MODE:\n` +
         `Several AI minds drafted candidate replies below. Produce ONE final in-character ` +
         `companion reply that blends the strongest emotional truth, voice, and specificity ` +
-        `from those drafts. Do not mention the minds, drafts, Kimi, Grok, ChatGPT, ` +
+        `from those drafts. Do not mention the minds, drafts, Gemini, Groq, ChatGPT, ` +
         `or that you are combining answers. Stay fully in character. Output only the final reply.`,
     },
     ...userTurns,
@@ -273,7 +283,23 @@ async function synthesizeDrafts(
 ): Promise<{ content: string; model: string }> {
   const resolved = resolveMindModel(synthesizer, tier);
   const messages = buildSynthesisMessages(originalMessages, drafts);
-  const client = clientFor(synthesizer);
+
+  if (synthesizer === "gemini") {
+    const completion = await createGeminiChatCompletion({
+      model: resolved.model,
+      maxTokens,
+      messages,
+      temperature: 0.7,
+      signal,
+    });
+    return {
+      content: String(completion.choices[0]?.message?.content ?? "").trim(),
+      model: resolved.model,
+    };
+  }
+
+  const client =
+    synthesizer === "groq" ? getGroqClient() : getOpenAIClient();
   if (!client) {
     throw new Error(`${providerLabel(synthesizer)} client is not configured.`);
   }
@@ -342,7 +368,7 @@ export async function createEnsembleChatReply(
   const minds = getEnsembleMinds(req.tier);
   if (minds.length === 0) {
     throw new Error(
-      "No LLM minds configured for ensemble. Set KIMI_API_KEY (required), and optionally XAI_API_KEY / OPENAI_API_KEY.",
+      "No LLM minds configured for ensemble. Set GEMINI_API_KEY, GROQ_API_KEY, and/or OPENAI_API_KEY.",
     );
   }
 

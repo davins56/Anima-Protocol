@@ -23,12 +23,12 @@ python scripts/llm/finetune/unsloth_sft.py \
 # 3) Serve with vLLM
 docker compose -f scripts/llm/docker-compose.vllm.yml up
 
-# 4) Point api-server at local model with cloud fallback
-export ANIMA_LLM_PROVIDER=local-first
+# 4) Point api-server at your custom model (no cloud BYOK)
+export ANIMA_LLM_PROVIDER=custom
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 ```
 
-Full guide: [`docs/llm-build.md`](../../docs/llm-build.md).
+Short guide: [`docs/custom-llm.md`](../../docs/custom-llm.md) · Full: [`docs/llm-build.md`](../../docs/llm-build.md).
 
 ## Suggested lineup
 
@@ -36,4 +36,4 @@ Full guide: [`docs/llm-build.md`](../../docs/llm-build.md).
 |------|-------|-------|
 | Primary chat | Fine-tuned Qwen3.6-27B | Q4_K_M / Q5 on 24 GB |
 | Memory specialist (optional) | Qwen2.5-7B Instruct | Summarize / compress |
-| Cloud safety net | Gemini → Kimi → Grok → OpenAI | `local-first` failover |
+| Custom mode | `ANIMA_LLM_PROVIDER=custom` | Self-hosted only — no Gemini/Groq/Kimi/Grok/Gateway |

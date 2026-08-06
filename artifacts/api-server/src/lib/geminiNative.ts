@@ -339,6 +339,8 @@ export async function createGeminiChatCompletion(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  /** Optional abort for ensemble mind timeouts. */
+  signal?: AbortSignal;
 }): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   if (!hasGeminiKey()) {
     throw new GeminiApiError(
@@ -362,6 +364,7 @@ export async function createGeminiChatCompletion(opts: {
       "x-goog-api-key": apiKey,
     },
     body: JSON.stringify(body),
+    signal: opts.signal,
   });
 
   if (!res.ok) {
