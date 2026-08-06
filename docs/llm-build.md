@@ -19,7 +19,9 @@ Chat.jsx
       → promptBuilder + memory retrieval (heuristic + embeddings)
       → llmFailover
            ├─ local (vLLM / Ollama)     ← ANIMA_LLM_PROVIDER=local|local-first
-           └─ Gemini → Kimi → Grok → OpenAI → Gateway
+           └─ Gemini → Groq → Kimi → Grok → OpenAI → Gateway
+      → llmEnsemble (ANIMA_LLM_PROVIDER=anima)
+           └─ parallel minds: Gemini + Groq + ChatGPT → synthesize
 ```
 
 | Piece | Location |
@@ -154,7 +156,7 @@ ollama create anima-qwen27b -f scripts/llm/Modelfile.anima-qwen27b
 ### Point the api-server at it
 
 ```bash
-export ANIMA_LLM_PROVIDER=local-first
+export ANIMA_LLM_PROVIDER=custom                           # self-hosted only
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1   # or http://localhost:11434/v1
 export ANIMA_VLLM_MODEL_STANDARD=Qwen/Qwen3.6-27B          # must match served name
 # For Ollama tags:
@@ -176,10 +178,13 @@ curl -s http://localhost:8080/api/healthz/llm | jq
 
 | `ANIMA_LLM_PROVIDER` | Behavior |
 |----------------------|----------|
-| `auto` (default) | Cloud: Gemini → Kimi → Grok → OpenAI → Gateway |
-| `local` | Local only |
-| `local-first` / `vllm` / `ollama` | **Local first**, then cloud auto chain |
-| `gemini` / `kimi` / … | Existing single-provider modes |
+| `custom` / `anima` / `local` | **Self-hosted Anima LLM only** (no Gemini/Groq/Kimi/Grok/Gateway) |
+| `local-first` / `vllm` / `ollama` | Local first, then optional cloud auto chain |
+| `auto` | Cloud BYOK: Gemini → Groq → Kimi → Grok → OpenAI → Gateway |
+| `ensemble` | Opt-in cloud parallel minds (not the custom path) |
+| `gemini` / `groq` / `kimi` / … | Single-provider cloud modes |
+
+Short guide: [`docs/custom-llm.md`](./custom-llm.md).
 
 Route core companion traffic to local once it consistently beats your internal evals (character fidelity, memory coherence, tone). Keep cloud keys configured so edge cases still fail over.
 

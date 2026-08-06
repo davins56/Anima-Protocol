@@ -203,8 +203,15 @@ export function resolveProvider(envValue?: string | null): ProviderName {
   if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
     return raw;
   }
-  // local / local-first map to vLLM OpenAI-compatible serving by default.
-  if (raw === "local" || raw === "local-first") return "vllm";
+  // custom / anima / local / local-first → vLLM OpenAI-compatible by default.
+  if (
+    raw === "custom" ||
+    raw === "anima" ||
+    raw === "local" ||
+    raw === "local-first"
+  ) {
+    return "vllm";
+  }
   return "openai";
 }
 

@@ -7,7 +7,7 @@
 #   ollama run anima-qwen27b
 #
 # Point the api-server at Ollama's OpenAI-compatible API:
-#   export ANIMA_LLM_PROVIDER=local-first
+#   export ANIMA_LLM_PROVIDER=custom
 #   export ANIMA_LOCAL_LLM_BACKEND=ollama
 #   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 #   export ANIMA_OLLAMA_MODEL_STANDARD=anima-qwen27b
