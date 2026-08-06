@@ -1,11 +1,13 @@
-# Local OpenAI-compatible serving for fine-tuned Qwen3.6-27B via vLLM.
+# Local OpenAI-compatible serving for fine-tuned Ministral 3 8B via vLLM.
 #
 # Prerequisites:
-#   - NVIDIA GPU with ~24 GB VRAM for Q4/AWQ, or more for BF16/FP16
+#   - NVIDIA GPU with ~8–16 GB VRAM for FP8/QLoRA, or more for BF16
 #   - Docker + NVIDIA Container Toolkit
+#   - Accept mistralai model terms; set HUGGING_FACE_HUB_TOKEN if gated
 #
 # Usage:
-#   export ANIMA_VLLM_MODEL=Qwen/Qwen3.6-27B   # or path to your LoRA/merged checkpoint
+#   export ANIMA_VLLM_MODEL=mistralai/Ministral-3-8B-Instruct-2512
+#   # or path to your LoRA/merged checkpoint under ./checkpoints
 #   docker compose -f scripts/llm/docker-compose.vllm.yml up
 #
 # Then point the api-server at it (custom = self-hosted only):
@@ -24,9 +26,9 @@ services:
       - ${ANIMA_VLLM_CHECKPOINT_DIR:-./checkpoints}:/checkpoints
     command:
       - "--model"
-      - "${ANIMA_VLLM_MODEL:-Qwen/Qwen3.6-27B}"
+      - "${ANIMA_VLLM_MODEL:-mistralai/Ministral-3-8B-Instruct-2512}"
       - "--served-model-name"
-      - "${ANIMA_VLLM_SERVED_NAME:-Qwen/Qwen3.6-27B}"
+      - "${ANIMA_VLLM_SERVED_NAME:-mistralai/Ministral-3-8B-Instruct-2512}"
       - "--dtype"
       - "${ANIMA_VLLM_DTYPE:-auto}"
       - "--max-model-len"

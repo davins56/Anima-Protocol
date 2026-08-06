@@ -7,7 +7,7 @@ documentation.
 ## Phase A — New `lib/llm` workspace package (`@workspace/llm`)
 
 - [x] Step 1: package.json, tsconfig.json, vitest config
-- [x] Step 2: `src/registry.ts` — tier × provider model registry + Qwen3.6 / vLLM presets
+- [x] Step 2: `src/registry.ts` — tier × provider model registry + Ministral 3 8B / vLLM presets
 - [x] Step 3: `src/dataset/transcripts.ts` — export chat_messages to transcripts
 - [x] Step 4: `src/dataset/format.ts` — ShareGPT / ChatML / Alpaca formatters
 - [x] Step 5: `src/dataset/seed.ts` — curated Anima-protocol seed turns

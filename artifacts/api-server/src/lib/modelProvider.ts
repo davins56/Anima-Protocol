@@ -118,13 +118,13 @@ function createOllamaProvider(): ModelProvider {
       return {
         text: chunks.join(""),
         provider: "ollama",
-        model: request.model ?? "anima-qwen27b",
+        model: request.model ?? "anima-ministral8b",
       };
     },
     async *generateStream({ prompt, systemPrompt, maxTokens, model }) {
       const baseUrl = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
       const payload = {
-        model: model ?? "anima-qwen27b",
+        model: model ?? "anima-ministral8b",
         prompt: `${systemPrompt ? `${systemPrompt}\n\n` : ""}${prompt}`,
         stream: false,
         options: {
@@ -164,7 +164,7 @@ function createVllmProvider(): ModelProvider {
       return {
         text: chunks.join(""),
         provider: "vllm",
-        model: request.model ?? "Qwen/Qwen3.6-27B",
+        model: request.model ?? "mistralai/Ministral-3-8B-Instruct-2512",
       };
     },
     async *generateStream({ prompt, systemPrompt, maxTokens, model }) {
@@ -179,7 +179,7 @@ function createVllmProvider(): ModelProvider {
         "local";
 
       const payload = {
-        model: model ?? "Qwen/Qwen3.6-27B",
+        model: model ?? "mistralai/Ministral-3-8B-Instruct-2512",
         messages: [
           { role: "system", content: systemPrompt ?? "" },
           { role: "user", content: prompt },

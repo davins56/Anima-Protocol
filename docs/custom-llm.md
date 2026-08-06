@@ -1,72 +1,109 @@
-# Custom Anima LLM (self-hosted)
+# Custom Anima LLM — Ministral
 
-Run Anima chat on **your own model** — no Gemini, Groq, Kimi, Grok, or AI Gateway.
+Fine-tune **Ministral 3 8B** for persistent memory and companion identity. Do **not** build a model from scratch, and do **not** require Gemini / Groq / Kimi / Grok / AI Gateway for chat.
 
-The frontend stays the same (`POST /api/chat/messages`). Only the api-server’s LLM backend changes.
+| Role | Hugging Face id |
+|------|-----------------|
+| Serve (chat) | `mistralai/Ministral-3-8B-Instruct-2512` |
+| Fine-tune base (LoRA) | `mistralai/Ministral-3-8B-Base-2512` |
+| Optional memory specialist | `mistralai/Ministral-3-3B-Instruct-2512` |
 
-## Quick start
+Accept the Mistral license on Hugging Face and set `HUGGING_FACE_HUB_TOKEN` if the repo is gated.
 
-### 1. Serve a model (pick one)
+---
 
-**vLLM** (best throughput, needs NVIDIA GPU):
+## Recommended path
+
+### 1. Choose a base model — Ministral
+
+Ministral 3 8B balances companion quality with local VRAM (QLoRA on ~12–16 GB; Q4 GGUF often fits ~8 GB). Smaller option: Ministral 3 3B for light / memory-only tiers.
+
+### 2. Prepare your dataset
+
+Gather Anima-specific data:
+
+- Multi-turn chats between users and companions  
+- Turns that use **persistent memory** and emotional continuity  
+- Soul / personality examples that match your character cards  
 
 ```bash
-export ANIMA_VLLM_MODEL=Qwen/Qwen3.6-27B   # or your fine-tuned checkpoint
+# Seed examples (always available)
+pnpm llm:prepare-finetune
+
+# Seed + your Postgres transcripts
+pnpm llm:prepare-finetune -- --with-db --user <clerk_user_id>
+```
+
+Outputs ShareGPT / ChatML / Alpaca JSONL under `scripts/llm/output/`. Add cleaned companion arcs and memory-recall drills in the same ShareGPT shape.
+
+### 3. Fine-tune with LoRA (QLoRA)
+
+**Unsloth** (fast iteration):
+
+```bash
+pip install "unsloth[colab-new]" transformers datasets trl
+python scripts/llm/finetune/unsloth_sft.py \
+  --data scripts/llm/output/finetune-sharegpt.jsonl \
+  --base mistralai/Ministral-3-8B-Base-2512 \
+  --out scripts/llm/checkpoints/anima-ministral8b-qlora
+```
+
+**LLaMA-Factory**:
+
+```bash
+llamafactory-cli train scripts/llm/finetune/llama_factory_ministral.yaml
+```
+
+### 4. Deploy and integrate
+
+**vLLM:**
+
+```bash
+export ANIMA_VLLM_MODEL=mistralai/Ministral-3-8B-Instruct-2512
+# or: export ANIMA_VLLM_MODEL=/path/to/merged-checkpoint
 docker compose -f scripts/llm/docker-compose.vllm.yml up
 ```
 
-**Ollama** (simpler single-user):
+**Ollama** (after GGUF conversion):
 
 ```bash
-# After converting your fine-tune to GGUF:
-ollama create anima-qwen27b -f scripts/llm/Modelfile.anima-qwen27b
+ollama create anima-ministral8b -f scripts/llm/Modelfile.anima-ministral8b
 ```
 
-### 2. Point the api-server at it
+**Point the api-server** (self-hosted only — no cloud BYOK):
 
 ```bash
 export ANIMA_LLM_PROVIDER=custom
-export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1   # or http://localhost:11434/v1
-export ANIMA_VLLM_MODEL_STANDARD=Qwen/Qwen3.6-27B          # must match served name
-# For Ollama:
+export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1   # or :11434/v1 for Ollama
+export ANIMA_VLLM_MODEL_STANDARD=mistralai/Ministral-3-8B-Instruct-2512
+# Ollama:
 # export ANIMA_LOCAL_LLM_BACKEND=ollama
-# export ANIMA_OLLAMA_MODEL_STANDARD=anima-qwen27b
+# export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
 ```
 
 Leave `GEMINI_API_KEY`, `GROQ_API_KEY`, `KIMI_API_KEY`, `XAI_API_KEY`, and `AI_GATEWAY_API_KEY` unset.
 
-### 3. Verify
+Verify:
 
 ```bash
 curl -s http://localhost:8080/api/healthz/llm | jq
-# expect: "mode":"local", "preferred":"local", "brand":"anima", "keys.local": true
+# expect: "mode":"local", "preferred":"local", "brand":"anima"
 ```
+
+The React app keeps calling `POST /api/chat/messages` — no frontend rewrite.
+
+---
 
 ## Modes
 
 | `ANIMA_LLM_PROVIDER` | Behavior |
 |----------------------|----------|
-| `custom` / `anima` / `local` | **Self-hosted only** (recommended) |
+| `custom` / `anima` / `local` | **Self-hosted Ministral only** (recommended) |
 | `local-first` | Local first, then optional cloud BYOK if keys exist |
-| `auto` | Cloud BYOK only (not used for a custom model) |
-| `ensemble` | Opt-in cloud parallel minds (not the custom path) |
+| `auto` | Cloud BYOK only |
 
-Aliases: `custom`, `anima`, and `local` all mean the same self-hosted path.
-
-## Fine-tune your own weights
-
-See [`docs/llm-build.md`](./llm-build.md) for dataset export, Unsloth / LLaMA-Factory SFT, and memory retrieval.
-
-```bash
-pnpm llm:prepare-finetune
-pnpm llm:serve-hint
-```
+More detail (memory embeddings, eval checklist): [`docs/llm-build.md`](./llm-build.md).
 
 ## Production note
 
-Vercel serverless cannot reach a GPU on your laptop. For production custom LLM:
-
-1. Host vLLM/Ollama on a GPU box with a public HTTPS URL (or run the whole api-server next to the GPU), and  
-2. Set `ANIMA_LOCAL_LLM_BASE_URL` to that URL on the api-server.
-
-Image generation still uses `OPENAI_API_KEY` if you enable look generation — chat does not.
+Vercel serverless cannot reach a laptop GPU. Host vLLM/Ollama on a GPU box with a reachable HTTPS URL (or run the api-server beside the GPU), then set `ANIMA_LOCAL_LLM_BASE_URL`.

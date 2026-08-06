@@ -1,11 +1,13 @@
-# Building the Anima local LLM (Qwen3.6-27B)
+# Building the Anima local LLM (Ministral 3 8B)
 
 This guide covers the full stack:
 
-1. Fine-tuned **Qwen3.6-27B** (or equivalent) as the primary companion model  
+1. Fine-tuned **Ministral 3 8B** as the primary companion model  
 2. Structured + vector **memory retrieval** before every generation  
 3. **Local serving** via vLLM or Ollama (OpenAI-compatible)  
-4. **Hybrid fallback** to the existing cloud chain while you tune  
+4. Optional hybrid cloud fallback while you tune  
+
+Short path: [`docs/custom-llm.md`](./custom-llm.md).
 
 The React/Vite frontend does **not** need rewrites — it already talks to `POST /api/chat/messages` with an OpenAI-style SSE contract.
 
@@ -18,10 +20,8 @@ Chat.jsx
   → POST /api/chat/messages
       → promptBuilder + memory retrieval (heuristic + embeddings)
       → llmFailover
-           ├─ local (vLLM / Ollama)     ← ANIMA_LLM_PROVIDER=local|local-first
-           └─ Gemini → Groq → Kimi → Grok → OpenAI → Gateway
-      → llmEnsemble (ANIMA_LLM_PROVIDER=anima)
-           └─ parallel minds: Gemini + Groq + ChatGPT → synthesize
+           ├─ local (vLLM / Ollama)     ← ANIMA_LLM_PROVIDER=custom|local
+           └─ (optional) cloud auto chain only if local-first + keys set
 ```
 
 | Piece | Location |
@@ -33,8 +33,16 @@ Chat.jsx
 | Local provider in failover | `artifacts/api-server/src/lib/llmFailover.ts` |
 | Embedding store | `memory_embeddings` table (`lib/db`) |
 | Unsloth SFT script | `scripts/llm/finetune/unsloth_sft.py` |
-| LLaMA-Factory YAML | `scripts/llm/finetune/llama_factory_qwen36.yaml` |
+| LLaMA-Factory YAML | `scripts/llm/finetune/llama_factory_ministral.yaml` |
 | vLLM compose | `scripts/llm/docker-compose.vllm.yml` |
+
+**Defaults**
+
+| Constant | Value |
+|----------|-------|
+| Serve | `mistralai/Ministral-3-8B-Instruct-2512` |
+| Fine-tune base | `mistralai/Ministral-3-8B-Base-2512` |
+| Memory specialist | `mistralai/Ministral-3-3B-Instruct-2512` |
 
 ---
 
@@ -69,18 +77,18 @@ Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT
 ### Unsloth (fast iteration + VRAM savings)
 
 ```bash
-# On a CUDA box with ~24 GB+
+# On a CUDA box with ~12–16 GB
 pip install "unsloth[colab-new]" transformers datasets trl
 python scripts/llm/finetune/unsloth_sft.py \
   --data scripts/llm/output/finetune-sharegpt.jsonl \
-  --base Qwen/Qwen3.6-27B \
-  --out scripts/llm/checkpoints/anima-qwen27b-qlora
+  --base mistralai/Ministral-3-8B-Base-2512 \
+  --out scripts/llm/checkpoints/anima-ministral8b-qlora
 ```
 
 ### LLaMA-Factory (broadest method support)
 
 ```bash
-llamafactory-cli train scripts/llm/finetune/llama_factory_qwen36.yaml
+llamafactory-cli train scripts/llm/finetune/llama_factory_ministral.yaml
 ```
 
 Dataset metadata: `scripts/llm/output/dataset_info.json`.
@@ -115,7 +123,7 @@ import { upsertMemoryEmbeddings } from "../lib/memoryEmbeddings";
 await upsertMemoryEmbeddings({ userId, characterId, facts });
 ```
 
-Optional specialist (7–14B) for summarization: registry light tier (`ANIMA_MEMORY_SPECIALIST_MODEL` / `ANIMA_VLLM_MODEL_LIGHT`). Rule + embedding compression is available via `compressMemoriesForContext` without a second model.
+Optional specialist (Ministral 3 3B) for summarization: registry light tier (`ANIMA_MEMORY_SPECIALIST_MODEL` / `ANIMA_VLLM_MODEL_LIGHT`). Rule + embedding compression is available via `compressMemoriesForContext` without a second model.
 
 Embeddings endpoint (optional):
 
@@ -140,17 +148,17 @@ pnpm --filter @workspace/db run push
 ### vLLM (recommended throughput)
 
 ```bash
-export ANIMA_VLLM_MODEL=Qwen/Qwen3.6-27B   # or merged / LoRA checkpoint path
+export ANIMA_VLLM_MODEL=mistralai/Ministral-3-8B-Instruct-2512   # or merged / LoRA path
 docker compose -f scripts/llm/docker-compose.vllm.yml up
 ```
 
-Quantization: start with **Q4_K_M / AWQ / GPTQ** on 24 GB; raise precision if you have VRAM.
+Quantization: FP8 Instruct weights run efficiently; Q4_K_M / AWQ / GPTQ on smaller cards after merge.
 
 ### Ollama (simpler single-user)
 
 ```bash
 # After converting your fine-tune to GGUF Q4_K_M / Q5_K_M:
-ollama create anima-qwen27b -f scripts/llm/Modelfile.anima-qwen27b
+ollama create anima-ministral8b -f scripts/llm/Modelfile.anima-ministral8b
 ```
 
 ### Point the api-server at it
@@ -158,10 +166,10 @@ ollama create anima-qwen27b -f scripts/llm/Modelfile.anima-qwen27b
 ```bash
 export ANIMA_LLM_PROVIDER=custom                           # self-hosted only
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1   # or http://localhost:11434/v1
-export ANIMA_VLLM_MODEL_STANDARD=Qwen/Qwen3.6-27B          # must match served name
+export ANIMA_VLLM_MODEL_STANDARD=mistralai/Ministral-3-8B-Instruct-2512
 # For Ollama tags:
 # export ANIMA_LOCAL_LLM_BACKEND=ollama
-# export ANIMA_OLLAMA_MODEL_STANDARD=anima-qwen27b
+# export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
 ```
 
 The local client is OpenAI-compatible — existing chat + group-speaker logic keeps working.
@@ -184,9 +192,7 @@ curl -s http://localhost:8080/api/healthz/llm | jq
 | `ensemble` | Opt-in cloud parallel minds (not the custom path) |
 | `gemini` / `groq` / `kimi` / … | Single-provider cloud modes |
 
-Short guide: [`docs/custom-llm.md`](./custom-llm.md).
-
-Route core companion traffic to local once it consistently beats your internal evals (character fidelity, memory coherence, tone). Keep cloud keys configured so edge cases still fail over.
+Route core companion traffic to local once it consistently beats your internal evals (character fidelity, memory coherence, tone).
 
 ---
 

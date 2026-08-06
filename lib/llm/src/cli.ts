@@ -12,6 +12,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ANIMA_FINETUNE_BASE_MODEL,
+  ANIMA_OLLAMA_TAG,
   ANIMA_PRIMARY_MODEL,
   describeModel,
   listModels,
@@ -95,7 +97,8 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
   await mkdir(path.dirname(out), { recursive: true });
   await writeFile(out, toJsonl(examples, format), "utf8");
   console.log(`Wrote ${examples.length} examples → ${out} (${format})`);
-  console.log(`Primary fine-tune target: ${ANIMA_PRIMARY_MODEL}`);
+  console.log(`Fine-tune base: ${ANIMA_FINETUNE_BASE_MODEL}`);
+  console.log(`Serve target:   ${ANIMA_PRIMARY_MODEL}`);
 }
 
 async function cmdExportTurns(args: string[]): Promise<void> {
@@ -129,14 +132,19 @@ Local serving options:
    export ANIMA_VLLM_MODEL_STANDARD=${ANIMA_PRIMARY_MODEL}
 
 2) Ollama (simpler single-user):
-   ollama create anima-qwen27b -f scripts/llm/Modelfile.anima-qwen27b
+   ollama create ${ANIMA_OLLAMA_TAG} -f scripts/llm/Modelfile.anima-ministral8b
    export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BACKEND=ollama
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
-   export ANIMA_OLLAMA_MODEL_STANDARD=anima-qwen27b
+   export ANIMA_OLLAMA_MODEL_STANDARD=${ANIMA_OLLAMA_TAG}
+
+Fine-tune (LoRA on CUDA):
+  python scripts/llm/finetune/unsloth_sft.py \\
+    --data scripts/llm/output/finetune-sharegpt.jsonl \\
+    --base ${ANIMA_FINETUNE_BASE_MODEL}
 
 Modes:
-  ANIMA_LLM_PROVIDER=custom   # self-hosted Anima LLM only (recommended)
+  ANIMA_LLM_PROVIDER=custom   # self-hosted Ministral Anima LLM only (recommended)
   ANIMA_LLM_PROVIDER=local    # same as custom
   ANIMA_LLM_PROVIDER=local-first  # local, then optional cloud BYOK if keys exist
 `);
