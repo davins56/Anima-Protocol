@@ -1,20 +1,21 @@
 // Cross-provider chat completion with automatic failover.
 //
-// Chat LLM policy (2026-08): Gemini-first BYOK chain, with Vercel AI Gateway as
-// a last-resort unpaid path when every direct key is out of credits. Depleted
-// keys sticky-skip within a turn and fall through.
+// Chat LLM policy (2026-08): Gemini-first BYOK chain with Groq + ChatGPT
+// (OpenAI) as the core Anima stack, plus Kimi / Grok / Vercel AI Gateway as
+// extra backups. Depleted keys sticky-skip within a turn and fall through.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - (unset) / auto    — Gemini → Kimi → Grok → OpenAI → AI Gateway
+//   - (unset) / auto    — Gemini → Groq → Kimi → Grok → OpenAI → AI Gateway
 //   - gemini            — Gemini only
+//   - groq              — Groq only
 //   - kimi / moonshot   — Kimi only (no backup)
-//   - xai / grok        — Grok primary (Gemini / Kimi backup)
-//   - openai            — OpenAI primary (Gemini / Kimi / Grok backup)
+//   - xai / grok        — Grok primary (Gemini / Groq / Kimi backup)
+//   - openai            — OpenAI primary (Gemini / Groq / Kimi / Grok backup)
 //   - gateway           — Vercel AI Gateway only (OIDC or AI_GATEWAY_API_KEY)
 //   - local             — local OpenAI-compatible only (vLLM / Ollama / llama.cpp)
 //   - local-first / vllm / ollama — local first, then cloud auto chain (hybrid)
 //   - anima / custom / ensemble — sequential path uses auto chain; ensemble
-//                                 path fans out via llmEnsemble.ts
+//                                 path fans out Gemini + Groq + ChatGPT minds
 //
 // Local endpoint: ANIMA_LOCAL_LLM_BASE_URL (or VLLM_BASE_URL / OLLAMA_BASE_URL).
 //
@@ -23,6 +24,7 @@
 // GEMINI_API_KEY for the actual key and set ANIMA_LLM_PROVIDER=auto|gemini.
 //
 // ANIMA_DISABLE_OPENAI=true blocks OpenAI under `auto`.
+// ANIMA_DISABLE_GROQ=true blocks Groq under `auto` / `openai`.
 // ANIMA_DISABLE_XAI=true blocks Grok under `auto` / `openai`.
 // ANIMA_DISABLE_GATEWAY=true blocks AI Gateway under `auto`.
 //
@@ -43,12 +45,14 @@ import {
 } from "./modelRouter";
 import {
   getGatewayClient,
+  getGroqClient,
   getKimiClient,
   getLocalLlmClient,
   getOpenAIClient,
   getXaiClient,
   hasGatewayAuth,
   hasGeminiKey,
+  hasGroqKey,
   hasKimiKey,
   hasLocalLlm,
   hasOpenAIKey,
@@ -61,6 +65,7 @@ export type LlmProviderId =
   | "openai"
   | "xai"
   | "gemini"
+  | "groq"
   | "kimi"
   | "gateway"
   | "local";
@@ -70,6 +75,7 @@ export type LlmProviderMode =
   | "openai"
   | "xai"
   | "gemini"
+  | "groq"
   | "kimi"
   | "gateway"
   | "local"
@@ -91,6 +97,7 @@ export interface LlmRoutingStatus {
     openai: boolean;
     xai: boolean;
     gemini: boolean;
+    groq: boolean;
     gateway: boolean;
     local: boolean;
   };
@@ -161,6 +168,9 @@ let preferNonKimi = false;
 // Sticky skip after Gemini quota/auth failure in this process.
 let preferNonGemini = false;
 
+// Sticky skip after Groq quota/auth failure in this process.
+let preferNonGroq = false;
+
 // Sticky skip after Vercel AI Gateway quota/auth failure in this process.
 let preferNonGateway = false;
 
@@ -172,6 +182,7 @@ function clearAllStickySkips(): void {
   preferNonXai = false;
   preferNonKimi = false;
   preferNonGemini = false;
+  preferNonGroq = false;
   preferNonGateway = false;
   preferNonLocal = false;
 }
@@ -239,6 +250,7 @@ export function getConfiguredProviderMode(): LlmProviderMode {
     raw === "kimi" ||
     raw === "auto" ||
     raw === "gemini" ||
+    raw === "groq" ||
     raw === "gateway"
   ) {
     return raw;
@@ -258,6 +270,7 @@ export function isOpenAIBlocked(): boolean {
     mode === "xai" ||
     mode === "kimi" ||
     mode === "gemini" ||
+    mode === "groq" ||
     mode === "gateway" ||
     mode === "local"
   ) {
@@ -266,10 +279,31 @@ export function isOpenAIBlocked(): boolean {
   return envFlagEnabled("ANIMA_DISABLE_OPENAI");
 }
 
+/** True when Groq is blocked by config (mode / ANIMA_DISABLE_GROQ), not sticky. */
+export function isGroqBlocked(): boolean {
+  const mode = getConfiguredProviderMode();
+  if (
+    mode === "kimi" ||
+    mode === "gemini" ||
+    mode === "xai" ||
+    mode === "gateway" ||
+    mode === "local"
+  ) {
+    return true;
+  }
+  return envFlagEnabled("ANIMA_DISABLE_GROQ");
+}
+
 /** True when Grok is blocked by config (mode / ANIMA_DISABLE_XAI), not sticky. */
 export function isXaiBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  if (mode === "kimi" || mode === "gemini" || mode === "gateway" || mode === "local") {
+  if (
+    mode === "kimi" ||
+    mode === "gemini" ||
+    mode === "groq" ||
+    mode === "gateway" ||
+    mode === "local"
+  ) {
     return true;
   }
   return envFlagEnabled("ANIMA_DISABLE_XAI");
@@ -281,6 +315,7 @@ export function isGatewayBlocked(): boolean {
   if (
     mode === "kimi" ||
     mode === "gemini" ||
+    mode === "groq" ||
     mode === "xai" ||
     mode === "openai" ||
     mode === "local"
@@ -314,6 +349,11 @@ export function isGeminiStickySkipped(): boolean {
   return preferNonGemini;
 }
 
+/** Sticky skip after a prior Groq unusable failure. */
+export function isGroqStickySkipped(): boolean {
+  return preferNonGroq;
+}
+
 /** Sticky skip after a prior AI Gateway unusable failure. */
 export function isGatewayStickySkipped(): boolean {
   return preferNonGateway;
@@ -325,6 +365,7 @@ function hasAnyStickySkip(): boolean {
     preferNonXai ||
     preferNonOpenAI ||
     preferNonGemini ||
+    preferNonGroq ||
     preferNonGateway ||
     preferNonLocal
   );
@@ -334,6 +375,7 @@ function hasAnyChatKey(): boolean {
   return (
     hasLocalLlm() ||
     hasGeminiKey() ||
+    hasGroqKey() ||
     hasKimiKey() ||
     hasXaiKey() ||
     hasOpenAIKey() ||
@@ -357,13 +399,22 @@ export function reviveStickySkippedProvidersIfNeeded(): boolean {
 
   const localOk = hasLocalLlm() && !preferNonLocal;
   const geminiOk = hasGeminiKey() && !preferNonGemini && !isGeminiConfigBlocked();
+  const groqOk = hasGroqKey() && !preferNonGroq && !isGroqBlocked();
   const kimiOk = hasKimiKey() && !preferNonKimi && !isKimiConfigBlocked();
   const xaiOk = hasXaiKey() && !isXaiBlocked() && !preferNonXai;
   const openaiOk = hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
   const gatewayOk =
     hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
   const nothingLeft =
-    !localOk && !geminiOk && !kimiOk && !xaiOk && !openaiOk && !gatewayOk;
+    !localOk &&
+    !geminiOk &&
+    !groqOk &&
+    !kimiOk &&
+    !xaiOk &&
+    !openaiOk &&
+    !gatewayOk;
+  // Only revive early preferred slots (local/Gemini/Kimi) when sticky-hidden —
+  // Groq/OpenAI/xAI sticky skips stay until the chain would otherwise empty.
   const hidingPreferred =
     (preferNonLocal && hasLocalLlm()) ||
     (preferNonGemini && hasGeminiKey() && !isGeminiConfigBlocked()) ||
@@ -375,13 +426,14 @@ export function reviveStickySkippedProvidersIfNeeded(): boolean {
   return true;
 }
 
-/** Config-only Gemini block (mode=kimi|xai|openai|gateway|local can leave Gemini out). */
+/** Config-only Gemini block (mode=kimi|xai|openai|groq|gateway|local can leave Gemini out). */
 function isGeminiConfigBlocked(): boolean {
   const mode = getConfiguredProviderMode();
   return (
     mode === "kimi" ||
     mode === "xai" ||
     mode === "openai" ||
+    mode === "groq" ||
     mode === "gateway" ||
     mode === "local"
   );
@@ -389,7 +441,12 @@ function isGeminiConfigBlocked(): boolean {
 
 function isKimiConfigBlocked(): boolean {
   const mode = getConfiguredProviderMode();
-  return mode === "gemini" || mode === "gateway" || mode === "local";
+  return (
+    mode === "gemini" ||
+    mode === "groq" ||
+    mode === "gateway" ||
+    mode === "local"
+  );
 }
 
 /** Gemini is selectable when a key is present (no longer retired). */
@@ -403,6 +460,9 @@ function providerAvailable(id: LlmProviderId): boolean {
   }
   if (id === "gemini") {
     return hasGeminiKey() && !isGeminiConfigBlocked() && !preferNonGemini;
+  }
+  if (id === "groq") {
+    return hasGroqKey() && !isGroqBlocked() && !preferNonGroq;
   }
   if (id === "openai") {
     return hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
@@ -419,9 +479,12 @@ function providerAvailable(id: LlmProviderId): boolean {
   return false;
 }
 
-/** Provider order for Anima custom / ensemble drafts. */
+/**
+ * Provider order for Anima custom / ensemble drafts.
+ * Core stack: Gemini + Groq + ChatGPT (OpenAI).
+ */
 export function getAnimaTierProviderOrder(_tier: ModelTier): LlmProviderId[] {
-  return ["gemini", "kimi", "xai", "openai"];
+  return ["gemini", "groq", "openai"];
 }
 
 /** Ordered list of providers to try for the current env / sticky state. */
@@ -437,6 +500,7 @@ export function getProviderChain(_tier: ModelTier = "standard"): LlmProviderId[]
 
   const pushCloudAuto = () => {
     push("gemini");
+    push("groq");
     push("kimi");
     push("xai");
     push("openai");
@@ -464,6 +528,11 @@ export function getProviderChain(_tier: ModelTier = "standard"): LlmProviderId[]
     return chain;
   }
 
+  if (mode === "groq") {
+    push("groq");
+    return chain;
+  }
+
   if (mode === "gateway") {
     push("gateway");
     return chain;
@@ -472,6 +541,7 @@ export function getProviderChain(_tier: ModelTier = "standard"): LlmProviderId[]
   if (mode === "openai") {
     push("openai");
     push("gemini");
+    push("groq");
     push("kimi");
     push("xai");
     push("gateway");
@@ -481,12 +551,13 @@ export function getProviderChain(_tier: ModelTier = "standard"): LlmProviderId[]
   if (mode === "xai") {
     push("xai");
     push("gemini");
+    push("groq");
     push("kimi");
     push("gateway");
     return chain;
   }
 
-  // auto — Gemini first, then Kimi → Grok → OpenAI, then AI Gateway as unpaid last resort.
+  // auto — Gemini → Groq → Kimi → Grok → OpenAI, then AI Gateway last resort.
   pushCloudAuto();
   return chain;
 }
@@ -496,6 +567,7 @@ export function getPreferredProvider(tier: ModelTier = "standard"): LlmProviderI
   if (chain[0]) return chain[0];
   if (hasLocalLlm()) return "local";
   if (hasGeminiKey()) return "gemini";
+  if (hasGroqKey()) return "groq";
   if (hasKimiKey()) return "kimi";
   if (hasXaiKey()) return "xai";
   if (hasOpenAIKey()) return "openai";
@@ -512,7 +584,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   const noteParts: string[] = [];
   if (rawInput && !sanitized) {
     noteParts.push(
-      "ANIMA_LLM_PROVIDER looks like an API key and was ignored — set it to auto|gemini|kimi|xai|openai|gateway|local|local-first (put the Gemini key in GEMINI_API_KEY).",
+      "ANIMA_LLM_PROVIDER looks like an API key and was ignored — set it to auto|gemini|groq|kimi|xai|openai|gateway|local|local-first (put the Gemini key in GEMINI_API_KEY).",
     );
   }
   if (preferNonLocal) {
@@ -520,6 +592,9 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   }
   if (preferNonGemini) {
     noteParts.push("Gemini sticky-skipped after a prior quota/auth failure this process.");
+  }
+  if (preferNonGroq) {
+    noteParts.push("Groq sticky-skipped after a prior quota/auth failure this process.");
   }
   if (preferNonKimi) {
     noteParts.push("Kimi sticky-skipped after a prior quota/auth failure this process.");
@@ -531,7 +606,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   }
   if (mode === "auto") {
     noteParts.push(
-      "Chat prefers Gemini, then fails over to Kimi → Grok → OpenAI → AI Gateway on quota or auth errors.",
+      "Chat prefers Gemini, then fails over to Groq → Kimi → Grok → OpenAI → AI Gateway on quota or auth errors.",
     );
   } else if (mode === "local") {
     noteParts.push(
@@ -543,9 +618,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     );
   } else if (mode === "gemini") {
     noteParts.push("Chat is Gemini-only (ANIMA_LLM_PROVIDER=gemini).");
+  } else if (mode === "groq") {
+    noteParts.push("Chat is Groq-only (ANIMA_LLM_PROVIDER=groq).");
   } else if (mode === "kimi") {
     noteParts.push(
-      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=auto for Gemini/Grok/OpenAI/Gateway backup.",
+      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=auto for Gemini/Groq/OpenAI/Gateway backup.",
     );
   } else if (mode === "gateway") {
     noteParts.push(
@@ -555,7 +632,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     noteParts.push("Chat uses the configured provider chain.");
   } else {
     noteParts.push(
-      "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for local Qwen, or GEMINI_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY.",
+      "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for local Qwen, or GEMINI_API_KEY / GROQ_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY.",
     );
   }
 
@@ -570,6 +647,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       openai: hasOpenAIKey(),
       xai: hasXaiKey(),
       gemini: hasGeminiKey(),
+      groq: hasGroqKey(),
       gateway: hasGatewayAuth(),
       local: hasLocalLlm(),
     },
@@ -727,6 +805,19 @@ const KIMI_ENV_KEYS: Record<ModelTier, string> = {
   heavy: "ANIMA_KIMI_MODEL_HEAVY",
 };
 
+// Groq Cloud OpenAI-compatible lineup (fast Llama). Override with ANIMA_GROQ_MODEL_*.
+const DEFAULT_GROQ_MODELS: Record<ModelTier, string> = {
+  light: "llama-3.1-8b-instant",
+  standard: "llama-3.3-70b-versatile",
+  heavy: "llama-3.3-70b-versatile",
+};
+
+const GROQ_ENV_KEYS: Record<ModelTier, string> = {
+  light: "ANIMA_GROQ_MODEL_LIGHT",
+  standard: "ANIMA_GROQ_MODEL_STANDARD",
+  heavy: "ANIMA_GROQ_MODEL_HEAVY",
+};
+
 // Vercel AI Gateway model slugs (provider/model). Avoid retired Flash-Lite 2.5.
 const DEFAULT_GATEWAY_MODELS: Record<ModelTier, string> = {
   light: "google/gemini-3.1-flash-lite",
@@ -782,6 +873,18 @@ export function resolveKimiModel(tier: ModelTier): ResolvedModel {
   };
 }
 
+export function resolveGroqModel(tier: ModelTier): ResolvedModel {
+  const override =
+    process.env[GROQ_ENV_KEYS[tier]]?.trim() ||
+    process.env.ANIMA_GROQ_MODEL?.trim();
+  const openaiResolved = resolveModel(tier);
+  return {
+    tier,
+    model: override || DEFAULT_GROQ_MODELS[tier],
+    maxTokens: openaiResolved.maxTokens,
+  };
+}
+
 export function resolveGatewayModel(tier: ModelTier): ResolvedModel {
   const override =
     process.env[GATEWAY_ENV_KEYS[tier]]?.trim() ||
@@ -812,9 +915,10 @@ function providerLabel(id: LlmProviderId): string {
   if (id === "local") return "Local LLM";
   if (id === "xai") return "Grok (xAI)";
   if (id === "gemini") return "Gemini";
+  if (id === "groq") return "Groq";
   if (id === "kimi") return "Kimi (Moonshot)";
   if (id === "gateway") return "AI Gateway";
-  return "OpenAI";
+  return "ChatGPT (OpenAI)";
 }
 
 function clientFor(provider: Exclude<LlmProviderId, "gemini">): OpenAI {
@@ -831,6 +935,13 @@ function clientFor(provider: Exclude<LlmProviderId, "gemini">): OpenAI {
     const client = getXaiClient();
     if (!client) {
       throw new Error("XAI_API_KEY must be set to use the Grok provider.");
+    }
+    return client;
+  }
+  if (provider === "groq") {
+    const client = getGroqClient();
+    if (!client) {
+      throw new Error("GROQ_API_KEY must be set to use the Groq provider.");
     }
     return client;
   }
@@ -858,6 +969,7 @@ function clientFor(provider: Exclude<LlmProviderId, "gemini">): OpenAI {
 function resolveForProvider(provider: LlmProviderId, tier: ModelTier): ResolvedModel {
   if (provider === "local") return resolveLocalModel(tier);
   if (provider === "gemini") return resolveGeminiModel(tier);
+  if (provider === "groq") return resolveGroqModel(tier);
   if (provider === "xai") return resolveXaiModel(tier);
   if (provider === "kimi") return resolveKimiModel(tier);
   if (provider === "gateway") return resolveGatewayModel(tier);
@@ -867,6 +979,7 @@ function resolveForProvider(provider: LlmProviderId, tier: ModelTier): ResolvedM
 function otherVendorAvailable(excluding: LlmProviderId): boolean {
   if (excluding !== "local" && hasLocalLlm()) return true;
   if (excluding !== "gemini" && hasGeminiKey()) return true;
+  if (excluding !== "groq" && hasGroqKey()) return true;
   if (excluding !== "kimi" && hasKimiKey()) return true;
   if (excluding !== "xai" && hasXaiKey()) return true;
   if (excluding !== "openai" && hasOpenAIKey()) return true;
@@ -935,6 +1048,12 @@ export function recordProviderFailure(
   }
   if (provider === "gemini") {
     markGeminiUnusable(err);
+    return;
+  }
+  if (provider === "groq") {
+    if (isProviderUnusableError(err) && otherVendorAvailable("groq")) {
+      preferNonGroq = true;
+    }
     return;
   }
   if (provider === "gateway") {
@@ -1021,6 +1140,7 @@ function enrichError(
       if (id === "xai") return "XAI_API_KEY";
       if (id === "kimi") return "KIMI_API_KEY";
       if (id === "gemini") return "GEMINI_API_KEY";
+      if (id === "groq") return "GROQ_API_KEY";
       if (id === "gateway") return "AI_GATEWAY_API_KEY";
       return "OPENAI_API_KEY";
     });
@@ -1030,6 +1150,9 @@ function enrichError(
         " — paste the key without quotes, then redeploy. " +
         (attempted.includes("gemini")
           ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. "
+          : "") +
+        (attempted.includes("groq")
+          ? "Groq uses keys from https://console.groq.com. "
           : "") +
         (attempted.includes("kimi")
           ? "Kimi uses Moonshot keys from https://platform.kimi.ai. "
@@ -1060,8 +1183,21 @@ function enrichError(
     if (attempted.length === 1 && attempted[0] === "gemini") {
       return new Error(
         `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` +
-          (hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth()
-            ? " Or set ANIMA_LLM_PROVIDER=auto to allow Kimi/Grok/OpenAI/Gateway failover."
+          (hasGroqKey() ||
+          hasKimiKey() ||
+          hasXaiKey() ||
+          hasOpenAIKey() ||
+          hasGatewayAuth()
+            ? " Or set ANIMA_LLM_PROVIDER=auto to allow Groq/Kimi/Grok/OpenAI/Gateway failover."
+            : "") +
+          trailSuffix,
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "groq") {
+      return new Error(
+        `Groq credits/quota exhausted (or the key was rejected). Check GROQ_API_KEY at https://console.groq.com, then redeploy.` +
+          (hasGeminiKey() || hasOpenAIKey() || hasGatewayAuth()
+            ? " Or set ANIMA_LLM_PROVIDER=auto so Gemini/ChatGPT/Gateway can cover."
             : "") +
           trailSuffix,
       );
@@ -1070,7 +1206,7 @@ function enrichError(
       return new Error(
         `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). ` +
           `Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, ` +
-          `or set ANIMA_LLM_PROVIDER=auto so Gemini/Grok/OpenAI/Gateway can cover, then redeploy.` +
+          `or set ANIMA_LLM_PROVIDER=auto so Gemini/Groq/OpenAI/Gateway can cover, then redeploy.` +
           trailSuffix,
       );
     }
@@ -1082,9 +1218,10 @@ function enrichError(
     }
     const hints: string[] = [];
     if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
+    if (!hasGroqKey()) hints.push("Set GROQ_API_KEY for Groq");
     if (!hasKimiKey()) hints.push("Set KIMI_API_KEY for Kimi");
     if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
-    if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
+    if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY for ChatGPT");
     if (!hasGatewayAuth()) {
       hints.push("Set AI_GATEWAY_API_KEY (or deploy on Vercel with OIDC)");
     }
@@ -1093,8 +1230,8 @@ function enrichError(
     // revoked key). Do not tell operators to re-check missing vars in that case.
     const hint =
       hints.length > 0
-        ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|kimi|xai|gateway.`
-        : " Keys are present on the server, but every provider rejected the request (quota, billing, or revoked key) — re-checking env values will not fix this. Add credits in Google AI Studio / Moonshot / xAI / OpenAI, or top up AI Gateway. Live-check: /api/healthz/llm?probe=1.";
+        ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|groq|kimi|xai|gateway.`
+        : " Keys are present on the server, but every provider rejected the request (quota, billing, or revoked key) — re-checking env values will not fix this. Add credits in Google AI Studio / Groq / Moonshot / xAI / OpenAI, or top up AI Gateway. Live-check: /api/healthz/llm?probe=1.";
     return new Error(
       `LLM credits/quota exhausted (tried ${names}).${hint}${trailSuffix}`,
     );
@@ -1206,6 +1343,7 @@ function requireProviderChain(): LlmProviderId[] {
     const missing: string[] = [];
     if (!hasLocalLlm()) missing.push("ANIMA_LOCAL_LLM_BASE_URL");
     if (!hasGeminiKey()) missing.push("GEMINI_API_KEY");
+    if (!hasGroqKey()) missing.push("GROQ_API_KEY");
     if (!hasKimiKey()) missing.push("KIMI_API_KEY");
     if (!hasXaiKey()) missing.push("XAI_API_KEY");
     if (!hasOpenAIKey()) missing.push("OPENAI_API_KEY");
@@ -1221,12 +1359,14 @@ function requireProviderChain(): LlmProviderId[] {
           ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY."
           : mode === "gemini"
             ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY."
-            : mode === "gateway"
-              ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN."
-              : "";
+            : mode === "groq"
+              ? " ANIMA_LLM_PROVIDER=groq requires a working GROQ_API_KEY."
+              : mode === "gateway"
+                ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN."
+                : "";
     throw new Error(
       missing.length >= 4
-        ? `No LLM provider configured. Set ANIMA_LOCAL_LLM_BASE_URL for local Qwen, or GEMINI_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY.${configNote}${modeNote}`
+        ? `No LLM provider configured. Set ANIMA_LOCAL_LLM_BASE_URL for local Qwen, or GEMINI_API_KEY / GROQ_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY.${configNote}${modeNote}`
         : `No usable LLM provider right now.${configNote}${modeNote} Check local endpoint / API keys and redeploy.`,
     );
   }
@@ -1352,6 +1492,7 @@ export async function probeLlmProviders(
   const candidates: LlmProviderId[] = [
     "local",
     "gemini",
+    "groq",
     "kimi",
     "xai",
     "openai",
@@ -1363,6 +1504,7 @@ export async function probeLlmProviders(
     const configured =
       (provider === "local" && hasLocalLlm()) ||
       (provider === "gemini" && hasGeminiKey()) ||
+      (provider === "groq" && hasGroqKey()) ||
       (provider === "kimi" && hasKimiKey()) ||
       (provider === "xai" && hasXaiKey()) ||
       (provider === "openai" && hasOpenAIKey()) ||

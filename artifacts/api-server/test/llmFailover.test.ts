@@ -13,6 +13,7 @@ vi.mock("../src/lib/openaiClient", () => {
     hasXaiKey: () => Boolean(process.env.XAI_API_KEY?.trim()),
     hasGeminiKey: () =>
       Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
+    hasGroqKey: () => Boolean(process.env.GROQ_API_KEY?.trim()),
     hasKimiKey: () =>
       Boolean(process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()),
     hasGatewayAuth: () =>
@@ -27,6 +28,7 @@ vi.mock("../src/lib/openaiClient", () => {
       process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()
         ? client
         : null,
+    getGroqClient: () => (process.env.GROQ_API_KEY?.trim() ? client : null),
     getKimiClient: () =>
       process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()
         ? client
@@ -72,6 +74,7 @@ import {
   resetLlmFailoverStateForTests,
   resolveGatewayModel,
   resolveGeminiModel,
+  resolveGroqModel,
   resolveKimiModel,
   resolveXaiModel,
   reviveStickySkippedProvidersIfNeeded,
@@ -136,6 +139,7 @@ describe("isModelUnavailableError (via Gemini retired-model failover)", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    delete process.env.GROQ_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_GEMINI_MODEL;
     delete process.env.ANIMA_GEMINI_MODEL_LIGHT;
@@ -216,13 +220,16 @@ describe("resolve models", () => {
     process.env = { ...SAVED };
   });
 
-  it("defaults Gemini / Kimi / xAI / Gateway models per tier", () => {
+  it("defaults Gemini / Groq / Kimi / xAI / Gateway models per tier", () => {
     delete process.env.ANIMA_GEMINI_MODEL;
+    delete process.env.ANIMA_GROQ_MODEL;
     delete process.env.ANIMA_KIMI_MODEL;
     delete process.env.ANIMA_XAI_MODEL;
     delete process.env.ANIMA_GATEWAY_MODEL;
     expect(resolveGeminiModel("light").model).toBe("gemini-3.1-flash-lite");
     expect(resolveGeminiModel("standard").model).toBe("gemini-2.5-flash");
+    expect(resolveGroqModel("light").model).toBe("llama-3.1-8b-instant");
+    expect(resolveGroqModel("standard").model).toBe("llama-3.3-70b-versatile");
     expect(resolveKimiModel("standard").model).toBe("kimi-k2.6");
     expect(resolveXaiModel("standard").model).toBe("grok-3");
     expect(resolveGatewayModel("light").model).toBe("google/gemini-3.1-flash-lite");
@@ -240,9 +247,11 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    delete process.env.GROQ_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_DISABLE_XAI;
+    delete process.env.ANIMA_DISABLE_GROQ;
     delete process.env.ANIMA_DISABLE_GATEWAY;
     resetLlmFailoverStateForTests();
   });
@@ -265,12 +274,33 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(getPreferredProvider()).toBe("gemini");
   });
 
+  it("inserts Groq after Gemini when GROQ_API_KEY is set", () => {
+    process.env.GROQ_API_KEY = "gsk-test";
+    expect(getProviderChain()).toEqual([
+      "gemini",
+      "groq",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+    ]);
+    expect(getLlmRoutingStatus().keys.groq).toBe(true);
+  });
+
   it("honors ANIMA_LLM_PROVIDER=gemini as Gemini-only", () => {
     process.env.ANIMA_LLM_PROVIDER = "gemini";
     expect(getConfiguredProviderMode()).toBe("gemini");
     expect(isOpenAIBlocked()).toBe(true);
     expect(isXaiBlocked()).toBe(true);
     expect(getProviderChain()).toEqual(["gemini"]);
+  });
+
+  it("uses Groq-only when ANIMA_LLM_PROVIDER=groq", () => {
+    process.env.ANIMA_LLM_PROVIDER = "groq";
+    process.env.GROQ_API_KEY = "gsk-test";
+    expect(getConfiguredProviderMode()).toBe("groq");
+    expect(getProviderChain()).toEqual(["groq"]);
+    expect(isOpenAIBlocked()).toBe(true);
   });
 
   it("uses Kimi-only when ANIMA_LLM_PROVIDER=kimi", () => {
@@ -289,10 +319,17 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(status.note).toMatch(/Gemini/i);
   });
 
-  it("auto without Gemini uses Kimi → Grok → OpenAI → Gateway", () => {
+  it("auto without Gemini uses Groq → Kimi → Grok → OpenAI → Gateway", () => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
-    expect(getProviderChain()).toEqual(["kimi", "xai", "openai", "gateway"]);
+    process.env.GROQ_API_KEY = "gsk-test";
+    expect(getProviderChain()).toEqual([
+      "groq",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+    ]);
   });
 
   it("uses gateway-only when ANIMA_LLM_PROVIDER=gateway", () => {
@@ -301,12 +338,16 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(getProviderChain()).toEqual(["gateway"]);
   });
 
-  it("treats anima mode as auto chain with brand chip", () => {
+  it("treats anima mode as auto chain with Gemini/Groq/ChatGPT brand minds", () => {
     process.env.ANIMA_LLM_PROVIDER = "anima";
     expect(getConfiguredProviderMode()).toBe("auto");
     expect(isAnimaCustomMode()).toBe(true);
     expect(getProviderChain()[0]).toBe("gemini");
-    expect(getAnimaTierProviderOrder("standard")).toContain("gemini");
+    expect(getAnimaTierProviderOrder("standard")).toEqual([
+      "gemini",
+      "groq",
+      "openai",
+    ]);
   });
 
   it("uses local-only when ANIMA_LLM_PROVIDER=local", () => {
@@ -343,8 +384,10 @@ describe("createChatStreamWithFailover", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    delete process.env.GROQ_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
+    delete process.env.ANIMA_DISABLE_GROQ;
     delete process.env.ANIMA_DISABLE_GATEWAY;
     resetLlmFailoverStateForTests();
     createMock.mockReset();
@@ -390,7 +433,29 @@ describe("createChatStreamWithFailover", () => {
     expect(isKimiStickySkipped()).toBe(true);
   });
 
-  it("fails over from Gemini quota to Kimi", async () => {
+  it("fails over from Gemini quota to Groq when GROQ_API_KEY is set", async () => {
+    process.env.GROQ_API_KEY = "gsk-test";
+    geminiStreamMock.mockRejectedValueOnce({
+      status: 429,
+      message: "quota exhausted",
+    });
+    createMock.mockResolvedValueOnce(fakeStream("groq-backup"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "gpt-4o",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("groq");
+    expect(result.failedOver).toBe(true);
+    expect(result.previousProvider).toBe("gemini");
+    expect(result.model).toBe("llama-3.3-70b-versatile");
+    expect(isGeminiStickySkipped()).toBe(true);
+  });
+
+  it("fails over from Gemini quota to Kimi when Groq is absent", async () => {
     geminiStreamMock.mockRejectedValueOnce({
       status: 429,
       message: "quota exhausted",
@@ -471,7 +536,7 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toThrow(/Keys are present on the server[\s\S]*Details:.*Gemini:.*Kimi/i);
+    ).rejects.toThrow(/Details:.*Gemini:.*Kimi/i);
   });
 
   it("starts each chat turn on Gemini even after prior sticky failures", async () => {
@@ -531,6 +596,7 @@ describe("createChatCompletionWithFailover", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    delete process.env.GROQ_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     resetLlmFailoverStateForTests();
     createMock.mockReset();

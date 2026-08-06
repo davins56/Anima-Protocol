@@ -19,7 +19,9 @@ Chat.jsx
       → promptBuilder + memory retrieval (heuristic + embeddings)
       → llmFailover
            ├─ local (vLLM / Ollama)     ← ANIMA_LLM_PROVIDER=local|local-first
-           └─ Gemini → Kimi → Grok → OpenAI → Gateway
+           └─ Gemini → Groq → Kimi → Grok → OpenAI → Gateway
+      → llmEnsemble (ANIMA_LLM_PROVIDER=anima)
+           └─ parallel minds: Gemini + Groq + ChatGPT → synthesize
 ```
 
 | Piece | Location |
@@ -176,10 +178,11 @@ curl -s http://localhost:8080/api/healthz/llm | jq
 
 | `ANIMA_LLM_PROVIDER` | Behavior |
 |----------------------|----------|
-| `auto` (default) | Cloud: Gemini → Kimi → Grok → OpenAI → Gateway |
+| `auto` (default) | Cloud: Gemini → Groq → Kimi → Grok → OpenAI → Gateway |
+| `anima` / `ensemble` | Parallel minds: **Gemini + Groq + ChatGPT**, then synthesize |
 | `local` | Local only |
 | `local-first` / `vllm` / `ollama` | **Local first**, then cloud auto chain |
-| `gemini` / `kimi` / … | Existing single-provider modes |
+| `gemini` / `groq` / `kimi` / … | Single-provider modes |
 
 Route core companion traffic to local once it consistently beats your internal evals (character fidelity, memory coherence, tone). Keep cloud keys configured so edge cases still fail over.
 
