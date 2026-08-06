@@ -67,12 +67,21 @@ export default function SceneOrchestrator() {
     }));
   };
 
-  const handleSpeakerSelect = (characterId) => {
+  const handleSpeakerSelect = async (characterId) => {
     setNextSpeaker(characterId);
+    // Persist for Scene Mind in the live Chat path.
+    try {
+      await base44.entities.ChatSession.update(sessionId, {
+        next_speaker_id: characterId,
+      });
+      setSession((prev) => (prev ? { ...prev, next_speaker_id: characterId } : prev));
+    } catch (err) {
+      console.error('Error saving next speaker:', err);
+    }
   };
 
   const handleForceSpeaker = async (characterId) => {
-    // Add a system message to the session forcing the next speaker
+    // Pin next speaker for Scene Mind + leave an orchestrator breadcrumb in-thread.
     const char = characters.find(c => c.id === characterId);
     if (!char) return;
 
@@ -84,8 +93,12 @@ export default function SceneOrchestrator() {
     };
 
     const updated = [...(session.messages || []), systemMsg];
-    await base44.entities.ChatSession.update(session.id, { messages: updated });
-    setSession(prev => ({ ...prev, messages: updated }));
+    await base44.entities.ChatSession.update(session.id, {
+      messages: updated,
+      next_speaker_id: characterId,
+    });
+    setNextSpeaker(characterId);
+    setSession(prev => ({ ...prev, messages: updated, next_speaker_id: characterId }));
   };
 
   const presentCharacters = characters.filter(c => scenePresence[c.id]);
