@@ -10,16 +10,21 @@
  * The registry is pure — no I/O, no network — so it can be unit-tested and
  * shared between the api-server and the build/fine-tuning tooling.
  *
- * Primary local target: fine-tuned **Ministral 3 8B** (Mistral) served via
- * vLLM (OpenAI-compatible) or Ollama. Optional cloud BYOK remains available
- * via ANIMA_LLM_PROVIDER=auto / local-first.
+ * Primary product path: a **self-hosted Anima LLM** built from public open
+ * weights (not ChatGPT / Gemini / Groq — those stacks are closed).
+ *
+ *   Bootstrap (CPU / laptop): `anima-chat` ← Qwen2.5 3B via Ollama
+ *   GPU upgrade: fine-tuned Ministral 3 8B via vLLM / Ollama GGUF
+ *
+ * Optional cloud BYOK remains available via ANIMA_LLM_PROVIDER=auto / local-first.
  *
  * Environment overrides (all optional):
- *   ANIMA_LLM_PROVIDER           openai | groq | ollama | vllm | mock
+ *   ANIMA_LLM_PROVIDER           custom | anima | local | ollama | vllm | …
+ *   ANIMA_LOCAL_LLM_BACKEND      ollama | vllm  (how custom/local resolve)
  *   ANIMA_MODEL_LIGHT            global model override for the light tier
  *   ANIMA_MODEL_STANDARD         global model override for the standard tier
  *   ANIMA_MODEL_HEAVY            global model override for the heavy tier
- *   ANIMA_<PROVIDER>_MODEL_<T>   per-provider override, e.g. ANIMA_VLLM_MODEL_STANDARD
+ *   ANIMA_<PROVIDER>_MODEL_<T>   per-provider override, e.g. ANIMA_OLLAMA_MODEL_STANDARD
  */
 
 export type ProviderName = "openai" | "groq" | "ollama" | "vllm" | "mock";
@@ -36,7 +41,7 @@ export const MODEL_TIERS: ModelTier[] = ["light", "standard", "heavy"];
 export const DEFAULT_PROVIDER: ProviderName = "openai";
 
 /**
- * Canonical serve target for Anima companions (Ministral 3 8B Instruct).
+ * Canonical GPU serve target for Anima companions (Ministral 3 8B Instruct).
  * After LoRA merge, point ANIMA_VLLM_MODEL_* at your checkpoint instead.
  */
 export const ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
@@ -48,7 +53,14 @@ export const ANIMA_FINETUNE_BASE_MODEL = "mistralai/Ministral-3-8B-Base-2512";
 /** Memory summarization / compression specialist (Ministral 3 3B). */
 export const ANIMA_MEMORY_SPECIALIST_MODEL =
   "mistralai/Ministral-3-3B-Instruct-2512";
-/** Ollama tag after `ollama create` from Modelfile.anima-ministral8b. */
+/**
+ * Public open weights used for the CPU/laptop bootstrap chat model.
+ * (Qwen2.5 Instruct — Apache-2.0; not ChatGPT/Gemini/Groq.)
+ */
+export const ANIMA_BOOTSTRAP_BASE_MODEL = "qwen2.5:3b";
+/** Ollama tag after `ollama create` from Modelfile.anima-chat (bootstrap). */
+export const ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
+/** Ollama tag after fine-tune GGUF + Modelfile.anima-ministral8b (GPU upgrade). */
 export const ANIMA_OLLAMA_TAG = "anima-ministral8b";
 
 /** Sampling / decoding parameters applied to a model call. */
@@ -114,26 +126,27 @@ const GROQ_SAMPLING: Record<ModelTier, SamplingPreset> = {
 };
 
 // --- Ollama self-hosted lineup ----------------------------------------------
-// Quantized GGUF models. After fine-tuning, point ANIMA_OLLAMA_MODEL_* at your
-// Anima-branded Modelfile tag (anima-ministral8b).
+// Default = bootstrap `anima-chat` (public Qwen2.5 3B) so chat works on CPU
+// without a GPU fine-tune. Override ANIMA_OLLAMA_MODEL_* to anima-ministral8b
+// after you convert a LoRA merge to GGUF.
 const OLLAMA_DEFAULTS: Record<ModelTier, TierDefaults> = {
   light: {
-    model: "ministral-3:3b",
+    model: ANIMA_OLLAMA_CHAT_TAG,
     alias: "anima-mini",
     maxTokens: 4096,
-    description: "Ministral 3 3B memory / light tier (~2–3 GB Q4)",
+    description: "Anima bootstrap chat (Qwen2.5 3B open weights, ~2 GB)",
   },
   standard: {
-    model: ANIMA_OLLAMA_TAG,
+    model: ANIMA_OLLAMA_CHAT_TAG,
     alias: "anima-base",
     maxTokens: 8192,
-    description: "Fine-tuned Ministral 3 8B Q4_K_M / Q5 (~5–8 GB)",
+    description: "Anima open chat LLM — replaces cloud ChatGPT/Gemini/Groq for companions",
   },
   heavy: {
-    model: ANIMA_OLLAMA_TAG,
+    model: ANIMA_OLLAMA_CHAT_TAG,
     alias: "anima-pro",
     maxTokens: 8192,
-    description: "Same 8B at higher ctx / sampling for deep turns",
+    description: "Same bootstrap model; point at anima-ministral8b after GPU fine-tune",
   },
 };
 
@@ -214,14 +227,19 @@ export function resolveProvider(envValue?: string | null): ProviderName {
   if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
     return raw;
   }
-  // custom / anima / local / local-first → vLLM OpenAI-compatible by default.
+  // custom / anima / local / local-first → honor ANIMA_LOCAL_LLM_BACKEND.
+  // Default ollama (bootstrap anima-chat); set backend=vllm for GPU Ministral.
   if (
     raw === "custom" ||
     raw === "anima" ||
     raw === "local" ||
     raw === "local-first"
   ) {
-    return "vllm";
+    const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "")
+      .trim()
+      .toLowerCase();
+    if (backend === "vllm") return "vllm";
+    return "ollama";
   }
   return "openai";
 }

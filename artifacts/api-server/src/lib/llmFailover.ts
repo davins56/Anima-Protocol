@@ -903,10 +903,10 @@ export function resolveGatewayModel(tier: ModelTier): ResolvedModel {
 
 /** Resolve model for local vLLM / Ollama OpenAI-compatible serving. */
 export function resolveLocalModel(tier: ModelTier): ResolvedModel {
-  const registryProvider =
-    (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() === "ollama"
-      ? "ollama"
-      : "vllm";
+  // Default to ollama (bootstrap anima-chat). Set ANIMA_LOCAL_LLM_BACKEND=vllm
+  // for GPU Ministral / OpenAI-compatible vLLM serve.
+  const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
+  const registryProvider = backend === "vllm" ? "vllm" : "ollama";
   const spec = resolveModelSpec(tier, registryProvider);
   return {
     tier,

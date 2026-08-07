@@ -31,6 +31,13 @@ documentation.
 - [x] Step 14: root package.json `llm:*` scripts
 - [x] Step 15: typecheck + tests + api-server build validation
 
+## Phase E — Runnable open chat LLM (no cloud BYOK)
+
+- [x] Step 16: `Modelfile.anima-chat` from public Qwen2.5 3B weights
+- [x] Step 17: `scripts/llm/bootstrap-anima-llm.sh` + `pnpm llm:up` / `pnpm llm:chat`
+- [x] Step 18: Registry defaults Ollama lineup to `anima-chat`; custom → ollama unless `ANIMA_LOCAL_LLM_BACKEND=vllm`
+- [x] Step 19: Docs clarify ChatGPT/Gemini/Groq weights are closed; Anima uses open weights
+
 ## Still manual (GPU / data ops)
 
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
@@ -38,4 +45,4 @@ documentation.
 - [ ] Optional DPO/ORPO/SimPO preference stage
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
 - [x] `ANIMA_LLM_PROVIDER=custom|anima|local` = self-hosted Anima LLM (no cloud BYOK)
-- [ ] Flip production default to `custom` once GPU hosting + evals are ready
+- [ ] Host Ollama/vLLM with a public HTTPS URL and flip production to `custom`

@@ -1,15 +1,17 @@
 /**
  * Display labels for chat LLM backends returned by the API as
- * provider: "openai" | "xai" | "kimi" | "gemini" | "gateway" and optional brand: "anima".
+ * provider: "local" | "openai" | "xai" | "kimi" | "gemini" | "gateway" | "groq"
+ * and optional brand: "anima" (self-hosted Anima LLM).
  */
 
 /** @param {string | null | undefined} provider */
 export function llmProviderShortLabel(provider) {
-  if (provider === "anima") return "Anima";
+  if (provider === "anima" || provider === "local") return "Anima";
   if (provider === "kimi") return "Kimi";
   if (provider === "xai") return "Grok";
   if (provider === "openai") return "OpenAI";
   if (provider === "gemini") return "Gemini";
+  if (provider === "groq") return "Groq";
   if (provider === "gateway") return "Gateway";
   return null;
 }
@@ -26,8 +28,8 @@ export function llmDisplayLabel(provider, brand) {
 
 /** @param {string | null | undefined} provider */
 export function llmProviderTitle(provider) {
-  if (provider === "anima") {
-    return "Anima chat powered by Kimi";
+  if (provider === "anima" || provider === "local") {
+    return "Last reply from Anima LLM (self-hosted)";
   }
   if (provider === "kimi") {
     return "Last reply from Kimi (Moonshot)";
@@ -40,6 +42,9 @@ export function llmProviderTitle(provider) {
   }
   if (provider === "gemini") {
     return "Last reply from Gemini";
+  }
+  if (provider === "groq") {
+    return "Last reply from Groq";
   }
   if (provider === "gateway") {
     return "Last reply from Vercel AI Gateway";
@@ -54,10 +59,13 @@ export function llmProviderTitle(provider) {
  */
 export function llmDisplayTitle(provider, brand) {
   if (brand === "anima") {
+    if (provider === "local" || provider === "anima" || !provider) {
+      return "Anima LLM — open weights, self-hosted (not ChatGPT/Gemini/Groq)";
+    }
     const backend = llmProviderShortLabel(provider);
     return backend
       ? `Anima · served by ${backend}`
-      : "Anima chat powered by Kimi";
+      : "Anima LLM — open weights, self-hosted";
   }
   return llmProviderTitle(provider);
 }
@@ -91,36 +99,42 @@ export function llmDisplayBadgeClass(provider, brand) {
   return llmProviderBadgeClass(provider);
 }
 
-/** Providers shown in Settings — Gemini-first auto chain with backups. */
+/** Providers shown in Settings — Anima self-hosted first, then optional cloud BYOK. */
 export const CONFIGURED_LLM_PROVIDERS = [
+  {
+    id: "local",
+    label: "Anima LLM",
+    env: "ANIMA_LOCAL_LLM_BASE_URL",
+    note: "Self-hosted open weights (Ollama/vLLM) — set ANIMA_LLM_PROVIDER=custom",
+  },
   {
     id: "gemini",
     label: "Gemini",
     env: "GEMINI_API_KEY",
-    note: "Google AI Studio — preferred chat LLM under auto",
+    note: "Optional cloud BYOK under ANIMA_LLM_PROVIDER=auto",
   },
   {
     id: "kimi",
     label: "Kimi",
     env: "KIMI_API_KEY",
-    note: "Moonshot — backup when Gemini is exhausted",
+    note: "Optional Moonshot backup under auto",
   },
   {
     id: "xai",
     label: "Grok",
     env: "XAI_API_KEY",
-    note: "xAI — backup in the auto chain",
+    note: "Optional xAI backup under auto",
   },
   {
     id: "openai",
     label: "ChatGPT",
     env: "OPENAI_API_KEY",
-    note: "OpenAI — backup + image generation",
+    note: "Optional OpenAI backup under auto + image generation",
   },
   {
     id: "gateway",
     label: "AI Gateway",
     env: "AI_GATEWAY_API_KEY",
-    note: "Vercel AI Gateway — unpaid last resort when BYOK keys are exhausted",
+    note: "Optional Vercel AI Gateway last resort under auto",
   },
 ];

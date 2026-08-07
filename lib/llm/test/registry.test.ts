@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ANIMA_BOOTSTRAP_BASE_MODEL,
+  ANIMA_OLLAMA_CHAT_TAG,
   ANIMA_PRIMARY_MODEL,
   describeModel,
   listModels,
@@ -18,11 +20,26 @@ describe("registry", () => {
     expect(resolveProvider(null)).toBe("openai");
   });
 
-  it("maps custom / anima / local / local-first to vllm", () => {
+  it("maps custom / anima / local / local-first to ollama by default", () => {
+    expect(resolveProvider("custom")).toBe("ollama");
+    expect(resolveProvider("anima")).toBe("ollama");
+    expect(resolveProvider("local")).toBe("ollama");
+    expect(resolveProvider("local-first")).toBe("ollama");
+  });
+
+  it("maps custom to vllm when ANIMA_LOCAL_LLM_BACKEND=vllm", () => {
+    vi.stubEnv("ANIMA_LOCAL_LLM_BACKEND", "vllm");
     expect(resolveProvider("custom")).toBe("vllm");
     expect(resolveProvider("anima")).toBe("vllm");
-    expect(resolveProvider("local")).toBe("vllm");
-    expect(resolveProvider("local-first")).toBe("vllm");
+  });
+
+  it("lists ollama bootstrap lineup as anima-chat", () => {
+    const models = listModels("ollama");
+    expect(models).toHaveLength(3);
+    expect(ANIMA_BOOTSTRAP_BASE_MODEL).toContain("qwen");
+    expect(models.find((m) => m.tier === "standard")?.model).toBe(
+      ANIMA_OLLAMA_CHAT_TAG,
+    );
   });
 
   it("lists vllm lineup with Ministral 3 8B as standard/heavy", () => {
@@ -41,7 +58,7 @@ describe("registry", () => {
   });
 
   it("describeModel includes alias", () => {
-    const spec = resolveModelSpec("standard", "vllm");
+    const spec = resolveModelSpec("standard", "ollama");
     expect(describeModel(spec)).toContain("anima-base");
   });
 });

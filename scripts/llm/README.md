@@ -1,40 +1,48 @@
 # Anima Protocol LLM starter stack
 
-Fine-tune and serve **Ministral 3 8B** as the custom companion model for Anima.
+Build a **chat LLM you own** — public open weights + local inference — so companions do not depend on ChatGPT, Gemini, or Groq.
 
 ## Goals
 
-- Keep the app model-agnostic (OpenAI-compatible local + optional cloud hybrid).
+- Replace cloud chat APIs with a self-hosted Anima model (`ANIMA_LLM_PROVIDER=custom`).
+- Bootstrap on a laptop (Ollama + Qwen2.5 3B → `anima-chat`).
+- Upgrade on GPU (fine-tune Ministral 3 8B → vLLM / GGUF).
 - Export conversation data in ShareGPT / ChatML / Alpaca JSONL.
-- Inject character, scenario, memory, and relationship context.
-- Retrieve long-term memory (structured + embeddings) before every generation.
+- Retrieve long-term memory before every generation.
 
-## Quick start
+## Quick start (chat today)
 
 ```bash
-# 1) Prepare SFT data (seed examples; add --with-db for live transcripts)
+pnpm llm:up                 # pull open weights + create anima-chat
+pnpm llm:chat -- "Who are you?"
+
+export ANIMA_LLM_PROVIDER=custom
+export ANIMA_LOCAL_LLM_BACKEND=ollama
+export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+```
+
+## GPU fine-tune path
+
+```bash
 pnpm llm:prepare-finetune
 
-# 2) Fine-tune (CUDA machine) — Ministral 3 8B Base + LoRA
 python scripts/llm/finetune/unsloth_sft.py \
   --data scripts/llm/output/finetune-sharegpt.jsonl \
   --base mistralai/Ministral-3-8B-Base-2512
 
-# 3) Serve with vLLM
 docker compose -f scripts/llm/docker-compose.vllm.yml up
-
-# 4) Point api-server at your custom model (no cloud BYOK)
-export ANIMA_LLM_PROVIDER=custom
+export ANIMA_LOCAL_LLM_BACKEND=vllm
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 ```
 
 Short guide: [`docs/custom-llm.md`](../../docs/custom-llm.md) · Full: [`docs/llm-build.md`](../../docs/llm-build.md).
 
-## Suggested lineup
+## Lineup
 
 | Role | Model | Notes |
 |------|-------|-------|
-| Primary chat | Fine-tuned Ministral 3 8B | Q4_K_M / FP8 on ~8–16 GB |
+| Bootstrap chat | `anima-chat` ← `qwen2.5:3b` | CPU / laptop, ~2 GB |
+| Primary GPU chat | Fine-tuned Ministral 3 8B | Q4_K_M / FP8 on ~8–16 GB |
 | Fine-tune base | `mistralai/Ministral-3-8B-Base-2512` | BF16 Base for LoRA/QLoRA |
-| Memory specialist (optional) | Ministral 3 3B Instruct | Summarize / compress |
 | Custom mode | `ANIMA_LLM_PROVIDER=custom` | Self-hosted only — no Gemini/Groq/Kimi/Grok/Gateway |
