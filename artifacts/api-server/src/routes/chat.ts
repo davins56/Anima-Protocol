@@ -22,7 +22,10 @@ import {
   createChatStreamWithFailover,
   type LlmProviderId,
 } from "../lib/llmFailover";
-import { attachStoredEmbeddings } from "../lib/memoryEmbeddings";
+import {
+  attachStoredEmbeddings,
+  upsertMemoryEmbeddings,
+} from "../lib/memoryEmbeddings";
 import {
   chunkTextAsStream,
   createEnsembleChatReply,
@@ -412,6 +415,25 @@ async function upsertTurnMemory(params: {
           updatedAt: now,
         },
       });
+
+    // Index the new turn fact for hybrid semantic retrieval. Best-effort —
+    // chat must not fail if the embedding endpoint / hash path errors.
+    try {
+      await upsertMemoryEmbeddings({
+        userId: params.userId,
+        characterId,
+        facts: [
+          {
+            type: fact.type,
+            session_id: fact.session_id,
+            text: fact.text,
+            created_at: fact.created_at,
+          },
+        ],
+      });
+    } catch {
+      // leave companion_memories row intact; next turn can still use keyword path
+    }
   }
 }
 
