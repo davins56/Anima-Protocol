@@ -21,6 +21,16 @@ vi.mock("../src/lib/openaiClient", () => {
       ),
     hasLocalLlm: () => Boolean(process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()),
     localLlmBaseUrl: () => process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || null,
+    summarizeLocalLlmBaseUrl: () => ({
+      configured: Boolean(process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()),
+      host: process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()
+        ? "localhost"
+        : null,
+      hasV1Path: true,
+      isHttps: false,
+      isLocalhost: true,
+    }),
+    logLocalLlmClientInitOnce: () => {},
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () => null,
