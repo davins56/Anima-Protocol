@@ -1220,24 +1220,45 @@ function enrichError(
           trailSuffix,
       );
     }
-    const hints: string[] = [];
-    if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
-    if (!hasGroqKey()) hints.push("Set GROQ_API_KEY for Groq");
-    if (!hasKimiKey()) hints.push("Set KIMI_API_KEY for Kimi");
-    if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
-    if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY for ChatGPT");
-    if (!hasGatewayAuth()) {
-      hints.push("Set AI_GATEWAY_API_KEY (or deploy on Vercel with OIDC)");
+    // Multi-provider quota death: keys were present and tried — do NOT imply
+    // "set GROQ_API_KEY / flip ANIMA_LLM_PROVIDER=auto" as the main fix when the
+    // auto chain already burned through funded providers.
+    const missingUnused: string[] = [];
+    if (!attempted.includes("gemini") && !hasGeminiKey()) {
+      missingUnused.push("GEMINI_API_KEY");
     }
-    // When every BYOK/gateway slot is already configured, the env values can look
-    // "correct" in Vercel while every upstream still rejects (quota / billing /
-    // revoked key). Do not tell operators to re-check missing vars in that case.
-    const hint =
-      hints.length > 0
-        ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|groq|kimi|xai|gateway.`
-        : " Keys are present on the server, but every provider rejected the request (quota, billing, or revoked key) — re-checking env values will not fix this. Add credits in Google AI Studio / Groq / Moonshot / xAI / OpenAI, or top up AI Gateway. Live-check: /api/healthz/llm?probe=1.";
+    if (!attempted.includes("groq") && !hasGroqKey()) {
+      missingUnused.push("GROQ_API_KEY (often has a free tier at console.groq.com)");
+    }
+    if (!attempted.includes("kimi") && !hasKimiKey()) {
+      missingUnused.push("KIMI_API_KEY");
+    }
+    if (!attempted.includes("xai") && !hasXaiKey()) {
+      missingUnused.push("XAI_API_KEY");
+    }
+    if (!attempted.includes("openai") && !isOpenAIBlocked() && !hasOpenAIKey()) {
+      missingUnused.push("OPENAI_API_KEY");
+    }
+    if (!attempted.includes("gateway") && !hasGatewayAuth()) {
+      missingUnused.push("AI_GATEWAY_API_KEY");
+    }
+    if (!attempted.includes("local") && !hasLocalLlm()) {
+      missingUnused.push("ANIMA_LOCAL_LLM_BASE_URL (Anima open LLM via Ollama/vLLM)");
+    }
+
+    const parts: string[] = [
+      " Every cloud provider that was tried rejected the request (quota, billing, or revoked key) — re-pasting the same keys will not restore chat.",
+      " Fix options: (1) Preferred — host Anima LLM and set ANIMA_LLM_PROVIDER=custom plus ANIMA_LOCAL_LLM_BASE_URL (see docs/custom-llm.md), then redeploy.",
+      " (2) Top up credits for the providers you already use (Google AI Studio / Moonshot / xAI / OpenAI / AI Gateway).",
+    ];
+    if (missingUnused.length > 0) {
+      parts.push(` (3) Optional unused backup: set ${missingUnused.join("; ")}.`);
+    }
+    parts.push(
+      " Note: ANIMA_LLM_PROVIDER must be a mode name (custom|auto|gemini|groq|…), never an API key. Live-check: /api/healthz/llm?probe=1.",
+    );
     return new Error(
-      `LLM credits/quota exhausted (tried ${names}).${hint}${trailSuffix}`,
+      `LLM credits/quota exhausted (tried ${names}).${parts.join("")}${trailSuffix}`,
     );
   }
   const base = err instanceof Error ? err : new Error(String(err));
