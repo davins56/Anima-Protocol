@@ -101,9 +101,11 @@ export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
 
 | `ANIMA_LLM_PROVIDER` | Behavior |
 |----------------------|----------|
-| `custom` / `anima` / `local` | **Self-hosted Anima LLM only** (recommended) |
+| *(unset)* / `custom` / `anima` / `local` | **Self-hosted Anima LLM only** (product default) |
 | `local-first` | Local first, then optional cloud BYOK if keys exist |
-| `auto` | Cloud BYOK only (Gemini → Groq → …) — not the product path |
+| `auto` | Cloud BYOK only (Gemini → Groq → …) — opt-in only |
+
+If `ANIMA_LLM_PROVIDER` contains an API key (`AQ.*`, `sk-`, …), it is ignored and chat **stays on custom** — it does not fall back to the cloud chain.
 
 More detail: [`docs/llm-build.md`](./llm-build.md).
 

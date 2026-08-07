@@ -139,8 +139,8 @@ describe("isModelUnavailableError (via Gemini retired-model failover)", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     delete process.env.GROQ_API_KEY;
-    delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_GEMINI_MODEL;
     delete process.env.ANIMA_GEMINI_MODEL_LIGHT;
     delete process.env.ANIMA_GEMINI_MODEL_STANDARD;
@@ -261,8 +261,20 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     resetLlmFailoverStateForTests();
   });
 
-  it("defaults to Gemini-first auto chain with AI Gateway last resort", () => {
+  it("defaults to custom Anima LLM only (no cloud BYOK)", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VERCEL;
+    expect(getConfiguredProviderMode()).toBe("local");
+    expect(isAnimaCustomMode()).toBe(true);
+    // Dev convenience may expose localhost Ollama; Vercel must set an explicit URL.
+    expect(getLlmRoutingStatus().brand).toBe("anima");
+    expect(getLlmRoutingStatus().note).toMatch(/custom self-hosted Anima LLM/i);
+  });
+
+  it("auto is Gemini-first with AI Gateway last resort when explicitly selected", () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     expect(getConfiguredProviderMode()).toBe("auto");
     expect(getProviderChain()).toEqual([
       "gemini",
@@ -274,7 +286,8 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(getPreferredProvider()).toBe("gemini");
   });
 
-  it("inserts Groq after Gemini when GROQ_API_KEY is set", () => {
+  it("inserts Groq after Gemini when GROQ_API_KEY is set under auto", () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     process.env.GROQ_API_KEY = "gsk-test";
     expect(getProviderChain()).toEqual([
       "gemini",
@@ -308,18 +321,22 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(getProviderChain()).toEqual(["kimi"]);
   });
 
-  it("ignores API-key-like ANIMA_LLM_PROVIDER and still prefers Gemini", () => {
+  it("ignores API-key-like ANIMA_LLM_PROVIDER and stays on custom Anima LLM", () => {
     process.env.ANIMA_LLM_PROVIDER =
       "AQ.Ab8RN6LnPybKM8XuEVGP3i6PPJsaLJel5DeEfows_E_ZuL3_MQ";
-    expect(getConfiguredProviderMode()).toBe("auto");
-    expect(getProviderChain()[0]).toBe("gemini");
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    expect(getConfiguredProviderMode()).toBe("local");
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(isAnimaCustomMode()).toBe(true);
     const status = getLlmRoutingStatus();
     expect(status.rawProviderEnv).toBeNull();
-    expect(status.geminiRetiredForChat).toBe(false);
-    expect(status.note).toMatch(/Gemini/i);
+    expect(status.brand).toBe("anima");
+    expect(status.note).toMatch(/API key and was ignored/i);
+    expect(status.note).toMatch(/custom Anima LLM/i);
   });
 
   it("auto without Gemini uses Groq → Kimi → Grok → OpenAI → Gateway", () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
     process.env.GROQ_API_KEY = "gsk-test";
@@ -386,11 +403,12 @@ describe("createChatStreamWithFailover", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     delete process.env.GROQ_API_KEY;
-    delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_DISABLE_GROQ;
     delete process.env.ANIMA_DISABLE_GATEWAY;
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     resetLlmFailoverStateForTests();
     createMock.mockReset();
     geminiStreamMock.mockReset();
@@ -413,6 +431,25 @@ describe("createChatStreamWithFailover", () => {
     expect(result.provider).toBe("gemini");
     expect(result.model).toBe("gemini-2.5-flash");
     expect(geminiStreamMock).toHaveBeenCalledTimes(1);
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("never calls cloud providers in default custom mode", async () => {
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    process.env.VERCEL = "1";
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/Anima custom LLM is selected/i);
+
+    expect(geminiStreamMock).not.toHaveBeenCalled();
     expect(createMock).not.toHaveBeenCalled();
   });
 
@@ -628,8 +665,8 @@ describe("createChatCompletionWithFailover", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    process.env.ANIMA_LLM_PROVIDER = "auto";
     delete process.env.GROQ_API_KEY;
-    delete process.env.ANIMA_LLM_PROVIDER;
     resetLlmFailoverStateForTests();
     createMock.mockReset();
     geminiStreamMock.mockReset();
