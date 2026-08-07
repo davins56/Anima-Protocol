@@ -53,6 +53,8 @@ import {
   hasLocalLlm,
   hasOpenAIKey,
   hasXaiKey,
+  logLocalLlmClientInitOnce,
+  summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
 import { resolveModelSpec } from "@workspace/llm";
 
@@ -96,6 +98,20 @@ export interface LlmRoutingStatus {
     groq: boolean;
     gateway: boolean;
     local: boolean;
+  };
+  /**
+   * Secret-free custom/local endpoint diagnostics. Host only — never the full
+   * URL with credentials. Use this to confirm ANIMA_LOCAL_LLM_BASE_URL + model
+   * on Vercel without opening the env UI.
+   */
+  localEndpoint: {
+    configured: boolean;
+    host: string | null;
+    hasV1Path: boolean;
+    isHttps: boolean;
+    isLocalhost: boolean;
+    backend: string;
+    model: string;
   };
   /** Always false — Gemini is selectable again when GEMINI_API_KEY is set. */
   geminiRetiredForChat: false;
@@ -584,6 +600,17 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   const mode = getConfiguredProviderMode();
   const chain = getProviderChain(tier);
   const preferred = chain[0] ?? null;
+  const localSummary = summarizeLocalLlmBaseUrl();
+  const backend =
+    (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() || "ollama";
+  const localModel =
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
+    process.env.ANIMA_VLLM_MODEL?.trim() ||
+    resolveLocalModel(tier).model;
+  // Emit a one-time init line so Vercel logs show host/model without secrets.
+  if (mode === "local" || mode === "local-first") {
+    logLocalLlmClientInitOnce();
+  }
   const noteParts: string[] = [];
   if (rawInput && !sanitized) {
     noteParts.push(
@@ -612,9 +639,28 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       "Chat uses the cloud BYOK chain (Gemini → Groq → Kimi → Grok → OpenAI → Gateway). Set ANIMA_LLM_PROVIDER=custom to use only the Anima LLM.",
     );
   } else if (mode === "local") {
-    noteParts.push(
-      "Chat uses the custom self-hosted Anima LLM only (vLLM/Ollama/llama.cpp). No Gemini/Groq/Kimi/Grok/Gateway. Set ANIMA_LOCAL_LLM_BASE_URL to a public OpenAI-compatible URL on Vercel.",
-    );
+    if (!localSummary.configured) {
+      noteParts.push(
+        "Anima custom LLM is selected, but ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. Gemini/Groq/Kimi/Grok/ChatGPT/Gateway are intentionally NOT used in custom mode. Only set ANIMA_LLM_PROVIDER=auto if you want the cloud BYOK chain. See docs/custom-llm.md.",
+      );
+    } else {
+      noteParts.push(
+        `Chat uses the custom self-hosted Anima LLM only (vLLM/Ollama/llama.cpp) at host=${localSummary.host ?? "?"} model=${localModel}. No Gemini/Groq/Kimi/Grok/Gateway.`,
+      );
+      if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+        noteParts.push(
+          "WARNING: local endpoint is localhost on Vercel — serverless cannot reach it. Use a public HTTPS tunnel URL.",
+        );
+      } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+        noteParts.push(
+          "WARNING: local endpoint is not HTTPS — Vercel egress often requires https://…/v1.",
+        );
+      } else if (!localSummary.hasV1Path) {
+        noteParts.push(
+          "WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions.",
+        );
+      }
+    }
   } else if (mode === "local-first") {
     noteParts.push(
       "Chat prefers the custom local model, then fails over to the cloud auto chain if the local endpoint fails.",
@@ -653,6 +699,15 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       groq: hasGroqKey(),
       gateway: hasGatewayAuth(),
       local: hasLocalLlm(),
+    },
+    localEndpoint: {
+      configured: localSummary.configured,
+      host: localSummary.host,
+      hasV1Path: localSummary.hasV1Path,
+      isHttps: localSummary.isHttps,
+      isLocalhost: localSummary.isLocalhost,
+      backend,
+      model: localModel,
     },
     geminiRetiredForChat: false,
     // Never echo API-key-like values that were pasted into the wrong field.

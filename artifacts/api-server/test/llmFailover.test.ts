@@ -20,8 +20,108 @@ vi.mock("../src/lib/openaiClient", () => {
       Boolean(
         process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
       ),
-    hasLocalLlm: () => Boolean(process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()),
-    localLlmBaseUrl: () => process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || null,
+    localLlmBaseUrl: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim();
+      if (explicit) return explicit.replace(/\/$/, "");
+      const ollama = process.env.OLLAMA_BASE_URL?.trim();
+      if (ollama) {
+        const root = ollama.replace(/\/$/, "");
+        return root.endsWith("/v1") ? root : `${root}/v1`;
+      }
+      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+      const cloudOnly = [
+        "auto",
+        "gemini",
+        "groq",
+        "kimi",
+        "xai",
+        "openai",
+        "gateway",
+        "ensemble",
+      ].includes(mode);
+      if (cloudOnly) return null;
+      return "http://localhost:11434/v1";
+    },
+    hasLocalLlm: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim() ||
+        process.env.OLLAMA_BASE_URL?.trim();
+      if (explicit) return true;
+      if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
+      const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+      return ![
+        "auto",
+        "gemini",
+        "groq",
+        "kimi",
+        "xai",
+        "openai",
+        "gateway",
+        "ensemble",
+      ].includes(mode);
+    },
+    summarizeLocalLlmBaseUrl: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim();
+      let base = explicit?.replace(/\/$/, "") || null;
+      if (!base) {
+        const ollama = process.env.OLLAMA_BASE_URL?.trim();
+        if (ollama) {
+          const root = ollama.replace(/\/$/, "");
+          base = root.endsWith("/v1") ? root : `${root}/v1`;
+        }
+      }
+      if (!base && !(process.env.VERCEL || process.env.VERCEL_ENV)) {
+        const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+        const cloudOnly = [
+          "auto",
+          "gemini",
+          "groq",
+          "kimi",
+          "xai",
+          "openai",
+          "gateway",
+          "ensemble",
+        ].includes(mode);
+        if (!cloudOnly) base = "http://localhost:11434/v1";
+      }
+      if (!base) {
+        return {
+          configured: false,
+          host: null,
+          hasV1Path: false,
+          isHttps: false,
+          isLocalhost: false,
+        };
+      }
+      try {
+        const url = new URL(base);
+        const host = url.hostname || null;
+        const path = (url.pathname || "").replace(/\/$/, "");
+        return {
+          configured: true,
+          host,
+          hasV1Path: path === "/v1" || path.endsWith("/v1"),
+          isHttps: url.protocol === "https:",
+          isLocalhost:
+            host === "localhost" || host === "127.0.0.1" || host === "::1",
+        };
+      } catch {
+        return {
+          configured: true,
+          host: null,
+          hasV1Path: /\/v1\/?$/.test(base),
+          isHttps: /^https:/i.test(base),
+          isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+        };
+      }
+    },
+    logLocalLlmClientInitOnce: () => {},
     getOpenAIClient: () => client,
     getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
     getGeminiClient: () =>
@@ -37,8 +137,30 @@ vi.mock("../src/lib/openaiClient", () => {
       process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim()
         ? client
         : null,
-    getLocalLlmClient: () =>
-      process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ? client : null,
+    getLocalLlmClient: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim() ||
+        process.env.OLLAMA_BASE_URL?.trim();
+      if (explicit) return client;
+      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+      if (
+        [
+          "auto",
+          "gemini",
+          "groq",
+          "kimi",
+          "xai",
+          "openai",
+          "gateway",
+          "ensemble",
+        ].includes(mode)
+      ) {
+        return null;
+      }
+      return client;
+    },
     normalizeApiKey: (raw: string | undefined) => {
       if (!raw) return null;
       return raw.trim() || null;
@@ -332,7 +454,27 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     expect(status.rawProviderEnv).toBeNull();
     expect(status.brand).toBe("anima");
     expect(status.note).toMatch(/API key and was ignored/i);
-    expect(status.note).toMatch(/custom Anima LLM/i);
+    expect(status.note).toMatch(/custom self-hosted Anima LLM/i);
+    expect(status.localEndpoint.configured).toBe(true);
+    expect(status.localEndpoint.host).toBe("localhost");
+    expect(status.localEndpoint.hasV1Path).toBe(true);
+  });
+
+  it("surfaces missing ANIMA_LOCAL_LLM_BASE_URL on Vercel in healthz", () => {
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("error");
+    expect(status.mode).toBe("local");
+    expect(status.keys.local).toBe(false);
+    expect(status.localEndpoint.configured).toBe(false);
+    expect(status.localEndpoint.model).toBe("anima-chat");
+    expect(status.note).toMatch(/Anima custom LLM is selected/i);
+    expect(status.note).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/i);
   });
 
   it("auto without Gemini uses Groq → Kimi → Grok → OpenAI → Gateway", () => {

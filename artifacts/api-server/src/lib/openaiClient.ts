@@ -139,6 +139,84 @@ export function hasLocalLlm(): boolean {
   return Boolean(localLlmBaseUrl());
 }
 
+/**
+ * Secret-free summary of the configured local LLM base URL for healthz / logs.
+ * Returns hostname + whether the path looks OpenAI-compatible (`/v1`).
+ */
+export function summarizeLocalLlmBaseUrl(): {
+  configured: boolean;
+  host: string | null;
+  hasV1Path: boolean;
+  isHttps: boolean;
+  isLocalhost: boolean;
+} {
+  const base = localLlmBaseUrl();
+  if (!base) {
+    return {
+      configured: false,
+      host: null,
+      hasV1Path: false,
+      isHttps: false,
+      isLocalhost: false,
+    };
+  }
+  try {
+    const url = new URL(base);
+    const host = url.hostname || null;
+    const path = (url.pathname || "").replace(/\/$/, "");
+    const isLocalhost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host === "0.0.0.0";
+    return {
+      configured: true,
+      host,
+      hasV1Path: path === "/v1" || path.endsWith("/v1"),
+      isHttps: url.protocol === "https:",
+      isLocalhost,
+    };
+  } catch {
+    return {
+      configured: true,
+      host: null,
+      hasV1Path: /\/v1\/?$/.test(base),
+      isHttps: /^https:/i.test(base),
+      isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+    };
+  }
+}
+
+let loggedLocalLlmInit = false;
+
+/** One-time operator log of local LLM routing (no API keys). */
+export function logLocalLlmClientInitOnce(): void {
+  if (loggedLocalLlmInit) return;
+  loggedLocalLlmInit = true;
+  const summary = summarizeLocalLlmBaseUrl();
+  const backend =
+    (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() ||
+    "ollama";
+  const model =
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
+    process.env.ANIMA_VLLM_MODEL?.trim() ||
+    "(default from registry)";
+  if (!summary.configured) {
+    console.info(
+      "[llm] custom/local mode: ANIMA_LOCAL_LLM_BASE_URL unset — set a public HTTPS OpenAI-compatible URL (…/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md.",
+    );
+    return;
+  }
+  console.info(
+    `[llm] local client: host=${summary.host ?? "?"} https=${summary.isHttps} v1=${summary.hasV1Path} localhost=${summary.isLocalhost} backend=${backend} model=${model}`,
+  );
+}
+
+/** Test helper — allow re-logging after env changes. */
+export function resetLocalLlmInitLogForTests(): void {
+  loggedLocalLlmInit = false;
+}
+
 export function getOpenAIClient(): OpenAI {
   const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
   if (!apiKey) {
@@ -255,7 +333,10 @@ export function getGatewayClient(): OpenAI | null {
  */
 export function getLocalLlmClient(): OpenAI | null {
   const baseURL = localLlmBaseUrl();
-  if (!baseURL) return null;
+  if (!baseURL) {
+    logLocalLlmClientInitOnce();
+    return null;
+  }
   const apiKey =
     normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) ||
     normalizeApiKey(process.env.VLLM_API_KEY) ||
@@ -268,6 +349,7 @@ export function getLocalLlmClient(): OpenAI | null {
       maxRetries: 0,
     });
     localLlmClientKey = cacheKey;
+    logLocalLlmClientInitOnce();
   }
   return localLlmClient;
 }
@@ -288,4 +370,5 @@ export function resetLlmClientsForTests(): void {
   gatewayClientKey = null;
   localLlmClient = null;
   localLlmClientKey = null;
+  resetLocalLlmInitLogForTests();
 }

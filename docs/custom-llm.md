@@ -111,19 +111,52 @@ More detail: [`docs/llm-build.md`](./llm-build.md).
 
 ## Production note (Vercel)
 
-If chat shows **“LLM credits/quota exhausted (tried Gemini → …)”**, production is still on the cloud chain — not Anima LLM. Check:
+### Exact fix — “Anima custom LLM is selected…”
+
+That banner is intentional: custom mode is on, but `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable. Cloud BYOK (Gemini/Groq/Kimi/Grok/ChatGPT/Gateway) is **deliberately disabled**.
+
+1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS**.  
+   Example with Ollama: expose it via a reverse proxy / Cloudflare Tunnel / ngrok → `https://your-tunnel.example.com`.
+2. **Set these on Vercel (Production)** and redeploy **without build cache**:
 
 ```bash
-curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,keys,note}'
-```
-
-Vercel serverless cannot reach a laptop Ollama. Host Ollama/vLLM on a machine with a **public HTTPS** URL (or run the api-server beside the model), then set:
-
-```bash
-ANIMA_LLM_PROVIDER=custom          # must be the word "custom", never an API key
+ANIMA_LLM_PROVIDER=custom                    # literal word "custom" — never an API key
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
-ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or the model id your server serves
 ```
 
-Redeploy without build cache. Full troubleshooting: [`docs/vercel-api-migration.md`](./vercel-api-migration.md).
+3. Do **not** leave `ANIMA_LLM_PROVIDER=auto` (or paste a key into that field). Custom mode will not fall through to the cloud chain.
+
+### Quick diagnostic checklist
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,keys,localEndpoint,note}'
+# healthy custom mode: mode=local, preferred=local, keys.local=true,
+# localEndpoint.configured=true, localEndpoint.host=<your-host>, hasV1Path=true
+
+# Live probe (tiny completion against the configured endpoint):
+curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' | jq '{preferred,probeOk,localEndpoint,probes}'
+```
+
+Also verify the tunnel itself:
+
+```bash
+curl -sS https://<your-host>/v1/models
+# model id in the list must match ANIMA_OLLAMA_MODEL_STANDARD
+```
+
+| Check | Expect |
+|-------|--------|
+| `/v1/models` or `/v1/chat/completions` on the tunnel | Valid OpenAI-compatible JSON |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | Exists on that server |
+| `/api/healthz/llm` → `localEndpoint` | `configured: true`, correct `host`, `hasV1Path: true` |
+| Vercel function logs | One `[llm] local client: host=… model=…` line at init |
+
+Once those two vars are set and the endpoint is reachable, the banner disappears and the next chat turn uses your model.
+
+### Cloud-chain confusion
+
+If chat shows **“LLM credits/quota exhausted (tried Gemini → …)”**, production is still on the cloud chain — not Anima LLM. Set `ANIMA_LLM_PROVIDER=custom` and a public `ANIMA_LOCAL_LLM_BASE_URL` as above.
+
+Full troubleshooting: [`docs/vercel-api-migration.md`](./vercel-api-migration.md).
