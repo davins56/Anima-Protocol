@@ -20,6 +20,8 @@ documentation.
 - [x] Step 9: OpenAI-compatible **local** provider (vLLM/Ollama) in `llmFailover`
 - [x] Step 10: `ANIMA_LLM_PROVIDER=local|local-first` hybrid routing + healthz keys
 - [x] Step 11: Hybrid memory retrieval + `memory_embeddings` + `searchMemoriesSemantically`
+  - Chat `upsertTurnMemory` indexes each new turn into `memory_embeddings` via `upsertMemoryEmbeddings`
+  - Prompt path uses `attachStoredEmbeddings`; tool path uses `searchMemoriesSemantically`
 
 ## Phase C — Self-hosted "run your own Anima" path
 
@@ -46,3 +48,5 @@ documentation.
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
 - [x] `ANIMA_LLM_PROVIDER=custom|anima|local` = self-hosted Anima LLM (no cloud BYOK)
 - [ ] Host Ollama/vLLM with a public HTTPS URL and flip production to `custom`
+  - Do **not** point `ANIMA_LOCAL_LLM_BASE_URL` at `api.openai.com` — that is cloud OpenAI, not Anima LLM
+  - For OpenAI chat responses use `ANIMA_LLM_PROVIDER=openai` (or `auto`) + `OPENAI_API_KEY` instead
