@@ -13,7 +13,8 @@ flowchart LR
   web --> mixpanel[Mixpanel<br/>consent-gated analytics]
   web --> clerk[Clerk frontend auth]
   api --> clerk_api[Clerk session verification]
-  api --> openai[OpenAI]
+  api --> animaLlm[Anima LLM<br/>Ollama/vLLM open weights]
+  api --> cloudByok[Optional cloud BYOK<br/>Gemini/Groq/…]
   api --> eleven[ElevenLabs optional TTS]
   api --> db[(PostgreSQL<br/>Drizzle schema in lib/db)]
   mockup[Mockup sandbox<br/>artifacts/mockup-sandbox] --> web

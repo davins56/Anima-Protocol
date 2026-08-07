@@ -1,8 +1,13 @@
-# Building the Anima local LLM (Ministral 3 8B)
+# Building the Anima local LLM
+
+**Honest scope:** ChatGPT / Gemini / Groq source + weights are **not** public.
+Anima’s LLM is built from **public open weights** (Qwen2.5 bootstrap, Ministral
+upgrade) + open inference (Ollama / llama.cpp / vLLM) + Anima fine-tune data.
 
 This guide covers the full stack:
 
-1. Fine-tuned **Ministral 3 8B** as the primary companion model  
+0. **Bootstrap** `anima-chat` (Qwen2.5 3B) so chat works on a laptop today — `pnpm llm:up`  
+1. Fine-tuned **Ministral 3 8B** as the primary GPU companion model  
 2. Structured + vector **memory retrieval** before every generation  
 3. **Local serving** via vLLM or Ollama (OpenAI-compatible)  
 4. Optional hybrid cloud fallback while you tune  

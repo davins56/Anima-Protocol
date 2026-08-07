@@ -45,11 +45,27 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
-**If chat fails for every companion with “no credits” or `401 status code (no body)`:** Prefer a working **`GEMINI_API_KEY`**, keep `ANIMA_LLM_PROVIDER=auto`, ensure backups (`GROQ_API_KEY` / `KIMI_API_KEY` / `XAI_API_KEY` / `OPENAI_API_KEY`) are funded, **or** set `AI_GATEWAY_API_KEY` so the unpaid AI Gateway last resort can cover. Also check that `ANIMA_LLM_PROVIDER` is a mode name (`auto` / `gemini` / …), not an API key. Image generation still needs a funded `OPENAI_API_KEY`.
+**If chat shows “LLM credits/quota exhausted (tried Gemini → Kimi → Grok → ChatGPT → AI Gateway)”:**
+Production is on the **cloud BYOK chain** and every tried key is out of money/quota. Live status today often looks like:
 
-**If `/api/healthz/llm` already shows `"keys": { …: true }` for every provider:** the env values are present — the failure is upstream rejection (quota/billing/revoked), not a missing Vercel variable. Open each provider console and fund/repair the account, or set `AI_GATEWAY_API_KEY`. Confirm with `?probe=1` (look for at least one `"ok": true`).
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq
+# "mode":"auto", "local":false, and a note that ANIMA_LLM_PROVIDER looked like an API key
+```
 
-**Gemini setup (recommended):** Create a key at Google AI Studio, set `GEMINI_API_KEY` on Vercel **Production**, set `ANIMA_LLM_PROVIDER=auto` (or `gemini`), and move any `AQ.*` value out of `ANIMA_LLM_PROVIDER` into `GEMINI_API_KEY`. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"gemini"` and a chain like `["gemini","groq","kimi","xai","openai","gateway"]` (Groq appears when `GROQ_API_KEY` is set). Live-test keys with `?probe=1`.
+Do this on **Vercel → Settings → Environment Variables → Production**, then **redeploy without build cache**:
+
+| Fix | Env |
+|-----|-----|
+| **A — Anima LLM (preferred, no cloud chat bills)** | `ANIMA_LLM_PROVIDER=custom` (literal word `custom`, **not** a key), `ANIMA_LOCAL_LLM_BACKEND=ollama`, `ANIMA_LOCAL_LLM_BASE_URL=https://<your-public-ollama-or-vllm>/v1`, `ANIMA_OLLAMA_MODEL_STANDARD=anima-chat`. Host Ollama with `pnpm llm:up` on a machine that Vercel can reach (HTTPS). See `docs/custom-llm.md`. |
+| **B — Quick unblock** | Add a funded key that still works — e.g. free-tier `GROQ_API_KEY` from https://console.groq.com — keep `ANIMA_LLM_PROVIDER=auto`, redeploy. Or top up Gemini / Moonshot / xAI / OpenAI / AI Gateway. |
+| **C — Mis-pasted mode** | If `ANIMA_LLM_PROVIDER` contains an `AQ.*` / `sk-` / long secret, **delete it** or set it to `auto` / `custom`. Put Gemini keys only in `GEMINI_API_KEY`. |
+
+Image generation still needs a funded `OPENAI_API_KEY` even when chat uses Anima LLM / Groq.
+
+**If `/api/healthz/llm` already shows `"keys": { …: true }` for the cloud providers:** the env values are present — the failure is upstream rejection (quota/billing/revoked), not a missing Vercel variable. Confirm with `?probe=1` (look for at least one `"ok": true`).
+
+**Gemini setup (optional cloud path):** Create a key at Google AI Studio, set `GEMINI_API_KEY` on Vercel **Production**, set `ANIMA_LLM_PROVIDER=auto` (or `gemini`), and move any `AQ.*` value out of `ANIMA_LLM_PROVIDER` into `GEMINI_API_KEY`. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"gemini"` and a chain like `["gemini","groq","kimi","xai","openai","gateway"]` (Groq appears when `GROQ_API_KEY` is set). Live-test keys with `?probe=1`.
 
 **Chat default is Gemini-first with failover:** Without any chat keys, chat fails with a clear setup error. With `ANIMA_LLM_PROVIDER=anima` / `ensemble` (or `ANIMA_LLM_ENSEMBLE=true`), available minds (**Gemini / Groq / ChatGPT**) draft in parallel, then a combined reply is streamed. Sticky provider failures are skipped on later turns; timed-out mind calls are aborted.
 
