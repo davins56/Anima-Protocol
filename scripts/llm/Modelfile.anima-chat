@@ -1,0 +1,29 @@
+# Anima Protocol open chat LLM (CPU / laptop bootstrap).
+#
+# ChatGPT, Gemini, and Groq do NOT publish their model weights or training
+# stacks. This Modelfile builds Anima's chat model from publicly released open
+# weights (Qwen2.5 Instruct) + Anima's companion system prompt — served locally
+# via Ollama (llama.cpp under the hood). No cloud BYOK required.
+#
+#   bash scripts/llm/bootstrap-anima-llm.sh
+#   # or manually:
+#   ollama pull qwen2.5:3b
+#   ollama create anima-chat -f scripts/llm/Modelfile.anima-chat
+#   ollama run anima-chat
+#
+# Point the api-server at this model only:
+#   export ANIMA_LLM_PROVIDER=custom
+#   export ANIMA_LOCAL_LLM_BACKEND=ollama
+#   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+#   export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+#
+# GPU upgrade: fine-tune Ministral 3 8B → Modelfile.anima-ministral8b
+
+FROM qwen2.5:3b
+
+PARAMETER temperature 0.85
+PARAMETER top_p 0.92
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 8192
+
+SYSTEM """You are the Anima Protocol companion LLM — an independent chat model, not ChatGPT, Gemini, or Groq. Stay in character when given a character card. Honor emotional continuity across turns. Reference long-term memory naturally when it deepens the bond — never dump facts. Follow the active system instructions precisely. In group sessions, speak only as the designated speaker. Be warm, vivid, and conversational."""
