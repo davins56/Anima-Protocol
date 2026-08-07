@@ -541,6 +541,36 @@ describe("createChatStreamWithFailover", () => {
     ).rejects.toThrow(/Details:.*Gemini:.*Kimi/i);
   });
 
+  it("points exhausted cloud chain at Anima LLM, not at flipping ANIMA_LLM_PROVIDER=auto", async () => {
+    geminiStreamMock.mockRejectedValueOnce({
+      status: 429,
+      message: "gemini quota gone",
+    });
+    createMock
+      .mockRejectedValueOnce({ status: 429, message: "kimi quota gone" })
+      .mockRejectedValueOnce({ status: 403, message: "xai no credits" })
+      .mockRejectedValueOnce({ status: 429, message: "openai quota gone" })
+      .mockRejectedValueOnce({ status: 402, message: "gateway budget exceeded" });
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "gpt-4o",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      expect.unreachable("expected quota exhaustion");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      expect(msg).toMatch(/ANIMA_LLM_PROVIDER=custom/i);
+      expect(msg).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/i);
+      expect(msg).toMatch(/GROQ_API_KEY/);
+      expect(msg).not.toMatch(
+        /Set GROQ_API_KEY for Groq\. Or set ANIMA_LLM_PROVIDER=auto/,
+      );
+    }
+  });
+
   it("starts each chat turn on Gemini even after prior sticky failures", async () => {
     recordProviderFailure("gemini", { status: 429, message: "quota exhausted" });
     recordProviderFailure("kimi", { status: 429, message: "quota exhausted" });

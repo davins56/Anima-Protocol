@@ -107,6 +107,21 @@ export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
 
 More detail: [`docs/llm-build.md`](./llm-build.md).
 
-## Production note
+## Production note (Vercel)
 
-Vercel serverless cannot reach a laptop GPU/CPU Ollama by default. Host Ollama/vLLM on a machine with a reachable HTTPS URL (or run the api-server beside the model), then set `ANIMA_LOCAL_LLM_BASE_URL`.
+If chat shows **“LLM credits/quota exhausted (tried Gemini → …)”**, production is still on the cloud chain — not Anima LLM. Check:
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,keys,note}'
+```
+
+Vercel serverless cannot reach a laptop Ollama. Host Ollama/vLLM on a machine with a **public HTTPS** URL (or run the api-server beside the model), then set:
+
+```bash
+ANIMA_LLM_PROVIDER=custom          # must be the word "custom", never an API key
+ANIMA_LOCAL_LLM_BACKEND=ollama
+ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+```
+
+Redeploy without build cache. Full troubleshooting: [`docs/vercel-api-migration.md`](./vercel-api-migration.md).
