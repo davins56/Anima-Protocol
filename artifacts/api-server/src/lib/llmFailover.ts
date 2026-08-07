@@ -4,17 +4,20 @@
 // llama.cpp) — no Gemini, Groq, Kimi, Grok, or AI Gateway required.
 //
 // Provider selection is controlled by ANIMA_LLM_PROVIDER:
-//   - custom / anima / local — self-hosted Anima LLM only (recommended)
+//   - (unset) / custom / anima / local — self-hosted Anima LLM ONLY (default)
 //   - local-first / vllm / ollama — local first, then optional cloud auto chain
-//   - (unset) / auto         — cloud BYOK: Gemini → Groq → Kimi → Grok → OpenAI → Gateway
+//   - auto                   — cloud BYOK: Gemini → Groq → Kimi → Grok → OpenAI → Gateway
 //   - gemini / groq / kimi / xai / openai / gateway — single-provider cloud modes
 //   - ensemble               — opt-in cloud parallel-minds path (see llmEnsemble.ts)
 //
 // Local endpoint: ANIMA_LOCAL_LLM_BASE_URL (or VLLM_BASE_URL / OLLAMA_BASE_URL).
+// Required for the default custom mode on Vercel (set a public HTTPS URL).
 //
 // Values that look like API keys pasted into ANIMA_LLM_PROVIDER are ignored
-// (common Vercel misconfig: AQ.* Gemini key in the wrong field). Use
-// GEMINI_API_KEY for the actual key and set ANIMA_LLM_PROVIDER=auto|gemini.
+// (common Vercel misconfig: AQ.* Gemini key in the wrong field) and the default
+// custom/local mode is used — they do NOT unlock the cloud chain. Put keys in
+// GEMINI_API_KEY / GROQ_API_KEY / … and set ANIMA_LLM_PROVIDER=auto only if you
+// explicitly want cloud BYOK.
 //
 // ANIMA_DISABLE_OPENAI=true blocks OpenAI under `auto`.
 // ANIMA_DISABLE_GROQ=true blocks Groq under `auto` / `openai`.
@@ -218,11 +221,14 @@ export function sanitizeProviderEnv(raw: string | null | undefined): string | nu
 }
 
 function defaultProviderMode(): LlmProviderMode {
-  return "auto";
+  // Product default: Anima self-hosted LLM only. Cloud BYOK requires an
+  // explicit ANIMA_LLM_PROVIDER=auto (or gemini/groq/…).
+  return "local";
 }
 
 export function getConfiguredProviderMode(): LlmProviderMode {
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
+  // Unset OR API-key pasted into the wrong field → custom Anima LLM (not auto).
   if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
   if (raw === "moonshot") return "kimi";
@@ -256,15 +262,8 @@ export function getConfiguredProviderMode(): LlmProviderMode {
 
 /** True when using the branded self-hosted Anima LLM (not cloud ensemble). */
 export function isAnimaCustomMode(): boolean {
-  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
-  return (
-    raw === "anima" ||
-    raw === "custom" ||
-    raw === "local" ||
-    raw === "vllm" ||
-    raw === "ollama" ||
-    raw === "local-first"
-  );
+  const mode = getConfiguredProviderMode();
+  return mode === "local" || mode === "local-first";
 }
 
 /** True when OpenAI is blocked by config (mode / ANIMA_DISABLE_OPENAI), not sticky. */
@@ -588,7 +587,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   const noteParts: string[] = [];
   if (rawInput && !sanitized) {
     noteParts.push(
-      "ANIMA_LLM_PROVIDER looks like an API key and was ignored — set it to custom|local|auto|gemini|… (put the Gemini key in GEMINI_API_KEY).",
+      "ANIMA_LLM_PROVIDER looks like an API key and was ignored — chat stays on custom Anima LLM (not the cloud chain). Put the key in GEMINI_API_KEY / GROQ_API_KEY / … and set ANIMA_LLM_PROVIDER=custom (or delete it). Use auto only if you want cloud BYOK.",
     );
   }
   if (preferNonLocal) {
@@ -610,11 +609,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   }
   if (mode === "auto") {
     noteParts.push(
-      "Chat uses the cloud BYOK chain (Gemini → Groq → Kimi → Grok → OpenAI → Gateway). For a custom self-hosted model set ANIMA_LLM_PROVIDER=custom and ANIMA_LOCAL_LLM_BASE_URL.",
+      "Chat uses the cloud BYOK chain (Gemini → Groq → Kimi → Grok → OpenAI → Gateway). Set ANIMA_LLM_PROVIDER=custom to use only the Anima LLM.",
     );
   } else if (mode === "local") {
     noteParts.push(
-      "Chat uses the custom self-hosted Anima LLM only (vLLM/Ollama/llama.cpp). No Gemini/Groq/Kimi/Grok/Gateway. Set ANIMA_LOCAL_LLM_BASE_URL (or OLLAMA_BASE_URL).",
+      "Chat uses the custom self-hosted Anima LLM only (vLLM/Ollama/llama.cpp). No Gemini/Groq/Kimi/Grok/Gateway. Set ANIMA_LOCAL_LLM_BASE_URL to a public OpenAI-compatible URL on Vercel.",
     );
   } else if (mode === "local-first") {
     noteParts.push(
@@ -1365,6 +1364,16 @@ async function withModelFallback<T>(
 function requireProviderChain(): LlmProviderId[] {
   const chain = getProviderChain();
   if (chain.length === 0) {
+    const mode = getConfiguredProviderMode();
+    if (mode === "local" || mode === "local-first") {
+      throw new Error(
+        "Anima custom LLM is selected, but ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). " +
+          "Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 " +
+          "and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. " +
+          "Gemini/Groq/Kimi/Grok/ChatGPT/Gateway are intentionally NOT used in custom mode. " +
+          "Only set ANIMA_LLM_PROVIDER=auto if you want the cloud BYOK chain. See docs/custom-llm.md.",
+      );
+    }
     const missing: string[] = [];
     if (!hasLocalLlm()) missing.push("ANIMA_LOCAL_LLM_BASE_URL");
     if (!hasGeminiKey()) missing.push("GEMINI_API_KEY");
@@ -1376,22 +1385,19 @@ function requireProviderChain(): LlmProviderId[] {
     const configNote = isOpenAIBlocked()
       ? " OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI."
       : "";
-    const mode = getConfiguredProviderMode();
     const modeNote =
-      mode === "local" || mode === "local-first"
-        ? " Local mode requires ANIMA_LOCAL_LLM_BASE_URL (vLLM) or OLLAMA_BASE_URL with ANIMA_LLM_PROVIDER=local|local-first."
-        : mode === "kimi"
-          ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY."
-          : mode === "gemini"
-            ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY."
-            : mode === "groq"
-              ? " ANIMA_LLM_PROVIDER=groq requires a working GROQ_API_KEY."
-              : mode === "gateway"
-                ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN."
-                : "";
+      mode === "kimi"
+        ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY."
+        : mode === "gemini"
+          ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY."
+          : mode === "groq"
+            ? " ANIMA_LLM_PROVIDER=groq requires a working GROQ_API_KEY."
+            : mode === "gateway"
+              ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN."
+              : "";
     throw new Error(
       missing.length >= 4
-        ? `No LLM provider configured. Set ANIMA_LOCAL_LLM_BASE_URL for local Qwen, or GEMINI_API_KEY / GROQ_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY.${configNote}${modeNote}`
+        ? `No LLM provider configured. Set ANIMA_LOCAL_LLM_BASE_URL for the Anima LLM, or GEMINI_API_KEY / GROQ_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY with ANIMA_LLM_PROVIDER=auto.${configNote}${modeNote}`
         : `No usable LLM provider right now.${configNote}${modeNote} Check local endpoint / API keys and redeploy.`,
     );
   }

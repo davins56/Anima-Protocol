@@ -81,6 +81,10 @@ export function hasGatewayAuth(): boolean {
 /**
  * Base URL for a local OpenAI-compatible server (vLLM, Ollama `/v1`, llama.cpp).
  * Prefers ANIMA_LOCAL_LLM_BASE_URL, then VLLM_BASE_URL, then Ollama's OpenAI path.
+ *
+ * Product default is custom/local. Cloud-only modes (auto/gemini/…) never get a
+ * localhost Ollama URL. On Vercel, localhost is never invented — set
+ * ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS host.
  */
 export function localLlmBaseUrl(): string | null {
   const explicit =
@@ -88,23 +92,46 @@ export function localLlmBaseUrl(): string | null {
     process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
 
-  // Opt-in: treat Ollama as the local chat backend when custom/local modes are
-  // selected (or ANIMA_USE_OLLAMA_OPENAI is set).
-  const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
-  const ollamaAsLocal =
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim();
+  const mode = raw.toLowerCase();
+  const looksLikeKey =
+    /^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(raw) || raw.length > 32;
+  const cloudOnly =
+    !looksLikeKey &&
+    (mode === "auto" ||
+      mode === "gemini" ||
+      mode === "groq" ||
+      mode === "kimi" ||
+      mode === "xai" ||
+      mode === "openai" ||
+      mode === "gateway" ||
+      mode === "ensemble");
+  if (cloudOnly) return null;
+
+  const forceOllama =
+    process.env.ANIMA_USE_OLLAMA_OPENAI === "1" ||
+    process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
+  const customLike =
+    !raw ||
+    looksLikeKey ||
     mode === "local" ||
     mode === "custom" ||
     mode === "anima" ||
     mode === "local-first" ||
     mode === "ollama" ||
-    mode === "vllm" ||
-    process.env.ANIMA_USE_OLLAMA_OPENAI === "1" ||
-    process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
-  if (!ollamaAsLocal) return null;
+    mode === "vllm";
+  if (!customLike && !forceOllama) return null;
 
-  const ollama = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
-  const root = ollama.replace(/\/$/, "");
-  return root.endsWith("/v1") ? root : `${root}/v1`;
+  const ollama = process.env.OLLAMA_BASE_URL?.trim();
+  if (ollama) {
+    const root = ollama.replace(/\/$/, "");
+    return root.endsWith("/v1") ? root : `${root}/v1`;
+  }
+
+  // Never invent localhost on Vercel / serverless — operators must set a public URL.
+  if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+
+  return "http://localhost:11434/v1";
 }
 
 /** True when a local OpenAI-compatible LLM endpoint is configured. */
