@@ -23,8 +23,15 @@ import {
   type ProviderName,
 } from "./registry";
 import {
+  cleanExamples,
+  dedupeExamples,
+  hasDenylistedAssistantContent,
+  listPreferenceExamples,
   listSeedExamples,
+  preferencesToJsonl,
+  splitExamples,
   toJsonl,
+  type ChatTurn,
   type ExportFormat,
   type TrainingExample,
 } from "./dataset";
@@ -42,10 +49,21 @@ function usage(): never {
 Commands:
   list-models [--provider vllm|ollama|openai|groq|mock]
   export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
+               [--no-clean] [--min-assistant-chars N]
+  import-logs [--dir path] [--character name] [--tags a,b] [--out path] [--format …]
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
+               [--with-db] [--user <clerkUserId>] [--no-clean] [--no-dedupe]
+               [--min-assistant-chars N] [--val-split 0.0-0.5]
+               [--with-logs dir] [--character name]
+  dataset-stats [--file path]   Quality/shape report on an exported JSONL
+  prepare-dpo [--out path] [--tags a,b]   Preference pairs for DPO/ORPO/SimPO
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
   serve-hint
   seed-stats
+
+export-turns / prepare-finetune drop error/denylisted turns, redact obvious
+PII (emails, phone numbers), and de-duplicate near-identical conversations by
+default. Pass --no-clean / --no-dedupe to skip either step.
 
 Examples:
   pnpm llm:up                               # bootstrap open-weight anima-chat
@@ -65,6 +83,16 @@ function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
 }
 
+const SUPPORTED_FORMATS: ExportFormat[] = ["sharegpt", "chatml", "alpaca", "messages"];
+
+function parseFormat(raw: string | undefined): ExportFormat {
+  const format = raw || "sharegpt";
+  if (!SUPPORTED_FORMATS.includes(format as ExportFormat)) {
+    throw new Error(`Unsupported --format "${format}" (expected one of: ${SUPPORTED_FORMATS.join(", ")})`);
+  }
+  return format as ExportFormat;
+}
+
 async function cmdListModels(args: string[]): Promise<void> {
   const provider = resolveProvider(argValue(args, "--provider"));
   console.log(`Provider: ${provider}`);
@@ -73,16 +101,78 @@ async function cmdListModels(args: string[]): Promise<void> {
   }
 }
 
+/** Shared clean+dedupe pass, reporting what was dropped so bad data is visible, not silent. */
+function applyQualityPipeline(
+  examples: TrainingExample[],
+  args: string[],
+): TrainingExample[] {
+  const noClean = hasFlag(args, "--no-clean");
+  const noDedupe = hasFlag(args, "--no-dedupe");
+  const minAssistantChars = Number(argValue(args, "--min-assistant-chars") || 4);
+
+  let result = examples;
+  if (!noClean) {
+    const dropped: string[] = [];
+    result = cleanExamples(result, {
+      minAssistantChars,
+      onDrop: (ex, reason) => dropped.push(`${ex.id}: ${reason}`),
+    });
+    if (dropped.length) {
+      console.log(`Dropped ${dropped.length} low-quality example(s):`);
+      for (const line of dropped.slice(0, 20)) console.log(`  - ${line}`);
+      if (dropped.length > 20) console.log(`  ... and ${dropped.length - 20} more`);
+    }
+  }
+  if (!noDedupe) {
+    const before = result.length;
+    result = dedupeExamples(result);
+    if (result.length < before) {
+      console.log(`Deduped ${before - result.length} near-duplicate example(s)`);
+    }
+  }
+  return result;
+}
+
+async function writeSplitJsonl(
+  out: string,
+  examples: TrainingExample[],
+  format: ExportFormat,
+  valRatio: number,
+): Promise<void> {
+  await mkdir(path.dirname(out), { recursive: true });
+  const { train, val } = splitExamples(examples, valRatio);
+  await writeFile(out, toJsonl(train, format), "utf8");
+  console.log(`Wrote ${train.length} train example(s) → ${out} (${format})`);
+  if (valRatio > 0) {
+    const valOut = out.replace(/(\.jsonl)?$/, (m) => `.val${m || ".jsonl"}`);
+    await writeFile(valOut, toJsonl(val, format), "utf8");
+    console.log(`Wrote ${val.length} val example(s)   → ${valOut} (${format})`);
+  }
+}
+
 async function cmdPrepareFinetune(args: string[]): Promise<void> {
-  const format = (argValue(args, "--format") || "sharegpt") as ExportFormat;
+  const format = parseFormat(argValue(args, "--format"));
   const out = resolveOutPath(
     argValue(args, "--out") ||
       path.join("scripts", "llm", "output", `finetune-${format}.jsonl`),
   );
   const tagsRaw = argValue(args, "--tags");
   const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+  const valSplit = Number(argValue(args, "--val-split") || 0);
 
   let examples: TrainingExample[] = listSeedExamples(tags);
+
+  // Optionally merge your own cleaned logs (Serenity / Fallen Angel arcs, …).
+  const logsDir = argValue(args, "--with-logs");
+  if (logsDir) {
+    const { importLogsDir } = await import("./dataset/import");
+    const fromLogs = await importLogsDir(resolveOutPath(logsDir), {
+      tags,
+      defaultCharacterName: argValue(args, "--character"),
+    });
+    console.log(`Imported ${fromLogs.length} examples from ${logsDir}`);
+    examples = [...examples, ...fromLogs];
+  }
 
   // Optionally merge DB transcripts when --with-db is set.
   if (hasFlag(args, "--with-db")) {
@@ -98,11 +188,26 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
     examples = [...examples, ...fromDb];
   }
 
-  await mkdir(path.dirname(out), { recursive: true });
-  await writeFile(out, toJsonl(examples, format), "utf8");
-  console.log(`Wrote ${examples.length} examples → ${out} (${format})`);
+  examples = applyQualityPipeline(examples, args);
+  await writeSplitJsonl(out, examples, format, valSplit);
   console.log(`Fine-tune base: ${ANIMA_FINETUNE_BASE_MODEL}`);
   console.log(`Serve target:   ${ANIMA_PRIMARY_MODEL}`);
+}
+
+async function cmdPrepareDpo(args: string[]): Promise<void> {
+  const out = resolveOutPath(
+    argValue(args, "--out") || path.join("scripts", "llm", "output", "dpo-pairs.jsonl"),
+  );
+  const tagsRaw = argValue(args, "--tags");
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+
+  const preferences = listPreferenceExamples(tags);
+  await mkdir(path.dirname(out), { recursive: true });
+  await writeFile(out, preferencesToJsonl(preferences), "utf8");
+  console.log(`Wrote ${preferences.length} preference pairs → ${out}`);
+  console.log(
+    "Run: python scripts/llm/finetune/unsloth_dpo.py --data " + path.relative(REPO_ROOT, out),
+  );
 }
 
 async function cmdExportTurns(args: string[]): Promise<void> {
@@ -113,14 +218,123 @@ async function cmdExportTurns(args: string[]): Promise<void> {
   const out = resolveOutPath(
     argValue(args, "--out") || path.join("scripts", "llm", "output", "turns.jsonl"),
   );
-  const examples = await exportTranscripts({
+  let examples = await exportTranscripts({
     userId: argValue(args, "--user"),
     limit: Number(argValue(args, "--limit") || 200),
     minTurns: Number(argValue(args, "--min-turns") || 4),
   });
+  examples = applyQualityPipeline(examples, args);
   await mkdir(path.dirname(out), { recursive: true });
   await writeFile(out, toJsonl(examples, "messages"), "utf8");
-  console.log(`Exported ${examples.length} sessions → ${out}`);
+  console.log(`Exported ${examples.length} session(s) → ${out}`);
+}
+
+/** Turns extracted from an already-formatted JSONL row, for dataset-stats. */
+function extractTurns(row: Record<string, unknown>): ChatTurn[] {
+  if (Array.isArray(row.messages)) {
+    return (row.messages as Array<Record<string, unknown>>).map((m) => ({
+      role: (m.role as ChatTurn["role"]) || "user",
+      content: String(m.content ?? ""),
+    }));
+  }
+  if (Array.isArray(row.conversations)) {
+    const roleMap: Record<string, ChatTurn["role"]> = {
+      system: "system",
+      human: "user",
+      gpt: "assistant",
+    };
+    return (row.conversations as Array<Record<string, unknown>>).map((c) => ({
+      role: roleMap[String(c.from)] || "user",
+      content: String(c.value ?? ""),
+    }));
+  }
+  if (typeof row.output === "string") {
+    const turns: ChatTurn[] = [];
+    if (row.instruction) turns.push({ role: "user", content: String(row.instruction) });
+    turns.push({ role: "assistant", content: String(row.output) });
+    return turns;
+  }
+  return [];
+}
+
+async function cmdDatasetStats(args: string[]): Promise<void> {
+  const file = resolveOutPath(
+    argValue(args, "--file") || path.join("scripts", "llm", "output", "finetune-sharegpt.jsonl"),
+  );
+  const { readFile } = await import("node:fs/promises");
+  const raw = await readFile(file, "utf8");
+  const lines = raw.split("\n").filter((l) => l.trim());
+  if (!lines.length) {
+    console.log(`${file}: 0 examples`);
+    return;
+  }
+
+  let assistantChars: number[] = [];
+  let turnCounts: number[] = [];
+  let denylistHits = 0;
+  const dedupeKeys = new Set<string>();
+  let duplicates = 0;
+
+  for (const line of lines) {
+    const row = JSON.parse(line) as Record<string, unknown>;
+    const turns = extractTurns(row).filter((t) => t.role !== "system");
+    turnCounts.push(turns.length);
+    for (const t of turns) {
+      if (t.role === "assistant") assistantChars.push(t.content.trim().length);
+    }
+    if (hasDenylistedAssistantContent(turns)) denylistHits++;
+    const key = turns.map((t) => `${t.role}:${t.content.trim().toLowerCase()}`).join("|");
+    if (dedupeKeys.has(key)) duplicates++;
+    dedupeKeys.add(key);
+  }
+
+  const avg = (nums: number[]) => (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0);
+  const fmt = (n: number) => n.toFixed(1);
+
+  console.log(`${file}: ${lines.length} examples`);
+  console.log(`  turns/example:            avg ${fmt(avg(turnCounts))}, min ${Math.min(...turnCounts)}, max ${Math.max(...turnCounts)}`);
+  if (assistantChars.length) {
+    console.log(
+      `  assistant chars/turn:     avg ${fmt(avg(assistantChars))}, min ${Math.min(...assistantChars)}, max ${Math.max(...assistantChars)}`,
+    );
+  }
+  console.log(`  flagged (denylist match): ${denylistHits}`);
+  console.log(`  exact/near duplicates:    ${duplicates}`);
+  if (denylistHits || duplicates) {
+    console.log(`  → re-run with prepare-finetune/export-turns (cleaning is on by default) to drop these`);
+  }
+}
+
+async function cmdImportLogs(args: string[]): Promise<void> {
+  const dir = resolveOutPath(argValue(args, "--dir") || path.join("scripts", "llm", "data", "raw"));
+  const { importLogsDir } = await import("./dataset/import");
+  const character = argValue(args, "--character");
+  const tagsRaw = argValue(args, "--tags");
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+
+  const examples = await importLogsDir(dir, { defaultCharacterName: character, tags });
+  console.log(`Parsed ${examples.length} training example(s) from ${dir}`);
+  for (const ex of examples) {
+    const turns = ex.conversation.filter((t) => t.role !== "system").length;
+    console.log(`- ${ex.id} [${ex.character.name}] turns=${turns}`);
+  }
+  if (!examples.length) {
+    console.log(
+      `No logs found. Drop .json (TrainingExample or ShareGPT) / .jsonl / .txt transcripts into ${dir} and re-run.`,
+    );
+    return;
+  }
+
+  const out = argValue(args, "--out");
+  if (out) {
+    const format = parseFormat(argValue(args, "--format"));
+    const outPath = resolveOutPath(out);
+    await mkdir(path.dirname(outPath), { recursive: true });
+    await writeFile(outPath, toJsonl(examples, format), "utf8");
+    console.log(`Wrote ${examples.length} examples → ${outPath} (${format})`);
+  } else {
+    console.log(`Re-run with --out <path> to write these to JSONL, or use prepare-finetune --with-logs ${dir}.`);
+  }
 }
 
 async function cmdChat(args: string[]): Promise<void> {
@@ -189,7 +403,6 @@ public open weights + local serving instead.
 1) Bootstrap (CPU / laptop — works today):
    bash scripts/llm/bootstrap-anima-llm.sh
    # pulls ${ANIMA_BOOTSTRAP_BASE_MODEL}, creates ${ANIMA_OLLAMA_CHAT_TAG}
-   export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BACKEND=ollama
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
    export ANIMA_OLLAMA_MODEL_STANDARD=${ANIMA_OLLAMA_CHAT_TAG}
@@ -197,7 +410,6 @@ public open weights + local serving instead.
 
 2) GPU upgrade (Ministral 3 8B fine-tune → vLLM):
    docker compose -f scripts/llm/docker-compose.vllm.yml up
-   export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BACKEND=vllm
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
    export ANIMA_VLLM_MODEL_STANDARD=${ANIMA_PRIMARY_MODEL}
@@ -211,10 +423,9 @@ Fine-tune (LoRA on CUDA):
     --data scripts/llm/output/finetune-sharegpt.jsonl \\
     --base ${ANIMA_FINETUNE_BASE_MODEL}
 
-Modes:
-  ANIMA_LLM_PROVIDER=custom   # self-hosted Anima LLM only (recommended)
-  ANIMA_LLM_PROVIDER=local    # same as custom
-  ANIMA_LLM_PROVIDER=local-first  # local, then optional cloud BYOK if keys exist
+Chat has exactly one backend — ANIMA_LOCAL_LLM_BASE_URL above. There is no
+mode switch and no cloud fallback; ANIMA_LOCAL_LLM_BACKEND only picks which
+local server (ollama or vllm) that URL points at.
 `);
 }
 
@@ -239,8 +450,17 @@ async function main(): Promise<void> {
     case "prepare-finetune":
       await cmdPrepareFinetune(args.slice(1));
       break;
+    case "prepare-dpo":
+      await cmdPrepareDpo(args.slice(1));
+      break;
     case "export-turns":
       await cmdExportTurns(args.slice(1));
+      break;
+    case "dataset-stats":
+      await cmdDatasetStats(args.slice(1));
+      break;
+    case "import-logs":
+      await cmdImportLogs(args.slice(1));
       break;
     case "serve-hint":
       await cmdServeHint();

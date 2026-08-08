@@ -16,7 +16,10 @@ jobs:
       VITE_MIXPANEL_TOKEN: ""
       # api-server tests exercise the real store router against Postgres (see
       # artifacts/api-server/test/setup-db.ts) — pointed at the service below.
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # sslmode=disable is required: lib/db/src/client.ts defaults to SSL
+      # unless told otherwise (Replit's managed Postgres needs it), but the
+      # vanilla postgres:16 service container below doesn't speak SSL at all.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
 
     services:
       postgres:

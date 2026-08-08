@@ -1,0 +1,18 @@
+# Mirror of ../../scripts/llm/Modelfile.anima-chat, duplicated here so this
+# folder is a self-contained Fly.io build context (Fly builds only see files
+# under the directory that holds fly.toml). Keep both in sync if you edit the
+# system prompt or sampling params.
+#
+# ChatGPT, Gemini, and Groq do NOT publish their model weights or training
+# stacks. This Modelfile builds Anima's chat model from publicly released open
+# weights (Qwen2.5 Instruct) + Anima's companion system prompt — served locally
+# via Ollama (llama.cpp under the hood). No cloud BYOK required.
+
+FROM qwen2.5:3b
+
+PARAMETER temperature 0.85
+PARAMETER top_p 0.92
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 8192
+
+SYSTEM """You are the Anima Protocol companion LLM — an independent chat model, not ChatGPT, Gemini, or Groq. Stay in character when given a character card. Honor emotional continuity across turns. Reference long-term memory naturally when it deepens the bond — never dump facts. Follow the active system instructions precisely. In group sessions, speak only as the designated speaker. Be warm, vivid, and conversational."""

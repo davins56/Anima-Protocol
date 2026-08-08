@@ -1611,37 +1611,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Stream tokens into the open bubble as they arrive — no post-buffer delay.
       // Thinking indicator stays until the first delta, then the live reply grows.
       const streamTs = new Date().toISOString();
-      const mindLabel = (id) =>
-        ({ kimi: "Kimi", xai: "Grok", openai: "ChatGPT" })[id] || id;
-
-      const showEnsembleStatus = (event) => {
-        if (event?.status !== "ensemble") return;
-        const minds = Array.isArray(event.minds) ? event.minds.map(mindLabel) : [];
-        let statusText = "Consulting minds…";
-        if (event.phase === "gathering") {
-          statusText = minds.length
-            ? `Minds drafting: ${minds.join(" · ")}`
-            : "Minds drafting in parallel…";
-        } else if (event.phase === "combining") {
-          statusText = `Combining ${event.drafts || minds.length || "multiple"} mind drafts…`;
-        } else if (event.phase === "streaming") {
-          statusText = event.drafts > 1
-            ? "Streaming combined reply…"
-            : "Streaming reply…";
-        }
-        setActiveSession((prev) => ({
-          ...prev,
-          messages: [
-            ...updatedMessages,
-            {
-              role: "assistant",
-              content: statusText,
-              character_name: "__typing__",
-              timestamp: streamTs,
-            },
-          ],
-        }));
-      };
 
       const showStreamingPartial = (accumulated) => {
         streamedSoFar = accumulated;
@@ -1666,6 +1635,27 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           { role: "assistant", content: "...", character_name: "__typing__", timestamp: streamTs },
         ],
       }));
+
+      // Optional local "parallel minds" mode (ANIMA_LOCAL_LLM_ENSEMBLE=true on
+      // the server): several drafts from the same self-hosted model, combined
+      // into one reply. Shows progress in the typing bubble while it's gathering.
+      const showEnsembleStatus = (event) => {
+        if (event?.status !== "ensemble") return;
+        const mindsList = Array.isArray(event.minds) ? event.minds.filter(Boolean).join(", ") : "";
+        const label =
+          event.phase === "combining"
+            ? "Combining mind drafts…"
+            : mindsList
+              ? `Minds drafting: ${mindsList}…`
+              : "Minds drafting…";
+        setActiveSession((prev) => ({
+          ...prev,
+          messages: [
+            ...updatedMessages,
+            { role: "assistant", content: label, character_name: "__typing__", timestamp: streamTs },
+          ],
+        }));
+      };
 
       const resultPayload = await streamChatReply(
         animaApi.chat.sendMessage({
@@ -1705,45 +1695,16 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         throw new Error("The companion returned an empty reply. Please try again.");
       }
 
-      // Surface which backend LLM served this turn (Anima custom stack or single provider).
+      if (resultPayload.ensemble_combined && Array.isArray(resultPayload.ensemble_minds)) {
+        toast.success(`Combined from ${resultPayload.ensemble_minds.length} minds: ${resultPayload.ensemble_minds.join(", ")}`);
+      }
+
+      // Surface which backend LLM served this turn (always the self-hosted Anima LLM).
       if (resultPayload.provider) {
         setLlmProvider(resultPayload.provider);
       }
       if (resultPayload.brand) {
         setLlmBrand(resultPayload.brand);
-      }
-      if (resultPayload.ensemble_combined && Array.isArray(resultPayload.ensemble_minds)) {
-        toast.success("Anima combined mind drafts.", {
-          description: resultPayload.ensemble_minds.map(mindLabel).join(" · "),
-        });
-      } else if (resultPayload.failed_over && resultPayload.brand === "anima") {
-        toast.success("Anima routed to a backup model.", {
-          description: resultPayload.model
-            ? `Now using ${resultPayload.model}`
-            : "Custom multi-model failover active",
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "kimi") {
-        toast.success("Switched to Kimi.", {
-          description: resultPayload.model
-            ? `Now using ${resultPayload.model}`
-            : "Kimi failover active for this session",
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "xai") {
-        toast.success("Switched to Grok — previous LLM was unavailable.", {
-          description: resultPayload.model
-            ? `Now using ${resultPayload.model}`
-            : "xAI failover active for this session",
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "openai") {
-        toast.success("Switched to ChatGPT — previous LLMs were unavailable.", {
-          description: resultPayload.model ? `Now using ${resultPayload.model}` : undefined,
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "gateway") {
-        toast.success("Switched to AI Gateway — previous LLMs were unavailable.", {
-          description: resultPayload.model
-            ? `Now using ${resultPayload.model}`
-            : "Vercel AI Gateway failover active",
-        });
       }
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
