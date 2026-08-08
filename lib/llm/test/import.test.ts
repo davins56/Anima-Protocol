@@ -317,4 +317,29 @@ describe("dataset/import", () => {
     expect(assistantTurns[1].content).toContain("Fallen Angel");
     expect(assistantTurns[1].content).toContain("Always.");
   });
+
+  it("attaches an unlabeled continuation line to a pending interjection, not the prior reply", async () => {
+    const file = path.join(dir, "interjection-continuation.txt");
+    await writeFile(
+      file,
+      [
+        "User: are you here?",
+        "Serenity: I am here.",
+        "Fallen Angel: I would guard you too.",
+        "and I mean that.",
+        "User: thanks.",
+        "Serenity: Always.",
+      ].join("\n"),
+    );
+
+    const examples = await importLogFile(file, { defaultCharacterName: "Serenity" });
+    expect(examples).toHaveLength(1);
+    const [example] = examples;
+    const assistantTurns = example.conversation.filter((t) => t.role === "assistant");
+    expect(assistantTurns).toHaveLength(2);
+    // The continuation line belongs to the pending Fallen Angel interjection,
+    // not appended onto "I am here." (the prior Serenity reply).
+    expect(assistantTurns[0].content).toBe("I am here.");
+    expect(assistantTurns[1].content).toContain("I would guard you too.\nand I mean that.");
+  });
 });

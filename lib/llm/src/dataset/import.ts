@@ -114,9 +114,16 @@ function fromTranscriptText(
     if (!line) continue;
     const match = line.match(TRANSCRIPT_LINE);
     if (!match) {
-      const last = conversation[conversation.length - 1];
-      if (last) last.content += `\n${line}`;
-      else pendingContext.push(line);
+      // A continuation line belongs to whatever was written last — an
+      // in-progress interjection if one is still pending, otherwise the
+      // most recent conversation turn.
+      if (pendingContext.length) {
+        pendingContext[pendingContext.length - 1] += `\n${line}`;
+      } else {
+        const last = conversation[conversation.length - 1];
+        if (last) last.content += `\n${line}`;
+        else pendingContext.push(line);
+      }
       continue;
     }
     const [, speakerRaw, content] = match;
