@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { resetLlmClientsForTests } from "../src/lib/openaiClient";
+import { resetLocalModelCatalogForTests } from "../src/lib/localModelCatalog";
 import {
   createChatCompletionWithFailover,
   getLlmRoutingStatus,
@@ -25,9 +26,24 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
   let baseUrl: string;
   let received: Array<{ model: string; messages: unknown[] }> = [];
   let replyText = "";
+  /** Model ids the stub serves. `null` = accept anything (the happy path). */
+  let servedModels: string[] | null = null;
+  let modelsListCalls = 0;
 
   beforeAll(async () => {
     server = createServer((req: IncomingMessage, res: ServerResponse) => {
+      // Ollama / vLLM / llama.cpp all expose this alongside chat completions.
+      if (req.method === "GET" && req.url?.startsWith("/v1/models")) {
+        modelsListCalls += 1;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            object: "list",
+            data: (servedModels ?? []).map((id) => ({ id, object: "model", owned_by: "library" })),
+          }),
+        );
+        return;
+      }
       if (req.method !== "POST" || !req.url?.startsWith("/v1/chat/completions")) {
         res.writeHead(404).end();
         return;
@@ -36,6 +52,22 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
       req.on("data", (chunk) => (raw += chunk));
       req.on("end", () => {
         const body = JSON.parse(raw || "{}");
+        // Reproduce the real 404 an Ollama/vLLM host returns for a tag it does
+        // not have, verbatim — including OpenAI's wording, which is what the
+        // user actually sees in the app.
+        if (servedModels && !servedModels.includes(body.model)) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: {
+                message: `The model \`${body.model}\` does not exist or you do not have access to it.`,
+                type: "invalid_request_error",
+                code: "model_not_found",
+              },
+            }),
+          );
+          return;
+        }
         received.push({ model: body.model, messages: body.messages });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
@@ -96,13 +128,17 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
     delete process.env.VERCEL_OIDC_TOKEN;
 
     received = [];
+    servedModels = null;
+    modelsListCalls = 0;
     replyText = "Anima LLM ready — served locally, no flagship cloud model involved.";
     resetLlmClientsForTests();
+    resetLocalModelCatalogForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
     resetLlmClientsForTests();
+    resetLocalModelCatalogForTests();
   });
 
   it("resolves to the self-hosted Anima LLM as the only provider", () => {
@@ -133,6 +169,59 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
     expect(received[0]!.messages).toEqual([{ role: "user", content: "Who are you?" }]);
     // Default bootstrap tag from lib/llm/src/registry.ts (anima-chat / Qwen2.5).
     expect(received[0]!.model).toBe("anima-chat");
+  });
+
+  it("recovers over real HTTP when the host does not serve the configured tag", async () => {
+    // The reported failure: `ollama create anima-chat` was never run on the
+    // host, so it only has the base weights. Every turn used to die on
+    // "404 The model `anima-chat` does not exist or you do not have access to it."
+    servedModels = ["nomic-embed-text:latest", "qwen2.5:3b"];
+
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 64,
+      messages: [{ role: "user", content: "Are you there?" }],
+    });
+
+    expect(result.content).toBe(replyText);
+    expect(result.provider).toBe("local");
+    // Answered by the model the host really has — not the embedding model.
+    expect(result.model).toBe("qwen2.5:3b");
+    expect(received).toHaveLength(1);
+    expect(received[0]!.model).toBe("qwen2.5:3b");
+    expect(modelsListCalls).toBe(1);
+  });
+
+  it("keeps answering on later turns without re-listing or re-404ing", async () => {
+    servedModels = ["qwen2.5:3b"];
+
+    for (const text of ["first", "second", "third"]) {
+      const result = await createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: 64,
+        messages: [{ role: "user", content: text }],
+      });
+      expect(result.model).toBe("qwen2.5:3b");
+    }
+
+    // Three successful turns, one discovery — consistency, not a 404 per message.
+    expect(received.map((r) => r.model)).toEqual(["qwen2.5:3b", "qwen2.5:3b", "qwen2.5:3b"]);
+    expect(modelsListCalls).toBe(1);
+  });
+
+  it("explains the mismatch instead of surfacing a bare 404 when nothing can chat", async () => {
+    // Host is up and reachable, but serves only an embedding model.
+    servedModels = ["nomic-embed-text:latest"];
+
+    await expect(
+      createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: 64,
+        messages: [{ role: "user", content: "Hello" }],
+      }),
+    ).rejects.toThrow(/does not serve a model named "anima-chat".*nomic-embed-text/is);
+
+    expect(received).toHaveLength(0);
   });
 
   it("fails clearly instead of silently switching to a cloud flagship model when local is unreachable", async () => {
