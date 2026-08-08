@@ -56,6 +56,10 @@ Commands:
   serve-hint
   seed-stats
 
+export-turns / prepare-finetune drop error/denylisted turns, redact obvious
+PII (emails, phone numbers), and de-duplicate near-identical conversations by
+default. Pass --no-clean / --no-dedupe to skip either step.
+
 Examples:
   pnpm llm:up                               # bootstrap open-weight anima-chat
   pnpm llm:chat -- "Who are you?"
@@ -324,7 +328,6 @@ public open weights + local serving instead.
 1) Bootstrap (CPU / laptop — works today):
    bash scripts/llm/bootstrap-anima-llm.sh
    # pulls ${ANIMA_BOOTSTRAP_BASE_MODEL}, creates ${ANIMA_OLLAMA_CHAT_TAG}
-   export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BACKEND=ollama
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
    export ANIMA_OLLAMA_MODEL_STANDARD=${ANIMA_OLLAMA_CHAT_TAG}
@@ -332,7 +335,6 @@ public open weights + local serving instead.
 
 2) GPU upgrade (Ministral 3 8B fine-tune → vLLM):
    docker compose -f scripts/llm/docker-compose.vllm.yml up
-   export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BACKEND=vllm
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
    export ANIMA_VLLM_MODEL_STANDARD=${ANIMA_PRIMARY_MODEL}
@@ -346,10 +348,9 @@ Fine-tune (LoRA on CUDA):
     --data scripts/llm/output/finetune-sharegpt.jsonl \\
     --base ${ANIMA_FINETUNE_BASE_MODEL}
 
-Modes:
-  ANIMA_LLM_PROVIDER=custom   # self-hosted Anima LLM only (recommended)
-  ANIMA_LLM_PROVIDER=local    # same as custom
-  ANIMA_LLM_PROVIDER=local-first  # local, then optional cloud BYOK if keys exist
+Chat has exactly one backend — ANIMA_LOCAL_LLM_BASE_URL above. There is no
+mode switch and no cloud fallback; ANIMA_LOCAL_LLM_BACKEND only picks which
+local server (ollama or vllm) that URL points at.
 `);
 }
 

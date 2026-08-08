@@ -162,8 +162,8 @@ export function routeModel(content: string, ctx: RouteContext = {}): ResolvedMod
 // standard model within the same provider.
 //
 // Quota / rate-limit / billing errors are intentionally NOT matched here —
-// those are handled by cross-provider failover in llmFailover.ts instead of a
-// second doomed call on the same depleted OpenAI account.
+// there is no other provider to fail over to (llmFailover.ts only talks to
+// the self-hosted Anima LLM), so a doomed retry would just repeat the failure.
 export function isModelUnavailableError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { status?: number; code?: string; type?: string; message?: string };

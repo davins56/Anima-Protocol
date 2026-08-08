@@ -45,6 +45,21 @@ describe("normalizeTurns", () => {
     expect(turns).toHaveLength(2);
     expect(turns[0]?.content).toBe("first\n\nsecond");
   });
+
+  it("redacts emails and phone numbers by default", () => {
+    const turns = normalizeTurns([
+      { role: "user", content: "reach me at jane@example.com or 555-123-4567" },
+    ]);
+    expect(turns[0]?.content).toBe("reach me at [email] or [phone]");
+  });
+
+  it("skips redaction when redactPii is false", () => {
+    const turns = normalizeTurns(
+      [{ role: "user", content: "email me at jane@example.com" }],
+      { redactPii: false },
+    );
+    expect(turns[0]?.content).toContain("jane@example.com");
+  });
 });
 
 describe("hasDenylistedAssistantContent", () => {

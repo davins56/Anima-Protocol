@@ -13,8 +13,8 @@ flowchart LR
   web --> mixpanel[Mixpanel<br/>consent-gated analytics]
   web --> clerk[Clerk frontend auth]
   api --> clerk_api[Clerk session verification]
-  api --> animaLlm[Anima LLM<br/>Ollama/vLLM open weights]
-  api --> cloudByok[Optional cloud BYOK<br/>Gemini/Groq/…]
+  api --> animaLlm[Anima LLM<br/>Ollama/vLLM open weights — only chat backend]
+  api --> openaiImages[OpenAI<br/>image generate/edit only, not chat]
   api --> eleven[ElevenLabs optional TTS]
   api --> db[(PostgreSQL<br/>Drizzle schema in lib/db)]
   mockup[Mockup sandbox<br/>artifacts/mockup-sandbox] --> web
@@ -145,19 +145,11 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | Variable | Used by | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
-| `OPENAI_API_KEY` | API | Optional for chat when Kimi/Grok is configured; still used for image generate/edit |
-| `GEMINI_API_KEY` | API | Preferred chat LLM under `auto` (native Google AI Studio / AQ.* keys). Verify via `/api/healthz/llm` |
-| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Kimi (Moonshot) backup in the auto chain |
-| `XAI_API_KEY` | API | Grok backup in the auto chain |
-| `AI_GATEWAY_API_KEY` | API | Vercel AI Gateway last-resort unpaid path (or use `VERCEL_OIDC_TOKEN` on Vercel). Live-test with `/api/healthz/llm?probe=1` |
-| `ANIMA_LLM_PROVIDER` | API | Default (unset) / `custom` / `anima` / `local` = self-hosted Anima LLM only. Cloud modes (`auto`, `gemini`, `kimi`, `xai`, `openai`, `gateway`, `local-first`) also require `ANIMA_ALLOW_CLOUD_LLM=true`, or they're silently downgraded to `local`. Do **not** paste API keys here |
-| `ANIMA_ALLOW_CLOUD_LLM` | API | Second, explicit flag required before any cloud-capable `ANIMA_LLM_PROVIDER` mode (or `ANIMA_LLM_ENSEMBLE`) can dial out to Gemini/Groq/Kimi/Grok/ChatGPT/AI Gateway. See `docs/custom-llm.md` |
-| `ANIMA_LLM_ENSEMBLE` | API | Set `true` (with `ANIMA_ALLOW_CLOUD_LLM=true`) to force parallel cloud mind drafts even when provider mode is not `ensemble` |
-
-| `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
-| `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
-| `ANIMA_DISABLE_GATEWAY` | API | Set `true` under `auto` to skip AI Gateway |
-| `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
+| `OPENAI_API_KEY` | API | Image generate/edit only (Customise Anima → Generate Look). Never used for chat — there is no cloud chat path. |
+| `ANIMA_LOCAL_LLM_BASE_URL` | API | Public HTTPS OpenAI-compatible endpoint for the self-hosted Anima LLM (Ollama/vLLM). This is chat's only backend. Verify via `/api/healthz/llm` |
+| `ANIMA_LOCAL_LLM_BACKEND` | API | `ollama` (default) or `vllm` |
+| `ANIMA_OLLAMA_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | Ollama model tags per tier (default `anima-chat`) |
+| `ANIMA_VLLM_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | vLLM model ids per tier |
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
 | `CLERK_PUBLISHABLE_KEY` | API | Fallback publishable key for Clerk middleware |

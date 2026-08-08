@@ -4,10 +4,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { resetLlmClientsForTests } from "../src/lib/openaiClient";
 import {
   createChatCompletionWithFailover,
-  getConfiguredProviderMode,
   getLlmRoutingStatus,
-  getProviderChain,
-  resetLlmFailoverStateForTests,
+  isAnimaCustomMode,
 } from "../src/lib/llmFailover";
 
 /**
@@ -76,17 +74,17 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
 
   beforeEach(() => {
     process.env = { ...SAVED };
-    // Custom mode, pointed at the live stub — mirrors a real Ollama/vLLM host.
-    process.env.ANIMA_LLM_PROVIDER = "custom";
+    // Pointed at the live stub — mirrors a real Ollama/vLLM host. There is no
+    // provider mode to set: this is the only chat backend that exists.
     process.env.ANIMA_LOCAL_LLM_BASE_URL = baseUrl;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     delete process.env.ANIMA_LOCAL_LLM_BACKEND;
     delete process.env.VERCEL;
     delete process.env.VERCEL_ENV;
-    // No cloud key should ever be needed in custom mode; leaving them unset
-    // makes any accidental cloud call fail loudly instead of silently
-    // "working" via a real provider.
+    // No cloud key should ever matter; leaving them unset makes any
+    // accidental cloud call fail loudly instead of silently "working" via a
+    // real provider (there is no cloud call path in the code at all).
     delete process.env.OPENAI_API_KEY;
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
@@ -99,20 +97,18 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
 
     received = [];
     replyText = "Anima LLM ready — served locally, no flagship cloud model involved.";
-    resetLlmFailoverStateForTests();
     resetLlmClientsForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
-    resetLlmFailoverStateForTests();
     resetLlmClientsForTests();
   });
 
-  it("resolves to the self-hosted Anima LLM as the only provider in the chain", () => {
-    expect(getConfiguredProviderMode()).toBe("local");
-    expect(getProviderChain()).toEqual(["local"]);
+  it("resolves to the self-hosted Anima LLM as the only provider", () => {
+    expect(isAnimaCustomMode()).toBe(true);
     const status = getLlmRoutingStatus();
+    expect(status.status).toBe("ok");
     expect(status.brand).toBe("anima");
     expect(status.preferred).toBe("local");
   });
@@ -141,7 +137,6 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
 
   it("fails clearly instead of silently switching to a cloud flagship model when local is unreachable", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:1/v1"; // nothing listens here
-    resetLlmFailoverStateForTests();
     resetLlmClientsForTests();
 
     await expect(
@@ -153,8 +148,7 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
     ).rejects.toThrow();
 
     // The failed local attempt must not have fallen through to a cloud call —
-    // there was nothing else in the chain to fall through to.
-    expect(getProviderChain()).toEqual(["local"]);
+    // there is no other provider in the code to fall through to.
     expect(received).toHaveLength(0);
   });
 });

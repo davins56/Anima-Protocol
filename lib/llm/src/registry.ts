@@ -16,11 +16,16 @@
  *   Bootstrap (CPU / laptop): `anima-chat` ← Qwen2.5 3B via Ollama
  *   GPU upgrade: fine-tuned Ministral 3 8B via vLLM / Ollama GGUF
  *
- * Optional cloud BYOK remains available via ANIMA_LLM_PROVIDER=auto / local-first.
+ * Chat (artifacts/api-server/src/lib/llmFailover.ts) always resolves through
+ * `ollama` or `vllm` explicitly — it never reads ANIMA_LLM_PROVIDER, and there
+ * is no cloud BYOK chat path in the codebase. The `openai` / `groq` provider
+ * entries below exist only for registry introspection (`pnpm llm:list-models`)
+ * and are not reachable from live chat.
  *
  * Environment overrides (all optional):
- *   ANIMA_LLM_PROVIDER           custom | anima | local | ollama | vllm | …
- *   ANIMA_LOCAL_LLM_BACKEND      ollama | vllm  (how custom/local resolve)
+ *   ANIMA_LLM_PROVIDER           dev-tooling only (CLI list-models/serve-hint);
+ *                                 not read by the chat request path
+ *   ANIMA_LOCAL_LLM_BACKEND      ollama | vllm  (how chat resolves its model)
  *   ANIMA_MODEL_LIGHT            global model override for the light tier
  *   ANIMA_MODEL_STANDARD         global model override for the standard tier
  *   ANIMA_MODEL_HEAVY            global model override for the heavy tier
