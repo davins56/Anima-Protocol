@@ -9,8 +9,7 @@ This guide covers the full stack:
 0. **Bootstrap** `anima-chat` (Qwen2.5 3B) so chat works on a laptop today — `pnpm llm:up`  
 1. Fine-tuned **Ministral 3 8B** as the primary GPU companion model  
 2. Structured + vector **memory retrieval** before every generation  
-3. **Local serving** via vLLM or Ollama (OpenAI-compatible)  
-4. Optional hybrid cloud fallback while you tune  
+3. **Local serving** via vLLM or Ollama (OpenAI-compatible) — the only chat backend, no cloud fallback  
 
 Short path: [`docs/custom-llm.md`](./custom-llm.md).
 
@@ -24,9 +23,7 @@ The React/Vite frontend does **not** need rewrites — it already talks to `POST
 Chat.jsx
   → POST /api/chat/messages
       → promptBuilder + memory retrieval (heuristic + embeddings)
-      → llmFailover
-           ├─ local (vLLM / Ollama)     ← ANIMA_LLM_PROVIDER=custom|local
-           └─ (optional) cloud auto chain only if local-first + keys set
+      → llmFailover → local (vLLM / Ollama), the only chat backend
 ```
 
 | Piece | Location |
@@ -81,8 +78,9 @@ pnpm llm:export-turns -- --out scripts/llm/output/turns.jsonl
 Outputs JSONL in ShareGPT / ChatML / Alpaca formats under `scripts/llm/output/`.
 
 Both commands run every example through a cleaning pass first (normalize/merge
-turns, drop error-fallback or too-short assistant replies, dedupe near-identical
-conversations) — see [`lib/llm/README.md`](../lib/llm/README.md#data-quality-pipeline-srcdatasetcleants).
+turns, redact obvious PII like emails and phone numbers, drop error-fallback or
+too-short assistant replies, dedupe near-identical conversations) — see
+[`lib/llm/README.md`](../lib/llm/README.md#data-quality-pipeline-srcdatasetcleants).
 Opt out with `--no-clean` / `--no-dedupe` if you need the raw export.
 
 Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT shape), plus synthetic turns that force memory recall and voice adherence. After merging in hand-cleaned logs, run:
@@ -186,7 +184,6 @@ ollama create anima-ministral8b -f scripts/llm/Modelfile.anima-ministral8b
 ### Point the api-server at it
 
 ```bash
-export ANIMA_LLM_PROVIDER=custom                           # self-hosted only
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1   # or http://localhost:11434/v1
 export ANIMA_VLLM_MODEL_STANDARD=mistralai/Ministral-3-8B-Instruct-2512
 # For Ollama tags:
@@ -204,17 +201,11 @@ curl -s http://localhost:8080/api/healthz/llm | jq
 
 ---
 
-## 4. Hybrid safety net
+## 4. No cloud fallback, by design
 
-| `ANIMA_LLM_PROVIDER` | Behavior |
-|----------------------|----------|
-| `custom` / `anima` / `local` | **Self-hosted Anima LLM only** (no Gemini/Groq/Kimi/Grok/Gateway) |
-| `local-first` / `vllm` / `ollama` | Local first, then optional cloud auto chain |
-| `auto` | Cloud BYOK: Gemini → Groq → Kimi → Grok → OpenAI → Gateway |
-| `ensemble` | Opt-in cloud parallel minds (not the custom path) |
-| `gemini` / `groq` / `kimi` / … | Single-provider cloud modes |
+There is one chat backend: the self-hosted Anima LLM at `ANIMA_LOCAL_LLM_BASE_URL`. The codebase has no Gemini/Groq/Kimi/Grok/ChatGPT/Gateway chat routing to fall back to, and no `ANIMA_LLM_PROVIDER` mode switch — so there's nothing to accidentally flip. If the local endpoint is down, the turn fails with a clear setup error instead of silently switching models.
 
-Route core companion traffic to local once it consistently beats your internal evals (character fidelity, memory coherence, tone).
+Run your internal evals (character fidelity, memory coherence, tone, latency) against the local model directly — there's no comparison chain to fall back on if it underperforms, so get it right before routing production traffic to it.
 
 ---
 

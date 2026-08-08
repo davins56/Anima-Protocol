@@ -504,22 +504,19 @@ export default function Settings() {
           {/* ── AI BEHAVIOR ── */}
           {section === SECTION.AI && (
             <div className="space-y-4">
-              <SectionTitle>LLM Providers</SectionTitle>
+              <SectionTitle>LLM Provider</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat prefers Gemini, then fails over to Kimi / Grok / OpenAI / AI Gateway. Set GEMINI_API_KEY (or AI_GATEWAY_API_KEY) on the host (Vercel) and redeploy.
+                  Chat always runs on the self-hosted Anima LLM — there is no cloud flagship fallback. Set ANIMA_LOCAL_LLM_BASE_URL on the host and redeploy.
                 </p>
-                {CONFIGURED_LLM_PROVIDERS.map((provider, index) => (
+                {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div
                     key={provider.id}
                     className="flex items-start justify-between gap-3 border border-primary/10 bg-black/30 px-3 py-2.5"
                   >
                     <div className="min-w-0">
                       <p className="font-mono text-xs text-primary/80 tracking-wider uppercase">
-                        {index + 1}. {provider.label}
-                        {index === 0 ? (
-                          <span className="ml-2 text-[8px] text-sky-300/80 tracking-widest">Primary</span>
-                        ) : null}
+                        {provider.label}
                       </p>
                       <p className="text-[9px] font-mono text-primary/35 mt-0.5">{provider.note}</p>
                     </div>
@@ -1060,7 +1057,7 @@ export default function Settings() {
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
                 <InfoRow
                   label="AI Engine"
-                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(" → ")}
+                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(", ")}
                 />
                 <InfoRow label="Platform" value="Base44" />
               </div>

@@ -4,7 +4,7 @@ Build a **chat LLM you own** — public open weights + local inference — so co
 
 ## Goals
 
-- Replace cloud chat APIs with a self-hosted Anima model (`ANIMA_LLM_PROVIDER=custom`).
+- Replace cloud chat APIs with a self-hosted Anima model — the only chat backend, no mode switch.
 - Bootstrap on a laptop (Ollama + Qwen2.5 3B → `anima-chat`).
 - Upgrade on GPU (fine-tune Ministral 3 8B → vLLM / GGUF).
 - Export conversation data in ShareGPT / ChatML / Alpaca JSONL.
@@ -16,7 +16,6 @@ Build a **chat LLM you own** — public open weights + local inference — so co
 pnpm llm:up                 # pull open weights + create anima-chat
 pnpm llm:chat -- "Who are you?"
 
-export ANIMA_LLM_PROVIDER=custom
 export ANIMA_LOCAL_LLM_BACKEND=ollama
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
@@ -26,13 +25,12 @@ export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 
 `pnpm llm:up` needs to reach `ollama.com` to pull real weights. In a sandboxed
 dev container without that egress (or without a GPU), use the mock server to
-verify the *wiring* — env vars, `ANIMA_LLM_PROVIDER=custom` routing,
-`/api/healthz/llm` — end-to-end without a real brain behind it:
+verify the *wiring* — env vars, local-endpoint routing, `/api/healthz/llm` —
+end-to-end without a real brain behind it:
 
 ```bash
 pnpm llm:mock -- --port 11555     # canned OpenAI-compatible /v1 server, NOT a real model
 
-export ANIMA_LLM_PROVIDER=custom
 export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:11555/v1
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat-mock
 pnpm llm:chat -- "Who are you?"   # should echo back through the mock
@@ -71,4 +69,4 @@ always-on public URL, ready to plug into `ANIMA_LOCAL_LLM_BASE_URL`.
 | Bootstrap chat | `anima-chat` ← `qwen2.5:3b` | CPU / laptop, ~2 GB |
 | Primary GPU chat | Fine-tuned Ministral 3 8B | Q4_K_M / FP8 on ~8–16 GB |
 | Fine-tune base | `mistralai/Ministral-3-8B-Base-2512` | BF16 Base for LoRA/QLoRA |
-| Custom mode | `ANIMA_LLM_PROVIDER=custom` | Self-hosted only — no Gemini/Groq/Kimi/Grok/Gateway |
+| Chat backend | `ANIMA_LOCAL_LLM_BASE_URL` | The only chat backend — no Gemini/Groq/Kimi/Grok/Gateway path exists |

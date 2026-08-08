@@ -25,21 +25,36 @@ const ASSISTANT_DENYLIST_PATTERNS: RegExp[] = [
   /^\s*i'?m (just )?an ai\b/i,
 ];
 
+const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+const PHONE_RE = /\b(\+?\d{1,2}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g;
+
+function redactPii(text: string): string {
+  return text.replace(EMAIL_RE, "[email]").replace(PHONE_RE, "[phone]");
+}
+
 export interface CleanOptions {
   /** Minimum non-whitespace length for an assistant turn (default 4). */
   minAssistantChars?: number;
+  /** Redact emails / phone numbers found in turn content (default true). */
+  redactPii?: boolean;
 }
 
 /**
- * Trim whitespace, drop empty turns, and merge consecutive turns of the same
- * role (e.g. two user messages sent back-to-back before a reply) so the
- * conversation strictly alternates — required by most chat templates.
+ * Trim whitespace, drop empty turns, redact obvious PII (emails, phone
+ * numbers), and merge consecutive turns of the same role (e.g. two user
+ * messages sent back-to-back before a reply) so the conversation strictly
+ * alternates — required by most chat templates.
  */
-export function normalizeTurns(turns: ChatTurn[]): ChatTurn[] {
+export function normalizeTurns(
+  turns: ChatTurn[],
+  opts: Pick<CleanOptions, "redactPii"> = {},
+): ChatTurn[] {
+  const shouldRedact = opts.redactPii ?? true;
   const merged: ChatTurn[] = [];
   for (const turn of turns) {
-    const content = turn.content?.trim() ?? "";
+    let content = turn.content?.trim() ?? "";
     if (!content) continue;
+    if (shouldRedact) content = redactPii(content);
     const prev = merged[merged.length - 1];
     if (prev && prev.role === turn.role) {
       prev.content = `${prev.content}\n\n${content}`;
@@ -101,7 +116,7 @@ export function cleanExample(
   example: TrainingExample,
   opts: CleanOptions & { onDrop?: (example: TrainingExample, reason: string) => void } = {},
 ): TrainingExample | null {
-  const conversation = normalizeTurns(example.conversation);
+  const conversation = normalizeTurns(example.conversation, { redactPii: opts.redactPii });
   const candidate: TrainingExample = { ...example, conversation };
   const check = checkExampleQuality(candidate, opts);
   if (!check.ok) {

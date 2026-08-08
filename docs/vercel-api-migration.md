@@ -29,51 +29,36 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `DATABASE_URL` | Yes | Postgres connection string (Replit DB still works remotely) |
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
-| `OPENAI_API_KEY` | Recommended | Image edit/generate (Customise Anima → Generate Look). Also ChatGPT backup under `auto` / Anima ensemble. |
-| `GEMINI_API_KEY` | Recommended | Preferred chat LLM under `auto` (native Google AI Studio, including `AQ.*` keys). |
-| `GROQ_API_KEY` | Recommended | Fast Groq (Llama) backup after Gemini; also an Anima ensemble mind. |
-| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Optional | Kimi / Moonshot backup. Base URL `https://api.moonshot.ai/v1`. |
-| `XAI_API_KEY` | Optional | Grok (xAI) backup in the auto chain. |
-| `AI_GATEWAY_API_KEY` | Recommended | Vercel AI Gateway last-resort unpaid path (also uses `VERCEL_OIDC_TOKEN` on Vercel). |
-| `ANIMA_LLM_PROVIDER` | No | Default is **custom Anima LLM** (unset / `custom` / `anima` / `local`). Requires `ANIMA_LOCAL_LLM_BASE_URL`. Set **`auto` only** if you want the cloud BYOK chain. **Never paste an API key here** — a key-shaped value is ignored and custom mode stays on. See `docs/custom-llm.md`. |
-| `ANIMA_LOCAL_LLM_BASE_URL` | Yes for chat | Public HTTPS OpenAI-compatible URL for Ollama/vLLM (e.g. `https://llm.example.com/v1`). Required on Vercel for the default custom mode. |
-| `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
-| `ANIMA_DISABLE_GROQ` | No | Set `true` under `auto` / `openai` to skip Groq. |
-| `ANIMA_DISABLE_XAI` | No | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits. |
-| `ANIMA_DISABLE_GATEWAY` | No | Set `true` under `auto` to skip AI Gateway. |
+| `OPENAI_API_KEY` | Recommended | Image edit/generate only (Customise Anima → Generate Look). Never used for chat. |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Yes for chat | Public HTTPS OpenAI-compatible URL for Ollama/vLLM (e.g. `https://llm.example.com/v1`). This is the only chat backend — there is no cloud fallback. |
+| `ANIMA_LOCAL_LLM_BACKEND` | No | `ollama` (default) or `vllm`. |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | Yes for chat (Ollama) | Model tag served by your Ollama host, e.g. `anima-chat`. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 | `DATABASE_URL` | Yes | Also stores avatar uploads in `uploaded_images` (Vercel has no Replit object-storage sidecar) |
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
-**If chat shows “LLM credits/quota exhausted (tried Gemini → Kimi → Grok → ChatGPT → AI Gateway)”:**
-Chat defaults to **custom Anima LLM**. Live status when the public endpoint is missing looks like:
+**If chat shows "Anima custom LLM is not configured":**
+`ANIMA_LOCAL_LLM_BASE_URL` is empty or unreachable, and there is no cloud fallback to fall through to. Live status looks like:
 
 ```bash
-curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,keys,localEndpoint,note}'
-# "mode":"local", "preferred":null, "keys.local":false,
-# "localEndpoint.configured":false, and often a note that ANIMA_LLM_PROVIDER looked like an API key
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,localEndpoint,note}'
+# "status":"error", "preferred":null, "localEndpoint.configured":false
 ```
 
-Do this on **Vercel → Settings → Environment Variables → Production**, then **redeploy without build cache**:
+Fix on **Vercel → Settings → Environment Variables → Production**, then **redeploy without build cache**:
 
-| Fix | Env |
-|-----|-----|
-| **A — Anima LLM (preferred, no cloud chat bills)** | `ANIMA_LLM_PROVIDER=custom` (literal word `custom`, **not** a key), `ANIMA_LOCAL_LLM_BACKEND=ollama`, `ANIMA_LOCAL_LLM_BASE_URL=https://<your-public-ollama-or-vllm>/v1`, `ANIMA_OLLAMA_MODEL_STANDARD=anima-chat`. Host Ollama with `pnpm llm:up` on a machine that Vercel can reach (HTTPS). See `docs/custom-llm.md`. |
-| **B — Quick unblock (cloud BYOK)** | Set `ANIMA_LLM_PROVIDER=auto` explicitly and ensure a funded `GEMINI_API_KEY` / `GROQ_API_KEY` / … is present, then redeploy. Custom mode will **not** use those keys. |
-| **C — Mis-pasted mode** | If `ANIMA_LLM_PROVIDER` contains an `AQ.*` / `sk-` / long secret, **delete it** or set it to `custom` (or `auto` only if you want cloud). Put Gemini keys only in `GEMINI_API_KEY`. |
+```bash
+ANIMA_LOCAL_LLM_BACKEND=ollama
+ANIMA_LOCAL_LLM_BASE_URL=https://<your-public-ollama-or-vllm>/v1
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+```
 
-Image generation still needs a funded `OPENAI_API_KEY` even when chat uses Anima LLM / Groq.
+Host Ollama with `pnpm llm:up` on a machine that Vercel can reach (HTTPS). See `docs/custom-llm.md` and `docs/llm-deploy.md` for a concrete no-infra-yet path.
 
-**If `/api/healthz/llm` already shows `"keys": { …: true }` for the cloud providers:** the env values are present — the failure is upstream rejection (quota/billing/revoked), not a missing Vercel variable. Confirm with `?probe=1` (look for at least one `"ok": true`).
+Image generation still needs a funded `OPENAI_API_KEY` — that's a separate feature from chat and unaffected by the Anima LLM endpoint.
 
-**Gemini setup (optional cloud path):** Create a key at Google AI Studio, set `GEMINI_API_KEY` on Vercel **Production**, set `ANIMA_LLM_PROVIDER=auto` (or `gemini`), and move any `AQ.*` value out of `ANIMA_LLM_PROVIDER` into `GEMINI_API_KEY`. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"gemini"` and a chain like `["gemini","groq","kimi","xai","openai","gateway"]` (Groq appears when `GROQ_API_KEY` is set). Live-test keys with `?probe=1`.
-
-**Chat default is Gemini-first with failover:** Without any chat keys, chat fails with a clear setup error. With `ANIMA_LLM_PROVIDER=anima` / `ensemble` (or `ANIMA_LLM_ENSEMBLE=true`), available minds (**Gemini / Groq / ChatGPT**) draft in parallel, then a combined reply is streamed. Sticky provider failures are skipped on later turns; timed-out mind calls are aborted.
-
-**If chat fails with a Grok “no team credits” error:** buy xAI credits, set `ANIMA_DISABLE_XAI=true` to skip Grok, or rely on Gemini / Kimi / OpenAI backups.
-
-**If chat says “Too many requests. Please slow down” after one message:** that is the API’s own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
+**If chat says "Too many requests. Please slow down" after one message:** that is the API’s own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
 
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 

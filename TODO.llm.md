@@ -18,7 +18,9 @@ documentation.
 ## Phase B — Wire into api-server (multi-provider + local hybrid)
 
 - [x] Step 9: OpenAI-compatible **local** provider (vLLM/Ollama) in `llmFailover`
-- [x] Step 10: `ANIMA_LLM_PROVIDER=local|local-first` hybrid routing + healthz keys
+- [x] Step 10: local-only routing + healthz status (superseded by Step 21 — the
+      cloud failover/ensemble chain and `ANIMA_LLM_PROVIDER` mode switch were
+      removed entirely; chat has exactly one backend now)
 - [x] Step 11: Hybrid memory retrieval + `memory_embeddings` + `searchMemoriesSemantically`
   - Chat `upsertTurnMemory` indexes each new turn into `memory_embeddings` via `upsertMemoryEmbeddings`
   - Prompt path uses `attachStoredEmbeddings`; tool path uses `searchMemoriesSemantically`
@@ -76,9 +78,15 @@ documentation.
 - [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
 - [ ] Optional DPO/ORPO/SimPO preference stage
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
-- [x] `ANIMA_LLM_PROVIDER=custom|anima|local` = self-hosted Anima LLM (no cloud BYOK)
-- [x] `ANIMA_ALLOW_CLOUD_LLM=true` gate — every cloud-capable mode (auto/local-first/gemini/groq/kimi/xai/openai/gateway/ensemble) is silently downgraded to `local` unless this second flag is also set, so a mistyped `ANIMA_LLM_PROVIDER` can never switch chat onto a flagship provider
-- [ ] Host Ollama/vLLM with a public HTTPS URL and flip production to `custom`
+- [x] Step 21: Deleted the cloud failover/ensemble chain entirely — `llmEnsemble.ts`,
+      `geminiNative.ts`, and every Gemini/Groq/Kimi/xAI/OpenAI/Gateway chat code
+      path, plus the `ANIMA_LLM_PROVIDER` mode switch and `ANIMA_ALLOW_CLOUD_LLM`
+      gate (nothing left to gate — there is no cloud mode to enable). Chat is
+      exactly one backend: the self-hosted Anima LLM via `ANIMA_LOCAL_LLM_BASE_URL`.
+      `OPENAI_API_KEY` remains, scoped to image generate/edit only. Frontend
+      "Switched to Kimi/Grok/ChatGPT/AI Gateway" toasts and the ensemble
+      "Consulting minds…" status UI were removed along with it.
+- [ ] Host Ollama/vLLM with a public HTTPS URL and flip production to it
   - Do **not** point `ANIMA_LOCAL_LLM_BASE_URL` at `api.openai.com` — that is cloud OpenAI, not Anima LLM
   - For OpenAI chat responses use `ANIMA_LLM_PROVIDER=openai` (or `auto`) + `OPENAI_API_KEY` instead
   - Concrete no-infra-yet path (VPS + Cloudflare Tunnel, then GPU/vLLM upgrade): `docs/llm-deploy.md` + `scripts/llm/tunnel-cloudflared.sh` / `pnpm llm:tunnel` — still requires someone to actually rent the box and run it

@@ -3,9 +3,9 @@
  * Minimal OpenAI-compatible chat server for LOCAL SMOKE TESTING ONLY.
  *
  * This is NOT a real model — it echoes canned responses. It exists so the
- * custom-LLM wiring (ANIMA_LOCAL_LLM_BASE_URL, ANIMA_LLM_PROVIDER=custom,
- * /api/healthz/llm) can be exercised end-to-end without a GPU or network
- * access to Ollama/Hugging Face, e.g. in a sandboxed CI/dev container.
+ * custom-LLM wiring (ANIMA_LOCAL_LLM_BASE_URL, /api/healthz/llm) can be
+ * exercised end-to-end without a GPU or network access to Ollama/Hugging
+ * Face, e.g. in a sandboxed CI/dev container.
  *
  * For a real self-hosted brain, follow docs/custom-llm.md (Ollama + Qwen2.5,
  * or vLLM + fine-tuned Ministral) instead of this stub.

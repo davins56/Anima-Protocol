@@ -7,7 +7,6 @@
 #   fly deploy
 #
 # Then set on Vercel (see ../../docs/custom-llm.md, Production note):
-#   ANIMA_LLM_PROVIDER=custom
 #   ANIMA_LOCAL_LLM_BACKEND=ollama
 #   ANIMA_LOCAL_LLM_BASE_URL=https://<app-name>.fly.dev/v1
 #   ANIMA_LOCAL_LLM_API_KEY=<same value as PROXY_AUTH_TOKEN>

@@ -71,7 +71,6 @@ Set these on the Vercel project (Production environment), matching
 `PROXY_AUTH_TOKEN` from above, then redeploy without build cache:
 
 ```bash
-ANIMA_LLM_PROVIDER=custom
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<app-name>.fly.dev/v1
 ANIMA_LOCAL_LLM_API_KEY=<same value as PROXY_AUTH_TOKEN>

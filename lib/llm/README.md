@@ -23,8 +23,9 @@ Root shortcuts: `pnpm llm:up`, `pnpm llm:chat`, `pnpm llm:prepare-finetune`, `pn
 Both `prepare-finetune` and `export-turns` run every example through a cleaning pass
 before writing JSONL — on by default, opt out with `--no-clean` / `--no-dedupe`:
 
-- **Normalize** — trims whitespace, drops empty turns, merges consecutive
-  same-role turns so conversations strictly alternate (chat templates require this).
+- **Normalize** — trims whitespace, drops empty turns, redacts obvious PII
+  (emails, phone numbers), and merges consecutive same-role turns so
+  conversations strictly alternate (chat templates require this).
 - **Quality gate** — drops examples with no assistant turn, assistant turns
   shorter than `--min-assistant-chars` (default 4), assistant content matching
   a known error/fallback/refusal denylist (e.g. provider timeouts, generic
