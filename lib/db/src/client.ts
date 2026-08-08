@@ -7,7 +7,6 @@ const { Pool } = pg;
 type DbSchema = typeof schema;
 type Db = NodePgDatabase<DbSchema>;
 
-<<<<<<< HEAD
 // Resolve SSL behaviour from the URL's `sslmode`, then strip `sslmode` from the
 // connection string so node-postgres' own parser does not re-apply it.
 //
@@ -38,7 +37,6 @@ function resolveDbConfig(url: string): {
       (_match, lead: string, trail: string) => (trail === "&" ? lead : ""),
     );
   }
-=======
 /**
  * Resolve SSL behaviour from the URL's `sslmode`, then strip `sslmode` from the
  * connection string so node-postgres' own parser does not re-apply it.
@@ -72,7 +70,6 @@ export function resolveDbConfig(url: string): {
   // If we removed the only query param, we may leave a dangling '?'.
   connectionString = connectionString.replace(/\?$/, "").replace(/[?&]$/, "");
 
->>>>>>> origin/main
   const ssl = sslmode === "disable" ? false : { rejectUnauthorized: false };
   return { connectionString, ssl };
 }
@@ -89,9 +86,7 @@ export function getPool(): pg.Pool {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-<<<<<<< HEAD
   poolInstance = new Pool({ connectionString, ssl });
-=======
   // Vercel Fluid / serverless: keep the pool tiny and fail fast so a dead DB
   // surfaces as 503 quickly instead of hanging the Character list request.
   poolInstance = new Pool({
@@ -104,7 +99,6 @@ export function getPool(): pg.Pool {
     ),
     allowExitOnIdle: true,
   });
->>>>>>> origin/main
   return poolInstance;
 }
 

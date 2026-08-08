@@ -57,13 +57,10 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // ../../node_modules/.pnpm/ms@2.1.3/node_modules/ms/index.js
 var require_ms = __commonJS({
   "../../node_modules/.pnpm/ms@2.1.3/node_modules/ms/index.js"(exports, module) {
-<<<<<<< HEAD
     var s3 = 1e3;
     var m2 = s3 * 60;
-=======
     var s4 = 1e3;
     var m2 = s4 * 60;
->>>>>>> origin/main
     var h2 = m2 * 60;
     var d2 = h2 * 24;
     var w2 = d2 * 7;
@@ -72,11 +69,8 @@ var require_ms = __commonJS({
       options = options || {};
       var type = typeof val;
       if (type === "string" && val.length > 0) {
-<<<<<<< HEAD
         return parse4(val);
-=======
         return parse5(val);
->>>>>>> origin/main
       } else if (type === "number" && isFinite(val)) {
         return options.long ? fmtLong(val) : fmtShort(val);
       }
@@ -84,16 +78,12 @@ var require_ms = __commonJS({
         "val is not a non-empty string or a valid number. val=" + JSON.stringify(val)
       );
     };
-<<<<<<< HEAD
     function parse4(str2) {
-=======
     function parse5(str2) {
->>>>>>> origin/main
       str2 = String(str2);
       if (str2.length > 100) {
         return;
       }
-<<<<<<< HEAD
       var match2 = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(
         str2
       );
@@ -102,7 +92,6 @@ var require_ms = __commonJS({
       }
       var n2 = parseFloat(match2[1]);
       var type = (match2[2] || "ms").toLowerCase();
-=======
       var match3 = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(
         str2
       );
@@ -111,7 +100,6 @@ var require_ms = __commonJS({
       }
       var n2 = parseFloat(match3[1]);
       var type = (match3[2] || "ms").toLowerCase();
->>>>>>> origin/main
       switch (type) {
         case "years":
         case "year":
@@ -144,11 +132,8 @@ var require_ms = __commonJS({
         case "secs":
         case "sec":
         case "s":
-<<<<<<< HEAD
           return n2 * s3;
-=======
           return n2 * s4;
->>>>>>> origin/main
         case "milliseconds":
         case "millisecond":
         case "msecs":
@@ -170,13 +155,10 @@ var require_ms = __commonJS({
       if (msAbs >= m2) {
         return Math.round(ms / m2) + "m";
       }
-<<<<<<< HEAD
       if (msAbs >= s3) {
         return Math.round(ms / s3) + "s";
-=======
       if (msAbs >= s4) {
         return Math.round(ms / s4) + "s";
->>>>>>> origin/main
       }
       return ms + "ms";
     }
@@ -191,13 +173,10 @@ var require_ms = __commonJS({
       if (msAbs >= m2) {
         return plural(ms, msAbs, m2, "minute");
       }
-<<<<<<< HEAD
       if (msAbs >= s3) {
         return plural(ms, msAbs, s3, "second");
-=======
       if (msAbs >= s4) {
         return plural(ms, msAbs, s4, "second");
->>>>>>> origin/main
       }
       return ms + " ms";
     }
@@ -212,7 +191,6 @@ var require_ms = __commonJS({
 var require_common = __commonJS({
   "../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/common.js"(exports, module) {
     function setup(env) {
-<<<<<<< HEAD
       createDebug2.debug = createDebug2;
       createDebug2.default = createDebug2;
       createDebug2.coerce = coerce;
@@ -227,7 +205,6 @@ var require_common = __commonJS({
       createDebug2.names = [];
       createDebug2.skips = [];
       createDebug2.formatters = {};
-=======
       createDebug3.debug = createDebug3;
       createDebug3.default = createDebug3;
       createDebug3.coerce = coerce;
@@ -242,24 +219,20 @@ var require_common = __commonJS({
       createDebug3.names = [];
       createDebug3.skips = [];
       createDebug3.formatters = {};
->>>>>>> origin/main
       function selectColor(namespace) {
         let hash = 0;
         for (let i2 = 0; i2 < namespace.length; i2++) {
           hash = (hash << 5) - hash + namespace.charCodeAt(i2);
           hash |= 0;
         }
-<<<<<<< HEAD
         return createDebug2.colors[Math.abs(hash) % createDebug2.colors.length];
       }
       createDebug2.selectColor = selectColor;
       function createDebug2(namespace) {
-=======
         return createDebug3.colors[Math.abs(hash) % createDebug3.colors.length];
       }
       createDebug3.selectColor = selectColor;
       function createDebug3(namespace) {
->>>>>>> origin/main
         let prevTime;
         let enableOverride = null;
         let namespacesCache;
@@ -275,16 +248,12 @@ var require_common = __commonJS({
           self2.prev = prevTime;
           self2.curr = curr;
           prevTime = curr;
-<<<<<<< HEAD
           args[0] = createDebug2.coerce(args[0]);
-=======
           args[0] = createDebug3.coerce(args[0]);
->>>>>>> origin/main
           if (typeof args[0] !== "string") {
             args.unshift("%O");
           }
           let index2 = 0;
-<<<<<<< HEAD
           args[0] = args[0].replace(/%([a-zA-Z%])/g, (match2, format) => {
             if (match2 === "%%") {
               return "%";
@@ -308,7 +277,6 @@ var require_common = __commonJS({
         debug2.color = createDebug2.selectColor(namespace);
         debug2.extend = extend2;
         debug2.destroy = createDebug2.destroy;
-=======
           args[0] = args[0].replace(/%([a-zA-Z%])/g, (match3, format) => {
             if (match3 === "%%") {
               return "%";
@@ -332,7 +300,6 @@ var require_common = __commonJS({
         debug2.color = createDebug3.selectColor(namespace);
         debug2.extend = extend2;
         debug2.destroy = createDebug3.destroy;
->>>>>>> origin/main
         Object.defineProperty(debug2, "enabled", {
           enumerable: true,
           configurable: false,
@@ -340,15 +307,12 @@ var require_common = __commonJS({
             if (enableOverride !== null) {
               return enableOverride;
             }
-<<<<<<< HEAD
             if (namespacesCache !== createDebug2.namespaces) {
               namespacesCache = createDebug2.namespaces;
               enabledCache = createDebug2.enabled(namespace);
-=======
             if (namespacesCache !== createDebug3.namespaces) {
               namespacesCache = createDebug3.namespaces;
               enabledCache = createDebug3.enabled(namespace);
->>>>>>> origin/main
             }
             return enabledCache;
           },
@@ -356,27 +320,20 @@ var require_common = __commonJS({
             enableOverride = v2;
           }
         });
-<<<<<<< HEAD
         if (typeof createDebug2.init === "function") {
           createDebug2.init(debug2);
-=======
         if (typeof createDebug3.init === "function") {
           createDebug3.init(debug2);
->>>>>>> origin/main
         }
         return debug2;
       }
       function extend2(namespace, delimiter) {
-<<<<<<< HEAD
         const newDebug = createDebug2(this.namespace + (typeof delimiter === "undefined" ? ":" : delimiter) + namespace);
-=======
         const newDebug = createDebug3(this.namespace + (typeof delimiter === "undefined" ? ":" : delimiter) + namespace);
->>>>>>> origin/main
         newDebug.log = this.log;
         return newDebug;
       }
       function enable(namespaces) {
-<<<<<<< HEAD
         createDebug2.save(namespaces);
         createDebug2.namespaces = namespaces;
         createDebug2.names = [];
@@ -387,7 +344,6 @@ var require_common = __commonJS({
             createDebug2.skips.push(ns.slice(1));
           } else {
             createDebug2.names.push(ns);
-=======
         createDebug3.save(namespaces);
         createDebug3.namespaces = namespaces;
         createDebug3.names = [];
@@ -398,7 +354,6 @@ var require_common = __commonJS({
             createDebug3.skips.push(ns.slice(1));
           } else {
             createDebug3.names.push(ns);
->>>>>>> origin/main
           }
         }
       }
@@ -432,7 +387,6 @@ var require_common = __commonJS({
       }
       function disable() {
         const namespaces = [
-<<<<<<< HEAD
           ...createDebug2.names,
           ...createDebug2.skips.map((namespace) => "-" + namespace)
         ].join(",");
@@ -441,7 +395,6 @@ var require_common = __commonJS({
       }
       function enabled(name) {
         for (const skip of createDebug2.skips) {
-=======
           ...createDebug3.names,
           ...createDebug3.skips.map((namespace) => "-" + namespace)
         ].join(",");
@@ -450,16 +403,12 @@ var require_common = __commonJS({
       }
       function enabled(name) {
         for (const skip of createDebug3.skips) {
->>>>>>> origin/main
           if (matchesTemplate(name, skip)) {
             return false;
           }
         }
-<<<<<<< HEAD
         for (const ns of createDebug2.names) {
-=======
         for (const ns of createDebug3.names) {
->>>>>>> origin/main
           if (matchesTemplate(name, ns)) {
             return true;
           }
@@ -475,13 +424,10 @@ var require_common = __commonJS({
       function destroy() {
         console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");
       }
-<<<<<<< HEAD
       createDebug2.enable(createDebug2.load());
       return createDebug2;
-=======
       createDebug3.enable(createDebug3.load());
       return createDebug3;
->>>>>>> origin/main
     }
     module.exports = setup;
   }
@@ -605,21 +551,18 @@ var require_browser = __commonJS({
       args.splice(1, 0, c2, "color: inherit");
       let index2 = 0;
       let lastC = 0;
-<<<<<<< HEAD
       args[0].replace(/%[a-zA-Z%]/g, (match2) => {
         if (match2 === "%%") {
           return;
         }
         index2++;
         if (match2 === "%c") {
-=======
       args[0].replace(/%[a-zA-Z%]/g, (match3) => {
         if (match3 === "%%") {
           return;
         }
         index2++;
         if (match3 === "%c") {
->>>>>>> origin/main
           lastC = index2;
         }
       });
@@ -770,11 +713,8 @@ var require_node = __commonJS({
     exports.inspectOpts = Object.keys(process.env).filter((key) => {
       return /^debug_/i.test(key);
     }).reduce((obj, key) => {
-<<<<<<< HEAD
       const prop = key.substring(6).toLowerCase().replace(/_([a-z])/g, (_3, k2) => {
-=======
       const prop = key.substring(6).toLowerCase().replace(/_([a-z])/g, (_4, k2) => {
->>>>>>> origin/main
         return k2.toUpperCase();
       });
       let val = process.env[key];
@@ -860,11 +800,8 @@ var require_depd = __commonJS({
   "../../node_modules/.pnpm/depd@2.0.0/node_modules/depd/index.js"(exports, module) {
     var relative = __require("path").relative;
     module.exports = depd;
-<<<<<<< HEAD
     var basePath36 = process.cwd();
-=======
     var basePath39 = process.cwd();
->>>>>>> origin/main
     function containsNamespace(str2, namespace) {
       var vals = str2.split(/[ ,]+/);
       var ns = String(namespace).toLowerCase();
@@ -1054,11 +991,8 @@ var require_depd = __commonJS({
       return formatted;
     }
     function formatLocation(callSite) {
-<<<<<<< HEAD
       return relative(basePath36, callSite[0]) + ":" + callSite[1] + ":" + callSite[2];
-=======
       return relative(basePath39, callSite[0]) + ":" + callSite[1] + ":" + callSite[2];
->>>>>>> origin/main
     }
     function getStack() {
       var limit2 = Error.stackTraceLimit;
@@ -1560,11 +1494,8 @@ var require_bytes = __commonJS({
     "use strict";
     module.exports = bytes;
     module.exports.format = format;
-<<<<<<< HEAD
     module.exports.parse = parse4;
-=======
     module.exports.parse = parse5;
->>>>>>> origin/main
     var formatThousandsRegExp = /\B(?=(\d{3})+(?!\d))/g;
     var formatDecimalsRegExp = /(?:\.0*|(\.[^0]+)0+)$/;
     var map2 = {
@@ -1578,11 +1509,8 @@ var require_bytes = __commonJS({
     var parseRegExp = /^((-|\+)?(\d+(?:\.\d+)?)) *(kb|mb|gb|tb|pb)$/i;
     function bytes(value, options) {
       if (typeof value === "string") {
-<<<<<<< HEAD
         return parse4(value);
-=======
         return parse5(value);
->>>>>>> origin/main
       }
       if (typeof value === "number") {
         return format(value, options);
@@ -1620,22 +1548,16 @@ var require_bytes = __commonJS({
         str2 = str2.replace(formatDecimalsRegExp, "$1");
       }
       if (thousandsSeparator) {
-<<<<<<< HEAD
         str2 = str2.split(".").map(function(s3, i2) {
           return i2 === 0 ? s3.replace(formatThousandsRegExp, thousandsSeparator) : s3;
-=======
         str2 = str2.split(".").map(function(s4, i2) {
           return i2 === 0 ? s4.replace(formatThousandsRegExp, thousandsSeparator) : s4;
->>>>>>> origin/main
         }).join(".");
       }
       return str2 + unitSeparator + unit;
     }
-<<<<<<< HEAD
     function parse4(val) {
-=======
     function parse5(val) {
->>>>>>> origin/main
       if (typeof val === "number" && !isNaN(val)) {
         return val;
       }
@@ -5840,11 +5762,8 @@ var require_content_type = __commonJS({
     var QUOTE_REGEXP = /([\\"])/g;
     var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
     exports.format = format;
-<<<<<<< HEAD
     exports.parse = parse4;
-=======
     exports.parse = parse5;
->>>>>>> origin/main
     function format(obj) {
       if (!obj || typeof obj !== "object") {
         throw new TypeError("argument obj is required");
@@ -5868,11 +5787,8 @@ var require_content_type = __commonJS({
       }
       return string4;
     }
-<<<<<<< HEAD
     function parse4(string4) {
-=======
     function parse5(string4) {
->>>>>>> origin/main
       if (!string4) {
         throw new TypeError("argument string is required");
       }
@@ -5888,7 +5804,6 @@ var require_content_type = __commonJS({
       var obj = new ContentType(type.toLowerCase());
       if (index2 !== -1) {
         var key;
-<<<<<<< HEAD
         var match2;
         var value;
         PARAM_REGEXP.lastIndex = index2;
@@ -5899,7 +5814,6 @@ var require_content_type = __commonJS({
           index2 += match2[0].length;
           key = match2[1].toLowerCase();
           value = match2[2];
-=======
         var match3;
         var value;
         PARAM_REGEXP.lastIndex = index2;
@@ -5910,7 +5824,6 @@ var require_content_type = __commonJS({
           index2 += match3[0].length;
           key = match3[1].toLowerCase();
           value = match3[2];
->>>>>>> origin/main
           if (value.charCodeAt(0) === 34) {
             value = value.slice(1, -1);
             if (value.indexOf("\\") !== -1) {
@@ -15375,21 +15288,18 @@ var require_mime_types = __commonJS({
       if (!type || typeof type !== "string") {
         return false;
       }
-<<<<<<< HEAD
       var match2 = EXTRACT_TYPE_REGEXP.exec(type);
       var mime3 = match2 && db3[match2[1].toLowerCase()];
       if (mime3 && mime3.charset) {
         return mime3.charset;
       }
       if (match2 && TEXT_TYPE_REGEXP.test(match2[1])) {
-=======
       var match3 = EXTRACT_TYPE_REGEXP.exec(type);
       var mime3 = match3 && db3[match3[1].toLowerCase()];
       if (mime3 && mime3.charset) {
         return mime3.charset;
       }
       if (match3 && TEXT_TYPE_REGEXP.test(match3[1])) {
->>>>>>> origin/main
         return "UTF-8";
       }
       return false;
@@ -15412,13 +15322,10 @@ var require_mime_types = __commonJS({
       if (!type || typeof type !== "string") {
         return false;
       }
-<<<<<<< HEAD
       var match2 = EXTRACT_TYPE_REGEXP.exec(type);
       var exts = match2 && exports.extensions[match2[1].toLowerCase()];
-=======
       var match3 = EXTRACT_TYPE_REGEXP.exec(type);
       var exts = match3 && exports.extensions[match3[1].toLowerCase()];
->>>>>>> origin/main
       if (!exts || !exts.length) {
         return false;
       }
@@ -15481,11 +15388,8 @@ var require_media_typer = __commonJS({
     var TYPE_NAME_REGEXP = /^[A-Za-z0-9][A-Za-z0-9!#$&^_-]{0,126}$/;
     var TYPE_REGEXP = /^ *([A-Za-z0-9][A-Za-z0-9!#$&^_-]{0,126})\/([A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}) *$/;
     exports.format = format;
-<<<<<<< HEAD
     exports.parse = parse4;
-=======
     exports.parse = parse5;
->>>>>>> origin/main
     exports.test = test;
     function format(obj) {
       if (!obj || typeof obj !== "object") {
@@ -15518,32 +15422,26 @@ var require_media_typer = __commonJS({
       }
       return TYPE_REGEXP.test(string4.toLowerCase());
     }
-<<<<<<< HEAD
     function parse4(string4) {
-=======
     function parse5(string4) {
->>>>>>> origin/main
       if (!string4) {
         throw new TypeError("argument string is required");
       }
       if (typeof string4 !== "string") {
         throw new TypeError("argument string is required to be a string");
       }
-<<<<<<< HEAD
       var match2 = TYPE_REGEXP.exec(string4.toLowerCase());
       if (!match2) {
         throw new TypeError("invalid media type");
       }
       var type = match2[1];
       var subtype = match2[2];
-=======
       var match3 = TYPE_REGEXP.exec(string4.toLowerCase());
       if (!match3) {
         throw new TypeError("invalid media type");
       }
       var type = match3[1];
       var subtype = match3[2];
->>>>>>> origin/main
       var suffix;
       var index2 = subtype.lastIndexOf("+");
       if (index2 !== -1) {
@@ -15717,11 +15615,8 @@ var require_read = __commonJS({
     var hasBody = require_type_is().hasBody;
     var { getCharset } = require_utils();
     module.exports = read;
-<<<<<<< HEAD
     function read(req, res, next, parse4, debug2, options) {
-=======
     function read(req, res, next, parse5, debug2, options) {
->>>>>>> origin/main
       if (onFinished.isFinished(req)) {
         debug2("body already parsed");
         next();
@@ -15809,11 +15704,8 @@ var require_read = __commonJS({
         try {
           debug2("parse body");
           str2 = typeof body !== "string" && encoding !== null ? iconv.decode(body, encoding) : body;
-<<<<<<< HEAD
           req.body = parse4(str2, encoding);
-=======
           req.body = parse5(str2, encoding);
->>>>>>> origin/main
         } catch (err) {
           next(createError(400, err, {
             body: str2,
@@ -15886,11 +15778,8 @@ var require_json = __commonJS({
       const normalizedOptions = normalizeOptions(options, "application/json");
       var reviver = options?.reviver;
       var strict2 = options?.strict !== false;
-<<<<<<< HEAD
       function parse4(body) {
-=======
       function parse5(body) {
->>>>>>> origin/main
         if (body.length === 0) {
           return {};
         }
@@ -15917,11 +15806,8 @@ var require_json = __commonJS({
         isValidCharset: (charset) => charset.slice(0, 4) === "utf-"
       };
       return function jsonParser(req, res, next) {
-<<<<<<< HEAD
         read(req, res, next, parse4, debug2, readOptions);
-=======
         read(req, res, next, parse5, debug2, readOptions);
->>>>>>> origin/main
       };
     }
     function createStrictSyntaxError(str2, char3) {
@@ -15943,13 +15829,10 @@ var require_json = __commonJS({
       }
     }
     function firstchar(str2) {
-<<<<<<< HEAD
       var match2 = FIRST_CHAR_REGEXP.exec(str2);
       return match2 ? match2[1] : void 0;
-=======
       var match3 = FIRST_CHAR_REGEXP.exec(str2);
       return match3 ? match3[1] : void 0;
->>>>>>> origin/main
     }
     function normalizeJsonSyntaxError(error40, obj) {
       var keys = Object.getOwnPropertyNames(error40);
@@ -16168,7 +16051,6 @@ var require_object_inspect = __commonJS({
         return typeof obj === "object" && !hasShammedSymbols ? markBoxed(symString) : symString;
       }
       if (isElement(obj)) {
-<<<<<<< HEAD
         var s3 = "<" + $toLowerCase.call(String(obj.nodeName));
         var attrs = obj.attributes || [];
         for (var i2 = 0; i2 < attrs.length; i2++) {
@@ -16180,7 +16062,6 @@ var require_object_inspect = __commonJS({
         }
         s3 += "</" + $toLowerCase.call(String(obj.nodeName)) + ">";
         return s3;
-=======
         var s4 = "<" + $toLowerCase.call(String(obj.nodeName));
         var attrs = obj.attributes || [];
         for (var i2 = 0; i2 < attrs.length; i2++) {
@@ -16192,7 +16073,6 @@ var require_object_inspect = __commonJS({
         }
         s4 += "</" + $toLowerCase.call(String(obj.nodeName)) + ">";
         return s4;
->>>>>>> origin/main
       }
       if (isArray(obj)) {
         if (obj.length === 0) {
@@ -16283,7 +16163,6 @@ var require_object_inspect = __commonJS({
       }
       return String(obj);
     };
-<<<<<<< HEAD
     function wrapQuotes(s3, defaultStyle, opts) {
       var style = opts.quoteStyle || defaultStyle;
       var quoteChar = quotes[style];
@@ -16291,7 +16170,6 @@ var require_object_inspect = __commonJS({
     }
     function quote(s3) {
       return $replace.call(String(s3), /"/g, "&quot;");
-=======
     function wrapQuotes(s4, defaultStyle, opts) {
       var style = opts.quoteStyle || defaultStyle;
       var quoteChar = quotes[style];
@@ -16299,7 +16177,6 @@ var require_object_inspect = __commonJS({
     }
     function quote(s4) {
       return $replace.call(String(s4), /"/g, "&quot;");
->>>>>>> origin/main
     }
     function canTrustToString(obj) {
       return !toStringTag || !(typeof obj === "object" && (toStringTag in obj || typeof obj[toStringTag] !== "undefined"));
@@ -16391,11 +16268,8 @@ var require_object_inspect = __commonJS({
         mapSize.call(x2);
         try {
           setSize.call(x2);
-<<<<<<< HEAD
         } catch (s3) {
-=======
         } catch (s4) {
->>>>>>> origin/main
           return true;
         }
         return x2 instanceof Map;
@@ -16411,11 +16285,8 @@ var require_object_inspect = __commonJS({
         weakMapHas.call(x2, weakMapHas);
         try {
           weakSetHas.call(x2, weakSetHas);
-<<<<<<< HEAD
         } catch (s3) {
-=======
         } catch (s4) {
->>>>>>> origin/main
           return true;
         }
         return x2 instanceof WeakMap;
@@ -16458,11 +16329,8 @@ var require_object_inspect = __commonJS({
         weakSetHas.call(x2, weakSetHas);
         try {
           weakMapHas.call(x2, weakMapHas);
-<<<<<<< HEAD
         } catch (s3) {
-=======
         } catch (s4) {
->>>>>>> origin/main
           return true;
         }
         return x2 instanceof WeakSet;
@@ -16487,13 +16355,10 @@ var require_object_inspect = __commonJS({
       }
       var quoteRE = quoteREs[opts.quoteStyle || "single"];
       quoteRE.lastIndex = 0;
-<<<<<<< HEAD
       var s3 = $replace.call($replace.call(str2, quoteRE, "\\$1"), /[\x00-\x1f]/g, lowbyte);
       return wrapQuotes(s3, "single", opts);
-=======
       var s4 = $replace.call($replace.call(str2, quoteRE, "\\$1"), /[\x00-\x1f]/g, lowbyte);
       return wrapQuotes(s4, "single", opts);
->>>>>>> origin/main
     }
     function lowbyte(c2) {
       var n2 = c2.charCodeAt(0);
@@ -16685,15 +16550,12 @@ var require_side_channel_list = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/es-object-atoms@1.1.1/node_modules/es-object-atoms/index.js
 var require_es_object_atoms = __commonJS({
   "../../node_modules/.pnpm/es-object-atoms@1.1.1/node_modules/es-object-atoms/index.js"(exports, module) {
-=======
 // ../../node_modules/.pnpm/es-object-atoms@1.1.2/node_modules/es-object-atoms/index.js
 var require_es_object_atoms = __commonJS({
   "../../node_modules/.pnpm/es-object-atoms@1.1.2/node_modules/es-object-atoms/index.js"(exports, module) {
->>>>>>> origin/main
     "use strict";
     module.exports = Object;
   }
@@ -16884,11 +16746,8 @@ var require_shams = __commonJS({
       }
       var symVal = 42;
       obj[sym] = symVal;
-<<<<<<< HEAD
       for (var _3 in obj) {
-=======
       for (var _4 in obj) {
->>>>>>> origin/main
         return false;
       }
       if (typeof Object.keys === "function" && Object.keys(obj).length !== 0) {
@@ -17148,15 +17007,12 @@ var require_get_proto = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/hasown@2.0.3/node_modules/hasown/index.js
 var require_hasown = __commonJS({
   "../../node_modules/.pnpm/hasown@2.0.3/node_modules/hasown/index.js"(exports, module) {
-=======
 // ../../node_modules/.pnpm/hasown@2.0.4/node_modules/hasown/index.js
 var require_hasown = __commonJS({
   "../../node_modules/.pnpm/hasown@2.0.4/node_modules/hasown/index.js"(exports, module) {
->>>>>>> origin/main
     "use strict";
     var call = Function.prototype.call;
     var $hasOwn = Object.prototype.hasOwnProperty;
@@ -17404,13 +17260,10 @@ var require_get_intrinsic = __commonJS({
         throw new $SyntaxError("invalid intrinsic syntax, expected opening `%`");
       }
       var result = [];
-<<<<<<< HEAD
       $replace(string4, rePropName, function(match2, number4, quote, subString) {
         result[result.length] = quote ? $replace(subString, reEscapeChar, "$1") : number4 || match2;
-=======
       $replace(string4, rePropName, function(match3, number4, quote, subString) {
         result[result.length] = quote ? $replace(subString, reEscapeChar, "$1") : number4 || match3;
->>>>>>> origin/main
       });
       return result;
     };
@@ -17942,11 +17795,8 @@ var require_utils2 = __commonJS({
       }
       return !!(obj.constructor && obj.constructor.isBuffer && obj.constructor.isBuffer(obj));
     };
-<<<<<<< HEAD
     var combine2 = function combine3(a2, b2, arrayLimit, plainObjects) {
-=======
     var combine3 = function combine4(a2, b2, arrayLimit, plainObjects) {
->>>>>>> origin/main
       if (isOverflow(a2)) {
         var newIndex = getMaxIndex(a2) + 1;
         a2[newIndex] = b2;
@@ -17972,11 +17822,8 @@ var require_utils2 = __commonJS({
     module.exports = {
       arrayToObject,
       assign,
-<<<<<<< HEAD
       combine: combine2,
-=======
       combine: combine3,
->>>>>>> origin/main
       compact,
       decode: decode2,
       encode: encode2,
@@ -18045,11 +17892,8 @@ var require_stringify = __commonJS({
       return typeof v2 === "string" || typeof v2 === "number" || typeof v2 === "boolean" || typeof v2 === "symbol" || typeof v2 === "bigint";
     };
     var sentinel2 = {};
-<<<<<<< HEAD
     var stringify4 = function stringify5(object2, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder, filter, sort, allowDots, serializeDate, format, formatter, encodeValuesOnly, charset, sideChannel) {
-=======
     var stringify5 = function stringify6(object2, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder, filter, sort, allowDots, serializeDate, format, formatter, encodeValuesOnly, charset, sideChannel) {
->>>>>>> origin/main
       var obj = object2;
       var tmpSc = sideChannel;
       var step = 0;
@@ -18127,11 +17971,8 @@ var require_stringify = __commonJS({
         sideChannel.set(object2, step);
         var valueSideChannel = getSideChannel();
         valueSideChannel.set(sentinel2, sideChannel);
-<<<<<<< HEAD
         pushToArray(values, stringify5(
-=======
         pushToArray(values, stringify6(
->>>>>>> origin/main
           value,
           keyPrefix,
           generateArrayPrefix,
@@ -18251,11 +18092,8 @@ var require_stringify = __commonJS({
         if (options.skipNulls && value === null) {
           continue;
         }
-<<<<<<< HEAD
         pushToArray(keys, stringify4(
-=======
         pushToArray(keys, stringify5(
->>>>>>> origin/main
           value,
           key,
           generateArrayPrefix,
@@ -18612,7 +18450,6 @@ var require_parse = __commonJS({
 var require_lib2 = __commonJS({
   "../../node_modules/.pnpm/qs@6.15.2/node_modules/qs/lib/index.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     var stringify4 = require_stringify();
     var parse4 = require_parse();
     var formats = require_formats();
@@ -18620,7 +18457,6 @@ var require_lib2 = __commonJS({
       formats,
       parse: parse4,
       stringify: stringify4
-=======
     var stringify5 = require_stringify();
     var parse5 = require_parse();
     var formats = require_formats();
@@ -18628,7 +18464,6 @@ var require_lib2 = __commonJS({
       formats,
       parse: parse5,
       stringify: stringify5
->>>>>>> origin/main
     };
   }
 });
@@ -18649,11 +18484,8 @@ var require_urlencoded = __commonJS({
         throw new TypeError("option defaultCharset must be either utf-8 or iso-8859-1");
       }
       var queryparse = createQueryParser(options);
-<<<<<<< HEAD
       function parse4(body, encoding) {
-=======
       function parse5(body, encoding) {
->>>>>>> origin/main
         return body.length ? queryparse(body, encoding) : {};
       }
       const readOptions = {
@@ -18662,11 +18494,8 @@ var require_urlencoded = __commonJS({
         isValidCharset: (charset) => charset === "utf-8" || charset === "iso-8859-1"
       };
       return function urlencodedParser(req, res, next) {
-<<<<<<< HEAD
         read(req, res, next, parse4, debug2, readOptions);
-=======
         read(req, res, next, parse5, debug2, readOptions);
->>>>>>> origin/main
       };
     }
     function createQueryParser(options) {
@@ -18806,24 +18635,18 @@ var require_escape_html = __commonJS({
     module.exports = escapeHtml;
     function escapeHtml(string4) {
       var str2 = "" + string4;
-<<<<<<< HEAD
       var match2 = matchHtmlRegExp.exec(str2);
       if (!match2) {
-=======
       var match3 = matchHtmlRegExp.exec(str2);
       if (!match3) {
->>>>>>> origin/main
         return str2;
       }
       var escape2;
       var html = "";
       var index2 = 0;
       var lastIndex = 0;
-<<<<<<< HEAD
       for (index2 = match2.index; index2 < str2.length; index2++) {
-=======
       for (index2 = match3.index; index2 < str2.length; index2++) {
->>>>>>> origin/main
         switch (str2.charCodeAt(index2)) {
           case 34:
             escape2 = "&quot;";
@@ -18859,11 +18682,8 @@ var require_parseurl = __commonJS({
   "../../node_modules/.pnpm/parseurl@1.3.3/node_modules/parseurl/index.js"(exports, module) {
     "use strict";
     var url3 = __require("url");
-<<<<<<< HEAD
     var parse4 = url3.parse;
-=======
     var parse5 = url3.parse;
->>>>>>> origin/main
     var Url = url3.Url;
     module.exports = parseurl;
     module.exports.original = originalurl;
@@ -18895,11 +18715,8 @@ var require_parseurl = __commonJS({
     }
     function fastparse(str2) {
       if (typeof str2 !== "string" || str2.charCodeAt(0) !== 47) {
-<<<<<<< HEAD
         return parse4(str2);
-=======
         return parse5(str2);
->>>>>>> origin/main
       }
       var pathname = str2;
       var query = null;
@@ -18927,11 +18744,8 @@ var require_parseurl = __commonJS({
           /* #  */
           case 160:
           case 65279:
-<<<<<<< HEAD
             return parse4(str2);
-=======
             return parse5(str2);
->>>>>>> origin/main
         }
       }
       var url4 = Url !== void 0 ? new Url() : {};
@@ -19176,22 +18990,16 @@ var require_etag = __commonJS({
   "../../node_modules/.pnpm/etag@1.8.1/node_modules/etag/index.js"(exports, module) {
     "use strict";
     module.exports = etag;
-<<<<<<< HEAD
     var crypto4 = __require("crypto");
-=======
     var crypto7 = __require("crypto");
->>>>>>> origin/main
     var Stats = __require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-<<<<<<< HEAD
       var hash = crypto4.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
-=======
       var hash = crypto7.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
->>>>>>> origin/main
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -19230,11 +19038,8 @@ var require_forwarded = __commonJS({
       if (!req) {
         throw new TypeError("argument req is required");
       }
-<<<<<<< HEAD
       var proxyAddrs = parse4(req.headers["x-forwarded-for"] || "");
-=======
       var proxyAddrs = parse5(req.headers["x-forwarded-for"] || "");
->>>>>>> origin/main
       var socketAddr = getSocketAddr(req);
       var addrs = [socketAddr].concat(proxyAddrs);
       return addrs;
@@ -19242,11 +19047,8 @@ var require_forwarded = __commonJS({
     function getSocketAddr(req) {
       return req.socket ? req.socket.remoteAddress : req.connection.remoteAddress;
     }
-<<<<<<< HEAD
     function parse4(header) {
-=======
     function parse5(header) {
->>>>>>> origin/main
       var end = header.length;
       var list = [];
       var start = header.length;
@@ -19420,11 +19222,8 @@ var require_ipaddr = __commonJS({
         longValue: new RegExp("^" + ipv4Part + "$", "i")
       };
       ipaddr.IPv4.parser = function(string4) {
-<<<<<<< HEAD
         var match2, parseIntAuto, part, shift, value;
-=======
         var match3, parseIntAuto, part, shift, value;
->>>>>>> origin/main
         parseIntAuto = function(string5) {
           if (string5[0] === "0" && string5[1] !== "x") {
             return parseInt(string5, 8);
@@ -19432,17 +19231,14 @@ var require_ipaddr = __commonJS({
             return parseInt(string5);
           }
         };
-<<<<<<< HEAD
         if (match2 = string4.match(ipv4Regexes.fourOctet)) {
           return (function() {
             var k2, len, ref, results;
             ref = match2.slice(1, 6);
-=======
         if (match3 = string4.match(ipv4Regexes.fourOctet)) {
           return (function() {
             var k2, len, ref, results;
             ref = match3.slice(1, 6);
->>>>>>> origin/main
             results = [];
             for (k2 = 0, len = ref.length; k2 < len; k2++) {
               part = ref[k2];
@@ -19450,13 +19246,10 @@ var require_ipaddr = __commonJS({
             }
             return results;
           })();
-<<<<<<< HEAD
         } else if (match2 = string4.match(ipv4Regexes.longValue)) {
           value = parseIntAuto(match2[1]);
-=======
         } else if (match3 = string4.match(ipv4Regexes.longValue)) {
           value = parseIntAuto(match3[1]);
->>>>>>> origin/main
           if (value > 4294967295 || value < 0) {
             throw new Error("ipaddr: address outside defined range");
           }
@@ -19503,26 +19296,20 @@ var require_ipaddr = __commonJS({
           return this.toNormalizedString().replace(/((^|:)(0(:|$))+)/, "::");
         };
         IPv6.prototype.toRFC5952String = function() {
-<<<<<<< HEAD
           var bestMatchIndex, bestMatchLength, match2, regex, string4;
-=======
           var bestMatchIndex, bestMatchLength, match3, regex, string4;
->>>>>>> origin/main
           regex = /((^|:)(0(:|$)){2,})/g;
           string4 = this.toNormalizedString();
           bestMatchIndex = 0;
           bestMatchLength = -1;
-<<<<<<< HEAD
           while (match2 = regex.exec(string4)) {
             if (match2[0].length > bestMatchLength) {
               bestMatchIndex = match2.index;
               bestMatchLength = match2[0].length;
-=======
           while (match3 = regex.exec(string4)) {
             if (match3[0].length > bestMatchLength) {
               bestMatchIndex = match3.index;
               bestMatchLength = match3[0].length;
->>>>>>> origin/main
             }
           }
           if (bestMatchLength < 0) {
@@ -19715,7 +19502,6 @@ var require_ipaddr = __commonJS({
         };
       };
       ipaddr.IPv6.parser = function(string4) {
-<<<<<<< HEAD
         var addr, k2, len, match2, octet, octets, zoneId;
         if (ipv6Regexes["native"].test(string4)) {
           return expandIPv6(string4, 8);
@@ -19724,7 +19510,6 @@ var require_ipaddr = __commonJS({
           addr = expandIPv6(match2[1].slice(0, -1) + zoneId, 6);
           if (addr.parts) {
             octets = [parseInt(match2[2]), parseInt(match2[3]), parseInt(match2[4]), parseInt(match2[5])];
-=======
         var addr, k2, len, match3, octet, octets, zoneId;
         if (ipv6Regexes["native"].test(string4)) {
           return expandIPv6(string4, 8);
@@ -19733,7 +19518,6 @@ var require_ipaddr = __commonJS({
           addr = expandIPv6(match3[1].slice(0, -1) + zoneId, 6);
           if (addr.parts) {
             octets = [parseInt(match3[2]), parseInt(match3[3]), parseInt(match3[4]), parseInt(match3[5])];
->>>>>>> origin/main
             for (k2 = 0, len = octets.length; k2 < len; k2++) {
               octet = octets[k2];
               if (!(0 <= octet && octet <= 255)) {
@@ -19801,19 +19585,16 @@ var require_ipaddr = __commonJS({
         return new this(addr.parts, addr.zoneId);
       };
       ipaddr.IPv4.parseCIDR = function(string4) {
-<<<<<<< HEAD
         var maskLength, match2, parsed;
         if (match2 = string4.match(/^(.+)\/(\d+)$/)) {
           maskLength = parseInt(match2[2]);
           if (maskLength >= 0 && maskLength <= 32) {
             parsed = [this.parse(match2[1]), maskLength];
-=======
         var maskLength, match3, parsed;
         if (match3 = string4.match(/^(.+)\/(\d+)$/)) {
           maskLength = parseInt(match3[2]);
           if (maskLength >= 0 && maskLength <= 32) {
             parsed = [this.parse(match3[1]), maskLength];
->>>>>>> origin/main
             Object.defineProperty(parsed, "toString", {
               value: function() {
                 return this.join("/");
@@ -19879,19 +19660,16 @@ var require_ipaddr = __commonJS({
         }
       };
       ipaddr.IPv6.parseCIDR = function(string4) {
-<<<<<<< HEAD
         var maskLength, match2, parsed;
         if (match2 = string4.match(/^(.+)\/(\d+)$/)) {
           maskLength = parseInt(match2[2]);
           if (maskLength >= 0 && maskLength <= 128) {
             parsed = [this.parse(match2[1]), maskLength];
-=======
         var maskLength, match3, parsed;
         if (match3 = string4.match(/^(.+)\/(\d+)$/)) {
           maskLength = parseInt(match3[2]);
           if (maskLength >= 0 && maskLength <= 128) {
             parsed = [this.parse(match3[1]), maskLength];
->>>>>>> origin/main
             Object.defineProperty(parsed, "toString", {
               value: function() {
                 return this.join("/");
@@ -20329,19 +20107,16 @@ var require_dist = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PathError = exports.TokenData = void 0;
-<<<<<<< HEAD
     exports.parse = parse4;
     exports.compile = compile;
     exports.match = match2;
     exports.pathToRegexp = pathToRegexp2;
     exports.stringify = stringify4;
-=======
     exports.parse = parse5;
     exports.compile = compile;
     exports.match = match3;
     exports.pathToRegexp = pathToRegexp3;
     exports.stringify = stringify5;
->>>>>>> origin/main
     var DEFAULT_DELIMITER = "/";
     var NOOP_VALUE = (value) => value;
     var ID_START = /^[$_\p{ID_Start}]$/u;
@@ -20371,11 +20146,8 @@ var require_dist = __commonJS({
       }
     };
     exports.PathError = PathError;
-<<<<<<< HEAD
     function parse4(str2, options = {}) {
-=======
     function parse5(str2, options = {}) {
->>>>>>> origin/main
       const { encodePath = NOOP_VALUE } = options;
       const chars = [...str2];
       let index2 = 0;
@@ -20457,11 +20229,8 @@ var require_dist = __commonJS({
     }
     function compile(path2, options = {}) {
       const { encode: encode2 = encodeURIComponent, delimiter = DEFAULT_DELIMITER } = options;
-<<<<<<< HEAD
       const data = typeof path2 === "object" ? path2 : parse4(path2, options);
-=======
       const data = typeof path2 === "object" ? path2 : parse5(path2, options);
->>>>>>> origin/main
       const fn = tokensToFunction(data.tokens, delimiter, encode2);
       return function path3(params = {}) {
         const missing = [];
@@ -20531,15 +20300,12 @@ var require_dist = __commonJS({
         return encodeValue(value);
       };
     }
-<<<<<<< HEAD
     function match2(path2, options = {}) {
       const { decode: decode2 = decodeURIComponent, delimiter = DEFAULT_DELIMITER } = options;
       const { regexp, keys } = pathToRegexp2(path2, options);
-=======
     function match3(path2, options = {}) {
       const { decode: decode2 = decodeURIComponent, delimiter = DEFAULT_DELIMITER } = options;
       const { regexp, keys } = pathToRegexp3(path2, options);
->>>>>>> origin/main
       const decoders = keys.map((key) => {
         if (decode2 === false)
           return NOOP_VALUE;
@@ -20547,11 +20313,8 @@ var require_dist = __commonJS({
           return decode2;
         return (value) => value.split(delimiter).map(decode2);
       });
-<<<<<<< HEAD
       return function match3(input) {
-=======
       return function match4(input) {
->>>>>>> origin/main
         const m2 = regexp.exec(input);
         if (!m2)
           return false;
@@ -20567,11 +20330,8 @@ var require_dist = __commonJS({
         return { path: path3, params };
       };
     }
-<<<<<<< HEAD
     function pathToRegexp2(path2, options = {}) {
-=======
     function pathToRegexp3(path2, options = {}) {
->>>>>>> origin/main
       const { delimiter = DEFAULT_DELIMITER, end = true, sensitive = false, trailing = true } = options;
       const keys = [];
       let source = "";
@@ -20582,11 +20342,8 @@ var require_dist = __commonJS({
             process2(p2);
           return;
         }
-<<<<<<< HEAD
         const data = typeof path3 === "object" ? path3 : parse4(path3, options);
-=======
         const data = typeof path3 === "object" ? path3 : parse5(path3, options);
->>>>>>> origin/main
         flatten(data.tokens, 0, [], (tokens) => {
           if (combinations >= 256) {
             throw new PathError("Too many path combinations", data.originalPath);
@@ -20712,11 +20469,8 @@ var require_dist = __commonJS({
       }
       return value;
     }
-<<<<<<< HEAD
     function stringify4(data) {
-=======
     function stringify5(data) {
->>>>>>> origin/main
       return stringifyTokens(data.tokens, 0);
     }
     function stringifyName(name, next) {
@@ -20765,7 +20519,6 @@ var require_layer = __commonJS({
             });
           }
           return function regexpMatcher(p2) {
-<<<<<<< HEAD
             const match2 = _path.exec(p2);
             if (!match2) {
               return false;
@@ -20775,7 +20528,6 @@ var require_layer = __commonJS({
               const key = keys[i2 - 1];
               const prop = key.name;
               const val = decodeParam(match2[i2]);
-=======
             const match3 = _path.exec(p2);
             if (!match3) {
               return false;
@@ -20785,18 +20537,14 @@ var require_layer = __commonJS({
               const key = keys[i2 - 1];
               const prop = key.name;
               const val = decodeParam(match3[i2]);
->>>>>>> origin/main
               if (val !== void 0) {
                 params[prop] = val;
               }
             }
             return {
               params,
-<<<<<<< HEAD
               path: match2[0]
-=======
               path: match3[0]
->>>>>>> origin/main
             };
           };
         }
@@ -20847,13 +20595,10 @@ var require_layer = __commonJS({
         next(err);
       }
     };
-<<<<<<< HEAD
     Layer.prototype.match = function match2(path2) {
       let match3;
-=======
     Layer.prototype.match = function match3(path2) {
       let match4;
->>>>>>> origin/main
       if (path2 != null) {
         if (this.slash) {
           this.params = {};
@@ -20861,34 +20606,28 @@ var require_layer = __commonJS({
           return true;
         }
         let i2 = 0;
-<<<<<<< HEAD
         while (!match3 && i2 < this.matchers.length) {
           match3 = this.matchers[i2](path2);
           i2++;
         }
       }
       if (!match3) {
-=======
         while (!match4 && i2 < this.matchers.length) {
           match4 = this.matchers[i2](path2);
           i2++;
         }
       }
       if (!match4) {
->>>>>>> origin/main
         this.params = void 0;
         this.path = void 0;
         return false;
       }
-<<<<<<< HEAD
       this.params = match3.params;
       this.path = match3.path;
       this.keys = Object.keys(match3.params);
-=======
       this.params = match4.params;
       this.path = match4.path;
       this.keys = Object.keys(match4.params);
->>>>>>> origin/main
       return true;
     };
     function decodeParam(val) {
@@ -20980,21 +20719,18 @@ var require_route = __commonJS({
           return setImmediate(next, err);
         }
         let layer;
-<<<<<<< HEAD
         let match2;
         while (match2 !== true && idx < stack.length) {
           layer = stack[idx++];
           match2 = !layer.method || layer.method === method;
         }
         if (match2 !== true) {
-=======
         let match3;
         while (match3 !== true && idx < stack.length) {
           layer = stack[idx++];
           match3 = !layer.method || layer.method === method;
         }
         if (match3 !== true) {
->>>>>>> origin/main
           return done(err);
         }
         if (err) {
@@ -21151,7 +20887,6 @@ var require_router = __commonJS({
           return done(layerError);
         }
         let layer;
-<<<<<<< HEAD
         let match2;
         let route;
         while (match2 !== true && idx < stack.length) {
@@ -21162,7 +20897,6 @@ var require_router = __commonJS({
             layerError = layerError || match2;
           }
           if (match2 !== true) {
-=======
         let match3;
         let route;
         while (match3 !== true && idx < stack.length) {
@@ -21173,18 +20907,14 @@ var require_router = __commonJS({
             layerError = layerError || match3;
           }
           if (match3 !== true) {
->>>>>>> origin/main
             continue;
           }
           if (!route) {
             continue;
           }
           if (layerError) {
-<<<<<<< HEAD
             match2 = false;
-=======
             match3 = false;
->>>>>>> origin/main
             continue;
           }
           const method = req.method;
@@ -21193,17 +20923,14 @@ var require_router = __commonJS({
             methods2.push.apply(methods2, route._methods());
           }
           if (!hasMethod && method !== "HEAD") {
-<<<<<<< HEAD
             match2 = false;
           }
         }
         if (match2 !== true) {
-=======
             match3 = false;
           }
         }
         if (match3 !== true) {
->>>>>>> origin/main
           return done(layerError);
         }
         if (route) {
@@ -21671,11 +21398,8 @@ var require_application = __commonJS({
       return this;
     };
     app2.render = function render(name, options, callback) {
-<<<<<<< HEAD
       var cache2 = this.cache;
-=======
       var cache3 = this.cache;
->>>>>>> origin/main
       var done = callback;
       var engines = this.engines;
       var opts = options;
@@ -21689,11 +21413,8 @@ var require_application = __commonJS({
         renderOptions.cache = this.enabled("view cache");
       }
       if (renderOptions.cache) {
-<<<<<<< HEAD
         view = cache2[name];
-=======
         view = cache3[name];
->>>>>>> origin/main
       }
       if (!view) {
         var View4 = this.get("view");
@@ -21709,11 +21430,8 @@ var require_application = __commonJS({
           return done(err);
         }
         if (renderOptions.cache) {
-<<<<<<< HEAD
           cache2[name] = view;
-=======
           cache3[name] = view;
->>>>>>> origin/main
         }
       }
       tryRender(view, renderOptions, done);
@@ -21759,21 +21477,18 @@ var require_charset = __commonJS({
       return accepts;
     }
     function parseCharset(str2, i2) {
-<<<<<<< HEAD
       var match2 = simpleCharsetRegExp.exec(str2);
       if (!match2) return null;
       var charset = match2[1];
       var q2 = 1;
       if (match2[2]) {
         var params = match2[2].split(";");
-=======
       var match3 = simpleCharsetRegExp.exec(str2);
       if (!match3) return null;
       var charset = match3[1];
       var q2 = 1;
       if (match3[2]) {
         var params = match3[2].split(";");
->>>>>>> origin/main
         for (var j2 = 0; j2 < params.length; j2++) {
           var p2 = params[j2].trim().split("=");
           if (p2[0] === "q") {
@@ -21799,15 +21514,12 @@ var require_charset = __commonJS({
       return priority;
     }
     function specify(charset, spec, index2) {
-<<<<<<< HEAD
       var s3 = 0;
       if (spec.charset.toLowerCase() === charset.toLowerCase()) {
         s3 |= 1;
-=======
       var s4 = 0;
       if (spec.charset.toLowerCase() === charset.toLowerCase()) {
         s4 |= 1;
->>>>>>> origin/main
       } else if (spec.charset !== "*") {
         return null;
       }
@@ -21815,11 +21527,8 @@ var require_charset = __commonJS({
         i: index2,
         o: spec.i,
         q: spec.q,
-<<<<<<< HEAD
         s: s3
-=======
         s: s4
->>>>>>> origin/main
       };
     }
     function preferredCharsets(accept, provided) {
@@ -21876,21 +21585,18 @@ var require_encoding = __commonJS({
       return accepts;
     }
     function parseEncoding(str2, i2) {
-<<<<<<< HEAD
       var match2 = simpleEncodingRegExp.exec(str2);
       if (!match2) return null;
       var encoding = match2[1];
       var q2 = 1;
       if (match2[2]) {
         var params = match2[2].split(";");
-=======
       var match3 = simpleEncodingRegExp.exec(str2);
       if (!match3) return null;
       var encoding = match3[1];
       var q2 = 1;
       if (match3[2]) {
         var params = match3[2].split(";");
->>>>>>> origin/main
         for (var j2 = 0; j2 < params.length; j2++) {
           var p2 = params[j2].trim().split("=");
           if (p2[0] === "q") {
@@ -21916,15 +21622,12 @@ var require_encoding = __commonJS({
       return priority;
     }
     function specify(encoding, spec, index2) {
-<<<<<<< HEAD
       var s3 = 0;
       if (spec.encoding.toLowerCase() === encoding.toLowerCase()) {
         s3 |= 1;
-=======
       var s4 = 0;
       if (spec.encoding.toLowerCase() === encoding.toLowerCase()) {
         s4 |= 1;
->>>>>>> origin/main
       } else if (spec.encoding !== "*") {
         return null;
       }
@@ -21933,11 +21636,8 @@ var require_encoding = __commonJS({
         i: index2,
         o: spec.i,
         q: spec.q,
-<<<<<<< HEAD
         s: s3
-=======
         s: s4
->>>>>>> origin/main
       };
     }
     function preferredEncodings(accept, provided, preferred) {
@@ -21997,7 +21697,6 @@ var require_language = __commonJS({
       return accepts;
     }
     function parseLanguage(str2, i2) {
-<<<<<<< HEAD
       var match2 = simpleLanguageRegExp.exec(str2);
       if (!match2) return null;
       var prefix = match2[1];
@@ -22007,7 +21706,6 @@ var require_language = __commonJS({
       var q2 = 1;
       if (match2[3]) {
         var params = match2[3].split(";");
-=======
       var match3 = simpleLanguageRegExp.exec(str2);
       if (!match3) return null;
       var prefix = match3[1];
@@ -22017,7 +21715,6 @@ var require_language = __commonJS({
       var q2 = 1;
       if (match3[3]) {
         var params = match3[3].split(";");
->>>>>>> origin/main
         for (var j2 = 0; j2 < params.length; j2++) {
           var p2 = params[j2].split("=");
           if (p2[0] === "q") q2 = parseFloat(p2[1]);
@@ -22044,7 +21741,6 @@ var require_language = __commonJS({
     function specify(language, spec, index2) {
       var p2 = parseLanguage(language);
       if (!p2) return null;
-<<<<<<< HEAD
       var s3 = 0;
       if (spec.full.toLowerCase() === p2.full.toLowerCase()) {
         s3 |= 4;
@@ -22052,7 +21748,6 @@ var require_language = __commonJS({
         s3 |= 2;
       } else if (spec.full.toLowerCase() === p2.prefix.toLowerCase()) {
         s3 |= 1;
-=======
       var s4 = 0;
       if (spec.full.toLowerCase() === p2.full.toLowerCase()) {
         s4 |= 4;
@@ -22060,7 +21755,6 @@ var require_language = __commonJS({
         s4 |= 2;
       } else if (spec.full.toLowerCase() === p2.prefix.toLowerCase()) {
         s4 |= 1;
->>>>>>> origin/main
       } else if (spec.full !== "*") {
         return null;
       }
@@ -22068,11 +21762,8 @@ var require_language = __commonJS({
         i: index2,
         o: spec.i,
         q: spec.q,
-<<<<<<< HEAD
         s: s3
-=======
         s: s4
->>>>>>> origin/main
       };
     }
     function preferredLanguages(accept, provided) {
@@ -22118,7 +21809,6 @@ var require_mediaType = __commonJS({
       return accepts;
     }
     function parseMediaType(str2, i2) {
-<<<<<<< HEAD
       var match2 = simpleMediaTypeRegExp.exec(str2);
       if (!match2) return null;
       var params = /* @__PURE__ */ Object.create(null);
@@ -22127,7 +21817,6 @@ var require_mediaType = __commonJS({
       var type = match2[1];
       if (match2[3]) {
         var kvps = splitParameters(match2[3]).map(splitKeyValuePair);
-=======
       var match3 = simpleMediaTypeRegExp.exec(str2);
       if (!match3) return null;
       var params = /* @__PURE__ */ Object.create(null);
@@ -22136,7 +21825,6 @@ var require_mediaType = __commonJS({
       var type = match3[1];
       if (match3[3]) {
         var kvps = splitParameters(match3[3]).map(splitKeyValuePair);
->>>>>>> origin/main
         for (var j2 = 0; j2 < kvps.length; j2++) {
           var pair = kvps[j2];
           var key = pair[0].toLowerCase();
@@ -22169,29 +21857,20 @@ var require_mediaType = __commonJS({
     }
     function specify(type, spec, index2) {
       var p2 = parseMediaType(type);
-<<<<<<< HEAD
       var s3 = 0;
-=======
       var s4 = 0;
->>>>>>> origin/main
       if (!p2) {
         return null;
       }
       if (spec.type.toLowerCase() == p2.type.toLowerCase()) {
-<<<<<<< HEAD
         s3 |= 4;
-=======
         s4 |= 4;
->>>>>>> origin/main
       } else if (spec.type != "*") {
         return null;
       }
       if (spec.subtype.toLowerCase() == p2.subtype.toLowerCase()) {
-<<<<<<< HEAD
         s3 |= 2;
-=======
         s4 |= 2;
->>>>>>> origin/main
       } else if (spec.subtype != "*") {
         return null;
       }
@@ -22200,11 +21879,8 @@ var require_mediaType = __commonJS({
         if (keys.every(function(k2) {
           return spec.params[k2] == "*" || (spec.params[k2] || "").toLowerCase() == (p2.params[k2] || "").toLowerCase();
         })) {
-<<<<<<< HEAD
           s3 |= 1;
-=======
           s4 |= 1;
->>>>>>> origin/main
         } else {
           return null;
         }
@@ -22213,11 +21889,8 @@ var require_mediaType = __commonJS({
         i: index2,
         o: spec.i,
         q: spec.q,
-<<<<<<< HEAD
         s: s3
-=======
         s: s4
->>>>>>> origin/main
       };
     }
     function preferredMediaTypes(accept, provided) {
@@ -22453,17 +22126,14 @@ var require_fresh = __commonJS({
         if (!etag) {
           return false;
         }
-<<<<<<< HEAD
         var matches2 = parseTokenList(noneMatch);
         for (var i2 = 0; i2 < matches2.length; i2++) {
           var match2 = matches2[i2];
           if (match2 === etag || match2 === "W/" + etag || "W/" + match2 === etag) {
-=======
         var matches3 = parseTokenList(noneMatch);
         for (var i2 = 0; i2 < matches3.length; i2++) {
           var match3 = matches3[i2];
           if (match3 === etag || match3 === "W/" + etag || "W/" + match3 === etag) {
->>>>>>> origin/main
             return true;
           }
         }
@@ -22599,11 +22269,8 @@ var require_request = __commonJS({
     var http = __require("node:http");
     var fresh = require_fresh();
     var parseRange = require_range_parser();
-<<<<<<< HEAD
     var parse4 = require_parseurl();
-=======
     var parse5 = require_parseurl();
->>>>>>> origin/main
     var proxyaddr = require_proxy_addr();
     var req = Object.create(http.IncomingMessage.prototype);
     module.exports = req;
@@ -22648,11 +22315,8 @@ var require_request = __commonJS({
       if (!queryparse) {
         return /* @__PURE__ */ Object.create(null);
       }
-<<<<<<< HEAD
       var querystring2 = parse4(this).query;
-=======
       var querystring2 = parse5(this).query;
->>>>>>> origin/main
       return queryparse(querystring2);
     });
     req.is = function is3(types5) {
@@ -22696,11 +22360,8 @@ var require_request = __commonJS({
       return subdomains2.slice(offset);
     });
     defineGetter(req, "path", function path2() {
-<<<<<<< HEAD
       return parse4(this).pathname;
-=======
       return parse5(this).pathname;
->>>>>>> origin/main
     });
     defineGetter(req, "host", function host() {
       var trust = this.app.get("trust proxy fn");
@@ -22754,11 +22415,8 @@ var require_content_disposition = __commonJS({
   "../../node_modules/.pnpm/content-disposition@1.1.0/node_modules/content-disposition/index.js"(exports, module) {
     "use strict";
     module.exports = contentDisposition;
-<<<<<<< HEAD
     module.exports.parse = parse4;
-=======
     module.exports.parse = parse5;
->>>>>>> origin/main
     var utf8Decoder = new TextDecoder("utf-8");
     var ENCODE_URL_ATTR_CHAR_REGEXP = /[\x00-\x20"'()*,/:;<=>?@[\\\]{}\x7f]/g;
     var NON_LATIN1_REGEXP = /[^\x20-\x7e\xa0-\xff]/g;
@@ -22823,21 +22481,18 @@ var require_content_disposition = __commonJS({
       return string4;
     }
     function decodefield(str2) {
-<<<<<<< HEAD
       const match2 = EXT_VALUE_REGEXP.exec(str2);
       if (!match2) {
         throw new TypeError("invalid extended field value");
       }
       const charset = match2[1].toLowerCase();
       const encoded = match2[2];
-=======
       const match3 = EXT_VALUE_REGEXP.exec(str2);
       if (!match3) {
         throw new TypeError("invalid extended field value");
       }
       const charset = match3[1].toLowerCase();
       const encoded = match3[2];
->>>>>>> origin/main
       switch (charset) {
         case "iso-8859-1": {
           const binary = decodeHexEscapes(encoded);
@@ -22862,7 +22517,6 @@ var require_content_disposition = __commonJS({
     function getlatin1(val) {
       return String(val).replace(NON_LATIN1_REGEXP, "?");
     }
-<<<<<<< HEAD
     function parse4(string4) {
       if (!string4 || typeof string4 !== "string") {
         throw new TypeError("argument string is required");
@@ -22873,7 +22527,6 @@ var require_content_disposition = __commonJS({
       }
       var index2 = match2[0].length;
       var type = match2[1].toLowerCase();
-=======
     function parse5(string4) {
       if (!string4 || typeof string4 !== "string") {
         throw new TypeError("argument string is required");
@@ -22884,12 +22537,10 @@ var require_content_disposition = __commonJS({
       }
       var index2 = match3[0].length;
       var type = match3[1].toLowerCase();
->>>>>>> origin/main
       var key;
       var names = [];
       var params = {};
       var value;
-<<<<<<< HEAD
       index2 = PARAM_REGEXP.lastIndex = match2[0].slice(-1) === ";" ? index2 - 1 : index2;
       while (match2 = PARAM_REGEXP.exec(string4)) {
         if (match2.index !== index2) {
@@ -22898,7 +22549,6 @@ var require_content_disposition = __commonJS({
         index2 += match2[0].length;
         key = match2[1].toLowerCase();
         value = match2[2];
-=======
       index2 = PARAM_REGEXP.lastIndex = match3[0].slice(-1) === ";" ? index2 - 1 : index2;
       while (match3 = PARAM_REGEXP.exec(string4)) {
         if (match3.index !== index2) {
@@ -22907,7 +22557,6 @@ var require_content_disposition = __commonJS({
         index2 += match3[0].length;
         key = match3[1].toLowerCase();
         value = match3[2];
->>>>>>> origin/main
         if (names.indexOf(key) !== -1) {
           throw new TypeError("invalid duplicate parameter");
         }
@@ -22998,29 +22647,23 @@ var require_content_disposition = __commonJS({
 // ../../node_modules/.pnpm/cookie-signature@1.2.2/node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS({
   "../../node_modules/.pnpm/cookie-signature@1.2.2/node_modules/cookie-signature/index.js"(exports) {
-<<<<<<< HEAD
     var crypto4 = __require("crypto");
     exports.sign = function(val, secret) {
       if ("string" != typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
       return val + "." + crypto4.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
-=======
     var crypto7 = __require("crypto");
     exports.sign = function(val, secret) {
       if ("string" != typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
       return val + "." + crypto7.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
->>>>>>> origin/main
     };
     exports.unsign = function(input, secret) {
       if ("string" != typeof input) throw new TypeError("Signed cookie string must be provided.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
       var tentativeValue = input.slice(0, input.lastIndexOf(".")), expectedInput = exports.sign(tentativeValue, secret), expectedBuffer = Buffer.from(expectedInput), inputBuffer = Buffer.from(input);
-<<<<<<< HEAD
       return expectedBuffer.length === inputBuffer.length && crypto4.timingSafeEqual(expectedBuffer, inputBuffer) ? tentativeValue : false;
-=======
       return expectedBuffer.length === inputBuffer.length && crypto7.timingSafeEqual(expectedBuffer, inputBuffer) ? tentativeValue : false;
->>>>>>> origin/main
     };
   }
 });
@@ -23029,11 +22672,8 @@ var require_cookie_signature = __commonJS({
 var require_cookie = __commonJS({
   "../../node_modules/.pnpm/cookie@0.7.2/node_modules/cookie/index.js"(exports) {
     "use strict";
-<<<<<<< HEAD
     exports.parse = parse4;
-=======
     exports.parse = parse5;
->>>>>>> origin/main
     exports.serialize = serialize;
     var __toString = Object.prototype.toString;
     var __hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -23041,11 +22681,8 @@ var require_cookie = __commonJS({
     var cookieValueRegExp = /^("?)[\u0021\u0023-\u002B\u002D-\u003A\u003C-\u005B\u005D-\u007E]*\1$/;
     var domainValueRegExp = /^([.]?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)([.][a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
     var pathValueRegExp = /^[\u0020-\u003A\u003D-\u007E]*$/;
-<<<<<<< HEAD
     function parse4(str2, opt) {
-=======
     function parse5(str2, opt) {
->>>>>>> origin/main
       if (typeof str2 !== "string") {
         throw new TypeError("argument str must be a string");
       }
@@ -23280,19 +22917,16 @@ var require_send = __commonJS({
     SendStream.prototype.isPreconditionFailure = function isPreconditionFailure() {
       var req = this.req;
       var res = this.res;
-<<<<<<< HEAD
       var match2 = req.headers["if-match"];
       if (match2) {
         var etag2 = res.getHeader("ETag");
         return !etag2 || match2 !== "*" && parseTokenList(match2).every(function(match3) {
           return match3 !== etag2 && match3 !== "W/" + etag2 && "W/" + match3 !== etag2;
-=======
       var match3 = req.headers["if-match"];
       if (match3) {
         var etag2 = res.getHeader("ETag");
         return !etag2 || match3 !== "*" && parseTokenList(match3).every(function(match4) {
           return match4 !== etag2 && match4 !== "W/" + etag2 && "W/" + match4 !== etag2;
->>>>>>> origin/main
         });
       }
       var unmodifiedSince = parseHttpDate(req.headers["if-unmodified-since"]);
@@ -23704,11 +23338,8 @@ var require_vary = __commonJS({
       if (!field) {
         throw new TypeError("field argument is required");
       }
-<<<<<<< HEAD
       var fields = !Array.isArray(field) ? parse4(String(field)) : field;
-=======
       var fields = !Array.isArray(field) ? parse5(String(field)) : field;
->>>>>>> origin/main
       for (var j2 = 0; j2 < fields.length; j2++) {
         if (!FIELD_NAME_REGEXP.test(fields[j2])) {
           throw new TypeError("field argument contains an invalid header name");
@@ -23718,11 +23349,8 @@ var require_vary = __commonJS({
         return header;
       }
       var val = header;
-<<<<<<< HEAD
       var vals = parse4(header.toLowerCase());
-=======
       var vals = parse5(header.toLowerCase());
->>>>>>> origin/main
       if (fields.indexOf("*") !== -1 || vals.indexOf("*") !== -1) {
         return "*";
       }
@@ -23735,11 +23363,8 @@ var require_vary = __commonJS({
       }
       return val;
     }
-<<<<<<< HEAD
     function parse4(header) {
-=======
     function parse5(header) {
->>>>>>> origin/main
       var end = 0;
       var list = [];
       var start = 0;
@@ -23904,11 +23529,8 @@ var require_response = __commonJS({
       var escape2 = app2.get("json escape");
       var replacer = app2.get("json replacer");
       var spaces = app2.get("json spaces");
-<<<<<<< HEAD
       var body = stringify4(obj, replacer, spaces, escape2);
-=======
       var body = stringify5(obj, replacer, spaces, escape2);
->>>>>>> origin/main
       if (!this.get("Content-Type")) {
         this.set("Content-Type", "application/json");
       }
@@ -23919,11 +23541,8 @@ var require_response = __commonJS({
       var escape2 = app2.get("json escape");
       var replacer = app2.get("json replacer");
       var spaces = app2.get("json spaces");
-<<<<<<< HEAD
       var body = stringify4(obj, replacer, spaces, escape2);
-=======
       var body = stringify5(obj, replacer, spaces, escape2);
->>>>>>> origin/main
       var callback = this.req.query[app2.get("jsonp callback name")];
       if (!this.get("Content-Type")) {
         this.set("X-Content-Type-Options", "nosniff");
@@ -24231,11 +23850,8 @@ var require_response = __commonJS({
       }
       file2.pipe(res2);
     }
-<<<<<<< HEAD
     function stringify4(value, replacer, spaces, escape2) {
-=======
     function stringify5(value, replacer, spaces, escape2) {
->>>>>>> origin/main
       var json4 = replacer || spaces ? JSON.stringify(value, replacer, spaces) : JSON.stringify(value);
       if (escape2 && typeof json4 === "string") {
         json4 = json4.replace(/[<>&]/g, function(c2) {
@@ -24458,13 +24074,10 @@ var require_object_assign = __commonJS({
       var from;
       var to = toObject(target);
       var symbols;
-<<<<<<< HEAD
       for (var s3 = 1; s3 < arguments.length; s3++) {
         from = Object(arguments[s3]);
-=======
       for (var s4 = 1; s4 < arguments.length; s4++) {
         from = Object(arguments[s4]);
->>>>>>> origin/main
         for (var key in from) {
           if (hasOwnProperty.call(from, key)) {
             to[key] = from[key];
@@ -24497,13 +24110,10 @@ var require_lib3 = __commonJS({
         preflightContinue: false,
         optionsSuccessStatus: 204
       };
-<<<<<<< HEAD
       function isString(s3) {
         return typeof s3 === "string" || s3 instanceof String;
-=======
       function isString(s4) {
         return typeof s4 === "string" || s4 instanceof String;
->>>>>>> origin/main
       }
       function isOriginAllowed(origin, allowedOrigin) {
         if (Array.isArray(allowedOrigin)) {
@@ -25073,11 +24683,8 @@ var require_pino_std_serializers = __commonJS({
 var require_caller = __commonJS({
   "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/caller.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     function noOpPrepareStackTrace(_3, stack) {
-=======
     function noOpPrepareStackTrace(_4, stack) {
->>>>>>> origin/main
       return stack;
     }
     module.exports = function getCallers() {
@@ -25842,11 +25449,8 @@ var require_atomic_sleep = __commonJS({
   "../../node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js"(exports, module) {
     "use strict";
     if (typeof SharedArrayBuffer !== "undefined" && typeof Atomics !== "undefined") {
-<<<<<<< HEAD
       let sleep3 = function(ms) {
-=======
       let sleep4 = function(ms) {
->>>>>>> origin/main
         const valid = ms > 0 && ms < Infinity;
         if (valid === false) {
           if (typeof ms !== "number" && typeof ms !== "bigint") {
@@ -25857,15 +25461,12 @@ var require_atomic_sleep = __commonJS({
         Atomics.wait(nil, 0, 0, Number(ms));
       };
       const nil = new Int32Array(new SharedArrayBuffer(4));
-<<<<<<< HEAD
       module.exports = sleep3;
     } else {
       let sleep3 = function(ms) {
-=======
       module.exports = sleep4;
     } else {
       let sleep4 = function(ms) {
->>>>>>> origin/main
         const valid = ms > 0 && ms < Infinity;
         if (valid === false) {
           if (typeof ms !== "number" && typeof ms !== "bigint") {
@@ -25877,11 +25478,8 @@ var require_atomic_sleep = __commonJS({
         while (target > Date.now()) {
         }
       };
-<<<<<<< HEAD
       module.exports = sleep3;
-=======
       module.exports = sleep4;
->>>>>>> origin/main
     }
   }
 });
@@ -25894,11 +25492,8 @@ var require_sonic_boom = __commonJS({
     var EventEmitter2 = __require("events");
     var inherits = __require("util").inherits;
     var path2 = __require("path");
-<<<<<<< HEAD
     var sleep3 = require_atomic_sleep();
-=======
     var sleep4 = require_atomic_sleep();
->>>>>>> origin/main
     var assert2 = __require("assert");
     var BUSY_WRITE_TIMEOUT = 100;
     var kEmptyBuffer = Buffer.allocUnsafe(0);
@@ -26044,11 +25639,8 @@ var require_sonic_boom = __commonJS({
           if ((err.code === "EAGAIN" || err.code === "EBUSY") && this.retryEAGAIN(err, this._writingBuf.length, this._len - this._writingBuf.length)) {
             if (this.sync) {
               try {
-<<<<<<< HEAD
                 sleep3(BUSY_WRITE_TIMEOUT);
-=======
                 sleep4(BUSY_WRITE_TIMEOUT);
->>>>>>> origin/main
                 this.release(void 0, 0);
               } catch (err2) {
                 this.release(err2);
@@ -26361,11 +25953,8 @@ var require_sonic_boom = __commonJS({
           if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
             throw err;
           }
-<<<<<<< HEAD
           sleep3(BUSY_WRITE_TIMEOUT);
-=======
           sleep4(BUSY_WRITE_TIMEOUT);
->>>>>>> origin/main
         }
       }
       try {
@@ -26402,11 +25991,8 @@ var require_sonic_boom = __commonJS({
           if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
             throw err;
           }
-<<<<<<< HEAD
           sleep3(BUSY_WRITE_TIMEOUT);
-=======
           sleep4(BUSY_WRITE_TIMEOUT);
->>>>>>> origin/main
         }
       }
     }
@@ -27147,11 +26733,8 @@ var require_transport = __commonJS({
     var { createRequire } = __require("module");
     var getCallers = require_caller();
     var { join, isAbsolute, sep } = __require("node:path");
-<<<<<<< HEAD
     var sleep3 = require_atomic_sleep();
-=======
     var sleep4 = require_atomic_sleep();
->>>>>>> origin/main
     var onExit = require_on_exit_leak_free();
     var ThreadStream = require_thread_stream();
     function setupOnExit(stream) {
@@ -27185,11 +26768,8 @@ var require_transport = __commonJS({
           return;
         }
         stream.flushSync();
-<<<<<<< HEAD
         sleep3(100);
-=======
         sleep4(100);
->>>>>>> origin/main
         stream.end();
       }
       return stream;
@@ -27388,11 +26968,8 @@ var require_tools = __commonJS({
       return asJsonChan.traceSync(_asJson, store, this, obj, msg, num, time5);
     }
     function _asJson(obj, msg, num, time5) {
-<<<<<<< HEAD
       const stringify5 = this[stringifySym];
-=======
       const stringify6 = this[stringifySym];
->>>>>>> origin/main
       const stringifySafe = this[stringifySafeSym];
       const stringifiers = this[stringifiersSym];
       const end = this[endSym];
@@ -27434,11 +27011,8 @@ var require_tools = __commonJS({
               value = (stringifier || asString)(value);
               break;
             default:
-<<<<<<< HEAD
               value = (stringifier || stringify5)(value, stringifySafe);
-=======
               value = (stringifier || stringify6)(value, stringifySafe);
->>>>>>> origin/main
           }
           if (value === void 0) continue;
           const strKey = asString(key);
@@ -27466,11 +27040,8 @@ var require_tools = __commonJS({
             msgStr = ',"' + messageKey + '":' + value;
             break;
           default:
-<<<<<<< HEAD
             value = (stringifier || stringify5)(value, stringifySafe);
-=======
             value = (stringifier || stringify6)(value, stringifySafe);
->>>>>>> origin/main
             msgStr = ',"' + messageKey + '":' + value;
         }
       }
@@ -27483,11 +27054,8 @@ var require_tools = __commonJS({
     function asChindings(instance, bindings) {
       let value;
       let data = instance[chindingsSym];
-<<<<<<< HEAD
       const stringify5 = instance[stringifySym];
-=======
       const stringify6 = instance[stringifySym];
->>>>>>> origin/main
       const stringifySafe = instance[stringifySafeSym];
       const stringifiers = instance[stringifiersSym];
       const wildcardStringifier = stringifiers[wildcardFirstSym];
@@ -27499,11 +27067,8 @@ var require_tools = __commonJS({
         const valid = (key.length < 5 || key !== "level" && key !== "serializers" && key !== "formatters" && key !== "customLevels") && bindings.hasOwnProperty(key) && value !== void 0;
         if (valid === true) {
           value = serializers[key] ? serializers[key](value) : value;
-<<<<<<< HEAD
           value = (stringifiers[key] || wildcardStringifier || stringify5)(value, stringifySafe);
-=======
           value = (stringifiers[key] || wildcardStringifier || stringify6)(value, stringifySafe);
->>>>>>> origin/main
           if (value === void 0) continue;
           data += ',"' + key + '":' + value;
         }
@@ -27548,11 +27113,8 @@ var require_tools = __commonJS({
         stream.flushSync();
       }
     }
-<<<<<<< HEAD
     function createArgsNormalizer(defaultOptions4) {
-=======
     function createArgsNormalizer(defaultOptions6) {
->>>>>>> origin/main
       return function normalizeArgs(instance, caller, opts = {}, stream) {
         if (typeof opts === "string") {
           stream = buildSafeSonicBoom({ dest: opts });
@@ -27578,15 +27140,12 @@ var require_tools = __commonJS({
           }
           stream = transport({ caller, ...opts.transport, levels: customLevels });
         }
-<<<<<<< HEAD
         opts = Object.assign({}, defaultOptions4, opts);
         opts.serializers = Object.assign({}, defaultOptions4.serializers, opts.serializers);
         opts.formatters = Object.assign({}, defaultOptions4.formatters, opts.formatters);
-=======
         opts = Object.assign({}, defaultOptions6, opts);
         opts.serializers = Object.assign({}, defaultOptions6.serializers, opts.serializers);
         opts.formatters = Object.assign({}, defaultOptions6.formatters, opts.formatters);
->>>>>>> origin/main
         if (opts.prettyPrint) {
           throw new Error("prettyPrint option is no longer supported, see the pino-pretty package (https://github.com/pinojs/pino-pretty)");
         }
@@ -27603,7 +27162,6 @@ var require_tools = __commonJS({
         return { opts, stream };
       };
     }
-<<<<<<< HEAD
     function stringify4(obj, stringifySafeFn) {
       try {
         return JSON.stringify(obj);
@@ -27612,7 +27170,6 @@ var require_tools = __commonJS({
           const stringify5 = stringifySafeFn || this[stringifySafeSym];
           return stringify5(obj);
         } catch (_4) {
-=======
     function stringify5(obj, stringifySafeFn) {
       try {
         return JSON.stringify(obj);
@@ -27621,7 +27178,6 @@ var require_tools = __commonJS({
           const stringify6 = stringifySafeFn || this[stringifySafeSym];
           return stringify6(obj);
         } catch (_5) {
->>>>>>> origin/main
           return '"[unable to serialize, circular reference is too complex to analyze]"';
         }
       }
@@ -27650,11 +27206,8 @@ var require_tools = __commonJS({
       asJson,
       genLog,
       createArgsNormalizer,
-<<<<<<< HEAD
       stringify: stringify4,
-=======
       stringify: stringify5,
->>>>>>> origin/main
       buildFormatters,
       normalizeDestFileDescriptor
     };
@@ -27729,21 +27282,18 @@ var require_levels = __commonJS({
     function genLsCache(instance) {
       const formatter = instance[formattersSym].level;
       const { labels } = instance.levels;
-<<<<<<< HEAD
       const cache2 = {};
       for (const label in labels) {
         const level = formatter(labels[label], Number(label));
         cache2[label] = JSON.stringify(level).slice(0, -1);
       }
       instance[lsCacheSym] = cache2;
-=======
       const cache3 = {};
       for (const label in labels) {
         const level = formatter(labels[label], Number(label));
         cache3[label] = JSON.stringify(level).slice(0, -1);
       }
       instance[lsCacheSym] = cache3;
->>>>>>> origin/main
       return instance;
     }
     function isStandardLevel(level, useOnlyCustomLevels) {
@@ -27938,11 +27488,8 @@ var require_proto = __commonJS({
       asChindings,
       asJson,
       buildFormatters,
-<<<<<<< HEAD
       stringify: stringify4,
-=======
       stringify: stringify5,
->>>>>>> origin/main
       noop: noop2
     } = require_tools();
     var {
@@ -28050,15 +27597,12 @@ var require_proto = __commonJS({
       }
       if (typeof options.redact === "object" && options.redact !== null || Array.isArray(options.redact)) {
         instance.redact = options.redact;
-<<<<<<< HEAD
         const stringifiers = redaction(instance.redact, stringify4);
         const formatOpts = { stringify: stringifiers[redactFmtSym] };
         instance[stringifySym] = stringify4;
-=======
         const stringifiers = redaction(instance.redact, stringify5);
         const formatOpts = { stringify: stringifiers[redactFmtSym] };
         instance[stringifySym] = stringify5;
->>>>>>> origin/main
         instance[stringifiersSym] = stringifiers;
         instance[formatOptsSym] = formatOpts;
       }
@@ -28111,11 +27655,8 @@ var require_proto = __commonJS({
       if (mixin) {
         obj = mixinMergeStrategy(obj, mixin(obj, num, this));
       }
-<<<<<<< HEAD
       const s3 = this[asJsonSym](obj, msg, num, t2);
-=======
       const s4 = this[asJsonSym](obj, msg, num, t2);
->>>>>>> origin/main
       const stream = this[streamSym];
       if (stream[needsMetadataGsym] === true) {
         stream.lastLevel = num;
@@ -28124,11 +27665,8 @@ var require_proto = __commonJS({
         stream.lastTime = t2.slice(this[timeSliceIndexSym]);
         stream.lastLogger = this;
       }
-<<<<<<< HEAD
       stream.write(streamWriteHook ? streamWriteHook(s3) : s3);
-=======
       stream.write(streamWriteHook ? streamWriteHook(s4) : s4);
->>>>>>> origin/main
     }
     function flush(cb) {
       if (cb != null && typeof cb !== "function") {
@@ -28147,7 +27685,6 @@ var require_safe_stable_stringify = __commonJS({
   "../../node_modules/.pnpm/safe-stable-stringify@2.5.0/node_modules/safe-stable-stringify/index.js"(exports, module) {
     "use strict";
     var { hasOwnProperty } = Object.prototype;
-<<<<<<< HEAD
     var stringify4 = configure();
     stringify4.configure = configure;
     stringify4.stringify = stringify4;
@@ -28155,7 +27692,6 @@ var require_safe_stable_stringify = __commonJS({
     exports.stringify = stringify4;
     exports.configure = configure;
     module.exports = stringify4;
-=======
     var stringify5 = configure();
     stringify5.configure = configure;
     stringify5.stringify = stringify5;
@@ -28163,7 +27699,6 @@ var require_safe_stable_stringify = __commonJS({
     exports.stringify = stringify5;
     exports.configure = configure;
     module.exports = stringify5;
->>>>>>> origin/main
     var strEscapeSequencesRegExp = /[\u0000-\u001f\u0022\u005c\ud800-\udfff]/;
     function strEscape(str2) {
       if (str2.length < 5e3 && !strEscapeSequencesRegExp.test(str2)) {
@@ -28721,11 +28256,8 @@ ${originalIndentation}`;
             return fail ? fail(value) : void 0;
         }
       }
-<<<<<<< HEAD
       function stringify5(value, replacer, space) {
-=======
       function stringify6(value, replacer, space) {
->>>>>>> origin/main
         if (arguments.length > 1) {
           let spacer = "";
           if (typeof space === "number") {
@@ -28747,11 +28279,8 @@ ${originalIndentation}`;
         }
         return stringifySimple("", value, []);
       }
-<<<<<<< HEAD
       return stringify5;
-=======
       return stringify6;
->>>>>>> origin/main
     }
   }
 });
@@ -28871,11 +28400,8 @@ var require_multistream = __commonJS({
       }
       function remove(id) {
         const { streams } = this;
-<<<<<<< HEAD
         const index2 = streams.findIndex((s3) => s3.id === id);
-=======
         const index2 = streams.findIndex((s4) => s4.id === id);
->>>>>>> origin/main
         if (index2 >= 0) {
           streams.splice(index2, 1);
           streams.sort(compareByLevel);
@@ -28947,11 +28473,8 @@ var require_pino = __commonJS({
       asChindings,
       buildSafeSonicBoom,
       buildFormatters,
-<<<<<<< HEAD
       stringify: stringify4,
-=======
       stringify: stringify5,
->>>>>>> origin/main
       normalizeDestFileDescriptor,
       noop: noop2
     } = require_tools();
@@ -28985,11 +28508,8 @@ var require_pino = __commonJS({
     var { pid } = process;
     var hostname2 = os.hostname();
     var defaultErrorSerializer = stdSerializers.err;
-<<<<<<< HEAD
     var defaultOptions4 = {
-=======
     var defaultOptions6 = {
->>>>>>> origin/main
       level: "info",
       levelComparison: SORTING_ORDER.ASC,
       levels: DEFAULT_LEVELS,
@@ -29021,11 +28541,8 @@ var require_pino = __commonJS({
       depthLimit: 5,
       edgeLimit: 100
     };
-<<<<<<< HEAD
     var normalize2 = createArgsNormalizer(defaultOptions4);
-=======
     var normalize2 = createArgsNormalizer(defaultOptions6);
->>>>>>> origin/main
     var serializers = Object.assign(/* @__PURE__ */ Object.create(null), stdSerializers);
     function pino2(...args) {
       const instance = {};
@@ -29063,11 +28580,8 @@ var require_pino = __commonJS({
         formatters2.bindings,
         formatters2.log
       );
-<<<<<<< HEAD
       const stringifyFn = stringify4.bind({
-=======
       const stringifyFn = stringify5.bind({
->>>>>>> origin/main
         [stringifySafeSym]: stringifySafe
       });
       const stringifiers = redact ? redaction(redact, stringifyFn) : {};
@@ -29077,11 +28591,8 @@ var require_pino = __commonJS({
         [chindingsSym]: "",
         [serializersSym]: serializers2,
         [stringifiersSym]: stringifiers,
-<<<<<<< HEAD
         [stringifySym]: stringify4,
-=======
         [stringifySym]: stringify5,
->>>>>>> origin/main
         [stringifySafeSym]: stringifySafe,
         [formattersSym]: allFormatters
       });
@@ -29112,11 +28623,8 @@ var require_pino = __commonJS({
         [streamSym]: stream,
         [timeSym]: time6,
         [timeSliceIndexSym]: timeSliceIndex,
-<<<<<<< HEAD
         [stringifySym]: stringify4,
-=======
         [stringifySym]: stringify5,
->>>>>>> origin/main
         [stringifySafeSym]: stringifySafe,
         [stringifiersSym]: stringifiers,
         [endSym]: end,
@@ -29162,15 +28670,12 @@ var require_pino = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationIn.js
 var require_applicationIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationIn.js
 var require_applicationIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationInSerializer = void 0;
@@ -29197,15 +28702,12 @@ var require_applicationIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationOut.js
 var require_applicationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationOut.js
 var require_applicationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationOutSerializer = void 0;
@@ -29238,15 +28740,12 @@ var require_applicationOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationPatch.js
 var require_applicationPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationPatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationPatch.js
 var require_applicationPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationPatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationPatchSerializer = void 0;
@@ -29273,15 +28772,12 @@ var require_applicationPatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseApplicationOut.js
 var require_listResponseApplicationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseApplicationOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseApplicationOut.js
 var require_listResponseApplicationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseApplicationOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseApplicationOutSerializer = void 0;
@@ -29307,15 +28803,12 @@ var require_listResponseApplicationOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/util.js
 var require_util = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/util.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/util.js
 var require_util = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/util.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApiException = void 0;
@@ -29335,7 +28828,6 @@ Headers: ${JSON.stringify(headers)}`);
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/request.js
 var require_request2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/request.js"(exports) {
@@ -29347,7 +28839,6 @@ var require_request2 = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/request.js
 var require_request2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/request.js"(exports) {
@@ -29359,7 +28850,6 @@ var require_request2 = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -29383,11 +28873,8 @@ var require_request2 = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixRequest = exports.HttpMethod = exports.LIB_VERSION = void 0;
     var util_1 = require_util();
-<<<<<<< HEAD
     exports.LIB_VERSION = "1.96.1";
-=======
     exports.LIB_VERSION = "1.99.1";
->>>>>>> origin/main
     function getUserAgent() {
       var fields = [`svix-libs/${exports.LIB_VERSION}/javascript`];
       if (process !== void 0) {
@@ -29477,11 +28964,8 @@ var require_request2 = __commonJS({
         });
       }
       sendInner(ctx) {
-<<<<<<< HEAD
         var _a2, _b;
-=======
         var _a2, _b, _c;
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const url3 = new URL(ctx.baseUrl + this.path);
           for (const [name, value] of Object.entries(this.queryParams)) {
@@ -29501,11 +28985,8 @@ var require_request2 = __commonJS({
             headers: Object.assign({ accept: "application/json, */*;q=0.8", authorization: `Bearer ${ctx.token}`, "user-agent": getUserAgent(), "svix-req-id": randomId.toString() }, this.headerParams),
             credentials: isCredentialsSupported ? "same-origin" : void 0,
             signal: ctx.timeout !== void 0 ? AbortSignal.timeout(ctx.timeout) : void 0
-<<<<<<< HEAD
           }, ctx.retryScheduleInMs, (_a2 = ctx.retryScheduleInMs) === null || _a2 === void 0 ? void 0 : _a2[0], ((_b = ctx.retryScheduleInMs) === null || _b === void 0 ? void 0 : _b.length) || ctx.numRetries, ctx.fetch);
-=======
           }, ctx.retryScheduleInMs, (_a2 = ctx.retryScheduleInMs) === null || _a2 === void 0 ? void 0 : _a2[0], (_c = (_b = ctx.retryScheduleInMs) === null || _b === void 0 ? void 0 : _b.length) !== null && _c !== void 0 ? _c : ctx.numRetries, ctx.fetch);
->>>>>>> origin/main
           return filterResponseForErrors(response);
         });
       }
@@ -29527,14 +29008,11 @@ var require_request2 = __commonJS({
       });
     }
     function sendWithRetry(url3, init2, retryScheduleInMs, nextInterval = 50, triesLeft = 2, fetchImpl = fetch, retryCount = 1) {
-<<<<<<< HEAD
       return __awaiter(this, void 0, void 0, function* () {
         const sleep3 = (interval3) => new Promise((resolve) => setTimeout(resolve, interval3));
-=======
       var _a2;
       return __awaiter(this, void 0, void 0, function* () {
         const sleep4 = (interval3) => new Promise((resolve) => setTimeout(resolve, interval3));
->>>>>>> origin/main
         try {
           const response = yield fetchImpl(url3, init2);
           if (triesLeft <= 0 || response.status < 500) {
@@ -29545,22 +29023,18 @@ var require_request2 = __commonJS({
             throw e2;
           }
         }
-<<<<<<< HEAD
         yield sleep3(nextInterval);
         init2.headers["svix-retry-count"] = retryCount.toString();
         nextInterval = (retryScheduleInMs === null || retryScheduleInMs === void 0 ? void 0 : retryScheduleInMs[retryCount]) || nextInterval * 2;
-=======
         yield sleep4(nextInterval);
         init2.headers["svix-retry-count"] = retryCount.toString();
         nextInterval = (_a2 = retryScheduleInMs === null || retryScheduleInMs === void 0 ? void 0 : retryScheduleInMs[retryCount]) !== null && _a2 !== void 0 ? _a2 : nextInterval * 2;
->>>>>>> origin/main
         return yield sendWithRetry(url3, init2, retryScheduleInMs, nextInterval, --triesLeft, fetchImpl, ++retryCount);
       });
     }
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/application.js
 var require_application2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/application.js"(exports) {
@@ -29572,7 +29046,6 @@ var require_application2 = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/application.js
 var require_application2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/application.js"(exports) {
@@ -29584,7 +29057,6 @@ var require_application2 = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -29680,15 +29152,12 @@ var require_application2 = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/apiTokenOut.js
 var require_apiTokenOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/apiTokenOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/apiTokenOut.js
 var require_apiTokenOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/apiTokenOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApiTokenOutSerializer = void 0;
@@ -29717,15 +29186,12 @@ var require_apiTokenOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalCapability.js
 var require_appPortalCapability = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalCapability.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appPortalCapability.js
 var require_appPortalCapability = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appPortalCapability.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppPortalCapabilitySerializer = exports.AppPortalCapability = void 0;
@@ -29749,15 +29215,12 @@ var require_appPortalCapability = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessIn.js
 var require_appPortalAccessIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appPortalAccessIn.js
 var require_appPortalAccessIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appPortalAccessIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppPortalAccessInSerializer = void 0;
@@ -29790,15 +29253,12 @@ var require_appPortalAccessIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessOut.js
 var require_appPortalAccessOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appPortalAccessOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appPortalAccessOut.js
 var require_appPortalAccessOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appPortalAccessOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppPortalAccessOutSerializer = void 0;
@@ -29819,15 +29279,12 @@ var require_appPortalAccessOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationTokenExpireIn.js
 var require_applicationTokenExpireIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/applicationTokenExpireIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationTokenExpireIn.js
 var require_applicationTokenExpireIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/applicationTokenExpireIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ApplicationTokenExpireInSerializer = void 0;
@@ -29848,15 +29305,12 @@ var require_applicationTokenExpireIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotatePollerTokenIn.js
 var require_rotatePollerTokenIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotatePollerTokenIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rotatePollerTokenIn.js
 var require_rotatePollerTokenIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rotatePollerTokenIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RotatePollerTokenInSerializer = void 0;
@@ -29877,15 +29331,12 @@ var require_rotatePollerTokenIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPortalAccessIn.js
 var require_streamPortalAccessIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPortalAccessIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamPortalAccessIn.js
 var require_streamPortalAccessIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamPortalAccessIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamPortalAccessInSerializer = void 0;
@@ -29908,15 +29359,12 @@ var require_streamPortalAccessIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamTokenExpireIn.js
 var require_streamTokenExpireIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamTokenExpireIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamTokenExpireIn.js
 var require_streamTokenExpireIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamTokenExpireIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamTokenExpireInSerializer = void 0;
@@ -29937,15 +29385,12 @@ var require_streamTokenExpireIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/dashboardAccessOut.js
 var require_dashboardAccessOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/dashboardAccessOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/dashboardAccessOut.js
 var require_dashboardAccessOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/dashboardAccessOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DashboardAccessOutSerializer = void 0;
@@ -29966,7 +29411,6 @@ var require_dashboardAccessOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/authentication.js
 var require_authentication = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/authentication.js"(exports) {
@@ -29978,7 +29422,6 @@ var require_authentication = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/authentication.js
 var require_authentication = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/authentication.js"(exports) {
@@ -29990,7 +29433,6 @@ var require_authentication = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -30026,11 +29468,8 @@ var require_authentication = __commonJS({
       constructor(requestCtx) {
         this.requestCtx = requestCtx;
       }
-<<<<<<< HEAD
       appPortalAccess(appId, appPortalAccessIn, options) {
-=======
       appPortalAccess(appId, appPortalAccessIn = {}, options) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/app-portal-access/{app_id}");
           request.setPathParam("app_id", appId);
@@ -30039,9 +29478,7 @@ var require_authentication = __commonJS({
           return yield request.send(this.requestCtx, appPortalAccessOut_1.AppPortalAccessOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       expireAll(appId, applicationTokenExpireIn, options) {
-=======
       logout(options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/logout");
@@ -30050,7 +29487,6 @@ var require_authentication = __commonJS({
         });
       }
       expireAll(appId, applicationTokenExpireIn = {}, options) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/app/{app_id}/expire-all");
           request.setPathParam("app_id", appId);
@@ -30065,13 +29501,11 @@ var require_authentication = __commonJS({
         request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
         return request.send(this.requestCtx, dashboardAccessOut_1.DashboardAccessOutSerializer._fromJsonObject);
       }
-<<<<<<< HEAD
       logout(options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/logout");
           request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
           return yield request.sendNoResponseBody(this.requestCtx);
-=======
       streamPortalAccess(streamId, streamPortalAccessIn = {}, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/stream-portal-access/{stream_id}");
@@ -30079,7 +29513,6 @@ var require_authentication = __commonJS({
           request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
           request.setBody(streamPortalAccessIn_1.StreamPortalAccessInSerializer._toJsonObject(streamPortalAccessIn));
           return yield request.send(this.requestCtx, appPortalAccessOut_1.AppPortalAccessOutSerializer._fromJsonObject);
->>>>>>> origin/main
         });
       }
       streamLogout(options) {
@@ -30089,7 +29522,6 @@ var require_authentication = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
       streamPortalAccess(streamId, streamPortalAccessIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/stream-portal-access/{stream_id}");
@@ -30100,9 +29532,7 @@ var require_authentication = __commonJS({
         });
       }
       streamExpireAll(streamId, streamTokenExpireIn, options) {
-=======
       streamExpireAll(streamId, streamTokenExpireIn = {}, options) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/stream/{stream_id}/expire-all");
           request.setPathParam("stream_id", streamId);
@@ -30111,8 +29541,6 @@ var require_authentication = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
-=======
       rotateStreamPollerToken(streamId, sinkId, rotatePollerTokenIn = {}, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/stream/{stream_id}/sink/{sink_id}/poller/token/rotate");
@@ -30123,7 +29551,6 @@ var require_authentication = __commonJS({
           return yield request.send(this.requestCtx, apiTokenOut_1.ApiTokenOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
       getStreamPollerToken(streamId, sinkId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/auth/stream/{stream_id}/sink/{sink_id}/poller/token");
@@ -30132,7 +29559,6 @@ var require_authentication = __commonJS({
           return yield request.send(this.requestCtx, apiTokenOut_1.ApiTokenOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       rotateStreamPollerToken(streamId, sinkId, rotatePollerTokenIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/auth/stream/{stream_id}/sink/{sink_id}/poller/token/rotate");
@@ -30143,22 +29569,17 @@ var require_authentication = __commonJS({
           return yield request.send(this.requestCtx, apiTokenOut_1.ApiTokenOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
     };
     exports.Authentication = Authentication;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskStatus.js
 var require_backgroundTaskStatus = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskStatus.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/backgroundTaskStatus.js
 var require_backgroundTaskStatus = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/backgroundTaskStatus.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BackgroundTaskStatusSerializer = exports.BackgroundTaskStatus = void 0;
@@ -30179,15 +29600,12 @@ var require_backgroundTaskStatus = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskType.js
 var require_backgroundTaskType = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskType.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/backgroundTaskType.js
 var require_backgroundTaskType = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/backgroundTaskType.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BackgroundTaskTypeSerializer = exports.BackgroundTaskType = void 0;
@@ -30213,15 +29631,12 @@ var require_backgroundTaskType = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskOut.js
 var require_backgroundTaskOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/backgroundTaskOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/backgroundTaskOut.js
 var require_backgroundTaskOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/backgroundTaskOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BackgroundTaskOutSerializer = void 0;
@@ -30250,15 +29665,12 @@ var require_backgroundTaskOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js
 var require_listResponseBackgroundTaskOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js
 var require_listResponseBackgroundTaskOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseBackgroundTaskOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseBackgroundTaskOutSerializer = void 0;
@@ -30284,7 +29696,6 @@ var require_listResponseBackgroundTaskOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/backgroundTask.js
 var require_backgroundTask = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/backgroundTask.js"(exports) {
@@ -30296,7 +29707,6 @@ var require_backgroundTask = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/backgroundTask.js
 var require_backgroundTask = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/backgroundTask.js"(exports) {
@@ -30308,7 +29718,6 @@ var require_backgroundTask = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -30366,15 +29775,12 @@ var require_backgroundTask = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorKind.js
 var require_connectorKind = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorKind.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorKind.js
 var require_connectorKind = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorKind.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorKindSerializer = exports.ConnectorKind = void 0;
@@ -30410,15 +29816,12 @@ var require_connectorKind = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorProduct.js
 var require_connectorProduct = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorProduct.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorProduct.js
 var require_connectorProduct = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorProduct.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorProductSerializer = exports.ConnectorProduct = void 0;
@@ -30438,15 +29841,12 @@ var require_connectorProduct = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorIn.js
 var require_connectorIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorIn.js
 var require_connectorIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorInSerializer = void 0;
@@ -30485,15 +29885,12 @@ var require_connectorIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorOut.js
 var require_connectorOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorOut.js
 var require_connectorOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorOutSerializer = void 0;
@@ -30542,15 +29939,12 @@ var require_connectorOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorPatch.js
 var require_connectorPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorPatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorPatch.js
 var require_connectorPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorPatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorPatchSerializer = void 0;
@@ -30584,15 +29978,12 @@ var require_connectorPatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorUpdate.js
 var require_connectorUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/connectorUpdate.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorUpdate.js
 var require_connectorUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/connectorUpdate.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ConnectorUpdateSerializer = void 0;
@@ -30626,15 +30017,12 @@ var require_connectorUpdate = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseConnectorOut.js
 var require_listResponseConnectorOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseConnectorOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseConnectorOut.js
 var require_listResponseConnectorOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseConnectorOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseConnectorOutSerializer = void 0;
@@ -30660,7 +30048,6 @@ var require_listResponseConnectorOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/connector.js
 var require_connector = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/connector.js"(exports) {
@@ -30672,7 +30059,6 @@ var require_connector = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/connector.js
 var require_connector = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/connector.js"(exports) {
@@ -30684,7 +30070,6 @@ var require_connector = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -30772,15 +30157,12 @@ var require_connector = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatus.js
 var require_messageStatus = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatus.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageStatus.js
 var require_messageStatus = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageStatus.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageStatusSerializer = exports.MessageStatus = void 0;
@@ -30803,15 +30185,12 @@ var require_messageStatus = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/statusCodeClass.js
 var require_statusCodeClass = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/statusCodeClass.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/statusCodeClass.js
 var require_statusCodeClass = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/statusCodeClass.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StatusCodeClassSerializer = exports.StatusCodeClass = void 0;
@@ -30835,15 +30214,12 @@ var require_statusCodeClass = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bulkReplayIn.js
 var require_bulkReplayIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bulkReplayIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/bulkReplayIn.js
 var require_bulkReplayIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/bulkReplayIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BulkReplayInSerializer = void 0;
@@ -30876,15 +30252,12 @@ var require_bulkReplayIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersIn.js
 var require_endpointHeadersIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointHeadersIn.js
 var require_endpointHeadersIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointHeadersIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointHeadersInSerializer = void 0;
@@ -30903,15 +30276,12 @@ var require_endpointHeadersIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersOut.js
 var require_endpointHeadersOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointHeadersOut.js
 var require_endpointHeadersOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointHeadersOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointHeadersOutSerializer = void 0;
@@ -30932,15 +30302,12 @@ var require_endpointHeadersOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersPatchIn.js
 var require_endpointHeadersPatchIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointHeadersPatchIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointHeadersPatchIn.js
 var require_endpointHeadersPatchIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointHeadersPatchIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointHeadersPatchInSerializer = void 0;
@@ -30961,15 +30328,12 @@ var require_endpointHeadersPatchIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointIn.js
 var require_endpointIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointIn.js
 var require_endpointIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointInSerializer = void 0;
@@ -31010,15 +30374,12 @@ var require_endpointIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointOut.js
 var require_endpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointOut.js
 var require_endpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointOutSerializer = void 0;
@@ -31061,15 +30422,12 @@ var require_endpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointPatch.js
 var require_endpointPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointPatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointPatch.js
 var require_endpointPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointPatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointPatchSerializer = void 0;
@@ -31108,15 +30466,12 @@ var require_endpointPatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretOut.js
 var require_endpointSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointSecretOut.js
 var require_endpointSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointSecretOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointSecretOutSerializer = void 0;
@@ -31135,34 +30490,25 @@ var require_endpointSecretOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretRotateIn.js
 var require_endpointSecretRotateIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointSecretRotateIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointSecretRotateIn.js
 var require_endpointSecretRotateIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointSecretRotateIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointSecretRotateInSerializer = void 0;
     exports.EndpointSecretRotateInSerializer = {
       _fromJsonObject(object2) {
         return {
-<<<<<<< HEAD
-=======
           gracePeriodSeconds: object2["gracePeriodSeconds"],
->>>>>>> origin/main
           key: object2["key"]
         };
       },
       _toJsonObject(self2) {
         return {
-<<<<<<< HEAD
-=======
           gracePeriodSeconds: self2.gracePeriodSeconds,
->>>>>>> origin/main
           key: self2.key
         };
       }
@@ -31170,15 +30516,12 @@ var require_endpointSecretRotateIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointStats.js
 var require_endpointStats = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointStats.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointStats.js
 var require_endpointStats = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointStats.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointStatsSerializer = void 0;
@@ -31205,15 +30548,12 @@ var require_endpointStats = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationIn.js
 var require_endpointTransformationIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointTransformationIn.js
 var require_endpointTransformationIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointTransformationIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointTransformationInSerializer = void 0;
@@ -31234,15 +30574,12 @@ var require_endpointTransformationIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationOut.js
 var require_endpointTransformationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointTransformationOut.js
 var require_endpointTransformationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointTransformationOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointTransformationOutSerializer = void 0;
@@ -31267,15 +30604,12 @@ var require_endpointTransformationOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationPatch.js
 var require_endpointTransformationPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointTransformationPatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointTransformationPatch.js
 var require_endpointTransformationPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointTransformationPatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointTransformationPatchSerializer = void 0;
@@ -31298,15 +30632,12 @@ var require_endpointTransformationPatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointUpdate.js
 var require_endpointUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointUpdate.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointUpdate.js
 var require_endpointUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointUpdate.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointUpdateSerializer = void 0;
@@ -31343,15 +30674,12 @@ var require_endpointUpdate = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventExampleIn.js
 var require_eventExampleIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventExampleIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventExampleIn.js
 var require_eventExampleIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventExampleIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventExampleInSerializer = void 0;
@@ -31372,15 +30700,12 @@ var require_eventExampleIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointOut.js
 var require_listResponseEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseEndpointOut.js
 var require_listResponseEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseEndpointOutSerializer = void 0;
@@ -31406,15 +30731,12 @@ var require_listResponseEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageOut.js
 var require_messageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageOut.js
 var require_messageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageOutSerializer = void 0;
@@ -31447,15 +30769,12 @@ var require_messageOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverIn.js
 var require_recoverIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/recoverIn.js
 var require_recoverIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/recoverIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RecoverInSerializer = void 0;
@@ -31476,15 +30795,12 @@ var require_recoverIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverOut.js
 var require_recoverOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/recoverOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/recoverOut.js
 var require_recoverOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/recoverOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RecoverOutSerializer = void 0;
@@ -31511,15 +30827,12 @@ var require_recoverOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayIn.js
 var require_replayIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/replayIn.js
 var require_replayIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/replayIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ReplayInSerializer = void 0;
@@ -31540,15 +30853,12 @@ var require_replayIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayOut.js
 var require_replayOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/replayOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/replayOut.js
 var require_replayOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/replayOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ReplayOutSerializer = void 0;
@@ -31575,7 +30885,6 @@ var require_replayOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/endpoint.js
 var require_endpoint = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/endpoint.js"(exports) {
@@ -31587,7 +30896,6 @@ var require_endpoint = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/endpoint.js
 var require_endpoint = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/endpoint.js"(exports) {
@@ -31599,7 +30907,6 @@ var require_endpoint = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -31703,7 +31010,6 @@ var require_endpoint = __commonJS({
           return yield request.send(this.requestCtx, endpointOut_1.EndpointOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       bulkReplay(appId, endpointId, bulkReplayIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/bulk-replay");
@@ -31712,7 +31018,6 @@ var require_endpoint = __commonJS({
           request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
           request.setBody(bulkReplayIn_1.BulkReplayInSerializer._toJsonObject(bulkReplayIn));
           return yield request.send(this.requestCtx, replayOut_1.ReplayOutSerializer._fromJsonObject);
-=======
       getSecret(appId, endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/secret");
@@ -31729,7 +31034,6 @@ var require_endpoint = __commonJS({
           request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
           request.setBody(endpointSecretRotateIn_1.EndpointSecretRotateInSerializer._toJsonObject(endpointSecretRotateIn));
           return yield request.sendNoResponseBody(this.requestCtx);
->>>>>>> origin/main
         });
       }
       getHeaders(appId, endpointId) {
@@ -31764,7 +31068,6 @@ var require_endpoint = __commonJS({
       headersPatch(appId, endpointId, endpointHeadersPatchIn) {
         return this.patchHeaders(appId, endpointId, endpointHeadersPatchIn);
       }
-<<<<<<< HEAD
       recover(appId, endpointId, recoverIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/recover");
@@ -31825,8 +31128,6 @@ var require_endpoint = __commonJS({
           return yield request.send(this.requestCtx, endpointStats_1.EndpointStatsSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
       transformationGet(appId, endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/transformation");
@@ -31844,9 +31145,7 @@ var require_endpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
       transformationPartialUpdate(appId, endpointId, endpointTransformationIn) {
-=======
       replayMissing(appId, endpointId, replayIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/replay-missing");
@@ -31900,7 +31199,6 @@ var require_endpoint = __commonJS({
         });
       }
       transformationPartialUpdate(appId, endpointId, endpointTransformationIn = {}) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.PATCH, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/transformation");
           request.setPathParam("app_id", appId);
@@ -31914,15 +31212,12 @@ var require_endpoint = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeIn.js
 var require_eventTypeIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeIn.js
 var require_eventTypeIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeInSerializer = void 0;
@@ -31955,15 +31250,12 @@ var require_eventTypeIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentIn.js
 var require_environmentIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/environmentIn.js
 var require_environmentIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/environmentIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EnvironmentInSerializer = void 0;
@@ -31990,15 +31282,12 @@ var require_environmentIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeOut.js
 var require_eventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeOut.js
 var require_eventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeOutSerializer = void 0;
@@ -32035,15 +31324,12 @@ var require_eventTypeOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentOut.js
 var require_environmentOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/environmentOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/environmentOut.js
 var require_environmentOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/environmentOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EnvironmentOutSerializer = void 0;
@@ -32072,7 +31358,6 @@ var require_environmentOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/environment.js
 var require_environment = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/environment.js"(exports) {
@@ -32084,7 +31369,6 @@ var require_environment = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/environment.js
 var require_environment = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/environment.js"(exports) {
@@ -32096,7 +31380,6 @@ var require_environment = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -32133,11 +31416,8 @@ var require_environment = __commonJS({
           return yield request.send(this.requestCtx, environmentOut_1.EnvironmentOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       import(environmentIn, options) {
-=======
       import(environmentIn = {}, options) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/environment/import");
           request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
@@ -32150,15 +31430,12 @@ var require_environment = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js
 var require_eventTypeImportOpenApiIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js
 var require_eventTypeImportOpenApiIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeImportOpenApiIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeImportOpenApiInSerializer = void 0;
@@ -32183,15 +31460,12 @@ var require_eventTypeImportOpenApiIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeFromOpenApi.js
 var require_eventTypeFromOpenApi = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeFromOpenApi.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeFromOpenApi.js
 var require_eventTypeFromOpenApi = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeFromOpenApi.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeFromOpenApiSerializer = void 0;
@@ -32222,15 +31496,12 @@ var require_eventTypeFromOpenApi = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js
 var require_eventTypeImportOpenApiOutData = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js
 var require_eventTypeImportOpenApiOutData = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeImportOpenApiOutData.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeImportOpenApiOutDataSerializer = void 0;
@@ -32254,15 +31525,12 @@ var require_eventTypeImportOpenApiOutData = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js
 var require_eventTypeImportOpenApiOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js
 var require_eventTypeImportOpenApiOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeImportOpenApiOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeImportOpenApiOutSerializer = void 0;
@@ -32282,15 +31550,12 @@ var require_eventTypeImportOpenApiOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypePatch.js
 var require_eventTypePatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypePatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypePatch.js
 var require_eventTypePatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypePatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypePatchSerializer = void 0;
@@ -32321,15 +31586,12 @@ var require_eventTypePatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeUpdate.js
 var require_eventTypeUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventTypeUpdate.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeUpdate.js
 var require_eventTypeUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventTypeUpdate.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventTypeUpdateSerializer = void 0;
@@ -32360,15 +31622,12 @@ var require_eventTypeUpdate = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEventTypeOut.js
 var require_listResponseEventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEventTypeOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseEventTypeOut.js
 var require_listResponseEventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseEventTypeOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseEventTypeOutSerializer = void 0;
@@ -32394,7 +31653,6 @@ var require_listResponseEventTypeOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/eventType.js
 var require_eventType = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/eventType.js"(exports) {
@@ -32406,7 +31664,6 @@ var require_eventType = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/eventType.js
 var require_eventType = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/eventType.js"(exports) {
@@ -32418,7 +31675,6 @@ var require_eventType = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -32474,11 +31730,8 @@ var require_eventType = __commonJS({
           return yield request.send(this.requestCtx, eventTypeOut_1.EventTypeOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       importOpenapi(eventTypeImportOpenApiIn, options) {
-=======
       importOpenapi(eventTypeImportOpenApiIn = {}, options) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/event-type/import/openapi");
           request.setHeaderParam("idempotency-key", options === null || options === void 0 ? void 0 : options.idempotencyKey);
@@ -32524,7 +31777,6 @@ var require_eventType = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/health.js
 var require_health = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/health.js"(exports) {
@@ -32536,7 +31788,6 @@ var require_health = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/health.js
 var require_health = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/health.js"(exports) {
@@ -32548,7 +31799,6 @@ var require_health = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -32587,15 +31837,12 @@ var require_health = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js
 var require_ingestSourceConsumerPortalAccessIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js
 var require_ingestSourceConsumerPortalAccessIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestSourceConsumerPortalAccessIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestSourceConsumerPortalAccessInSerializer = void 0;
@@ -32616,15 +31863,12 @@ var require_ingestSourceConsumerPortalAccessIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersIn.js
 var require_ingestEndpointHeadersIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointHeadersIn.js
 var require_ingestEndpointHeadersIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointHeadersIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointHeadersInSerializer = void 0;
@@ -32643,15 +31887,12 @@ var require_ingestEndpointHeadersIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersOut.js
 var require_ingestEndpointHeadersOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointHeadersOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointHeadersOut.js
 var require_ingestEndpointHeadersOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointHeadersOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointHeadersOutSerializer = void 0;
@@ -32672,15 +31913,12 @@ var require_ingestEndpointHeadersOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointIn.js
 var require_ingestEndpointIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointIn.js
 var require_ingestEndpointIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointInSerializer = void 0;
@@ -32692,10 +31930,7 @@ var require_ingestEndpointIn = __commonJS({
           metadata: object2["metadata"],
           rateLimit: object2["rateLimit"],
           secret: object2["secret"],
-<<<<<<< HEAD
-=======
           throttleRate: object2["throttleRate"],
->>>>>>> origin/main
           uid: object2["uid"],
           url: object2["url"]
         };
@@ -32707,10 +31942,7 @@ var require_ingestEndpointIn = __commonJS({
           metadata: self2.metadata,
           rateLimit: self2.rateLimit,
           secret: self2.secret,
-<<<<<<< HEAD
-=======
           throttleRate: self2.throttleRate,
->>>>>>> origin/main
           uid: self2.uid,
           url: self2.url
         };
@@ -32719,15 +31951,12 @@ var require_ingestEndpointIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointOut.js
 var require_ingestEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointOut.js
 var require_ingestEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointOutSerializer = void 0;
@@ -32740,10 +31969,7 @@ var require_ingestEndpointOut = __commonJS({
           id: object2["id"],
           metadata: object2["metadata"],
           rateLimit: object2["rateLimit"],
-<<<<<<< HEAD
-=======
           throttleRate: object2["throttleRate"],
->>>>>>> origin/main
           uid: object2["uid"],
           updatedAt: new Date(object2["updatedAt"]),
           url: object2["url"]
@@ -32757,10 +31983,7 @@ var require_ingestEndpointOut = __commonJS({
           id: self2.id,
           metadata: self2.metadata,
           rateLimit: self2.rateLimit,
-<<<<<<< HEAD
-=======
           throttleRate: self2.throttleRate,
->>>>>>> origin/main
           uid: self2.uid,
           updatedAt: self2.updatedAt,
           url: self2.url
@@ -32770,15 +31993,12 @@ var require_ingestEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretIn.js
 var require_ingestEndpointSecretIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointSecretIn.js
 var require_ingestEndpointSecretIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointSecretIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointSecretInSerializer = void 0;
@@ -32797,15 +32017,12 @@ var require_ingestEndpointSecretIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretOut.js
 var require_ingestEndpointSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointSecretOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointSecretOut.js
 var require_ingestEndpointSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointSecretOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointSecretOutSerializer = void 0;
@@ -32824,15 +32041,12 @@ var require_ingestEndpointSecretOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationOut.js
 var require_ingestEndpointTransformationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointTransformationOut.js
 var require_ingestEndpointTransformationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointTransformationOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointTransformationOutSerializer = void 0;
@@ -32853,15 +32067,12 @@ var require_ingestEndpointTransformationOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js
 var require_ingestEndpointTransformationPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js
 var require_ingestEndpointTransformationPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointTransformationPatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointTransformationPatchSerializer = void 0;
@@ -32882,15 +32093,12 @@ var require_ingestEndpointTransformationPatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointUpdate.js
 var require_ingestEndpointUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestEndpointUpdate.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointUpdate.js
 var require_ingestEndpointUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestEndpointUpdate.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestEndpointUpdateSerializer = void 0;
@@ -32901,10 +32109,7 @@ var require_ingestEndpointUpdate = __commonJS({
           disabled: object2["disabled"],
           metadata: object2["metadata"],
           rateLimit: object2["rateLimit"],
-<<<<<<< HEAD
-=======
           throttleRate: object2["throttleRate"],
->>>>>>> origin/main
           uid: object2["uid"],
           url: object2["url"]
         };
@@ -32915,10 +32120,7 @@ var require_ingestEndpointUpdate = __commonJS({
           disabled: self2.disabled,
           metadata: self2.metadata,
           rateLimit: self2.rateLimit,
-<<<<<<< HEAD
-=======
           throttleRate: self2.throttleRate,
->>>>>>> origin/main
           uid: self2.uid,
           url: self2.url
         };
@@ -32927,15 +32129,12 @@ var require_ingestEndpointUpdate = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestEndpointOut.js
 var require_listResponseIngestEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseIngestEndpointOut.js
 var require_listResponseIngestEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseIngestEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseIngestEndpointOutSerializer = void 0;
@@ -32961,7 +32160,6 @@ var require_listResponseIngestEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestEndpoint.js
 var require_ingestEndpoint = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestEndpoint.js"(exports) {
@@ -32973,7 +32171,6 @@ var require_ingestEndpoint = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/ingestEndpoint.js
 var require_ingestEndpoint = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/ingestEndpoint.js"(exports) {
@@ -32985,7 +32182,6 @@ var require_ingestEndpoint = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -33069,8 +32265,6 @@ var require_ingestEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
-=======
       getSecret(sourceId, endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/ingest/api/v1/source/{source_id}/endpoint/{endpoint_id}/secret");
@@ -33089,7 +32283,6 @@ var require_ingestEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
->>>>>>> origin/main
       getHeaders(sourceId, endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/ingest/api/v1/source/{source_id}/endpoint/{endpoint_id}/headers");
@@ -33107,7 +32300,6 @@ var require_ingestEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
       getSecret(sourceId, endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/ingest/api/v1/source/{source_id}/endpoint/{endpoint_id}/secret");
@@ -33126,8 +32318,6 @@ var require_ingestEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-=======
->>>>>>> origin/main
       getTransformation(sourceId, endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/ingest/api/v1/source/{source_id}/endpoint/{endpoint_id}/transformation");
@@ -33150,15 +32340,12 @@ var require_ingestEndpoint = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfig.js
 var require_adobeSignConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/adobeSignConfig.js
 var require_adobeSignConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/adobeSignConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AdobeSignConfigSerializer = void 0;
@@ -33177,15 +32364,12 @@ var require_adobeSignConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfig.js
 var require_airwallexConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/airwallexConfig.js
 var require_airwallexConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/airwallexConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AirwallexConfigSerializer = void 0;
@@ -33204,15 +32388,12 @@ var require_airwallexConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfig.js
 var require_checkbookConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/checkbookConfig.js
 var require_checkbookConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/checkbookConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CheckbookConfigSerializer = void 0;
@@ -33231,15 +32412,12 @@ var require_checkbookConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/cronConfig.js
 var require_cronConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/cronConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/cronConfig.js
 var require_cronConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/cronConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CronConfigSerializer = void 0;
@@ -33262,15 +32440,12 @@ var require_cronConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfig.js
 var require_docusignConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/docusignConfig.js
 var require_docusignConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/docusignConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DocusignConfigSerializer = void 0;
@@ -33289,15 +32464,12 @@ var require_docusignConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfig.js
 var require_easypostConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/easypostConfig.js
 var require_easypostConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/easypostConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EasypostConfigSerializer = void 0;
@@ -33316,15 +32488,12 @@ var require_easypostConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfig.js
 var require_githubConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/githubConfig.js
 var require_githubConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/githubConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GithubConfigSerializer = void 0;
@@ -33343,15 +32512,12 @@ var require_githubConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfig.js
 var require_hubspotConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/hubspotConfig.js
 var require_hubspotConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/hubspotConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HubspotConfigSerializer = void 0;
@@ -33370,15 +32536,12 @@ var require_hubspotConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfig.js
 var require_metaConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/metaConfig.js
 var require_metaConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/metaConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MetaConfigSerializer = void 0;
@@ -33399,11 +32562,9 @@ var require_metaConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfig.js
 var require_orumIoConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/nangoConfig.js
 var require_nangoConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/nangoConfig.js"(exports) {
@@ -33449,7 +32610,6 @@ var require_openClawConfig = __commonJS({
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/orumIoConfig.js
 var require_orumIoConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/orumIoConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OrumIoConfigSerializer = void 0;
@@ -33468,15 +32628,12 @@ var require_orumIoConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfig.js
 var require_pandaDocConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pandaDocConfig.js
 var require_pandaDocConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pandaDocConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PandaDocConfigSerializer = void 0;
@@ -33495,15 +32652,12 @@ var require_pandaDocConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfig.js
 var require_portIoConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/portIoConfig.js
 var require_portIoConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/portIoConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PortIoConfigSerializer = void 0;
@@ -33522,15 +32676,12 @@ var require_portIoConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfig.js
 var require_rutterConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rutterConfig.js
 var require_rutterConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rutterConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RutterConfigSerializer = void 0;
@@ -33549,15 +32700,12 @@ var require_rutterConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfig.js
 var require_segmentConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/segmentConfig.js
 var require_segmentConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/segmentConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SegmentConfigSerializer = void 0;
@@ -33576,15 +32724,12 @@ var require_segmentConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfig.js
 var require_shopifyConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/shopifyConfig.js
 var require_shopifyConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/shopifyConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ShopifyConfigSerializer = void 0;
@@ -33603,15 +32748,12 @@ var require_shopifyConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfig.js
 var require_slackConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/slackConfig.js
 var require_slackConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/slackConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SlackConfigSerializer = void 0;
@@ -33630,15 +32772,12 @@ var require_slackConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfig.js
 var require_stripeConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/stripeConfig.js
 var require_stripeConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/stripeConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StripeConfigSerializer = void 0;
@@ -33657,15 +32796,12 @@ var require_stripeConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfig.js
 var require_svixConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/svixConfig.js
 var require_svixConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/svixConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixConfigSerializer = void 0;
@@ -33684,15 +32820,12 @@ var require_svixConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfig.js
 var require_tailscaleConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/tailscaleConfig.js
 var require_tailscaleConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/tailscaleConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TailscaleConfigSerializer = void 0;
@@ -33713,15 +32846,12 @@ var require_tailscaleConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfig.js
 var require_telnyxConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/telnyxConfig.js
 var require_telnyxConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/telnyxConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TelnyxConfigSerializer = void 0;
@@ -33740,15 +32870,12 @@ var require_telnyxConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfig.js
 var require_vapiConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vapiConfig.js
 var require_vapiConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vapiConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VapiConfigSerializer = void 0;
@@ -33767,15 +32894,12 @@ var require_vapiConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfig.js
 var require_veriffConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/veriffConfig.js
 var require_veriffConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/veriffConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VeriffConfigSerializer = void 0;
@@ -33794,15 +32918,12 @@ var require_veriffConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfig.js
 var require_vgsConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vgsConfig.js
 var require_vgsConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vgsConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VgsConfigSerializer = void 0;
@@ -33821,15 +32942,12 @@ var require_vgsConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfig.js
 var require_zoomConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/zoomConfig.js
 var require_zoomConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/zoomConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ZoomConfigSerializer = void 0;
@@ -33848,15 +32966,12 @@ var require_zoomConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceIn.js
 var require_ingestSourceIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestSourceIn.js
 var require_ingestSourceIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestSourceIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestSourceInSerializer = void 0;
@@ -33869,11 +32984,8 @@ var require_ingestSourceIn = __commonJS({
     var githubConfig_1 = require_githubConfig();
     var hubspotConfig_1 = require_hubspotConfig();
     var metaConfig_1 = require_metaConfig();
-<<<<<<< HEAD
-=======
     var nangoConfig_1 = require_nangoConfig();
     var openClawConfig_1 = require_openClawConfig();
->>>>>>> origin/main
     var orumIoConfig_1 = require_orumIoConfig();
     var pandaDocConfig_1 = require_pandaDocConfig();
     var portIoConfig_1 = require_portIoConfig();
@@ -33924,17 +33036,14 @@ var require_ingestSourceIn = __commonJS({
               return svixConfig_1.SvixConfigSerializer._fromJsonObject(object2["config"]);
             case "meta":
               return metaConfig_1.MetaConfigSerializer._fromJsonObject(object2["config"]);
-<<<<<<< HEAD
             case "nash":
               return svixConfig_1.SvixConfigSerializer._fromJsonObject(object2["config"]);
-=======
             case "nango":
               return nangoConfig_1.NangoConfigSerializer._fromJsonObject(object2["config"]);
             case "nash":
               return svixConfig_1.SvixConfigSerializer._fromJsonObject(object2["config"]);
             case "openclaw":
               return openClawConfig_1.OpenClawConfigSerializer._fromJsonObject(object2["config"]);
->>>>>>> origin/main
             case "orum-io":
               return orumIoConfig_1.OrumIoConfigSerializer._fromJsonObject(object2["config"]);
             case "panda-doc":
@@ -34045,11 +33154,9 @@ var require_ingestSourceIn = __commonJS({
           case "meta":
             config2 = metaConfig_1.MetaConfigSerializer._toJsonObject(self2.config);
             break;
-<<<<<<< HEAD
           case "nash":
             config2 = svixConfig_1.SvixConfigSerializer._toJsonObject(self2.config);
             break;
-=======
           case "nango":
             config2 = nangoConfig_1.NangoConfigSerializer._toJsonObject(self2.config);
             break;
@@ -34059,7 +33166,6 @@ var require_ingestSourceIn = __commonJS({
           case "openclaw":
             config2 = openClawConfig_1.OpenClawConfigSerializer._toJsonObject(self2.config);
             break;
->>>>>>> origin/main
           case "orum-io":
             config2 = orumIoConfig_1.OrumIoConfigSerializer._toJsonObject(self2.config);
             break;
@@ -34148,15 +33254,12 @@ var require_ingestSourceIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfigOut.js
 var require_adobeSignConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/adobeSignConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/adobeSignConfigOut.js
 var require_adobeSignConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/adobeSignConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AdobeSignConfigOutSerializer = void 0;
@@ -34171,15 +33274,12 @@ var require_adobeSignConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfigOut.js
 var require_airwallexConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/airwallexConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/airwallexConfigOut.js
 var require_airwallexConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/airwallexConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AirwallexConfigOutSerializer = void 0;
@@ -34194,15 +33294,12 @@ var require_airwallexConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfigOut.js
 var require_checkbookConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/checkbookConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/checkbookConfigOut.js
 var require_checkbookConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/checkbookConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CheckbookConfigOutSerializer = void 0;
@@ -34217,15 +33314,12 @@ var require_checkbookConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfigOut.js
 var require_docusignConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/docusignConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/docusignConfigOut.js
 var require_docusignConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/docusignConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DocusignConfigOutSerializer = void 0;
@@ -34240,15 +33334,12 @@ var require_docusignConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfigOut.js
 var require_easypostConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/easypostConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/easypostConfigOut.js
 var require_easypostConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/easypostConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EasypostConfigOutSerializer = void 0;
@@ -34263,15 +33354,12 @@ var require_easypostConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfigOut.js
 var require_githubConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/githubConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/githubConfigOut.js
 var require_githubConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/githubConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GithubConfigOutSerializer = void 0;
@@ -34286,15 +33374,12 @@ var require_githubConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfigOut.js
 var require_hubspotConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/hubspotConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/hubspotConfigOut.js
 var require_hubspotConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/hubspotConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HubspotConfigOutSerializer = void 0;
@@ -34309,15 +33394,12 @@ var require_hubspotConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfigOut.js
 var require_metaConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/metaConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/metaConfigOut.js
 var require_metaConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/metaConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MetaConfigOutSerializer = void 0;
@@ -34332,11 +33414,9 @@ var require_metaConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfigOut.js
 var require_orumIoConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/orumIoConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/nangoConfigOut.js
 var require_nangoConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/nangoConfigOut.js"(exports) {
@@ -34374,7 +33454,6 @@ var require_openClawConfigOut = __commonJS({
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/orumIoConfigOut.js
 var require_orumIoConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/orumIoConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OrumIoConfigOutSerializer = void 0;
@@ -34393,15 +33472,12 @@ var require_orumIoConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfigOut.js
 var require_pandaDocConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pandaDocConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pandaDocConfigOut.js
 var require_pandaDocConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pandaDocConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PandaDocConfigOutSerializer = void 0;
@@ -34416,15 +33492,12 @@ var require_pandaDocConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfigOut.js
 var require_portIoConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/portIoConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/portIoConfigOut.js
 var require_portIoConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/portIoConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PortIoConfigOutSerializer = void 0;
@@ -34439,15 +33512,12 @@ var require_portIoConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfigOut.js
 var require_rutterConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rutterConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rutterConfigOut.js
 var require_rutterConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rutterConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RutterConfigOutSerializer = void 0;
@@ -34462,15 +33532,12 @@ var require_rutterConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfigOut.js
 var require_segmentConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/segmentConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/segmentConfigOut.js
 var require_segmentConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/segmentConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SegmentConfigOutSerializer = void 0;
@@ -34485,15 +33552,12 @@ var require_segmentConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfigOut.js
 var require_shopifyConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/shopifyConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/shopifyConfigOut.js
 var require_shopifyConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/shopifyConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ShopifyConfigOutSerializer = void 0;
@@ -34508,15 +33572,12 @@ var require_shopifyConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfigOut.js
 var require_slackConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/slackConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/slackConfigOut.js
 var require_slackConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/slackConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SlackConfigOutSerializer = void 0;
@@ -34531,15 +33592,12 @@ var require_slackConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfigOut.js
 var require_stripeConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/stripeConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/stripeConfigOut.js
 var require_stripeConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/stripeConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StripeConfigOutSerializer = void 0;
@@ -34554,15 +33612,12 @@ var require_stripeConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfigOut.js
 var require_svixConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/svixConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/svixConfigOut.js
 var require_svixConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/svixConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixConfigOutSerializer = void 0;
@@ -34577,15 +33632,12 @@ var require_svixConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfigOut.js
 var require_tailscaleConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/tailscaleConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/tailscaleConfigOut.js
 var require_tailscaleConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/tailscaleConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TailscaleConfigOutSerializer = void 0;
@@ -34600,15 +33652,12 @@ var require_tailscaleConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfigOut.js
 var require_telnyxConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/telnyxConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/telnyxConfigOut.js
 var require_telnyxConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/telnyxConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.TelnyxConfigOutSerializer = void 0;
@@ -34627,15 +33676,12 @@ var require_telnyxConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfigOut.js
 var require_vapiConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vapiConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vapiConfigOut.js
 var require_vapiConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vapiConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VapiConfigOutSerializer = void 0;
@@ -34650,15 +33696,12 @@ var require_vapiConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfigOut.js
 var require_veriffConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/veriffConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/veriffConfigOut.js
 var require_veriffConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/veriffConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VeriffConfigOutSerializer = void 0;
@@ -34673,15 +33716,12 @@ var require_veriffConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfigOut.js
 var require_vgsConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/vgsConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vgsConfigOut.js
 var require_vgsConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/vgsConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.VgsConfigOutSerializer = void 0;
@@ -34696,15 +33736,12 @@ var require_vgsConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfigOut.js
 var require_zoomConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/zoomConfigOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/zoomConfigOut.js
 var require_zoomConfigOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/zoomConfigOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ZoomConfigOutSerializer = void 0;
@@ -34719,15 +33756,12 @@ var require_zoomConfigOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceOut.js
 var require_ingestSourceOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ingestSourceOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestSourceOut.js
 var require_ingestSourceOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ingestSourceOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IngestSourceOutSerializer = void 0;
@@ -34740,11 +33774,8 @@ var require_ingestSourceOut = __commonJS({
     var githubConfigOut_1 = require_githubConfigOut();
     var hubspotConfigOut_1 = require_hubspotConfigOut();
     var metaConfigOut_1 = require_metaConfigOut();
-<<<<<<< HEAD
-=======
     var nangoConfigOut_1 = require_nangoConfigOut();
     var openClawConfigOut_1 = require_openClawConfigOut();
->>>>>>> origin/main
     var orumIoConfigOut_1 = require_orumIoConfigOut();
     var pandaDocConfigOut_1 = require_pandaDocConfigOut();
     var portIoConfigOut_1 = require_portIoConfigOut();
@@ -34795,17 +33826,14 @@ var require_ingestSourceOut = __commonJS({
               return svixConfigOut_1.SvixConfigOutSerializer._fromJsonObject(object2["config"]);
             case "meta":
               return metaConfigOut_1.MetaConfigOutSerializer._fromJsonObject(object2["config"]);
-<<<<<<< HEAD
             case "nash":
               return svixConfigOut_1.SvixConfigOutSerializer._fromJsonObject(object2["config"]);
-=======
             case "nango":
               return nangoConfigOut_1.NangoConfigOutSerializer._fromJsonObject(object2["config"]);
             case "nash":
               return svixConfigOut_1.SvixConfigOutSerializer._fromJsonObject(object2["config"]);
             case "openclaw":
               return openClawConfigOut_1.OpenClawConfigOutSerializer._fromJsonObject(object2["config"]);
->>>>>>> origin/main
             case "orum-io":
               return orumIoConfigOut_1.OrumIoConfigOutSerializer._fromJsonObject(object2["config"]);
             case "panda-doc":
@@ -34920,11 +33948,9 @@ var require_ingestSourceOut = __commonJS({
           case "meta":
             config2 = metaConfigOut_1.MetaConfigOutSerializer._toJsonObject(self2.config);
             break;
-<<<<<<< HEAD
           case "nash":
             config2 = svixConfigOut_1.SvixConfigOutSerializer._toJsonObject(self2.config);
             break;
-=======
           case "nango":
             config2 = nangoConfigOut_1.NangoConfigOutSerializer._toJsonObject(self2.config);
             break;
@@ -34934,7 +33960,6 @@ var require_ingestSourceOut = __commonJS({
           case "openclaw":
             config2 = openClawConfigOut_1.OpenClawConfigOutSerializer._toJsonObject(self2.config);
             break;
->>>>>>> origin/main
           case "orum-io":
             config2 = orumIoConfigOut_1.OrumIoConfigOutSerializer._toJsonObject(self2.config);
             break;
@@ -35027,15 +34052,12 @@ var require_ingestSourceOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestSourceOut.js
 var require_listResponseIngestSourceOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIngestSourceOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseIngestSourceOut.js
 var require_listResponseIngestSourceOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseIngestSourceOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseIngestSourceOutSerializer = void 0;
@@ -35061,15 +34083,12 @@ var require_listResponseIngestSourceOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotateTokenOut.js
 var require_rotateTokenOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rotateTokenOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rotateTokenOut.js
 var require_rotateTokenOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rotateTokenOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RotateTokenOutSerializer = void 0;
@@ -35088,7 +34107,6 @@ var require_rotateTokenOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestSource.js
 var require_ingestSource = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingestSource.js"(exports) {
@@ -35100,7 +34118,6 @@ var require_ingestSource = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/ingestSource.js
 var require_ingestSource = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/ingestSource.js"(exports) {
@@ -35112,7 +34129,6 @@ var require_ingestSource = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -35198,7 +34214,6 @@ var require_ingestSource = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingest.js
 var require_ingest = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/ingest.js"(exports) {
@@ -35210,7 +34225,6 @@ var require_ingest = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/ingest.js
 var require_ingest = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/ingest.js"(exports) {
@@ -35222,7 +34236,6 @@ var require_ingest = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -35260,11 +34273,8 @@ var require_ingest = __commonJS({
       get source() {
         return new ingestSource_1.IngestSource(this.requestCtx);
       }
-<<<<<<< HEAD
       dashboard(sourceId, ingestSourceConsumerPortalAccessIn, options) {
-=======
       dashboard(sourceId, ingestSourceConsumerPortalAccessIn = {}, options) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/ingest/api/v1/source/{source_id}/dashboard");
           request.setPathParam("source_id", sourceId);
@@ -35278,15 +34288,12 @@ var require_ingest = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationIn.js
 var require_integrationIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationIn.js
 var require_integrationIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationInSerializer = void 0;
@@ -35307,15 +34314,12 @@ var require_integrationIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationKeyOut.js
 var require_integrationKeyOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationKeyOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationKeyOut.js
 var require_integrationKeyOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationKeyOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationKeyOutSerializer = void 0;
@@ -35334,15 +34338,12 @@ var require_integrationKeyOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationOut.js
 var require_integrationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationOut.js
 var require_integrationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationOutSerializer = void 0;
@@ -35369,15 +34370,12 @@ var require_integrationOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationUpdate.js
 var require_integrationUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/integrationUpdate.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationUpdate.js
 var require_integrationUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/integrationUpdate.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.IntegrationUpdateSerializer = void 0;
@@ -35398,15 +34396,12 @@ var require_integrationUpdate = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIntegrationOut.js
 var require_listResponseIntegrationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseIntegrationOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseIntegrationOut.js
 var require_listResponseIntegrationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseIntegrationOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseIntegrationOutSerializer = void 0;
@@ -35432,7 +34427,6 @@ var require_listResponseIntegrationOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/integration.js
 var require_integration = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/integration.js"(exports) {
@@ -35444,7 +34438,6 @@ var require_integration = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/integration.js
 var require_integration = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/integration.js"(exports) {
@@ -35456,7 +34449,6 @@ var require_integration = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -35535,7 +34527,6 @@ var require_integration = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
       getKey(appId, integId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/integration/{integ_id}/key");
@@ -35544,8 +34535,6 @@ var require_integration = __commonJS({
           return yield request.send(this.requestCtx, integrationKeyOut_1.IntegrationKeyOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
       rotateKey(appId, integId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/integration/{integ_id}/key/rotate");
@@ -35555,8 +34544,6 @@ var require_integration = __commonJS({
           return yield request.send(this.requestCtx, integrationKeyOut_1.IntegrationKeyOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
-=======
       getKey(appId, integId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/integration/{integ_id}/key");
@@ -35565,21 +34552,17 @@ var require_integration = __commonJS({
           return yield request.send(this.requestCtx, integrationKeyOut_1.IntegrationKeyOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
     };
     exports.Integration = Integration;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/expungeAllContentsOut.js
 var require_expungeAllContentsOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/expungeAllContentsOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/expungeAllContentsOut.js
 var require_expungeAllContentsOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/expungeAllContentsOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ExpungeAllContentsOutSerializer = void 0;
@@ -35606,15 +34589,12 @@ var require_expungeAllContentsOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageOut.js
 var require_listResponseMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseMessageOut.js
 var require_listResponseMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseMessageOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseMessageOutSerializer = void 0;
@@ -35640,15 +34620,12 @@ var require_listResponseMessageOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckIn.js
 var require_messagePrecheckIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messagePrecheckIn.js
 var require_messagePrecheckIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messagePrecheckIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessagePrecheckInSerializer = void 0;
@@ -35669,15 +34646,12 @@ var require_messagePrecheckIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckOut.js
 var require_messagePrecheckOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messagePrecheckOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messagePrecheckOut.js
 var require_messagePrecheckOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messagePrecheckOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessagePrecheckOutSerializer = void 0;
@@ -35696,15 +34670,12 @@ var require_messagePrecheckOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js
 var require_pollingEndpointConsumerSeekIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js
 var require_pollingEndpointConsumerSeekIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointConsumerSeekInSerializer = void 0;
@@ -35723,15 +34694,12 @@ var require_pollingEndpointConsumerSeekIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js
 var require_pollingEndpointConsumerSeekOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js
 var require_pollingEndpointConsumerSeekOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointConsumerSeekOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointConsumerSeekOutSerializer = void 0;
@@ -35750,15 +34718,12 @@ var require_pollingEndpointConsumerSeekOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointMessageOut.js
 var require_pollingEndpointMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointMessageOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointMessageOut.js
 var require_pollingEndpointMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointMessageOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointMessageOutSerializer = void 0;
@@ -35793,15 +34758,12 @@ var require_pollingEndpointMessageOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointOut.js
 var require_pollingEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollingEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointOut.js
 var require_pollingEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollingEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollingEndpointOutSerializer = void 0;
@@ -35825,7 +34787,6 @@ var require_pollingEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messagePoller.js
 var require_messagePoller = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messagePoller.js"(exports) {
@@ -35837,7 +34798,6 @@ var require_messagePoller = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/messagePoller.js
 var require_messagePoller = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/messagePoller.js"(exports) {
@@ -35849,7 +34809,6 @@ var require_messagePoller = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -35895,8 +34854,6 @@ var require_messagePoller = __commonJS({
           return yield request.send(this.requestCtx, pollingEndpointOut_1.PollingEndpointOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
-=======
       consumerSeek(appId, sinkId, consumerId, pollingEndpointConsumerSeekIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/poller/{sink_id}/consumer/{consumer_id}/seek");
@@ -35908,7 +34865,6 @@ var require_messagePoller = __commonJS({
           return yield request.send(this.requestCtx, pollingEndpointConsumerSeekOut_1.PollingEndpointConsumerSeekOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
       consumerPoll(appId, sinkId, consumerId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/poller/{sink_id}/consumer/{consumer_id}");
@@ -35922,7 +34878,6 @@ var require_messagePoller = __commonJS({
           return yield request.send(this.requestCtx, pollingEndpointOut_1.PollingEndpointOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       consumerSeek(appId, sinkId, consumerId, pollingEndpointConsumerSeekIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/poller/{sink_id}/consumer/{consumer_id}/seek");
@@ -35934,22 +34889,17 @@ var require_messagePoller = __commonJS({
           return yield request.send(this.requestCtx, pollingEndpointConsumerSeekOut_1.PollingEndpointConsumerSeekOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
     };
     exports.MessagePoller = MessagePoller;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageIn.js
 var require_messageIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageIn.js
 var require_messageIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageInSerializer = void 0;
@@ -35987,7 +34937,6 @@ var require_messageIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/message.js
 var require_message = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/message.js"(exports) {
@@ -35999,7 +34948,6 @@ var require_message = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/message.js
 var require_message = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/message.js"(exports) {
@@ -36011,7 +34959,6 @@ var require_message = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -36083,7 +35030,6 @@ var require_message = __commonJS({
           return response;
         });
       }
-<<<<<<< HEAD
       expungeAllContents(appId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/msg/expunge-all-contents");
@@ -36092,8 +35038,6 @@ var require_message = __commonJS({
           return yield request.send(this.requestCtx, expungeAllContentsOut_1.ExpungeAllContentsOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
       precheck(appId, messagePrecheckIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/msg/precheck/active");
@@ -36122,8 +35066,6 @@ var require_message = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
-=======
       expungeAllContents(appId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/msg/expunge-all-contents");
@@ -36132,7 +35074,6 @@ var require_message = __commonJS({
           return yield request.send(this.requestCtx, expungeAllContentsOut_1.ExpungeAllContentsOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
     };
     exports.Message = Message;
     function messageInRaw(eventType, payload, contentType) {
@@ -36150,15 +35091,12 @@ var require_message = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/emptyResponse.js
 var require_emptyResponse = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/emptyResponse.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/emptyResponse.js
 var require_emptyResponse = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/emptyResponse.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EmptyResponseSerializer = void 0;
@@ -36173,15 +35111,12 @@ var require_emptyResponse = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatusText.js
 var require_messageStatusText = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageStatusText.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageStatusText.js
 var require_messageStatusText = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageStatusText.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageStatusTextSerializer = exports.MessageStatusText = void 0;
@@ -36204,15 +35139,12 @@ var require_messageStatusText = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointMessageOut.js
 var require_endpointMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointMessageOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointMessageOut.js
 var require_endpointMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointMessageOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointMessageOutSerializer = void 0;
@@ -36253,15 +35185,12 @@ var require_endpointMessageOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointMessageOut.js
 var require_listResponseEndpointMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseEndpointMessageOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseEndpointMessageOut.js
 var require_listResponseEndpointMessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseEndpointMessageOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseEndpointMessageOutSerializer = void 0;
@@ -36287,15 +35216,12 @@ var require_listResponseEndpointMessageOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptTriggerType.js
 var require_messageAttemptTriggerType = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptTriggerType.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageAttemptTriggerType.js
 var require_messageAttemptTriggerType = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageAttemptTriggerType.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageAttemptTriggerTypeSerializer = exports.MessageAttemptTriggerType = void 0;
@@ -36315,15 +35241,12 @@ var require_messageAttemptTriggerType = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptOut.js
 var require_messageAttemptOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageAttemptOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageAttemptOut.js
 var require_messageAttemptOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageAttemptOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageAttemptOutSerializer = void 0;
@@ -36368,15 +35291,12 @@ var require_messageAttemptOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageAttemptOut.js
 var require_listResponseMessageAttemptOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageAttemptOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseMessageAttemptOut.js
 var require_listResponseMessageAttemptOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseMessageAttemptOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseMessageAttemptOutSerializer = void 0;
@@ -36402,15 +35322,12 @@ var require_listResponseMessageAttemptOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageEndpointOut.js
 var require_messageEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/messageEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageEndpointOut.js
 var require_messageEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/messageEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MessageEndpointOutSerializer = void 0;
@@ -36459,15 +35376,12 @@ var require_messageEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageEndpointOut.js
 var require_listResponseMessageEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseMessageEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseMessageEndpointOut.js
 var require_listResponseMessageEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseMessageEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseMessageEndpointOutSerializer = void 0;
@@ -36493,7 +35407,6 @@ var require_listResponseMessageEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messageAttempt.js
 var require_messageAttempt = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/messageAttempt.js"(exports) {
@@ -36505,7 +35418,6 @@ var require_messageAttempt = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/messageAttempt.js
 var require_messageAttempt = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/messageAttempt.js"(exports) {
@@ -36517,7 +35429,6 @@ var require_messageAttempt = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -36617,8 +35528,6 @@ var require_messageAttempt = __commonJS({
           return yield request.send(this.requestCtx, listResponseEndpointMessageOut_1.ListResponseEndpointMessageOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
-=======
       listAttemptedDestinations(appId, msgId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/msg/{msg_id}/endpoint");
@@ -36631,7 +35540,6 @@ var require_messageAttempt = __commonJS({
           return yield request.send(this.requestCtx, listResponseMessageEndpointOut_1.ListResponseMessageEndpointOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
       get(appId, msgId, attemptId, options) {
         var _a2;
         return __awaiter(this, void 0, void 0, function* () {
@@ -36654,7 +35562,6 @@ var require_messageAttempt = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
       listAttemptedDestinations(appId, msgId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/app/{app_id}/msg/{msg_id}/endpoint");
@@ -36667,8 +35574,6 @@ var require_messageAttempt = __commonJS({
           return yield request.send(this.requestCtx, listResponseMessageEndpointOut_1.ListResponseMessageEndpointOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
       resend(appId, msgId, endpointId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/app/{app_id}/msg/{msg_id}/endpoint/{endpoint_id}/resend");
@@ -36684,15 +35589,12 @@ var require_messageAttempt = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointOut.js
 var require_operationalWebhookEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointOut.js
 var require_operationalWebhookEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointOutSerializer = void 0;
@@ -36731,15 +35633,12 @@ var require_operationalWebhookEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js
 var require_listResponseOperationalWebhookEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js
 var require_listResponseOperationalWebhookEndpointOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseOperationalWebhookEndpointOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseOperationalWebhookEndpointOutSerializer = void 0;
@@ -36765,15 +35664,12 @@ var require_listResponseOperationalWebhookEndpointOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js
 var require_operationalWebhookEndpointHeadersIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js
 var require_operationalWebhookEndpointHeadersIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointHeadersInSerializer = void 0;
@@ -36792,15 +35688,12 @@ var require_operationalWebhookEndpointHeadersIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js
 var require_operationalWebhookEndpointHeadersOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js
 var require_operationalWebhookEndpointHeadersOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointHeadersOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointHeadersOutSerializer = void 0;
@@ -36821,15 +35714,12 @@ var require_operationalWebhookEndpointHeadersOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointIn.js
 var require_operationalWebhookEndpointIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointIn.js
 var require_operationalWebhookEndpointIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointInSerializer = void 0;
@@ -36864,15 +35754,12 @@ var require_operationalWebhookEndpointIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js
 var require_operationalWebhookEndpointSecretIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js
 var require_operationalWebhookEndpointSecretIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointSecretInSerializer = void 0;
@@ -36891,15 +35778,12 @@ var require_operationalWebhookEndpointSecretIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js
 var require_operationalWebhookEndpointSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js
 var require_operationalWebhookEndpointSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointSecretOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointSecretOutSerializer = void 0;
@@ -36918,15 +35802,12 @@ var require_operationalWebhookEndpointSecretOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js
 var require_operationalWebhookEndpointUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js
 var require_operationalWebhookEndpointUpdate = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/operationalWebhookEndpointUpdate.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhookEndpointUpdateSerializer = void 0;
@@ -36959,7 +35840,6 @@ var require_operationalWebhookEndpointUpdate = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhookEndpoint.js
 var require_operationalWebhookEndpoint = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhookEndpoint.js"(exports) {
@@ -36971,7 +35851,6 @@ var require_operationalWebhookEndpoint = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/operationalWebhookEndpoint.js
 var require_operationalWebhookEndpoint = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/operationalWebhookEndpoint.js"(exports) {
@@ -36983,7 +35862,6 @@ var require_operationalWebhookEndpoint = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -37060,8 +35938,6 @@ var require_operationalWebhookEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
-=======
       getSecret(endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/operational-webhook/endpoint/{endpoint_id}/secret");
@@ -37078,7 +35954,6 @@ var require_operationalWebhookEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
->>>>>>> origin/main
       getHeaders(endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/operational-webhook/endpoint/{endpoint_id}/headers");
@@ -37094,7 +35969,6 @@ var require_operationalWebhookEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-<<<<<<< HEAD
       getSecret(endpointId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/operational-webhook/endpoint/{endpoint_id}/secret");
@@ -37111,22 +35985,17 @@ var require_operationalWebhookEndpoint = __commonJS({
           return yield request.sendNoResponseBody(this.requestCtx);
         });
       }
-=======
->>>>>>> origin/main
     };
     exports.OperationalWebhookEndpoint = OperationalWebhookEndpoint;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhook.js
 var require_operationalWebhook = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/operationalWebhook.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/operationalWebhook.js
 var require_operationalWebhook = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/operationalWebhook.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OperationalWebhook = void 0;
@@ -37143,15 +36012,12 @@ var require_operationalWebhook = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/aggregateEventTypesOut.js
 var require_aggregateEventTypesOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/aggregateEventTypesOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/aggregateEventTypesOut.js
 var require_aggregateEventTypesOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/aggregateEventTypesOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AggregateEventTypesOutSerializer = void 0;
@@ -37178,15 +36044,12 @@ var require_aggregateEventTypesOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsIn.js
 var require_appUsageStatsIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appUsageStatsIn.js
 var require_appUsageStatsIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appUsageStatsIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppUsageStatsInSerializer = void 0;
@@ -37209,15 +36072,12 @@ var require_appUsageStatsIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsOut.js
 var require_appUsageStatsOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/appUsageStatsOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appUsageStatsOut.js
 var require_appUsageStatsOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/appUsageStatsOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AppUsageStatsOutSerializer = void 0;
@@ -37246,7 +36106,6 @@ var require_appUsageStatsOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/statistics.js
 var require_statistics = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/statistics.js"(exports) {
@@ -37258,7 +36117,6 @@ var require_statistics = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/statistics.js
 var require_statistics = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/statistics.js"(exports) {
@@ -37270,7 +36128,6 @@ var require_statistics = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -37301,15 +36158,12 @@ var require_statistics = __commonJS({
       constructor(requestCtx) {
         this.requestCtx = requestCtx;
       }
-<<<<<<< HEAD
-=======
       aggregateEventTypes() {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.PUT, "/api/v1/stats/usage/event-types");
           return yield request.send(this.requestCtx, aggregateEventTypesOut_1.AggregateEventTypesOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
       aggregateAppStats(appUsageStatsIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/stats/usage/app");
@@ -37318,29 +36172,23 @@ var require_statistics = __commonJS({
           return yield request.send(this.requestCtx, appUsageStatsOut_1.AppUsageStatsOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       aggregateEventTypes() {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.PUT, "/api/v1/stats/usage/event-types");
           return yield request.send(this.requestCtx, aggregateEventTypesOut_1.AggregateEventTypesOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
     };
     exports.Statistics = Statistics;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js
 var require_httpSinkHeadersPatchIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js
 var require_httpSinkHeadersPatchIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/httpSinkHeadersPatchIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HttpSinkHeadersPatchInSerializer = void 0;
@@ -37359,15 +36207,12 @@ var require_httpSinkHeadersPatchIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformationOut.js
 var require_sinkTransformationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformationOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkTransformationOut.js
 var require_sinkTransformationOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkTransformationOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkTransformationOutSerializer = void 0;
@@ -37388,15 +36233,12 @@ var require_sinkTransformationOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeOut.js
 var require_streamEventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamEventTypeOut.js
 var require_streamEventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamEventTypeOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamEventTypeOutSerializer = void 0;
@@ -37427,15 +36269,12 @@ var require_streamEventTypeOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js
 var require_listResponseStreamEventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js
 var require_listResponseStreamEventTypeOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseStreamEventTypeOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseStreamEventTypeOutSerializer = void 0;
@@ -37461,15 +36300,12 @@ var require_listResponseStreamEventTypeOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeIn.js
 var require_streamEventTypeIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypeIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamEventTypeIn.js
 var require_streamEventTypeIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamEventTypeIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamEventTypeInSerializer = void 0;
@@ -37496,15 +36332,12 @@ var require_streamEventTypeIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypePatch.js
 var require_streamEventTypePatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamEventTypePatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamEventTypePatch.js
 var require_streamEventTypePatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamEventTypePatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamEventTypePatchSerializer = void 0;
@@ -37529,7 +36362,6 @@ var require_streamEventTypePatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEventType.js
 var require_streamingEventType = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEventType.js"(exports) {
@@ -37541,7 +36373,6 @@ var require_streamingEventType = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingEventType.js
 var require_streamingEventType = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingEventType.js"(exports) {
@@ -37553,7 +36384,6 @@ var require_streamingEventType = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -37643,15 +36473,12 @@ var require_streamingEventType = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventIn.js
 var require_eventIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventIn.js
 var require_eventIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventInSerializer = void 0;
@@ -37672,15 +36499,12 @@ var require_eventIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamIn.js
 var require_streamIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamIn.js
 var require_streamIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamInSerializer = void 0;
@@ -37703,15 +36527,12 @@ var require_streamIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsIn.js
 var require_createStreamEventsIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/createStreamEventsIn.js
 var require_createStreamEventsIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/createStreamEventsIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CreateStreamEventsInSerializer = void 0;
@@ -37734,15 +36555,12 @@ var require_createStreamEventsIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsOut.js
 var require_createStreamEventsOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/createStreamEventsOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/createStreamEventsOut.js
 var require_createStreamEventsOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/createStreamEventsOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CreateStreamEventsOutSerializer = void 0;
@@ -37757,15 +36575,12 @@ var require_createStreamEventsOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventOut.js
 var require_eventOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventOut.js
 var require_eventOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventOutSerializer = void 0;
@@ -37788,15 +36603,12 @@ var require_eventOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventStreamOut.js
 var require_eventStreamOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventStreamOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventStreamOut.js
 var require_eventStreamOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventStreamOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventStreamOutSerializer = void 0;
@@ -37820,7 +36632,6 @@ var require_eventStreamOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEvents.js
 var require_streamingEvents = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingEvents.js"(exports) {
@@ -37832,7 +36643,6 @@ var require_streamingEvents = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingEvents.js
 var require_streamingEvents = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingEvents.js"(exports) {
@@ -37844,7 +36654,6 @@ var require_streamingEvents = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -37875,7 +36684,6 @@ var require_streamingEvents = __commonJS({
       constructor(requestCtx) {
         this.requestCtx = requestCtx;
       }
-<<<<<<< HEAD
       create(streamId, createStreamEventsIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/stream/{stream_id}/events");
@@ -37885,8 +36693,6 @@ var require_streamingEvents = __commonJS({
           return yield request.send(this.requestCtx, createStreamEventsOut_1.CreateStreamEventsOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
       get(streamId, sinkId, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/stream/{stream_id}/sink/{sink_id}/events");
@@ -37900,8 +36706,6 @@ var require_streamingEvents = __commonJS({
           return yield request.send(this.requestCtx, eventStreamOut_1.EventStreamOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
-=======
       create(streamId, createStreamEventsIn, options) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/stream/{stream_id}/events");
@@ -37911,21 +36715,17 @@ var require_streamingEvents = __commonJS({
           return yield request.send(this.requestCtx, createStreamEventsOut_1.CreateStreamEventsOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
     };
     exports.StreamingEvents = StreamingEvents;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStorageConfig.js
 var require_azureBlobStorageConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStorageConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/azureBlobStorageConfig.js
 var require_azureBlobStorageConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/azureBlobStorageConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AzureBlobStorageConfigSerializer = void 0;
@@ -37948,15 +36748,12 @@ var require_azureBlobStorageConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryConfig.js
 var require_bigQueryConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/bigQueryConfig.js
 var require_bigQueryConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/bigQueryConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BigQueryConfigSerializer = void 0;
@@ -37981,15 +36778,12 @@ var require_bigQueryConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhouseConfig.js
 var require_clickhouseConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhouseConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/clickhouseConfig.js
 var require_clickhouseConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/clickhouseConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ClickhouseConfigSerializer = void 0;
@@ -38016,15 +36810,12 @@ var require_clickhouseConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgeConfig.js
 var require_eventBridgeConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgeConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventBridgeConfig.js
 var require_eventBridgeConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventBridgeConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventBridgeConfigSerializer = void 0;
@@ -38051,15 +36842,12 @@ var require_eventBridgeConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubConfig.js
 var require_googleCloudPubSubConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudPubSubConfig.js
 var require_googleCloudPubSubConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudPubSubConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudPubSubConfigSerializer = void 0;
@@ -38082,15 +36870,12 @@ var require_googleCloudPubSubConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStorageConfig.js
 var require_googleCloudStorageConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStorageConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudStorageConfig.js
 var require_googleCloudStorageConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudStorageConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudStorageConfigSerializer = void 0;
@@ -38111,15 +36896,12 @@ var require_googleCloudStorageConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqConfig.js
 var require_rabbitMqConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rabbitMqConfig.js
 var require_rabbitMqConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rabbitMqConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RabbitMqConfigSerializer = void 0;
@@ -38140,15 +36922,12 @@ var require_rabbitMqConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftConfig.js
 var require_redshiftConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/redshiftConfig.js
 var require_redshiftConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/redshiftConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RedshiftConfigSerializer = void 0;
@@ -38183,15 +36962,12 @@ var require_redshiftConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/s3Config.js
 var require_s3Config = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/s3Config.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/s3Config.js
 var require_s3Config = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/s3Config.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.S3ConfigSerializer = void 0;
@@ -38218,15 +36994,12 @@ var require_s3Config = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkHttpConfig.js
 var require_sinkHttpConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkHttpConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkHttpConfig.js
 var require_sinkHttpConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkHttpConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkHttpConfigSerializer = void 0;
@@ -38249,15 +37022,12 @@ var require_sinkHttpConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkOtelV1Config.js
 var require_sinkOtelV1Config = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkOtelV1Config.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkOtelV1Config.js
 var require_sinkOtelV1Config = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkOtelV1Config.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkOtelV1ConfigSerializer = void 0;
@@ -38278,15 +37048,12 @@ var require_sinkOtelV1Config = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatus.js
 var require_sinkStatus = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatus.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkStatus.js
 var require_sinkStatus = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkStatus.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkStatusSerializer = exports.SinkStatus = void 0;
@@ -38308,15 +37075,12 @@ var require_sinkStatus = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakeConfig.js
 var require_snowflakeConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakeConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snowflakeConfig.js
 var require_snowflakeConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snowflakeConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnowflakeConfigSerializer = void 0;
@@ -38345,15 +37109,12 @@ var require_snowflakeConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsConfig.js
 var require_snsConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snsConfig.js
 var require_snsConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snsConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnsConfigSerializer = void 0;
@@ -38380,15 +37141,12 @@ var require_snsConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsConfig.js
 var require_sqsConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sqsConfig.js
 var require_sqsConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sqsConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SqsConfigSerializer = void 0;
@@ -38415,15 +37173,12 @@ var require_sqsConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkOut.js
 var require_streamSinkOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamSinkOut.js
 var require_streamSinkOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamSinkOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamSinkOutSerializer = void 0;
@@ -38568,15 +37323,12 @@ var require_streamSinkOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamSinkOut.js
 var require_listResponseStreamSinkOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamSinkOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseStreamSinkOut.js
 var require_listResponseStreamSinkOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseStreamSinkOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseStreamSinkOutSerializer = void 0;
@@ -38602,15 +37354,12 @@ var require_listResponseStreamSinkOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkSecretOut.js
 var require_sinkSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkSecretOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkSecretOut.js
 var require_sinkSecretOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkSecretOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkSecretOutSerializer = void 0;
@@ -38629,15 +37378,12 @@ var require_sinkSecretOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformIn.js
 var require_sinkTransformIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkTransformIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkTransformIn.js
 var require_sinkTransformIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkTransformIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkTransformInSerializer = void 0;
@@ -38656,15 +37402,12 @@ var require_sinkTransformIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatusIn.js
 var require_sinkStatusIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkStatusIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkStatusIn.js
 var require_sinkStatusIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkStatusIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkStatusInSerializer = exports.SinkStatusIn = void 0;
@@ -38684,15 +37427,12 @@ var require_sinkStatusIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkIn.js
 var require_streamSinkIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamSinkIn.js
 var require_streamSinkIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamSinkIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamSinkInSerializer = void 0;
@@ -38825,15 +37565,12 @@ var require_streamSinkIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/amazonS3PatchConfig.js
 var require_amazonS3PatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/amazonS3PatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/amazonS3PatchConfig.js
 var require_amazonS3PatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/amazonS3PatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AmazonS3PatchConfigSerializer = void 0;
@@ -38860,15 +37597,12 @@ var require_amazonS3PatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js
 var require_azureBlobStoragePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js
 var require_azureBlobStoragePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/azureBlobStoragePatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AzureBlobStoragePatchConfigSerializer = void 0;
@@ -38891,15 +37625,12 @@ var require_azureBlobStoragePatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryPatchConfig.js
 var require_bigQueryPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/bigQueryPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/bigQueryPatchConfig.js
 var require_bigQueryPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/bigQueryPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BigQueryPatchConfigSerializer = void 0;
@@ -38924,15 +37655,12 @@ var require_bigQueryPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhousePatchConfig.js
 var require_clickhousePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/clickhousePatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/clickhousePatchConfig.js
 var require_clickhousePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/clickhousePatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ClickhousePatchConfigSerializer = void 0;
@@ -38959,15 +37687,12 @@ var require_clickhousePatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgePatchConfig.js
 var require_eventBridgePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/eventBridgePatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventBridgePatchConfig.js
 var require_eventBridgePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/eventBridgePatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EventBridgePatchConfigSerializer = void 0;
@@ -38994,15 +37719,12 @@ var require_eventBridgePatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js
 var require_googleCloudPubSubPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js
 var require_googleCloudPubSubPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudPubSubPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudPubSubPatchConfigSerializer = void 0;
@@ -39025,15 +37747,12 @@ var require_googleCloudPubSubPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js
 var require_googleCloudStoragePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js
 var require_googleCloudStoragePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/googleCloudStoragePatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleCloudStoragePatchConfigSerializer = void 0;
@@ -39054,15 +37773,12 @@ var require_googleCloudStoragePatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpPatchConfig.js
 var require_httpPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/httpPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/httpPatchConfig.js
 var require_httpPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/httpPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HttpPatchConfigSerializer = void 0;
@@ -39081,15 +37797,12 @@ var require_httpPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/otelTracingPatchConfig.js
 var require_otelTracingPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/otelTracingPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/otelTracingPatchConfig.js
 var require_otelTracingPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/otelTracingPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OtelTracingPatchConfigSerializer = void 0;
@@ -39108,15 +37821,12 @@ var require_otelTracingPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqPatchConfig.js
 var require_rabbitMqPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/rabbitMqPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rabbitMqPatchConfig.js
 var require_rabbitMqPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/rabbitMqPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RabbitMqPatchConfigSerializer = void 0;
@@ -39137,15 +37847,12 @@ var require_rabbitMqPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftPatchConfig.js
 var require_redshiftPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/redshiftPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/redshiftPatchConfig.js
 var require_redshiftPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/redshiftPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.RedshiftPatchConfigSerializer = void 0;
@@ -39174,15 +37881,12 @@ var require_redshiftPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakePatchConfig.js
 var require_snowflakePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snowflakePatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snowflakePatchConfig.js
 var require_snowflakePatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snowflakePatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnowflakePatchConfigSerializer = void 0;
@@ -39211,15 +37915,12 @@ var require_snowflakePatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsPatchConfig.js
 var require_snsPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/snsPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snsPatchConfig.js
 var require_snsPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/snsPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SnsPatchConfigSerializer = void 0;
@@ -39246,15 +37947,12 @@ var require_snsPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsPatchConfig.js
 var require_sqsPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sqsPatchConfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sqsPatchConfig.js
 var require_sqsPatchConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sqsPatchConfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SqsPatchConfigSerializer = void 0;
@@ -39281,15 +37979,12 @@ var require_sqsPatchConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkPatch.js
 var require_streamSinkPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamSinkPatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamSinkPatch.js
 var require_streamSinkPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamSinkPatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamSinkPatchSerializer = void 0;
@@ -39422,7 +38117,6 @@ var require_streamSinkPatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingSink.js
 var require_streamingSink = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingSink.js"(exports) {
@@ -39434,7 +38128,6 @@ var require_streamingSink = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingSink.js
 var require_streamingSink = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingSink.js"(exports) {
@@ -39446,7 +38139,6 @@ var require_streamingSink = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -39537,8 +38229,6 @@ var require_streamingSink = __commonJS({
           return yield request.send(this.requestCtx, streamSinkOut_1.StreamSinkOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
-=======
       transformationPartialUpdate(streamId, sinkId, sinkTransformIn = {}) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.PATCH, "/api/v1/stream/{stream_id}/sink/{sink_id}/transformation");
@@ -39548,7 +38238,6 @@ var require_streamingSink = __commonJS({
           return yield request.send(this.requestCtx, emptyResponse_1.EmptyResponseSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
       getSecret(streamId, sinkId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/stream/{stream_id}/sink/{sink_id}/secret");
@@ -39557,11 +38246,8 @@ var require_streamingSink = __commonJS({
           return yield request.send(this.requestCtx, sinkSecretOut_1.SinkSecretOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       rotateSecret(streamId, sinkId, endpointSecretRotateIn, options) {
-=======
       rotateSecret(streamId, sinkId, endpointSecretRotateIn = {}, options) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.POST, "/api/v1/stream/{stream_id}/sink/{sink_id}/secret/rotate");
           request.setPathParam("stream_id", streamId);
@@ -39571,7 +38257,6 @@ var require_streamingSink = __commonJS({
           return yield request.send(this.requestCtx, emptyResponse_1.EmptyResponseSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       transformationPartialUpdate(streamId, sinkId, sinkTransformIn) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.PATCH, "/api/v1/stream/{stream_id}/sink/{sink_id}/transformation");
@@ -39581,22 +38266,17 @@ var require_streamingSink = __commonJS({
           return yield request.send(this.requestCtx, emptyResponse_1.EmptyResponseSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
     };
     exports.StreamingSink = StreamingSink;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamOut.js
 var require_streamOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamOut.js
 var require_streamOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamOutSerializer = void 0;
@@ -39625,15 +38305,12 @@ var require_streamOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamOut.js
 var require_listResponseStreamOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/listResponseStreamOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseStreamOut.js
 var require_listResponseStreamOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/listResponseStreamOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ListResponseStreamOutSerializer = void 0;
@@ -39659,15 +38336,12 @@ var require_listResponseStreamOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPatch.js
 var require_streamPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/streamPatch.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamPatch.js
 var require_streamPatch = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/streamPatch.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StreamPatchSerializer = void 0;
@@ -39690,7 +38364,6 @@ var require_streamPatch = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingStream.js
 var require_streamingStream = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streamingStream.js"(exports) {
@@ -39702,7 +38375,6 @@ var require_streamingStream = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingStream.js
 var require_streamingStream = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streamingStream.js"(exports) {
@@ -39714,7 +38386,6 @@ var require_streamingStream = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -39800,7 +38471,6 @@ var require_streamingStream = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streaming.js
 var require_streaming = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api/streaming.js"(exports) {
@@ -39812,7 +38482,6 @@ var require_streaming = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streaming.js
 var require_streaming = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api/streaming.js"(exports) {
@@ -39824,7 +38493,6 @@ var require_streaming = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -39871,8 +38539,6 @@ var require_streaming = __commonJS({
       get stream() {
         return new streamingStream_1.StreamingStream(this.requestCtx);
       }
-<<<<<<< HEAD
-=======
       sinkTransformationGet(streamId, sinkId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/stream/{stream_id}/sink/{sink_id}/transformation");
@@ -39881,7 +38547,6 @@ var require_streaming = __commonJS({
           return yield request.send(this.requestCtx, sinkTransformationOut_1.SinkTransformationOutSerializer._fromJsonObject);
         });
       }
->>>>>>> origin/main
       sinkHeadersGet(streamId, sinkId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/stream/{stream_id}/sink/{sink_id}/headers");
@@ -39899,7 +38564,6 @@ var require_streaming = __commonJS({
           return yield request.send(this.requestCtx, endpointHeadersOut_1.EndpointHeadersOutSerializer._fromJsonObject);
         });
       }
-<<<<<<< HEAD
       sinkTransformationGet(streamId, sinkId) {
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.GET, "/api/v1/stream/{stream_id}/sink/{sink_id}/transformation");
@@ -39908,22 +38572,17 @@ var require_streaming = __commonJS({
           return yield request.send(this.requestCtx, sinkTransformationOut_1.SinkTransformationOutSerializer._fromJsonObject);
         });
       }
-=======
->>>>>>> origin/main
     };
     exports.Streaming = Streaming;
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/HttpErrors.js
 var require_HttpErrors = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/HttpErrors.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/HttpErrors.js
 var require_HttpErrors = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/HttpErrors.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.HTTPValidationError = exports.ValidationError = exports.HttpErrorOut = void 0;
@@ -40099,7 +38758,6 @@ var require_base64 = __commonJS({
           }
           return length / 4 * 3 | 0;
         };
-<<<<<<< HEAD
         Coder2.prototype.decodedLength = function(s3) {
           return this.maxDecodedLength(s3.length - this._getPaddingLength(s3));
         };
@@ -40109,7 +38767,6 @@ var require_base64 = __commonJS({
           }
           var paddingLength = this._getPaddingLength(s3);
           var length = s3.length - paddingLength;
-=======
         Coder2.prototype.decodedLength = function(s4) {
           return this.maxDecodedLength(s4.length - this._getPaddingLength(s4));
         };
@@ -40119,24 +38776,20 @@ var require_base64 = __commonJS({
           }
           var paddingLength = this._getPaddingLength(s4);
           var length = s4.length - paddingLength;
->>>>>>> origin/main
           var out = new Uint8Array(this.maxDecodedLength(length));
           var op = 0;
           var i2 = 0;
           var haveBad = 0;
           var v0 = 0, v1 = 0, v2 = 0, v3 = 0;
           for (; i2 < length - 4; i2 += 4) {
-<<<<<<< HEAD
             v0 = this._decodeChar(s3.charCodeAt(i2 + 0));
             v1 = this._decodeChar(s3.charCodeAt(i2 + 1));
             v2 = this._decodeChar(s3.charCodeAt(i2 + 2));
             v3 = this._decodeChar(s3.charCodeAt(i2 + 3));
-=======
             v0 = this._decodeChar(s4.charCodeAt(i2 + 0));
             v1 = this._decodeChar(s4.charCodeAt(i2 + 1));
             v2 = this._decodeChar(s4.charCodeAt(i2 + 2));
             v3 = this._decodeChar(s4.charCodeAt(i2 + 3));
->>>>>>> origin/main
             out[op++] = v0 << 2 | v1 >>> 4;
             out[op++] = v1 << 4 | v2 >>> 2;
             out[op++] = v2 << 6 | v3;
@@ -40146,32 +38799,23 @@ var require_base64 = __commonJS({
             haveBad |= v3 & INVALID_BYTE;
           }
           if (i2 < length - 1) {
-<<<<<<< HEAD
             v0 = this._decodeChar(s3.charCodeAt(i2));
             v1 = this._decodeChar(s3.charCodeAt(i2 + 1));
-=======
             v0 = this._decodeChar(s4.charCodeAt(i2));
             v1 = this._decodeChar(s4.charCodeAt(i2 + 1));
->>>>>>> origin/main
             out[op++] = v0 << 2 | v1 >>> 4;
             haveBad |= v0 & INVALID_BYTE;
             haveBad |= v1 & INVALID_BYTE;
           }
           if (i2 < length - 2) {
-<<<<<<< HEAD
             v2 = this._decodeChar(s3.charCodeAt(i2 + 2));
-=======
             v2 = this._decodeChar(s4.charCodeAt(i2 + 2));
->>>>>>> origin/main
             out[op++] = v1 << 4 | v2 >>> 2;
             haveBad |= v2 & INVALID_BYTE;
           }
           if (i2 < length - 3) {
-<<<<<<< HEAD
             v3 = this._decodeChar(s3.charCodeAt(i2 + 3));
-=======
             v3 = this._decodeChar(s4.charCodeAt(i2 + 3));
->>>>>>> origin/main
             out[op++] = v2 << 6 | v3;
             haveBad |= v3 & INVALID_BYTE;
           }
@@ -40198,28 +38842,22 @@ var require_base64 = __commonJS({
           result += (96 - c2 & c2 - 123) >>> 8 & -INVALID_BYTE + c2 - 97 + 26;
           return result;
         };
-<<<<<<< HEAD
         Coder2.prototype._getPaddingLength = function(s3) {
           var paddingLength = 0;
           if (this._paddingCharacter) {
             for (var i2 = s3.length - 1; i2 >= 0; i2--) {
               if (s3[i2] !== this._paddingCharacter) {
-=======
         Coder2.prototype._getPaddingLength = function(s4) {
           var paddingLength = 0;
           if (this._paddingCharacter) {
             for (var i2 = s4.length - 1; i2 >= 0; i2--) {
               if (s4[i2] !== this._paddingCharacter) {
->>>>>>> origin/main
                 break;
               }
               paddingLength++;
             }
-<<<<<<< HEAD
             if (s3.length < 4 || paddingLength > 2) {
-=======
             if (s4.length < 4 || paddingLength > 2) {
->>>>>>> origin/main
               throw new Error("Base64Coder: incorrect padding");
             }
           }
@@ -40234,13 +38872,10 @@ var require_base64 = __commonJS({
       return stdCoder.encode(data);
     }
     exports.encode = encode2;
-<<<<<<< HEAD
     function decode2(s3) {
       return stdCoder.decode(s3);
-=======
     function decode2(s4) {
       return stdCoder.decode(s4);
->>>>>>> origin/main
     }
     exports.decode = decode2;
     var URLSafeCoder = (
@@ -40277,13 +38912,10 @@ var require_base64 = __commonJS({
       return urlSafeCoder.encode(data);
     }
     exports.encodeURLSafe = encodeURLSafe;
-<<<<<<< HEAD
     function decodeURLSafe(s3) {
       return urlSafeCoder.decode(s3);
-=======
     function decodeURLSafe(s4) {
       return urlSafeCoder.decode(s4);
->>>>>>> origin/main
     }
     exports.decodeURLSafe = decodeURLSafe;
     exports.encodedLength = function(length) {
@@ -40292,13 +38924,10 @@ var require_base64 = __commonJS({
     exports.maxDecodedLength = function(length) {
       return stdCoder.maxDecodedLength(length);
     };
-<<<<<<< HEAD
     exports.decodedLength = function(s3) {
       return stdCoder.decodedLength(s3);
-=======
     exports.decodedLength = function(s4) {
       return stdCoder.decodedLength(s4);
->>>>>>> origin/main
     };
   }
 });
@@ -40834,15 +39463,12 @@ var require_dist3 = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/webhook.js
 var require_webhook = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/webhook.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/webhook.js
 var require_webhook = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/webhook.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Webhook = exports.WebhookVerificationError = void 0;
@@ -40874,15 +39500,12 @@ var require_webhook = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointDisabledTrigger.js
 var require_endpointDisabledTrigger = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/endpointDisabledTrigger.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointDisabledTrigger.js
 var require_endpointDisabledTrigger = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/endpointDisabledTrigger.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.EndpointDisabledTriggerSerializer = exports.EndpointDisabledTrigger = void 0;
@@ -40902,15 +39525,12 @@ var require_endpointDisabledTrigger = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ordering.js
 var require_ordering = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/ordering.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ordering.js
 var require_ordering = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/ordering.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.OrderingSerializer = exports.Ordering = void 0;
@@ -40930,15 +39550,12 @@ var require_ordering = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/index.js
 var require_models = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/index.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/index.js
 var require_models = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/index.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.StatusCodeClass = exports.SinkStatusIn = exports.SinkStatus = exports.Ordering = exports.MessageStatusText = exports.MessageStatus = exports.MessageAttemptTriggerType = exports.EndpointDisabledTrigger = exports.ConnectorProduct = exports.ConnectorKind = exports.BackgroundTaskType = exports.BackgroundTaskStatus = exports.AppPortalCapability = void 0;
@@ -40997,15 +39614,12 @@ var require_models = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/index.js
 var require_api_internal = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/index.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/index.js
 var require_api_internal = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/index.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SvixInternal = void 0;
@@ -41019,15 +39633,12 @@ var require_api_internal = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkInCommon.js
 var require_sinkInCommon = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/sinkInCommon.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkInCommon.js
 var require_sinkInCommon = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/sinkInCommon.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SinkInCommonSerializer = void 0;
@@ -41062,15 +39673,12 @@ var require_sinkInCommon = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/autoConfigSinkType.js
 var require_autoConfigSinkType = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/autoConfigSinkType.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/autoConfigSinkType.js
 var require_autoConfigSinkType = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/autoConfigSinkType.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AutoConfigSinkTypeSerializer = void 0;
@@ -41113,15 +39721,12 @@ var require_autoConfigSinkType = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/subscribeIn.js
 var require_subscribeIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/subscribeIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/subscribeIn.js
 var require_subscribeIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/subscribeIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SubscribeInSerializer = void 0;
@@ -41144,7 +39749,6 @@ var require_subscribeIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpointAutoConfig.js
 var require_endpointAutoConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpointAutoConfig.js"(exports) {
@@ -41156,7 +39760,6 @@ var require_endpointAutoConfig = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/endpointAutoConfig.js
 var require_endpointAutoConfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/endpointAutoConfig.js"(exports) {
@@ -41168,7 +39771,6 @@ var require_endpointAutoConfig = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -41198,11 +39800,8 @@ var require_endpointAutoConfig = __commonJS({
       constructor(requestCtx) {
         this.requestCtx = requestCtx;
       }
-<<<<<<< HEAD
       update(appId, endpointId, subscribeIn) {
-=======
       update(appId, endpointId, subscribeIn = {}) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.PUT, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/auto-config");
           request.setPathParam("app_id", appId);
@@ -41216,7 +39815,6 @@ var require_endpointAutoConfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpoint.js
 var require_endpoint2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/endpoint.js"(exports) {
@@ -41228,7 +39826,6 @@ var require_endpoint2 = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/endpoint.js
 var require_endpoint2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/endpoint.js"(exports) {
@@ -41240,7 +39837,6 @@ var require_endpoint2 = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -41273,11 +39869,8 @@ var require_endpoint2 = __commonJS({
       get auto_config() {
         return new endpointAutoConfig_1.EndpointAutoConfig(this.requestCtx);
       }
-<<<<<<< HEAD
       transformationPartialUpdate(appId, endpointId, endpointTransformationIn) {
-=======
       transformationPartialUpdate(appId, endpointId, endpointTransformationIn = {}) {
->>>>>>> origin/main
         return __awaiter(this, void 0, void 0, function* () {
           const request = new request_1.SvixRequest(request_1.HttpMethod.PATCH, "/api/v1/app/{app_id}/endpoint/{endpoint_id}/transformation");
           request.setPathParam("app_id", appId);
@@ -41291,15 +39884,12 @@ var require_endpoint2 = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfig.js
 var require_autoconfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfig.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/autoconfig.js
 var require_autoconfig = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/autoconfig.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AutoConfig = exports.decodeAutoconfigTokenV1 = exports.isAutoConfigTokenContentV1 = exports.AutoConfigError = void 0;
@@ -41374,15 +39964,12 @@ var require_autoconfig = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2CommitIn.js
 var require_pollerV2CommitIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2CommitIn.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollerV2CommitIn.js
 var require_pollerV2CommitIn = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollerV2CommitIn.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollerV2CommitInSerializer = void 0;
@@ -41401,15 +39988,12 @@ var require_pollerV2CommitIn = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2MessageOut.js
 var require_pollerV2MessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2MessageOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollerV2MessageOut.js
 var require_pollerV2MessageOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollerV2MessageOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollerV2MessageOutSerializer = void 0;
@@ -41446,15 +40030,12 @@ var require_pollerV2MessageOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2PollOut.js
 var require_pollerV2PollOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/models/pollerV2PollOut.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollerV2PollOut.js
 var require_pollerV2PollOut = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/models/pollerV2PollOut.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.PollerV2PollOutSerializer = void 0;
@@ -41476,7 +40057,6 @@ var require_pollerV2PollOut = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/messagePollerv2.js
 var require_messagePollerv2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/api_internal/messagePollerv2.js"(exports) {
@@ -41488,7 +40068,6 @@ var require_messagePollerv2 = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/messagePollerv2.js
 var require_messagePollerv2 = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/api_internal/messagePollerv2.js"(exports) {
@@ -41500,7 +40079,6 @@ var require_messagePollerv2 = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -41560,15 +40138,12 @@ var require_messagePollerv2 = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfigConsumer.js
 var require_autoconfigConsumer = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/autoconfigConsumer.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/autoconfigConsumer.js
 var require_autoconfigConsumer = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/autoconfigConsumer.js"(exports) {
->>>>>>> origin/main
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AutoConfigConsumer = void 0;
@@ -41606,15 +40181,12 @@ var require_autoconfigConsumer = __commonJS({
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/index.js
 var require_dist4 = __commonJS({
   "../../node_modules/.pnpm/svix@1.96.1/node_modules/svix/dist/index.js"(exports) {
-=======
 // ../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/index.js
 var require_dist4 = __commonJS({
   "../../node_modules/.pnpm/svix@1.99.1/node_modules/svix/dist/index.js"(exports) {
->>>>>>> origin/main
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o2, m2, k2, k22) {
       if (k22 === void 0) k22 = k2;
@@ -41895,7 +40467,6 @@ var require_postgres_date = __commonJS({
       if (INFINITY2.test(isoDate)) {
         return Number(isoDate.replace("i", "I"));
       }
-<<<<<<< HEAD
       var matches2 = DATE_TIME.exec(isoDate);
       if (!matches2) {
         return getDate(isoDate) || null;
@@ -41911,7 +40482,6 @@ var require_postgres_date = __commonJS({
       var minute = parseInt(matches2[5], 10);
       var second = parseInt(matches2[6], 10);
       var ms = matches2[7];
-=======
       var matches3 = DATE_TIME.exec(isoDate);
       if (!matches3) {
         return getDate(isoDate) || null;
@@ -41927,7 +40497,6 @@ var require_postgres_date = __commonJS({
       var minute = parseInt(matches3[5], 10);
       var second = parseInt(matches3[6], 10);
       var ms = matches3[7];
->>>>>>> origin/main
       ms = ms ? 1e3 * parseFloat(ms) : 0;
       var date7;
       var offset = timeZoneOffset(isoDate);
@@ -41948,7 +40517,6 @@ var require_postgres_date = __commonJS({
       return date7;
     };
     function getDate(isoDate) {
-<<<<<<< HEAD
       var matches2 = DATE.exec(isoDate);
       if (!matches2) {
         return;
@@ -41960,7 +40528,6 @@ var require_postgres_date = __commonJS({
       }
       var month = parseInt(matches2[2], 10) - 1;
       var day = matches2[3];
-=======
       var matches3 = DATE.exec(isoDate);
       if (!matches3) {
         return;
@@ -41972,7 +40539,6 @@ var require_postgres_date = __commonJS({
       }
       var month = parseInt(matches3[2], 10) - 1;
       var day = matches3[3];
->>>>>>> origin/main
       var date7 = new Date(year, month, day);
       if (is0To99(year)) {
         date7.setFullYear(year);
@@ -42031,11 +40597,8 @@ var require_postgres_interval = __commonJS({
       if (!(this instanceof PostgresInterval)) {
         return new PostgresInterval(raw);
       }
-<<<<<<< HEAD
       extend2(this, parse4(raw));
-=======
       extend2(this, parse5(raw));
->>>>>>> origin/main
     }
     var properties = ["seconds", "minutes", "hours", "days", "months", "years"];
     PostgresInterval.prototype.toPostgres = function() {
@@ -42096,7 +40659,6 @@ var require_postgres_interval = __commonJS({
       var microseconds = fraction + "000000".slice(fraction.length);
       return parseInt(microseconds, 10) / 1e3;
     }
-<<<<<<< HEAD
     function parse4(interval3) {
       if (!interval3) return {};
       var matches2 = INTERVAL.exec(interval3);
@@ -42104,7 +40666,6 @@ var require_postgres_interval = __commonJS({
       return Object.keys(positions).reduce(function(parsed, property) {
         var position = positions[property];
         var value = matches2[position];
-=======
     function parse5(interval3) {
       if (!interval3) return {};
       var matches3 = INTERVAL.exec(interval3);
@@ -42112,7 +40673,6 @@ var require_postgres_interval = __commonJS({
       return Object.keys(positions).reduce(function(parsed, property) {
         var position = positions[property];
         var value = matches3[position];
->>>>>>> origin/main
         if (!value) return parsed;
         value = property === "milliseconds" ? parseMilliseconds(value) : parseInt(value, 10);
         if (!value) return parsed;
@@ -42593,21 +41153,15 @@ var require_binaryParsers = __commonJS({
           console.log("ERROR: ElementType not implemented: " + elementType2);
         }
       };
-<<<<<<< HEAD
       var parse4 = function(dimension, elementType2) {
-=======
       var parse5 = function(dimension, elementType2) {
->>>>>>> origin/main
         var array2 = [];
         var i3;
         if (dimension.length > 1) {
           var count = dimension.shift();
           for (i3 = 0; i3 < count; i3++) {
-<<<<<<< HEAD
             array2[i3] = parse4(dimension, elementType2);
-=======
             array2[i3] = parse5(dimension, elementType2);
->>>>>>> origin/main
           }
           dimension.unshift(count);
         } else {
@@ -42617,11 +41171,8 @@ var require_binaryParsers = __commonJS({
         }
         return array2;
       };
-<<<<<<< HEAD
       return parse4(dims, elementType);
-=======
       return parse5(dims, elementType);
->>>>>>> origin/main
     };
     var parseText = function(value) {
       return value.toString("utf8");
@@ -43148,11 +41699,8 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     var crypto4 = require_utils5();
-=======
     var crypto7 = require_utils5();
->>>>>>> origin/main
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -43170,11 +41718,8 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-<<<<<<< HEAD
       const clientNonce = crypto4.randomBytes(18).toString("base64");
-=======
       const clientNonce = crypto7.randomBytes(18).toString("base64");
->>>>>>> origin/main
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -43216,18 +41761,14 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-<<<<<<< HEAD
         const certHash = await crypto4.hashByName(hashName, peerCert);
-=======
         const certHash = await crypto7.hashByName(hashName, peerCert);
->>>>>>> origin/main
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-<<<<<<< HEAD
       const saltedPassword = await crypto4.deriveKey(saslprep(password), saltBytes, sv.iteration);
       const clientKey2 = await crypto4.hmacSha256(saltedPassword, "Client Key");
       const storedKey = await crypto4.sha256(clientKey2);
@@ -43235,7 +41776,6 @@ var require_sasl = __commonJS({
       const clientProof = xorBuffers(Buffer.from(clientKey2), Buffer.from(clientSignature)).toString("base64");
       const serverKey = await crypto4.hmacSha256(saltedPassword, "Server Key");
       const serverSignatureBytes = await crypto4.hmacSha256(serverKey, authMessage);
-=======
       const saltedPassword = await crypto7.deriveKey(saslprep(password), saltBytes, sv.iteration);
       const clientKey = await crypto7.hmacSha256(saltedPassword, "Client Key");
       const storedKey = await crypto7.sha256(clientKey);
@@ -43243,7 +41783,6 @@ var require_sasl = __commonJS({
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
       const serverKey = await crypto7.hmacSha256(saltedPassword, "Server Key");
       const serverSignatureBytes = await crypto7.hmacSha256(serverKey, authMessage);
->>>>>>> origin/main
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -43264,11 +41803,8 @@ var require_sasl = __commonJS({
       if (typeof text3 !== "string") {
         throw new TypeError("SASL: text must be a string");
       }
-<<<<<<< HEAD
       return text3.split("").map((_3, i2) => text3.charCodeAt(i2)).every((c2) => c2 >= 33 && c2 <= 43 || c2 >= 45 && c2 <= 126);
-=======
       return text3.split("").map((_4, i2) => text3.charCodeAt(i2)).every((c2) => c2 >= 33 && c2 <= 43 || c2 >= 45 && c2 <= 126);
->>>>>>> origin/main
     }
     function isBase64(text3) {
       return /^(?:[a-zA-Z0-9+/]{4})*(?:[a-zA-Z0-9+/]{2}==|[a-zA-Z0-9+/]{3}=)?$/.test(text3);
@@ -43344,11 +41880,8 @@ var require_sasl = __commonJS({
       if (a2.length === 0) {
         throw new Error("Buffers cannot be empty");
       }
-<<<<<<< HEAD
       return Buffer.from(a2.map((_3, i2) => a2[i2] ^ b2[i2]));
-=======
       return Buffer.from(a2.map((_4, i2) => a2[i2] ^ b2[i2]));
->>>>>>> origin/main
     }
     module.exports = {
       startSession,
@@ -43398,11 +41931,8 @@ var require_type_overrides = __commonJS({
 var require_pg_connection_string = __commonJS({
   "../../node_modules/.pnpm/pg-connection-string@2.14.0/node_modules/pg-connection-string/index.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     function parse4(str2, options = {}) {
-=======
     function parse5(str2, options = {}) {
->>>>>>> origin/main
       if (str2.charAt(0) === "/") {
         const config3 = str2.split(" ");
         return { host: config3[0], database: config3[1] };
@@ -43564,11 +42094,8 @@ var require_pg_connection_string = __commonJS({
       return poolConfig;
     }
     function parseIntoClientConfig(str2) {
-<<<<<<< HEAD
       return toClientConfig(parse4(str2));
-=======
       return toClientConfig(parse5(str2));
->>>>>>> origin/main
     }
     function deprecatedSslModeWarning(sslmode) {
       if (!deprecatedSslModeWarning.warned && typeof process !== "undefined" && process.emitWarning) {
@@ -43583,17 +42110,14 @@ To prepare for this change:
 See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.`);
       }
     }
-<<<<<<< HEAD
     module.exports = parse4;
     parse4.parse = parse4;
     parse4.toClientConfig = toClientConfig;
     parse4.parseIntoClientConfig = parseIntoClientConfig;
-=======
     module.exports = parse5;
     parse5.parse = parse5;
     parse5.toClientConfig = toClientConfig;
     parse5.parseIntoClientConfig = parseIntoClientConfig;
->>>>>>> origin/main
   }
 });
 
@@ -43603,11 +42127,8 @@ var require_connection_parameters = __commonJS({
     "use strict";
     var dns = __require("dns");
     var defaults4 = require_defaults();
-<<<<<<< HEAD
     var parse4 = require_pg_connection_string().parse;
-=======
     var parse5 = require_pg_connection_string().parse;
->>>>>>> origin/main
     var val = function(key, config2, envVar) {
       if (config2[key]) {
         return config2[key];
@@ -43645,15 +42166,12 @@ var require_connection_parameters = __commonJS({
     };
     var ConnectionParameters = class {
       constructor(config2) {
-<<<<<<< HEAD
         config2 = typeof config2 === "string" ? parse4(config2) : config2 || {};
         if (config2.connectionString) {
           config2 = Object.assign({}, config2, parse4(config2.connectionString));
-=======
         config2 = typeof config2 === "string" ? parse5(config2) : config2 || {};
         if (config2.connectionString) {
           config2 = Object.assign({}, config2, parse5(config2.connectionString));
->>>>>>> origin/main
         }
         this.user = val("user", config2);
         this.database = val("database", config2);
@@ -43782,7 +42300,6 @@ var require_result = __commonJS({
       }
       // adds a command complete message
       addCommandComplete(msg) {
-<<<<<<< HEAD
         let match2;
         if (msg.text) {
           match2 = matchRegexp.exec(msg.text);
@@ -43796,7 +42313,6 @@ var require_result = __commonJS({
             this.rowCount = parseInt(match2[3], 10);
           } else if (match2[2]) {
             this.rowCount = parseInt(match2[2], 10);
-=======
         let match3;
         if (msg.text) {
           match3 = matchRegexp.exec(msg.text);
@@ -43810,7 +42326,6 @@ var require_result = __commonJS({
             this.rowCount = parseInt(match3[3], 10);
           } else if (match3[2]) {
             this.rowCount = parseInt(match3[2], 10);
->>>>>>> origin/main
           }
         }
       }
@@ -44383,11 +42898,8 @@ var require_serializer = __commonJS({
       );
     };
     var emptyArray = [];
-<<<<<<< HEAD
     var parse4 = (query2) => {
-=======
     var parse5 = (query2) => {
->>>>>>> origin/main
       const name = query2.name || "";
       if (name.length > 63) {
         console.error("Warning! Postgres only supports 63 characters for query names.");
@@ -44542,11 +43054,8 @@ var require_serializer = __commonJS({
       sendSASLInitialResponseMessage,
       sendSCRAMClientFinalMessage,
       query,
-<<<<<<< HEAD
       parse: parse4,
-=======
       parse: parse5,
->>>>>>> origin/main
       bind,
       execute,
       describe,
@@ -44935,11 +43444,8 @@ var require_dist5 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DatabaseError = exports.serialize = void 0;
-<<<<<<< HEAD
     exports.parse = parse4;
-=======
     exports.parse = parse5;
->>>>>>> origin/main
     var messages_1 = require_messages();
     Object.defineProperty(exports, "DatabaseError", { enumerable: true, get: function() {
       return messages_1.DatabaseError;
@@ -44949,11 +43455,8 @@ var require_dist5 = __commonJS({
       return serializer_1.serialize;
     } });
     var parser_1 = require_parser();
-<<<<<<< HEAD
     function parse4(stream, callback) {
-=======
     function parse5(stream, callback) {
->>>>>>> origin/main
       const parser = new parser_1.Parser();
       stream.on("data", (buffer) => parser.parse(buffer, callback));
       return new Promise((resolve) => stream.on("end", () => resolve()));
@@ -45041,11 +43544,8 @@ var require_connection = __commonJS({
   "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/connection.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events").EventEmitter;
-<<<<<<< HEAD
     var { parse: parse4, serialize } = require_dist5();
-=======
     var { parse: parse5, serialize } = require_dist5();
->>>>>>> origin/main
     var stream = require_stream();
     var { getStream } = stream;
     var flushBuffer = serialize.flush();
@@ -45145,11 +43645,8 @@ var require_connection = __commonJS({
         self2.emit("sslconnect");
       }
       attachListeners(stream2) {
-<<<<<<< HEAD
         parse4(stream2, (msg) => {
-=======
         parse5(stream2, (msg) => {
->>>>>>> origin/main
           const eventName = msg.name === "error" ? "errorMessage" : msg.name;
           if (this._emitMessage) {
             this.emit("message", msg);
@@ -45295,11 +43792,8 @@ var require_split2 = __commonJS({
     function noop2(incoming) {
       return incoming;
     }
-<<<<<<< HEAD
     function split2(matcher, mapper, options) {
-=======
     function split3(matcher, mapper, options) {
->>>>>>> origin/main
       matcher = matcher || /\r?\n/;
       mapper = mapper || noop2;
       options = options || {};
@@ -45342,11 +43836,8 @@ var require_split2 = __commonJS({
       };
       return stream;
     }
-<<<<<<< HEAD
     module.exports = split2;
-=======
     module.exports = split3;
->>>>>>> origin/main
   }
 });
 
@@ -45356,11 +43847,8 @@ var require_helper = __commonJS({
     "use strict";
     var path2 = __require("path");
     var Stream2 = __require("stream").Stream;
-<<<<<<< HEAD
     var split2 = require_split2();
-=======
     var split3 = require_split2();
->>>>>>> origin/main
     var util3 = __require("util");
     var defaultPort = 5432;
     var isWin = process.platform === "win32";
@@ -45430,11 +43918,8 @@ var require_helper = __commonJS({
     };
     module.exports.getPassword = function(connInfo, stream, cb) {
       var pass;
-<<<<<<< HEAD
       var lineStream = stream.pipe(split2());
-=======
       var lineStream = stream.pipe(split3());
->>>>>>> origin/main
       function onLine(line3) {
         var entry = parseLine(line3);
         if (entry && isValidEntry(entry) && matcher(connInfo, entry)) {
@@ -45562,11 +44047,8 @@ var require_client = __commonJS({
     var Query3 = require_query();
     var defaults4 = require_defaults();
     var Connection3 = require_connection();
-<<<<<<< HEAD
     var crypto4 = require_utils5();
-=======
     var crypto7 = require_utils5();
->>>>>>> origin/main
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -45602,11 +44084,8 @@ var require_client = __commonJS({
       }
       return defaultValue;
     }
-<<<<<<< HEAD
     var Client4 = class extends EventEmitter2 {
-=======
     var Client5 = class extends EventEmitter2 {
->>>>>>> origin/main
       constructor(config2) {
         super();
         this.connectionParameters = new ConnectionParameters(config2);
@@ -45821,11 +44300,8 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-<<<<<<< HEAD
             const hashedPassword = await crypto4.postgresMd5PasswordHash(this.user, this.password, msg.salt);
-=======
             const hashedPassword = await crypto7.postgresMd5PasswordHash(this.user, this.password, msg.salt);
->>>>>>> origin/main
             this.connection.password(hashedPassword);
           } catch (e2) {
             this.emit("error", e2);
@@ -46035,13 +44511,10 @@ var require_client = __commonJS({
         }
         return data;
       }
-<<<<<<< HEAD
       cancel(client2, query) {
         if (client2.activeQuery === query) {
-=======
       cancel(client, query) {
         if (client.activeQuery === query) {
->>>>>>> origin/main
           const con = this.connection;
           if (this.host && this.host.indexOf("/") === 0) {
             con.connect(this.host + "/.s.PGSQL." + this.port);
@@ -46049,17 +44522,14 @@ var require_client = __commonJS({
             con.connect(this.port, this.host);
           }
           con.on("connect", function() {
-<<<<<<< HEAD
             con.cancel(client2.processID, client2.secretKey);
           });
         } else if (client2._queryQueue.indexOf(query) !== -1) {
           client2._queryQueue.splice(client2._queryQueue.indexOf(query), 1);
-=======
             con.cancel(client.processID, client.secretKey);
           });
         } else if (client._queryQueue.indexOf(query) !== -1) {
           client._queryQueue.splice(client._queryQueue.indexOf(query), 1);
->>>>>>> origin/main
         }
       }
       setTypeParser(oid, format, parseFn) {
@@ -46211,13 +44681,10 @@ var require_client = __commonJS({
         return this._queryQueue;
       }
     };
-<<<<<<< HEAD
     Client4.Query = Query3;
     module.exports = Client4;
-=======
     Client5.Query = Query3;
     module.exports = Client5;
->>>>>>> origin/main
   }
 });
 
@@ -46233,13 +44700,10 @@ var require_pg_pool = __commonJS({
       return i2 === -1 ? void 0 : list.splice(i2, 1)[0];
     };
     var IdleItem = class {
-<<<<<<< HEAD
       constructor(client2, idleListener, timeoutId) {
         this.client = client2;
-=======
       constructor(client, idleListener, timeoutId) {
         this.client = client;
->>>>>>> origin/main
         this.idleListener = idleListener;
         this.timeoutId = timeoutId;
       }
@@ -46258,13 +44722,10 @@ var require_pg_pool = __commonJS({
       }
       let rej;
       let res;
-<<<<<<< HEAD
       const cb = function(err, client2) {
         err ? rej(err) : res(client2);
-=======
       const cb = function(err, client) {
         err ? rej(err) : res(client);
->>>>>>> origin/main
       };
       const result = new Promise2(function(resolve, reject) {
         res = resolve;
@@ -46275,7 +44736,6 @@ var require_pg_pool = __commonJS({
       });
       return { callback: cb, result };
     }
-<<<<<<< HEAD
     function makeIdleListener(pool3, client2) {
       return function idleListener(err) {
         err.client = client2;
@@ -46289,7 +44749,6 @@ var require_pg_pool = __commonJS({
     }
     var Pool6 = class extends EventEmitter2 {
       constructor(options, Client4) {
-=======
     function makeIdleListener(pool3, client) {
       return function idleListener(err) {
         err.client = client;
@@ -46303,7 +44762,6 @@ var require_pg_pool = __commonJS({
     }
     var Pool6 = class extends EventEmitter2 {
       constructor(options, Client5) {
->>>>>>> origin/main
         super();
         this.options = Object.assign({}, options);
         if (options != null && "password" in options) {
@@ -46326,11 +44784,8 @@ var require_pg_pool = __commonJS({
         this.options.maxLifetimeSeconds = this.options.maxLifetimeSeconds || 0;
         this.log = this.options.log || function() {
         };
-<<<<<<< HEAD
         this.Client = this.options.Client || Client4 || require_lib5().Client;
-=======
         this.Client = this.options.Client || Client5 || require_lib5().Client;
->>>>>>> origin/main
         this.Promise = this.options.Promise || global.Promise;
         if (typeof this.options.idleTimeoutMillis === "undefined") {
           this.options.idleTimeoutMillis = 1e4;
@@ -46386,24 +44841,20 @@ var require_pg_pool = __commonJS({
         if (this._idle.length) {
           const idleItem = this._idle.pop();
           clearTimeout(idleItem.timeoutId);
-<<<<<<< HEAD
           const client2 = idleItem.client;
           client2.ref && client2.ref();
           const idleListener = idleItem.idleListener;
           return this._acquireClient(client2, pendingItem, idleListener, false);
-=======
           const client = idleItem.client;
           client.ref && client.ref();
           const idleListener = idleItem.idleListener;
           return this._acquireClient(client, pendingItem, idleListener, false);
->>>>>>> origin/main
         }
         if (!this._isFull()) {
           return this.newClient(pendingItem);
         }
         throw new Error("unexpected condition");
       }
-<<<<<<< HEAD
       _remove(client2, callback) {
         const removed = removeWhere(this._idle, (item) => item.client === client2);
         if (removed !== void 0) {
@@ -46413,7 +44864,6 @@ var require_pg_pool = __commonJS({
         const context = this;
         client2.end(() => {
           context.emit("remove", client2);
-=======
       _remove(client, callback) {
         const removed = removeWhere(this._idle, (item) => item.client === client);
         if (removed !== void 0) {
@@ -46423,7 +44873,6 @@ var require_pg_pool = __commonJS({
         const context = this;
         client.end(() => {
           context.emit("remove", client);
->>>>>>> origin/main
           if (typeof callback === "function") {
             callback();
           }
@@ -46464,21 +44913,17 @@ var require_pg_pool = __commonJS({
         return result;
       }
       newClient(pendingItem) {
-<<<<<<< HEAD
         const client2 = new this.Client(this.options);
         this._clients.push(client2);
         const idleListener = makeIdleListener(this, client2);
-=======
         const client = new this.Client(this.options);
         this._clients.push(client);
         const idleListener = makeIdleListener(this, client);
->>>>>>> origin/main
         this.log("checking client timeout");
         let tid;
         let timeoutHit = false;
         if (this.options.connectionTimeoutMillis) {
           tid = setTimeout(() => {
-<<<<<<< HEAD
             if (client2.connection) {
               this.log("ending client due to timeout");
               timeoutHit = true;
@@ -46487,7 +44932,6 @@ var require_pg_pool = __commonJS({
               this.log("ending client due to timeout");
               timeoutHit = true;
               client2.end();
-=======
             if (client.connection) {
               this.log("ending client due to timeout");
               timeoutHit = true;
@@ -46496,12 +44940,10 @@ var require_pg_pool = __commonJS({
               this.log("ending client due to timeout");
               timeoutHit = true;
               client.end();
->>>>>>> origin/main
             }
           }, this.options.connectionTimeoutMillis);
         }
         this.log("connecting new client");
-<<<<<<< HEAD
         client2.connect((err) => {
           if (tid) {
             clearTimeout(tid);
@@ -46510,7 +44952,6 @@ var require_pg_pool = __commonJS({
           if (err) {
             this.log("client failed to connect", err);
             this._clients = this._clients.filter((c2) => c2 !== client2);
-=======
         client.connect((err) => {
           if (tid) {
             clearTimeout(tid);
@@ -46519,7 +44960,6 @@ var require_pg_pool = __commonJS({
           if (err) {
             this.log("client failed to connect", err);
             this._clients = this._clients.filter((c2) => c2 !== client);
->>>>>>> origin/main
             if (timeoutHit) {
               err = new Error("Connection terminated due to connection timeout", { cause: err });
             }
@@ -46530,7 +44970,6 @@ var require_pg_pool = __commonJS({
           } else {
             this.log("new client connected");
             if (this.options.onConnect) {
-<<<<<<< HEAD
               this._promiseTry(() => this.options.onConnect(client2)).then(
                 () => {
                   this._afterConnect(client2, pendingItem, idleListener);
@@ -46538,7 +44977,6 @@ var require_pg_pool = __commonJS({
                 (hookErr) => {
                   this._clients = this._clients.filter((c2) => c2 !== client2);
                   client2.end(() => {
-=======
               this._promiseTry(() => this.options.onConnect(client)).then(
                 () => {
                   this._afterConnect(client, pendingItem, idleListener);
@@ -46546,7 +44984,6 @@ var require_pg_pool = __commonJS({
                 (hookErr) => {
                   this._clients = this._clients.filter((c2) => c2 !== client);
                   client.end(() => {
->>>>>>> origin/main
                     this._pulseQueue();
                     if (!pendingItem.timedOut) {
                       pendingItem.callback(hookErr, void 0, NOOP);
@@ -46556,7 +44993,6 @@ var require_pg_pool = __commonJS({
               );
               return;
             }
-<<<<<<< HEAD
             return this._afterConnect(client2, pendingItem, idleListener);
           }
         });
@@ -46571,7 +45007,6 @@ var require_pg_pool = __commonJS({
               this._acquireClient(
                 client2,
                 new PendingItem((err, client3, clientRelease) => clientRelease()),
-=======
             return this._afterConnect(client, pendingItem, idleListener);
           }
         });
@@ -46586,14 +45021,12 @@ var require_pg_pool = __commonJS({
               this._acquireClient(
                 client,
                 new PendingItem((err, client2, clientRelease) => clientRelease()),
->>>>>>> origin/main
                 idleListener,
                 false
               );
             }
           }, this.options.maxLifetimeSeconds * 1e3);
           maxLifetimeTimeout.unref();
-<<<<<<< HEAD
           client2.once("end", () => clearTimeout(maxLifetimeTimeout));
         }
         return this._acquireClient(client2, pendingItem, idleListener, true);
@@ -46623,7 +45056,6 @@ var require_pg_pool = __commonJS({
             this.options.verify(client2, client2.release);
           } else {
             client2.release();
-=======
           client.once("end", () => clearTimeout(maxLifetimeTimeout));
         }
         return this._acquireClient(client, pendingItem, idleListener, true);
@@ -46653,32 +45085,24 @@ var require_pg_pool = __commonJS({
             this.options.verify(client, client.release);
           } else {
             client.release();
->>>>>>> origin/main
           }
         }
       }
       // returns a function that wraps _release and throws if called more than once
-<<<<<<< HEAD
       _releaseOnce(client2, idleListener) {
-=======
       _releaseOnce(client, idleListener) {
->>>>>>> origin/main
         let released = false;
         return (err) => {
           if (released) {
             throwOnDoubleRelease();
           }
           released = true;
-<<<<<<< HEAD
           this._release(client2, idleListener, err);
-=======
           this._release(client, idleListener, err);
->>>>>>> origin/main
         };
       }
       // release a client back to the poll, include an error
       // to remove it from the pool
-<<<<<<< HEAD
       _release(client2, idleListener, err) {
         client2.on("error", idleListener);
         client2._poolUseCount = (client2._poolUseCount || 0) + 1;
@@ -46694,7 +45118,6 @@ var require_pg_pool = __commonJS({
           this.log("remove expired client");
           this._expired.delete(client2);
           return this._remove(client2, this._pulseQueue.bind(this));
-=======
       _release(client, idleListener, err) {
         client.on("error", idleListener);
         client._poolUseCount = (client._poolUseCount || 0) + 1;
@@ -46710,18 +45133,14 @@ var require_pg_pool = __commonJS({
           this.log("remove expired client");
           this._expired.delete(client);
           return this._remove(client, this._pulseQueue.bind(this));
->>>>>>> origin/main
         }
         let tid;
         if (this.options.idleTimeoutMillis && this._isAboveMin()) {
           tid = setTimeout(() => {
             if (this._isAboveMin()) {
               this.log("remove idle client");
-<<<<<<< HEAD
               this._remove(client2, this._pulseQueue.bind(this));
-=======
               this._remove(client, this._pulseQueue.bind(this));
->>>>>>> origin/main
             }
           }, this.options.idleTimeoutMillis);
           if (this.options.allowExitOnIdle) {
@@ -46729,15 +45148,12 @@ var require_pg_pool = __commonJS({
           }
         }
         if (this.options.allowExitOnIdle) {
-<<<<<<< HEAD
           client2.unref();
         }
         this._idle.push(new IdleItem(client2, idleListener, tid));
-=======
           client.unref();
         }
         this._idle.push(new IdleItem(client, idleListener, tid));
->>>>>>> origin/main
         this._pulseQueue();
       }
       query(text3, values, cb) {
@@ -46754,11 +45170,8 @@ var require_pg_pool = __commonJS({
         }
         const response = promisify2(this.Promise, cb);
         cb = response.callback;
-<<<<<<< HEAD
         this.connect((err, client2) => {
-=======
         this.connect((err, client) => {
->>>>>>> origin/main
           if (err) {
             return cb(err);
           }
@@ -46768,7 +45181,6 @@ var require_pg_pool = __commonJS({
               return;
             }
             clientReleased = true;
-<<<<<<< HEAD
             client2.release(err2);
             cb(err2);
           };
@@ -46778,7 +45190,6 @@ var require_pg_pool = __commonJS({
             client2.query(text3, values, (err2, res) => {
               this.log("query dispatched");
               client2.removeListener("error", onError);
-=======
             client.release(err2);
             cb(err2);
           };
@@ -46788,27 +45199,20 @@ var require_pg_pool = __commonJS({
             client.query(text3, values, (err2, res) => {
               this.log("query dispatched");
               client.removeListener("error", onError);
->>>>>>> origin/main
               if (clientReleased) {
                 return;
               }
               clientReleased = true;
-<<<<<<< HEAD
               client2.release(err2);
-=======
               client.release(err2);
->>>>>>> origin/main
               if (err2) {
                 return cb(err2);
               }
               return cb(void 0, res);
             });
           } catch (err2) {
-<<<<<<< HEAD
             client2.release(err2);
-=======
             client.release(err2);
->>>>>>> origin/main
             return cb(err2);
           }
         });
@@ -46833,11 +45237,8 @@ var require_pg_pool = __commonJS({
         return this._idle.length;
       }
       get expiredCount() {
-<<<<<<< HEAD
         return this._clients.reduce((acc, client2) => acc + (this._expired.has(client2) ? 1 : 0), 0);
-=======
         return this._clients.reduce((acc, client) => acc + (this._expired.has(client) ? 1 : 0), 0);
->>>>>>> origin/main
       }
       get totalCount() {
         return this._clients.length;
@@ -46918,7 +45319,6 @@ var require_query2 = __commonJS({
       );
       return this._promise;
     };
-<<<<<<< HEAD
     NativeQuery.prototype.submit = function(client2) {
       this.state = "running";
       const self2 = this;
@@ -46926,7 +45326,6 @@ var require_query2 = __commonJS({
       client2.native.arrayMode = this._arrayMode;
       let after = function(err, rows, results) {
         client2.native.arrayMode = false;
-=======
     NativeQuery.prototype.submit = function(client) {
       this.state = "running";
       const self2 = this;
@@ -46934,7 +45333,6 @@ var require_query2 = __commonJS({
       client.native.arrayMode = this._arrayMode;
       let after = function(err, rows, results) {
         client.native.arrayMode = false;
->>>>>>> origin/main
         setImmediate(function() {
           self2.emit("_done");
         });
@@ -46970,7 +45368,6 @@ var require_query2 = __commonJS({
           console.error("This can cause conflicts and silent errors executing queries");
         }
         const values = (this.values || []).map(utils.prepareValue);
-<<<<<<< HEAD
         if (client2.namedQueries[this.name]) {
           if (this.text && client2.namedQueries[this.name] !== this.text) {
             const err = new Error(`Prepared statements must be unique - '${this.name}' was used for a different statement`);
@@ -46981,7 +45378,6 @@ var require_query2 = __commonJS({
         return client2.native.prepare(this.name, this.text, values.length, function(err) {
           if (err) return after(err);
           client2.namedQueries[self2.name] = self2.text;
-=======
         if (client.namedQueries[this.name]) {
           if (this.text && client.namedQueries[this.name] !== this.text) {
             const err = new Error(`Prepared statements must be unique - '${this.name}' was used for a different statement`);
@@ -46992,7 +45388,6 @@ var require_query2 = __commonJS({
         return client.native.prepare(this.name, this.text, values.length, function(err) {
           if (err) return after(err);
           client.namedQueries[self2.name] = self2.text;
->>>>>>> origin/main
           return self2.native.execute(self2.name, values, after);
         });
       } else if (this.values) {
@@ -47001,19 +45396,16 @@ var require_query2 = __commonJS({
           return after(err);
         }
         const vals = this.values.map(utils.prepareValue);
-<<<<<<< HEAD
         client2.native.query(this.text, vals, after);
       } else if (this.queryMode === "extended") {
         client2.native.query(this.text, [], after);
       } else {
         client2.native.query(this.text, after);
-=======
         client.native.query(this.text, vals, after);
       } else if (this.queryMode === "extended") {
         client.native.query(this.text, [], after);
       } else {
         client.native.query(this.text, after);
->>>>>>> origin/main
       }
     };
   }
@@ -47039,11 +45431,8 @@ var require_client2 = __commonJS({
       },
       "Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead."
     );
-<<<<<<< HEAD
     var Client4 = module.exports = function(config2) {
-=======
     var Client5 = module.exports = function(config2) {
->>>>>>> origin/main
       EventEmitter2.call(this);
       config2 = config2 || {};
       this._Promise = config2.Promise || global.Promise;
@@ -47070,15 +45459,12 @@ var require_client2 = __commonJS({
       this.port = cp.port;
       this.namedQueries = {};
     };
-<<<<<<< HEAD
     Client4.Query = NativeQuery;
     util3.inherits(Client4, EventEmitter2);
     Client4.prototype._errorAllQueries = function(err) {
-=======
     Client5.Query = NativeQuery;
     util3.inherits(Client5, EventEmitter2);
     Client5.prototype._errorAllQueries = function(err) {
->>>>>>> origin/main
       const enqueueError = (query) => {
         process.nextTick(() => {
           query.native = this.native;
@@ -47092,11 +45478,8 @@ var require_client2 = __commonJS({
       this._queryQueue.forEach(enqueueError);
       this._queryQueue.length = 0;
     };
-<<<<<<< HEAD
     Client4.prototype._connect = function(cb) {
-=======
     Client5.prototype._connect = function(cb) {
->>>>>>> origin/main
       const self2 = this;
       if (this._connecting) {
         process.nextTick(() => cb(new Error("Client has already been connected. You cannot reuse a client.")));
@@ -47129,11 +45512,8 @@ var require_client2 = __commonJS({
         });
       });
     };
-<<<<<<< HEAD
     Client4.prototype.connect = function(callback) {
-=======
     Client5.prototype.connect = function(callback) {
->>>>>>> origin/main
       if (callback) {
         this._connect(callback);
         return;
@@ -47148,11 +45528,8 @@ var require_client2 = __commonJS({
         });
       });
     };
-<<<<<<< HEAD
     Client4.prototype.query = function(config2, values, callback) {
-=======
     Client5.prototype.query = function(config2, values, callback) {
->>>>>>> origin/main
       let query;
       let result;
       let readTimeout;
@@ -47224,11 +45601,8 @@ var require_client2 = __commonJS({
       this._pulseQueryQueue();
       return result;
     };
-<<<<<<< HEAD
     Client4.prototype.end = function(cb) {
-=======
     Client5.prototype.end = function(cb) {
->>>>>>> origin/main
       const self2 = this;
       this._ending = true;
       if (this._connecting && !this._connected) {
@@ -47253,17 +45627,14 @@ var require_client2 = __commonJS({
       });
       return result;
     };
-<<<<<<< HEAD
     Client4.prototype._hasActiveQuery = function() {
       return this._activeQuery && this._activeQuery.state !== "error" && this._activeQuery.state !== "end";
     };
     Client4.prototype._pulseQueryQueue = function(initialConnection) {
-=======
     Client5.prototype._hasActiveQuery = function() {
       return this._activeQuery && this._activeQuery.state !== "error" && this._activeQuery.state !== "end";
     };
     Client5.prototype._pulseQueryQueue = function(initialConnection) {
->>>>>>> origin/main
       if (!this._connected) {
         return;
       }
@@ -47284,11 +45655,8 @@ var require_client2 = __commonJS({
         self2._pulseQueryQueue();
       });
     };
-<<<<<<< HEAD
     Client4.prototype.cancel = function(query) {
-=======
     Client5.prototype.cancel = function(query) {
->>>>>>> origin/main
       if (this._activeQuery === query) {
         this.native.cancel(function() {
         });
@@ -47296,7 +45664,6 @@ var require_client2 = __commonJS({
         this._queryQueue.splice(this._queryQueue.indexOf(query), 1);
       }
     };
-<<<<<<< HEAD
     Client4.prototype.ref = function() {
     };
     Client4.prototype.unref = function() {
@@ -47311,7 +45678,6 @@ var require_client2 = __commonJS({
       return this._connected;
     };
     Client4.prototype.getTransactionStatus = function() {
-=======
     Client5.prototype.ref = function() {
     };
     Client5.prototype.unref = function() {
@@ -47326,7 +45692,6 @@ var require_client2 = __commonJS({
       return this._connected;
     };
     Client5.prototype.getTransactionStatus = function() {
->>>>>>> origin/main
       return this.native.getTransactionStatus();
     };
   }
@@ -47344,11 +45709,8 @@ var require_native = __commonJS({
 var require_lib5 = __commonJS({
   "../../node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/index.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     var Client4 = require_client();
-=======
     var Client5 = require_client();
->>>>>>> origin/main
     var defaults4 = require_defaults();
     var Connection3 = require_connection();
     var Result3 = require_result();
@@ -47357,17 +45719,14 @@ var require_lib5 = __commonJS({
     var TypeOverrides3 = require_type_overrides();
     var { DatabaseError: DatabaseError3 } = require_dist5();
     var { escapeIdentifier: escapeIdentifier3, escapeLiteral: escapeLiteral3 } = require_utils4();
-<<<<<<< HEAD
     var poolFactory = (Client5) => {
       return class BoundPool extends Pool6 {
         constructor(options) {
           super(options, Client5);
-=======
     var poolFactory = (Client6) => {
       return class BoundPool extends Pool6 {
         constructor(options) {
           super(options, Client6);
->>>>>>> origin/main
         }
       };
     };
@@ -47386,11 +45745,8 @@ var require_lib5 = __commonJS({
       this.Result = Result3;
       this.utils = utils;
     };
-<<<<<<< HEAD
     var clientConstructor = Client4;
-=======
     var clientConstructor = Client5;
->>>>>>> origin/main
     var forceNative = false;
     try {
       forceNative = !!process.env.NODE_PG_FORCE_NATIVE;
@@ -47865,11 +46221,8 @@ var require_cert_signatures2 = __commonJS({
 var require_sasl2 = __commonJS({
   "../../node_modules/.pnpm/pg@8.20.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     var crypto4 = require_utils7();
-=======
     var crypto7 = require_utils7();
->>>>>>> origin/main
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures2();
     function startSession(mechanisms, stream) {
       const candidates = ["SCRAM-SHA-256"];
@@ -47881,11 +46234,8 @@ var require_sasl2 = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-<<<<<<< HEAD
       const clientNonce = crypto4.randomBytes(18).toString("base64");
-=======
       const clientNonce = crypto7.randomBytes(18).toString("base64");
->>>>>>> origin/main
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -47920,18 +46270,14 @@ var require_sasl2 = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-<<<<<<< HEAD
         const certHash = await crypto4.hashByName(hashName, peerCert);
-=======
         const certHash = await crypto7.hashByName(hashName, peerCert);
->>>>>>> origin/main
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-<<<<<<< HEAD
       const saltedPassword = await crypto4.deriveKey(password, saltBytes, sv.iteration);
       const clientKey2 = await crypto4.hmacSha256(saltedPassword, "Client Key");
       const storedKey = await crypto4.sha256(clientKey2);
@@ -47939,7 +46285,6 @@ var require_sasl2 = __commonJS({
       const clientProof = xorBuffers(Buffer.from(clientKey2), Buffer.from(clientSignature)).toString("base64");
       const serverKey = await crypto4.hmacSha256(saltedPassword, "Server Key");
       const serverSignatureBytes = await crypto4.hmacSha256(serverKey, authMessage);
-=======
       const saltedPassword = await crypto7.deriveKey(password, saltBytes, sv.iteration);
       const clientKey = await crypto7.hmacSha256(saltedPassword, "Client Key");
       const storedKey = await crypto7.sha256(clientKey);
@@ -47947,7 +46292,6 @@ var require_sasl2 = __commonJS({
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
       const serverKey = await crypto7.hmacSha256(saltedPassword, "Server Key");
       const serverSignatureBytes = await crypto7.hmacSha256(serverKey, authMessage);
->>>>>>> origin/main
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -47968,11 +46312,8 @@ var require_sasl2 = __commonJS({
       if (typeof text3 !== "string") {
         throw new TypeError("SASL: text must be a string");
       }
-<<<<<<< HEAD
       return text3.split("").map((_3, i2) => text3.charCodeAt(i2)).every((c2) => c2 >= 33 && c2 <= 43 || c2 >= 45 && c2 <= 126);
-=======
       return text3.split("").map((_4, i2) => text3.charCodeAt(i2)).every((c2) => c2 >= 33 && c2 <= 43 || c2 >= 45 && c2 <= 126);
->>>>>>> origin/main
     }
     function isBase64(text3) {
       return /^(?:[a-zA-Z0-9+/]{4})*(?:[a-zA-Z0-9+/]{2}==|[a-zA-Z0-9+/]{3}=)?$/.test(text3);
@@ -48044,11 +46385,8 @@ var require_sasl2 = __commonJS({
       if (a2.length === 0) {
         throw new Error("Buffers cannot be empty");
       }
-<<<<<<< HEAD
       return Buffer.from(a2.map((_3, i2) => a2[i2] ^ b2[i2]));
-=======
       return Buffer.from(a2.map((_4, i2) => a2[i2] ^ b2[i2]));
->>>>>>> origin/main
     }
     module.exports = {
       startSession,
@@ -48097,11 +46435,8 @@ var require_type_overrides2 = __commonJS({
 var require_pg_connection_string2 = __commonJS({
   "../../node_modules/.pnpm/pg-connection-string@2.12.0/node_modules/pg-connection-string/index.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     function parse4(str2, options = {}) {
-=======
     function parse5(str2, options = {}) {
->>>>>>> origin/main
       if (str2.charAt(0) === "/") {
         const config3 = str2.split(" ");
         return { host: config3[0], database: config3[1] };
@@ -48260,11 +46595,8 @@ var require_pg_connection_string2 = __commonJS({
       return poolConfig;
     }
     function parseIntoClientConfig(str2) {
-<<<<<<< HEAD
       return toClientConfig(parse4(str2));
-=======
       return toClientConfig(parse5(str2));
->>>>>>> origin/main
     }
     function deprecatedSslModeWarning(sslmode) {
       if (!deprecatedSslModeWarning.warned && typeof process !== "undefined" && process.emitWarning) {
@@ -48279,17 +46611,14 @@ To prepare for this change:
 See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.`);
       }
     }
-<<<<<<< HEAD
     module.exports = parse4;
     parse4.parse = parse4;
     parse4.toClientConfig = toClientConfig;
     parse4.parseIntoClientConfig = parseIntoClientConfig;
-=======
     module.exports = parse5;
     parse5.parse = parse5;
     parse5.toClientConfig = toClientConfig;
     parse5.parseIntoClientConfig = parseIntoClientConfig;
->>>>>>> origin/main
   }
 });
 
@@ -48299,11 +46628,8 @@ var require_connection_parameters2 = __commonJS({
     "use strict";
     var dns = __require("dns");
     var defaults4 = require_defaults2();
-<<<<<<< HEAD
     var parse4 = require_pg_connection_string2().parse;
-=======
     var parse5 = require_pg_connection_string2().parse;
->>>>>>> origin/main
     var val = function(key, config2, envVar) {
       if (config2[key]) {
         return config2[key];
@@ -48341,15 +46667,12 @@ var require_connection_parameters2 = __commonJS({
     };
     var ConnectionParameters = class {
       constructor(config2) {
-<<<<<<< HEAD
         config2 = typeof config2 === "string" ? parse4(config2) : config2 || {};
         if (config2.connectionString) {
           config2 = Object.assign({}, config2, parse4(config2.connectionString));
-=======
         config2 = typeof config2 === "string" ? parse5(config2) : config2 || {};
         if (config2.connectionString) {
           config2 = Object.assign({}, config2, parse5(config2.connectionString));
->>>>>>> origin/main
         }
         this.user = val("user", config2);
         this.database = val("database", config2);
@@ -48468,7 +46791,6 @@ var require_result2 = __commonJS({
       }
       // adds a command complete message
       addCommandComplete(msg) {
-<<<<<<< HEAD
         let match2;
         if (msg.text) {
           match2 = matchRegexp.exec(msg.text);
@@ -48482,7 +46804,6 @@ var require_result2 = __commonJS({
             this.rowCount = parseInt(match2[3], 10);
           } else if (match2[2]) {
             this.rowCount = parseInt(match2[2], 10);
-=======
         let match3;
         if (msg.text) {
           match3 = matchRegexp.exec(msg.text);
@@ -48496,7 +46817,6 @@ var require_result2 = __commonJS({
             this.rowCount = parseInt(match3[3], 10);
           } else if (match3[2]) {
             this.rowCount = parseInt(match3[2], 10);
->>>>>>> origin/main
           }
         }
       }
@@ -49044,11 +47364,8 @@ var require_serializer2 = __commonJS({
       );
     };
     var emptyArray = [];
-<<<<<<< HEAD
     var parse4 = (query2) => {
-=======
     var parse5 = (query2) => {
->>>>>>> origin/main
       const name = query2.name || "";
       if (name.length > 63) {
         console.error("Warning! Postgres only supports 63 characters for query names.");
@@ -49198,11 +47515,8 @@ var require_serializer2 = __commonJS({
       sendSASLInitialResponseMessage,
       sendSCRAMClientFinalMessage,
       query,
-<<<<<<< HEAD
       parse: parse4,
-=======
       parse: parse5,
->>>>>>> origin/main
       bind,
       execute,
       describe,
@@ -49600,20 +47914,14 @@ var require_dist6 = __commonJS({
       return serializer_1.serialize;
     } });
     var parser_1 = require_parser2();
-<<<<<<< HEAD
     function parse4(stream, callback) {
-=======
     function parse5(stream, callback) {
->>>>>>> origin/main
       const parser = new parser_1.Parser();
       stream.on("data", (buffer) => parser.parse(buffer, callback));
       return new Promise((resolve) => stream.on("end", () => resolve()));
     }
-<<<<<<< HEAD
     exports.parse = parse4;
-=======
     exports.parse = parse5;
->>>>>>> origin/main
   }
 });
 
@@ -49697,11 +48005,8 @@ var require_connection2 = __commonJS({
   "../../node_modules/.pnpm/pg@8.20.0/node_modules/pg/lib/connection.js"(exports, module) {
     "use strict";
     var EventEmitter2 = __require("events").EventEmitter;
-<<<<<<< HEAD
     var { parse: parse4, serialize } = require_dist6();
-=======
     var { parse: parse5, serialize } = require_dist6();
->>>>>>> origin/main
     var { getStream, getSecureStream } = require_stream2();
     var flushBuffer = serialize.flush();
     var syncBuffer = serialize.sync();
@@ -49787,11 +48092,8 @@ var require_connection2 = __commonJS({
         });
       }
       attachListeners(stream) {
-<<<<<<< HEAD
         parse4(stream, (msg) => {
-=======
         parse5(stream, (msg) => {
->>>>>>> origin/main
           const eventName = msg.name === "error" ? "errorMessage" : msg.name;
           if (this._emitMessage) {
             this.emit("message", msg);
@@ -49895,11 +48197,8 @@ var require_client3 = __commonJS({
     var Query3 = require_query3();
     var defaults4 = require_defaults2();
     var Connection3 = require_connection2();
-<<<<<<< HEAD
     var crypto4 = require_utils7();
-=======
     var crypto7 = require_utils7();
->>>>>>> origin/main
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -49925,11 +48224,8 @@ var require_client3 = __commonJS({
       },
       "Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead."
     );
-<<<<<<< HEAD
     var Client4 = class extends EventEmitter2 {
-=======
     var Client5 = class extends EventEmitter2 {
->>>>>>> origin/main
       constructor(config2) {
         super();
         this.connectionParameters = new ConnectionParameters(config2);
@@ -50138,11 +48434,8 @@ var require_client3 = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-<<<<<<< HEAD
             const hashedPassword = await crypto4.postgresMd5PasswordHash(this.user, this.password, msg.salt);
-=======
             const hashedPassword = await crypto7.postgresMd5PasswordHash(this.user, this.password, msg.salt);
->>>>>>> origin/main
             this.connection.password(hashedPassword);
           } catch (e2) {
             this.emit("error", e2);
@@ -50347,13 +48640,10 @@ var require_client3 = __commonJS({
         }
         return data;
       }
-<<<<<<< HEAD
       cancel(client2, query) {
         if (client2.activeQuery === query) {
-=======
       cancel(client, query) {
         if (client.activeQuery === query) {
->>>>>>> origin/main
           const con = this.connection;
           if (this.host && this.host.indexOf("/") === 0) {
             con.connect(this.host + "/.s.PGSQL." + this.port);
@@ -50361,17 +48651,14 @@ var require_client3 = __commonJS({
             con.connect(this.port, this.host);
           }
           con.on("connect", function() {
-<<<<<<< HEAD
             con.cancel(client2.processID, client2.secretKey);
           });
         } else if (client2._queryQueue.indexOf(query) !== -1) {
           client2._queryQueue.splice(client2._queryQueue.indexOf(query), 1);
-=======
             con.cancel(client.processID, client.secretKey);
           });
         } else if (client._queryQueue.indexOf(query) !== -1) {
           client._queryQueue.splice(client._queryQueue.indexOf(query), 1);
->>>>>>> origin/main
         }
       }
       setTypeParser(oid, format, parseFn) {
@@ -50520,13 +48807,10 @@ var require_client3 = __commonJS({
         return this._queryQueue;
       }
     };
-<<<<<<< HEAD
     Client4.Query = Query3;
     module.exports = Client4;
-=======
     Client5.Query = Query3;
     module.exports = Client5;
->>>>>>> origin/main
   }
 });
 
@@ -50542,13 +48826,10 @@ var require_pg_pool2 = __commonJS({
       return i2 === -1 ? void 0 : list.splice(i2, 1)[0];
     };
     var IdleItem = class {
-<<<<<<< HEAD
       constructor(client2, idleListener, timeoutId) {
         this.client = client2;
-=======
       constructor(client, idleListener, timeoutId) {
         this.client = client;
->>>>>>> origin/main
         this.idleListener = idleListener;
         this.timeoutId = timeoutId;
       }
@@ -50567,13 +48848,10 @@ var require_pg_pool2 = __commonJS({
       }
       let rej;
       let res;
-<<<<<<< HEAD
       const cb = function(err, client2) {
         err ? rej(err) : res(client2);
-=======
       const cb = function(err, client) {
         err ? rej(err) : res(client);
->>>>>>> origin/main
       };
       const result = new Promise2(function(resolve, reject) {
         res = resolve;
@@ -50584,7 +48862,6 @@ var require_pg_pool2 = __commonJS({
       });
       return { callback: cb, result };
     }
-<<<<<<< HEAD
     function makeIdleListener(pool3, client2) {
       return function idleListener(err) {
         err.client = client2;
@@ -50598,7 +48875,6 @@ var require_pg_pool2 = __commonJS({
     }
     var Pool6 = class extends EventEmitter2 {
       constructor(options, Client4) {
-=======
     function makeIdleListener(pool3, client) {
       return function idleListener(err) {
         err.client = client;
@@ -50612,7 +48888,6 @@ var require_pg_pool2 = __commonJS({
     }
     var Pool6 = class extends EventEmitter2 {
       constructor(options, Client5) {
->>>>>>> origin/main
         super();
         this.options = Object.assign({}, options);
         if (options != null && "password" in options) {
@@ -50635,11 +48910,8 @@ var require_pg_pool2 = __commonJS({
         this.options.maxLifetimeSeconds = this.options.maxLifetimeSeconds || 0;
         this.log = this.options.log || function() {
         };
-<<<<<<< HEAD
         this.Client = this.options.Client || Client4 || require_lib6().Client;
-=======
         this.Client = this.options.Client || Client5 || require_lib6().Client;
->>>>>>> origin/main
         this.Promise = this.options.Promise || global.Promise;
         if (typeof this.options.idleTimeoutMillis === "undefined") {
           this.options.idleTimeoutMillis = 1e4;
@@ -50695,24 +48967,20 @@ var require_pg_pool2 = __commonJS({
         if (this._idle.length) {
           const idleItem = this._idle.pop();
           clearTimeout(idleItem.timeoutId);
-<<<<<<< HEAD
           const client2 = idleItem.client;
           client2.ref && client2.ref();
           const idleListener = idleItem.idleListener;
           return this._acquireClient(client2, pendingItem, idleListener, false);
-=======
           const client = idleItem.client;
           client.ref && client.ref();
           const idleListener = idleItem.idleListener;
           return this._acquireClient(client, pendingItem, idleListener, false);
->>>>>>> origin/main
         }
         if (!this._isFull()) {
           return this.newClient(pendingItem);
         }
         throw new Error("unexpected condition");
       }
-<<<<<<< HEAD
       _remove(client2, callback) {
         const removed = removeWhere(this._idle, (item) => item.client === client2);
         if (removed !== void 0) {
@@ -50722,7 +48990,6 @@ var require_pg_pool2 = __commonJS({
         const context = this;
         client2.end(() => {
           context.emit("remove", client2);
-=======
       _remove(client, callback) {
         const removed = removeWhere(this._idle, (item) => item.client === client);
         if (removed !== void 0) {
@@ -50732,7 +48999,6 @@ var require_pg_pool2 = __commonJS({
         const context = this;
         client.end(() => {
           context.emit("remove", client);
->>>>>>> origin/main
           if (typeof callback === "function") {
             callback();
           }
@@ -50773,21 +49039,17 @@ var require_pg_pool2 = __commonJS({
         return result;
       }
       newClient(pendingItem) {
-<<<<<<< HEAD
         const client2 = new this.Client(this.options);
         this._clients.push(client2);
         const idleListener = makeIdleListener(this, client2);
-=======
         const client = new this.Client(this.options);
         this._clients.push(client);
         const idleListener = makeIdleListener(this, client);
->>>>>>> origin/main
         this.log("checking client timeout");
         let tid;
         let timeoutHit = false;
         if (this.options.connectionTimeoutMillis) {
           tid = setTimeout(() => {
-<<<<<<< HEAD
             if (client2.connection) {
               this.log("ending client due to timeout");
               timeoutHit = true;
@@ -50796,7 +49058,6 @@ var require_pg_pool2 = __commonJS({
               this.log("ending client due to timeout");
               timeoutHit = true;
               client2.end();
-=======
             if (client.connection) {
               this.log("ending client due to timeout");
               timeoutHit = true;
@@ -50805,12 +49066,10 @@ var require_pg_pool2 = __commonJS({
               this.log("ending client due to timeout");
               timeoutHit = true;
               client.end();
->>>>>>> origin/main
             }
           }, this.options.connectionTimeoutMillis);
         }
         this.log("connecting new client");
-<<<<<<< HEAD
         client2.connect((err) => {
           if (tid) {
             clearTimeout(tid);
@@ -50819,7 +49078,6 @@ var require_pg_pool2 = __commonJS({
           if (err) {
             this.log("client failed to connect", err);
             this._clients = this._clients.filter((c2) => c2 !== client2);
-=======
         client.connect((err) => {
           if (tid) {
             clearTimeout(tid);
@@ -50828,7 +49086,6 @@ var require_pg_pool2 = __commonJS({
           if (err) {
             this.log("client failed to connect", err);
             this._clients = this._clients.filter((c2) => c2 !== client);
->>>>>>> origin/main
             if (timeoutHit) {
               err = new Error("Connection terminated due to connection timeout", { cause: err });
             }
@@ -50839,7 +49096,6 @@ var require_pg_pool2 = __commonJS({
           } else {
             this.log("new client connected");
             if (this.options.onConnect) {
-<<<<<<< HEAD
               this._promiseTry(() => this.options.onConnect(client2)).then(
                 () => {
                   this._afterConnect(client2, pendingItem, idleListener);
@@ -50847,7 +49103,6 @@ var require_pg_pool2 = __commonJS({
                 (hookErr) => {
                   this._clients = this._clients.filter((c2) => c2 !== client2);
                   client2.end(() => {
-=======
               this._promiseTry(() => this.options.onConnect(client)).then(
                 () => {
                   this._afterConnect(client, pendingItem, idleListener);
@@ -50855,7 +49110,6 @@ var require_pg_pool2 = __commonJS({
                 (hookErr) => {
                   this._clients = this._clients.filter((c2) => c2 !== client);
                   client.end(() => {
->>>>>>> origin/main
                     this._pulseQueue();
                     if (!pendingItem.timedOut) {
                       pendingItem.callback(hookErr, void 0, NOOP);
@@ -50865,7 +49119,6 @@ var require_pg_pool2 = __commonJS({
               );
               return;
             }
-<<<<<<< HEAD
             return this._afterConnect(client2, pendingItem, idleListener);
           }
         });
@@ -50880,7 +49133,6 @@ var require_pg_pool2 = __commonJS({
               this._acquireClient(
                 client2,
                 new PendingItem((err, client3, clientRelease) => clientRelease()),
-=======
             return this._afterConnect(client, pendingItem, idleListener);
           }
         });
@@ -50895,14 +49147,12 @@ var require_pg_pool2 = __commonJS({
               this._acquireClient(
                 client,
                 new PendingItem((err, client2, clientRelease) => clientRelease()),
->>>>>>> origin/main
                 idleListener,
                 false
               );
             }
           }, this.options.maxLifetimeSeconds * 1e3);
           maxLifetimeTimeout.unref();
-<<<<<<< HEAD
           client2.once("end", () => clearTimeout(maxLifetimeTimeout));
         }
         return this._acquireClient(client2, pendingItem, idleListener, true);
@@ -50932,7 +49182,6 @@ var require_pg_pool2 = __commonJS({
             this.options.verify(client2, client2.release);
           } else {
             client2.release();
-=======
           client.once("end", () => clearTimeout(maxLifetimeTimeout));
         }
         return this._acquireClient(client, pendingItem, idleListener, true);
@@ -50962,32 +49211,24 @@ var require_pg_pool2 = __commonJS({
             this.options.verify(client, client.release);
           } else {
             client.release();
->>>>>>> origin/main
           }
         }
       }
       // returns a function that wraps _release and throws if called more than once
-<<<<<<< HEAD
       _releaseOnce(client2, idleListener) {
-=======
       _releaseOnce(client, idleListener) {
->>>>>>> origin/main
         let released = false;
         return (err) => {
           if (released) {
             throwOnDoubleRelease();
           }
           released = true;
-<<<<<<< HEAD
           this._release(client2, idleListener, err);
-=======
           this._release(client, idleListener, err);
->>>>>>> origin/main
         };
       }
       // release a client back to the poll, include an error
       // to remove it from the pool
-<<<<<<< HEAD
       _release(client2, idleListener, err) {
         client2.on("error", idleListener);
         client2._poolUseCount = (client2._poolUseCount || 0) + 1;
@@ -51003,7 +49244,6 @@ var require_pg_pool2 = __commonJS({
           this.log("remove expired client");
           this._expired.delete(client2);
           return this._remove(client2, this._pulseQueue.bind(this));
-=======
       _release(client, idleListener, err) {
         client.on("error", idleListener);
         client._poolUseCount = (client._poolUseCount || 0) + 1;
@@ -51019,18 +49259,14 @@ var require_pg_pool2 = __commonJS({
           this.log("remove expired client");
           this._expired.delete(client);
           return this._remove(client, this._pulseQueue.bind(this));
->>>>>>> origin/main
         }
         let tid;
         if (this.options.idleTimeoutMillis && this._isAboveMin()) {
           tid = setTimeout(() => {
             if (this._isAboveMin()) {
               this.log("remove idle client");
-<<<<<<< HEAD
               this._remove(client2, this._pulseQueue.bind(this));
-=======
               this._remove(client, this._pulseQueue.bind(this));
->>>>>>> origin/main
             }
           }, this.options.idleTimeoutMillis);
           if (this.options.allowExitOnIdle) {
@@ -51038,15 +49274,12 @@ var require_pg_pool2 = __commonJS({
           }
         }
         if (this.options.allowExitOnIdle) {
-<<<<<<< HEAD
           client2.unref();
         }
         this._idle.push(new IdleItem(client2, idleListener, tid));
-=======
           client.unref();
         }
         this._idle.push(new IdleItem(client, idleListener, tid));
->>>>>>> origin/main
         this._pulseQueue();
       }
       query(text3, values, cb) {
@@ -51063,11 +49296,8 @@ var require_pg_pool2 = __commonJS({
         }
         const response = promisify2(this.Promise, cb);
         cb = response.callback;
-<<<<<<< HEAD
         this.connect((err, client2) => {
-=======
         this.connect((err, client) => {
->>>>>>> origin/main
           if (err) {
             return cb(err);
           }
@@ -51077,7 +49307,6 @@ var require_pg_pool2 = __commonJS({
               return;
             }
             clientReleased = true;
-<<<<<<< HEAD
             client2.release(err2);
             cb(err2);
           };
@@ -51087,7 +49316,6 @@ var require_pg_pool2 = __commonJS({
             client2.query(text3, values, (err2, res) => {
               this.log("query dispatched");
               client2.removeListener("error", onError);
-=======
             client.release(err2);
             cb(err2);
           };
@@ -51097,27 +49325,20 @@ var require_pg_pool2 = __commonJS({
             client.query(text3, values, (err2, res) => {
               this.log("query dispatched");
               client.removeListener("error", onError);
->>>>>>> origin/main
               if (clientReleased) {
                 return;
               }
               clientReleased = true;
-<<<<<<< HEAD
               client2.release(err2);
-=======
               client.release(err2);
->>>>>>> origin/main
               if (err2) {
                 return cb(err2);
               }
               return cb(void 0, res);
             });
           } catch (err2) {
-<<<<<<< HEAD
             client2.release(err2);
-=======
             client.release(err2);
->>>>>>> origin/main
             return cb(err2);
           }
         });
@@ -51142,11 +49363,8 @@ var require_pg_pool2 = __commonJS({
         return this._idle.length;
       }
       get expiredCount() {
-<<<<<<< HEAD
         return this._clients.reduce((acc, client2) => acc + (this._expired.has(client2) ? 1 : 0), 0);
-=======
         return this._clients.reduce((acc, client) => acc + (this._expired.has(client) ? 1 : 0), 0);
->>>>>>> origin/main
       }
       get totalCount() {
         return this._clients.length;
@@ -51227,7 +49445,6 @@ var require_query4 = __commonJS({
       );
       return this._promise;
     };
-<<<<<<< HEAD
     NativeQuery.prototype.submit = function(client2) {
       this.state = "running";
       const self2 = this;
@@ -51235,7 +49452,6 @@ var require_query4 = __commonJS({
       client2.native.arrayMode = this._arrayMode;
       let after = function(err, rows, results) {
         client2.native.arrayMode = false;
-=======
     NativeQuery.prototype.submit = function(client) {
       this.state = "running";
       const self2 = this;
@@ -51243,7 +49459,6 @@ var require_query4 = __commonJS({
       client.native.arrayMode = this._arrayMode;
       let after = function(err, rows, results) {
         client.native.arrayMode = false;
->>>>>>> origin/main
         setImmediate(function() {
           self2.emit("_done");
         });
@@ -51279,7 +49494,6 @@ var require_query4 = __commonJS({
           console.error("This can cause conflicts and silent errors executing queries");
         }
         const values = (this.values || []).map(utils.prepareValue);
-<<<<<<< HEAD
         if (client2.namedQueries[this.name]) {
           if (this.text && client2.namedQueries[this.name] !== this.text) {
             const err = new Error(`Prepared statements must be unique - '${this.name}' was used for a different statement`);
@@ -51290,7 +49504,6 @@ var require_query4 = __commonJS({
         return client2.native.prepare(this.name, this.text, values.length, function(err) {
           if (err) return after(err);
           client2.namedQueries[self2.name] = self2.text;
-=======
         if (client.namedQueries[this.name]) {
           if (this.text && client.namedQueries[this.name] !== this.text) {
             const err = new Error(`Prepared statements must be unique - '${this.name}' was used for a different statement`);
@@ -51301,7 +49514,6 @@ var require_query4 = __commonJS({
         return client.native.prepare(this.name, this.text, values.length, function(err) {
           if (err) return after(err);
           client.namedQueries[self2.name] = self2.text;
->>>>>>> origin/main
           return self2.native.execute(self2.name, values, after);
         });
       } else if (this.values) {
@@ -51310,19 +49522,16 @@ var require_query4 = __commonJS({
           return after(err);
         }
         const vals = this.values.map(utils.prepareValue);
-<<<<<<< HEAD
         client2.native.query(this.text, vals, after);
       } else if (this.queryMode === "extended") {
         client2.native.query(this.text, [], after);
       } else {
         client2.native.query(this.text, after);
-=======
         client.native.query(this.text, vals, after);
       } else if (this.queryMode === "extended") {
         client.native.query(this.text, [], after);
       } else {
         client.native.query(this.text, after);
->>>>>>> origin/main
       }
     };
   }
@@ -51348,11 +49557,8 @@ var require_client4 = __commonJS({
       },
       "Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead."
     );
-<<<<<<< HEAD
     var Client4 = module.exports = function(config2) {
-=======
     var Client5 = module.exports = function(config2) {
->>>>>>> origin/main
       EventEmitter2.call(this);
       config2 = config2 || {};
       this._Promise = config2.Promise || global.Promise;
@@ -51379,15 +49585,12 @@ var require_client4 = __commonJS({
       this.port = cp.port;
       this.namedQueries = {};
     };
-<<<<<<< HEAD
     Client4.Query = NativeQuery;
     util3.inherits(Client4, EventEmitter2);
     Client4.prototype._errorAllQueries = function(err) {
-=======
     Client5.Query = NativeQuery;
     util3.inherits(Client5, EventEmitter2);
     Client5.prototype._errorAllQueries = function(err) {
->>>>>>> origin/main
       const enqueueError = (query) => {
         process.nextTick(() => {
           query.native = this.native;
@@ -51401,11 +49604,8 @@ var require_client4 = __commonJS({
       this._queryQueue.forEach(enqueueError);
       this._queryQueue.length = 0;
     };
-<<<<<<< HEAD
     Client4.prototype._connect = function(cb) {
-=======
     Client5.prototype._connect = function(cb) {
->>>>>>> origin/main
       const self2 = this;
       if (this._connecting) {
         process.nextTick(() => cb(new Error("Client has already been connected. You cannot reuse a client.")));
@@ -51438,11 +49638,8 @@ var require_client4 = __commonJS({
         });
       });
     };
-<<<<<<< HEAD
     Client4.prototype.connect = function(callback) {
-=======
     Client5.prototype.connect = function(callback) {
->>>>>>> origin/main
       if (callback) {
         this._connect(callback);
         return;
@@ -51457,11 +49654,8 @@ var require_client4 = __commonJS({
         });
       });
     };
-<<<<<<< HEAD
     Client4.prototype.query = function(config2, values, callback) {
-=======
     Client5.prototype.query = function(config2, values, callback) {
->>>>>>> origin/main
       let query;
       let result;
       let readTimeout;
@@ -51533,11 +49727,8 @@ var require_client4 = __commonJS({
       this._pulseQueryQueue();
       return result;
     };
-<<<<<<< HEAD
     Client4.prototype.end = function(cb) {
-=======
     Client5.prototype.end = function(cb) {
->>>>>>> origin/main
       const self2 = this;
       this._ending = true;
       if (!this._connected) {
@@ -51559,17 +49750,14 @@ var require_client4 = __commonJS({
       });
       return result;
     };
-<<<<<<< HEAD
     Client4.prototype._hasActiveQuery = function() {
       return this._activeQuery && this._activeQuery.state !== "error" && this._activeQuery.state !== "end";
     };
     Client4.prototype._pulseQueryQueue = function(initialConnection) {
-=======
     Client5.prototype._hasActiveQuery = function() {
       return this._activeQuery && this._activeQuery.state !== "error" && this._activeQuery.state !== "end";
     };
     Client5.prototype._pulseQueryQueue = function(initialConnection) {
->>>>>>> origin/main
       if (!this._connected) {
         return;
       }
@@ -51590,11 +49778,8 @@ var require_client4 = __commonJS({
         self2._pulseQueryQueue();
       });
     };
-<<<<<<< HEAD
     Client4.prototype.cancel = function(query) {
-=======
     Client5.prototype.cancel = function(query) {
->>>>>>> origin/main
       if (this._activeQuery === query) {
         this.native.cancel(function() {
         });
@@ -51602,7 +49787,6 @@ var require_client4 = __commonJS({
         this._queryQueue.splice(this._queryQueue.indexOf(query), 1);
       }
     };
-<<<<<<< HEAD
     Client4.prototype.ref = function() {
     };
     Client4.prototype.unref = function() {
@@ -51614,7 +49798,6 @@ var require_client4 = __commonJS({
       return this._types.getTypeParser(oid, format);
     };
     Client4.prototype.isConnected = function() {
-=======
     Client5.prototype.ref = function() {
     };
     Client5.prototype.unref = function() {
@@ -51626,7 +49809,6 @@ var require_client4 = __commonJS({
       return this._types.getTypeParser(oid, format);
     };
     Client5.prototype.isConnected = function() {
->>>>>>> origin/main
       return this._connected;
     };
   }
@@ -51644,11 +49826,8 @@ var require_native2 = __commonJS({
 var require_lib6 = __commonJS({
   "../../node_modules/.pnpm/pg@8.20.0/node_modules/pg/lib/index.js"(exports, module) {
     "use strict";
-<<<<<<< HEAD
     var Client4 = require_client3();
-=======
     var Client5 = require_client3();
->>>>>>> origin/main
     var defaults4 = require_defaults2();
     var Connection3 = require_connection2();
     var Result3 = require_result2();
@@ -51657,17 +49836,14 @@ var require_lib6 = __commonJS({
     var TypeOverrides3 = require_type_overrides2();
     var { DatabaseError: DatabaseError3 } = require_dist6();
     var { escapeIdentifier: escapeIdentifier3, escapeLiteral: escapeLiteral3 } = require_utils6();
-<<<<<<< HEAD
     var poolFactory = (Client5) => {
       return class BoundPool extends Pool6 {
         constructor(options) {
           super(options, Client5);
-=======
     var poolFactory = (Client6) => {
       return class BoundPool extends Pool6 {
         constructor(options) {
           super(options, Client6);
->>>>>>> origin/main
         }
       };
     };
@@ -51686,11 +49862,8 @@ var require_lib6 = __commonJS({
       this.Result = Result3;
       this.utils = utils;
     };
-<<<<<<< HEAD
     var clientConstructor = Client4;
-=======
     var clientConstructor = Client5;
->>>>>>> origin/main
     var forceNative = false;
     try {
       forceNative = !!process.env.NODE_PG_FORCE_NATIVE;
@@ -51831,7 +50004,6 @@ var require_lib7 = __commonJS({
     conversions["USVString"] = function(V2) {
       const S2 = String(V2);
       const n2 = S2.length;
-<<<<<<< HEAD
       const U3 = [];
       for (let i2 = 0; i2 < n2; ++i2) {
         const c2 = S2.charCodeAt(i2);
@@ -51842,7 +50014,6 @@ var require_lib7 = __commonJS({
         } else {
           if (i2 === n2 - 1) {
             U3.push(String.fromCodePoint(65533));
-=======
       const U4 = [];
       for (let i2 = 0; i2 < n2; ++i2) {
         const c2 = S2.charCodeAt(i2);
@@ -51853,32 +50024,25 @@ var require_lib7 = __commonJS({
         } else {
           if (i2 === n2 - 1) {
             U4.push(String.fromCodePoint(65533));
->>>>>>> origin/main
           } else {
             const d2 = S2.charCodeAt(i2 + 1);
             if (56320 <= d2 && d2 <= 57343) {
               const a2 = c2 & 1023;
               const b2 = d2 & 1023;
-<<<<<<< HEAD
               U3.push(String.fromCodePoint((2 << 15) + (2 << 9) * a2 + b2));
               ++i2;
             } else {
               U3.push(String.fromCodePoint(65533));
-=======
               U4.push(String.fromCodePoint((2 << 15) + (2 << 9) * a2 + b2));
               ++i2;
             } else {
               U4.push(String.fromCodePoint(65533));
->>>>>>> origin/main
             }
           }
         }
       }
-<<<<<<< HEAD
       return U3.join("");
-=======
       return U4.join("");
->>>>>>> origin/main
     };
     conversions["Date"] = function(V2, opts) {
       if (!(V2 instanceof Date)) {
@@ -51937,13 +50101,10 @@ var require_tr46 = __commonJS({
       NONTRANSITIONAL: 1
     };
     function normalize2(str2) {
-<<<<<<< HEAD
       return str2.split("\0").map(function(s3) {
         return s3.normalize("NFC");
-=======
       return str2.split("\0").map(function(s4) {
         return s4.normalize("NFC");
->>>>>>> origin/main
       }).join("\0");
     }
     function findStatus(val) {
@@ -54575,15 +52736,12 @@ var require_lib8 = __commonJS({
           }
         });
         if (parseInt(process.version.substring(1)) < 14) {
-<<<<<<< HEAD
           req.on("socket", function(s3) {
             s3.addListener("close", function(hadError) {
               const hasDataListener = s3.listenerCount("data") > 0;
-=======
           req.on("socket", function(s4) {
             s4.addListener("close", function(hadError) {
               const hasDataListener = s4.listenerCount("data") > 0;
->>>>>>> origin/main
               if (response && hasDataListener && !hadError && !(signal && signal.aborted)) {
                 const err = new Error("Premature close");
                 err.code = "ERR_STREAM_PREMATURE_CLOSE";
@@ -54724,13 +52882,10 @@ var require_lib8 = __commonJS({
     }
     function fixResponseChunkedTransferBadEnding(request, errorCallback) {
       let socket;
-<<<<<<< HEAD
       request.on("socket", function(s3) {
         socket = s3;
-=======
       request.on("socket", function(s4) {
         socket = s4;
->>>>>>> origin/main
       });
       request.on("response", function(response) {
         const headers = response.headers;
@@ -54788,11 +52943,8 @@ function c(e2) {
   return l(e2);
 }
 function d(e2) {
-<<<<<<< HEAD
   return s2(e2);
-=======
   return s3(e2);
->>>>>>> origin/main
 }
 function f(e2, t2, r2) {
   return i.call(e2, t2, r2);
@@ -54803,11 +52955,8 @@ function b(e2, t2, r2) {
 function h(e2, t2) {
   b(e2, t2);
 }
-<<<<<<< HEAD
 function _2(e2, t2) {
-=======
 function _3(e2, t2) {
->>>>>>> origin/main
   b(e2, void 0, t2);
 }
 function p(e2, t2, r2) {
@@ -54832,17 +52981,14 @@ function E(e2, t2) {
     O(e3), j(e3);
   })(e2) : B(e2, t2._storedError);
 }
-<<<<<<< HEAD
 function P2(e2, t2) {
   return Gt(e2._ownerReadableStream, t2);
 }
 function W2(e2) {
-=======
 function P3(e2, t2) {
   return Gt(e2._ownerReadableStream, t2);
 }
 function W3(e2) {
->>>>>>> origin/main
   const t2 = e2._ownerReadableStream;
   "readable" === t2._state ? A(e2, new TypeError("Reader was released and can no longer be used to monitor the stream's closedness")) : (function(e3, t3) {
     B(e3, t3);
@@ -54865,7 +53011,6 @@ function A(e2, t2) {
 function j(e2) {
   void 0 !== e2._closedPromise_resolve && (e2._closedPromise_resolve(void 0), e2._closedPromise_resolve = void 0, e2._closedPromise_reject = void 0);
 }
-<<<<<<< HEAD
 function F2(e2, t2) {
   if (void 0 !== e2 && ("object" != typeof (r2 = e2) && "function" != typeof r2)) throw new TypeError(`${t2} is not an object.`);
   var r2;
@@ -54874,7 +53019,6 @@ function I2(e2, t2) {
   if ("function" != typeof e2) throw new TypeError(`${t2} is not a function.`);
 }
 function D2(e2, t2) {
-=======
 function F3(e2, t2) {
   if (void 0 !== e2 && ("object" != typeof (r2 = e2) && "function" != typeof r2)) throw new TypeError(`${t2} is not an object.`);
   var r2;
@@ -54883,16 +53027,12 @@ function I3(e2, t2) {
   if ("function" != typeof e2) throw new TypeError(`${t2} is not a function.`);
 }
 function D3(e2, t2) {
->>>>>>> origin/main
   if (!/* @__PURE__ */ (function(e3) {
     return "object" == typeof e3 && null !== e3 || "function" == typeof e3;
   })(e2)) throw new TypeError(`${t2} is not an object.`);
 }
-<<<<<<< HEAD
 function $2(e2, t2, r2) {
-=======
 function $3(e2, t2, r2) {
->>>>>>> origin/main
   if (void 0 === e2) throw new TypeError(`Parameter ${t2} is required in '${r2}'.`);
 }
 function M(e2, t2, r2) {
@@ -54909,19 +53049,16 @@ function N(e2, t2) {
   let o2 = Number(e2);
   if (o2 = Q(o2), !z(o2)) throw new TypeError(`${t2} is not a finite number`);
   if (o2 = (function(e3) {
-<<<<<<< HEAD
     return Q(L2(e3));
   })(o2), o2 < 0 || o2 > r2) throw new TypeError(`${t2} is outside the accepted range of 0 to ${r2}, inclusive`);
   return z(o2) && 0 !== o2 ? o2 : 0;
 }
 function H2(e2) {
-=======
     return Q(L3(e3));
   })(o2), o2 < 0 || o2 > r2) throw new TypeError(`${t2} is outside the accepted range of 0 to ${r2}, inclusive`);
   return z(o2) && 0 !== o2 ? o2 : 0;
 }
 function H3(e2) {
->>>>>>> origin/main
   if (!r(e2)) return false;
   if ("function" != typeof e2.getReader) return false;
   try {
@@ -54942,11 +53079,8 @@ function x(e2) {
 function V(e2, t2) {
   if (!Vt(e2)) throw new TypeError(`${t2} is not a ReadableStream.`);
 }
-<<<<<<< HEAD
 function U2(e2, t2) {
-=======
 function U3(e2, t2) {
->>>>>>> origin/main
   e2._reader._readRequests.push(t2);
 }
 function G(e2, t2, r2) {
@@ -55062,23 +53196,17 @@ function ge(e2, t2) {
 }
 function we(e2, t2) {
   const r2 = t2.elementSize, o2 = t2.bytesFilled - t2.bytesFilled % r2, n2 = Math.min(e2._queueTotalSize, t2.byteLength - t2.bytesFilled), a2 = t2.bytesFilled + n2, i2 = a2 - a2 % r2;
-<<<<<<< HEAD
   let l2 = n2, s3 = false;
   i2 > o2 && (l2 = i2 - t2.bytesFilled, s3 = true);
-=======
   let l2 = n2, s4 = false;
   i2 > o2 && (l2 = i2 - t2.bytesFilled, s4 = true);
->>>>>>> origin/main
   const u2 = e2._queue;
   for (; l2 > 0; ) {
     const r3 = u2.peek(), o3 = Math.min(l2, r3.byteLength), n3 = t2.byteOffset + t2.bytesFilled;
     ie(t2.buffer, n3, r3.buffer, r3.byteOffset, o3), r3.byteLength === o3 ? u2.shift() : (r3.byteOffset += o3, r3.byteLength -= o3), e2._queueTotalSize -= o3, Se(e2, o3, t2), l2 -= o3;
   }
-<<<<<<< HEAD
   return s3;
-=======
   return s4;
->>>>>>> origin/main
 }
 function Se(e2, t2, r2) {
   r2.bytesFilled += t2;
@@ -55185,16 +53313,12 @@ function Me(e2) {
   return t2 || (() => 1);
 }
 function Ye(e2, t2) {
-<<<<<<< HEAD
   F2(e2, t2);
-=======
   F3(e2, t2);
->>>>>>> origin/main
   const r2 = null == e2 ? void 0 : e2.highWaterMark, o2 = null == e2 ? void 0 : e2.size;
   return { highWaterMark: void 0 === r2 ? void 0 : Y(r2), size: void 0 === o2 ? void 0 : Qe(o2, `${t2} has member 'size' that`) };
 }
 function Qe(e2, t2) {
-<<<<<<< HEAD
   return I2(e2, t2), (t3) => Y(e2(t3));
 }
 function Ne(e2, t2, r2) {
@@ -55208,7 +53332,6 @@ function xe(e2, t2, r2) {
 }
 function Ve(e2, t2, r2) {
   return I2(e2, r2), (r3, o2) => w(e2, t2, [r3, o2]);
-=======
   return I3(e2, t2), (t3) => Y(e2(t3));
 }
 function Ne(e2, t2, r2) {
@@ -55222,7 +53345,6 @@ function xe(e2, t2, r2) {
 }
 function Ve(e2, t2, r2) {
   return I3(e2, r2), (r3, o2) => w(e2, t2, [r3, o2]);
->>>>>>> origin/main
 }
 function Ge(e2) {
   return !!r(e2) && (!!Object.prototype.hasOwnProperty.call(e2, "_writableStreamController") && e2 instanceof WritableStream);
@@ -55403,20 +53525,14 @@ function Et(e2) {
 function kt(e2, t2, r2, o2, n2, a2) {
   const i2 = e2.getReader(), l2 = t2.getWriter();
   Vt(e2) && (e2._disturbed = true);
-<<<<<<< HEAD
   let s3, _3, g2, w2 = false, S2 = false, v2 = "readable", R2 = "writable", T2 = false, q2 = false;
-=======
   let s4, _4, g2, w2 = false, S2 = false, v2 = "readable", R2 = "writable", T2 = false, q2 = false;
->>>>>>> origin/main
   const C2 = u(((e3) => {
     g2 = e3;
   }));
   let E2 = Promise.resolve(void 0);
-<<<<<<< HEAD
   return u(((P3, W3) => {
-=======
   return u(((P4, W4) => {
->>>>>>> origin/main
     let k2;
     function O2() {
       if (w2) return;
@@ -55431,7 +53547,6 @@ function kt(e2, t2, r2, o2, n2, a2) {
       m(e3);
     }
     function B2() {
-<<<<<<< HEAD
       return v2 = "closed", r2 ? L3() : z2((() => (Ge(t2) && (T2 = rt(t2), R2 = t2._state), T2 || "closed" === R2 ? c(void 0) : "erroring" === R2 || "errored" === R2 ? d(_3) : (T2 = true, l2.close()))), false, void 0), null;
     }
     function A2(e3) {
@@ -55439,7 +53554,6 @@ function kt(e2, t2, r2, o2, n2, a2) {
     }
     function j2(e3) {
       return S2 || (R2 = "errored", _3 = e3, n2 ? L3(true, e3) : z2((() => i2.cancel(e3)), true, e3)), null;
-=======
       return v2 = "closed", r2 ? L4() : z2((() => (Ge(t2) && (T2 = rt(t2), R2 = t2._state), T2 || "closed" === R2 ? c(void 0) : "erroring" === R2 || "errored" === R2 ? d(_4) : (T2 = true, l2.close()))), false, void 0), null;
     }
     function A2(e3) {
@@ -55447,26 +53561,22 @@ function kt(e2, t2, r2, o2, n2, a2) {
     }
     function j2(e3) {
       return S2 || (R2 = "errored", _4 = e3, n2 ? L4(true, e3) : z2((() => i2.cancel(e3)), true, e3)), null;
->>>>>>> origin/main
     }
     if (void 0 !== a2 && (k2 = () => {
       const e3 = void 0 !== a2.reason ? a2.reason : new Wt("Aborted", "AbortError"), t3 = [];
       o2 || t3.push((() => "writable" === R2 ? l2.abort(e3) : c(void 0))), n2 || t3.push((() => "readable" === v2 ? i2.cancel(e3) : c(void 0))), z2((() => Promise.all(t3.map(((e4) => e4())))), true, e3);
-<<<<<<< HEAD
     }, a2.aborted ? k2() : a2.addEventListener("abort", k2)), Vt(e2) && (v2 = e2._state, s3 = e2._storedError), Ge(t2) && (R2 = t2._state, _3 = t2._storedError, T2 = rt(t2)), Vt(e2) && Ge(t2) && (q2 = true, g2()), "errored" === v2) A2(s3);
     else if ("erroring" === R2 || "errored" === R2) j2(_3);
     else if ("closed" === v2) B2();
     else if (T2 || "closed" === R2) {
       const e3 = new TypeError("the destination writable stream closed before all data could be piped to it");
       n2 ? L3(true, e3) : z2((() => i2.cancel(e3)), true, e3);
-=======
     }, a2.aborted ? k2() : a2.addEventListener("abort", k2)), Vt(e2) && (v2 = e2._state, s4 = e2._storedError), Ge(t2) && (R2 = t2._state, _4 = t2._storedError, T2 = rt(t2)), Vt(e2) && Ge(t2) && (q2 = true, g2()), "errored" === v2) A2(s4);
     else if ("erroring" === R2 || "errored" === R2) j2(_4);
     else if ("closed" === v2) B2();
     else if (T2 || "closed" === R2) {
       const e3 = new TypeError("the destination writable stream closed before all data could be piped to it");
       n2 ? L4(true, e3) : z2((() => i2.cancel(e3)), true, e3);
->>>>>>> origin/main
     }
     function z2(e3, t3, r3) {
       function o3() {
@@ -55478,7 +53588,6 @@ function kt(e2, t2, r2, o2, n2, a2) {
         })(), n3), null;
       }
       function n3() {
-<<<<<<< HEAD
         return e3 ? b(e3(), (() => F3(t3, r3)), ((e4) => F3(true, e4))) : F3(t3, r3), null;
       }
       w2 || (w2 = true, q2 ? o3() : h(C2, o3));
@@ -55488,7 +53597,6 @@ function kt(e2, t2, r2, o2, n2, a2) {
     }
     function F3(e3, t3) {
       return S2 = true, l2.releaseLock(), i2.releaseLock(), void 0 !== a2 && a2.removeEventListener("abort", k2), e3 ? W3(t3) : P3(void 0), null;
-=======
         return e3 ? b(e3(), (() => F4(t3, r3)), ((e4) => F4(true, e4))) : F4(t3, r3), null;
       }
       w2 || (w2 = true, q2 ? o3() : h(C2, o3));
@@ -55498,7 +53606,6 @@ function kt(e2, t2, r2, o2, n2, a2) {
     }
     function F4(e3, t3) {
       return S2 = true, l2.releaseLock(), i2.releaseLock(), void 0 !== a2 && a2.removeEventListener("abort", k2), e3 ? W4(t3) : P4(void 0), null;
->>>>>>> origin/main
     }
     w2 || (b(i2.closed, B2, A2), b(l2.closed, (function() {
       return S2 || (R2 = "closed"), null;
@@ -55515,20 +53622,14 @@ function Ot(e2, t2) {
       return false;
     }
   })(e2) ? (function(e3) {
-<<<<<<< HEAD
     let t3, r2, o2, n2, a2, i2 = e3.getReader(), l2 = false, s3 = false, d2 = false, f2 = false, h2 = false, p2 = false;
-=======
     let t3, r2, o2, n2, a2, i2 = e3.getReader(), l2 = false, s4 = false, d2 = false, f2 = false, h2 = false, p2 = false;
->>>>>>> origin/main
     const m2 = u(((e4) => {
       a2 = e4;
     }));
     function y2(e4) {
-<<<<<<< HEAD
       _2(e4.closed, ((t4) => (e4 !== i2 || (o2.error(t4), n2.error(t4), h2 && p2 || a2(void 0)), null)));
-=======
       _3(e4.closed, ((t4) => (e4 !== i2 || (o2.error(t4), n2.error(t4), h2 && p2 || a2(void 0)), null)));
->>>>>>> origin/main
     }
     function g2() {
       l2 && (i2.releaseLock(), i2 = e3.getReader(), y2(i2), l2 = false), b(i2.read(), ((e4) => {
@@ -55541,13 +53642,10 @@ function Ot(e2, t2) {
         } catch (e5) {
           return o2.error(e5), n2.error(e5), a2(i2.cancel(e5)), null;
         }
-<<<<<<< HEAD
         return h2 || o2.enqueue(u2), p2 || n2.enqueue(c2), s3 = false, d2 ? S2() : f2 && v2(), null;
       }), (() => (s3 = false, null)));
-=======
         return h2 || o2.enqueue(u2), p2 || n2.enqueue(c2), s4 = false, d2 ? S2() : f2 && v2(), null;
       }), (() => (s4 = false, null)));
->>>>>>> origin/main
     }
     function w2(t4, r3) {
       l2 || (i2.releaseLock(), i2 = e3.getReader({ mode: "byob" }), y2(i2), l2 = true);
@@ -55572,32 +53670,26 @@ function Ot(e2, t2) {
           }
           o3 || u2.byobRequest.respondWithNewView(l3), c2.enqueue(e5);
         }
-<<<<<<< HEAD
         return s3 = false, d2 ? S2() : f2 && v2(), null;
       }), (() => (s3 = false, null)));
     }
     function S2() {
       if (s3) return d2 = true, c(void 0);
       s3 = true;
-=======
         return s4 = false, d2 ? S2() : f2 && v2(), null;
       }), (() => (s4 = false, null)));
     }
     function S2() {
       if (s4) return d2 = true, c(void 0);
       s4 = true;
->>>>>>> origin/main
       const e4 = o2.byobRequest;
       return null === e4 ? g2() : w2(e4.view, false), c(void 0);
     }
     function v2() {
-<<<<<<< HEAD
       if (s3) return f2 = true, c(void 0);
       s3 = true;
-=======
       if (s4) return f2 = true, c(void 0);
       s4 = true;
->>>>>>> origin/main
       const e4 = n2.byobRequest;
       return null === e4 ? g2() : w2(e4.view, true), c(void 0);
     }
@@ -55623,28 +53715,22 @@ function Ot(e2, t2) {
     return y2(i2), [q2, C2];
   })(e2) : (function(e3, t3) {
     const r2 = e3.getReader();
-<<<<<<< HEAD
     let o2, n2, a2, i2, l2, s3 = false, d2 = false, f2 = false, h2 = false;
-=======
     let o2, n2, a2, i2, l2, s4 = false, d2 = false, f2 = false, h2 = false;
->>>>>>> origin/main
     const p2 = u(((e4) => {
       l2 = e4;
     }));
     function m2() {
-<<<<<<< HEAD
       return s3 ? (d2 = true, c(void 0)) : (s3 = true, b(r2.read(), ((e4) => {
         if (d2 = false, e4.done) return f2 || a2.close(), h2 || i2.close(), f2 && h2 || l2(void 0), null;
         const t4 = e4.value, r3 = t4, o3 = t4;
         return f2 || a2.enqueue(r3), h2 || i2.enqueue(o3), s3 = false, d2 && m2(), null;
       }), (() => (s3 = false, null))), c(void 0));
-=======
       return s4 ? (d2 = true, c(void 0)) : (s4 = true, b(r2.read(), ((e4) => {
         if (d2 = false, e4.done) return f2 || a2.close(), h2 || i2.close(), f2 && h2 || l2(void 0), null;
         const t4 = e4.value, r3 = t4, o3 = t4;
         return f2 || a2.enqueue(r3), h2 || i2.enqueue(o3), s4 = false, d2 && m2(), null;
       }), (() => (s4 = false, null))), c(void 0));
->>>>>>> origin/main
     }
     function y2(e4) {
       if (f2 = true, o2 = e4, h2) {
@@ -55665,11 +53751,8 @@ function Ot(e2, t2) {
     }, pull: m2, cancel: y2 }), S2 = new ReadableStream2({ start(e4) {
       i2 = e4;
     }, pull: m2, cancel: g2 });
-<<<<<<< HEAD
     return _2(r2.closed, ((e4) => (a2.error(e4), i2.error(e4), f2 && h2 || l2(void 0), null))), [w2, S2];
-=======
     return _3(r2.closed, ((e4) => (a2.error(e4), i2.error(e4), f2 && h2 || l2(void 0), null))), [w2, S2];
->>>>>>> origin/main
   })(e2);
 }
 function Bt(e2) {
@@ -55715,7 +53798,6 @@ function Dt(e2) {
   return new TypeError(`ReadableStreamDefaultController.prototype.${e2} can only be used on a ReadableStreamDefaultController`);
 }
 function $t(e2, t2, r2) {
-<<<<<<< HEAD
   return I2(e2, r2), (r3) => w(e2, t2, [r3]);
 }
 function Mt(e2, t2, r2) {
@@ -55723,7 +53805,6 @@ function Mt(e2, t2, r2) {
 }
 function Yt(e2, t2, r2) {
   return I2(e2, r2), (r3) => g(e2, t2, [r3]);
-=======
   return I3(e2, r2), (r3) => w(e2, t2, [r3]);
 }
 function Mt(e2, t2, r2) {
@@ -55731,7 +53812,6 @@ function Mt(e2, t2, r2) {
 }
 function Yt(e2, t2, r2) {
   return I3(e2, r2), (r3) => g(e2, t2, [r3]);
->>>>>>> origin/main
 }
 function Qt(e2, t2) {
   if ("bytes" !== (e2 = `${e2}`)) throw new TypeError(`${t2} '${e2}' is not a valid enumeration value for ReadableStreamType`);
@@ -55742,11 +53822,8 @@ function Nt(e2, t2) {
   return e2;
 }
 function Ht(e2, t2) {
-<<<<<<< HEAD
   F2(e2, t2);
-=======
   F3(e2, t2);
->>>>>>> origin/main
   const r2 = null == e2 ? void 0 : e2.preventAbort, o2 = null == e2 ? void 0 : e2.preventCancel, n2 = null == e2 ? void 0 : e2.preventClose, a2 = null == e2 ? void 0 : e2.signal;
   return void 0 !== a2 && (function(e3, t3) {
     if (!(function(e4) {
@@ -55760,17 +53837,14 @@ function Ht(e2, t2) {
   })(a2, `${t2} has member 'signal' that`), { preventAbort: Boolean(r2), preventCancel: Boolean(o2), preventClose: Boolean(n2), signal: a2 };
 }
 function xt(e2, t2) {
-<<<<<<< HEAD
   F2(e2, t2);
   const r2 = null == e2 ? void 0 : e2.readable;
   M(r2, "readable", "ReadableWritablePair"), (function(e3, t3) {
     if (!H2(e3)) throw new TypeError(`${t3} is not a ReadableStream.`);
-=======
   F3(e2, t2);
   const r2 = null == e2 ? void 0 : e2.readable;
   M(r2, "readable", "ReadableWritablePair"), (function(e3, t3) {
     if (!H3(e3)) throw new TypeError(`${t3} is not a ReadableStream.`);
->>>>>>> origin/main
   })(r2, `${t2} has member 'readable' that`);
   const o2 = null == e2 ? void 0 : e2.writable;
   return M(o2, "writable", "ReadableWritablePair"), (function(e3, t3) {
@@ -55815,11 +53889,8 @@ function Kt(e2) {
   return new TypeError(`ReadableStream.prototype.${e2} can only be used on a ReadableStream`);
 }
 function Zt(e2, t2) {
-<<<<<<< HEAD
   F2(e2, t2);
-=======
   F3(e2, t2);
->>>>>>> origin/main
   const r2 = null == e2 ? void 0 : e2.highWaterMark;
   return M(r2, "highWaterMark", "QueuingStrategyInit"), { highWaterMark: Y(r2) };
 }
@@ -55836,7 +53907,6 @@ function ar(e2) {
   return !!r(e2) && (!!Object.prototype.hasOwnProperty.call(e2, "_countQueuingStrategyHighWaterMark") && e2 instanceof CountQueuingStrategy);
 }
 function ir(e2, t2, r2) {
-<<<<<<< HEAD
   return I2(e2, r2), (r3) => w(e2, t2, [r3]);
 }
 function lr(e2, t2, r2) {
@@ -55844,7 +53914,6 @@ function lr(e2, t2, r2) {
 }
 function sr(e2, t2, r2) {
   return I2(e2, r2), (r3, o2) => w(e2, t2, [r3, o2]);
-=======
   return I3(e2, r2), (r3) => w(e2, t2, [r3]);
 }
 function lr(e2, t2, r2) {
@@ -55852,7 +53921,6 @@ function lr(e2, t2, r2) {
 }
 function sr(e2, t2, r2) {
   return I3(e2, r2), (r3, o2) => w(e2, t2, [r3, o2]);
->>>>>>> origin/main
 }
 function ur(e2) {
   return !!r(e2) && (!!Object.prototype.hasOwnProperty.call(e2, "_transformStreamController") && e2 instanceof TransformStream);
@@ -55939,11 +54007,8 @@ function qr(e2) {
 function Cr(e2) {
   "erroring" === e2._writableState && qr(e2);
 }
-<<<<<<< HEAD
 var e, o, a, i, l, s2, y, S, v, R, T, q, C, z, L2, ReadableStreamDefaultReader, te, re, ae, ReadableStreamBYOBRequest, ReadableByteStreamController, ReadableStreamBYOBReader, Ue, WritableStream, WritableStreamDefaultWriter, lt3, WritableStreamDefaultController, Pt, Wt, ReadableStreamDefaultController, ReadableStream2, er, ByteLengthQueuingStrategy, or3, CountQueuingStrategy, TransformStream, TransformStreamDefaultController;
-=======
 var e, o, a, i, l, s3, y, S, v, R, T, q, C, z, L3, ReadableStreamDefaultReader, te, re, ae, ReadableStreamBYOBRequest, ReadableByteStreamController, ReadableStreamBYOBReader, Ue, WritableStream, WritableStreamDefaultWriter, lt3, WritableStreamDefaultController, Pt, Wt, ReadableStreamDefaultController, ReadableStream2, er, ByteLengthQueuingStrategy, or3, CountQueuingStrategy, TransformStream, TransformStreamDefaultController;
->>>>>>> origin/main
 var init_ponyfill = __esm({
   "../../node_modules/.pnpm/web-streams-polyfill@4.0.0-beta.3/node_modules/web-streams-polyfill/dist/ponyfill.mjs"() {
     e = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? Symbol : (e2) => `Symbol(${e2})`;
@@ -55951,11 +54016,8 @@ var init_ponyfill = __esm({
     a = Promise;
     i = Promise.prototype.then;
     l = Promise.resolve.bind(a);
-<<<<<<< HEAD
     s2 = Promise.reject.bind(a);
-=======
     s3 = Promise.reject.bind(a);
->>>>>>> origin/main
     y = (e2) => {
       if ("function" == typeof queueMicrotask) y = queueMicrotask;
       else {
@@ -56001,31 +54063,22 @@ var init_ponyfill = __esm({
     z = Number.isFinite || function(e2) {
       return "number" == typeof e2 && isFinite(e2);
     };
-<<<<<<< HEAD
     L2 = Math.trunc || function(e2) {
-=======
     L3 = Math.trunc || function(e2) {
->>>>>>> origin/main
       return e2 < 0 ? Math.ceil(e2) : Math.floor(e2);
     };
     ReadableStreamDefaultReader = class {
       constructor(e2) {
-<<<<<<< HEAD
         if ($2(e2, 1, "ReadableStreamDefaultReader"), V(e2, "First parameter"), Ut(e2)) throw new TypeError("This stream has already been locked for exclusive reading by another reader");
-=======
         if ($3(e2, 1, "ReadableStreamDefaultReader"), V(e2, "First parameter"), Ut(e2)) throw new TypeError("This stream has already been locked for exclusive reading by another reader");
->>>>>>> origin/main
         E(this, e2), this._readRequests = new S();
       }
       get closed() {
         return K(this) ? this._closedPromise : d(ee("closed"));
       }
       cancel(e2) {
-<<<<<<< HEAD
         return K(this) ? void 0 === this._ownerReadableStream ? d(k("cancel")) : P2(this, e2) : d(ee("cancel"));
-=======
         return K(this) ? void 0 === this._ownerReadableStream ? d(k("cancel")) : P3(this, e2) : d(ee("cancel"));
->>>>>>> origin/main
       }
       read() {
         if (!K(this)) return d(ee("read"));
@@ -56042,11 +54095,8 @@ var init_ponyfill = __esm({
       releaseLock() {
         if (!K(this)) throw ee("releaseLock");
         void 0 !== this._ownerReadableStream && (function(e2) {
-<<<<<<< HEAD
           W2(e2);
-=======
           W3(e2);
->>>>>>> origin/main
           const t2 = new TypeError("Reader was released");
           Z(e2, t2);
         })(this);
@@ -56109,11 +54159,8 @@ var init_ponyfill = __esm({
       }
       respond(e2) {
         if (!fe(this)) throw Be("respond");
-<<<<<<< HEAD
         if ($2(e2, 1, "respond"), e2 = N(e2, "First parameter"), void 0 === this._associatedReadableByteStreamController) throw new TypeError("This BYOB request has been invalidated");
-=======
         if ($3(e2, 1, "respond"), e2 = N(e2, "First parameter"), void 0 === this._associatedReadableByteStreamController) throw new TypeError("This BYOB request has been invalidated");
->>>>>>> origin/main
         this._view.buffer, (function(e3, t2) {
           const r2 = e3._pendingPullIntos.peek();
           if ("closed" === e3._controlledReadableByteStream._state) {
@@ -56127,11 +54174,8 @@ var init_ponyfill = __esm({
       }
       respondWithNewView(e2) {
         if (!fe(this)) throw Be("respondWithNewView");
-<<<<<<< HEAD
         if ($2(e2, 1, "respondWithNewView"), !ArrayBuffer.isView(e2)) throw new TypeError("You can only respond with array buffer views");
-=======
         if ($3(e2, 1, "respondWithNewView"), !ArrayBuffer.isView(e2)) throw new TypeError("You can only respond with array buffer views");
->>>>>>> origin/main
         if (void 0 === this._associatedReadableByteStreamController) throw new TypeError("This BYOB request has been invalidated");
         e2.buffer, (function(e3, t2) {
           const r2 = e3._pendingPullIntos.peek();
@@ -56187,11 +54231,8 @@ var init_ponyfill = __esm({
       }
       enqueue(e2) {
         if (!de(this)) throw Ae("enqueue");
-<<<<<<< HEAD
         if ($2(e2, 1, "enqueue"), !ArrayBuffer.isView(e2)) throw new TypeError("chunk must be an array buffer view");
-=======
         if ($3(e2, 1, "enqueue"), !ArrayBuffer.isView(e2)) throw new TypeError("chunk must be an array buffer view");
->>>>>>> origin/main
         if (0 === e2.byteLength) throw new TypeError("chunk must have non-zero byteLength");
         if (0 === e2.buffer.byteLength) throw new TypeError("chunk's buffer must have non-zero byteLength");
         if (this._closeRequested) throw new TypeError("stream is closed or draining");
@@ -56243,11 +54284,8 @@ var init_ponyfill = __esm({
           const o2 = { buffer: t3, bufferByteLength: r2, byteOffset: 0, byteLength: r2, bytesFilled: 0, elementSize: 1, viewConstructor: Uint8Array, readerType: "default" };
           this._pendingPullIntos.push(o2);
         }
-<<<<<<< HEAD
         U2(t2, e2), be(this);
-=======
         U3(t2, e2), be(this);
->>>>>>> origin/main
       }
       [C]() {
         if (this._pendingPullIntos.length > 0) {
@@ -56259,11 +54297,8 @@ var init_ponyfill = __esm({
     Object.defineProperties(ReadableByteStreamController.prototype, { close: { enumerable: true }, enqueue: { enumerable: true }, error: { enumerable: true }, byobRequest: { enumerable: true }, desiredSize: { enumerable: true } }), n(ReadableByteStreamController.prototype.close, "close"), n(ReadableByteStreamController.prototype.enqueue, "enqueue"), n(ReadableByteStreamController.prototype.error, "error"), "symbol" == typeof e.toStringTag && Object.defineProperty(ReadableByteStreamController.prototype, e.toStringTag, { value: "ReadableByteStreamController", configurable: true });
     ReadableStreamBYOBReader = class {
       constructor(e2) {
-<<<<<<< HEAD
         if ($2(e2, 1, "ReadableStreamBYOBReader"), V(e2, "First parameter"), Ut(e2)) throw new TypeError("This stream has already been locked for exclusive reading by another reader");
-=======
         if ($3(e2, 1, "ReadableStreamBYOBReader"), V(e2, "First parameter"), Ut(e2)) throw new TypeError("This stream has already been locked for exclusive reading by another reader");
->>>>>>> origin/main
         if (!de(e2._readableStreamController)) throw new TypeError("Cannot construct a ReadableStreamBYOBReader for a stream not constructed with a byte source");
         E(this, e2), this._readIntoRequests = new S();
       }
@@ -56271,11 +54306,8 @@ var init_ponyfill = __esm({
         return Fe(this) ? this._closedPromise : d(De("closed"));
       }
       cancel(e2) {
-<<<<<<< HEAD
         return Fe(this) ? void 0 === this._ownerReadableStream ? d(k("cancel")) : P2(this, e2) : d(De("cancel"));
-=======
         return Fe(this) ? void 0 === this._ownerReadableStream ? d(k("cancel")) : P3(this, e2) : d(De("cancel"));
->>>>>>> origin/main
       }
       read(e2) {
         if (!Fe(this)) return d(De("read"));
@@ -56317,11 +54349,8 @@ var init_ponyfill = __esm({
       releaseLock() {
         if (!Fe(this)) throw De("releaseLock");
         void 0 !== this._ownerReadableStream && (function(e2) {
-<<<<<<< HEAD
           W2(e2);
-=======
           W3(e2);
->>>>>>> origin/main
           const t2 = new TypeError("Reader was released");
           Ie(e2, t2);
         })(this);
@@ -56331,15 +54360,12 @@ var init_ponyfill = __esm({
     Ue = "function" == typeof AbortController;
     WritableStream = class {
       constructor(e2 = {}, t2 = {}) {
-<<<<<<< HEAD
         void 0 === e2 ? e2 = null : D2(e2, "First parameter");
         const r2 = Ye(t2, "Second parameter"), o2 = (function(e3, t3) {
           F2(e3, t3);
-=======
         void 0 === e2 ? e2 = null : D3(e2, "First parameter");
         const r2 = Ye(t2, "Second parameter"), o2 = (function(e3, t3) {
           F3(e3, t3);
->>>>>>> origin/main
           const r3 = null == e3 ? void 0 : e3.abort, o3 = null == e3 ? void 0 : e3.close, n3 = null == e3 ? void 0 : e3.start, a3 = null == e3 ? void 0 : e3.type, i2 = null == e3 ? void 0 : e3.write;
           return { abort: void 0 === r3 ? void 0 : Ne(r3, e3, `${t3} has member 'abort' that`), close: void 0 === o3 ? void 0 : He(o3, e3, `${t3} has member 'close' that`), start: void 0 === n3 ? void 0 : xe(n3, e3, `${t3} has member 'start' that`), write: void 0 === i2 ? void 0 : Ve(i2, e3, `${t3} has member 'write' that`), type: a3 };
         })(e2, "First parameter");
@@ -56349,37 +54375,28 @@ var init_ponyfill = __esm({
         const a2 = Me(r2);
         !(function(e3, t3, r3, o3) {
           const n3 = Object.create(WritableStreamDefaultController.prototype);
-<<<<<<< HEAD
           let a3, i2, l2, s3;
-=======
           let a3, i2, l2, s4;
->>>>>>> origin/main
           a3 = void 0 !== t3.start ? () => t3.start(n3) : () => {
           };
           i2 = void 0 !== t3.write ? (e4) => t3.write(e4, n3) : () => c(void 0);
           l2 = void 0 !== t3.close ? () => t3.close() : () => c(void 0);
-<<<<<<< HEAD
           s3 = void 0 !== t3.abort ? (e4) => t3.abort(e4) : () => c(void 0);
-=======
           s4 = void 0 !== t3.abort ? (e4) => t3.abort(e4) : () => c(void 0);
->>>>>>> origin/main
           !(function(e4, t4, r4, o4, n4, a4, i3, l3) {
             t4._controlledWritableStream = e4, e4._writableStreamController = t4, t4._queue = void 0, t4._queueTotalSize = void 0, ce(t4), t4._abortReason = void 0, t4._abortController = (function() {
               if (Ue) return new AbortController();
             })(), t4._started = false, t4._strategySizeAlgorithm = l3, t4._strategyHWM = i3, t4._writeAlgorithm = o4, t4._closeAlgorithm = n4, t4._abortAlgorithm = a4;
-<<<<<<< HEAD
             const s4 = bt(t4);
             nt(e4, s4);
             const u2 = r4();
             b(c(u2), (() => (t4._started = true, dt(t4), null)), ((r5) => (t4._started = true, Ze(e4, r5), null)));
           })(e3, n3, a3, i2, l2, s3, r3, o3);
-=======
             const s5 = bt(t4);
             nt(e4, s5);
             const u2 = r4();
             b(c(u2), (() => (t4._started = true, dt(t4), null)), ((r5) => (t4._started = true, Ze(e4, r5), null)));
           })(e3, n3, a3, i2, l2, s4, r3, o3);
->>>>>>> origin/main
         })(this, o2, $e(r2, 1), a2);
       }
       get locked() {
@@ -56400,11 +54417,8 @@ var init_ponyfill = __esm({
     Object.defineProperties(WritableStream.prototype, { abort: { enumerable: true }, close: { enumerable: true }, getWriter: { enumerable: true }, locked: { enumerable: true } }), n(WritableStream.prototype.abort, "abort"), n(WritableStream.prototype.close, "close"), n(WritableStream.prototype.getWriter, "getWriter"), "symbol" == typeof e.toStringTag && Object.defineProperty(WritableStream.prototype, e.toStringTag, { value: "WritableStream", configurable: true });
     WritableStreamDefaultWriter = class {
       constructor(e2) {
-<<<<<<< HEAD
         if ($2(e2, 1, "WritableStreamDefaultWriter"), (function(e3, t3) {
-=======
         if ($3(e2, 1, "WritableStreamDefaultWriter"), (function(e3, t3) {
->>>>>>> origin/main
           if (!Ge(e3)) throw new TypeError(`${t3} is not a WritableStream.`);
         })(e2, "First parameter"), Xe(e2)) throw new TypeError("This stream has already been locked for exclusive writing by another writer");
         this._ownerWritableStream = e2, e2._writer = this;
@@ -56586,11 +54600,8 @@ var init_ponyfill = __esm({
         if (this._queue.length > 0) {
           const r2 = se(this);
           this._closeRequested && 0 === this._queue.length ? (jt(this), Xt(t2)) : At(this), e2._chunkSteps(r2);
-<<<<<<< HEAD
         } else U2(t2, e2), At(this);
-=======
         } else U3(t2, e2), At(this);
->>>>>>> origin/main
       }
       [C]() {
       }
@@ -56598,15 +54609,12 @@ var init_ponyfill = __esm({
     Object.defineProperties(ReadableStreamDefaultController.prototype, { close: { enumerable: true }, enqueue: { enumerable: true }, error: { enumerable: true }, desiredSize: { enumerable: true } }), n(ReadableStreamDefaultController.prototype.close, "close"), n(ReadableStreamDefaultController.prototype.enqueue, "enqueue"), n(ReadableStreamDefaultController.prototype.error, "error"), "symbol" == typeof e.toStringTag && Object.defineProperty(ReadableStreamDefaultController.prototype, e.toStringTag, { value: "ReadableStreamDefaultController", configurable: true });
     ReadableStream2 = class {
       constructor(e2 = {}, t2 = {}) {
-<<<<<<< HEAD
         void 0 === e2 ? e2 = null : D2(e2, "First parameter");
         const r2 = Ye(t2, "Second parameter"), o2 = (function(e3, t3) {
           F2(e3, t3);
-=======
         void 0 === e2 ? e2 = null : D3(e2, "First parameter");
         const r2 = Ye(t2, "Second parameter"), o2 = (function(e3, t3) {
           F3(e3, t3);
->>>>>>> origin/main
           const r3 = e3, o3 = null == r3 ? void 0 : r3.autoAllocateChunkSize, n3 = null == r3 ? void 0 : r3.cancel, a2 = null == r3 ? void 0 : r3.pull, i2 = null == r3 ? void 0 : r3.start, l2 = null == r3 ? void 0 : r3.type;
           return { autoAllocateChunkSize: void 0 === o3 ? void 0 : N(o3, `${t3} has member 'autoAllocateChunkSize' that`), cancel: void 0 === n3 ? void 0 : $t(n3, r3, `${t3} has member 'cancel' that`), pull: void 0 === a2 ? void 0 : Mt(a2, r3, `${t3} has member 'pull' that`), start: void 0 === i2 ? void 0 : Yt(i2, r3, `${t3} has member 'start' that`), type: void 0 === l2 ? void 0 : Qt(l2, `${t3} has member 'type' that`) };
         })(e2, "First parameter");
@@ -56629,11 +54637,8 @@ var init_ponyfill = __esm({
       getReader(e2) {
         if (!Vt(this)) throw Kt("getReader");
         return void 0 === (function(e3, t2) {
-<<<<<<< HEAD
           F2(e3, t2);
-=======
           F3(e3, t2);
->>>>>>> origin/main
           const r2 = null == e3 ? void 0 : e3.mode;
           return { mode: void 0 === r2 ? void 0 : Nt(r2, `${t2} has member 'mode' that`) };
         })(e2, "First parameter").mode ? new ReadableStreamDefaultReader(this) : (function(e3) {
@@ -56641,24 +54646,18 @@ var init_ponyfill = __esm({
         })(this);
       }
       pipeThrough(e2, t2 = {}) {
-<<<<<<< HEAD
         if (!H2(this)) throw Kt("pipeThrough");
         $2(e2, 1, "pipeThrough");
-=======
         if (!H3(this)) throw Kt("pipeThrough");
         $3(e2, 1, "pipeThrough");
->>>>>>> origin/main
         const r2 = xt(e2, "First parameter"), o2 = Ht(t2, "Second parameter");
         if (this.locked) throw new TypeError("ReadableStream.prototype.pipeThrough cannot be used on a locked ReadableStream");
         if (r2.writable.locked) throw new TypeError("ReadableStream.prototype.pipeThrough cannot be used on a locked WritableStream");
         return m(kt(this, r2.writable, o2.preventClose, o2.preventAbort, o2.preventCancel, o2.signal)), r2.readable;
       }
       pipeTo(e2, t2 = {}) {
-<<<<<<< HEAD
         if (!H2(this)) return d(Kt("pipeTo"));
-=======
         if (!H3(this)) return d(Kt("pipeTo"));
->>>>>>> origin/main
         if (void 0 === e2) return d("Parameter 1 is required in 'pipeTo'.");
         if (!x(e2)) return d(new TypeError("ReadableStream.prototype.pipeTo's first argument must be a WritableStream"));
         let r2;
@@ -56670,29 +54669,20 @@ var init_ponyfill = __esm({
         return this.locked ? d(new TypeError("ReadableStream.prototype.pipeTo cannot be used on a locked ReadableStream")) : e2.locked ? d(new TypeError("ReadableStream.prototype.pipeTo cannot be used on a locked WritableStream")) : kt(this, e2, r2.preventClose, r2.preventAbort, r2.preventCancel, r2.signal);
       }
       tee() {
-<<<<<<< HEAD
         if (!H2(this)) throw Kt("tee");
-=======
         if (!H3(this)) throw Kt("tee");
->>>>>>> origin/main
         if (this.locked) throw new TypeError("Cannot tee a stream that already has a reader");
         return Ot(this);
       }
       values(e2) {
-<<<<<<< HEAD
         if (!H2(this)) throw Kt("values");
-=======
         if (!H3(this)) throw Kt("values");
->>>>>>> origin/main
         return (function(e3, t2) {
           const r2 = e3.getReader(), o2 = new te(r2, t2), n2 = Object.create(re);
           return n2._asyncIteratorImpl = o2, n2;
         })(this, (function(e3, t2) {
-<<<<<<< HEAD
           F2(e3, t2);
-=======
           F3(e3, t2);
->>>>>>> origin/main
           const r2 = null == e3 ? void 0 : e3.preventCancel;
           return { preventCancel: Boolean(r2) };
         })(e2, "First parameter").preventCancel);
@@ -56703,11 +54693,8 @@ var init_ponyfill = __esm({
     n(er, "size");
     ByteLengthQueuingStrategy = class {
       constructor(e2) {
-<<<<<<< HEAD
         $2(e2, 1, "ByteLengthQueuingStrategy"), e2 = Zt(e2, "First parameter"), this._byteLengthQueuingStrategyHighWaterMark = e2.highWaterMark;
-=======
         $3(e2, 1, "ByteLengthQueuingStrategy"), e2 = Zt(e2, "First parameter"), this._byteLengthQueuingStrategyHighWaterMark = e2.highWaterMark;
->>>>>>> origin/main
       }
       get highWaterMark() {
         if (!rr(this)) throw tr("highWaterMark");
@@ -56723,11 +54710,8 @@ var init_ponyfill = __esm({
     n(or3, "size");
     CountQueuingStrategy = class {
       constructor(e2) {
-<<<<<<< HEAD
         $2(e2, 1, "CountQueuingStrategy"), e2 = Zt(e2, "First parameter"), this._countQueuingStrategyHighWaterMark = e2.highWaterMark;
-=======
         $3(e2, 1, "CountQueuingStrategy"), e2 = Zt(e2, "First parameter"), this._countQueuingStrategyHighWaterMark = e2.highWaterMark;
->>>>>>> origin/main
       }
       get highWaterMark() {
         if (!ar(this)) throw nr("highWaterMark");
@@ -56743,21 +54727,15 @@ var init_ponyfill = __esm({
       constructor(e2 = {}, t2 = {}, r2 = {}) {
         void 0 === e2 && (e2 = null);
         const o2 = Ye(t2, "Second parameter"), n2 = Ye(r2, "Third parameter"), a2 = (function(e3, t3) {
-<<<<<<< HEAD
           F2(e3, t3);
-=======
           F3(e3, t3);
->>>>>>> origin/main
           const r3 = null == e3 ? void 0 : e3.flush, o3 = null == e3 ? void 0 : e3.readableType, n3 = null == e3 ? void 0 : e3.start, a3 = null == e3 ? void 0 : e3.transform, i3 = null == e3 ? void 0 : e3.writableType;
           return { flush: void 0 === r3 ? void 0 : ir(r3, e3, `${t3} has member 'flush' that`), readableType: o3, start: void 0 === n3 ? void 0 : lr(n3, e3, `${t3} has member 'start' that`), transform: void 0 === a3 ? void 0 : sr(a3, e3, `${t3} has member 'transform' that`), writableType: i3 };
         })(e2, "First parameter");
         if (void 0 !== a2.readableType) throw new RangeError("Invalid readableType specified");
         if (void 0 !== a2.writableType) throw new RangeError("Invalid writableType specified");
-<<<<<<< HEAD
         const i2 = $e(n2, 0), l2 = Me(n2), s3 = $e(o2, 1), f2 = Me(o2);
-=======
         const i2 = $e(n2, 0), l2 = Me(n2), s4 = $e(o2, 1), f2 = Me(o2);
->>>>>>> origin/main
         let b2;
         !(function(e3, t3, r3, o3, n3, a3) {
           function i3() {
@@ -56775,11 +54753,8 @@ var init_ponyfill = __esm({
               return pr(r4, t5);
             })(e3, t4);
           }
-<<<<<<< HEAD
           function s4(t4) {
-=======
           function s5(t4) {
->>>>>>> origin/main
             return (function(e4, t5) {
               return cr(e4, t5), c(void 0);
             })(e3, t4);
@@ -56835,11 +54810,8 @@ var init_ponyfill = __esm({
                 e5._writableHasInFlightOperation = false, e5._writableState, Rr(e5, t6);
               })(e4, t5), t5;
             }))), abort: (t5) => (e4._writableState = "errored", e4._writableStoredError = t5, n4(t5)) }, { highWaterMark: a4, size: i4 });
-<<<<<<< HEAD
           })(e3, i3, l3, u2, s4, r3, o3), e3._readableState = "readable", e3._readableStoredError = void 0, e3._readableCloseRequested = false, e3._readablePulling = false, e3._readable = (function(e4, t4, r4, o4, n4, a4) {
-=======
           })(e3, i3, l3, u2, s5, r3, o3), e3._readableState = "readable", e3._readableStoredError = void 0, e3._readableCloseRequested = false, e3._readablePulling = false, e3._readable = (function(e4, t4, r4, o4, n4, a4) {
->>>>>>> origin/main
             return new ReadableStream2({ start: (r5) => (e4._readableController = r5, t4().catch(((t5) => {
               Sr(e4, t5);
             }))), pull: () => (e4._readablePulling = true, r4().catch(((t5) => {
@@ -56848,11 +54820,8 @@ var init_ponyfill = __esm({
           })(e3, i3, d2, f3, n3, a3), e3._backpressure = void 0, e3._backpressureChangePromise = void 0, e3._backpressureChangePromise_resolve = void 0, fr(e3, true), e3._transformStreamController = void 0;
         })(this, u(((e3) => {
           b2 = e3;
-<<<<<<< HEAD
         })), s3, f2, i2, l2), (function(e3, t3) {
-=======
         })), s4, f2, i2, l2), (function(e3, t3) {
->>>>>>> origin/main
           const r3 = Object.create(TransformStreamDefaultController.prototype);
           let o3, n3;
           o3 = void 0 !== t3.transform ? (e4) => t3.transform(e4, r3) : (e4) => {
@@ -57905,11 +55874,8 @@ var require_event_target_shim = __commonJS({
     var CAPTURE = 1;
     var BUBBLE = 2;
     var ATTRIBUTE = 3;
-<<<<<<< HEAD
     function isObject3(x2) {
-=======
     function isObject4(x2) {
->>>>>>> origin/main
       return x2 !== null && typeof x2 === "object";
     }
     function getListeners(eventTarget) {
@@ -57935,11 +55901,8 @@ var require_event_target_shim = __commonJS({
           return null;
         },
         set(listener) {
-<<<<<<< HEAD
           if (typeof listener !== "function" && !isObject3(listener)) {
-=======
           if (typeof listener !== "function" && !isObject4(listener)) {
->>>>>>> origin/main
             listener = null;
           }
           const listeners = getListeners(this);
@@ -58030,19 +55993,16 @@ var require_event_target_shim = __commonJS({
         if (listener == null) {
           return;
         }
-<<<<<<< HEAD
         if (typeof listener !== "function" && !isObject3(listener)) {
           throw new TypeError("'listener' should be a function or an object.");
         }
         const listeners = getListeners(this);
         const optionsIsObj = isObject3(options);
-=======
         if (typeof listener !== "function" && !isObject4(listener)) {
           throw new TypeError("'listener' should be a function or an object.");
         }
         const listeners = getListeners(this);
         const optionsIsObj = isObject4(options);
->>>>>>> origin/main
         const capture = optionsIsObj ? Boolean(options.capture) : Boolean(options);
         const listenerType = capture ? CAPTURE : BUBBLE;
         const newNode = {
@@ -58079,11 +56039,8 @@ var require_event_target_shim = __commonJS({
           return;
         }
         const listeners = getListeners(this);
-<<<<<<< HEAD
         const capture = isObject3(options) ? Boolean(options.capture) : Boolean(options);
-=======
         const capture = isObject4(options) ? Boolean(options.capture) : Boolean(options);
->>>>>>> origin/main
         const listenerType = capture ? CAPTURE : BUBBLE;
         let prev = null;
         let node = listeners.get(eventName);
@@ -58902,22 +56859,16 @@ var require_parse2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var validate_js_1 = require_validate();
-<<<<<<< HEAD
     function parse4(uuid8) {
-=======
     function parse5(uuid8) {
->>>>>>> origin/main
       if (!(0, validate_js_1.default)(uuid8)) {
         throw TypeError("Invalid UUID");
       }
       let v2;
       return Uint8Array.of((v2 = parseInt(uuid8.slice(0, 8), 16)) >>> 24, v2 >>> 16 & 255, v2 >>> 8 & 255, v2 & 255, (v2 = parseInt(uuid8.slice(9, 13), 16)) >>> 8, v2 & 255, (v2 = parseInt(uuid8.slice(14, 18), 16)) >>> 8, v2 & 255, (v2 = parseInt(uuid8.slice(19, 23), 16)) >>> 8, v2 & 255, (v2 = parseInt(uuid8.slice(24, 36), 16)) / 1099511627776 & 255, v2 / 4294967296 & 255, v2 >>> 24 & 255, v2 >>> 16 & 255, v2 >>> 8 & 255, v2 & 255);
     }
-<<<<<<< HEAD
     exports.default = parse4;
-=======
     exports.default = parse5;
->>>>>>> origin/main
   }
 });
 
@@ -58928,7 +56879,6 @@ var require_stringify2 = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.unsafeStringify = void 0;
     var validate_js_1 = require_validate();
-<<<<<<< HEAD
     var byteToHex2 = [];
     for (let i2 = 0; i2 < 256; ++i2) {
       byteToHex2.push((i2 + 256).toString(16).slice(1));
@@ -58939,7 +56889,6 @@ var require_stringify2 = __commonJS({
     exports.unsafeStringify = unsafeStringify2;
     function stringify4(arr, offset = 0) {
       const uuid8 = unsafeStringify2(arr, offset);
-=======
     var byteToHex = [];
     for (let i2 = 0; i2 < 256; ++i2) {
       byteToHex.push((i2 + 256).toString(16).slice(1));
@@ -58950,17 +56899,13 @@ var require_stringify2 = __commonJS({
     exports.unsafeStringify = unsafeStringify;
     function stringify5(arr, offset = 0) {
       const uuid8 = unsafeStringify(arr, offset);
->>>>>>> origin/main
       if (!(0, validate_js_1.default)(uuid8)) {
         throw TypeError("Stringified UUID is invalid");
       }
       return uuid8;
     }
-<<<<<<< HEAD
     exports.default = stringify4;
-=======
     exports.default = stringify5;
->>>>>>> origin/main
   }
 });
 
@@ -58970,7 +56915,6 @@ var require_rng = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var crypto_1 = __require("crypto");
-<<<<<<< HEAD
     var rnds8Pool2 = new Uint8Array(256);
     var poolPtr2 = rnds8Pool2.length;
     function rng2() {
@@ -58981,7 +56925,6 @@ var require_rng = __commonJS({
       return rnds8Pool2.slice(poolPtr2, poolPtr2 += 16);
     }
     exports.default = rng2;
-=======
     var rnds8Pool = new Uint8Array(256);
     var poolPtr = rnds8Pool.length;
     function rng() {
@@ -58992,7 +56935,6 @@ var require_rng = __commonJS({
       return rnds8Pool.slice(poolPtr, poolPtr += 16);
     }
     exports.default = rng;
->>>>>>> origin/main
   }
 });
 
@@ -59214,11 +57156,8 @@ var require_v4 = __commonJS({
     var native_js_1 = require_native3();
     var rng_js_1 = require_rng();
     var stringify_js_1 = require_stringify2();
-<<<<<<< HEAD
     function v42(options, buf, offset) {
-=======
     function v4(options, buf, offset) {
->>>>>>> origin/main
       if (native_js_1.default.randomUUID && !buf && !options) {
         return native_js_1.default.randomUUID();
       }
@@ -59241,11 +57180,8 @@ var require_v4 = __commonJS({
       }
       return (0, stringify_js_1.unsafeStringify)(rnds);
     }
-<<<<<<< HEAD
     exports.default = v42;
-=======
     exports.default = v4;
->>>>>>> origin/main
   }
 });
 
@@ -59574,11 +57510,8 @@ var require_helpers = __commonJS({
 });
 
 // ../../node_modules/.pnpm/agent-base@7.1.4/node_modules/agent-base/dist/index.js
-<<<<<<< HEAD
 var require_dist7 = __commonJS({
-=======
 var require_dist8 = __commonJS({
->>>>>>> origin/main
   "../../node_modules/.pnpm/agent-base@7.1.4/node_modules/agent-base/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o2, m2, k2, k22) {
@@ -59830,11 +57763,8 @@ var require_parse_proxy_response = __commonJS({
 });
 
 // ../../node_modules/.pnpm/https-proxy-agent@7.0.6/node_modules/https-proxy-agent/dist/index.js
-<<<<<<< HEAD
 var require_dist8 = __commonJS({
-=======
 var require_dist9 = __commonJS({
->>>>>>> origin/main
   "../../node_modules/.pnpm/https-proxy-agent@7.0.6/node_modules/https-proxy-agent/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o2, m2, k2, k22) {
@@ -59873,11 +57803,8 @@ var require_dist9 = __commonJS({
     var tls = __importStar(__require("tls"));
     var assert_1 = __importDefault(__require("assert"));
     var debug_1 = __importDefault(require_src());
-<<<<<<< HEAD
     var agent_base_1 = require_dist7();
-=======
     var agent_base_1 = require_dist8();
->>>>>>> origin/main
     var url_1 = __require("url");
     var parse_proxy_response_1 = require_parse_proxy_response();
     var debug2 = (0, debug_1.default)("https-proxy-agent");
@@ -59960,19 +57887,16 @@ var require_dist9 = __commonJS({
         socket.destroy();
         const fakeSocket = new net.Socket({ writable: false });
         fakeSocket.readable = true;
-<<<<<<< HEAD
         req.once("socket", (s3) => {
           debug2("Replaying proxy buffer for failed request");
           (0, assert_1.default)(s3.listenerCount("data") > 0);
           s3.push(buffered);
           s3.push(null);
-=======
         req.once("socket", (s4) => {
           debug2("Replaying proxy buffer for failed request");
           (0, assert_1.default)(s4.listenerCount("data") > 0);
           s4.push(buffered);
           s4.push(null);
->>>>>>> origin/main
         });
         return fakeSocket;
       }
@@ -60413,11 +58337,8 @@ Content-Type: ${partContentType}\r
       }
       return opts;
     }, _Gaxios_getProxyAgent = async function _Gaxios_getProxyAgent2() {
-<<<<<<< HEAD
       __classPrivateFieldSet14(this, _a2, __classPrivateFieldGet17(this, _a2, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist8()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
-=======
       __classPrivateFieldSet14(this, _a2, __classPrivateFieldGet17(this, _a2, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist9()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
->>>>>>> origin/main
       return __classPrivateFieldGet17(this, _a2, "f", _Gaxios_proxyAgent);
     };
     _Gaxios_proxyAgent = { value: void 0 };
@@ -60470,11 +58391,8 @@ var require_bignumber = __commonJS({
       "use strict";
       var BigNumber, isNumeric = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i, mathceil = Math.ceil, mathfloor = Math.floor, bignumberError = "[BigNumber Error] ", tooManyDigits = bignumberError + "Number primitive has more than 15 significant digits: ", BASE = 1e14, LOG_BASE = 14, MAX_SAFE_INTEGER = 9007199254740991, POWS_TEN = [1, 10, 100, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13], SQRT_BASE = 1e7, MAX = 1e9;
       function clone2(configObject) {
-<<<<<<< HEAD
         var div, convertBase, parseNumeric, P3 = BigNumber2.prototype = { constructor: BigNumber2, toString: null, valueOf: null }, ONE = new BigNumber2(1), DECIMAL_PLACES = 20, ROUNDING_MODE = 4, TO_EXP_NEG = -7, TO_EXP_POS = 21, MIN_EXP = -1e7, MAX_EXP = 1e7, CRYPTO = false, MODULO_MODE = 1, POW_PRECISION = 0, FORMAT = {
-=======
         var div, convertBase, parseNumeric, P4 = BigNumber2.prototype = { constructor: BigNumber2, toString: null, valueOf: null }, ONE = new BigNumber2(1), DECIMAL_PLACES = 20, ROUNDING_MODE = 4, TO_EXP_NEG = -7, TO_EXP_POS = 21, MIN_EXP = -1e7, MAX_EXP = 1e7, CRYPTO = false, MODULO_MODE = 1, POW_PRECISION = 0, FORMAT = {
->>>>>>> origin/main
           prefix: "",
           groupSize: 3,
           secondaryGroupSize: 0,
@@ -60712,15 +58630,12 @@ var require_bignumber = __commonJS({
         BigNumber2.isBigNumber = function(v2) {
           if (!v2 || v2._isBigNumber !== true) return false;
           if (!BigNumber2.DEBUG) return true;
-<<<<<<< HEAD
           var i2, n2, c2 = v2.c, e2 = v2.e, s3 = v2.s;
           out: if ({}.toString.call(c2) == "[object Array]") {
             if ((s3 === 1 || s3 === -1) && e2 >= -MAX && e2 <= MAX && e2 === mathfloor(e2)) {
-=======
           var i2, n2, c2 = v2.c, e2 = v2.e, s4 = v2.s;
           out: if ({}.toString.call(c2) == "[object Array]") {
             if ((s4 === 1 || s4 === -1) && e2 >= -MAX && e2 <= MAX && e2 === mathfloor(e2)) {
->>>>>>> origin/main
               if (c2[0] === 0) {
                 if (e2 === 0 && c2.length === 1) return true;
                 break out;
@@ -60735,11 +58650,8 @@ var require_bignumber = __commonJS({
                 if (n2 !== 0) return true;
               }
             }
-<<<<<<< HEAD
           } else if (c2 === null && e2 === null && (s3 === null || s3 === 1 || s3 === -1)) {
-=======
           } else if (c2 === null && e2 === null && (s4 === null || s4 === 1 || s4 === -1)) {
->>>>>>> origin/main
             return true;
           }
           throw Error(bignumberError + "Invalid BigNumber: " + v2);
@@ -60936,17 +58848,13 @@ var require_bignumber = __commonJS({
             for (; !a2[0] && a2.length > 1; a2.splice(0, 1)) ;
           }
           return function(x2, y2, dp, rm, base) {
-<<<<<<< HEAD
             var cmp, e2, i2, more, n2, prod, prodL, q2, qc, rem, remL, rem0, xi, xL, yc0, yL, yz, s3 = x2.s == y2.s ? 1 : -1, xc = x2.c, yc = y2.c;
-=======
             var cmp, e2, i2, more, n2, prod, prodL, q2, qc, rem, remL, rem0, xi, xL, yc0, yL, yz, s4 = x2.s == y2.s ? 1 : -1, xc = x2.c, yc = y2.c;
->>>>>>> origin/main
             if (!xc || !xc[0] || !yc || !yc[0]) {
               return new BigNumber2(
                 // Return NaN if either NaN, or both Infinity or 0.
                 !x2.s || !y2.s || (xc ? yc && xc[0] == yc[0] : !yc) ? NaN : (
                   // Return ±0 if x is ±0 or y is ±Infinity, or return ±Infinity as y is ±0.
-<<<<<<< HEAD
                   xc && xc[0] == 0 || !yc ? s3 * 0 : s3 / 0
                 )
               );
@@ -60963,7 +58871,6 @@ var require_bignumber = __commonJS({
             for (i2 = 0; yc[i2] == (xc[i2] || 0); i2++) ;
             if (yc[i2] > (xc[i2] || 0)) e2--;
             if (s3 < 0) {
-=======
                   xc && xc[0] == 0 || !yc ? s4 * 0 : s4 / 0
                 )
               );
@@ -60980,18 +58887,14 @@ var require_bignumber = __commonJS({
             for (i2 = 0; yc[i2] == (xc[i2] || 0); i2++) ;
             if (yc[i2] > (xc[i2] || 0)) e2--;
             if (s4 < 0) {
->>>>>>> origin/main
               qc.push(1);
               more = true;
             } else {
               xL = xc.length;
               yL = yc.length;
               i2 = 0;
-<<<<<<< HEAD
               s3 += 2;
-=======
               s4 += 2;
->>>>>>> origin/main
               n2 = mathfloor(base / (yc[0] + 1));
               if (n2 > 1) {
                 yc = multiply(yc, n2, base);
@@ -61053,20 +58956,14 @@ var require_bignumber = __commonJS({
                   rem = [xc[xi]];
                   remL = 1;
                 }
-<<<<<<< HEAD
               } while ((xi++ < xL || rem[0] != null) && s3--);
-=======
               } while ((xi++ < xL || rem[0] != null) && s4--);
->>>>>>> origin/main
               more = rem[0] != null;
               if (!qc[0]) qc.splice(0, 1);
             }
             if (base == BASE) {
-<<<<<<< HEAD
               for (i2 = 1, s3 = qc[0]; s3 >= 10; s3 /= 10, i2++) ;
-=======
               for (i2 = 1, s4 = qc[0]; s4 >= 10; s4 /= 10, i2++) ;
->>>>>>> origin/main
               round(q2, dp + (q2.e = i2 + e2 * LOG_BASE - 1) + 1, rm, more);
             } else {
               q2.e = e2;
@@ -61136,35 +59033,29 @@ var require_bignumber = __commonJS({
         parseNumeric = /* @__PURE__ */ (function() {
           var basePrefix = /^(-?)0([xbo])(?=\w[\w.]*$)/i, dotAfter = /^([^.]+)\.$/, dotBefore = /^\.([^.]+)$/, isInfinityOrNaN = /^-?(Infinity|NaN)$/, whitespaceOrPlus = /^\s*\+(?=[\w.])|^\s+|\s+$/g;
           return function(x2, str2, isNum, b2) {
-<<<<<<< HEAD
             var base, s3 = isNum ? str2 : str2.replace(whitespaceOrPlus, "");
             if (isInfinityOrNaN.test(s3)) {
               x2.s = isNaN(s3) ? null : s3 < 0 ? -1 : 1;
             } else {
               if (!isNum) {
                 s3 = s3.replace(basePrefix, function(m2, p1, p2) {
-=======
             var base, s4 = isNum ? str2 : str2.replace(whitespaceOrPlus, "");
             if (isInfinityOrNaN.test(s4)) {
               x2.s = isNaN(s4) ? null : s4 < 0 ? -1 : 1;
             } else {
               if (!isNum) {
                 s4 = s4.replace(basePrefix, function(m2, p1, p2) {
->>>>>>> origin/main
                   base = (p2 = p2.toLowerCase()) == "x" ? 16 : p2 == "b" ? 2 : 8;
                   return !b2 || b2 == base ? p1 : m2;
                 });
                 if (b2) {
                   base = b2;
-<<<<<<< HEAD
                   s3 = s3.replace(dotAfter, "$1").replace(dotBefore, "0.$1");
                 }
                 if (str2 != s3) return new BigNumber2(s3, base);
-=======
                   s4 = s4.replace(dotAfter, "$1").replace(dotBefore, "0.$1");
                 }
                 if (str2 != s4) return new BigNumber2(s4, base);
->>>>>>> origin/main
               }
               if (BigNumber2.DEBUG) {
                 throw Error(bignumberError + "Not a" + (b2 ? " base " + b2 : "") + " number: " + str2);
@@ -61267,26 +59158,20 @@ var require_bignumber = __commonJS({
           str2 = e2 <= TO_EXP_NEG || e2 >= TO_EXP_POS ? toExponential(str2, e2) : toFixedPoint(str2, e2, "0");
           return n2.s < 0 ? "-" + str2 : str2;
         }
-<<<<<<< HEAD
         P3.absoluteValue = P3.abs = function() {
-=======
         P4.absoluteValue = P4.abs = function() {
->>>>>>> origin/main
           var x2 = new BigNumber2(this);
           if (x2.s < 0) x2.s = 1;
           return x2;
         };
-<<<<<<< HEAD
         P3.comparedTo = function(y2, b2) {
           return compare(this, new BigNumber2(y2, b2));
         };
         P3.decimalPlaces = P3.dp = function(dp, rm) {
-=======
         P4.comparedTo = function(y2, b2) {
           return compare(this, new BigNumber2(y2, b2));
         };
         P4.decimalPlaces = P4.dp = function(dp, rm) {
->>>>>>> origin/main
           var c2, n2, v2, x2 = this;
           if (dp != null) {
             intCheck(dp, 0, MAX);
@@ -61300,7 +59185,6 @@ var require_bignumber = __commonJS({
           if (n2 < 0) n2 = 0;
           return n2;
         };
-<<<<<<< HEAD
         P3.dividedBy = P3.div = function(y2, b2) {
           return div(this, new BigNumber2(y2, b2), DECIMAL_PLACES, ROUNDING_MODE);
         };
@@ -61308,7 +59192,6 @@ var require_bignumber = __commonJS({
           return div(this, new BigNumber2(y2, b2), 0, 1);
         };
         P3.exponentiatedBy = P3.pow = function(n2, m2) {
-=======
         P4.dividedBy = P4.div = function(y2, b2) {
           return div(this, new BigNumber2(y2, b2), DECIMAL_PLACES, ROUNDING_MODE);
         };
@@ -61316,7 +59199,6 @@ var require_bignumber = __commonJS({
           return div(this, new BigNumber2(y2, b2), 0, 1);
         };
         P4.exponentiatedBy = P4.pow = function(n2, m2) {
->>>>>>> origin/main
           var half, isModExp, i2, k2, more, nIsBig, nIsNeg, nIsOdd, y2, x2 = this;
           n2 = new BigNumber2(n2);
           if (n2.c && !n2.isInteger()) {
@@ -61385,17 +59267,13 @@ var require_bignumber = __commonJS({
           if (nIsNeg) y2 = ONE.div(y2);
           return m2 ? y2.mod(m2) : k2 ? round(y2, POW_PRECISION, ROUNDING_MODE, more) : y2;
         };
-<<<<<<< HEAD
         P3.integerValue = function(rm) {
-=======
         P4.integerValue = function(rm) {
->>>>>>> origin/main
           var n2 = new BigNumber2(this);
           if (rm == null) rm = ROUNDING_MODE;
           else intCheck(rm, 0, 8);
           return round(n2, n2.e + 1, rm);
         };
-<<<<<<< HEAD
         P3.isEqualTo = P3.eq = function(y2, b2) {
           return compare(this, new BigNumber2(y2, b2)) === 0;
         };
@@ -61430,7 +59308,6 @@ var require_bignumber = __commonJS({
           return !!this.c && this.c[0] == 0;
         };
         P3.minus = function(y2, b2) {
-=======
         P4.isEqualTo = P4.eq = function(y2, b2) {
           return compare(this, new BigNumber2(y2, b2)) === 0;
         };
@@ -61465,7 +59342,6 @@ var require_bignumber = __commonJS({
           return !!this.c && this.c[0] == 0;
         };
         P4.minus = function(y2, b2) {
->>>>>>> origin/main
           var i2, j2, t2, xLTy, x2 = this, a2 = x2.s;
           y2 = new BigNumber2(y2, b2);
           b2 = y2.s;
@@ -61532,13 +59408,10 @@ var require_bignumber = __commonJS({
           }
           return normalise(y2, xc, ye2);
         };
-<<<<<<< HEAD
         P3.modulo = P3.mod = function(y2, b2) {
           var q2, s3, x2 = this;
-=======
         P4.modulo = P4.mod = function(y2, b2) {
           var q2, s4, x2 = this;
->>>>>>> origin/main
           y2 = new BigNumber2(y2, b2);
           if (!x2.c || !y2.s || y2.c && !y2.c[0]) {
             return new BigNumber2(NaN);
@@ -61546,19 +59419,16 @@ var require_bignumber = __commonJS({
             return new BigNumber2(x2);
           }
           if (MODULO_MODE == 9) {
-<<<<<<< HEAD
             s3 = y2.s;
             y2.s = 1;
             q2 = div(x2, y2, 0, 3);
             y2.s = s3;
             q2.s *= s3;
-=======
             s4 = y2.s;
             y2.s = 1;
             q2 = div(x2, y2, 0, 3);
             y2.s = s4;
             q2.s *= s4;
->>>>>>> origin/main
           } else {
             q2 = div(x2, y2, 0, MODULO_MODE);
           }
@@ -61566,11 +59436,8 @@ var require_bignumber = __commonJS({
           if (!y2.c[0] && MODULO_MODE == 1) y2.s = x2.s;
           return y2;
         };
-<<<<<<< HEAD
         P3.multipliedBy = P3.times = function(y2, b2) {
-=======
         P4.multipliedBy = P4.times = function(y2, b2) {
->>>>>>> origin/main
           var c2, e2, i2, j2, k2, m2, xcL, xlo, xhi, ycL, ylo, yhi, zc, base, sqrtBase, x2 = this, xc = x2.c, yc = (y2 = new BigNumber2(y2, b2)).c;
           if (!xc || !yc || !xc[0] || !yc[0]) {
             if (!x2.s || !y2.s || xc && !xc[0] && !yc || yc && !yc[0] && !xc) {
@@ -61622,20 +59489,14 @@ var require_bignumber = __commonJS({
           }
           return normalise(y2, zc, e2);
         };
-<<<<<<< HEAD
         P3.negated = function() {
-=======
         P4.negated = function() {
->>>>>>> origin/main
           var x2 = new BigNumber2(this);
           x2.s = -x2.s || null;
           return x2;
         };
-<<<<<<< HEAD
         P3.plus = function(y2, b2) {
-=======
         P4.plus = function(y2, b2) {
->>>>>>> origin/main
           var t2, x2 = this, a2 = x2.s;
           y2 = new BigNumber2(y2, b2);
           b2 = y2.s;
@@ -61682,11 +59543,8 @@ var require_bignumber = __commonJS({
           }
           return normalise(y2, xc, ye2);
         };
-<<<<<<< HEAD
         P3.precision = P3.sd = function(sd, rm) {
-=======
         P4.precision = P4.sd = function(sd, rm) {
->>>>>>> origin/main
           var c2, n2, v2, x2 = this;
           if (sd != null && sd !== !!sd) {
             intCheck(sd, 1, MAX);
@@ -61704,7 +59562,6 @@ var require_bignumber = __commonJS({
           if (sd && x2.e + 1 > n2) n2 = x2.e + 1;
           return n2;
         };
-<<<<<<< HEAD
         P3.shiftedBy = function(k2) {
           intCheck(k2, -MAX_SAFE_INTEGER, MAX_SAFE_INTEGER);
           return this.times("1e" + k2);
@@ -61724,7 +59581,6 @@ var require_bignumber = __commonJS({
               n2 = "5e" + e2;
             } else {
               n2 = s3.toExponential();
-=======
         P4.shiftedBy = function(k2) {
           intCheck(k2, -MAX_SAFE_INTEGER, MAX_SAFE_INTEGER);
           return this.times("1e" + k2);
@@ -61744,12 +59600,10 @@ var require_bignumber = __commonJS({
               n2 = "5e" + e2;
             } else {
               n2 = s4.toExponential();
->>>>>>> origin/main
               n2 = n2.slice(0, n2.indexOf("e") + 1) + e2;
             }
             r2 = new BigNumber2(n2);
           } else {
-<<<<<<< HEAD
             r2 = new BigNumber2(s3 + "");
           }
           if (r2.c[0]) {
@@ -61762,7 +59616,6 @@ var require_bignumber = __commonJS({
               if (coeffToString(t2.c).slice(0, s3) === (n2 = coeffToString(r2.c)).slice(0, s3)) {
                 if (r2.e < e2) --s3;
                 n2 = n2.slice(s3 - 3, s3 + 1);
-=======
             r2 = new BigNumber2(s4 + "");
           }
           if (r2.c[0]) {
@@ -61775,7 +59628,6 @@ var require_bignumber = __commonJS({
               if (coeffToString(t2.c).slice(0, s4) === (n2 = coeffToString(r2.c)).slice(0, s4)) {
                 if (r2.e < e2) --s4;
                 n2 = n2.slice(s4 - 3, s4 + 1);
->>>>>>> origin/main
                 if (n2 == "9999" || !rep && n2 == "4999") {
                   if (!rep) {
                     round(t2, t2.e + DECIMAL_PLACES + 2, 0);
@@ -61785,11 +59637,8 @@ var require_bignumber = __commonJS({
                     }
                   }
                   dp += 4;
-<<<<<<< HEAD
                   s3 += 4;
-=======
                   s4 += 4;
->>>>>>> origin/main
                   rep = 1;
                 } else {
                   if (!+n2 || !+n2.slice(1) && n2.charAt(0) == "5") {
@@ -61803,33 +59652,24 @@ var require_bignumber = __commonJS({
           }
           return round(r2, r2.e + DECIMAL_PLACES + 1, ROUNDING_MODE, m2);
         };
-<<<<<<< HEAD
         P3.toExponential = function(dp, rm) {
-=======
         P4.toExponential = function(dp, rm) {
->>>>>>> origin/main
           if (dp != null) {
             intCheck(dp, 0, MAX);
             dp++;
           }
           return format(this, dp, rm, 1);
         };
-<<<<<<< HEAD
         P3.toFixed = function(dp, rm) {
-=======
         P4.toFixed = function(dp, rm) {
->>>>>>> origin/main
           if (dp != null) {
             intCheck(dp, 0, MAX);
             dp = dp + this.e + 1;
           }
           return format(this, dp, rm);
         };
-<<<<<<< HEAD
         P3.toFormat = function(dp, rm, format2) {
-=======
         P4.toFormat = function(dp, rm, format2) {
->>>>>>> origin/main
           var str2, x2 = this;
           if (format2 == null) {
             if (dp != null && rm && typeof rm == "object") {
@@ -61867,13 +59707,10 @@ var require_bignumber = __commonJS({
           }
           return (format2.prefix || "") + str2 + (format2.suffix || "");
         };
-<<<<<<< HEAD
         P3.toFraction = function(md) {
           var d2, d0, d1, d22, e2, exp, n2, n0, n1, q2, r2, s3, x2 = this, xc = x2.c;
-=======
         P4.toFraction = function(md) {
           var d2, d0, d1, d22, e2, exp, n2, n0, n1, q2, r2, s4, x2 = this, xc = x2.c;
->>>>>>> origin/main
           if (md != null) {
             n2 = new BigNumber2(md);
             if (!n2.isInteger() && (n2.c || n2.s !== 1) || n2.lt(ONE)) {
@@ -61884,22 +59721,16 @@ var require_bignumber = __commonJS({
           d2 = new BigNumber2(ONE);
           n1 = d0 = new BigNumber2(ONE);
           d1 = n0 = new BigNumber2(ONE);
-<<<<<<< HEAD
           s3 = coeffToString(xc);
           e2 = d2.e = s3.length - x2.e - 1;
-=======
           s4 = coeffToString(xc);
           e2 = d2.e = s4.length - x2.e - 1;
->>>>>>> origin/main
           d2.c[0] = POWS_TEN[(exp = e2 % LOG_BASE) < 0 ? LOG_BASE + exp : exp];
           md = !md || n2.comparedTo(d2) > 0 ? e2 > 0 ? d2 : n1 : n2;
           exp = MAX_EXP;
           MAX_EXP = 1 / 0;
-<<<<<<< HEAD
           n2 = new BigNumber2(s3);
-=======
           n2 = new BigNumber2(s4);
->>>>>>> origin/main
           n0.c[0] = 0;
           for (; ; ) {
             q2 = div(n2, d2, 0, 1);
@@ -61923,7 +59754,6 @@ var require_bignumber = __commonJS({
           MAX_EXP = exp;
           return r2;
         };
-<<<<<<< HEAD
         P3.toNumber = function() {
           return +valueOf(this);
         };
@@ -61937,7 +59767,6 @@ var require_bignumber = __commonJS({
             if (s3) {
               str2 = "Infinity";
               if (s3 < 0) str2 = "-" + str2;
-=======
         P4.toNumber = function() {
           return +valueOf(this);
         };
@@ -61951,7 +59780,6 @@ var require_bignumber = __commonJS({
             if (s4) {
               str2 = "Infinity";
               if (s4 < 0) str2 = "-" + str2;
->>>>>>> origin/main
             } else {
               str2 = "NaN";
             }
@@ -61963,7 +59791,6 @@ var require_bignumber = __commonJS({
               str2 = toFixedPoint(coeffToString(n2.c), n2.e, "0");
             } else {
               intCheck(b2, 2, ALPHABET.length, "Base");
-<<<<<<< HEAD
               str2 = convertBase(toFixedPoint(coeffToString(n2.c), e2, "0"), 10, b2, s3, true);
             }
             if (s3 < 0 && n2.c[0]) str2 = "-" + str2;
@@ -61974,7 +59801,6 @@ var require_bignumber = __commonJS({
           return valueOf(this);
         };
         P3._isBigNumber = true;
-=======
               str2 = convertBase(toFixedPoint(coeffToString(n2.c), e2, "0"), 10, b2, s4, true);
             }
             if (s4 < 0 && n2.c[0]) str2 = "-" + str2;
@@ -61985,7 +59811,6 @@ var require_bignumber = __commonJS({
           return valueOf(this);
         };
         P4._isBigNumber = true;
->>>>>>> origin/main
         if (configObject != null) BigNumber2.set(configObject);
         return BigNumber2;
       }
@@ -61994,21 +59819,18 @@ var require_bignumber = __commonJS({
         return n2 > 0 || n2 === i2 ? i2 : i2 - 1;
       }
       function coeffToString(a2) {
-<<<<<<< HEAD
         var s3, z2, i2 = 1, j2 = a2.length, r2 = a2[0] + "";
         for (; i2 < j2; ) {
           s3 = a2[i2++] + "";
           z2 = LOG_BASE - s3.length;
           for (; z2--; s3 = "0" + s3) ;
           r2 += s3;
-=======
         var s4, z2, i2 = 1, j2 = a2.length, r2 = a2[0] + "";
         for (; i2 < j2; ) {
           s4 = a2[i2++] + "";
           z2 = LOG_BASE - s4.length;
           for (; z2--; s4 = "0" + s4) ;
           r2 += s4;
->>>>>>> origin/main
         }
         for (j2 = r2.length; r2.charCodeAt(--j2) === 48; ) ;
         return r2.slice(0, j2 + 1 || 1);
@@ -62700,21 +60522,18 @@ var require_logging_utils = __commonJS({
             this.setFilters();
             this.filtersSet = true;
           }
-<<<<<<< HEAD
           let logger3 = this.cached.get(namespace);
           if (!logger3) {
             logger3 = this.makeLogger(namespace);
             this.cached.set(namespace, logger3);
           }
           logger3(fields, ...args);
-=======
           let logger4 = this.cached.get(namespace);
           if (!logger4) {
             logger4 = this.makeLogger(namespace);
             this.cached.set(namespace, logger4);
           }
           logger4(fields, ...args);
->>>>>>> origin/main
         } catch (e2) {
           console.error(e2);
         }
@@ -62851,11 +60670,8 @@ var require_logging_utils = __commonJS({
       } else if (cachedBackend === void 0) {
         cachedBackend = getNodeBackend();
       }
-<<<<<<< HEAD
       const logger3 = (() => {
-=======
       const logger4 = (() => {
->>>>>>> origin/main
         let previousBackend = void 0;
         const newLogger = new AdhocDebugLogger(namespace, (fields, ...args) => {
           if (previousBackend !== cachedBackend) {
@@ -62870,13 +60686,10 @@ var require_logging_utils = __commonJS({
         });
         return newLogger;
       })();
-<<<<<<< HEAD
       loggerCache.set(namespace, logger3);
       return logger3.func;
-=======
       loggerCache.set(namespace, logger4);
       return logger4.func;
->>>>>>> origin/main
     }
   }
 });
@@ -62940,22 +60753,16 @@ var require_src4 = __commonJS({
     var gaxios_1 = require_src2();
     var jsonBigint = require_json_bigint();
     var gcp_residency_1 = require_gcp_residency();
-<<<<<<< HEAD
     var logger3 = require_src3();
-=======
     var logger4 = require_src3();
->>>>>>> origin/main
     exports.BASE_PATH = "/computeMetadata/v1";
     exports.HOST_ADDRESS = "http://169.254.169.254";
     exports.SECONDARY_HOST_ADDRESS = "http://metadata.google.internal.";
     exports.HEADER_NAME = "Metadata-Flavor";
     exports.HEADER_VALUE = "Google";
     exports.HEADERS = Object.freeze({ [exports.HEADER_NAME]: exports.HEADER_VALUE });
-<<<<<<< HEAD
     var log = logger3.log("gcp metadata");
-=======
     var log = logger4.log("gcp metadata");
->>>>>>> origin/main
     exports.METADATA_SERVER_DETECTION = Object.freeze({
       "assume-present": "don't try to ping the metadata server, but assume it's present",
       none: "don't try to ping the metadata server, but don't try to use it either",
@@ -63370,7 +61177,6 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NodeCrypto = void 0;
-<<<<<<< HEAD
     var crypto4 = __require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str2) {
@@ -63381,7 +61187,6 @@ var require_crypto2 = __commonJS({
       }
       async verify(pubkey, data, signature) {
         const verifier = crypto4.createVerify("RSA-SHA256");
-=======
     var crypto7 = __require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str2) {
@@ -63392,17 +61197,13 @@ var require_crypto2 = __commonJS({
       }
       async verify(pubkey, data, signature) {
         const verifier = crypto7.createVerify("RSA-SHA256");
->>>>>>> origin/main
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-<<<<<<< HEAD
         const signer = crypto4.createSign("RSA-SHA256");
-=======
         const signer = crypto7.createSign("RSA-SHA256");
->>>>>>> origin/main
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -63420,11 +61221,8 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str2) {
-<<<<<<< HEAD
         return crypto4.createHash("sha256").update(str2).digest("hex");
-=======
         return crypto7.createHash("sha256").update(str2).digest("hex");
->>>>>>> origin/main
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -63436,11 +61234,8 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-<<<<<<< HEAD
         return toArrayBuffer(crypto4.createHmac("sha256", cryptoKey).update(msg).digest());
-=======
         return toArrayBuffer(crypto7.createHmac("sha256", cryptoKey).update(msg).digest());
->>>>>>> origin/main
       }
     };
     exports.NodeCrypto = NodeCrypto;
@@ -63925,27 +61720,21 @@ var require_util3 = __commonJS({
     var _LRUCache_evict;
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.LRUCache = void 0;
-<<<<<<< HEAD
     exports.snakeToCamel = snakeToCamel2;
     exports.originalOrCamelOptions = originalOrCamelOptions;
     function snakeToCamel2(str2) {
       return str2.replace(/([_][^_])/g, (match2) => match2.slice(1).toUpperCase());
-=======
     exports.snakeToCamel = snakeToCamel3;
     exports.originalOrCamelOptions = originalOrCamelOptions;
     function snakeToCamel3(str2) {
       return str2.replace(/([_][^_])/g, (match3) => match3.slice(1).toUpperCase());
->>>>>>> origin/main
     }
     function originalOrCamelOptions(obj) {
       function get(key) {
         var _a2;
         const o2 = obj || {};
-<<<<<<< HEAD
         return (_a2 = o2[key]) !== null && _a2 !== void 0 ? _a2 : o2[snakeToCamel2(key)];
-=======
         return (_a2 = o2[key]) !== null && _a2 !== void 0 ? _a2 : o2[snakeToCamel3(key)];
->>>>>>> origin/main
       }
       return { get };
     }
@@ -64229,17 +62018,14 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-<<<<<<< HEAD
         const crypto4 = (0, crypto_1.createCrypto)();
         const randomString2 = crypto4.randomBytesBase64(96);
         const codeVerifier = randomString2.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
         const unencodedCodeChallenge = await crypto4.sha256DigestBase64(codeVerifier);
-=======
         const crypto7 = (0, crypto_1.createCrypto)();
         const randomString2 = crypto7.randomBytesBase64(96);
         const codeVerifier = randomString2.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
         const unencodedCodeChallenge = await crypto7.sha256DigestBase64(codeVerifier);
->>>>>>> origin/main
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -64683,11 +62469,8 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt2, certs, requiredAudience, issuers, maxExpiry) {
-<<<<<<< HEAD
         const crypto4 = (0, crypto_1.createCrypto)();
-=======
         const crypto7 = (0, crypto_1.createCrypto)();
->>>>>>> origin/main
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -64700,11 +62483,8 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-<<<<<<< HEAD
           envelope = JSON.parse(crypto4.decodeBase64StringUtf8(segments[0]));
-=======
           envelope = JSON.parse(crypto7.decodeBase64StringUtf8(segments[0]));
->>>>>>> origin/main
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -64715,11 +62495,8 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-<<<<<<< HEAD
           payload = JSON.parse(crypto4.decodeBase64StringUtf8(segments[1]));
-=======
           payload = JSON.parse(crypto7.decodeBase64StringUtf8(segments[1]));
->>>>>>> origin/main
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -64736,11 +62513,8 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-<<<<<<< HEAD
         const verified = await crypto4.verify(cert, signed, signature);
-=======
         const verified = await crypto7.verify(cert, signed, signature);
->>>>>>> origin/main
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt2);
         }
@@ -65108,22 +62882,16 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "../../node_modules/.pnpm/jwa@2.0.1/node_modules/jwa/index.js"(exports, module) {
     var Buffer2 = require_safe_buffer().Buffer;
-<<<<<<< HEAD
     var crypto4 = __require("crypto");
-=======
     var crypto7 = __require("crypto");
->>>>>>> origin/main
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = __require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-<<<<<<< HEAD
     var supportsKeyObjects = typeof crypto4.createPublicKey === "function";
-=======
     var supportsKeyObjects = typeof crypto7.createPublicKey === "function";
->>>>>>> origin/main
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -65186,7 +62954,6 @@ var require_jwa = __commonJS({
     function fromBase64(base643) {
       return base643.replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
     }
-<<<<<<< HEAD
     function toBase64(base64url4) {
       base64url4 = base64url4.toString();
       var padding = 4 - base64url4.length % 4;
@@ -65196,7 +62963,6 @@ var require_jwa = __commonJS({
         }
       }
       return base64url4.replace(/\-/g, "+").replace(/_/g, "/");
-=======
     function toBase64(base64url5) {
       base64url5 = base64url5.toString();
       var padding = 4 - base64url5.length % 4;
@@ -65206,7 +62972,6 @@ var require_jwa = __commonJS({
         }
       }
       return base64url5.replace(/\-/g, "+").replace(/_/g, "/");
->>>>>>> origin/main
     }
     function typeError(template) {
       var args = [].slice.call(arguments, 1);
@@ -65225,29 +62990,23 @@ var require_jwa = __commonJS({
       return function sign(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-<<<<<<< HEAD
         var hmac = crypto4.createHmac("sha" + bits, secret);
-=======
         var hmac = crypto7.createHmac("sha" + bits, secret);
->>>>>>> origin/main
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-<<<<<<< HEAD
     var timingSafeEqual = "timingSafeEqual" in crypto4 ? function timingSafeEqual2(a2, b2) {
       if (a2.byteLength !== b2.byteLength) {
         return false;
       }
       return crypto4.timingSafeEqual(a2, b2);
-=======
     var timingSafeEqual = "timingSafeEqual" in crypto7 ? function timingSafeEqual2(a2, b2) {
       if (a2.byteLength !== b2.byteLength) {
         return false;
       }
       return crypto7.timingSafeEqual(a2, b2);
->>>>>>> origin/main
     } : function timingSafeEqual2(a2, b2) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -65264,11 +63023,8 @@ var require_jwa = __commonJS({
       return function sign(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-<<<<<<< HEAD
         var signer = crypto4.createSign("RSA-SHA" + bits);
-=======
         var signer = crypto7.createSign("RSA-SHA" + bits);
->>>>>>> origin/main
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -65278,11 +63034,8 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-<<<<<<< HEAD
         var verifier = crypto4.createVerify("RSA-SHA" + bits);
-=======
         var verifier = crypto7.createVerify("RSA-SHA" + bits);
->>>>>>> origin/main
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -65291,19 +63044,16 @@ var require_jwa = __commonJS({
       return function sign(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-<<<<<<< HEAD
         var signer = crypto4.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
           padding: crypto4.constants.RSA_PKCS1_PSS_PADDING,
           saltLength: crypto4.constants.RSA_PSS_SALTLEN_DIGEST
-=======
         var signer = crypto7.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
           padding: crypto7.constants.RSA_PKCS1_PSS_PADDING,
           saltLength: crypto7.constants.RSA_PSS_SALTLEN_DIGEST
->>>>>>> origin/main
         }, "base64"));
         return fromBase64(sig);
       };
@@ -65313,21 +63063,18 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-<<<<<<< HEAD
         var verifier = crypto4.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
           padding: crypto4.constants.RSA_PKCS1_PSS_PADDING,
           saltLength: crypto4.constants.RSA_PSS_SALTLEN_DIGEST
-=======
         var verifier = crypto7.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
           padding: crypto7.constants.RSA_PKCS1_PSS_PADDING,
           saltLength: crypto7.constants.RSA_PSS_SALTLEN_DIGEST
->>>>>>> origin/main
         }, signature, "base64");
       };
     }
@@ -65372,19 +63119,16 @@ var require_jwa = __commonJS({
         es: createECDSAVerifer,
         none: createNoneVerifier
       };
-<<<<<<< HEAD
       var match2 = algorithm.match(/^(RS|PS|ES|HS)(256|384|512)$|^(none)$/);
       if (!match2)
         throw typeError(MSG_INVALID_ALGORITHM, algorithm);
       var algo = (match2[1] || match2[3]).toLowerCase();
       var bits = match2[2];
-=======
       var match3 = algorithm.match(/^(RS|PS|ES|HS)(256|384|512)$|^(none)$/);
       if (!match3)
         throw typeError(MSG_INVALID_ALGORITHM, algorithm);
       var algo = (match3[1] || match3[3]).toLowerCase();
       var bits = match3[2];
->>>>>>> origin/main
       return {
         sign: signerFactories[algo](bits),
         verify: verifierFactories[algo](bits)
@@ -65416,22 +63160,16 @@ var require_sign_stream = __commonJS({
     var Stream2 = __require("stream");
     var toString = require_tostring();
     var util3 = __require("util");
-<<<<<<< HEAD
     function base64url4(string4, encoding) {
-=======
     function base64url5(string4, encoding) {
->>>>>>> origin/main
       return Buffer2.from(string4, encoding).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
     }
     function jwsSecuredInput(header, payload, encoding) {
       encoding = encoding || "utf8";
-<<<<<<< HEAD
       var encodedHeader = base64url4(toString(header), "binary");
       var encodedPayload = base64url4(toString(payload), encoding);
-=======
       var encodedHeader = base64url5(toString(header), "binary");
       var encodedPayload = base64url5(toString(payload), encoding);
->>>>>>> origin/main
       return util3.format("%s.%s", encodedHeader, encodedPayload);
     }
     function jwsSign(opts) {
@@ -65501,19 +63239,16 @@ var require_verify_stream = __commonJS({
     var toString = require_tostring();
     var util3 = __require("util");
     var JWS_REGEX = /^[a-zA-Z0-9\-_]+?\.[a-zA-Z0-9\-_]+?\.([a-zA-Z0-9\-_]+)?$/;
-<<<<<<< HEAD
     function isObject3(thing) {
       return Object.prototype.toString.call(thing) === "[object Object]";
     }
     function safeJsonParse(thing) {
       if (isObject3(thing))
-=======
     function isObject4(thing) {
       return Object.prototype.toString.call(thing) === "[object Object]";
     }
     function safeJsonParse(thing) {
       if (isObject4(thing))
->>>>>>> origin/main
         return thing;
       try {
         return JSON.parse(thing);
@@ -66059,17 +63794,14 @@ var require_jwtaccess = __commonJS({
           if (!inputStream) {
             reject(new Error("Must pass in a stream containing the service account auth settings."));
           }
-<<<<<<< HEAD
           let s3 = "";
           inputStream.setEncoding("utf8").on("data", (chunk) => s3 += chunk).on("error", reject).on("end", () => {
             try {
               const data = JSON.parse(s3);
-=======
           let s4 = "";
           inputStream.setEncoding("utf8").on("data", (chunk) => s4 += chunk).on("error", reject).on("end", () => {
             try {
               const data = JSON.parse(s4);
->>>>>>> origin/main
               this.fromJSON(data);
               resolve();
             } catch (err) {
@@ -66294,17 +64026,14 @@ var require_jwtclient = __commonJS({
           if (!inputStream) {
             throw new Error("Must pass in a stream containing the service account auth settings.");
           }
-<<<<<<< HEAD
           let s3 = "";
           inputStream.setEncoding("utf8").on("error", reject).on("data", (chunk) => s3 += chunk).on("end", () => {
             try {
               const data = JSON.parse(s3);
-=======
           let s4 = "";
           inputStream.setEncoding("utf8").on("error", reject).on("data", (chunk) => s4 += chunk).on("end", () => {
             try {
               const data = JSON.parse(s4);
->>>>>>> origin/main
               this.fromJSON(data);
               resolve();
             } catch (e2) {
@@ -66430,17 +64159,14 @@ var require_refreshclient = __commonJS({
           if (!inputStream) {
             return reject(new Error("Must pass in a stream containing the user refresh token."));
           }
-<<<<<<< HEAD
           let s3 = "";
           inputStream.setEncoding("utf8").on("error", reject).on("data", (chunk) => s3 += chunk).on("end", () => {
             try {
               const data = JSON.parse(s3);
-=======
           let s4 = "";
           inputStream.setEncoding("utf8").on("error", reject).on("data", (chunk) => s4 += chunk).on("end", () => {
             try {
               const data = JSON.parse(s4);
->>>>>>> origin/main
               this.fromJSON(data);
               return resolve();
             } catch (err) {
@@ -66455,15 +64181,12 @@ var require_refreshclient = __commonJS({
        * @param json The input object.
        */
       static fromJSON(json4) {
-<<<<<<< HEAD
         const client2 = new _UserRefreshClient();
         client2.fromJSON(json4);
         return client2;
-=======
         const client = new _UserRefreshClient();
         client.fromJSON(json4);
         return client;
->>>>>>> origin/main
       }
     };
     exports.UserRefreshClient = UserRefreshClient;
@@ -67135,19 +64858,16 @@ var require_baseexternalclient = __commonJS({
        *   returned.
        */
       getProjectNumber(audience) {
-<<<<<<< HEAD
         const match2 = audience.match(/\/projects\/([^/]+)/);
         if (!match2) {
           return null;
         }
         return match2[1];
-=======
         const match3 = audience.match(/\/projects\/([^/]+)/);
         if (!match3) {
           return null;
         }
         return match3[1];
->>>>>>> origin/main
       }
       /**
        * Exchanges an external account GCP access token for a service
@@ -67545,7 +65265,6 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports.AwsRequestSigner = AwsRequestSigner;
-<<<<<<< HEAD
     async function sign(crypto4, key, msg) {
       return await crypto4.signWithHmacSha256(key, msg);
     }
@@ -67554,7 +65273,6 @@ var require_awsrequestsigner = __commonJS({
       const kRegion = await sign(crypto4, kDate, region);
       const kService = await sign(crypto4, kRegion, serviceName);
       const kSigning = await sign(crypto4, kService, "aws4_request");
-=======
     async function sign(crypto7, key, msg) {
       return await crypto7.signWithHmacSha256(key, msg);
     }
@@ -67563,7 +65281,6 @@ var require_awsrequestsigner = __commonJS({
       const kRegion = await sign(crypto7, kDate, region);
       const kService = await sign(crypto7, kRegion, serviceName);
       const kSigning = await sign(crypto7, kService, "aws4_request");
->>>>>>> origin/main
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -67838,19 +65555,16 @@ var require_awsclient = __commonJS({
       }
       validateEnvironmentId() {
         var _b;
-<<<<<<< HEAD
         const match2 = (_b = this.environmentId) === null || _b === void 0 ? void 0 : _b.match(/^(aws)(\d+)$/);
         if (!match2 || !this.regionalCredVerificationUrl) {
           throw new Error('No valid AWS "credential_source" provided');
         } else if (parseInt(match2[2], 10) !== 1) {
           throw new Error(`aws version "${match2[2]}" is not supported in the current build.`);
-=======
         const match3 = (_b = this.environmentId) === null || _b === void 0 ? void 0 : _b.match(/^(aws)(\d+)$/);
         if (!match3 || !this.regionalCredVerificationUrl) {
           throw new Error('No valid AWS "credential_source" provided');
         } else if (parseInt(match3[2], 10) !== 1) {
           throw new Error(`aws version "${match3[2]}" is not supported in the current build.`);
->>>>>>> origin/main
         }
       }
       /**
@@ -68575,17 +66289,14 @@ var require_googleauth = __commonJS({
       // GAPIC client libraries should always use self-signed JWTs. The following
       // variables are set on the JWT client in order to indicate the type of library,
       // and sign the JWT with the correct audience and scopes (if not supplied).
-<<<<<<< HEAD
       setGapicJWTValues(client2) {
         client2.defaultServicePath = this.defaultServicePath;
         client2.useJWTAccessWithScope = this.useJWTAccessWithScope;
         client2.defaultScopes = this.defaultScopes;
-=======
       setGapicJWTValues(client) {
         client.defaultServicePath = this.defaultServicePath;
         client.useJWTAccessWithScope = this.useJWTAccessWithScope;
         client.defaultScopes = this.defaultScopes;
->>>>>>> origin/main
       }
       getProjectId(callback) {
         if (callback) {
@@ -68792,13 +66503,10 @@ var require_googleauth = __commonJS({
         if (!location) {
           return null;
         }
-<<<<<<< HEAD
         const client2 = await this._getApplicationCredentialsFromFilePath(location, options);
         return client2;
-=======
         const client = await this._getApplicationCredentialsFromFilePath(location, options);
         return client;
->>>>>>> origin/main
       }
       /**
        * Attempts to load default credentials from a file at the given path..
@@ -68870,7 +66578,6 @@ var require_googleauth = __commonJS({
        * @returns JWT or UserRefresh Client with data
        */
       fromJSON(json4, options = {}) {
-<<<<<<< HEAD
         let client2;
         const preferredUniverseDomain = (0, util_1.originalOrCamelOptions)(options).get("universe_domain");
         if (json4.type === refreshclient_1.USER_REFRESH_ACCOUNT_TYPE) {
@@ -68893,7 +66600,6 @@ var require_googleauth = __commonJS({
           client2.universeDomain = preferredUniverseDomain;
         }
         return client2;
-=======
         let client;
         const preferredUniverseDomain = (0, util_1.originalOrCamelOptions)(options).get("universe_domain");
         if (json4.type === refreshclient_1.USER_REFRESH_ACCOUNT_TYPE) {
@@ -68916,7 +66622,6 @@ var require_googleauth = __commonJS({
           client.universeDomain = preferredUniverseDomain;
         }
         return client;
->>>>>>> origin/main
       }
       /**
        * Return a JWT or UserRefreshClient from JavaScript object, caching both the
@@ -68926,17 +66631,14 @@ var require_googleauth = __commonJS({
        * @returns JWT or UserRefresh Client with data
        */
       _cacheClientFromJSON(json4, options) {
-<<<<<<< HEAD
         const client2 = this.fromJSON(json4, options);
         this.jsonContent = json4;
         this.cachedCredential = client2;
         return client2;
-=======
         const client = this.fromJSON(json4, options);
         this.jsonContent = json4;
         this.cachedCredential = client;
         return client;
->>>>>>> origin/main
       }
       fromStream(inputStream, optionsOrCallback = {}, callback) {
         let options = {};
@@ -68966,7 +66668,6 @@ var require_googleauth = __commonJS({
               } catch (err) {
                 if (!this.keyFilename)
                   throw err;
-<<<<<<< HEAD
                 const client2 = new jwtclient_1.JWT({
                   ...this.clientOptions,
                   keyFile: this.keyFilename
@@ -68974,7 +66675,6 @@ var require_googleauth = __commonJS({
                 this.cachedCredential = client2;
                 this.setGapicJWTValues(client2);
                 return resolve(client2);
-=======
                 const client = new jwtclient_1.JWT({
                   ...this.clientOptions,
                   keyFile: this.keyFilename
@@ -68982,7 +66682,6 @@ var require_googleauth = __commonJS({
                 this.cachedCredential = client;
                 this.setGapicJWTValues(client);
                 return resolve(client);
->>>>>>> origin/main
               }
             } catch (err) {
               return reject(err);
@@ -69089,7 +66788,6 @@ var require_googleauth = __commonJS({
         }
       }
       async getCredentialsAsync() {
-<<<<<<< HEAD
         const client2 = await this.getClient();
         if (client2 instanceof impersonated_1.Impersonated) {
           return { client_email: client2.getTargetPrincipal() };
@@ -69100,7 +66798,6 @@ var require_googleauth = __commonJS({
             return {
               client_email: serviceAccountEmail,
               universe_domain: client2.universeDomain
-=======
         const client = await this.getClient();
         if (client instanceof impersonated_1.Impersonated) {
           return { client_email: client.getTargetPrincipal() };
@@ -69111,7 +66808,6 @@ var require_googleauth = __commonJS({
             return {
               client_email: serviceAccountEmail,
               universe_domain: client.universeDomain
->>>>>>> origin/main
             };
           }
         }
@@ -69153,45 +66849,36 @@ var require_googleauth = __commonJS({
        * @returns IdTokenClient for making HTTP calls authenticated with ID tokens.
        */
       async getIdTokenClient(targetAudience) {
-<<<<<<< HEAD
         const client2 = await this.getClient();
         if (!("fetchIdToken" in client2)) {
           throw new Error("Cannot fetch ID token in this environment, use GCE or set the GOOGLE_APPLICATION_CREDENTIALS environment variable to a service account credentials JSON file.");
         }
         return new idtokenclient_1.IdTokenClient({ targetAudience, idTokenProvider: client2 });
-=======
         const client = await this.getClient();
         if (!("fetchIdToken" in client)) {
           throw new Error("Cannot fetch ID token in this environment, use GCE or set the GOOGLE_APPLICATION_CREDENTIALS environment variable to a service account credentials JSON file.");
         }
         return new idtokenclient_1.IdTokenClient({ targetAudience, idTokenProvider: client });
->>>>>>> origin/main
       }
       /**
        * Automatically obtain application default credentials, and return
        * an access token for making requests.
        */
       async getAccessToken() {
-<<<<<<< HEAD
         const client2 = await this.getClient();
         return (await client2.getAccessToken()).token;
-=======
         const client = await this.getClient();
         return (await client.getAccessToken()).token;
->>>>>>> origin/main
       }
       /**
        * Obtain the HTTP headers that will provide authorization for a given
        * request.
        */
       async getRequestHeaders(url3) {
-<<<<<<< HEAD
         const client2 = await this.getClient();
         return client2.getRequestHeaders(url3);
-=======
         const client = await this.getClient();
         return client.getRequestHeaders(url3);
->>>>>>> origin/main
       }
       /**
        * Obtain credentials for a request, then attach the appropriate headers to
@@ -69201,13 +66888,10 @@ var require_googleauth = __commonJS({
       async authorizeRequest(opts) {
         opts = opts || {};
         const url3 = opts.url || opts.uri;
-<<<<<<< HEAD
         const client2 = await this.getClient();
         const headers = await client2.getRequestHeaders(url3);
-=======
         const client = await this.getClient();
         const headers = await client.getRequestHeaders(url3);
->>>>>>> origin/main
         opts.headers = Object.assign(opts.headers || {}, headers);
         return opts;
       }
@@ -69218,13 +66902,10 @@ var require_googleauth = __commonJS({
        */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async request(opts) {
-<<<<<<< HEAD
         const client2 = await this.getClient();
         return client2.request(opts);
-=======
         const client = await this.getClient();
         return client.request(opts);
->>>>>>> origin/main
       }
       /**
        * Determine the compute environment in which the code is running.
@@ -69244,7 +66925,6 @@ var require_googleauth = __commonJS({
        * ```
        */
       async sign(data, endpoint) {
-<<<<<<< HEAD
         const client2 = await this.getClient();
         const universe = await this.getUniverseDomain();
         endpoint = endpoint || `https://iamcredentials.${universe}/v1/projects/-/serviceAccounts/`;
@@ -69255,7 +66935,6 @@ var require_googleauth = __commonJS({
         const crypto4 = (0, crypto_1.createCrypto)();
         if (client2 instanceof jwtclient_1.JWT && client2.key) {
           const sign = await crypto4.sign(client2.key, data);
-=======
         const client = await this.getClient();
         const universe = await this.getUniverseDomain();
         endpoint = endpoint || `https://iamcredentials.${universe}/v1/projects/-/serviceAccounts/`;
@@ -69266,32 +66945,25 @@ var require_googleauth = __commonJS({
         const crypto7 = (0, crypto_1.createCrypto)();
         if (client instanceof jwtclient_1.JWT && client.key) {
           const sign = await crypto7.sign(client.key, data);
->>>>>>> origin/main
           return sign;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-<<<<<<< HEAD
         return this.signBlob(crypto4, creds.client_email, data, endpoint);
       }
       async signBlob(crypto4, emailOrUniqueId, data, endpoint) {
-=======
         return this.signBlob(crypto7, creds.client_email, data, endpoint);
       }
       async signBlob(crypto7, emailOrUniqueId, data, endpoint) {
->>>>>>> origin/main
         const url3 = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url3.href,
           data: {
-<<<<<<< HEAD
             payload: crypto4.encodeBase64StringUtf8(data)
-=======
             payload: crypto7.encodeBase64StringUtf8(data)
->>>>>>> origin/main
           },
           retry: true,
           retryConfig: {
@@ -69317,15 +66989,12 @@ var require_googleauth = __commonJS({
         const stream = fs4.createReadStream(filePath);
         return await this.fromStreamAsync(stream, this.clientOptions);
       } else if (this.apiKey) {
-<<<<<<< HEAD
         const client2 = await this.fromAPIKey(this.apiKey, this.clientOptions);
         client2.scopes = this.scopes;
         const { credential } = await __classPrivateFieldGet17(this, _GoogleAuth_instances, "m", _GoogleAuth_prepareAndCacheClient).call(this, client2);
-=======
         const client = await this.fromAPIKey(this.apiKey, this.clientOptions);
         client.scopes = this.scopes;
         const { credential } = await __classPrivateFieldGet17(this, _GoogleAuth_instances, "m", _GoogleAuth_prepareAndCacheClient).call(this, client);
->>>>>>> origin/main
         return credential;
       } else {
         const { credential } = await this.getApplicationDefaultAsync(this.clientOptions);
@@ -69973,11 +67642,8 @@ var require_retry_request = __commonJS({
 });
 
 // ../../node_modules/.pnpm/@tootallnate+once@2.0.1/node_modules/@tootallnate/once/dist/index.js
-<<<<<<< HEAD
 var require_dist9 = __commonJS({
-=======
 var require_dist10 = __commonJS({
->>>>>>> origin/main
   "../../node_modules/.pnpm/@tootallnate+once@2.0.1/node_modules/@tootallnate/once/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -70224,7 +67890,6 @@ var require_src8 = __commonJS({
 var require_agent2 = __commonJS({
   "../../node_modules/.pnpm/http-proxy-agent@5.0.0/node_modules/http-proxy-agent/dist/agent.js"(exports) {
     "use strict";
-<<<<<<< HEAD
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P3, generator) {
       function adopt(value) {
         return value instanceof P3 ? value : new P3(function(resolve) {
@@ -70232,7 +67897,6 @@ var require_agent2 = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P4, generator) {
       function adopt(value) {
         return value instanceof P4 ? value : new P4(function(resolve) {
@@ -70240,7 +67904,6 @@ var require_agent2 = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -70269,11 +67932,8 @@ var require_agent2 = __commonJS({
     var tls_1 = __importDefault(__require("tls"));
     var url_1 = __importDefault(__require("url"));
     var debug_1 = __importDefault(require_src());
-<<<<<<< HEAD
     var once_1 = __importDefault(require_dist9());
-=======
     var once_1 = __importDefault(require_dist10());
->>>>>>> origin/main
     var agent_base_1 = require_src8();
     var debug2 = (0, debug_1.default)("http-proxy-agent");
     function isHTTPS(protocol) {
@@ -70371,11 +68031,8 @@ var require_agent2 = __commonJS({
 });
 
 // ../../node_modules/.pnpm/http-proxy-agent@5.0.0/node_modules/http-proxy-agent/dist/index.js
-<<<<<<< HEAD
 var require_dist10 = __commonJS({
-=======
 var require_dist11 = __commonJS({
->>>>>>> origin/main
   "../../node_modules/.pnpm/http-proxy-agent@5.0.0/node_modules/http-proxy-agent/dist/index.js"(exports, module) {
     "use strict";
     var __importDefault = exports && exports.__importDefault || function(mod) {
@@ -70463,7 +68120,6 @@ var require_parse_proxy_response2 = __commonJS({
 var require_agent3 = __commonJS({
   "../../node_modules/.pnpm/https-proxy-agent@5.0.1/node_modules/https-proxy-agent/dist/agent.js"(exports) {
     "use strict";
-<<<<<<< HEAD
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P3, generator) {
       function adopt(value) {
         return value instanceof P3 ? value : new P3(function(resolve) {
@@ -70471,7 +68127,6 @@ var require_agent3 = __commonJS({
         });
       }
       return new (P3 || (P3 = Promise))(function(resolve, reject) {
-=======
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P4, generator) {
       function adopt(value) {
         return value instanceof P4 ? value : new P4(function(resolve) {
@@ -70479,7 +68134,6 @@ var require_agent3 = __commonJS({
         });
       }
       return new (P4 || (P4 = Promise))(function(resolve, reject) {
->>>>>>> origin/main
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -70596,19 +68250,16 @@ var require_agent3 = __commonJS({
           socket.destroy();
           const fakeSocket = new net_1.default.Socket({ writable: false });
           fakeSocket.readable = true;
-<<<<<<< HEAD
           req.once("socket", (s3) => {
             debug2("replaying proxy buffer for failed request");
             assert_1.default(s3.listenerCount("data") > 0);
             s3.push(buffered);
             s3.push(null);
-=======
           req.once("socket", (s4) => {
             debug2("replaying proxy buffer for failed request");
             assert_1.default(s4.listenerCount("data") > 0);
             s4.push(buffered);
             s4.push(null);
->>>>>>> origin/main
           });
           return fakeSocket;
         });
@@ -70638,11 +68289,8 @@ var require_agent3 = __commonJS({
 });
 
 // ../../node_modules/.pnpm/https-proxy-agent@5.0.1/node_modules/https-proxy-agent/dist/index.js
-<<<<<<< HEAD
 var require_dist11 = __commonJS({
-=======
 var require_dist12 = __commonJS({
->>>>>>> origin/main
   "../../node_modules/.pnpm/https-proxy-agent@5.0.1/node_modules/https-proxy-agent/dist/index.js"(exports, module) {
     "use strict";
     var __importDefault = exports && exports.__importDefault || function(mod) {
@@ -70696,11 +68344,8 @@ var require_agents = __commonJS({
       const manuallyProvidedProxy = !!reqOpts.proxy;
       const shouldUseProxy = manuallyProvidedProxy || shouldUseProxyForURI(uri);
       if (proxy && shouldUseProxy) {
-<<<<<<< HEAD
         const Agent = isHttp ? require_dist10() : require_dist11();
-=======
         const Agent = isHttp ? require_dist11() : require_dist12();
->>>>>>> origin/main
         const proxyOpts = { ...(0, url_1.parse)(proxy), ...poolOptions };
         return new Agent(proxyOpts);
       }
@@ -71076,7 +68721,6 @@ Content-Type: ${part["Content-Type"]}\r
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/package.json
 var require_package4 = __commonJS({
   "../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/package.json"(exports, module) {
@@ -71084,7 +68728,6 @@ var require_package4 = __commonJS({
       name: "@google-cloud/storage",
       description: "Cloud Storage Client Library for Node.js",
       version: "7.19.0",
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/package.json
 var require_package4 = __commonJS({
   "../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/package.json"(exports, module) {
@@ -71092,21 +68735,17 @@ var require_package4 = __commonJS({
       name: "@google-cloud/storage",
       description: "Cloud Storage Client Library for Node.js",
       version: "7.21.0",
->>>>>>> origin/main
       license: "Apache-2.0",
       author: "Google Inc.",
       engines: {
         node: ">=14"
       },
-<<<<<<< HEAD
       repository: "googleapis/nodejs-storage",
-=======
       repository: {
         type: "git",
         directory: "handwritten/storage",
         url: "https://github.com/googleapis/google-cloud-node.git"
       },
->>>>>>> origin/main
       main: "./build/cjs/src/index.js",
       types: "./build/cjs/src/index.d.ts",
       type: "module",
@@ -71150,10 +68789,7 @@ var require_package4 = __commonJS({
         "compile:esm": "tsc -p .",
         compile: "npm run compile:cjs && npm run compile:esm",
         "conformance-test": "mocha --parallel build/cjs/conformance-test/ --require build/cjs/conformance-test/globalHooks.js",
-<<<<<<< HEAD
         "docs-test": "linkinator docs",
-=======
->>>>>>> origin/main
         docs: "jsdoc -c .jsdoc.json",
         fix: "gts fix",
         lint: "gts check",
@@ -71161,10 +68797,7 @@ var require_package4 = __commonJS({
         "postcompile:cjs": "babel --plugins gapic-tools/build/src/replaceImportMetaUrl,gapic-tools/build/src/toggleESMFlagVariable build/cjs/src/util.js -o build/cjs/src/util.js && cp internal-tooling/helpers/package.cjs.json build/cjs/package.json",
         precompile: "rm -rf build/",
         "preconformance-test": "npm run compile:cjs -- --sourceMap",
-<<<<<<< HEAD
         "predocs-test": "npm run docs",
-=======
->>>>>>> origin/main
         predocs: "npm run compile:cjs -- --sourceMap",
         prelint: "cd samples; npm link ../; npm install",
         prepare: "npm run compile",
@@ -71174,11 +68807,8 @@ var require_package4 = __commonJS({
         "samples-test": "npm link && cd samples/ && npm link ../ && npm test && cd ../",
         "system-test:esm": "mocha build/esm/system-test --timeout 600000 --exit",
         "system-test": "mocha build/cjs/system-test --timeout 600000 --exit",
-<<<<<<< HEAD
         test: "c8 mocha build/cjs/test"
-=======
         test: "cross-env NODE_OPTIONS='--no-deprecation' c8 mocha build/cjs/test"
->>>>>>> origin/main
       },
       dependencies: {
         "@google-cloud/paginator": "^5.0.0",
@@ -71194,12 +68824,9 @@ var require_package4 = __commonJS({
         mime: "^3.0.0",
         "p-limit": "^3.0.1",
         "retry-request": "^7.0.0",
-<<<<<<< HEAD
         "teeny-request": "^9.0.0",
         uuid: "^8.0.0"
-=======
         "teeny-request": "^9.0.0"
->>>>>>> origin/main
       },
       devDependencies: {
         "@babel/cli": "^7.22.10",
@@ -71218,10 +68845,7 @@ var require_package4 = __commonJS({
         "@types/request": "^2.48.4",
         "@types/sinon": "^17.0.0",
         "@types/tmp": "0.2.6",
-<<<<<<< HEAD
         "@types/uuid": "^8.0.0",
-=======
->>>>>>> origin/main
         "@types/yargs": "^17.0.10",
         c8: "^9.0.0",
         "form-data": "^4.0.4",
@@ -71230,10 +68854,7 @@ var require_package4 = __commonJS({
         jsdoc: "^4.0.4",
         "jsdoc-fresh": "^5.0.0",
         "jsdoc-region-tag": "^4.0.0",
-<<<<<<< HEAD
         linkinator: "^3.0.0",
-=======
->>>>>>> origin/main
         mocha: "^9.2.2",
         mockery: "^2.1.0",
         nock: "~13.5.0",
@@ -71245,28 +68866,22 @@ var require_package4 = __commonJS({
         "path-to-regexp": "6.3.0",
         tmp: "^0.2.0",
         typescript: "^5.1.6",
-<<<<<<< HEAD
         yargs: "^17.3.1"
       }
-=======
         yargs: "^17.3.1",
         "cross-env": "^7.0.3"
       },
       homepage: "https://github.com/googleapis/google-cloud-node/tree/main/handwritten/storage"
->>>>>>> origin/main
     };
   }
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/package-json-helper.cjs
 var require_package_json_helper = __commonJS({
   "../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/package-json-helper.cjs"(exports) {
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/package-json-helper.cjs
 var require_package_json_helper = __commonJS({
   "../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/package-json-helper.cjs"(exports) {
->>>>>>> origin/main
     function getPackageJSON6() {
       return require_package4();
     }
@@ -71405,19 +69020,16 @@ var require_buffer_list = __commonJS({
         }
       }, {
         key: "join",
-<<<<<<< HEAD
         value: function join(s3) {
           if (this.length === 0) return "";
           var p2 = this.head;
           var ret = "" + p2.data;
           while (p2 = p2.next) ret += s3 + p2.data;
-=======
         value: function join(s4) {
           if (this.length === 0) return "";
           var p2 = this.head;
           var ret = "" + p2.data;
           while (p2 = p2.next) ret += s4 + p2.data;
->>>>>>> origin/main
           return ret;
         }
       }, {
@@ -71517,11 +69129,8 @@ var require_buffer_list = __commonJS({
         // Make sure the linked list only shows the minimal necessary information.
       }, {
         key: custom2,
-<<<<<<< HEAD
         value: function value(_3, options) {
-=======
         value: function value(_4, options) {
->>>>>>> origin/main
           return inspect2(this, _objectSpread(_objectSpread({}, options), {}, {
             // Only inspect one level.
             depth: 0,
@@ -71852,11 +69461,8 @@ var require_stream_writable = __commonJS({
             return this.getBuffer();
           }, "_writableState.buffer is deprecated. Use _writableState.getBuffer instead.", "DEP0003")
         });
-<<<<<<< HEAD
       } catch (_3) {
-=======
       } catch (_4) {
->>>>>>> origin/main
       }
     })();
     var realHasInstance;
@@ -75000,11 +72606,8 @@ var require_retry3 = __commonJS({
 var require_lib9 = __commonJS({
   "../../node_modules/.pnpm/async-retry@1.3.3/node_modules/async-retry/lib/index.js"(exports, module) {
     var retrier = require_retry3();
-<<<<<<< HEAD
     function retry2(fn, opts) {
-=======
     function retry3(fn, opts) {
->>>>>>> origin/main
       function run(resolve, reject) {
         var options = opts || {};
         var op;
@@ -75042,16 +72645,12 @@ var require_lib9 = __commonJS({
       }
       return new Promise(run);
     }
-<<<<<<< HEAD
     module.exports = retry2;
-=======
     module.exports = retry3;
->>>>>>> origin/main
   }
 });
 
 // src/app.ts
-<<<<<<< HEAD
 var import_express17 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
@@ -75214,7 +72813,6 @@ ${warning}`);
 };
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/constants.mjs
-=======
 var import_express19 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
@@ -75237,7 +72835,6 @@ var logger = (0, import_pino.default)({
 });
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/constants.mjs
->>>>>>> origin/main
 var LEGACY_DEV_INSTANCE_SUFFIXES = [
   ".lcl.dev",
   ".lclstage.dev",
@@ -75259,7 +72856,6 @@ var DEV_OR_STAGING_SUFFIXES = [
   "accountsstage.dev",
   "accounts.dev"
 ];
-<<<<<<< HEAD
 var LOCAL_ENV_SUFFIXES = [
   ".lcl.dev",
   "lclstage.dev",
@@ -75273,32 +72869,25 @@ var PROD_FAPI_URL = "https://frontend-api.clerk.dev";
 var DEFAULT_PROXY_PATH = "/__clerk";
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/isomorphicAtob.mjs
-=======
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/isomorphicAtob.mjs
->>>>>>> origin/main
 var isomorphicAtob = (data) => {
   if (typeof atob !== "undefined" && typeof atob === "function") return atob(data);
   else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data, "base64").toString();
   return data;
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/isomorphicBtoa.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/isomorphicBtoa.mjs
->>>>>>> origin/main
 var isomorphicBtoa = (data) => {
   if (typeof btoa !== "undefined" && typeof btoa === "function") return btoa(data);
   else if (typeof globalThis.Buffer !== "undefined") return globalThis.Buffer.from(data).toString("base64");
   return data;
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/keys.mjs
 var PUBLISHABLE_KEY_LIVE_PREFIX = "pk_live_";
 var PUBLISHABLE_KEY_TEST_PREFIX = "pk_test_";
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/keys.mjs
 var PUBLISHABLE_KEY_LIVE_PREFIX = "pk_live_";
 var PUBLISHABLE_KEY_TEST_PREFIX = "pk_test_";
@@ -75312,7 +72901,6 @@ function publishableKeyFromHost(host, fallbackKey) {
   if (!hostname2) throw new Error("Host must not be empty.");
   return buildPublishableKey(`clerk.${hostname2}`);
 }
->>>>>>> origin/main
 function isValidDecodedPublishableKey(decoded) {
   if (!decoded.endsWith("$")) return false;
   const withoutTrailing = decoded.slice(0, -1);
@@ -75372,23 +72960,17 @@ function createDevOrStagingUrlCache() {
       const hostname2 = typeof url3 === "string" ? url3 : url3.hostname;
       let res = devOrStagingUrlCache.get(hostname2);
       if (res === void 0) {
-<<<<<<< HEAD
         res = DEV_OR_STAGING_SUFFIXES.some((s3) => hostname2.endsWith(s3));
-=======
         res = DEV_OR_STAGING_SUFFIXES.some((s4) => hostname2.endsWith(s4));
->>>>>>> origin/main
         devOrStagingUrlCache.set(hostname2, res);
       }
       return res;
     }
   };
 }
-<<<<<<< HEAD
-=======
 function isDevelopmentFromPublishableKey(apiKey) {
   return apiKey.startsWith("test_") || apiKey.startsWith("pk_test_");
 }
->>>>>>> origin/main
 function isProductionFromPublishableKey(apiKey) {
   return apiKey.startsWith("live_") || apiKey.startsWith("pk_live_");
 }
@@ -75404,9 +72986,7 @@ var getSuffixedCookieName = (cookieName, cookieSuffix) => {
   return `${cookieName}_${cookieSuffix}`;
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/retry.mjs
-=======
 // src/middlewares/clerkProxyHosts.ts
 var CLERK_PROXY_PATH = "/api/__clerk";
 var ANIMA_APEX_HOST = "anima-protocol.com";
@@ -75984,25 +73564,18 @@ var getSuffixedCookieName2 = (cookieName, cookieSuffix) => {
 };
 
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/retry.mjs
->>>>>>> origin/main
 var defaultOptions = {
   initialDelay: 125,
   maxDelayBetweenRetries: 0,
   factor: 2,
-<<<<<<< HEAD
   shouldRetry: (_3, iteration) => iteration < 5,
-=======
   shouldRetry: (_4, iteration) => iteration < 5,
->>>>>>> origin/main
   retryImmediately: false,
   jitter: true
 };
 var RETRY_IMMEDIATELY_DELAY = 100;
-<<<<<<< HEAD
 var sleep = async (ms) => new Promise((s3) => setTimeout(s3, ms));
-=======
 var sleep = async (ms) => new Promise((s4) => setTimeout(s4, ms));
->>>>>>> origin/main
 var applyJitter = (delay, jitter) => {
   return jitter ? delay * (1 + Math.random()) : delay;
 };
@@ -76043,33 +73616,24 @@ var retry = async (callback, options = {}) => {
   }
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/url.mjs
 function isLegacyDevAccountPortalOrigin(host) {
   return LEGACY_DEV_INSTANCE_SUFFIXES.some((legacyDevSuffix) => {
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/url.mjs
 function isLegacyDevAccountPortalOrigin(host) {
   return LEGACY_DEV_INSTANCE_SUFFIXES2.some((legacyDevSuffix) => {
->>>>>>> origin/main
     return host.startsWith("accounts.") && host.endsWith(legacyDevSuffix);
   });
 }
 function isCurrentDevAccountPortalOrigin(host) {
-<<<<<<< HEAD
   return CURRENT_DEV_INSTANCE_SUFFIXES.some((currentDevSuffix) => {
-=======
   return CURRENT_DEV_INSTANCE_SUFFIXES2.some((currentDevSuffix) => {
->>>>>>> origin/main
     return host.endsWith(currentDevSuffix) && !host.endsWith(".clerk" + currentDevSuffix);
   });
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/clerkRuntimeError-DlesLWqO.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/_chunks/clerkRuntimeError-DlesLWqO.mjs
->>>>>>> origin/main
 function createErrorTypeGuard(ErrorClass) {
   function typeGuard(error40) {
     const target = error40 ?? this;
@@ -76134,11 +73698,8 @@ var ClerkRuntimeError = class ClerkRuntimeError2 extends ClerkError {
 };
 var isClerkRuntimeError = createErrorTypeGuard(ClerkRuntimeError);
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/error-uYOdvTDm.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/_chunks/error-uYOdvTDm.mjs
->>>>>>> origin/main
 var ClerkAPIError = class {
   static kind = "ClerkAPIError";
   code;
@@ -76200,11 +73761,8 @@ Serialized errors: ${this.errors.map((e2) => JSON.stringify(e2))}`;
 Clerk Trace ID: ${this.clerkTraceId}`;
     return message;
   }
-<<<<<<< HEAD
   static formatMessage(name, msg, _3, __) {
-=======
   static formatMessage(name, msg, _4, __) {
->>>>>>> origin/main
     return msg;
   }
 };
@@ -76221,17 +73779,14 @@ function buildErrorThrower({ packageName, customMessages }) {
   function buildMessage(rawMessage, replacements) {
     if (!replacements) return `${pkg}: ${rawMessage}`;
     let msg = rawMessage;
-<<<<<<< HEAD
     const matches2 = rawMessage.matchAll(/{{([a-zA-Z0-9-_]+)}}/g);
     for (const match2 of matches2) {
       const replacement = (replacements[match2[1]] || "").toString();
       msg = msg.replace(`{{${match2[1]}}}`, replacement);
-=======
     const matches3 = rawMessage.matchAll(/{{([a-zA-Z0-9-_]+)}}/g);
     for (const match3 of matches3) {
       const replacement = (replacements[match3[1]] || "").toString();
       msg = msg.replace(`{{${match3[1]}}}`, replacement);
->>>>>>> origin/main
     }
     return `${pkg}: ${msg}`;
   }
@@ -76269,19 +73824,16 @@ function buildErrorThrower({ packageName, customMessages }) {
   };
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-YBVFDYDR.mjs
 var errorThrower = buildErrorThrower({ packageName: "@clerk/backend" });
 var { isDevOrStagingUrl } = createDevOrStagingUrlCache();
 
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-RZ7A7F6X.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/chunk-YBVFDYDR.mjs
 var errorThrower = buildErrorThrower({ packageName: "@clerk/backend" });
 var { isDevOrStagingUrl } = createDevOrStagingUrlCache2();
 
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/chunk-RZ7A7F6X.mjs
->>>>>>> origin/main
 var TokenVerificationErrorCode = {
   InvalidSecretKey: "clerk_key_invalid"
 };
@@ -76354,17 +73906,14 @@ var _MachineTokenVerificationError = class _MachineTokenVerificationError2 exten
 _MachineTokenVerificationError.kind = "MachineTokenVerificationError";
 var MachineTokenVerificationError = _MachineTokenVerificationError;
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/runtime/node/crypto.mjs
 import { webcrypto } from "node:crypto";
 
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-7E7A3JZN.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/runtime/node/crypto.mjs
 import { webcrypto } from "node:crypto";
 
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/chunk-QOX5XVDR.mjs
->>>>>>> origin/main
 var globalFetch = fetch.bind(globalThis);
 var runtime = {
   crypto: webcrypto,
@@ -76475,13 +74024,10 @@ function getCryptoAlgorithm(algorithmName) {
     name: jwksAlgToCryptoAlg[algorithmName]
   };
 }
-<<<<<<< HEAD
 var isArrayString = (s3) => {
   return Array.isArray(s3) && s3.length > 0 && s3.every((a2) => typeof a2 === "string");
-=======
 var isArrayString = (s4) => {
   return Array.isArray(s4) && s4.length > 0 && s4.every((a2) => typeof a2 === "string");
->>>>>>> origin/main
 };
 var assertAudienceClaim = (aud, audience) => {
   const audienceList = [audience].flat().filter((a2) => !!a2);
@@ -76545,17 +74091,14 @@ var assertSubClaim = (sub) => {
   }
 };
 var assertAuthorizedPartiesClaim = (azp, authorizedParties) => {
-<<<<<<< HEAD
   if (!azp || !authorizedParties || authorizedParties.length === 0) {
     return;
   }
   if (!authorizedParties.includes(azp)) {
-=======
   if (!authorizedParties || authorizedParties.length === 0) {
     return;
   }
   if (!azp || !authorizedParties.includes(azp)) {
->>>>>>> origin/main
     throw new TokenVerificationError({
       reason: TokenVerificationErrorReason.TokenInvalidAuthorizedParties,
       message: `Invalid JWT Authorized party claim (azp) ${JSON.stringify(azp)}. Expected "${authorizedParties}".`
@@ -76627,11 +74170,8 @@ var assertIssuedAtClaim = (iat, clockSkewInMs) => {
 };
 function pemToBuffer(secret) {
   const trimmed = secret.replace(/-----BEGIN.*?-----/g, "").replace(/-----END.*?-----/g, "").replace(/\s/g, "");
-<<<<<<< HEAD
   const decoded = isomorphicAtob(trimmed);
-=======
   const decoded = isomorphicAtob2(trimmed);
->>>>>>> origin/main
   const buffer = new ArrayBuffer(decoded.length);
   const bufView = new Uint8Array(buffer);
   for (let i2 = 0, strLen = decoded.length; i2 < strLen; i2++) {
@@ -76687,11 +74227,9 @@ function decodeJwt(token) {
   }
   const [rawHeader, rawPayload, rawSignature] = tokenParts;
   const decoder = new TextDecoder();
-<<<<<<< HEAD
   const header = JSON.parse(decoder.decode(base64url.parse(rawHeader, { loose: true })));
   const payload = JSON.parse(decoder.decode(base64url.parse(rawPayload, { loose: true })));
   const signature = base64url.parse(rawSignature, { loose: true });
-=======
   let header, payload, signature;
   try {
     header = JSON.parse(decoder.decode(base64url.parse(rawHeader, { loose: true })));
@@ -76707,7 +74245,6 @@ function decodeJwt(token) {
       ]
     };
   }
->>>>>>> origin/main
   const data = {
     header,
     payload,
@@ -76772,11 +74309,8 @@ async function verifyJwt(token, options) {
   return { data: payload };
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-TOROEX6P.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/chunk-TOROEX6P.mjs
->>>>>>> origin/main
 var __create2 = Object.create;
 var __defProp2 = Object.defineProperty;
 var __getOwnPropDesc2 = Object.getOwnPropertyDescriptor;
@@ -76811,25 +74345,19 @@ var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/buildAccountsBaseUrl.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/buildAccountsBaseUrl.mjs
->>>>>>> origin/main
 function buildAccountsBaseUrl(frontendApi) {
   if (!frontendApi) return "";
   return `https://${frontendApi.replace(/clerk\.accountsstage\./, "accountsstage.").replace(/clerk\.accounts\.|clerk\./, "accounts.")}`;
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/logger.mjs
 var loggedMessages = /* @__PURE__ */ new Set();
 var logger = {
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/logger.mjs
 var loggedMessages = /* @__PURE__ */ new Set();
 var logger2 = {
->>>>>>> origin/main
   /**
   * A custom logger that ensures messages are logged only once.
   * Reduces noise and duplicated messages when logs are in a hot codepath.
@@ -76846,11 +74374,8 @@ var logger2 = {
   }
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/proxy.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/proxy.mjs
->>>>>>> origin/main
 function isValidProxyUrl(key) {
   if (!key) return true;
   return isHttpOrHttps(key) || isProxyUrlRelative(key);
@@ -76869,14 +74394,11 @@ function shouldAutoProxy(hostname2) {
 function getDefaultEnvironment() {
   return typeof process !== "undefined" && process.env ? process.env : {};
 }
-<<<<<<< HEAD
 function normalizeHostname(hostnameOrUrl) {
-=======
 function isAutoProxyDisabledFromEnvironment(environment = getDefaultEnvironment()) {
   return isTruthy(environment.CLERK_DISABLE_AUTO_PROXY);
 }
 function normalizeHostname3(hostnameOrUrl) {
->>>>>>> origin/main
   if (hostnameOrUrl.startsWith("http://") || hostnameOrUrl.startsWith("https://")) try {
     return new URL(hostnameOrUrl).hostname;
   } catch {
@@ -76885,7 +74407,6 @@ function normalizeHostname3(hostnameOrUrl) {
   return hostnameOrUrl.split("/")[0] || "";
 }
 function getAutoProxyUrlFromEnvironment({ publishableKey, hasDomain = false, hasProxyUrl = false, environment = getDefaultEnvironment() }) {
-<<<<<<< HEAD
   if (hasProxyUrl || hasDomain || !isProductionFromPublishableKey(publishableKey)) return "";
   if (environment.VERCEL_TARGET_ENV !== "production") return "";
   const vercelProductionHostname = environment.VERCEL_PROJECT_PRODUCTION_URL;
@@ -76894,7 +74415,6 @@ function getAutoProxyUrlFromEnvironment({ publishableKey, hasDomain = false, has
 }
 
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/authorization.mjs
-=======
   if (hasProxyUrl || hasDomain || !isProductionFromPublishableKey2(publishableKey)) return "";
   if (isAutoProxyDisabledFromEnvironment(environment)) return "";
   if (environment.VERCEL_TARGET_ENV !== "production") return "";
@@ -76904,7 +74424,6 @@ function getAutoProxyUrlFromEnvironment({ publishableKey, hasDomain = false, has
 }
 
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/authorization.mjs
->>>>>>> origin/main
 var TYPES_TO_OBJECTS = {
   strict_mfa: {
     afterMinutes: 10,
@@ -77074,11 +74593,8 @@ var createCheckAuthorization = (options) => {
   };
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/jwtPayloadParser.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/jwtPayloadParser.mjs
->>>>>>> origin/main
 var parsePermissions = ({ per, fpm }) => {
   if (!per || !fpm) return {
     permissions: [],
@@ -77148,11 +74664,8 @@ var __experimental_JWTPayloadToAuthObjectProperties = (claims) => {
   };
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/pathToRegexp-C-7qTA7_.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/_chunks/pathToRegexp-C-7qTA7_.mjs
->>>>>>> origin/main
 function _(r2) {
   for (var n2 = [], e2 = 0; e2 < r2.length; ) {
     var a2 = r2[e2];
@@ -77389,11 +74902,8 @@ ${e2.message}`);
   }
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-7KNTREEZ.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/chunk-JJXYXNCM.mjs
->>>>>>> origin/main
 var require_dist2 = __commonJS2({
   "../../node_modules/.pnpm/cookie@1.1.1/node_modules/cookie/dist/index.js"(exports) {
     "use strict";
@@ -77643,11 +75153,8 @@ var require_dist2 = __commonJS2({
 });
 var API_URL = "https://api.clerk.com";
 var API_VERSION = "v1";
-<<<<<<< HEAD
 var USER_AGENT = `${"@clerk/backend"}@${"3.8.4"}`;
-=======
 var USER_AGENT = `${"@clerk/backend"}@${"3.15.0"}`;
->>>>>>> origin/main
 var MAX_CACHE_LAST_UPDATED_AT_SECONDS = 5 * 60;
 var SUPPORTED_BAPI_VERSION = "2026-05-12";
 var Attributes = {
@@ -77742,11 +75249,8 @@ function assertValidSecretKey(val) {
   }
 }
 function assertValidPublishableKey(val) {
-<<<<<<< HEAD
   parsePublishableKey(val, { fatal: true });
-=======
   parsePublishableKey2(val, { fatal: true });
->>>>>>> origin/main
 }
 var TokenType = {
   SessionToken: "session_token",
@@ -77842,19 +75346,16 @@ var AuthenticateContext = class {
     }
   }
   /**
-<<<<<<< HEAD
    * Determines if the referrer URL is from a Clerk domain (accounts portal or FAPI).
    * This includes both development and production account portal domains, as well as FAPI domains
    * used for redirect-based authentication flows.
    *
    * @returns {boolean} True if the referrer is from a Clerk accounts portal or FAPI domain, false otherwise
-=======
    * Determines if the referrer URL is from a Clerk domain: the instance's FAPI domain, the accounts
    * portal derived from its frontend API, or — on non-production instances only — a development
    * account-portal domain.
    *
    * @returns {boolean} True if the referrer is a trusted Clerk domain, false otherwise
->>>>>>> origin/main
    */
   isKnownClerkReferrer() {
     if (!this.referrer) {
@@ -77869,11 +75370,8 @@ var AuthenticateContext = class {
           return true;
         }
       }
-<<<<<<< HEAD
       if (isLegacyDevAccountPortalOrigin(referrerHost) || isCurrentDevAccountPortalOrigin(referrerHost)) {
-=======
       if (this.instanceType !== "production" && (isLegacyDevAccountPortalOrigin(referrerHost) || isCurrentDevAccountPortalOrigin(referrerHost))) {
->>>>>>> origin/main
         return true;
       }
       const expectedAccountsUrl = buildAccountsBaseUrl(this.frontendApi);
@@ -77883,12 +75381,9 @@ var AuthenticateContext = class {
           return true;
         }
       }
-<<<<<<< HEAD
       if (referrerHost.startsWith("accounts.")) {
         return true;
       }
-=======
->>>>>>> origin/main
       return false;
     } catch {
       return false;
@@ -77901,21 +75396,15 @@ var AuthenticateContext = class {
     if (resolvedProxyUrl?.startsWith("/")) {
       resolvedProxyUrl = `${this.clerkRequest.clerkUrl.origin}${resolvedProxyUrl}`;
     }
-<<<<<<< HEAD
     const originalPk = parsePublishableKey(this.publishableKey, {
-=======
     const originalPk = parsePublishableKey2(this.publishableKey, {
->>>>>>> origin/main
       fatal: true,
       domain: options.domain,
       isSatellite: options.isSatellite
     });
     this.originalFrontendApi = originalPk.frontendApi;
-<<<<<<< HEAD
     const pk = parsePublishableKey(this.publishableKey, {
-=======
     const pk = parsePublishableKey2(this.publishableKey, {
->>>>>>> origin/main
       fatal: true,
       proxyUrl: resolvedProxyUrl,
       domain: options.domain,
@@ -77957,11 +75446,8 @@ var AuthenticateContext = class {
     return this.clerkRequest.cookies.get(name) || void 0;
   }
   getSuffixedCookie(name) {
-<<<<<<< HEAD
     return this.getCookie(getSuffixedCookieName(name, this.cookieSuffix)) || void 0;
-=======
     return this.getCookie(getSuffixedCookieName2(name, this.cookieSuffix)) || void 0;
->>>>>>> origin/main
   }
   getSuffixedOrUnSuffixedCookie(cookieName) {
     if (this.usesSuffixedCookies()) {
@@ -78005,11 +75491,8 @@ var AuthenticateContext = class {
   }
 };
 var createAuthenticateContext = async (clerkRequest, options) => {
-<<<<<<< HEAD
   const cookieSuffix = options.publishableKey ? await getCookieSuffix(options.publishableKey, runtime.crypto.subtle) : "";
-=======
   const cookieSuffix = options.publishableKey ? await getCookieSuffix2(options.publishableKey, runtime.crypto.subtle) : "";
->>>>>>> origin/main
   return new AuthenticateContext(cookieSuffix, clerkRequest, options);
 };
 var SEPARATOR = "/";
@@ -78074,13 +75557,10 @@ var ActorTokenAPI = class extends AbstractAPI {
 };
 var basePath2 = "/agents/tasks";
 var AgentTaskAPI = class extends AbstractAPI {
-<<<<<<< HEAD
-=======
   /**
    * Creates an Agent Task that generates a URL which, when visited, creates a session for the specified user. This is useful for automated testing or agent-driven flows where full authentication isn't practical.
    * @returns The created [`AgentTask`](https://clerk.com/docs/reference/backend/types/backend-agent-task) object.
    */
->>>>>>> origin/main
   async create(params) {
     return this.request({
       method: "POST",
@@ -78091,14 +75571,11 @@ var AgentTaskAPI = class extends AbstractAPI {
       }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Revokes the given Agent Task.
    * @param agentTaskId - The ID of the Agent Task to revoke.
    * @returns The revoked [`AgentTask`](https://clerk.com/docs/reference/backend/types/backend-agent-task) object.
    */
->>>>>>> origin/main
   async revoke(agentTaskId) {
     this.requireId(agentTaskId);
     return this.request({
@@ -78134,13 +75611,10 @@ var AccountlessApplicationAPI = class extends AbstractAPI {
 };
 var basePath4 = "/allowlist_identifiers";
 var AllowlistIdentifierAPI = class extends AbstractAPI {
-<<<<<<< HEAD
-=======
   /**
    * Gets the list of allowlist identifiers for the instance. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`AllowlistIdentifier`](https://clerk.com/docs/reference/backend/types/backend-allowlist-identifier) objects and a `totalCount` property containing the total number of allowlist identifiers for the instance.
    */
->>>>>>> origin/main
   async getAllowlistIdentifierList(params = {}) {
     return this.request({
       method: "GET",
@@ -78148,13 +75622,10 @@ var AllowlistIdentifierAPI = class extends AbstractAPI {
       queryParams: { ...params, paginated: true }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Creates a new allowlist identifier.
    * @returns The created [`AllowlistIdentifier`](https://clerk.com/docs/reference/backend/types/backend-allowlist-identifier) object.
    */
->>>>>>> origin/main
   async createAllowlistIdentifier(params) {
     return this.request({
       method: "POST",
@@ -78162,14 +75633,11 @@ var AllowlistIdentifierAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Deletes an allowlist identifier.
    * @param allowlistIdentifierId - The ID of the allowlist identifier to delete.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object) object.
    */
->>>>>>> origin/main
   async deleteAllowlistIdentifier(allowlistIdentifierId) {
     this.requireId(allowlistIdentifierId);
     return this.request({
@@ -78180,13 +75648,10 @@ var AllowlistIdentifierAPI = class extends AbstractAPI {
 };
 var basePath5 = "/api_keys";
 var APIKeysAPI = class extends AbstractAPI {
-<<<<<<< HEAD
-=======
   /**
    * Gets a list of API keys for the given user or Organization. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`APIKey`](https://clerk.com/docs/reference/backend/types/backend-api-key) objects and a `totalCount` property containing the total number of API keys for the user or Organization.
    */
->>>>>>> origin/main
   async list(queryParams) {
     return this.request({
       method: "GET",
@@ -78194,13 +75659,10 @@ var APIKeysAPI = class extends AbstractAPI {
       queryParams
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Creates a new API key for the given user or Organization.
    * @returns The created [`APIKey`](https://clerk.com/docs/reference/backend/types/backend-api-key) object.
    */
->>>>>>> origin/main
   async create(params) {
     return this.request({
       method: "POST",
@@ -78208,13 +75670,10 @@ var APIKeysAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Gets the given [`APIKey`](https://clerk.com/docs/reference/backend/types/backend-api-key) object.
    * @param apiKeyId - The ID of the API key to get.
    */
->>>>>>> origin/main
   async get(apiKeyId) {
     this.requireId(apiKeyId);
     return this.request({
@@ -78222,13 +75681,10 @@ var APIKeysAPI = class extends AbstractAPI {
       path: joinPaths(basePath5, apiKeyId)
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Updates the given API key.
    * @returns The updated [`APIKey`](https://clerk.com/docs/reference/backend/types/backend-api-key) object.
    */
->>>>>>> origin/main
   async update(params) {
     const { apiKeyId, ...bodyParams } = params;
     this.requireId(apiKeyId);
@@ -78238,14 +75694,11 @@ var APIKeysAPI = class extends AbstractAPI {
       bodyParams
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Deletes the given API key.
    * @param apiKeyId - The ID of the API key to delete.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object) object.
    */
->>>>>>> origin/main
   async delete(apiKeyId) {
     this.requireId(apiKeyId);
     return this.request({
@@ -78253,13 +75706,10 @@ var APIKeysAPI = class extends AbstractAPI {
       path: joinPaths(basePath5, apiKeyId)
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Revokes the given API key. This will immediately invalidate the API key and prevent it from being used to authenticate any future requests.
    * @returns The revoked [`APIKey`](https://clerk.com/docs/reference/backend/types/backend-api-key) object.
    */
->>>>>>> origin/main
   async revoke(params) {
     const { apiKeyId, revocationReason = null } = params;
     this.requireId(apiKeyId);
@@ -78269,13 +75719,10 @@ var APIKeysAPI = class extends AbstractAPI {
       bodyParams: { revocationReason }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Gets the secret of the given API key.
    * @param apiKeyId - The ID of the API key to get the secret of.
    */
->>>>>>> origin/main
   async getSecret(apiKeyId) {
     this.requireId(apiKeyId);
     return this.request({
@@ -78283,8 +75730,6 @@ var APIKeysAPI = class extends AbstractAPI {
       path: joinPaths(basePath5, apiKeyId, "secret")
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Verifies the given API key.
    * - If the API key is valid, the method returns the API key object with its properties.
@@ -78292,7 +75737,6 @@ var APIKeysAPI = class extends AbstractAPI {
    * @param secret - The secret of the API key to verify.
    * @returns The verified [`APIKey`](https://clerk.com/docs/reference/backend/types/backend-api-key) object.
    */
->>>>>>> origin/main
   async verify(secret) {
     return this.request({
       method: "POST",
@@ -78347,12 +75791,9 @@ var BlocklistIdentifierAPI = class extends AbstractAPI {
 };
 var basePath8 = "/clients";
 var ClientAPI = class extends AbstractAPI {
-<<<<<<< HEAD
-=======
   /**
    * @deprecated This method is deprecated and will be removed in a future version.
    */
->>>>>>> origin/main
   async getClientList(params = {}) {
     return this.request({
       method: "GET",
@@ -78360,13 +75801,10 @@ var ClientAPI = class extends AbstractAPI {
       queryParams: { ...params, paginated: true }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Gets the given [`Client`](https://clerk.com/docs/reference/backend/types/backend-client).
    * @param clientId - The ID of the client to get.
    */
->>>>>>> origin/main
   async getClient(clientId) {
     this.requireId(clientId);
     return this.request({
@@ -78374,14 +75812,11 @@ var ClientAPI = class extends AbstractAPI {
       path: joinPaths(basePath8, clientId)
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Verifies the client in the given token.
    * @param token - The token to verify.
    * @returns The verified [`Client`](https://clerk.com/docs/reference/backend/types/backend-client).
    */
->>>>>>> origin/main
   verifyClient(token) {
     return this.request({
       method: "POST",
@@ -78389,15 +75824,12 @@ var ClientAPI = class extends AbstractAPI {
       bodyParams: { token }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Retrieves the handshake payload for a given nonce. Used internally by Clerk's SDKs to resolve
    * session cookies during the handshake flow.
    *
    * @internal
    */
->>>>>>> origin/main
   async getHandshakePayload(queryParams) {
     return this.request({
       method: "GET",
@@ -78408,26 +75840,20 @@ var ClientAPI = class extends AbstractAPI {
 };
 var basePath9 = "/domains";
 var DomainAPI = class extends AbstractAPI {
-<<<<<<< HEAD
-=======
   /**
    * Gets the list of domains for the instance. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`Domain`](https://clerk.com/docs/reference/backend/types/domain) objects and a `totalCount` property containing the total number of domains for the instance.
    */
->>>>>>> origin/main
   async list() {
     return this.request({
       method: "GET",
       path: basePath9
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Adds a new domain to the instance. Useful in the case of multi-domain instances, allows adding [satellite domains](https://clerk.com/docs/guides/dashboard/dns-domains/satellite-domains) to an instance.
    * @returns The created [`Domain`](https://clerk.com/docs/reference/backend/types/domain) object.
    */
->>>>>>> origin/main
   async add(params) {
     return this.request({
       method: "POST",
@@ -78435,15 +75861,12 @@ var DomainAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Updates a domain for the instance. Both primary and satellite domains can be updated. If you choose to use Clerk via proxy, use this endpoint to specify the `proxy_url`. Whenever you decide you'd rather switch to DNS setup for Clerk, simply set `proxy_url` to `null` for the domain.
    *
    * When you update a production instance's primary domain name, you have to make sure that you've completed all the necessary setup steps for DNS and emails to work. Expect downtime otherwise. Updating a primary domain's name will also update the instance's home origin, affecting the default application paths.
    * @returns The updated [`Domain`](https://clerk.com/docs/reference/backend/types/domain) object.
    */
->>>>>>> origin/main
   async update(params) {
     const { domainId, ...bodyParams } = params;
     this.requireId(domainId);
@@ -78454,27 +75877,21 @@ var DomainAPI = class extends AbstractAPI {
     });
   }
   /**
-<<<<<<< HEAD
    * Deletes a satellite domain for the instance.
    * It is currently not possible to delete the instance's primary domain.
-=======
    * Deletes a satellite domain for the instance. It is currently not possible to delete the instance's primary domain.
    * @param satelliteDomainId - The ID of the satellite domain to delete.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object).
->>>>>>> origin/main
    */
   async delete(satelliteDomainId) {
     return this.deleteDomain(satelliteDomainId);
   }
   /**
-<<<<<<< HEAD
    * @deprecated Use `delete` instead
-=======
    * Deletes a satellite domain for the instance.
    * @param satelliteDomainId - The ID of the satellite domain to delete.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object).
    * @deprecated Use `delete()` instead.
->>>>>>> origin/main
    */
   async deleteDomain(satelliteDomainId) {
     this.requireId(satelliteDomainId);
@@ -78486,13 +75903,10 @@ var DomainAPI = class extends AbstractAPI {
 };
 var basePath10 = "/email_addresses";
 var EmailAddressAPI = class extends AbstractAPI {
-<<<<<<< HEAD
-=======
   /**
    * Gets the given [`EmailAddress`](https://clerk.com/docs/reference/backend/types/backend-email-address).
    * @param emailAddressId - The ID of the email address to get.
    */
->>>>>>> origin/main
   async getEmailAddress(emailAddressId) {
     this.requireId(emailAddressId);
     return this.request({
@@ -78500,13 +75914,10 @@ var EmailAddressAPI = class extends AbstractAPI {
       path: joinPaths(basePath10, emailAddressId)
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Creates a new email address for the given user.
    * @returns The created [`EmailAddress`](https://clerk.com/docs/reference/backend/types/backend-email-address) object.
    */
->>>>>>> origin/main
   async createEmailAddress(params) {
     return this.request({
       method: "POST",
@@ -78514,15 +75925,12 @@ var EmailAddressAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Updates the given email address.
    * @param emailAddressId - The ID of the email address to update.
    * @param params - The parameters to update the email address.
    * @returns The updated [`EmailAddress`](https://clerk.com/docs/reference/backend/types/backend-email-address) object.
    */
->>>>>>> origin/main
   async updateEmailAddress(emailAddressId, params = {}) {
     this.requireId(emailAddressId);
     return this.request({
@@ -78531,14 +75939,11 @@ var EmailAddressAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Deletes the given email address.
    * @param emailAddressId - The ID of the email address to delete.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object) object.
    */
->>>>>>> origin/main
   async deleteEmailAddress(emailAddressId) {
     this.requireId(emailAddressId);
     return this.request({
@@ -78547,11 +75952,9 @@ var EmailAddressAPI = class extends AbstractAPI {
     });
   }
 };
-<<<<<<< HEAD
 var basePath11 = "/enterprise_connections";
 var EnterpriseConnectionAPI = class extends AbstractAPI {
   async createEnterpriseConnection(params) {
-=======
 var basePath11 = "/email";
 var EmailApi = class extends AbstractAPI {
   /**
@@ -78562,14 +75965,11 @@ var EmailApi = class extends AbstractAPI {
    * Sends a transactional email.
    */
   async create(params) {
->>>>>>> origin/main
     return this.request({
       method: "POST",
       path: basePath11,
       bodyParams: params,
       options: {
-<<<<<<< HEAD
-=======
         // Snakecase nested keys too, so a `to: { userId }` recipient is sent as
         // `to: { user_id }` on the wire (the default only snakecases top-level
         // keys, which would leave the nested `userId` untouched).
@@ -78590,36 +75990,28 @@ var EnterpriseConnectionAPI = class extends AbstractAPI {
       path: basePath12,
       bodyParams: params,
       options: {
->>>>>>> origin/main
         deepSnakecaseBodyParamKeys: true
       }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Updates the given enterprise connection.
    * @param enterpriseConnectionId - The ID of the enterprise connection to update.
    * @param params - The parameters to update the enterprise connection.
    * @returns The updated [`EnterpriseConnection`](https://clerk.com/docs/reference/backend/types/backend-enterprise-connection) object.
    */
->>>>>>> origin/main
   async updateEnterpriseConnection(enterpriseConnectionId, params) {
     this.requireId(enterpriseConnectionId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath11, enterpriseConnectionId),
-=======
       path: joinPaths(basePath12, enterpriseConnectionId),
->>>>>>> origin/main
       bodyParams: params,
       options: {
         deepSnakecaseBodyParamKeys: true
       }
     });
   }
-<<<<<<< HEAD
   async getEnterpriseConnectionList(params = {}) {
     return this.request({
       method: "GET",
@@ -78627,7 +76019,6 @@ var EnterpriseConnectionAPI = class extends AbstractAPI {
       queryParams: params
     });
   }
-=======
   /**
    * Gets the list of enterprise connections for the instance. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`EnterpriseConnection`](https://clerk.com/docs/reference/backend/types/backend-enterprise-connection) objects and a `totalCount` property containing the total number of enterprise connections for the instance.
@@ -78644,16 +76035,13 @@ var EnterpriseConnectionAPI = class extends AbstractAPI {
    * @param enterpriseConnectionId - The ID of the enterprise connection to get.
    * @returns The [`EnterpriseConnection`](https://clerk.com/docs/reference/backend/types/backend-enterprise-connection) object.
    */
->>>>>>> origin/main
   async getEnterpriseConnection(enterpriseConnectionId) {
     this.requireId(enterpriseConnectionId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath11, enterpriseConnectionId)
     });
   }
-=======
       path: joinPaths(basePath12, enterpriseConnectionId)
     });
   }
@@ -78662,38 +76050,30 @@ var EnterpriseConnectionAPI = class extends AbstractAPI {
    * @param enterpriseConnectionId - The ID of the enterprise connection to delete.
    * @returns The deleted [`EnterpriseConnection`](https://clerk.com/docs/reference/backend/types/backend-enterprise-connection) object.
    */
->>>>>>> origin/main
   async deleteEnterpriseConnection(enterpriseConnectionId) {
     this.requireId(enterpriseConnectionId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath11, enterpriseConnectionId)
     });
   }
 };
 var basePath12 = "/oauth_applications/access_tokens";
-=======
       path: joinPaths(basePath12, enterpriseConnectionId)
     });
   }
 };
 var basePath13 = "/oauth_applications/access_tokens";
->>>>>>> origin/main
 var IdPOAuthAccessTokenApi = class extends AbstractAPI {
   async verify(accessToken) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath12, "verify"),
-=======
       path: joinPaths(basePath13, "verify"),
->>>>>>> origin/main
       bodyParams: { access_token: accessToken }
     });
   }
 };
-<<<<<<< HEAD
 var basePath13 = "/instance";
 var InstanceAPI = class extends AbstractAPI {
   async get() {
@@ -78726,7 +76106,6 @@ var InstanceAPI = class extends AbstractAPI {
     return this.request({
       method: "PATCH",
       path: joinPaths(basePath13, "organization_settings"),
-=======
 var basePath14 = "/instance";
 var InstanceAPI = class extends AbstractAPI {
   /**
@@ -78777,12 +76156,10 @@ var InstanceAPI = class extends AbstractAPI {
     return this.request({
       method: "PATCH",
       path: joinPaths(basePath14, "organization_settings"),
->>>>>>> origin/main
       bodyParams: params
     });
   }
 };
-<<<<<<< HEAD
 var basePath14 = "/invitations";
 var InvitationAPI = class extends AbstractAPI {
   async getInvitationList(params = {}) {
@@ -78806,7 +76183,6 @@ var InvitationAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-=======
 var basePath15 = "/invitations";
 var InvitationAPI = class extends AbstractAPI {
   /**
@@ -78855,19 +76231,16 @@ var InvitationAPI = class extends AbstractAPI {
    * @param invitationId - The ID of the invitation to revoke.
    * @returns The revoked [`Invitation`](https://clerk.com/docs/reference/backend/types/backend-invitation).
    */
->>>>>>> origin/main
   async revokeInvitation(invitationId) {
     this.requireId(invitationId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath14, invitationId, "revoke")
     });
   }
 };
 var basePath15 = "/machines";
 var MachineApi = class extends AbstractAPI {
-=======
       path: joinPaths(basePath15, invitationId, "revoke")
     });
   }
@@ -78879,12 +76252,10 @@ var MachineApi = class extends AbstractAPI {
    * @param machineId - The ID of the machine to get.
    * @returns The [`Machine`](https://clerk.com/docs/reference/backend/types/backend-machine) object.
    */
->>>>>>> origin/main
   async get(machineId) {
     this.requireId(machineId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath15, machineId)
     });
   }
@@ -78902,7 +76273,6 @@ var MachineApi = class extends AbstractAPI {
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath16, machineId)
     });
   }
@@ -78932,18 +76302,15 @@ var MachineApi = class extends AbstractAPI {
    * Updates the given machine.
    * @returns The updated [`Machine`](https://clerk.com/docs/reference/backend/types/backend-machine) object.
    */
->>>>>>> origin/main
   async update(params) {
     const { machineId, ...bodyParams } = params;
     this.requireId(machineId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath15, machineId),
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath16, machineId),
       bodyParams
     });
@@ -78953,16 +76320,13 @@ var MachineApi = class extends AbstractAPI {
    * @param machineId - The ID of the machine to delete.
    * @returns The [`Machine`](https://clerk.com/docs/reference/backend/types/backend-machine) object.
    */
->>>>>>> origin/main
   async delete(machineId) {
     this.requireId(machineId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath15, machineId)
     });
   }
-=======
       path: joinPaths(basePath16, machineId)
     });
   }
@@ -78971,16 +76335,13 @@ var MachineApi = class extends AbstractAPI {
    * @param machineId - The ID of the machine to get the secret key for.
    * @returns The machine's secret key.
    */
->>>>>>> origin/main
   async getSecretKey(machineId) {
     this.requireId(machineId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath15, machineId, "secret_key")
     });
   }
-=======
       path: joinPaths(basePath16, machineId, "secret_key")
     });
   }
@@ -78988,73 +76349,57 @@ var MachineApi = class extends AbstractAPI {
    * Rotates the secret key for the given machine.
    * @returns The new secret key.
    */
->>>>>>> origin/main
   async rotateSecretKey(params) {
     const { machineId, previousTokenTtl } = params;
     this.requireId(machineId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath15, machineId, "secret_key", "rotate"),
-=======
       path: joinPaths(basePath16, machineId, "secret_key", "rotate"),
->>>>>>> origin/main
       bodyParams: {
         previousTokenTtl
       }
     });
   }
   /**
-<<<<<<< HEAD
    * Creates a new machine scope, allowing the specified machine to access another machine.
    *
    * @param machineId - The ID of the machine that will have access to another machine.
    * @param toMachineId - The ID of the machine that will be scoped to the current machine.
-=======
    * Creates a new machine scope, allowing the specified machine to access another machine. Maximum of 150 scopes per machine.
    *
    * @param machineId - The ID of the machine that will have access to the target machine.
    * @param toMachineId - The ID of the machine that will be accessible by the source machine.
    * @returns The created [`MachineScope`](https://clerk.com/docs/reference/backend/types/backend-machine-scope) object.
->>>>>>> origin/main
    */
   async createScope(machineId, toMachineId) {
     this.requireId(machineId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath15, machineId, "scopes"),
-=======
       path: joinPaths(basePath16, machineId, "scopes"),
->>>>>>> origin/main
       bodyParams: {
         toMachineId
       }
     });
   }
   /**
-<<<<<<< HEAD
    * Deletes a machine scope, removing access from one machine to another.
    *
    * @param machineId - The ID of the machine that has access to another machine.
    * @param otherMachineId - The ID of the machine that is being accessed.
-=======
    * Deletes the given machine scope, removing access from one machine to another.
    *
    * @param machineId - The ID of the machine that has access to the target machine.
    * @param otherMachineId - The ID of the machine that will no longer be accessible by the source machine.
    * @returns The deleted [`MachineScope`](https://clerk.com/docs/reference/backend/types/backend-machine-scope) object.
->>>>>>> origin/main
    */
   async deleteScope(machineId, otherMachineId) {
     this.requireId(machineId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath15, machineId, "scopes", otherMachineId)
-=======
       path: joinPaths(basePath16, machineId, "scopes", otherMachineId)
->>>>>>> origin/main
     });
   }
 };
@@ -79294,10 +76639,7 @@ var M2M_TOKEN_PREFIX = "mt_";
 var M2M_SUBJECT_PREFIX = "mch_";
 var OAUTH_TOKEN_PREFIX = "oat_";
 var API_KEY_PREFIX = "ak_";
-<<<<<<< HEAD
-=======
 var JWT_CATEGORY_M2M_TOKEN = "cl_B7d4PD333AAA";
->>>>>>> origin/main
 var MACHINE_TOKEN_PREFIXES = [M2M_TOKEN_PREFIX, OAUTH_TOKEN_PREFIX, API_KEY_PREFIX];
 var JwtFormatRegExp = /^[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+$/;
 function isJwtFormat(token) {
@@ -79401,8 +76743,6 @@ async function resolveKeyAndVerifyJwt(token, kid, options, headerType) {
   }
 }
 async function verifyM2MJwt(token, decoded, options) {
-<<<<<<< HEAD
-=======
   const cat = decoded.header.cat;
   if (cat !== void 0 && cat !== JWT_CATEGORY_M2M_TOKEN) {
     return {
@@ -79416,7 +76756,6 @@ async function verifyM2MJwt(token, decoded, options) {
       ]
     };
   }
->>>>>>> origin/main
   const result = await resolveKeyAndVerifyJwt(token, decoded.header.kid, options);
   if ("error" in result) {
     return { data: void 0, tokenType: TokenType.M2MToken, errors: [result.error] };
@@ -79438,11 +76777,8 @@ async function verifyOAuthJwt(token, decoded, options) {
     errors: void 0
   };
 }
-<<<<<<< HEAD
 var basePath16 = "/m2m_tokens";
-=======
 var basePath17 = "/m2m_tokens";
->>>>>>> origin/main
 var _verifyOptions;
 var _M2MTokenApi_instances;
 var createRequestOptions_fn;
@@ -79459,35 +76795,26 @@ var M2MTokenApi = class extends AbstractAPI {
     __privateAdd(this, _verifyOptions);
     __privateSet(this, _verifyOptions, verifyOptions);
   }
-<<<<<<< HEAD
-=======
   /**
    * Gets a list of M2M tokens for the given machine. By default, the list is returned in descending order by creation date (newest first). This endpoint can be authenticated by either a Machine Secret Key or by a Clerk [Secret Key](!secret-key).
    * - When fetching M2M tokens with a Machine Secret Key, only tokens associated with the authenticated machine can be retrieved.
    * - When fetching M2M tokens with a Clerk Secret Key, tokens for any machine in the instance can be retrieved.
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`M2MToken`](https://clerk.com/docs/reference/backend/types/backend-m2m-token) objects and a `totalCount` property containing the total number of M2M tokens for the machine.
    */
->>>>>>> origin/main
   async list(queryParams) {
     const { machineSecretKey, ...params } = queryParams;
     const requestOptions = __privateMethod(this, _M2MTokenApi_instances, createRequestOptions_fn).call(this, {
       method: "GET",
-<<<<<<< HEAD
       path: basePath16,
-=======
       path: basePath17,
->>>>>>> origin/main
       queryParams: params
     }, machineSecretKey);
     return this.request(requestOptions);
   }
-<<<<<<< HEAD
-=======
   /**
    * Creates a new [M2M token](https://clerk.com/docs/guides/development/machine-auth/m2m-tokens) for the given machine. Must be authenticated by a Machine Secret Key.
    * @returns The created [`M2MToken`](https://clerk.com/docs/reference/backend/types/backend-m2m-token) object.
    */
->>>>>>> origin/main
   async createToken(params) {
     const {
       claims = null,
@@ -79498,11 +76825,8 @@ var M2MTokenApi = class extends AbstractAPI {
     } = params || {};
     const requestOptions = __privateMethod(this, _M2MTokenApi_instances, createRequestOptions_fn).call(this, {
       method: "POST",
-<<<<<<< HEAD
       path: basePath16,
-=======
       path: basePath17,
->>>>>>> origin/main
       bodyParams: {
         secondsUntilExpiration,
         claims,
@@ -79512,38 +76836,29 @@ var M2MTokenApi = class extends AbstractAPI {
     }, machineSecretKey);
     return this.request(requestOptions);
   }
-<<<<<<< HEAD
-=======
   /**
    * Revokes an [M2M token](https://clerk.com/docs/guides/development/machine-auth/m2m-tokens). This endpoint can be authenticated by either a Machine Secret Key or by a Clerk [Secret Key](!secret-key).
    * - When revoking M2M tokens with a Machine Secret Key, the token will be revoked using the machine secret key.
    * - When revoking M2M tokens with a Clerk Secret Key, the token will be revoked using the instance secret key.
    * @returns The revoked [`M2MToken`](https://clerk.com/docs/reference/backend/types/backend-m2m-token) object.
    */
->>>>>>> origin/main
   async revokeToken(params) {
     const { m2mTokenId, revocationReason = null, machineSecretKey } = params;
     this.requireId(m2mTokenId);
     const requestOptions = __privateMethod(this, _M2MTokenApi_instances, createRequestOptions_fn).call(this, {
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath16, m2mTokenId, "revoke"),
-=======
       path: joinPaths(basePath17, m2mTokenId, "revoke"),
->>>>>>> origin/main
       bodyParams: {
         revocationReason
       }
     }, machineSecretKey);
     return this.request(requestOptions);
   }
-<<<<<<< HEAD
-=======
   /**
    * Verifies a [M2M token](https://clerk.com/docs/guides/development/machine-auth/m2m-tokens). Must be authenticated by a Machine Secret Key.
    * @returns The verified [`M2MToken`](https://clerk.com/docs/reference/backend/types/backend-m2m-token) object.
    */
->>>>>>> origin/main
   async verify(params) {
     const { token, machineSecretKey } = params;
     if (isM2MJwt(token)) {
@@ -79551,11 +76866,8 @@ var M2MTokenApi = class extends AbstractAPI {
     }
     const requestOptions = __privateMethod(this, _M2MTokenApi_instances, createRequestOptions_fn).call(this, {
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath16, "verify"),
-=======
       path: joinPaths(basePath17, "verify"),
->>>>>>> origin/main
       bodyParams: { token }
     }, machineSecretKey);
     return this.request(requestOptions);
@@ -79595,37 +76907,28 @@ verifyJwtFormat_fn = async function(token) {
   }
   return result.data;
 };
-<<<<<<< HEAD
 var basePath17 = "/jwks";
-=======
 var basePath18 = "/jwks";
->>>>>>> origin/main
 var JwksAPI = class extends AbstractAPI {
   async getJwks() {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: basePath17
     });
   }
 };
 var basePath18 = "/jwt_templates";
-=======
       path: basePath18
     });
   }
 };
 var basePath19 = "/jwt_templates";
->>>>>>> origin/main
 var JwtTemplatesApi = class extends AbstractAPI {
   async list(params = {}) {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: basePath18,
-=======
       path: basePath19,
->>>>>>> origin/main
       queryParams: { ...params, paginated: true }
     });
   }
@@ -79633,21 +76936,15 @@ var JwtTemplatesApi = class extends AbstractAPI {
     this.requireId(templateId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath18, templateId)
-=======
       path: joinPaths(basePath19, templateId)
->>>>>>> origin/main
     });
   }
   async create(params) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: basePath18,
-=======
       path: basePath19,
->>>>>>> origin/main
       bodyParams: params
     });
   }
@@ -79656,11 +76953,8 @@ var JwtTemplatesApi = class extends AbstractAPI {
     this.requireId(templateId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath18, templateId),
-=======
       path: joinPaths(basePath19, templateId),
->>>>>>> origin/main
       bodyParams
     });
   }
@@ -79668,7 +76962,6 @@ var JwtTemplatesApi = class extends AbstractAPI {
     this.requireId(templateId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath18, templateId)
     });
   }
@@ -79689,7 +76982,6 @@ var OrganizationAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-=======
       path: joinPaths(basePath19, templateId)
     });
   }
@@ -79716,32 +77008,25 @@ var OrganizationAPI = class extends AbstractAPI {
     });
   }
   /** Gets an [Organization](https://clerk.com/docs/reference/backend/types/backend-organization). */
->>>>>>> origin/main
   async getOrganization(params) {
     const { includeMembersCount } = params;
     const organizationIdOrSlug = "organizationId" in params ? params.organizationId : params.slug;
     this.requireId(organizationIdOrSlug);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationIdOrSlug),
-=======
       path: joinPaths(basePath20, organizationIdOrSlug),
->>>>>>> origin/main
       queryParams: {
         includeMembersCount
       }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Updates an [Organization](https://clerk.com/docs/reference/backend/types/backend-organization).
    * @param organizationId - The ID of the Organization to update.
    * @param params - The parameters to update the Organization with.
    * @returns The updated [Organization](https://clerk.com/docs/reference/backend/types/backend-organization).
    */
->>>>>>> origin/main
   async updateOrganization(organizationId, params) {
     this.requireId(organizationId);
     const { publicMetadata, privateMetadata, ...rest } = params;
@@ -79756,33 +77041,25 @@ var OrganizationAPI = class extends AbstractAPI {
     if (!hasMetadata) {
       return this.request({
         method: "PATCH",
-<<<<<<< HEAD
         path: joinPaths(basePath19, organizationId),
-=======
         path: joinPaths(basePath20, organizationId),
->>>>>>> origin/main
         bodyParams: rest
       });
     }
     if (hasRest) {
       await this.request({
         method: "PATCH",
-<<<<<<< HEAD
         path: joinPaths(basePath19, organizationId),
-=======
         path: joinPaths(basePath20, organizationId),
->>>>>>> origin/main
         bodyParams: rest
       });
     }
     return this.request({
       method: "PUT",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "metadata"),
       bodyParams: { publicMetadata, privateMetadata }
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "metadata"),
       bodyParams: { publicMetadata, privateMetadata }
     });
@@ -79793,7 +77070,6 @@ var OrganizationAPI = class extends AbstractAPI {
    * @param params - The parameters to update the logo with.
    * @returns The updated [`Organization`](https://clerk.com/docs/reference/backend/types/backend-organization).
    */
->>>>>>> origin/main
   async updateOrganizationLogo(organizationId, params) {
     this.requireId(organizationId);
     const formData = new runtime.FormData();
@@ -79803,12 +77079,10 @@ var OrganizationAPI = class extends AbstractAPI {
     }
     return this.request({
       method: "PUT",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "logo"),
       formData
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "logo"),
       formData
     });
@@ -79818,16 +77092,13 @@ var OrganizationAPI = class extends AbstractAPI {
    * @param organizationId - The ID of the Organization to delete the logo for.
    * @returns The deleted [`Organization`](https://clerk.com/docs/reference/backend/types/backend-organization).
    */
->>>>>>> origin/main
   async deleteOrganizationLogo(organizationId) {
     this.requireId(organizationId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "logo")
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "logo")
     });
   }
@@ -79843,25 +77114,19 @@ var OrganizationAPI = class extends AbstractAPI {
    * > [!TIP]
    * > If you want to fully replace the existing metadata instead of merging, use [`replaceOrganizationMetadata()`](https://clerk.com/docs/reference/backend/organization/replace-organization-metadata).
    */
->>>>>>> origin/main
   async updateOrganizationMetadata(organizationId, params) {
     this.requireId(organizationId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "metadata"),
-=======
       path: joinPaths(basePath20, organizationId, "metadata"),
->>>>>>> origin/main
       bodyParams: params
     });
   }
   /**
-<<<<<<< HEAD
    * Replace an organization's metadata. Supplied fields are overwritten in full;
    * fields omitted from `params` are left unchanged. Prefer
    * `updateOrganizationMetadata` for partial updates with deep-merge semantics.
-=======
    * Replaces the metadata associated with the specified Organization. Unlike [`updateOrganizationMetadata()`](/docs/reference/backend/organization/update-organization-metadata), which deep-merges into the existing metadata, this method uses replace semantics: when a metadata field is provided, its previous value is overwritten in full with no merging at any level.
    *
    * The distinction is at two layers:
@@ -79874,13 +77139,11 @@ var OrganizationAPI = class extends AbstractAPI {
    * @param organizationId - The ID of the Organization to replace the metadata for.
    * @param params - The metadata to replace.
    * @returns The updated [`Organization`](https://clerk.com/docs/reference/backend/types/backend-organization).
->>>>>>> origin/main
    */
   async replaceOrganizationMetadata(organizationId, params) {
     this.requireId(organizationId);
     return this.request({
       method: "PUT",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "metadata"),
       bodyParams: params
     });
@@ -79891,7 +77154,6 @@ var OrganizationAPI = class extends AbstractAPI {
       path: joinPaths(basePath19, organizationId)
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "metadata"),
       bodyParams: params
     });
@@ -79916,18 +77178,15 @@ var OrganizationAPI = class extends AbstractAPI {
    * > [!TIP]
    * > To get the list of Organization memberships **for your instance**, use [`getInstanceOrganizationMembershipList()`](/docs/reference/backend/organization/get-instance-organization-membership-list).
    */
->>>>>>> origin/main
   async getOrganizationMembershipList(params) {
     const { organizationId, ...queryParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "memberships"),
       queryParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "memberships"),
       queryParams
     });
@@ -79940,7 +77199,6 @@ var OrganizationAPI = class extends AbstractAPI {
    * > [!TIP]
    * > To get the list of Organization memberships **for a specific Organization**, use [`getOrganizationMembershipList()`](/docs/reference/backend/organization/get-organization-membership-list).
    */
->>>>>>> origin/main
   async getInstanceOrganizationMembershipList(params) {
     return this.request({
       method: "GET",
@@ -79948,24 +77206,19 @@ var OrganizationAPI = class extends AbstractAPI {
       queryParams: params
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Creates a membership to an Organization for a user directly (circumventing the need for an invitation).
    * @returns The newly created [`OrganizationMembership`](https://clerk.com/docs/reference/backend/types/backend-organization-membership) object.
    */
->>>>>>> origin/main
   async createOrganizationMembership(params) {
     const { organizationId, ...bodyParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "memberships"),
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "memberships"),
       bodyParams
     });
@@ -79974,18 +77227,15 @@ var OrganizationAPI = class extends AbstractAPI {
    * Updates a user's [`OrganizationMembership`](https://clerk.com/docs/reference/backend/types/backend-organization-membership).
    * @returns The updated [`OrganizationMembership`](https://clerk.com/docs/reference/backend/types/backend-organization-membership) object.
    */
->>>>>>> origin/main
   async updateOrganizationMembership(params) {
     const { organizationId, userId, ...bodyParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "memberships", userId),
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "memberships", userId),
       bodyParams
     });
@@ -79997,17 +77247,14 @@ var OrganizationAPI = class extends AbstractAPI {
    *
    * @returns The updated [`OrganizationMembership`](https://clerk.com/docs/reference/backend/types/backend-organization-membership).
    */
->>>>>>> origin/main
   async updateOrganizationMembershipMetadata(params) {
     const { organizationId, userId, ...bodyParams } = params;
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "memberships", userId, "metadata"),
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "memberships", userId, "metadata"),
       bodyParams
     });
@@ -80018,17 +77265,14 @@ var OrganizationAPI = class extends AbstractAPI {
    * @param userId - The ID of the user to remove from the Organization.
    * @returns The deleted [`OrganizationMembership`](https://clerk.com/docs/reference/backend/types/backend-organization-membership).
    */
->>>>>>> origin/main
   async deleteOrganizationMembership(params) {
     const { organizationId, userId } = params;
     this.requireId(organizationId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "memberships", userId)
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "memberships", userId)
     });
   }
@@ -80036,18 +77280,15 @@ var OrganizationAPI = class extends AbstractAPI {
    * Gets the list of Organization invitations for the specified Organization.
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`OrganizationInvitation`](https://clerk.com/docs/reference/backend/types/backend-organization-invitation) objects and a `totalCount` property containing the total number of Organization invitations for the Organization.
    */
->>>>>>> origin/main
   async getOrganizationInvitationList(params) {
     const { organizationId, ...queryParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "invitations"),
       queryParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "invitations"),
       queryParams
     });
@@ -80056,18 +77297,15 @@ var OrganizationAPI = class extends AbstractAPI {
    * Creates an invitation for a user to join an Organization.
    * @returns The newly created [`OrganizationInvitation`](https://clerk.com/docs/reference/backend/types/backend-organization-invitation) object.
    */
->>>>>>> origin/main
   async createOrganizationInvitation(params) {
     const { organizationId, ...bodyParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "invitations"),
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "invitations"),
       bodyParams
     });
@@ -80077,34 +77315,28 @@ var OrganizationAPI = class extends AbstractAPI {
    * @param params - The parameters to create the invitations with.
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`OrganizationInvitation`](https://clerk.com/docs/reference/backend/types/backend-organization-invitation) objects and a `totalCount` property containing the total number of Organization invitations.
    */
->>>>>>> origin/main
   async createOrganizationInvitationBulk(organizationId, params) {
     this.requireId(organizationId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "invitations", "bulk"),
       bodyParams: params
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "invitations", "bulk"),
       bodyParams: params
     });
   }
   /** Gets an [`OrganizationInvitation`](https://clerk.com/docs/reference/backend/types/backend-organization-invitation). */
->>>>>>> origin/main
   async getOrganizationInvitation(params) {
     const { organizationId, invitationId } = params;
     this.requireId(organizationId);
     this.requireId(invitationId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "invitations", invitationId)
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "invitations", invitationId)
     });
   }
@@ -80112,18 +77344,15 @@ var OrganizationAPI = class extends AbstractAPI {
    * Revokes an invitation from a user for the given Organization.
    * @returns The revoked [`OrganizationInvitation`](https://clerk.com/docs/reference/backend/types/backend-organization-invitation).
    */
->>>>>>> origin/main
   async revokeOrganizationInvitation(params) {
     const { organizationId, invitationId, ...bodyParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "invitations", invitationId, "revoke"),
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "invitations", invitationId, "revoke"),
       bodyParams
     });
@@ -80132,18 +77361,15 @@ var OrganizationAPI = class extends AbstractAPI {
    * Gets the list of [Verified Domains](https://clerk.com/docs/guides/organizations/add-members/verified-domains) for the given Organization. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`OrganizationDomain`](https://clerk.com/docs/reference/backend/types/backend-organization-domain) objects and a `totalCount` property containing the total number of Verified Domains for the Organization.
    */
->>>>>>> origin/main
   async getOrganizationDomainList(params) {
     const { organizationId, ...queryParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "domains"),
       queryParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "domains"),
       queryParams
     });
@@ -80152,42 +77378,33 @@ var OrganizationAPI = class extends AbstractAPI {
    * Creates a new [Verified Domain](https://clerk.com/docs/guides/organizations/add-members/verified-domains) for the given Organization. By default, the domain is verified, but can be optionally set to unverified.
    * @returns The newly created [`OrganizationDomain`](https://clerk.com/docs/reference/backend/types/backend-organization-domain) object.
    */
->>>>>>> origin/main
   async createOrganizationDomain(params) {
     const { organizationId, ...bodyParams } = params;
     this.requireId(organizationId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "domains"),
-=======
       path: joinPaths(basePath20, organizationId, "domains"),
->>>>>>> origin/main
       bodyParams: {
         ...bodyParams,
         verified: bodyParams.verified ?? true
       }
     });
   }
-<<<<<<< HEAD
-=======
   /**
    * Updates a [Verified Domain](https://clerk.com/docs/guides/organizations/add-members/verified-domains) for the given Organization.
    * @returns The updated [`OrganizationDomain`](https://clerk.com/docs/reference/backend/types/backend-organization-domain) object.
    */
->>>>>>> origin/main
   async updateOrganizationDomain(params) {
     const { organizationId, domainId, ...bodyParams } = params;
     this.requireId(organizationId);
     this.requireId(domainId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "domains", domainId),
       bodyParams
     });
   }
-=======
       path: joinPaths(basePath20, organizationId, "domains", domainId),
       bodyParams
     });
@@ -80196,35 +77413,28 @@ var OrganizationAPI = class extends AbstractAPI {
    * Deletes a [Verified Domain](https://clerk.com/docs/guides/organizations/add-members/verified-domains) for the given Organization.
    * @returns The deleted [`OrganizationDomain`](https://clerk.com/docs/reference/backend/types/backend-organization-domain) object.
    */
->>>>>>> origin/main
   async deleteOrganizationDomain(params) {
     const { organizationId, domainId } = params;
     this.requireId(organizationId);
     this.requireId(domainId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath19, organizationId, "domains", domainId)
     });
   }
 };
 var basePath20 = "/organization_permissions";
-=======
       path: joinPaths(basePath20, organizationId, "domains", domainId)
     });
   }
 };
 var basePath21 = "/organization_permissions";
->>>>>>> origin/main
 var OrganizationPermissionAPI = class extends AbstractAPI {
   async getOrganizationPermissionList(params = {}) {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: basePath20,
-=======
       path: basePath21,
->>>>>>> origin/main
       queryParams: params
     });
   }
@@ -80232,21 +77442,15 @@ var OrganizationPermissionAPI = class extends AbstractAPI {
     this.requireId(permissionId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath20, permissionId)
-=======
       path: joinPaths(basePath21, permissionId)
->>>>>>> origin/main
     });
   }
   async createOrganizationPermission(params) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: basePath20,
-=======
       path: basePath21,
->>>>>>> origin/main
       bodyParams: params
     });
   }
@@ -80255,11 +77459,8 @@ var OrganizationPermissionAPI = class extends AbstractAPI {
     this.requireId(permissionId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath20, permissionId),
-=======
       path: joinPaths(basePath21, permissionId),
->>>>>>> origin/main
       bodyParams
     });
   }
@@ -80267,28 +77468,22 @@ var OrganizationPermissionAPI = class extends AbstractAPI {
     this.requireId(permissionId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath20, permissionId)
     });
   }
 };
 var basePath21 = "/organization_roles";
-=======
       path: joinPaths(basePath21, permissionId)
     });
   }
 };
 var basePath22 = "/organization_roles";
->>>>>>> origin/main
 var OrganizationRoleAPI = class extends AbstractAPI {
   async getOrganizationRoleList(params = {}) {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: basePath21,
-=======
       path: basePath22,
->>>>>>> origin/main
       queryParams: params
     });
   }
@@ -80296,21 +77491,15 @@ var OrganizationRoleAPI = class extends AbstractAPI {
     this.requireId(organizationRoleId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath21, organizationRoleId)
-=======
       path: joinPaths(basePath22, organizationRoleId)
->>>>>>> origin/main
     });
   }
   async createOrganizationRole(params) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: basePath21,
-=======
       path: basePath22,
->>>>>>> origin/main
       bodyParams: params
     });
   }
@@ -80319,11 +77508,8 @@ var OrganizationRoleAPI = class extends AbstractAPI {
     this.requireId(organizationRoleId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath21, organizationRoleId),
-=======
       path: joinPaths(basePath22, organizationRoleId),
->>>>>>> origin/main
       bodyParams
     });
   }
@@ -80331,11 +77517,8 @@ var OrganizationRoleAPI = class extends AbstractAPI {
     this.requireId(organizationRoleId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath21, organizationRoleId)
-=======
       path: joinPaths(basePath22, organizationRoleId)
->>>>>>> origin/main
     });
   }
   async assignPermissionToOrganizationRole(params) {
@@ -80344,11 +77527,8 @@ var OrganizationRoleAPI = class extends AbstractAPI {
     this.requireId(permissionId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath21, organizationRoleId, "permissions", permissionId)
-=======
       path: joinPaths(basePath22, organizationRoleId, "permissions", permissionId)
->>>>>>> origin/main
     });
   }
   async removePermissionFromOrganizationRole(params) {
@@ -80357,7 +77537,6 @@ var OrganizationRoleAPI = class extends AbstractAPI {
     this.requireId(permissionId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath21, organizationRoleId, "permissions", permissionId)
     });
   }
@@ -80371,7 +77550,6 @@ var OAuthApplicationsApi = class extends AbstractAPI {
       queryParams: params
     });
   }
-=======
       path: joinPaths(basePath22, organizationRoleId, "permissions", permissionId)
     });
   }
@@ -80395,12 +77573,10 @@ var OAuthApplicationsApi = class extends AbstractAPI {
    * @param oauthApplicationId - The ID of the OAuth application to get.
    * @returns The [`OAuthApplication`](https://clerk.com/docs/reference/backend/types/backend-oauth-application) object.
    */
->>>>>>> origin/main
   async get(oauthApplicationId) {
     this.requireId(oauthApplicationId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath22, oauthApplicationId)
     });
   }
@@ -80447,7 +77623,6 @@ var PhoneNumberAPI = class extends AbstractAPI {
   async createPhoneNumber(params) {
     return this.request({
       method: "POST",
-=======
       path: joinPaths(basePath23, oauthApplicationId)
     });
   }
@@ -80459,12 +77634,10 @@ var PhoneNumberAPI = class extends AbstractAPI {
   async create(params) {
     return this.request({
       method: "POST",
->>>>>>> origin/main
       path: basePath23,
       bodyParams: params
     });
   }
-<<<<<<< HEAD
   async updatePhoneNumber(phoneNumberId, params = {}) {
     this.requireId(phoneNumberId);
     return this.request({
@@ -80484,7 +77657,6 @@ var PhoneNumberAPI = class extends AbstractAPI {
 var basePath24 = "/proxy_checks";
 var ProxyCheckAPI = class extends AbstractAPI {
   async verify(params) {
-=======
   /**
    * Updates the given OAuth application.
    * @returns The updated [`OAuthApplication`](https://clerk.com/docs/reference/backend/types/backend-oauth-application) object.
@@ -80553,14 +77725,12 @@ var PhoneNumberAPI = class extends AbstractAPI {
    * @returns The created [`PhoneNumber`](https://clerk.com/docs/reference/backend/types/backend-phone-number) object.
    */
   async createPhoneNumber(params) {
->>>>>>> origin/main
     return this.request({
       method: "POST",
       path: basePath24,
       bodyParams: params
     });
   }
-<<<<<<< HEAD
 };
 var basePath25 = "/redirect_urls";
 var RedirectUrlAPI = class extends AbstractAPI {
@@ -80579,7 +77749,6 @@ var RedirectUrlAPI = class extends AbstractAPI {
     });
   }
   async createRedirectUrl(params) {
-=======
   /**
    * Updates the given phone number.
    * @param phoneNumberId - The ID of the phone number to update.
@@ -80610,15 +77779,12 @@ var RedirectUrlAPI = class extends AbstractAPI {
 var basePath25 = "/proxy_checks";
 var ProxyCheckAPI = class extends AbstractAPI {
   async verify(params) {
->>>>>>> origin/main
     return this.request({
       method: "POST",
       path: basePath25,
       bodyParams: params
     });
   }
-<<<<<<< HEAD
-=======
 };
 var basePath26 = "/redirect_urls";
 var RedirectUrlAPI = class extends AbstractAPI {
@@ -80660,33 +77826,26 @@ var RedirectUrlAPI = class extends AbstractAPI {
    * @param redirectUrlId - The ID of the redirect URL to delete.
    * @returns The deleted [`RedirectUrl`](https://clerk.com/docs/reference/backend/types/backend-redirect-url) object.
    */
->>>>>>> origin/main
   async deleteRedirectUrl(redirectUrlId) {
     this.requireId(redirectUrlId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath25, redirectUrlId)
     });
   }
 };
 var basePath26 = "/role_sets";
-=======
       path: joinPaths(basePath26, redirectUrlId)
     });
   }
 };
 var basePath27 = "/role_sets";
->>>>>>> origin/main
 var RoleSetAPI = class extends AbstractAPI {
   async getRoleSetList(params = {}) {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: basePath26,
-=======
       path: basePath27,
->>>>>>> origin/main
       queryParams: params
     });
   }
@@ -80694,21 +77853,15 @@ var RoleSetAPI = class extends AbstractAPI {
     this.requireId(roleSetKeyOrId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath26, roleSetKeyOrId)
-=======
       path: joinPaths(basePath27, roleSetKeyOrId)
->>>>>>> origin/main
     });
   }
   async createRoleSet(params) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: basePath26,
-=======
       path: basePath27,
->>>>>>> origin/main
       bodyParams: params
     });
   }
@@ -80717,11 +77870,8 @@ var RoleSetAPI = class extends AbstractAPI {
     this.requireId(roleSetKeyOrId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath26, roleSetKeyOrId),
-=======
       path: joinPaths(basePath27, roleSetKeyOrId),
->>>>>>> origin/main
       bodyParams
     });
   }
@@ -80730,11 +77880,8 @@ var RoleSetAPI = class extends AbstractAPI {
     this.requireId(roleSetKeyOrId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath26, roleSetKeyOrId, "roles"),
-=======
       path: joinPaths(basePath27, roleSetKeyOrId, "roles"),
->>>>>>> origin/main
       bodyParams
     });
   }
@@ -80743,11 +77890,8 @@ var RoleSetAPI = class extends AbstractAPI {
     this.requireId(roleSetKeyOrId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath26, roleSetKeyOrId, "roles", "replace"),
-=======
       path: joinPaths(basePath27, roleSetKeyOrId, "roles", "replace"),
->>>>>>> origin/main
       bodyParams
     });
   }
@@ -80756,40 +77900,28 @@ var RoleSetAPI = class extends AbstractAPI {
     this.requireId(roleSetKeyOrId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath26, roleSetKeyOrId, "replace"),
-=======
       path: joinPaths(basePath27, roleSetKeyOrId, "replace"),
->>>>>>> origin/main
       bodyParams
     });
   }
 };
-<<<<<<< HEAD
 var basePath27 = "/saml_connections";
-=======
 var basePath28 = "/saml_connections";
->>>>>>> origin/main
 var SamlConnectionAPI = class extends AbstractAPI {
   async getSamlConnectionList(params = {}) {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: basePath27,
-=======
       path: basePath28,
->>>>>>> origin/main
       queryParams: params
     });
   }
   async createSamlConnection(params) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: basePath27,
-=======
       path: basePath28,
->>>>>>> origin/main
       bodyParams: params,
       options: {
         deepSnakecaseBodyParamKeys: true
@@ -80800,22 +77932,16 @@ var SamlConnectionAPI = class extends AbstractAPI {
     this.requireId(samlConnectionId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath27, samlConnectionId)
-=======
       path: joinPaths(basePath28, samlConnectionId)
->>>>>>> origin/main
     });
   }
   async updateSamlConnection(samlConnectionId, params = {}) {
     this.requireId(samlConnectionId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath27, samlConnectionId),
-=======
       path: joinPaths(basePath28, samlConnectionId),
->>>>>>> origin/main
       bodyParams: params,
       options: {
         deepSnakecaseBodyParamKeys: true
@@ -80826,7 +77952,6 @@ var SamlConnectionAPI = class extends AbstractAPI {
     this.requireId(samlConnectionId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath27, samlConnectionId)
     });
   }
@@ -80840,7 +77965,6 @@ var SessionAPI = class extends AbstractAPI {
       queryParams: { ...params, paginated: true }
     });
   }
-=======
       path: joinPaths(basePath28, samlConnectionId)
     });
   }
@@ -80862,12 +77986,10 @@ var SessionAPI = class extends AbstractAPI {
    * Gets the given [`Session`](https://clerk.com/docs/reference/backend/types/backend-session).
    * @param sessionId - The ID of the session to get.
    */
->>>>>>> origin/main
   async getSession(sessionId) {
     this.requireId(sessionId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath28, sessionId)
     });
   }
@@ -80878,7 +78000,6 @@ var SessionAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-=======
       path: joinPaths(basePath29, sessionId)
     });
   }
@@ -80898,32 +78019,24 @@ var SessionAPI = class extends AbstractAPI {
    * @param sessionId - The ID of the session to revoke.
    * @returns The revoked [`Session`](https://clerk.com/docs/reference/backend/types/backend-session).
    */
->>>>>>> origin/main
   async revokeSession(sessionId) {
     this.requireId(sessionId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath28, sessionId, "revoke")
-=======
       path: joinPaths(basePath29, sessionId, "revoke")
->>>>>>> origin/main
     });
   }
   async verifySession(sessionId, token) {
     this.requireId(sessionId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath28, sessionId, "verify"),
-=======
       path: joinPaths(basePath29, sessionId, "verify"),
->>>>>>> origin/main
       bodyParams: { token }
     });
   }
   /**
-<<<<<<< HEAD
    * Gets a session token or generates a JWT using a specified template.
    *
    * @param sessionId - The ID of the session for which to generate the token
@@ -80938,7 +78051,6 @@ var SessionAPI = class extends AbstractAPI {
   async getToken(sessionId, template, expiresInSeconds) {
     this.requireId(sessionId);
     const path2 = template ? joinPaths(basePath28, sessionId, "tokens", template) : joinPaths(basePath28, sessionId, "tokens");
-=======
    * Gets a session token or generates a JWT using a specified template that is defined in the [**JWT templates**](https://dashboard.clerk.com/~/jwt-templates) page in the Clerk Dashboard.
    *
    * @param sessionId - The ID of the session to get the token for.
@@ -80950,7 +78062,6 @@ var SessionAPI = class extends AbstractAPI {
   async getToken(sessionId, template, expiresInSeconds) {
     this.requireId(sessionId);
     const path2 = template ? joinPaths(basePath29, sessionId, "tokens", template) : joinPaths(basePath29, sessionId, "tokens");
->>>>>>> origin/main
     const requestOptions = {
       method: "POST",
       path: path2
@@ -80965,17 +78076,13 @@ var SessionAPI = class extends AbstractAPI {
     const { suffixed_cookies, ...restParams } = params;
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath28, sessionId, "refresh"),
-=======
       path: joinPaths(basePath29, sessionId, "refresh"),
->>>>>>> origin/main
       bodyParams: restParams,
       queryParams: { suffixed_cookies }
     });
   }
 };
-<<<<<<< HEAD
 var basePath29 = "/sign_in_tokens";
 var SignInTokenAPI = class extends AbstractAPI {
   async createSignInToken(params) {
@@ -80985,7 +78092,6 @@ var SignInTokenAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-=======
 var basePath30 = "/sign_in_tokens";
 var SignInTokenAPI = class extends AbstractAPI {
   /**
@@ -81004,50 +78110,39 @@ var SignInTokenAPI = class extends AbstractAPI {
    * @param signInTokenId - The ID of the sign-in token to revoke.
    * @returns The revoked [`SignInToken`](https://clerk.com/docs/reference/backend/types/backend-sign-in-token) object.
    */
->>>>>>> origin/main
   async revokeSignInToken(signInTokenId) {
     this.requireId(signInTokenId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath29, signInTokenId, "revoke")
     });
   }
 };
 var basePath30 = "/sign_ups";
-=======
       path: joinPaths(basePath30, signInTokenId, "revoke")
     });
   }
 };
 var basePath31 = "/sign_ups";
->>>>>>> origin/main
 var SignUpAPI = class extends AbstractAPI {
   async get(signUpAttemptId) {
     this.requireId(signUpAttemptId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath30, signUpAttemptId)
-=======
       path: joinPaths(basePath31, signUpAttemptId)
->>>>>>> origin/main
     });
   }
   async update(params) {
     const { signUpAttemptId, ...bodyParams } = params;
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath30, signUpAttemptId),
-=======
       path: joinPaths(basePath31, signUpAttemptId),
->>>>>>> origin/main
       bodyParams
     });
   }
 };
-<<<<<<< HEAD
 var basePath31 = "/testing_tokens";
 var TestingTokenAPI = class extends AbstractAPI {
   async createTestingToken() {
@@ -81059,7 +78154,6 @@ var TestingTokenAPI = class extends AbstractAPI {
 };
 var basePath32 = "/users";
 var UserAPI = class extends AbstractAPI {
-=======
 var basePath32 = "/testing_tokens";
 var TestingTokenAPI = class extends AbstractAPI {
   /**
@@ -81079,35 +78173,27 @@ var UserAPI = class extends AbstractAPI {
    * Retrieves the list of users in your instance. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property that contains an array of [`User`](https://clerk.com/docs/reference/backend/types/backend-user) objects, and a `totalCount` property that indicates the total number of users in your instance.
    */
->>>>>>> origin/main
   async getUserList(params = {}) {
     const { limit: limit2, offset, orderBy, ...userCountParams } = params;
     const [data, totalCount] = await Promise.all([
       this.request({
         method: "GET",
-<<<<<<< HEAD
         path: basePath32,
-=======
         path: basePath33,
->>>>>>> origin/main
         queryParams: params
       }),
       this.getCount(userCountParams)
     ]);
     return { data, totalCount };
   }
-<<<<<<< HEAD
-=======
   /**
    * Gets a [`User`](https://clerk.com/docs/reference/backend/types/backend-user) for the specified user ID.
    * @param userId - The ID of the user to retrieve.
    */
->>>>>>> origin/main
   async getUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId)
     });
   }
@@ -81118,7 +78204,6 @@ var UserAPI = class extends AbstractAPI {
       bodyParams: params
     });
   }
-=======
       path: joinPaths(basePath33, userId)
     });
   }
@@ -81145,7 +78230,6 @@ var UserAPI = class extends AbstractAPI {
    * @param userId - The ID of the user to update.
    * @param params - The user attributes to update.
    */
->>>>>>> origin/main
   async updateUser(userId, params = {}) {
     this.requireId(userId);
     const { publicMetadata, privateMetadata, unsafeMetadata, ...rest } = params;
@@ -81160,32 +78244,23 @@ var UserAPI = class extends AbstractAPI {
     if (!hasMetadata) {
       return this.request({
         method: "PATCH",
-<<<<<<< HEAD
         path: joinPaths(basePath32, userId),
-=======
         path: joinPaths(basePath33, userId),
->>>>>>> origin/main
         bodyParams: rest
       });
     }
     if (hasRest) {
       await this.request({
         method: "PATCH",
-<<<<<<< HEAD
         path: joinPaths(basePath32, userId),
-=======
         path: joinPaths(basePath33, userId),
->>>>>>> origin/main
         bodyParams: rest
       });
     }
     return this.request({
       method: "PUT",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "metadata"),
-=======
       path: joinPaths(basePath33, userId, "metadata"),
->>>>>>> origin/main
       bodyParams: { publicMetadata, privateMetadata, unsafeMetadata }
     });
   }
@@ -81193,11 +78268,8 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "PUT",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "email_address"),
-=======
       path: joinPaths(basePath33, userId, "email_address"),
->>>>>>> origin/main
       bodyParams: params
     });
   }
@@ -81205,12 +78277,10 @@ var UserAPI = class extends AbstractAPI {
     this.requireId(userId);
     return this.request({
       method: "PUT",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "phone_number"),
       bodyParams: params
     });
   }
-=======
       path: joinPaths(basePath33, userId, "phone_number"),
       bodyParams: params
     });
@@ -81221,19 +78291,16 @@ var UserAPI = class extends AbstractAPI {
    * @param params - The file to set as the user's profile image.
    * @returns The updated [`User`](https://clerk.com/docs/reference/backend/types/backend-user).
    */
->>>>>>> origin/main
   async updateUserProfileImage(userId, params) {
     this.requireId(userId);
     const formData = new runtime.FormData();
     formData.append("file", params?.file);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "profile_image"),
       formData
     });
   }
-=======
       path: joinPaths(basePath33, userId, "profile_image"),
       formData
     });
@@ -81249,25 +78316,19 @@ var UserAPI = class extends AbstractAPI {
    * @param params - The metadata to update.
    * @returns The updated [`User`](https://clerk.com/docs/reference/backend/types/backend-user).
    */
->>>>>>> origin/main
   async updateUserMetadata(userId, params) {
     this.requireId(userId);
     return this.request({
       method: "PATCH",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "metadata"),
-=======
       path: joinPaths(basePath33, userId, "metadata"),
->>>>>>> origin/main
       bodyParams: params
     });
   }
   /**
-<<<<<<< HEAD
    * Replace a user's metadata. Supplied fields are overwritten in full; fields
    * omitted from `params` are left unchanged. Prefer `updateUserMetadata` for
    * partial updates with deep-merge semantics.
-=======
    * Replaces the metadata associated with the specified user. Unlike [`updateUserMetadata()`](/docs/reference/backend/user/update-user-metadata), which deep-merges into the existing metadata, this method uses replace semantics: when a metadata field is provided, its previous value is overwritten in full with no merging at any level.
    *
    * The distinction is at two layers:
@@ -81280,18 +78341,15 @@ var UserAPI = class extends AbstractAPI {
    * @param userId - The ID of the user to replace the metadata for.
    * @param params - The metadata to replace.
    * @returns The updated [`User`](https://clerk.com/docs/reference/backend/types/backend-user).
->>>>>>> origin/main
    */
   async replaceUserMetadata(userId, params) {
     this.requireId(userId);
     return this.request({
       method: "PUT",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "metadata"),
       bodyParams: params
     });
   }
-=======
       path: joinPaths(basePath33, userId, "metadata"),
       bodyParams: params
     });
@@ -81300,12 +78358,10 @@ var UserAPI = class extends AbstractAPI {
    * Deletes the given [`User`](https://clerk.com/docs/reference/backend/types/backend-user).
    * @param userId - The ID of the user to delete.
    */
->>>>>>> origin/main
   async deleteUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId)
     });
   }
@@ -81313,7 +78369,6 @@ var UserAPI = class extends AbstractAPI {
     return this.request({
       method: "GET",
       path: joinPaths(basePath32, "count"),
-=======
       path: joinPaths(basePath33, userId)
     });
   }
@@ -81324,7 +78379,6 @@ var UserAPI = class extends AbstractAPI {
     return this.request({
       method: "GET",
       path: joinPaths(basePath33, "count"),
->>>>>>> origin/main
       queryParams: params
     });
   }
@@ -81340,12 +78394,10 @@ var UserAPI = class extends AbstractAPI {
     }
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "oauth_access_tokens", _provider),
       queryParams: { paginated: true }
     });
   }
-=======
       path: joinPaths(basePath33, userId, "oauth_access_tokens", _provider),
       queryParams: { paginated: true }
     });
@@ -81354,16 +78406,13 @@ var UserAPI = class extends AbstractAPI {
    * Disable all of a user's MFA methods (e.g., [OTP](!otp) sent via SMS, TOTP on their authenticator app) at once.
    * @param userId - The ID of the user to disable MFA for.
    */
->>>>>>> origin/main
   async disableUserMFA(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "mfa")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "mfa")
     });
   }
@@ -81371,18 +78420,15 @@ var UserAPI = class extends AbstractAPI {
    * Gets a list of the given user's Organization memberships. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property that contains an array of [`OrganizationMembership`](https://clerk.com/docs/reference/backend/types/backend-organization-membership) objects, and a `totalCount` property that indicates the total number of Organization memberships for the user.
    */
->>>>>>> origin/main
   async getOrganizationMembershipList(params) {
     const { userId, limit: limit2, offset } = params;
     this.requireId(userId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "organization_memberships"),
       queryParams: { limit: limit2, offset }
     });
   }
-=======
       path: joinPaths(basePath33, userId, "organization_memberships"),
       queryParams: { limit: limit2, offset }
     });
@@ -81391,52 +78437,43 @@ var UserAPI = class extends AbstractAPI {
    * Gets a list of the given user's Organization invitations. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property that contains an array of [`OrganizationInvitation`](https://clerk.com/docs/reference/backend/types/backend-organization-invitation) objects, and a `totalCount` property that indicates the total number of Organization invitations for the user.
    */
->>>>>>> origin/main
   async getOrganizationInvitationList(params) {
     const { userId, ...queryParams } = params;
     this.requireId(userId);
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "organization_invitations"),
       queryParams
     });
   }
-=======
       path: joinPaths(basePath33, userId, "organization_invitations"),
       queryParams
     });
   }
   /** Check that the user's password matches the supplied input. Useful for custom auth flows and re-verification. */
->>>>>>> origin/main
   async verifyPassword(params) {
     const { userId, password } = params;
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "verify_password"),
       bodyParams: { password }
     });
   }
-=======
       path: joinPaths(basePath33, userId, "verify_password"),
       bodyParams: { password }
     });
   }
   /** Verify that the provided TOTP or backup code is valid for the user. Verifying a backup code will result it in being consumed (i.e., it will become invalid). Useful for custom auth flows and re-verification. */
->>>>>>> origin/main
   async verifyTOTP(params) {
     const { userId, code } = params;
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "verify_totp"),
       bodyParams: { code }
     });
   }
-=======
       path: joinPaths(basePath33, userId, "verify_totp"),
       bodyParams: { code }
     });
@@ -81445,16 +78482,13 @@ var UserAPI = class extends AbstractAPI {
    * Marks the given [`User`](https://clerk.com/docs/reference/backend/types/backend-user) as banned, which means that all their sessions are revoked and they are not allowed to sign in again.
    * @param userId - The ID of the user to ban.
    */
->>>>>>> origin/main
   async banUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "ban")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "ban")
     });
   }
@@ -81462,16 +78496,13 @@ var UserAPI = class extends AbstractAPI {
    * Removes the ban mark from the given [`User`](https://clerk.com/docs/reference/backend/types/backend-user), allowing them to sign in again.
    * @param userId - The ID of the user to unban.
    */
->>>>>>> origin/main
   async unbanUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "unban")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "unban")
     });
   }
@@ -81479,32 +78510,26 @@ var UserAPI = class extends AbstractAPI {
    * Locks the given [`User`](https://clerk.com/docs/reference/backend/types/backend-user), which means that they are not allowed to sign in again until the lock expires or is manually unlocked. By default, lockout duration is 1 hour, but it can be configured in the application's [**Attack protection**](https://dashboard.clerk.com/~/protect/attack-protection) settings. See the [guide on user locks](https://clerk.com/docs/guides/secure/user-lockout).
    * @param userId - The ID of the user to lock.
    */
->>>>>>> origin/main
   async lockUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "lock")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "lock")
     });
   }
   /** Removes a sign-in lock from the given [`User`](https://clerk.com/docs/reference/backend/types/backend-user), allowing them to sign in again. See the [guide on user locks](https://clerk.com/docs/guides/secure/user-lockout).
    * @param userId - The ID of the user to unlock.
    */
->>>>>>> origin/main
   async unlockUser(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "unlock")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "unlock")
     });
   }
@@ -81513,16 +78538,13 @@ var UserAPI = class extends AbstractAPI {
    * @param userId - The ID of the user to delete the profile image for.
    * @returns The updated [`User`](https://clerk.com/docs/reference/backend/types/backend-user).
    */
->>>>>>> origin/main
   async deleteUserProfileImage(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "profile_image")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "profile_image")
     });
   }
@@ -81530,17 +78552,14 @@ var UserAPI = class extends AbstractAPI {
    * Deletes the passkey identification for a given user and notifies them through email.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object) object.
    */
->>>>>>> origin/main
   async deleteUserPasskey(params) {
     this.requireId(params.userId);
     this.requireId(params.passkeyIdentificationId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, params.userId, "passkeys", params.passkeyIdentificationId)
     });
   }
-=======
       path: joinPaths(basePath33, params.userId, "passkeys", params.passkeyIdentificationId)
     });
   }
@@ -81548,17 +78567,14 @@ var UserAPI = class extends AbstractAPI {
    * Deletes a Web3 wallet identification for the given user.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object) object.
    */
->>>>>>> origin/main
   async deleteUserWeb3Wallet(params) {
     this.requireId(params.userId);
     this.requireId(params.web3WalletIdentificationId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, params.userId, "web3_wallets", params.web3WalletIdentificationId)
     });
   }
-=======
       path: joinPaths(basePath33, params.userId, "web3_wallets", params.web3WalletIdentificationId)
     });
   }
@@ -81566,17 +78582,14 @@ var UserAPI = class extends AbstractAPI {
    * Deletes an external account for the given user.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object) object.
    */
->>>>>>> origin/main
   async deleteUserExternalAccount(params) {
     this.requireId(params.userId);
     this.requireId(params.externalAccountId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, params.userId, "external_accounts", params.externalAccountId)
     });
   }
-=======
       path: joinPaths(basePath33, params.userId, "external_accounts", params.externalAccountId)
     });
   }
@@ -81584,16 +78597,13 @@ var UserAPI = class extends AbstractAPI {
    * Deletes all backup codes for the given user.
    * @param userId - The ID of the user to delete backup codes for.
    */
->>>>>>> origin/main
   async deleteUserBackupCodes(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "backup_code")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "backup_code")
     });
   }
@@ -81601,16 +78611,13 @@ var UserAPI = class extends AbstractAPI {
    * Deletes all of the TOTP secrets for the given user.
    * @param userId - The ID of the user to delete the TOTP secrets for.
    */
->>>>>>> origin/main
   async deleteUserTOTP(userId) {
     this.requireId(userId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "totp")
     });
   }
-=======
       path: joinPaths(basePath33, userId, "totp")
     });
   }
@@ -81620,19 +78627,16 @@ var UserAPI = class extends AbstractAPI {
    * @param params - Other parameters for the request.
    * @returns The updated [`User`](https://clerk.com/docs/reference/backend/types/backend-user).
    */
->>>>>>> origin/main
   async setPasswordCompromised(userId, params = {
     revokeAllSessions: false
   }) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "password", "set_compromised"),
       bodyParams: params
     });
   }
-=======
       path: joinPaths(basePath33, userId, "password", "set_compromised"),
       bodyParams: params
     });
@@ -81642,12 +78646,10 @@ var UserAPI = class extends AbstractAPI {
    * @param userId - The ID of the user to unset the password as compromised for.
    * @returns The updated [`User`](https://clerk.com/docs/reference/backend/types/backend-user).
    */
->>>>>>> origin/main
   async unsetPasswordCompromised(userId) {
     this.requireId(userId);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath32, userId, "password", "unset_compromised")
     });
   }
@@ -81657,7 +78659,6 @@ var WaitlistEntryAPI = class extends AbstractAPI {
   /**
    * List waitlist entries.
    * @param params Optional parameters (e.g., `query`, `status`, `orderBy`).
-=======
       path: joinPaths(basePath33, userId, "password", "unset_compromised")
     });
   }
@@ -81667,105 +78668,78 @@ var WaitlistEntryAPI = class extends AbstractAPI {
   /**
    * Gets a list of waitlist entries for the instance. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`WaitlistEntry`](https://clerk.com/docs/reference/backend/types/backend-waitlist-entry) objects and a `totalCount` property containing the total number of waitlist entries for the instance.
->>>>>>> origin/main
    */
   async list(params = {}) {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: basePath33,
-=======
       path: basePath34,
->>>>>>> origin/main
       queryParams: params
     });
   }
   /**
-<<<<<<< HEAD
    * Create a waitlist entry.
    * @param params The parameters for creating a waitlist entry.
-=======
    * Create a waitlist entry for the given email address. If the email address is already on the waitlist, no new entry will be created and the existing waitlist entry will be returned.
    * @returns The created or existing [`WaitlistEntry`](https://clerk.com/docs/reference/backend/types/backend-waitlist-entry) object.
->>>>>>> origin/main
    */
   async create(params) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: basePath33,
-=======
       path: basePath34,
->>>>>>> origin/main
       bodyParams: params
     });
   }
   /**
-<<<<<<< HEAD
    * Bulk create waitlist entries.
    * @param params An array of parameters for creating waitlist entries.
-=======
    * Creates multiple waitlist entries for the given email addresses. If an email address is already on the waitlist, no new entry will be created and the existing waitlist entry will be returned.
    * @returns An array of created or existing [`WaitlistEntry`](https://clerk.com/docs/reference/backend/types/backend-waitlist-entry) objects.
->>>>>>> origin/main
    */
   async createBulk(params) {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath33, "bulk"),
-=======
       path: joinPaths(basePath34, "bulk"),
->>>>>>> origin/main
       bodyParams: params
     });
   }
   /**
-<<<<<<< HEAD
    * Invite a waitlist entry.
    * @param id The waitlist entry ID.
    * @param params Optional parameters (e.g., `ignoreExisting`).
-=======
    * Invites the given waitlist entry.
    * @param id - The waitlist entry ID.
    * @param params - Optional parameters for inviting the waitlist entry.
    * @returns The invited [`WaitlistEntry`](https://clerk.com/docs/reference/backend/types/backend-waitlist-entry) object.
->>>>>>> origin/main
    */
   async invite(id, params = {}) {
     this.requireId(id);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath33, id, "invite"),
-=======
       path: joinPaths(basePath34, id, "invite"),
->>>>>>> origin/main
       bodyParams: params
     });
   }
   /**
-<<<<<<< HEAD
    * Reject a waitlist entry.
    * @param id The waitlist entry ID.
-=======
    * Rejects the given waitlist entry.
    * @param id - The ID of the waitlist entry to reject.
    * @returns The rejected [`WaitlistEntry`](https://clerk.com/docs/reference/backend/types/backend-waitlist-entry) object.
->>>>>>> origin/main
    */
   async reject(id) {
     this.requireId(id);
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath33, id, "reject")
     });
   }
   /**
    * Delete a waitlist entry.
    * @param id The waitlist entry ID.
-=======
       path: joinPaths(basePath34, id, "reject")
     });
   }
@@ -81773,114 +78747,86 @@ var WaitlistEntryAPI = class extends AbstractAPI {
    * Deletes the given pending waitlist entry.
    * @param id - The ID of the waitlist entry to delete.
    * @returns The [`DeletedObject`](https://clerk.com/docs/reference/backend/types/deleted-object) object.
->>>>>>> origin/main
    */
   async delete(id) {
     this.requireId(id);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath33, id)
     });
   }
 };
 var basePath34 = "/webhooks";
-=======
       path: joinPaths(basePath34, id)
     });
   }
 };
 var basePath35 = "/webhooks";
->>>>>>> origin/main
 var WebhookAPI = class extends AbstractAPI {
   async createSvixApp() {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath34, "svix")
-=======
       path: joinPaths(basePath35, "svix")
->>>>>>> origin/main
     });
   }
   async generateSvixAuthURL() {
     return this.request({
       method: "POST",
-<<<<<<< HEAD
       path: joinPaths(basePath34, "svix_url")
-=======
       path: joinPaths(basePath35, "svix_url")
->>>>>>> origin/main
     });
   }
   async deleteSvixApp() {
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath34, "svix")
     });
   }
 };
 var basePath35 = "/billing";
-=======
       path: joinPaths(basePath35, "svix")
     });
   }
 };
 var basePath36 = "/billing";
->>>>>>> origin/main
 var organizationBasePath = "/organizations";
 var userBasePath = "/users";
 var BillingAPI = class extends AbstractAPI {
   /**
-<<<<<<< HEAD
-=======
    * Gets the list of Billing Plans for the instance. By default, the list is returned in descending order by creation date (newest first).
    * @returns A [`PaginatedResourceResponse`](https://clerk.com/docs/reference/backend/types/paginated-resource-response) object with a `data` property containing an array of [`BillingPlan`](https://clerk.com/docs/reference/backend/types/billing-plan) objects and a `totalCount` property containing the total number of Billing Plans for the instance.
->>>>>>> origin/main
    * @experimental This is an experimental API for the Billing feature that is available under a public beta, and the API is subject to change. It is advised to [pin](https://clerk.com/docs/pinning) the SDK version and the clerk-js version to avoid breaking changes.
    */
   async getPlanList(params) {
     return this.request({
       method: "GET",
-<<<<<<< HEAD
       path: joinPaths(basePath35, "plans"),
-=======
       path: joinPaths(basePath36, "plans"),
->>>>>>> origin/main
       queryParams: params
     });
   }
   /**
-<<<<<<< HEAD
-=======
    * Cancels the given Subscription Item.
    * @param subscriptionItemId - The ID of the Subscription Item to cancel.
    * @param params - The parameters for the request.
    * @returns The cancelled [`BillingSubscriptionItem`](https://clerk.com/docs/reference/backend/types/billing-subscription-item) object.
->>>>>>> origin/main
    * @experimental This is an experimental API for the Billing feature that is available under a public beta, and the API is subject to change. It is advised to [pin](https://clerk.com/docs/pinning) the SDK version and the clerk-js version to avoid breaking changes.
    */
   async cancelSubscriptionItem(subscriptionItemId, params) {
     this.requireId(subscriptionItemId);
     return this.request({
       method: "DELETE",
-<<<<<<< HEAD
       path: joinPaths(basePath35, "subscription_items", subscriptionItemId),
-=======
       path: joinPaths(basePath36, "subscription_items", subscriptionItemId),
->>>>>>> origin/main
       queryParams: params
     });
   }
   /**
-<<<<<<< HEAD
-=======
    * Extends the free trial for the given Subscription Item.
    * @param subscriptionItemId - The ID of the Subscription Item to extend the free trial for.
    * @param params - The parameters for the request.
    * @returns The updated [`BillingSubscriptionItem`](https://clerk.com/docs/reference/backend/types/billing-subscription-item) object.
->>>>>>> origin/main
    * @experimental This is an experimental API for the Billing feature that is available under a public beta, and the API is subject to change. It is advised to [pin](https://clerk.com/docs/pinning) the SDK version and the clerk-js version to avoid breaking changes.
    */
   async extendSubscriptionItemFreeTrial(subscriptionItemId, params) {
@@ -81892,11 +78838,8 @@ var BillingAPI = class extends AbstractAPI {
     });
   }
   /**
-<<<<<<< HEAD
-=======
    * Gets the [`BillingSubscription`](https://clerk.com/docs/reference/backend/types/billing-subscription) for the given Organization.
    * @param organizationId - The ID of the Organization to get the Billing Subscription for.
->>>>>>> origin/main
    * @experimental This is an experimental API for the Billing feature that is available under a public beta, and the API is subject to change. It is advised to [pin](https://clerk.com/docs/pinning) the SDK version and the clerk-js version to avoid breaking changes.
    */
   async getOrganizationBillingSubscription(organizationId) {
@@ -81907,11 +78850,8 @@ var BillingAPI = class extends AbstractAPI {
     });
   }
   /**
-<<<<<<< HEAD
-=======
    * Gets the [`BillingSubscription`](https://clerk.com/docs/reference/backend/types/billing-subscription) for the given User.
    * @param userId - The ID of the User to get the Billing Subscription for.
->>>>>>> origin/main
    * @experimental This is an experimental API for the Billing feature that is available under a public beta, and the API is subject to change. It is advised to [pin](https://clerk.com/docs/pinning) the SDK version and the clerk-js version to avoid breaking changes.
    */
   async getUserBillingSubscription(userId) {
@@ -81990,15 +78930,12 @@ function splitSeparateNumbers(value) {
   const words = split(value);
   for (let i2 = 0; i2 < words.length; i2++) {
     const word = words[i2];
-<<<<<<< HEAD
     const match2 = SPLIT_SEPARATE_NUMBER_RE.exec(word);
     if (match2) {
       const offset = match2.index + (match2[1] ?? match2[2]).length;
-=======
     const match22 = SPLIT_SEPARATE_NUMBER_RE.exec(word);
     if (match22) {
       const offset = match22.index + (match22[1] ?? match22[2]).length;
->>>>>>> origin/main
       words.splice(i2, 1, word.slice(0, offset), word.slice(offset));
     }
   }
@@ -82099,15 +79036,12 @@ var AgentTask = class _AgentTask {
     this.url = url3;
   }
   /**
-<<<<<<< HEAD
    * Creates a AgentTask instance from a JSON object.
    *
    * @param data - The JSON object containing agent task data
-=======
    * Creates an AgentTask instance from a JSON object.
    *
    * @param data - The JSON object containing Agent Task data
->>>>>>> origin/main
    * @returns A new AgentTask instance
    */
   static fromJSON(data) {
@@ -82357,11 +79291,8 @@ var Domain = class _Domain {
   }
 };
 var Email = class _Email {
-<<<<<<< HEAD
   constructor(id, fromEmailName, emailAddressId, toEmailAddress, subject, body, bodyPlain, status, slug, data, deliveredByClerk) {
-=======
   constructor(id, fromEmailName, emailAddressId, toEmailAddress, subject, body, bodyPlain, status, slug, data, deliveredByClerk, userId) {
->>>>>>> origin/main
     this.id = id;
     this.fromEmailName = fromEmailName;
     this.emailAddressId = emailAddressId;
@@ -82373,10 +79304,7 @@ var Email = class _Email {
     this.slug = slug;
     this.data = data;
     this.deliveredByClerk = deliveredByClerk;
-<<<<<<< HEAD
-=======
     this.userId = userId;
->>>>>>> origin/main
   }
   static fromJSON(data) {
     return new _Email(
@@ -82390,12 +79318,9 @@ var Email = class _Email {
       data.status,
       data.slug,
       data.data,
-<<<<<<< HEAD
       data.delivered_by_clerk
-=======
       data.delivered_by_clerk,
       data.user_id
->>>>>>> origin/main
     );
   }
 };
@@ -82505,11 +79430,9 @@ var BillingPlan = class _BillingPlan {
     );
   }
 };
-<<<<<<< HEAD
 var BillingSubscriptionItem = class _BillingSubscriptionItem {
   constructor(id, status, planPeriod, periodStart, nextPayment, amount, plan, planId, createdAt, updatedAt, periodEnd, canceledAt, pastDueAt, endedAt, payerId, isFreeTrial, lifetimePaid) {
     this.id = id;
-=======
 var billingMoneyAmountFromJSON = (amount) => ({
   amount: amount.amount,
   amountFormatted: amount.amount_formatted,
@@ -82581,7 +79504,6 @@ var BillingSubscriptionItem = class _BillingSubscriptionItem {
   constructor(id, instanceId, status, planPeriod, periodStart, nextPayment, amount, plan, planId, priceId, createdAt, updatedAt, periodEnd, canceledAt, pastDueAt, endedAt, payerId, isFreeTrial, lifetimePaid, seats) {
     this.id = id;
     this.instanceId = instanceId;
->>>>>>> origin/main
     this.status = status;
     this.planPeriod = planPeriod;
     this.periodStart = periodStart;
@@ -82589,10 +79511,7 @@ var BillingSubscriptionItem = class _BillingSubscriptionItem {
     this.amount = amount;
     this.plan = plan;
     this.planId = planId;
-<<<<<<< HEAD
-=======
     this.priceId = priceId;
->>>>>>> origin/main
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.periodEnd = periodEnd;
@@ -82602,7 +79521,6 @@ var BillingSubscriptionItem = class _BillingSubscriptionItem {
     this.payerId = payerId;
     this.isFreeTrial = isFreeTrial;
     this.lifetimePaid = lifetimePaid;
-<<<<<<< HEAD
   }
   static fromJSON(data) {
     function formatAmountJSON(amount) {
@@ -82625,7 +79543,6 @@ var BillingSubscriptionItem = class _BillingSubscriptionItem {
       formatAmountJSON(data.amount) ?? void 0,
       data.plan ? BillingPlan.fromJSON(data.plan) : null,
       data.plan_id ?? null,
-=======
     this.seats = seats;
   }
   static fromJSON(data) {
@@ -82646,7 +79563,6 @@ var BillingSubscriptionItem = class _BillingSubscriptionItem {
       data.plan ? BillingPlan.fromJSON(data.plan) : null,
       data.plan_id ?? null,
       data.price_id ?? null,
->>>>>>> origin/main
       data.created_at,
       data.updated_at,
       data.period_end,
@@ -82655,24 +79571,18 @@ var BillingSubscriptionItem = class _BillingSubscriptionItem {
       data.ended_at,
       data.payer_id,
       data.is_free_trial,
-<<<<<<< HEAD
       formatAmountJSON(data.lifetime_paid) ?? void 0
-=======
       data.lifetime_paid ? billingMoneyAmountFromJSON(data.lifetime_paid) : void 0,
       data.seats ? billingSubscriptionItemSeatsFromJSON(data.seats) : void 0
->>>>>>> origin/main
     );
   }
 };
 var BillingSubscription = class _BillingSubscription {
-<<<<<<< HEAD
   constructor(id, status, payerId, createdAt, updatedAt, activeAt, pastDueAt, subscriptionItems, nextPayment, eligibleForFreeTrial) {
     this.id = id;
-=======
   constructor(id, instanceId, status, payerId, createdAt, updatedAt, activeAt, pastDueAt, subscriptionItems, nextPayment, eligibleForFreeTrial) {
     this.id = id;
     this.instanceId = instanceId;
->>>>>>> origin/main
     this.status = status;
     this.payerId = payerId;
     this.createdAt = createdAt;
@@ -82686,7 +79596,6 @@ var BillingSubscription = class _BillingSubscription {
   static fromJSON(data) {
     const nextPayment = data.next_payment ? {
       date: data.next_payment.date,
-<<<<<<< HEAD
       amount: {
         amount: data.next_payment.amount.amount,
         amountFormatted: data.next_payment.amount.amount_formatted,
@@ -82696,7 +79605,6 @@ var BillingSubscription = class _BillingSubscription {
     } : null;
     return new _BillingSubscription(
       data.id,
-=======
       amount: billingMoneyAmountFromJSON(data.next_payment.amount),
       perUnitTotals: data.next_payment.per_unit_totals ? billingPerUnitTotalsFromJSON(data.next_payment.per_unit_totals) : void 0,
       totals: data.next_payment.totals ? billingTotalsFromJSON(data.next_payment.totals) : void 0
@@ -82704,7 +79612,6 @@ var BillingSubscription = class _BillingSubscription {
     return new _BillingSubscription(
       data.id,
       data.instance_id,
->>>>>>> origin/main
       data.status,
       data.payer_id,
       data.created_at,
@@ -82785,10 +79692,8 @@ var EnterpriseAccount = class _EnterpriseAccount {
     );
   }
 };
-<<<<<<< HEAD
 var EnterpriseConnectionSamlConnection = class _EnterpriseConnectionSamlConnection {
   constructor(id, name, idpEntityId, idpSsoUrl, idpCertificate, idpMetadataUrl, idpMetadata, acsUrl, spEntityId, spMetadataUrl, syncUserAttributes, allowSubdomains, allowIdpInitiated) {
-=======
 var EnterpriseConnectionSamlConnectionLoginHint = class _EnterpriseConnectionSamlConnectionLoginHint {
   constructor(mode, source) {
     this.mode = mode;
@@ -82818,17 +79723,13 @@ var EnterpriseConnectionCustomAttribute = class _EnterpriseConnectionCustomAttri
 };
 var EnterpriseConnectionSamlConnection = class _EnterpriseConnectionSamlConnection {
   constructor(id, name, idpEntityId, idpSsoUrl, idpCertificate, idpCertificateIssuedAt, idpCertificateExpiresAt, idpMetadataUrl, idpMetadata, acsUrl, spEntityId, spMetadataUrl, syncUserAttributes, allowSubdomains, allowIdpInitiated, active, forceAuthn, loginHint) {
->>>>>>> origin/main
     this.id = id;
     this.name = name;
     this.idpEntityId = idpEntityId;
     this.idpSsoUrl = idpSsoUrl;
     this.idpCertificate = idpCertificate;
-<<<<<<< HEAD
-=======
     this.idpCertificateIssuedAt = idpCertificateIssuedAt;
     this.idpCertificateExpiresAt = idpCertificateExpiresAt;
->>>>>>> origin/main
     this.idpMetadataUrl = idpMetadataUrl;
     this.idpMetadata = idpMetadata;
     this.acsUrl = acsUrl;
@@ -82837,12 +79738,9 @@ var EnterpriseConnectionSamlConnection = class _EnterpriseConnectionSamlConnecti
     this.syncUserAttributes = syncUserAttributes;
     this.allowSubdomains = allowSubdomains;
     this.allowIdpInitiated = allowIdpInitiated;
-<<<<<<< HEAD
-=======
     this.active = active;
     this.forceAuthn = forceAuthn;
     this.loginHint = loginHint;
->>>>>>> origin/main
   }
   static fromJSON(data) {
     return new _EnterpriseConnectionSamlConnection(
@@ -82851,11 +79749,8 @@ var EnterpriseConnectionSamlConnection = class _EnterpriseConnectionSamlConnecti
       data.idp_entity_id,
       data.idp_sso_url,
       data.idp_certificate,
-<<<<<<< HEAD
-=======
       data.idp_certificate_issued_at,
       data.idp_certificate_expires_at,
->>>>>>> origin/main
       data.idp_metadata_url,
       data.idp_metadata,
       data.acs_url,
@@ -82863,23 +79758,17 @@ var EnterpriseConnectionSamlConnection = class _EnterpriseConnectionSamlConnecti
       data.sp_metadata_url,
       data.sync_user_attributes,
       data.allow_subdomains,
-<<<<<<< HEAD
       data.allow_idp_initiated
-=======
       data.allow_idp_initiated,
       data.active,
       data.force_authn,
       EnterpriseConnectionSamlConnectionLoginHint.fromJSON(data.login_hint)
->>>>>>> origin/main
     );
   }
 };
 var EnterpriseConnectionOauthConfig = class _EnterpriseConnectionOauthConfig {
-<<<<<<< HEAD
   constructor(id, name, clientId, discoveryUrl, logoPublicUrl, createdAt, updatedAt) {
-=======
   constructor(id, name, clientId, discoveryUrl, logoPublicUrl, createdAt, updatedAt, providerKey, authUrl, tokenUrl, userInfoUrl, requiresPkce) {
->>>>>>> origin/main
     this.id = id;
     this.name = name;
     this.clientId = clientId;
@@ -82887,14 +79776,11 @@ var EnterpriseConnectionOauthConfig = class _EnterpriseConnectionOauthConfig {
     this.logoPublicUrl = logoPublicUrl;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
-<<<<<<< HEAD
-=======
     this.providerKey = providerKey;
     this.authUrl = authUrl;
     this.tokenUrl = tokenUrl;
     this.userInfoUrl = userInfoUrl;
     this.requiresPkce = requiresPkce;
->>>>>>> origin/main
   }
   static fromJSON(data) {
     return new _EnterpriseConnectionOauthConfig(
@@ -82904,25 +79790,19 @@ var EnterpriseConnectionOauthConfig = class _EnterpriseConnectionOauthConfig {
       data.discovery_url,
       data.logo_public_url,
       data.created_at,
-<<<<<<< HEAD
       data.updated_at
-=======
       data.updated_at,
       data.provider_key,
       data.auth_url,
       data.token_url,
       data.user_info_url,
       data.requires_pkce
->>>>>>> origin/main
     );
   }
 };
 var EnterpriseConnection = class _EnterpriseConnection {
-<<<<<<< HEAD
   constructor(id, name, domains, organizationId, active, syncUserAttributes, allowSubdomains, disableAdditionalIdentifications, createdAt, updatedAt, samlConnection, oauthConfig) {
-=======
   constructor(id, name, domains, organizationId, active, syncUserAttributes, allowSubdomains, disableAdditionalIdentifications, createdAt, updatedAt, samlConnection, oauthConfig, provider, logoPublicUrl, allowOrganizationAccountLinking, authenticatable, disableJitProvisioning, customAttributes) {
->>>>>>> origin/main
     this.id = id;
     this.name = name;
     this.domains = domains;
@@ -82935,26 +79815,20 @@ var EnterpriseConnection = class _EnterpriseConnection {
     this.updatedAt = updatedAt;
     this.samlConnection = samlConnection;
     this.oauthConfig = oauthConfig;
-<<<<<<< HEAD
-=======
     this.provider = provider;
     this.logoPublicUrl = logoPublicUrl;
     this.allowOrganizationAccountLinking = allowOrganizationAccountLinking;
     this.authenticatable = authenticatable;
     this.disableJitProvisioning = disableJitProvisioning;
     this.customAttributes = customAttributes;
->>>>>>> origin/main
   }
   static fromJSON(data) {
     return new _EnterpriseConnection(
       data.id,
       data.name,
       data.domains,
-<<<<<<< HEAD
       data.organization_id,
-=======
       data.organization_id ?? null,
->>>>>>> origin/main
       data.active,
       data.sync_user_attributes,
       data.allow_subdomains,
@@ -82962,9 +79836,7 @@ var EnterpriseConnection = class _EnterpriseConnection {
       data.created_at,
       data.updated_at,
       data.saml_connection != null ? EnterpriseConnectionSamlConnection.fromJSON(data.saml_connection) : null,
-<<<<<<< HEAD
       data.oauth_config != null ? EnterpriseConnectionOauthConfig.fromJSON(data.oauth_config) : null
-=======
       data.oauth_config != null ? EnterpriseConnectionOauthConfig.fromJSON(data.oauth_config) : null,
       data.provider,
       data.logo_public_url,
@@ -82972,16 +79844,12 @@ var EnterpriseConnection = class _EnterpriseConnection {
       data.authenticatable,
       data.disable_jit_provisioning,
       data.custom_attributes?.map((attr) => EnterpriseConnectionCustomAttribute.fromJSON(attr))
->>>>>>> origin/main
     );
   }
 };
 var ExternalAccount = class _ExternalAccount {
-<<<<<<< HEAD
   constructor(id, provider, providerUserId, identificationId, externalId, approvedScopes, emailAddress, firstName, lastName, imageUrl, username, phoneNumber, publicMetadata = {}, label, verification) {
-=======
   constructor(id, provider, providerUserId, identificationId, externalId, approvedScopes, emailAddress, firstName, lastName, imageUrl, username, phoneNumber, publicMetadata = {}, label, verification, externalAccountId) {
->>>>>>> origin/main
     this.id = id;
     this.provider = provider;
     this.providerUserId = providerUserId;
@@ -82997,10 +79865,7 @@ var ExternalAccount = class _ExternalAccount {
     this.publicMetadata = publicMetadata;
     this.label = label;
     this.verification = verification;
-<<<<<<< HEAD
-=======
     this.externalAccountId = externalAccountId;
->>>>>>> origin/main
   }
   static fromJSON(data) {
     return new _ExternalAccount(
@@ -83018,12 +79883,9 @@ var ExternalAccount = class _ExternalAccount {
       data.phone_number,
       data.public_metadata,
       data.label,
-<<<<<<< HEAD
       data.verification && Verification.fromJSON(data.verification)
-=======
       data.verification && Verification.fromJSON(data.verification),
       data.external_account_id
->>>>>>> origin/main
     );
   }
 };
@@ -83657,11 +80519,8 @@ var RoleSet = class _RoleSet {
   }
 };
 var SamlConnection = class _SamlConnection {
-<<<<<<< HEAD
   constructor(id, name, domain2, organizationId, idpEntityId, idpSsoUrl, idpCertificate, idpMetadataUrl, idpMetadata, acsUrl, spEntityId, spMetadataUrl, active, provider, userCount, syncUserAttributes, allowSubdomains, allowIdpInitiated, createdAt, updatedAt, attributeMapping) {
-=======
   constructor(id, name, domain2, organizationId, idpEntityId, idpSsoUrl, idpCertificate, idpCertificateIssuedAt, idpCertificateExpiresAt, idpMetadataUrl, idpMetadata, acsUrl, spEntityId, spMetadataUrl, active, provider, userCount, syncUserAttributes, allowSubdomains, allowIdpInitiated, createdAt, updatedAt, attributeMapping) {
->>>>>>> origin/main
     this.id = id;
     this.name = name;
     this.domain = domain2;
@@ -83669,11 +80528,8 @@ var SamlConnection = class _SamlConnection {
     this.idpEntityId = idpEntityId;
     this.idpSsoUrl = idpSsoUrl;
     this.idpCertificate = idpCertificate;
-<<<<<<< HEAD
-=======
     this.idpCertificateIssuedAt = idpCertificateIssuedAt;
     this.idpCertificateExpiresAt = idpCertificateExpiresAt;
->>>>>>> origin/main
     this.idpMetadataUrl = idpMetadataUrl;
     this.idpMetadata = idpMetadata;
     this.acsUrl = acsUrl;
@@ -83698,11 +80554,8 @@ var SamlConnection = class _SamlConnection {
       data.idp_entity_id,
       data.idp_sso_url,
       data.idp_certificate,
-<<<<<<< HEAD
-=======
       data.idp_certificate_issued_at,
       data.idp_certificate_expires_at,
->>>>>>> origin/main
       data.idp_metadata_url,
       data.idp_metadata,
       data.acs_url,
@@ -84191,15 +81044,12 @@ function buildRequest(options) {
           ...buildBody()
         });
       }
-<<<<<<< HEAD
-=======
       if (res.status === 204) {
         return {
           data: void 0,
           errors: null
         };
       }
->>>>>>> origin/main
       const isJSONResponse = res?.headers && res.headers?.get(constants.Headers.ContentType) === constants.ContentTypes.Json;
       const responseBody = await (isJSONResponse ? res.json() : res.text());
       if (!res.ok) {
@@ -84312,15 +81162,12 @@ function createBackendApiClient(options) {
     clients: new ClientAPI(request),
     domains: new DomainAPI(request),
     emailAddresses: new EmailAddressAPI(request),
-<<<<<<< HEAD
-=======
     /**
      * @experimental This calls an internal, not-yet-public endpoint for sending
      * transactional emails and is subject to change. It is advised to
      * [pin](https://clerk.com/docs/pinning) the SDK version to avoid breaking changes.
      */
     emails: new EmailApi(request),
->>>>>>> origin/main
     enterpriseConnections: new EnterpriseConnectionAPI(request),
     idPOAuthAccessToken: new IdPOAuthAccessTokenApi(
       buildRequest({
@@ -84805,8 +81652,6 @@ async function verifyToken(token, options) {
   }
   const { header } = decodedResult;
   const { kid } = header;
-<<<<<<< HEAD
-=======
   if (header.cat === JWT_CATEGORY_M2M_TOKEN) {
     return {
       errors: [
@@ -84818,7 +81663,6 @@ async function verifyToken(token, options) {
       ]
     };
   }
->>>>>>> origin/main
   try {
     let key;
     if (options.jwtKey) {
@@ -84884,13 +81728,10 @@ function handleClerkAPIError(tokenType, err, notFoundMessage) {
 }
 async function verifyM2MToken(token, options) {
   try {
-<<<<<<< HEAD
     const client2 = createBackendApiClient(options);
     const verifiedToken = await client2.m2m.verify({ token });
-=======
     const client = createBackendApiClient(options);
     const verifiedToken = await client.m2m.verify({ token });
->>>>>>> origin/main
     return { data: verifiedToken, tokenType: TokenType.M2MToken, errors: void 0 };
   } catch (err) {
     return handleClerkAPIError(TokenType.M2MToken, err, "Machine token not found");
@@ -84898,13 +81739,10 @@ async function verifyM2MToken(token, options) {
 }
 async function verifyOAuthToken(accessToken, options) {
   try {
-<<<<<<< HEAD
     const client2 = createBackendApiClient(options);
     const verifiedToken = await client2.idPOAuthAccessToken.verify(accessToken);
-=======
     const client = createBackendApiClient(options);
     const verifiedToken = await client.idPOAuthAccessToken.verify(accessToken);
->>>>>>> origin/main
     return { data: verifiedToken, tokenType: TokenType.OAuthToken, errors: void 0 };
   } catch (err) {
     return handleClerkAPIError(TokenType.OAuthToken, err, "OAuth token not found");
@@ -84912,13 +81750,10 @@ async function verifyOAuthToken(accessToken, options) {
 }
 async function verifyAPIKey(secret, options) {
   try {
-<<<<<<< HEAD
     const client2 = createBackendApiClient(options);
     const verifiedToken = await client2.apiKeys.verify(secret);
-=======
     const client = createBackendApiClient(options);
     const verifiedToken = await client.apiKeys.verify(secret);
->>>>>>> origin/main
     return { data: verifiedToken, tokenType: TokenType.ApiKey, errors: void 0 };
   } catch (err) {
     return handleClerkAPIError(TokenType.ApiKey, err, "API key not found");
@@ -85311,11 +82146,8 @@ var RefreshTokenErrorReason = {
   UnexpectedBAPIError: "unexpected-bapi-error"
 };
 function assertSignInUrlExists(signInUrl, key) {
-<<<<<<< HEAD
   if (!signInUrl && isDevelopmentFromSecretKey(key)) {
-=======
   if (!signInUrl && isDevelopmentFromSecretKey2(key)) {
->>>>>>> origin/main
     throw new Error(`Missing signInUrl. Pass a signInUrl for dev instances if an app is satellite`);
   }
 }
@@ -85520,11 +82352,8 @@ var authenticateRequest = (async (request, options) => {
     }
     const isRedirectLoop = handshakeService.checkAndTrackRedirectLoop(handshakeHeaders);
     if (isRedirectLoop) {
-<<<<<<< HEAD
       const msg = `Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.`;
-=======
       const msg = getHandshakeRedirectLoopMessage(reason);
->>>>>>> origin/main
       console.log(msg);
       return signedOut({
         tokenType: TokenType.SessionToken,
@@ -85535,15 +82364,12 @@ var authenticateRequest = (async (request, options) => {
     }
     return handshake(authenticateContext2, reason, message, handshakeHeaders);
   }
-<<<<<<< HEAD
-=======
   function getHandshakeRedirectLoopMessage(reason) {
     if (reason === AuthErrorReason.SatelliteCookieNeedsSyncing) {
       return `Clerk: Satellite-domain authentication resulted in an infinite redirect loop. Check that this request is using a configured primary or satellite domain for the production instance. For preview deployments, use a development/staging Clerk instance or a supported configured preview-domain setup.`;
     }
     return `Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.`;
   }
->>>>>>> origin/main
   function handleMaybeOrganizationSyncHandshake(authenticateContext2, auth) {
     const organizationSyncTarget = organizationMatcher.findTarget(authenticateContext2.clerkUrl);
     if (!organizationSyncTarget) {
@@ -85704,8 +82530,6 @@ var authenticateRequest = (async (request, options) => {
     if (decodedErrors) {
       return handleSessionTokenError(decodedErrors[0], "cookie");
     }
-<<<<<<< HEAD
-=======
     if (isMachineJwt(authenticateContext.sessionTokenInCookie)) {
       return signedOut({
         tokenType: TokenType.SessionToken,
@@ -85714,7 +82538,6 @@ var authenticateRequest = (async (request, options) => {
         message: ""
       });
     }
->>>>>>> origin/main
     if (decodeResult.payload.iat < authenticateContext.clientUat) {
       return handleMaybeHandshakeStatus(authenticateContext, AuthErrorReason.SessionTokenIATBeforeClientUAT, "");
     }
@@ -85724,11 +82547,8 @@ var authenticateRequest = (async (request, options) => {
         throw errors[0];
       }
       if (!data.azp) {
-<<<<<<< HEAD
         logger.warnOnce(
-=======
         logger2.warnOnce(
->>>>>>> origin/main
           "Clerk: Session token from cookie is missing the azp claim. In a future version of Clerk, this token will be considered invalid. Please contact Clerk support if you see this warning."
         );
       }
@@ -85977,11 +82797,8 @@ function createAuthenticateRequest(params) {
   };
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/chunk-P263NW7Z.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/chunk-P263NW7Z.mjs
->>>>>>> origin/main
 function withLegacyReturn(cb) {
   return async (...args) => {
     const { data, errors } = await cb(...args);
@@ -85992,11 +82809,8 @@ function withLegacyReturn(cb) {
   };
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/telemetry-9C6N5ppw.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/_chunks/telemetry-9C6N5ppw.mjs
->>>>>>> origin/main
 var PROCESS_FLAG = /* @__PURE__ */ Symbol.for("@clerk/shared.telemetryNoticeShown");
 var NOTICE_LINES = [
   "Attention: Clerk collects telemetry data from its SDKs when connected to development instances.",
@@ -86038,13 +82852,10 @@ var DEFAULT_CACHE_TTL_MS = 864e5;
 var TelemetryEventThrottler = class {
   #cache;
   #cacheTtl = DEFAULT_CACHE_TTL_MS;
-<<<<<<< HEAD
   constructor(cache2) {
     this.#cache = cache2;
-=======
   constructor(cache3) {
     this.#cache = cache3;
->>>>>>> origin/main
   }
   isEventThrottled(payload) {
     const now = Date.now();
@@ -86083,30 +82894,24 @@ var LocalStorageThrottlerCache = class {
   }
   setItem(key, value) {
     try {
-<<<<<<< HEAD
       const cache2 = this.#getCache();
       cache2[key] = value;
       localStorage.setItem(this.#storageKey, JSON.stringify(cache2));
-=======
       const cache3 = this.#getCache();
       cache3[key] = value;
       localStorage.setItem(this.#storageKey, JSON.stringify(cache3));
->>>>>>> origin/main
     } catch (err) {
       if (err instanceof DOMException && (err.name === "QuotaExceededError" || err.name === "NS_ERROR_DOM_QUOTA_REACHED") && localStorage.length > 0) localStorage.removeItem(this.#storageKey);
     }
   }
   removeItem(key) {
     try {
-<<<<<<< HEAD
       const cache2 = this.#getCache();
       delete cache2[key];
       localStorage.setItem(this.#storageKey, JSON.stringify(cache2));
-=======
       const cache3 = this.#getCache();
       delete cache3[key];
       localStorage.setItem(this.#storageKey, JSON.stringify(cache3));
->>>>>>> origin/main
     } catch {
     }
   }
@@ -86175,19 +82980,16 @@ var TelemetryCollector = class {
     this.#metadata.sdk = options.sdk;
     this.#metadata.sdkVersion = options.sdkVersion;
     this.#metadata.publishableKey = options.publishableKey ?? "";
-<<<<<<< HEAD
     const parsedKey = parsePublishableKey(options.publishableKey);
     if (parsedKey) this.#metadata.instanceType = parsedKey.instanceType;
     if (options.secretKey) this.#metadata.secretKey = options.secretKey.substring(0, 16);
     const cache2 = LocalStorageThrottlerCache.isSupported() ? new LocalStorageThrottlerCache() : new InMemoryThrottlerCache();
     this.#eventThrottler = new TelemetryEventThrottler(cache2);
-=======
     const parsedKey = parsePublishableKey2(options.publishableKey);
     if (parsedKey) this.#metadata.instanceType = parsedKey.instanceType;
     if (options.secretKey) this.#metadata.secretKey = options.secretKey.substring(0, 16);
     const cache3 = LocalStorageThrottlerCache.isSupported() ? new LocalStorageThrottlerCache() : new InMemoryThrottlerCache();
     this.#eventThrottler = new TelemetryEventThrottler(cache3);
->>>>>>> origin/main
     maybeShowTelemetryNotice({ skip: !this.isEnabled });
   }
   get isEnabled() {
@@ -86382,11 +83184,8 @@ var TelemetryCollector = class {
   }
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/index.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/index.mjs
->>>>>>> origin/main
 var verifyToken2 = withLegacyReturn(verifyToken);
 function createClerkClient(options) {
   const opts = { ...options };
@@ -86406,19 +83205,16 @@ function createClerkClient(options) {
   };
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+express@2.1.32_express@5.2.1/node_modules/@clerk/express/dist/index.mjs
 import { Readable as Readable2 } from "stream";
 
 // ../../node_modules/.pnpm/@clerk+backend@3.8.4/node_modules/@clerk/backend/dist/proxy.mjs
 var HOP_BY_HOP_HEADERS = /* @__PURE__ */ new Set([
-=======
 // ../../node_modules/.pnpm/@clerk+express@2.1.49_express@5.2.1/node_modules/@clerk/express/dist/index.mjs
 import { Readable as Readable2 } from "stream";
 
 // ../../node_modules/.pnpm/@clerk+backend@3.15.0/node_modules/@clerk/backend/dist/proxy.mjs
 var HOP_BY_HOP_HEADERS2 = /* @__PURE__ */ new Set([
->>>>>>> origin/main
   "connection",
   "keep-alive",
   "proxy-authenticate",
@@ -86439,13 +83235,10 @@ function getDynamicHopByHopHeaders(headers) {
 }
 var RESPONSE_HEADERS_TO_STRIP = /* @__PURE__ */ new Set(["content-encoding", "content-length"]);
 function fapiUrlFromPublishableKey(publishableKey) {
-<<<<<<< HEAD
   const frontendApi = parsePublishableKey(publishableKey)?.frontendApi;
   if (frontendApi?.startsWith("clerk.") && LEGACY_DEV_INSTANCE_SUFFIXES.some((suffix) => frontendApi?.endsWith(suffix))) {
-=======
   const frontendApi = parsePublishableKey2(publishableKey)?.frontendApi;
   if (frontendApi?.startsWith("clerk.") && LEGACY_DEV_INSTANCE_SUFFIXES2.some((suffix) => frontendApi?.endsWith(suffix))) {
->>>>>>> origin/main
     return PROD_FAPI_URL;
   }
   if (LOCAL_ENV_SUFFIXES.some((suffix) => frontendApi?.endsWith(suffix))) {
@@ -86462,8 +83255,6 @@ function stripTrailingSlashes(str2) {
   }
   return str2;
 }
-<<<<<<< HEAD
-=======
 function normalizeFapiUrl(fapiUrl) {
   const url3 = new URL(fapiUrl);
   if (url3.protocol !== "http:" && url3.protocol !== "https:") {
@@ -86474,7 +83265,6 @@ function normalizeFapiUrl(fapiUrl) {
   }
   return stripTrailingSlashes(url3.toString());
 }
->>>>>>> origin/main
 function createErrorResponse(code, message, status) {
   const error40 = { code, message };
   return new Response(JSON.stringify({ errors: [error40] }), {
@@ -86535,9 +83325,7 @@ async function clerkFrontendApiProxy(request, options) {
       400
     );
   }
-<<<<<<< HEAD
   const fapiBaseUrl = fapiUrlFromPublishableKey(publishableKey);
-=======
   let fapiBaseUrl;
   try {
     fapiBaseUrl = normalizeFapiUrl(
@@ -86550,7 +83338,6 @@ async function clerkFrontendApiProxy(request, options) {
       500
     );
   }
->>>>>>> origin/main
   const fapiHost = new URL(fapiBaseUrl).host;
   const targetPath = requestUrl.pathname.slice(proxyPath.length) || "/";
   const targetUrl = new URL(`${fapiBaseUrl}${targetPath}`);
@@ -86562,11 +83349,8 @@ async function clerkFrontendApiProxy(request, options) {
   const dynamicHopByHop = getDynamicHopByHopHeaders(request.headers);
   request.headers.forEach((value, key) => {
     const lower = key.toLowerCase();
-<<<<<<< HEAD
     if (!HOP_BY_HOP_HEADERS.has(lower) && !dynamicHopByHop.has(lower)) {
-=======
     if (!HOP_BY_HOP_HEADERS2.has(lower) && !dynamicHopByHop.has(lower)) {
->>>>>>> origin/main
       headers.set(key, value);
     }
   });
@@ -86602,11 +83386,8 @@ async function clerkFrontendApiProxy(request, options) {
     const responseHeaders = new Headers();
     response.headers.forEach((value, key) => {
       const lower = key.toLowerCase();
-<<<<<<< HEAD
       if (!HOP_BY_HOP_HEADERS.has(lower) && !RESPONSE_HEADERS_TO_STRIP.has(lower) && !responseDynamicHopByHop.has(lower)) {
-=======
       if (!HOP_BY_HOP_HEADERS2.has(lower) && !RESPONSE_HEADERS_TO_STRIP.has(lower) && !responseDynamicHopByHop.has(lower)) {
->>>>>>> origin/main
         if (lower === "set-cookie") {
           responseHeaders.append(key, value);
         } else {
@@ -86640,22 +83421,16 @@ async function clerkFrontendApiProxy(request, options) {
   }
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0/node_modules/@clerk/shared/dist/_chunks/handleValueOrFn-CKEDuW4I.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.25.10/node_modules/@clerk/shared/dist/_chunks/handleValueOrFn-CKEDuW4I.mjs
->>>>>>> origin/main
 function handleValueOrFn(value, url3, defaultValue) {
   if (typeof value === "function") return value(url3);
   if (typeof value !== "undefined") return value;
   if (typeof defaultValue !== "undefined") return defaultValue;
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@clerk+express@2.1.32_express@5.2.1/node_modules/@clerk/express/dist/index.mjs
-=======
 // ../../node_modules/.pnpm/@clerk+express@2.1.49_express@5.2.1/node_modules/@clerk/express/dist/index.mjs
->>>>>>> origin/main
 var clerkClientSingleton = {};
 var clerkClient = new Proxy(clerkClientSingleton, {
   get(_target, property) {
@@ -86664,21 +83439,18 @@ var clerkClient = new Proxy(clerkClientSingleton, {
       ...loadApiEnv(),
       ...loadClientEnv()
     };
-<<<<<<< HEAD
     const client2 = createClerkClient({
       ...env,
       userAgent: `@clerk/express@2.1.32`
     });
     if (env.secretKey) clerkClientSingleton = client2;
     return client2[property];
-=======
     const client = createClerkClient({
       ...env,
       userAgent: `@clerk/express@2.1.49`
     });
     if (env.secretKey) clerkClientSingleton = client;
     return client[property];
->>>>>>> origin/main
   },
   set() {
     return false;
@@ -86720,11 +83492,8 @@ var authenticateRequest2 = (opts) => {
   const signInUrl = signInUrlInput || env.signInUrl;
   const proxyUrl = absoluteProxyUrl(handleValueOrFn(proxyUrlInput, clerkRequest.clerkUrl, env.proxyUrl), clerkRequest.clerkUrl.toString());
   if (isSatellite && !proxyUrl && !domain2) throw new Error(satelliteAndMissingProxyUrlAndDomain);
-<<<<<<< HEAD
   if (isSatellite && !isHttpOrHttps(signInUrl) && isDevelopmentFromSecretKey(secretKey || "")) throw new Error(satelliteAndMissingSignInUrl);
-=======
   if (isSatellite && !isHttpOrHttps(signInUrl) && isDevelopmentFromSecretKey2(secretKey || "")) throw new Error(satelliteAndMissingSignInUrl);
->>>>>>> origin/main
   return clerkClient3.authenticateRequest(clerkRequest, {
     ...restOptions,
     secretKey,
@@ -86758,11 +83527,8 @@ var resolveDefaultClerkClient = (options) => {
     ...loadClientEnv(),
     ...options.apiUrl ? { apiUrl: options.apiUrl } : {},
     ...options.apiVersion ? { apiVersion: options.apiVersion } : {},
-<<<<<<< HEAD
     userAgent: `@clerk/express@2.1.32`
-=======
     userAgent: `@clerk/express@2.1.49`
->>>>>>> origin/main
   });
 };
 var authenticateAndDecorateRequest = (options = {}) => {
@@ -86771,11 +83537,8 @@ var authenticateAndDecorateRequest = (options = {}) => {
   const proxyPath = stripTrailingSlashes(frontendApiProxy?.path ?? DEFAULT_PROXY_PATH) || DEFAULT_PROXY_PATH;
   const middleware = async (request, response, next) => {
     if (requestHasAuthObject(request)) return next();
-<<<<<<< HEAD
     if ("auth" in request) logger.warnOnce("Clerk: another middleware has already set `req.auth` on this request. Clerk authentication will run anyway and overwrite it. To use another auth library alongside Clerk, configure it to store its state on a different request property.");
-=======
     if ("auth" in request) logger2.warnOnce("Clerk: another middleware has already set `req.auth` on this request. Clerk authentication will run anyway and overwrite it. To use another auth library alongside Clerk, configure it to store its state on a different request property.");
->>>>>>> origin/main
     const env = {
       ...loadApiEnv(),
       ...loadClientEnv()
@@ -86864,7 +83627,6 @@ var getAuth = ((req, options) => {
   });
 });
 
-<<<<<<< HEAD
 // src/lib/logger.ts
 var import_pino = __toESM(require_pino(), 1);
 var usePrettyTransport = false;
@@ -87127,7 +83889,6 @@ function clerkProxyMiddleware() {
   }
   return (req, res) => {
     void handleClerkProxyRequest(req, res, secretKey);
-=======
 // src/middlewares/clerkAuthFallback.ts
 var CLERK_AUTH_BRAND = /* @__PURE__ */ Symbol.for("@clerk/express.auth");
 function makeSignedOutAuth() {
@@ -87192,16 +83953,12 @@ function safeClerkMiddleware() {
     } catch (err) {
       continueAsSignedOut(err);
     }
->>>>>>> origin/main
   };
 }
 
 // src/webhooks/clerk.ts
-<<<<<<< HEAD
 var import_express = __toESM(require_express2(), 1);
-=======
 var import_express2 = __toESM(require_express2(), 1);
->>>>>>> origin/main
 var import_svix = __toESM(require_dist4(), 1);
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/entity.js
@@ -91062,11 +87819,8 @@ var PgDialect = class {
   buildInsertQuery({ table, values: valuesOrSelect, onConflict, returning, withList, select, overridingSystemValue_ }) {
     const valuesSqlList = [];
     const columns = table[Table.Symbol.Columns];
-<<<<<<< HEAD
     const colEntries = Object.entries(columns).filter(([_3, col]) => !col.shouldDisableInsert());
-=======
     const colEntries = Object.entries(columns).filter(([_4, col]) => !col.shouldDisableInsert());
->>>>>>> origin/main
     const insertOrder = colEntries.map(
       ([, column]) => sql.identifier(this.casing.getColumnCasing(column))
     );
@@ -93830,21 +90584,18 @@ async function hashQuery(sql3, params) {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/session.js
 var PgPreparedQuery = class {
-<<<<<<< HEAD
   constructor(query, cache2, queryMetadata, cacheConfig) {
     this.query = query;
     this.cache = cache2;
     this.queryMetadata = queryMetadata;
     this.cacheConfig = cacheConfig;
     if (cache2 && cache2.strategy() === "all" && cacheConfig === void 0) {
-=======
   constructor(query, cache3, queryMetadata, cacheConfig) {
     this.query = query;
     this.cache = cache3;
     this.queryMetadata = queryMetadata;
     this.cacheConfig = cacheConfig;
     if (cache3 && cache3.strategy() === "all" && cacheConfig === void 0) {
->>>>>>> origin/main
       this.cacheConfig = { enable: true, autoInvalidate: true };
     }
     if (!this.cacheConfig?.enable) {
@@ -94000,21 +90751,18 @@ var PgTransaction = class extends PgDatabase {
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/session.js
 var { Pool: Pool2, types: types2 } = esm_default;
 var NodePgPreparedQuery = class extends PgPreparedQuery {
-<<<<<<< HEAD
   constructor(client2, queryString, params, logger3, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
     super({ sql: queryString, params }, cache2, queryMetadata, cacheConfig);
     this.client = client2;
     this.queryString = queryString;
     this.params = params;
     this.logger = logger3;
-=======
   constructor(client, queryString, params, logger4, cache3, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
     super({ sql: queryString, params }, cache3, queryMetadata, cacheConfig);
     this.client = client;
     this.queryString = queryString;
     this.params = params;
     this.logger = logger4;
->>>>>>> origin/main
     this.fields = fields;
     this._isResponseInArrayMode = _isResponseInArrayMode;
     this.customResultMapper = customResultMapper;
@@ -94101,11 +90849,8 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
     return tracer.startActiveSpan("drizzle.execute", async () => {
       const params = fillPlaceholders(this.params, placeholderValues);
       this.logger.logQuery(this.rawQueryConfig.text, params);
-<<<<<<< HEAD
       const { fields, rawQueryConfig: rawQuery, client: client2, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
-=======
       const { fields, rawQueryConfig: rawQuery, client, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
->>>>>>> origin/main
       if (!fields && !customResultMapper) {
         return tracer.startActiveSpan("drizzle.driver.execute", async (span) => {
           span?.setAttributes({
@@ -94114,11 +90859,8 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
             "drizzle.query.params": JSON.stringify(params)
           });
           return this.queryWithCache(rawQuery.text, params, async () => {
-<<<<<<< HEAD
             return await client2.query(rawQuery, params);
-=======
             return await client.query(rawQuery, params);
->>>>>>> origin/main
           });
         });
       }
@@ -94129,11 +90871,8 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
           "drizzle.query.params": JSON.stringify(params)
         });
         return this.queryWithCache(query.text, params, async () => {
-<<<<<<< HEAD
           return await client2.query(query, params);
-=======
           return await client.query(query, params);
->>>>>>> origin/main
         });
       });
       return tracer.startActiveSpan("drizzle.mapResponse", () => {
@@ -94163,15 +90902,12 @@ var NodePgPreparedQuery = class extends PgPreparedQuery {
   }
 };
 var NodePgSession = class _NodePgSession extends PgSession {
-<<<<<<< HEAD
   constructor(client2, dialect, schema, options = {}) {
     super(dialect);
     this.client = client2;
-=======
   constructor(client, dialect, schema, options = {}) {
     super(dialect);
     this.client = client;
->>>>>>> origin/main
     this.schema = schema;
     this.options = options;
     this.logger = options.logger ?? new NoopLogger();
@@ -94242,13 +90978,10 @@ var NodePgTransaction = class _NodePgTransaction extends PgTransaction {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.22.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/driver.js
 var NodePgDriver = class {
-<<<<<<< HEAD
   constructor(client2, dialect, options = {}) {
     this.client = client2;
-=======
   constructor(client, dialect, options = {}) {
     this.client = client;
->>>>>>> origin/main
     this.dialect = dialect;
     this.options = options;
   }
@@ -94263,7 +90996,6 @@ var NodePgDriver = class {
 var NodePgDatabase = class extends PgDatabase {
   static [entityKind] = "NodePgDatabase";
 };
-<<<<<<< HEAD
 function construct(client2, config2 = {}) {
   const dialect = new PgDialect({ casing: config2.casing });
   let logger3;
@@ -94271,7 +91003,6 @@ function construct(client2, config2 = {}) {
     logger3 = new DefaultLogger();
   } else if (config2.logger !== false) {
     logger3 = config2.logger;
-=======
 function construct(client, config2 = {}) {
   const dialect = new PgDialect({ casing: config2.casing });
   let logger4;
@@ -94279,7 +91010,6 @@ function construct(client, config2 = {}) {
     logger4 = new DefaultLogger();
   } else if (config2.logger !== false) {
     logger4 = config2.logger;
->>>>>>> origin/main
   }
   let schema;
   if (config2.schema) {
@@ -94293,17 +91023,14 @@ function construct(client, config2 = {}) {
       tableNamesMap: tablesConfig.tableNamesMap
     };
   }
-<<<<<<< HEAD
   const driver = new NodePgDriver(client2, dialect, { logger: logger3, cache: config2.cache });
   const session = driver.createSession(schema);
   const db3 = new NodePgDatabase(dialect, session, schema);
   db3.$client = client2;
-=======
   const driver = new NodePgDriver(client, dialect, { logger: logger4, cache: config2.cache });
   const session = driver.createSession(schema);
   const db3 = new NodePgDatabase(dialect, session, schema);
   db3.$client = client;
->>>>>>> origin/main
   db3.$cache = config2.cache;
   if (db3.$cache) {
     db3.$cache["invalidate"] = config2.cache?.onMutate;
@@ -94318,13 +91045,10 @@ function drizzle(...params) {
     return construct(instance, params[1]);
   }
   if (isConfig(params[0])) {
-<<<<<<< HEAD
     const { connection, client: client2, ...drizzleConfig } = params[0];
     if (client2) return construct(client2, drizzleConfig);
-=======
     const { connection, client, ...drizzleConfig } = params[0];
     if (client) return construct(client, drizzleConfig);
->>>>>>> origin/main
     const instance = typeof connection === "string" ? new esm_default.Pool({
       connectionString: connection
     }) : new esm_default.Pool(connection);
@@ -94339,7 +91063,6 @@ function drizzle(...params) {
   drizzle22.mock = mock;
 })(drizzle || (drizzle = {}));
 
-<<<<<<< HEAD
 // src/db/schema.ts
 var schema_exports = {};
 __export(schema_exports, {
@@ -98393,11 +95116,9 @@ var import_express3 = __toESM(require_express2(), 1);
 // ../../lib/db/src/schema/index.ts
 var schema_exports2 = {};
 __export(schema_exports2, {
-=======
 // ../../lib/db/src/schema/index.ts
 var schema_exports = {};
 __export(schema_exports, {
->>>>>>> origin/main
   chatMessages: () => chatMessages,
   chatSessions: () => chatSessions,
   companionMemories: () => companionMemories,
@@ -98405,10 +95126,7 @@ __export(schema_exports, {
   insertConversationSchema: () => insertConversationSchema,
   insertMessageSchema: () => insertMessageSchema,
   messages: () => messages,
-<<<<<<< HEAD
-=======
   uploadedImages: () => uploadedImages,
->>>>>>> origin/main
   userEntities: () => userEntities,
   userProfiles: () => userProfiles
 });
@@ -102237,11 +98955,8 @@ var PgDialect2 = class {
   buildInsertQuery({ table, values: valuesOrSelect, onConflict, returning, withList, select, overridingSystemValue_ }) {
     const valuesSqlList = [];
     const columns = table[Table2.Symbol.Columns];
-<<<<<<< HEAD
     const colEntries = Object.entries(columns).filter(([_3, col]) => !col.shouldDisableInsert());
-=======
     const colEntries = Object.entries(columns).filter(([_4, col]) => !col.shouldDisableInsert());
->>>>>>> origin/main
     const insertOrder = colEntries.map(
       ([, column]) => sql2.identifier(this.casing.getColumnCasing(column))
     );
@@ -105005,21 +101720,18 @@ async function hashQuery2(sql3, params) {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0_postgres@3.4.9/node_modules/drizzle-orm/pg-core/session.js
 var PgPreparedQuery2 = class {
-<<<<<<< HEAD
   constructor(query, cache2, queryMetadata, cacheConfig) {
     this.query = query;
     this.cache = cache2;
     this.queryMetadata = queryMetadata;
     this.cacheConfig = cacheConfig;
     if (cache2 && cache2.strategy() === "all" && cacheConfig === void 0) {
-=======
   constructor(query, cache3, queryMetadata, cacheConfig) {
     this.query = query;
     this.cache = cache3;
     this.queryMetadata = queryMetadata;
     this.cacheConfig = cacheConfig;
     if (cache3 && cache3.strategy() === "all" && cacheConfig === void 0) {
->>>>>>> origin/main
       this.cacheConfig = { enable: true, autoInvalidate: true };
     }
     if (!this.cacheConfig?.enable) {
@@ -105211,7 +101923,6 @@ __export(external_exports, {
   $output: () => $output,
   NEVER: () => NEVER,
   TimePrecision: () => TimePrecision,
-<<<<<<< HEAD
   ZodAny: () => ZodAny2,
   ZodArray: () => ZodArray2,
   ZodBase64: () => ZodBase64,
@@ -105219,7 +101930,6 @@ __export(external_exports, {
   ZodBigInt: () => ZodBigInt2,
   ZodBigIntFormat: () => ZodBigIntFormat,
   ZodBoolean: () => ZodBoolean2,
-=======
   ZodAny: () => ZodAny,
   ZodArray: () => ZodArray,
   ZodBase64: () => ZodBase64,
@@ -105227,12 +101937,10 @@ __export(external_exports, {
   ZodBigInt: () => ZodBigInt,
   ZodBigIntFormat: () => ZodBigIntFormat,
   ZodBoolean: () => ZodBoolean,
->>>>>>> origin/main
   ZodCIDRv4: () => ZodCIDRv4,
   ZodCIDRv6: () => ZodCIDRv6,
   ZodCUID: () => ZodCUID,
   ZodCUID2: () => ZodCUID2,
-<<<<<<< HEAD
   ZodCatch: () => ZodCatch2,
   ZodCustom: () => ZodCustom,
   ZodCustomStringFormat: () => ZodCustomStringFormat,
@@ -105244,7 +101952,6 @@ __export(external_exports, {
   ZodEmoji: () => ZodEmoji,
   ZodEnum: () => ZodEnum2,
   ZodError: () => ZodError2,
-=======
   ZodCatch: () => ZodCatch,
   ZodCustom: () => ZodCustom,
   ZodCustomStringFormat: () => ZodCustomStringFormat,
@@ -105256,7 +101963,6 @@ __export(external_exports, {
   ZodEmoji: () => ZodEmoji,
   ZodEnum: () => ZodEnum,
   ZodError: () => ZodError,
->>>>>>> origin/main
   ZodFile: () => ZodFile,
   ZodGUID: () => ZodGUID,
   ZodIPv4: () => ZodIPv4,
@@ -105265,7 +101971,6 @@ __export(external_exports, {
   ZodISODateTime: () => ZodISODateTime,
   ZodISODuration: () => ZodISODuration,
   ZodISOTime: () => ZodISOTime,
-<<<<<<< HEAD
   ZodIntersection: () => ZodIntersection2,
   ZodIssueCode: () => ZodIssueCode2,
   ZodJWT: () => ZodJWT,
@@ -105305,7 +102010,6 @@ __export(external_exports, {
   ZodUnion: () => ZodUnion2,
   ZodUnknown: () => ZodUnknown2,
   ZodVoid: () => ZodVoid2,
-=======
   ZodIntersection: () => ZodIntersection,
   ZodIssueCode: () => ZodIssueCode,
   ZodJWT: () => ZodJWT,
@@ -105345,7 +102049,6 @@ __export(external_exports, {
   ZodUnion: () => ZodUnion,
   ZodUnknown: () => ZodUnknown,
   ZodVoid: () => ZodVoid,
->>>>>>> origin/main
   ZodXID: () => ZodXID,
   _ZodString: () => _ZodString,
   _default: () => _default2,
@@ -105379,11 +102082,8 @@ __export(external_exports, {
   float64: () => float64,
   formatError: () => formatError,
   function: () => _function,
-<<<<<<< HEAD
   getErrorMap: () => getErrorMap2,
-=======
   getErrorMap: () => getErrorMap,
->>>>>>> origin/main
   globalRegistry: () => globalRegistry,
   gt: () => _gt,
   gte: () => _gte,
@@ -105713,11 +102413,8 @@ __export(core_exports2, {
   globalRegistry: () => globalRegistry,
   isValidBase64: () => isValidBase64,
   isValidBase64URL: () => isValidBase64URL,
-<<<<<<< HEAD
   isValidJWT: () => isValidJWT2,
-=======
   isValidJWT: () => isValidJWT,
->>>>>>> origin/main
   locales: () => locales_exports,
   parse: () => parse2,
   parseAsync: () => parseAsync,
@@ -105748,30 +102445,24 @@ function $constructor(name, initializer3, params) {
     (_a2 = inst._zod).traits ?? (_a2.traits = /* @__PURE__ */ new Set());
     inst._zod.traits.add(name);
     initializer3(inst, def);
-<<<<<<< HEAD
     for (const k2 in _3.prototype) {
       if (!(k2 in inst))
         Object.defineProperty(inst, k2, { value: _3.prototype[k2].bind(inst) });
     }
     inst._zod.constr = _3;
-=======
     for (const k2 in _4.prototype) {
       if (!(k2 in inst))
         Object.defineProperty(inst, k2, { value: _4.prototype[k2].bind(inst) });
     }
     inst._zod.constr = _4;
->>>>>>> origin/main
     inst._zod.def = def;
   }
   const Parent = params?.Parent ?? Object;
   class Definition extends Parent {
   }
   Object.defineProperty(Definition, "name", { value: name });
-<<<<<<< HEAD
   function _3(def) {
-=======
   function _4(def) {
->>>>>>> origin/main
     var _a2;
     const inst = params?.Parent ? new Definition() : this;
     init2(inst, def);
@@ -105781,26 +102472,20 @@ function $constructor(name, initializer3, params) {
     }
     return inst;
   }
-<<<<<<< HEAD
   Object.defineProperty(_3, "init", { value: init2 });
   Object.defineProperty(_3, Symbol.hasInstance, {
-=======
   Object.defineProperty(_4, "init", { value: init2 });
   Object.defineProperty(_4, Symbol.hasInstance, {
->>>>>>> origin/main
     value: (inst) => {
       if (params?.Parent && inst instanceof params.Parent)
         return true;
       return inst?._zod?.traits?.has(name);
     }
   });
-<<<<<<< HEAD
   Object.defineProperty(_3, "name", { value: name });
   return _3;
-=======
   Object.defineProperty(_4, "name", { value: name });
   return _4;
->>>>>>> origin/main
 }
 var $brand = /* @__PURE__ */ Symbol("zod_brand");
 var $ZodAsyncError = class extends Error {
@@ -105840,19 +102525,16 @@ __export(util_exports, {
   escapeRegex: () => escapeRegex,
   extend: () => extend,
   finalizeIssue: () => finalizeIssue,
-<<<<<<< HEAD
   floatSafeRemainder: () => floatSafeRemainder2,
   getElementAtPath: () => getElementAtPath,
   getEnumValues: () => getEnumValues,
   getLengthableOrigin: () => getLengthableOrigin,
   getParsedType: () => getParsedType2,
-=======
   floatSafeRemainder: () => floatSafeRemainder,
   getElementAtPath: () => getElementAtPath,
   getEnumValues: () => getEnumValues,
   getLengthableOrigin: () => getLengthableOrigin,
   getParsedType: () => getParsedType,
->>>>>>> origin/main
   getSizableOrigin: () => getSizableOrigin,
   isObject: () => isObject2,
   isPlainObject: () => isPlainObject,
@@ -105887,29 +102569,23 @@ function assertIs(_arg) {
 function assertNever(_x) {
   throw new Error();
 }
-<<<<<<< HEAD
 function assert(_3) {
 }
 function getEnumValues(entries) {
   const numericValues = Object.values(entries).filter((v2) => typeof v2 === "number");
   const values = Object.entries(entries).filter(([k2, _3]) => numericValues.indexOf(+k2) === -1).map(([_3, v2]) => v2);
-=======
 function assert(_4) {
 }
 function getEnumValues(entries) {
   const numericValues = Object.values(entries).filter((v2) => typeof v2 === "number");
   const values = Object.entries(entries).filter(([k2, _4]) => numericValues.indexOf(+k2) === -1).map(([_4, v2]) => v2);
->>>>>>> origin/main
   return values;
 }
 function joinValues(array2, separator = "|") {
   return array2.map((val) => stringifyPrimitive(val)).join(separator);
 }
-<<<<<<< HEAD
 function jsonStringifyReplacer(_3, value) {
-=======
 function jsonStringifyReplacer(_4, value) {
->>>>>>> origin/main
   if (typeof value === "bigint")
     return value.toString();
   return value;
@@ -105935,11 +102611,8 @@ function cleanRegex(source) {
   const end = source.endsWith("$") ? source.length - 1 : source.length;
   return source.slice(start, end);
 }
-<<<<<<< HEAD
 function floatSafeRemainder2(val, step) {
-=======
 function floatSafeRemainder(val, step) {
->>>>>>> origin/main
   const valDecCount = (val.toString().split(".")[1] || "").length;
   const stepDecCount = (step.toString().split(".")[1] || "").length;
   const decCount = valDecCount > stepDecCount ? valDecCount : stepDecCount;
@@ -106012,17 +102685,14 @@ var allowsEval = cached(() => {
     return false;
   }
   try {
-<<<<<<< HEAD
     const F3 = Function;
     new F3("");
     return true;
   } catch (_3) {
-=======
     const F4 = Function;
     new F4("");
     return true;
   } catch (_4) {
->>>>>>> origin/main
     return false;
   }
 });
@@ -106049,11 +102719,8 @@ function numKeys(data) {
   }
   return keyCount;
 }
-<<<<<<< HEAD
 var getParsedType2 = (data) => {
-=======
 var getParsedType = (data) => {
->>>>>>> origin/main
   const t2 = typeof data;
   switch (t2) {
     case "undefined":
@@ -106127,7 +102794,6 @@ function normalizeParams(_params) {
 function createTransparentProxy(getter) {
   let target;
   return new Proxy({}, {
-<<<<<<< HEAD
     get(_3, prop, receiver) {
       target ?? (target = getter());
       return Reflect.get(target, prop, receiver);
@@ -106153,7 +102819,6 @@ function createTransparentProxy(getter) {
       return Reflect.getOwnPropertyDescriptor(target, prop);
     },
     defineProperty(_3, prop, descriptor) {
-=======
     get(_4, prop, receiver) {
       target ?? (target = getter());
       return Reflect.get(target, prop, receiver);
@@ -106179,7 +102844,6 @@ function createTransparentProxy(getter) {
       return Reflect.getOwnPropertyDescriptor(target, prop);
     },
     defineProperty(_4, prop, descriptor) {
->>>>>>> origin/main
       target ?? (target = getter());
       return Reflect.defineProperty(target, prop, descriptor);
     }
@@ -106390,11 +103054,8 @@ function issue(...args) {
   return { ...iss };
 }
 function cleanEnum(obj) {
-<<<<<<< HEAD
   return Object.entries(obj).filter(([k2, _3]) => {
-=======
   return Object.entries(obj).filter(([k2, _4]) => {
->>>>>>> origin/main
     return Number.isNaN(Number.parseInt(k2, 10));
   }).map((el) => el[1]);
 }
@@ -106792,11 +103453,8 @@ var $ZodCheckMultipleOf = /* @__PURE__ */ $constructor("$ZodCheckMultipleOf", (i
   inst._zod.check = (payload) => {
     if (typeof payload.value !== typeof def.value)
       throw new Error("Cannot mix number and bigint in multiple_of check.");
-<<<<<<< HEAD
     const isMultiple = typeof payload.value === "bigint" ? payload.value % def.value === BigInt(0) : floatSafeRemainder2(payload.value, def.value) === 0;
-=======
     const isMultiple = typeof payload.value === "bigint" ? payload.value % def.value === BigInt(0) : floatSafeRemainder(payload.value, def.value) === 0;
->>>>>>> origin/main
     if (isMultiple)
       return;
     payload.issues.push({
@@ -107285,19 +103943,16 @@ var Doc = class {
     }
   }
   compile() {
-<<<<<<< HEAD
     const F3 = Function;
     const args = this?.args;
     const content = this?.content ?? [``];
     const lines = [...content.map((x2) => `  ${x2}`)];
     return new F3(...args, lines.join("\n"));
-=======
     const F4 = Function;
     const args = this?.args;
     const content = this?.content ?? [``];
     const lines = [...content.map((x2) => `  ${x2}`)];
     return new F4(...args, lines.join("\n"));
->>>>>>> origin/main
   }
 };
 
@@ -107342,7 +103997,6 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
           continue;
         }
         const currLen = payload.issues.length;
-<<<<<<< HEAD
         const _3 = ch._zod.check(payload);
         if (_3 instanceof Promise && ctx?.async === false) {
           throw new $ZodAsyncError();
@@ -107350,7 +104004,6 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
         if (asyncResult || _3 instanceof Promise) {
           asyncResult = (asyncResult ?? Promise.resolve()).then(async () => {
             await _3;
-=======
         const _4 = ch._zod.check(payload);
         if (_4 instanceof Promise && ctx?.async === false) {
           throw new $ZodAsyncError();
@@ -107358,7 +104011,6 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
         if (asyncResult || _4 instanceof Promise) {
           asyncResult = (asyncResult ?? Promise.resolve()).then(async () => {
             await _4;
->>>>>>> origin/main
             const nextLen = payload.issues.length;
             if (nextLen === currLen)
               return;
@@ -107395,11 +104047,8 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
       try {
         const r2 = safeParse(inst, value);
         return r2.success ? { value: r2.data } : { issues: r2.error?.issues };
-<<<<<<< HEAD
       } catch (_3) {
-=======
       } catch (_4) {
->>>>>>> origin/main
         return safeParseAsync(inst, value).then((r2) => r2.success ? { value: r2.data } : { issues: r2.error?.issues });
       }
     },
@@ -107410,19 +104059,16 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
 var $ZodString = /* @__PURE__ */ $constructor("$ZodString", (inst, def) => {
   $ZodType.init(inst, def);
   inst._zod.pattern = [...inst?._zod.bag?.patterns ?? []].pop() ?? string(inst._zod.bag);
-<<<<<<< HEAD
   inst._zod.parse = (payload, _3) => {
     if (def.coerce)
       try {
         payload.value = String(payload.value);
       } catch (_4) {
-=======
   inst._zod.parse = (payload, _4) => {
     if (def.coerce)
       try {
         payload.value = String(payload.value);
       } catch (_5) {
->>>>>>> origin/main
       }
     if (typeof payload.value === "string")
       return payload;
@@ -107508,11 +104154,8 @@ var $ZodURL = /* @__PURE__ */ $constructor("$ZodURL", (inst, def) => {
         payload.value = href;
       }
       return;
-<<<<<<< HEAD
     } catch (_3) {
-=======
     } catch (_4) {
->>>>>>> origin/main
       payload.issues.push({
         code: "invalid_format",
         format: "url",
@@ -107684,11 +104327,8 @@ var $ZodE164 = /* @__PURE__ */ $constructor("$ZodE164", (inst, def) => {
   def.pattern ?? (def.pattern = e164);
   $ZodStringFormat.init(inst, def);
 });
-<<<<<<< HEAD
 function isValidJWT2(token, algorithm = null) {
-=======
 function isValidJWT(token, algorithm = null) {
->>>>>>> origin/main
   try {
     const tokensParts = token.split(".");
     if (tokensParts.length !== 3)
@@ -107711,11 +104351,8 @@ function isValidJWT(token, algorithm = null) {
 var $ZodJWT = /* @__PURE__ */ $constructor("$ZodJWT", (inst, def) => {
   $ZodStringFormat.init(inst, def);
   inst._zod.check = (payload) => {
-<<<<<<< HEAD
     if (isValidJWT2(payload.value, def.alg))
-=======
     if (isValidJWT(payload.value, def.alg))
->>>>>>> origin/main
       return;
     payload.issues.push({
       code: "invalid_format",
@@ -107747,11 +104384,8 @@ var $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
     if (def.coerce)
       try {
         payload.value = Number(payload.value);
-<<<<<<< HEAD
       } catch (_3) {
-=======
       } catch (_4) {
->>>>>>> origin/main
       }
     const input = payload.value;
     if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) {
@@ -107779,11 +104413,8 @@ var $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
     if (def.coerce)
       try {
         payload.value = Boolean(payload.value);
-<<<<<<< HEAD
       } catch (_3) {
-=======
       } catch (_4) {
->>>>>>> origin/main
       }
     const input = payload.value;
     if (typeof input === "boolean")
@@ -107804,11 +104435,8 @@ var $ZodBigInt = /* @__PURE__ */ $constructor("$ZodBigInt", (inst, def) => {
     if (def.coerce)
       try {
         payload.value = BigInt(payload.value);
-<<<<<<< HEAD
       } catch (_3) {
-=======
       } catch (_4) {
->>>>>>> origin/main
       }
     if (typeof payload.value === "bigint")
       return payload;
@@ -108085,11 +104713,8 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
     return (payload, ctx) => fn(shape, payload, ctx);
   };
   let fastpass;
-<<<<<<< HEAD
   const isObject3 = isObject2;
-=======
   const isObject4 = isObject2;
->>>>>>> origin/main
   const jit = !globalConfig.jitless;
   const allowsEval2 = allowsEval;
   const fastEnabled = jit && allowsEval2.value;
@@ -108098,11 +104723,8 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
   inst._zod.parse = (payload, ctx) => {
     value ?? (value = _normalized.value);
     const input = payload.value;
-<<<<<<< HEAD
     if (!isObject3(input)) {
-=======
     if (!isObject4(input)) {
->>>>>>> origin/main
       payload.issues.push({
         expected: "object",
         code: "invalid_type",
@@ -108303,11 +104925,8 @@ var $ZodIntersection = /* @__PURE__ */ $constructor("$ZodIntersection", (inst, d
     return handleIntersectionResults(payload, left, right);
   };
 });
-<<<<<<< HEAD
 function mergeValues2(a2, b2) {
-=======
 function mergeValues(a2, b2) {
->>>>>>> origin/main
   if (a2 === b2) {
     return { valid: true, data: a2 };
   }
@@ -108319,11 +104938,8 @@ function mergeValues(a2, b2) {
     const sharedKeys = Object.keys(a2).filter((key) => bKeys.indexOf(key) !== -1);
     const newObj = { ...a2, ...b2 };
     for (const key of sharedKeys) {
-<<<<<<< HEAD
       const sharedValue = mergeValues2(a2[key], b2[key]);
-=======
       const sharedValue = mergeValues(a2[key], b2[key]);
->>>>>>> origin/main
       if (!sharedValue.valid) {
         return {
           valid: false,
@@ -108342,11 +104958,8 @@ function mergeValues(a2, b2) {
     for (let index2 = 0; index2 < a2.length; index2++) {
       const itemA = a2[index2];
       const itemB = b2[index2];
-<<<<<<< HEAD
       const sharedValue = mergeValues2(itemA, itemB);
-=======
       const sharedValue = mergeValues(itemA, itemB);
->>>>>>> origin/main
       if (!sharedValue.valid) {
         return {
           valid: false,
@@ -108368,11 +104981,8 @@ function handleIntersectionResults(result, left, right) {
   }
   if (aborted(result))
     return result;
-<<<<<<< HEAD
   const merged = mergeValues2(left.value, right.value);
-=======
   const merged = mergeValues(left.value, right.value);
->>>>>>> origin/main
   if (!merged.valid) {
     throw new Error(`Unmergable intersection. Error path: ${JSON.stringify(merged.mergeErrorPath)}`);
   }
@@ -108974,11 +105584,8 @@ var $ZodLazy = /* @__PURE__ */ $constructor("$ZodLazy", (inst, def) => {
 var $ZodCustom = /* @__PURE__ */ $constructor("$ZodCustom", (inst, def) => {
   $ZodCheck.init(inst, def);
   $ZodType.init(inst, def);
-<<<<<<< HEAD
   inst._zod.parse = (payload, _3) => {
-=======
   inst._zod.parse = (payload, _4) => {
->>>>>>> origin/main
     return payload;
   };
   inst._zod.check = (payload) => {
@@ -109018,11 +105625,8 @@ __export(locales_exports, {
   ca: () => ca_default,
   cs: () => cs_default,
   de: () => de_default,
-<<<<<<< HEAD
   en: () => en_default2,
-=======
   en: () => en_default,
->>>>>>> origin/main
   eo: () => eo_default,
   es: () => es_default,
   fa: () => fa_default,
@@ -109940,11 +106544,8 @@ var error7 = () => {
     }
   };
 };
-<<<<<<< HEAD
 function en_default2() {
-=======
 function en_default() {
->>>>>>> origin/main
   return {
     localeError: error7()
   };
@@ -114725,15 +111326,12 @@ var $ZodFunction = class {
     return impl;
   }
   input(...args) {
-<<<<<<< HEAD
     const F3 = this.constructor;
     if (Array.isArray(args[0])) {
       return new F3({
-=======
     const F4 = this.constructor;
     if (Array.isArray(args[0])) {
       return new F4({
->>>>>>> origin/main
         type: "function",
         input: new $ZodTuple({
           type: "tuple",
@@ -114743,24 +111341,18 @@ var $ZodFunction = class {
         output: this._def.output
       });
     }
-<<<<<<< HEAD
     return new F3({
-=======
     return new F4({
->>>>>>> origin/main
       type: "function",
       input: args[0],
       output: this._def.output
     });
   }
   output(output) {
-<<<<<<< HEAD
     const F3 = this.constructor;
     return new F3({
-=======
     const F4 = this.constructor;
     return new F4({
->>>>>>> origin/main
       type: "function",
       input: this._def.input,
       output
@@ -115414,11 +112006,8 @@ function toJSONSchema(input, _params) {
     const gen2 = new JSONSchemaGenerator(_params);
     const defs = {};
     for (const entry of input._idmap.entries()) {
-<<<<<<< HEAD
       const [_3, schema] = entry;
-=======
       const [_4, schema] = entry;
->>>>>>> origin/main
       gen2.process(schema);
     }
     const schemas = {};
@@ -115619,11 +112208,8 @@ var initializer2 = (inst, issues) => {
     }
   });
 };
-<<<<<<< HEAD
 var ZodError2 = $constructor("ZodError", initializer2);
-=======
 var ZodError = $constructor("ZodError", initializer2);
->>>>>>> origin/main
 var ZodRealError = $constructor("ZodError", initializer2, {
   Parent: Error
 });
@@ -115635,11 +112221,8 @@ var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
 var safeParseAsync2 = /* @__PURE__ */ _safeParseAsync(ZodRealError);
 
 // ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/schemas.js
-<<<<<<< HEAD
 var ZodType2 = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
-=======
 var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
->>>>>>> origin/main
   $ZodType.init(inst, def);
   inst.def = def;
   Object.defineProperty(inst, "_def", { value: def });
@@ -115707,11 +112290,8 @@ var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
 });
 var _ZodString = /* @__PURE__ */ $constructor("_ZodString", (inst, def) => {
   $ZodString.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
   const bag = inst._zod.bag;
   inst.format = bag.format ?? null;
   inst.minLength = bag.minimum ?? null;
@@ -115731,11 +112311,8 @@ var _ZodString = /* @__PURE__ */ $constructor("_ZodString", (inst, def) => {
   inst.toLowerCase = () => inst.check(_toLowerCase());
   inst.toUpperCase = () => inst.check(_toUpperCase());
 });
-<<<<<<< HEAD
 var ZodString2 = /* @__PURE__ */ $constructor("ZodString", (inst, def) => {
-=======
 var ZodString = /* @__PURE__ */ $constructor("ZodString", (inst, def) => {
->>>>>>> origin/main
   $ZodString.init(inst, def);
   _ZodString.init(inst, def);
   inst.email = (params) => inst.check(_email(ZodEmail, params));
@@ -115767,11 +112344,8 @@ var ZodString = /* @__PURE__ */ $constructor("ZodString", (inst, def) => {
   inst.duration = (params) => inst.check(duration2(params));
 });
 function string2(params) {
-<<<<<<< HEAD
   return _string(ZodString2, params);
-=======
   return _string(ZodString, params);
->>>>>>> origin/main
 }
 var ZodStringFormat = /* @__PURE__ */ $constructor("ZodStringFormat", (inst, def) => {
   $ZodStringFormat.init(inst, def);
@@ -115926,15 +112500,12 @@ var ZodCustomStringFormat = /* @__PURE__ */ $constructor("ZodCustomStringFormat"
 function stringFormat(format, fnOrRegex, _params = {}) {
   return _stringFormat(ZodCustomStringFormat, format, fnOrRegex, _params);
 }
-<<<<<<< HEAD
 var ZodNumber2 = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
   $ZodNumber.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodNumber = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
   $ZodNumber.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.gt = (value, params) => inst.check(_gt(value, params));
   inst.gte = (value, params) => inst.check(_gte(value, params));
   inst.min = (value, params) => inst.check(_gte(value, params));
@@ -115958,19 +112529,16 @@ var ZodNumber = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
   inst.format = bag.format ?? null;
 });
 function number2(params) {
-<<<<<<< HEAD
   return _number(ZodNumber2, params);
 }
 var ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def) => {
   $ZodNumberFormat.init(inst, def);
   ZodNumber2.init(inst, def);
-=======
   return _number(ZodNumber, params);
 }
 var ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def) => {
   $ZodNumberFormat.init(inst, def);
   ZodNumber.init(inst, def);
->>>>>>> origin/main
 });
 function int(params) {
   return _int(ZodNumberFormat, params);
@@ -115987,7 +112555,6 @@ function int32(params) {
 function uint32(params) {
   return _uint32(ZodNumberFormat, params);
 }
-<<<<<<< HEAD
 var ZodBoolean2 = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
   $ZodBoolean.init(inst, def);
   ZodType2.init(inst, def);
@@ -115998,7 +112565,6 @@ function boolean4(params) {
 var ZodBigInt2 = /* @__PURE__ */ $constructor("ZodBigInt", (inst, def) => {
   $ZodBigInt.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
   $ZodBoolean.init(inst, def);
   ZodType.init(inst, def);
@@ -116009,7 +112575,6 @@ function boolean4(params) {
 var ZodBigInt = /* @__PURE__ */ $constructor("ZodBigInt", (inst, def) => {
   $ZodBigInt.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.gte = (value, params) => inst.check(_gte(value, params));
   inst.min = (value, params) => inst.check(_gte(value, params));
   inst.gt = (value, params) => inst.check(_gt(value, params));
@@ -116029,19 +112594,16 @@ var ZodBigInt = /* @__PURE__ */ $constructor("ZodBigInt", (inst, def) => {
   inst.format = bag.format ?? null;
 });
 function bigint4(params) {
-<<<<<<< HEAD
   return _bigint(ZodBigInt2, params);
 }
 var ZodBigIntFormat = /* @__PURE__ */ $constructor("ZodBigIntFormat", (inst, def) => {
   $ZodBigIntFormat.init(inst, def);
   ZodBigInt2.init(inst, def);
-=======
   return _bigint(ZodBigInt, params);
 }
 var ZodBigIntFormat = /* @__PURE__ */ $constructor("ZodBigIntFormat", (inst, def) => {
   $ZodBigIntFormat.init(inst, def);
   ZodBigInt.init(inst, def);
->>>>>>> origin/main
 });
 function int64(params) {
   return _int64(ZodBigIntFormat, params);
@@ -116049,7 +112611,6 @@ function int64(params) {
 function uint64(params) {
   return _uint64(ZodBigIntFormat, params);
 }
-<<<<<<< HEAD
 var ZodSymbol2 = /* @__PURE__ */ $constructor("ZodSymbol", (inst, def) => {
   $ZodSymbol.init(inst, def);
   ZodType2.init(inst, def);
@@ -116102,7 +112663,6 @@ function _void2(params) {
 var ZodDate2 = /* @__PURE__ */ $constructor("ZodDate", (inst, def) => {
   $ZodDate.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodSymbol = /* @__PURE__ */ $constructor("ZodSymbol", (inst, def) => {
   $ZodSymbol.init(inst, def);
   ZodType.init(inst, def);
@@ -116155,7 +112715,6 @@ function _void2(params) {
 var ZodDate = /* @__PURE__ */ $constructor("ZodDate", (inst, def) => {
   $ZodDate.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.min = (value, params) => inst.check(_gte(value, params));
   inst.max = (value, params) => inst.check(_lte(value, params));
   const c2 = inst._zod.bag;
@@ -116163,19 +112722,16 @@ var ZodDate = /* @__PURE__ */ $constructor("ZodDate", (inst, def) => {
   inst.maxDate = c2.maximum ? new Date(c2.maximum) : null;
 });
 function date5(params) {
-<<<<<<< HEAD
   return _date(ZodDate2, params);
 }
 var ZodArray2 = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
   $ZodArray.init(inst, def);
   ZodType2.init(inst, def);
-=======
   return _date(ZodDate, params);
 }
 var ZodArray = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
   $ZodArray.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.element = def.element;
   inst.min = (minLength, params) => inst.check(_minLength(minLength, params));
   inst.nonempty = (params) => inst.check(_minLength(1, params));
@@ -116184,25 +112740,19 @@ var ZodArray = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
   inst.unwrap = () => inst.element;
 });
 function array(element, params) {
-<<<<<<< HEAD
   return _array(ZodArray2, element, params);
-=======
   return _array(ZodArray, element, params);
->>>>>>> origin/main
 }
 function keyof(schema) {
   const shape = schema._zod.def.shape;
   return literal(Object.keys(shape));
 }
-<<<<<<< HEAD
 var ZodObject2 = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
   $ZodObject.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodObject = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
   $ZodObject.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   util_exports.defineLazy(inst, "shape", () => def.shape);
   inst.keyof = () => _enum2(Object.keys(inst._zod.def.shape));
   inst.catchall = (catchall) => inst.clone({ ...inst._zod.def, catchall });
@@ -116216,11 +112766,8 @@ var ZodObject = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
   inst.merge = (other) => util_exports.merge(inst, other);
   inst.pick = (mask) => util_exports.pick(inst, mask);
   inst.omit = (mask) => util_exports.omit(inst, mask);
-<<<<<<< HEAD
   inst.partial = (...args) => util_exports.partial(ZodOptional2, inst, args[0]);
-=======
   inst.partial = (...args) => util_exports.partial(ZodOptional, inst, args[0]);
->>>>>>> origin/main
   inst.required = (...args) => util_exports.required(ZodNonOptional, inst, args[0]);
 });
 function object(shape, params) {
@@ -116232,17 +112779,14 @@ function object(shape, params) {
     },
     ...util_exports.normalizeParams(params)
   };
-<<<<<<< HEAD
   return new ZodObject2(def);
 }
 function strictObject(shape, params) {
   return new ZodObject2({
-=======
   return new ZodObject(def);
 }
 function strictObject(shape, params) {
   return new ZodObject({
->>>>>>> origin/main
     type: "object",
     get shape() {
       util_exports.assignProp(this, "shape", { ...shape });
@@ -116253,11 +112797,8 @@ function strictObject(shape, params) {
   });
 }
 function looseObject(shape, params) {
-<<<<<<< HEAD
   return new ZodObject2({
-=======
   return new ZodObject({
->>>>>>> origin/main
     type: "object",
     get shape() {
       util_exports.assignProp(this, "shape", { ...shape });
@@ -116267,7 +112808,6 @@ function looseObject(shape, params) {
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodUnion2 = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
   $ZodUnion.init(inst, def);
   ZodType2.init(inst, def);
@@ -116275,7 +112815,6 @@ var ZodUnion2 = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
 });
 function union3(options, params) {
   return new ZodUnion2({
-=======
 var ZodUnion = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
   $ZodUnion.init(inst, def);
   ZodType.init(inst, def);
@@ -116283,62 +112822,52 @@ var ZodUnion = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
 });
 function union3(options, params) {
   return new ZodUnion({
->>>>>>> origin/main
     type: "union",
     options,
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodDiscriminatedUnion2 = /* @__PURE__ */ $constructor("ZodDiscriminatedUnion", (inst, def) => {
   ZodUnion2.init(inst, def);
   $ZodDiscriminatedUnion.init(inst, def);
 });
 function discriminatedUnion(discriminator, options, params) {
   return new ZodDiscriminatedUnion2({
-=======
 var ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("ZodDiscriminatedUnion", (inst, def) => {
   ZodUnion.init(inst, def);
   $ZodDiscriminatedUnion.init(inst, def);
 });
 function discriminatedUnion(discriminator, options, params) {
   return new ZodDiscriminatedUnion({
->>>>>>> origin/main
     type: "union",
     options,
     discriminator,
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodIntersection2 = /* @__PURE__ */ $constructor("ZodIntersection", (inst, def) => {
   $ZodIntersection.init(inst, def);
   ZodType2.init(inst, def);
 });
 function intersection(left, right) {
   return new ZodIntersection2({
-=======
 var ZodIntersection = /* @__PURE__ */ $constructor("ZodIntersection", (inst, def) => {
   $ZodIntersection.init(inst, def);
   ZodType.init(inst, def);
 });
 function intersection(left, right) {
   return new ZodIntersection({
->>>>>>> origin/main
     type: "intersection",
     left,
     right
   });
 }
-<<<<<<< HEAD
 var ZodTuple2 = /* @__PURE__ */ $constructor("ZodTuple", (inst, def) => {
   $ZodTuple.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodTuple = /* @__PURE__ */ $constructor("ZodTuple", (inst, def) => {
   $ZodTuple.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.rest = (rest) => inst.clone({
     ...inst._zod.def,
     rest
@@ -116348,35 +112877,26 @@ function tuple(items, _paramsOrRest, _params) {
   const hasRest = _paramsOrRest instanceof $ZodType;
   const params = hasRest ? _params : _paramsOrRest;
   const rest = hasRest ? _paramsOrRest : null;
-<<<<<<< HEAD
   return new ZodTuple2({
-=======
   return new ZodTuple({
->>>>>>> origin/main
     type: "tuple",
     items,
     rest,
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodRecord2 = /* @__PURE__ */ $constructor("ZodRecord", (inst, def) => {
   $ZodRecord.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodRecord = /* @__PURE__ */ $constructor("ZodRecord", (inst, def) => {
   $ZodRecord.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.keyType = def.keyType;
   inst.valueType = def.valueType;
 });
 function record(keyType, valueType, params) {
-<<<<<<< HEAD
   return new ZodRecord2({
-=======
   return new ZodRecord({
->>>>>>> origin/main
     type: "record",
     keyType,
     valueType,
@@ -116384,75 +112904,57 @@ function record(keyType, valueType, params) {
   });
 }
 function partialRecord(keyType, valueType, params) {
-<<<<<<< HEAD
   return new ZodRecord2({
-=======
   return new ZodRecord({
->>>>>>> origin/main
     type: "record",
     keyType: union3([keyType, never()]),
     valueType,
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodMap2 = /* @__PURE__ */ $constructor("ZodMap", (inst, def) => {
   $ZodMap.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodMap = /* @__PURE__ */ $constructor("ZodMap", (inst, def) => {
   $ZodMap.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.keyType = def.keyType;
   inst.valueType = def.valueType;
 });
 function map(keyType, valueType, params) {
-<<<<<<< HEAD
   return new ZodMap2({
-=======
   return new ZodMap({
->>>>>>> origin/main
     type: "map",
     keyType,
     valueType,
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodSet2 = /* @__PURE__ */ $constructor("ZodSet", (inst, def) => {
   $ZodSet.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodSet = /* @__PURE__ */ $constructor("ZodSet", (inst, def) => {
   $ZodSet.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.min = (...args) => inst.check(_minSize(...args));
   inst.nonempty = (params) => inst.check(_minSize(1, params));
   inst.max = (...args) => inst.check(_maxSize(...args));
   inst.size = (...args) => inst.check(_size(...args));
 });
 function set(valueType, params) {
-<<<<<<< HEAD
   return new ZodSet2({
-=======
   return new ZodSet({
->>>>>>> origin/main
     type: "set",
     valueType,
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodEnum2 = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   $ZodEnum.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   $ZodEnum.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.enum = def.entries;
   inst.options = Object.values(def.entries);
   const keys = new Set(Object.keys(def.entries));
@@ -116464,11 +112966,8 @@ var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
       } else
         throw new Error(`Key ${value} not found in enum`);
     }
-<<<<<<< HEAD
     return new ZodEnum2({
-=======
     return new ZodEnum({
->>>>>>> origin/main
       ...def,
       checks: [],
       ...util_exports.normalizeParams(params),
@@ -116483,11 +112982,8 @@ var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
       } else
         throw new Error(`Key ${value} not found in enum`);
     }
-<<<<<<< HEAD
     return new ZodEnum2({
-=======
     return new ZodEnum({
->>>>>>> origin/main
       ...def,
       checks: [],
       ...util_exports.normalizeParams(params),
@@ -116497,36 +112993,27 @@ var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
 });
 function _enum2(values, params) {
   const entries = Array.isArray(values) ? Object.fromEntries(values.map((v2) => [v2, v2])) : values;
-<<<<<<< HEAD
   return new ZodEnum2({
-=======
   return new ZodEnum({
->>>>>>> origin/main
     type: "enum",
     entries,
     ...util_exports.normalizeParams(params)
   });
 }
 function nativeEnum(entries, params) {
-<<<<<<< HEAD
   return new ZodEnum2({
-=======
   return new ZodEnum({
->>>>>>> origin/main
     type: "enum",
     entries,
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodLiteral2 = /* @__PURE__ */ $constructor("ZodLiteral", (inst, def) => {
   $ZodLiteral.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodLiteral = /* @__PURE__ */ $constructor("ZodLiteral", (inst, def) => {
   $ZodLiteral.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.values = new Set(def.values);
   Object.defineProperty(inst, "value", {
     get() {
@@ -116538,11 +113025,8 @@ var ZodLiteral = /* @__PURE__ */ $constructor("ZodLiteral", (inst, def) => {
   });
 });
 function literal(value, params) {
-<<<<<<< HEAD
   return new ZodLiteral2({
-=======
   return new ZodLiteral({
->>>>>>> origin/main
     type: "literal",
     values: Array.isArray(value) ? value : [value],
     ...util_exports.normalizeParams(params)
@@ -116550,11 +113034,8 @@ function literal(value, params) {
 }
 var ZodFile = /* @__PURE__ */ $constructor("ZodFile", (inst, def) => {
   $ZodFile.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.min = (size, params) => inst.check(_minSize(size, params));
   inst.max = (size, params) => inst.check(_maxSize(size, params));
   inst.mime = (types5, params) => inst.check(_mime(Array.isArray(types5) ? types5 : [types5], params));
@@ -116564,11 +113045,8 @@ function file(params) {
 }
 var ZodTransform = /* @__PURE__ */ $constructor("ZodTransform", (inst, def) => {
   $ZodTransform.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst._zod.parse = (payload, _ctx) => {
     payload.addIssue = (issue2) => {
       if (typeof issue2 === "string") {
@@ -116601,7 +113079,6 @@ function transform(fn) {
     transform: fn
   });
 }
-<<<<<<< HEAD
 var ZodOptional2 = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
   $ZodOptional.init(inst, def);
   ZodType2.init(inst, def);
@@ -116609,7 +113086,6 @@ var ZodOptional2 = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
 });
 function optional(innerType) {
   return new ZodOptional2({
-=======
 var ZodOptional = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
   $ZodOptional.init(inst, def);
   ZodType.init(inst, def);
@@ -116617,12 +113093,10 @@ var ZodOptional = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
 });
 function optional(innerType) {
   return new ZodOptional({
->>>>>>> origin/main
     type: "optional",
     innerType
   });
 }
-<<<<<<< HEAD
 var ZodNullable2 = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
   $ZodNullable.init(inst, def);
   ZodType2.init(inst, def);
@@ -116630,7 +113104,6 @@ var ZodNullable2 = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
 });
 function nullable(innerType) {
   return new ZodNullable2({
-=======
 var ZodNullable = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
   $ZodNullable.init(inst, def);
   ZodType.init(inst, def);
@@ -116638,7 +113111,6 @@ var ZodNullable = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
 });
 function nullable(innerType) {
   return new ZodNullable({
->>>>>>> origin/main
     type: "nullable",
     innerType
   });
@@ -116646,24 +113118,18 @@ function nullable(innerType) {
 function nullish2(innerType) {
   return optional(nullable(innerType));
 }
-<<<<<<< HEAD
 var ZodDefault2 = /* @__PURE__ */ $constructor("ZodDefault", (inst, def) => {
   $ZodDefault.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodDefault = /* @__PURE__ */ $constructor("ZodDefault", (inst, def) => {
   $ZodDefault.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.unwrap = () => inst._zod.def.innerType;
   inst.removeDefault = inst.unwrap;
 });
 function _default2(innerType, defaultValue) {
-<<<<<<< HEAD
   return new ZodDefault2({
-=======
   return new ZodDefault({
->>>>>>> origin/main
     type: "default",
     innerType,
     get defaultValue() {
@@ -116673,11 +113139,8 @@ function _default2(innerType, defaultValue) {
 }
 var ZodPrefault = /* @__PURE__ */ $constructor("ZodPrefault", (inst, def) => {
   $ZodPrefault.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function prefault(innerType, defaultValue) {
@@ -116691,11 +113154,8 @@ function prefault(innerType, defaultValue) {
 }
 var ZodNonOptional = /* @__PURE__ */ $constructor("ZodNonOptional", (inst, def) => {
   $ZodNonOptional.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function nonoptional(innerType, params) {
@@ -116707,11 +113167,8 @@ function nonoptional(innerType, params) {
 }
 var ZodSuccess = /* @__PURE__ */ $constructor("ZodSuccess", (inst, def) => {
   $ZodSuccess.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function success(innerType) {
@@ -116720,30 +113177,23 @@ function success(innerType) {
     innerType
   });
 }
-<<<<<<< HEAD
 var ZodCatch2 = /* @__PURE__ */ $constructor("ZodCatch", (inst, def) => {
   $ZodCatch.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodCatch = /* @__PURE__ */ $constructor("ZodCatch", (inst, def) => {
   $ZodCatch.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.unwrap = () => inst._zod.def.innerType;
   inst.removeCatch = inst.unwrap;
 });
 function _catch2(innerType, catchValue) {
-<<<<<<< HEAD
   return new ZodCatch2({
-=======
   return new ZodCatch({
->>>>>>> origin/main
     type: "catch",
     innerType,
     catchValue: typeof catchValue === "function" ? catchValue : () => catchValue
   });
 }
-<<<<<<< HEAD
 var ZodNaN2 = /* @__PURE__ */ $constructor("ZodNaN", (inst, def) => {
   $ZodNaN.init(inst, def);
   ZodType2.init(inst, def);
@@ -116754,7 +113204,6 @@ function nan(params) {
 var ZodPipe = /* @__PURE__ */ $constructor("ZodPipe", (inst, def) => {
   $ZodPipe.init(inst, def);
   ZodType2.init(inst, def);
-=======
 var ZodNaN = /* @__PURE__ */ $constructor("ZodNaN", (inst, def) => {
   $ZodNaN.init(inst, def);
   ZodType.init(inst, def);
@@ -116765,7 +113214,6 @@ function nan(params) {
 var ZodPipe = /* @__PURE__ */ $constructor("ZodPipe", (inst, def) => {
   $ZodPipe.init(inst, def);
   ZodType.init(inst, def);
->>>>>>> origin/main
   inst.in = def.in;
   inst.out = def.out;
 });
@@ -116777,32 +113225,26 @@ function pipe(in_, out) {
     // ...util.normalizeParams(params),
   });
 }
-<<<<<<< HEAD
 var ZodReadonly2 = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
   $ZodReadonly.init(inst, def);
   ZodType2.init(inst, def);
 });
 function readonly(innerType) {
   return new ZodReadonly2({
-=======
 var ZodReadonly = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
   $ZodReadonly.init(inst, def);
   ZodType.init(inst, def);
 });
 function readonly(innerType) {
   return new ZodReadonly({
->>>>>>> origin/main
     type: "readonly",
     innerType
   });
 }
 var ZodTemplateLiteral = /* @__PURE__ */ $constructor("ZodTemplateLiteral", (inst, def) => {
   $ZodTemplateLiteral.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
 });
 function templateLiteral(parts, params) {
   return new ZodTemplateLiteral({
@@ -116811,7 +113253,6 @@ function templateLiteral(parts, params) {
     ...util_exports.normalizeParams(params)
   });
 }
-<<<<<<< HEAD
 var ZodLazy2 = /* @__PURE__ */ $constructor("ZodLazy", (inst, def) => {
   $ZodLazy.init(inst, def);
   ZodType2.init(inst, def);
@@ -116819,7 +113260,6 @@ var ZodLazy2 = /* @__PURE__ */ $constructor("ZodLazy", (inst, def) => {
 });
 function lazy(getter) {
   return new ZodLazy2({
-=======
 var ZodLazy = /* @__PURE__ */ $constructor("ZodLazy", (inst, def) => {
   $ZodLazy.init(inst, def);
   ZodType.init(inst, def);
@@ -116827,12 +113267,10 @@ var ZodLazy = /* @__PURE__ */ $constructor("ZodLazy", (inst, def) => {
 });
 function lazy(getter) {
   return new ZodLazy({
->>>>>>> origin/main
     type: "lazy",
     getter
   });
 }
-<<<<<<< HEAD
 var ZodPromise2 = /* @__PURE__ */ $constructor("ZodPromise", (inst, def) => {
   $ZodPromise.init(inst, def);
   ZodType2.init(inst, def);
@@ -116840,7 +113278,6 @@ var ZodPromise2 = /* @__PURE__ */ $constructor("ZodPromise", (inst, def) => {
 });
 function promise(innerType) {
   return new ZodPromise2({
-=======
 var ZodPromise = /* @__PURE__ */ $constructor("ZodPromise", (inst, def) => {
   $ZodPromise.init(inst, def);
   ZodType.init(inst, def);
@@ -116848,18 +113285,14 @@ var ZodPromise = /* @__PURE__ */ $constructor("ZodPromise", (inst, def) => {
 });
 function promise(innerType) {
   return new ZodPromise({
->>>>>>> origin/main
     type: "promise",
     innerType
   });
 }
 var ZodCustom = /* @__PURE__ */ $constructor("ZodCustom", (inst, def) => {
   $ZodCustom.init(inst, def);
-<<<<<<< HEAD
   ZodType2.init(inst, def);
-=======
   ZodType.init(inst, def);
->>>>>>> origin/main
 });
 function check(fn) {
   const ch = new $ZodCheck({
@@ -116910,13 +113343,10 @@ function _instanceof(cls, params = {
 }
 var stringbool = (...args) => _stringbool({
   Pipe: ZodPipe,
-<<<<<<< HEAD
   Boolean: ZodBoolean2,
   String: ZodString2,
-=======
   Boolean: ZodBoolean,
   String: ZodString,
->>>>>>> origin/main
   Transform: ZodTransform
 }, ...args);
 function json3(params) {
@@ -116930,11 +113360,8 @@ function preprocess(fn, schema) {
 }
 
 // ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/compat.js
-<<<<<<< HEAD
 var ZodIssueCode2 = {
-=======
 var ZodIssueCode = {
->>>>>>> origin/main
   invalid_type: "invalid_type",
   too_big: "too_big",
   too_small: "too_small",
@@ -116952,11 +113379,8 @@ function setErrorMap(map2) {
     customError: map2
   });
 }
-<<<<<<< HEAD
 function getErrorMap2() {
-=======
 function getErrorMap() {
->>>>>>> origin/main
   return config().customError;
 }
 
@@ -116970,7 +113394,6 @@ __export(coerce_exports, {
   string: () => string3
 });
 function string3(params) {
-<<<<<<< HEAD
   return _coercedString(ZodString2, params);
 }
 function number3(params) {
@@ -116988,7 +113411,6 @@ function date6(params) {
 
 // ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/external.js
 config(en_default2());
-=======
   return _coercedString(ZodString, params);
 }
 function number3(params) {
@@ -117006,7 +113428,6 @@ function date6(params) {
 
 // ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v4/classic/external.js
 config(en_default());
->>>>>>> origin/main
 
 // ../../node_modules/.pnpm/drizzle-zod@0.8.3_drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0_postgres@3.4.9__zod@3.25.76/node_modules/drizzle-zod/index.mjs
 var CONSTANTS = {
@@ -117449,8 +113870,6 @@ var userProfiles = pgTable2("user_profiles", {
   createdAt: timestamp2("created_at").notNull().defaultNow(),
   updatedAt: timestamp2("updated_at").notNull().defaultNow()
 });
-<<<<<<< HEAD
-=======
 var uploadedImages = pgTable2(
   "uploaded_images",
   {
@@ -117466,7 +113885,6 @@ var uploadedImages = pgTable2(
     userIdx: index("uploaded_images_user_idx").on(table.userId)
   })
 );
->>>>>>> origin/main
 
 // ../../node_modules/.pnpm/pg@8.20.0/node_modules/pg/esm/index.mjs
 var import_lib2 = __toESM(require_lib6(), 1);
@@ -117486,21 +113904,18 @@ var esm_default2 = import_lib2.default;
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/session.js
 var { Pool: Pool4, types: types4 } = esm_default2;
 var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
-<<<<<<< HEAD
   constructor(client2, queryString, params, logger3, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
     super({ sql: queryString, params }, cache2, queryMetadata, cacheConfig);
     this.client = client2;
     this.queryString = queryString;
     this.params = params;
     this.logger = logger3;
-=======
   constructor(client, queryString, params, logger4, cache3, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
     super({ sql: queryString, params }, cache3, queryMetadata, cacheConfig);
     this.client = client;
     this.queryString = queryString;
     this.params = params;
     this.logger = logger4;
->>>>>>> origin/main
     this.fields = fields;
     this._isResponseInArrayMode = _isResponseInArrayMode;
     this.customResultMapper = customResultMapper;
@@ -117587,11 +114002,8 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
     return tracer2.startActiveSpan("drizzle.execute", async () => {
       const params = fillPlaceholders2(this.params, placeholderValues);
       this.logger.logQuery(this.rawQueryConfig.text, params);
-<<<<<<< HEAD
       const { fields, rawQueryConfig: rawQuery, client: client2, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
-=======
       const { fields, rawQueryConfig: rawQuery, client, queryConfig: query, joinsNotNullableMap, customResultMapper } = this;
->>>>>>> origin/main
       if (!fields && !customResultMapper) {
         return tracer2.startActiveSpan("drizzle.driver.execute", async (span) => {
           span?.setAttributes({
@@ -117600,11 +114012,8 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
             "drizzle.query.params": JSON.stringify(params)
           });
           return this.queryWithCache(rawQuery.text, params, async () => {
-<<<<<<< HEAD
             return await client2.query(rawQuery, params);
-=======
             return await client.query(rawQuery, params);
->>>>>>> origin/main
           });
         });
       }
@@ -117615,11 +114024,8 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
           "drizzle.query.params": JSON.stringify(params)
         });
         return this.queryWithCache(query.text, params, async () => {
-<<<<<<< HEAD
           return await client2.query(query, params);
-=======
           return await client.query(query, params);
->>>>>>> origin/main
         });
       });
       return tracer2.startActiveSpan("drizzle.mapResponse", () => {
@@ -117649,15 +114055,12 @@ var NodePgPreparedQuery2 = class extends PgPreparedQuery2 {
   }
 };
 var NodePgSession2 = class _NodePgSession extends PgSession2 {
-<<<<<<< HEAD
   constructor(client2, dialect, schema, options = {}) {
     super(dialect);
     this.client = client2;
-=======
   constructor(client, dialect, schema, options = {}) {
     super(dialect);
     this.client = client;
->>>>>>> origin/main
     this.schema = schema;
     this.options = options;
     this.logger = options.logger ?? new NoopLogger2();
@@ -117728,13 +114131,10 @@ var NodePgTransaction2 = class _NodePgTransaction extends PgTransaction2 {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0_postgres@3.4.9/node_modules/drizzle-orm/node-postgres/driver.js
 var NodePgDriver2 = class {
-<<<<<<< HEAD
   constructor(client2, dialect, options = {}) {
     this.client = client2;
-=======
   constructor(client, dialect, options = {}) {
     this.client = client;
->>>>>>> origin/main
     this.dialect = dialect;
     this.options = options;
   }
@@ -117749,7 +114149,6 @@ var NodePgDriver2 = class {
 var NodePgDatabase2 = class extends PgDatabase2 {
   static [entityKind2] = "NodePgDatabase";
 };
-<<<<<<< HEAD
 function construct2(client2, config2 = {}) {
   const dialect = new PgDialect2({ casing: config2.casing });
   let logger3;
@@ -117757,7 +114156,6 @@ function construct2(client2, config2 = {}) {
     logger3 = new DefaultLogger2();
   } else if (config2.logger !== false) {
     logger3 = config2.logger;
-=======
 function construct2(client, config2 = {}) {
   const dialect = new PgDialect2({ casing: config2.casing });
   let logger4;
@@ -117765,7 +114163,6 @@ function construct2(client, config2 = {}) {
     logger4 = new DefaultLogger2();
   } else if (config2.logger !== false) {
     logger4 = config2.logger;
->>>>>>> origin/main
   }
   let schema;
   if (config2.schema) {
@@ -117779,17 +114176,14 @@ function construct2(client, config2 = {}) {
       tableNamesMap: tablesConfig.tableNamesMap
     };
   }
-<<<<<<< HEAD
   const driver = new NodePgDriver2(client2, dialect, { logger: logger3, cache: config2.cache });
   const session = driver.createSession(schema);
   const db3 = new NodePgDatabase2(dialect, session, schema);
   db3.$client = client2;
-=======
   const driver = new NodePgDriver2(client, dialect, { logger: logger4, cache: config2.cache });
   const session = driver.createSession(schema);
   const db3 = new NodePgDatabase2(dialect, session, schema);
   db3.$client = client;
->>>>>>> origin/main
   db3.$cache = config2.cache;
   if (db3.$cache) {
     db3.$cache["invalidate"] = config2.cache?.onMutate;
@@ -117804,13 +114198,10 @@ function drizzle2(...params) {
     return construct2(instance, params[1]);
   }
   if (isConfig2(params[0])) {
-<<<<<<< HEAD
     const { connection, client: client2, ...drizzleConfig } = params[0];
     if (client2) return construct2(client2, drizzleConfig);
-=======
     const { connection, client, ...drizzleConfig } = params[0];
     if (client) return construct2(client, drizzleConfig);
->>>>>>> origin/main
     const instance = typeof connection === "string" ? new esm_default2.Pool({
       connectionString: connection
     }) : new esm_default2.Pool(connection);
@@ -117828,7 +114219,6 @@ function drizzle2(...params) {
 // ../../lib/db/src/client.ts
 var { Pool: Pool5 } = esm_default2;
 function resolveDbConfig(url3) {
-<<<<<<< HEAD
   let sslmode = null;
   let connectionString = url3;
   try {
@@ -117844,7 +114234,6 @@ function resolveDbConfig(url3) {
       (_match, lead, trail) => trail === "&" ? lead : ""
     );
   }
-=======
   const match3 = url3.match(/[?&]sslmode=([^&]*)/i);
   const sslmode = match3 ? decodeURIComponent(match3[1]) : null;
   let connectionString = url3.replace(
@@ -117855,7 +114244,6 @@ function resolveDbConfig(url3) {
     }
   );
   connectionString = connectionString.replace(/\?$/, "").replace(/[?&]$/, "");
->>>>>>> origin/main
   const ssl = sslmode === "disable" ? false : { rejectUnauthorized: false };
   return { connectionString, ssl };
 }
@@ -117870,9 +114258,7 @@ function getPool() {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-<<<<<<< HEAD
   poolInstance = new Pool5({ connectionString, ssl });
-=======
   poolInstance = new Pool5({
     connectionString,
     ssl,
@@ -117883,16 +114269,12 @@ function getPool() {
     ),
     allowExitOnIdle: true
   });
->>>>>>> origin/main
   return poolInstance;
 }
 function getDb() {
   if (dbInstance) return dbInstance;
-<<<<<<< HEAD
   dbInstance = drizzle2(getPool(), { schema: schema_exports2 });
-=======
   dbInstance = drizzle2(getPool(), { schema: schema_exports });
->>>>>>> origin/main
   return dbInstance;
 }
 function proxyBind(target) {
@@ -117903,13 +114285,10 @@ function proxyBind(target) {
     }
   });
 }
-<<<<<<< HEAD
 var pool2 = proxyBind(getPool);
 var db2 = proxyBind(getDb);
-=======
 var pool = proxyBind(getPool);
 var db = proxyBind(getDb);
->>>>>>> origin/main
 
 // ../../lib/db/src/chat-messages.ts
 var CHAT_MESSAGE = "ChatMessage";
@@ -117982,8 +114361,6 @@ async function migrateSessionMessages(tx, userId, sessionId) {
   );
 }
 
-<<<<<<< HEAD
-=======
 // ../../node_modules/.pnpm/@clerk+shared@4.22.0_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/@clerk/shared/dist/_chunks/runtimeEnvironment-CTVGzENl.mjs
 var automatedEnvironmentVariables2 = [
   "CI",
@@ -126147,7 +122524,6 @@ function createClerkClient2(options) {
   };
 }
 
->>>>>>> origin/main
 // ../../lib/db/src/migrate-user-data.ts
 var EMAIL_JSON_PATHS = [
   ["assigned_user"],
@@ -126155,11 +122531,8 @@ var EMAIL_JSON_PATHS = [
   ["email"]
 ];
 function clerkClient2(secretKey) {
-<<<<<<< HEAD
   return createClerkClient({ secretKey });
-=======
   return createClerkClient2({ secretKey });
->>>>>>> origin/main
 }
 async function resolveClerkUserIdByEmail(secretKey, email3) {
   const clerk = clerkClient2(secretKey);
@@ -126190,11 +122563,8 @@ async function resolveClerkUserIdByEmail(secretKey, email3) {
 }
 async function findUserIdByEmailInDb(email3) {
   const normalized = email3.trim().toLowerCase();
-<<<<<<< HEAD
   const [fromAnima] = await db2.select({ userId: userEntities.userId }).from(userEntities).where(
-=======
   const [fromAnima] = await db.select({ userId: userEntities.userId }).from(userEntities).where(
->>>>>>> origin/main
     and2(
       eq2(userEntities.entityName, "Anima"),
       sql2`lower(${userEntities.data}->>'assigned_user') = ${normalized}`
@@ -126207,19 +122577,16 @@ async function findUserIdByEmailInDb(email3) {
     sql2`lower(${userEntities.data}->>'user_email') = ${normalized}`,
     sql2`lower(${userEntities.data}->>'email') = ${normalized}`
   );
-<<<<<<< HEAD
   const [fromEntity] = await db2.select({ userId: userEntities.userId }).from(userEntities).where(jsonMatch).limit(1);
   if (fromEntity?.userId) {
     return fromEntity.userId;
   }
   const [fromProfile] = await db2.select({ userId: userProfiles.userId }).from(userProfiles).where(
-=======
   const [fromEntity] = await db.select({ userId: userEntities.userId }).from(userEntities).where(jsonMatch).limit(1);
   if (fromEntity?.userId) {
     return fromEntity.userId;
   }
   const [fromProfile] = await db.select({ userId: userProfiles.userId }).from(userProfiles).where(
->>>>>>> origin/main
     or2(
       sql2`lower(${userProfiles.data}->>'email') = ${normalized}`,
       sql2`lower(${userProfiles.data}->>'email_address') = ${normalized}`
@@ -126274,11 +122641,8 @@ async function migrateUserData(options) {
     throw new Error("Source and target resolve to the same Clerk user id.");
   }
   const entityFilter = options.entityNames?.length ? options.entityNames : null;
-<<<<<<< HEAD
   const sourceRows = await db2.select().from(userEntities).where(
-=======
   const sourceRows = await db.select().from(userEntities).where(
->>>>>>> origin/main
     entityFilter ? and2(
       eq2(userEntities.userId, fromUserId),
       inArray2(userEntities.entityName, entityFilter)
@@ -126288,11 +122652,8 @@ async function migrateUserData(options) {
   let entitiesSkipped = 0;
   let emailFieldsPatched = 0;
   if (!dryRun) {
-<<<<<<< HEAD
     await db2.transaction(async (tx) => {
-=======
     await db.transaction(async (tx) => {
->>>>>>> origin/main
       const sourceMemoryCharacterIds = (await tx.select({ characterId: companionMemories.characterId }).from(companionMemories).where(eq2(companionMemories.userId, fromUserId))).map((row) => row.characterId);
       if (sourceMemoryCharacterIds.length > 0) {
         await tx.delete(companionMemories).where(
@@ -126329,30 +122690,24 @@ async function migrateUserData(options) {
   } else {
     entitiesCopied = sourceRows.length;
   }
-<<<<<<< HEAD
   const companionMemoriesUpdated = dryRun ? (await db2.select({ id: companionMemories.id }).from(companionMemories).where(eq2(companionMemories.userId, fromUserId))).length : (await db2.select({ id: companionMemories.id }).from(companionMemories).where(eq2(companionMemories.userId, toUserId))).length;
   const chatSessionsUpdated = dryRun ? (await db2.select({ id: chatSessions.id }).from(chatSessions).where(eq2(chatSessions.userId, fromUserId))).length : (await db2.select({ id: chatSessions.id }).from(chatSessions).where(eq2(chatSessions.userId, toUserId))).length;
   const chatMessagesUpdated = dryRun ? (await db2.select({ id: chatMessages.id }).from(chatMessages).where(eq2(chatMessages.userId, fromUserId))).length : (await db2.select({ id: chatMessages.id }).from(chatMessages).where(eq2(chatMessages.userId, toUserId))).length;
   const conversationsUpdated = dryRun ? (await db2.select({ id: conversations.id }).from(conversations).where(eq2(conversations.userId, fromUserId))).length : (await db2.select({ id: conversations.id }).from(conversations).where(eq2(conversations.userId, toUserId))).length;
   if (!dryRun) {
     const targetEntities = await db2.select().from(userEntities).where(eq2(userEntities.userId, toUserId));
-=======
   const companionMemoriesUpdated = dryRun ? (await db.select({ id: companionMemories.id }).from(companionMemories).where(eq2(companionMemories.userId, fromUserId))).length : (await db.select({ id: companionMemories.id }).from(companionMemories).where(eq2(companionMemories.userId, toUserId))).length;
   const chatSessionsUpdated = dryRun ? (await db.select({ id: chatSessions.id }).from(chatSessions).where(eq2(chatSessions.userId, fromUserId))).length : (await db.select({ id: chatSessions.id }).from(chatSessions).where(eq2(chatSessions.userId, toUserId))).length;
   const chatMessagesUpdated = dryRun ? (await db.select({ id: chatMessages.id }).from(chatMessages).where(eq2(chatMessages.userId, fromUserId))).length : (await db.select({ id: chatMessages.id }).from(chatMessages).where(eq2(chatMessages.userId, toUserId))).length;
   const conversationsUpdated = dryRun ? (await db.select({ id: conversations.id }).from(conversations).where(eq2(conversations.userId, fromUserId))).length : (await db.select({ id: conversations.id }).from(conversations).where(eq2(conversations.userId, toUserId))).length;
   if (!dryRun) {
     const targetEntities = await db.select().from(userEntities).where(eq2(userEntities.userId, toUserId));
->>>>>>> origin/main
     for (const row of targetEntities) {
       const raw = row.data;
       const { data, patched } = patchEmailFields(raw, fromEmail, toEmail);
       if (patched > 0) {
-<<<<<<< HEAD
         await db2.update(userEntities).set({ data, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(userEntities.id, row.id));
-=======
         await db.update(userEntities).set({ data, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(userEntities.id, row.id));
->>>>>>> origin/main
         emailFieldsPatched += patched;
       }
     }
@@ -126373,7 +122728,6 @@ async function migrateUserData(options) {
   };
 }
 
-<<<<<<< HEAD
 // src/lib/rateLimit.ts
 var windowMs = 6e4;
 var maxRequests = 30;
@@ -126458,7 +122812,6 @@ function isModelUnavailableError(err) {
   if (e2.status === 404) return true;
   return false;
 }
-=======
 // ../../lib/db/src/ensure-schema.ts
 var REQUIRED_TABLES = [
   "user_entities",
@@ -130884,7 +127237,6 @@ function databaseTargetHint(rawUrl = process.env.DATABASE_URL) {
     };
   }
 }
->>>>>>> origin/main
 
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/internal/qs/formats.mjs
 var default_format = "RFC3986";
@@ -131190,11 +127542,8 @@ function normalize_stringify_options(opts = defaults3) {
     strictNullHandling: typeof opts.strictNullHandling === "boolean" ? opts.strictNullHandling : defaults3.strictNullHandling
   };
 }
-<<<<<<< HEAD
 function stringify2(object2, opts = {}) {
-=======
 function stringify3(object2, opts = {}) {
->>>>>>> origin/main
   let obj = object2;
   const options = normalize_stringify_options(opts);
   let obj_keys;
@@ -131478,19 +127827,16 @@ function isPlainObject2(value) {
 var isPlainObject_default = isPlainObject2;
 
 // ../../node_modules/.pnpm/form-data-encoder@1.7.2/node_modules/form-data-encoder/lib/esm/util/normalizeValue.js
-<<<<<<< HEAD
 var normalizeValue = (value) => String(value).replace(/\r|\n/g, (match2, i2, str2) => {
   if (match2 === "\r" && str2[i2 + 1] !== "\n" || match2 === "\n" && str2[i2 - 1] !== "\r") {
     return "\r\n";
   }
   return match2;
-=======
 var normalizeValue = (value) => String(value).replace(/\r|\n/g, (match3, i2, str2) => {
   if (match3 === "\r" && str2[i2 + 1] !== "\n" || match3 === "\n" && str2[i2 - 1] !== "\r") {
     return "\r\n";
   }
   return match3;
->>>>>>> origin/main
 });
 var normalizeValue_default = normalizeValue;
 
@@ -131530,11 +127876,8 @@ var _FormDataEncoder_footer;
 var _FormDataEncoder_form;
 var _FormDataEncoder_options;
 var _FormDataEncoder_getFieldHeader;
-<<<<<<< HEAD
 var defaultOptions3 = {
-=======
 var defaultOptions5 = {
->>>>>>> origin/main
   enableAdditionalHeaders: false
 };
 var FormDataEncoder = class {
@@ -131567,11 +127910,8 @@ var FormDataEncoder = class {
       throw new TypeError("Expected options argument to be an object.");
     }
     __classPrivateFieldSet3(this, _FormDataEncoder_form, form, "f");
-<<<<<<< HEAD
     __classPrivateFieldSet3(this, _FormDataEncoder_options, { ...defaultOptions3, ...options }, "f");
-=======
     __classPrivateFieldSet3(this, _FormDataEncoder_options, { ...defaultOptions5, ...options }, "f");
->>>>>>> origin/main
     __classPrivateFieldSet3(this, _FormDataEncoder_CRLF_BYTES, __classPrivateFieldGet4(this, _FormDataEncoder_encoder, "f").encode(__classPrivateFieldGet4(this, _FormDataEncoder_CRLF, "f")), "f");
     __classPrivateFieldSet3(this, _FormDataEncoder_CRLF_BYTES_LENGTH, __classPrivateFieldGet4(this, _FormDataEncoder_CRLF_BYTES, "f").byteLength, "f");
     this.boundary = `form-data-boundary-${boundary}`;
@@ -132178,11 +128518,8 @@ var SSEDecoder = class {
     if (line3.startsWith(":")) {
       return null;
     }
-<<<<<<< HEAD
     let [fieldname, _3, value] = partition(line3, ":");
-=======
     let [fieldname, _4, value] = partition(line3, ":");
->>>>>>> origin/main
     if (value.startsWith(" ")) {
       value = value.substring(1);
     }
@@ -132619,11 +128956,8 @@ var APIClient = class {
     return url3.toString();
   }
   stringifyQuery(query) {
-<<<<<<< HEAD
     return Object.entries(query).filter(([_3, value]) => typeof value !== "undefined").map(([key, value]) => {
-=======
     return Object.entries(query).filter(([_4, value]) => typeof value !== "undefined").map(([key, value]) => {
->>>>>>> origin/main
       if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
         return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
       }
@@ -132690,11 +129024,8 @@ var APIClient = class {
       const maxRetries = options.maxRetries ?? this.maxRetries;
       timeoutMillis = this.calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries);
     }
-<<<<<<< HEAD
     await sleep2(timeoutMillis);
-=======
     await sleep3(timeoutMillis);
->>>>>>> origin/main
     return this.makeRequest(options, retriesRemaining - 1);
   }
   calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries) {
@@ -132710,15 +129041,12 @@ var APIClient = class {
   }
 };
 var AbstractPage = class {
-<<<<<<< HEAD
   constructor(client2, response, body, options) {
     _AbstractPage_client.set(this, void 0);
     __classPrivateFieldSet6(this, _AbstractPage_client, client2, "f");
-=======
   constructor(client, response, body, options) {
     _AbstractPage_client.set(this, void 0);
     __classPrivateFieldSet6(this, _AbstractPage_client, client, "f");
->>>>>>> origin/main
     this.options = options;
     this.response = response;
     this.body = body;
@@ -132764,13 +129092,10 @@ var AbstractPage = class {
   }
 };
 var PagePromise = class extends APIPromise {
-<<<<<<< HEAD
   constructor(client2, request, Page2) {
     super(request, async (props) => new Page2(client2, props.response, await defaultParseResponse(props), props.options));
-=======
   constructor(client, request, Page2) {
     super(request, async (props) => new Page2(client, props.response, await defaultParseResponse(props), props.options));
->>>>>>> origin/main
   }
   /**
    * Allow auto-paginating iteration on an unawaited list call, eg:
@@ -132881,19 +129206,16 @@ function getBrowserInfo() {
     { key: "safari", pattern: /(?:Version\W+(\d+)\.(\d+)(?:\.(\d+))?)?(?:\W+Mobile\S*)?\W+Safari/ }
   ];
   for (const { key, pattern } of browserPatterns) {
-<<<<<<< HEAD
     const match2 = pattern.exec(navigator.userAgent);
     if (match2) {
       const major = match2[1] || 0;
       const minor = match2[2] || 0;
       const patch = match2[3] || 0;
-=======
     const match3 = pattern.exec(navigator.userAgent);
     if (match3) {
       const major = match3[1] || 0;
       const minor = match3[2] || 0;
       const patch = match3[3] || 0;
->>>>>>> origin/main
       return { browser: key, version: `${major}.${minor}.${patch}` };
     }
   }
@@ -132947,11 +129269,8 @@ var startsWithSchemeRegexp = /^[a-z][a-z0-9+.-]*:/i;
 var isAbsoluteURL = (url3) => {
   return startsWithSchemeRegexp.test(url3);
 };
-<<<<<<< HEAD
 var sleep2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-=======
 var sleep3 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
->>>>>>> origin/main
 var validatePositiveInteger = (name, n2) => {
   if (typeof n2 !== "number" || !Number.isInteger(n2)) {
     throw new OpenAIError(`${name} must be an integer`);
@@ -133096,13 +129415,10 @@ function isObj(obj) {
 
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/pagination.mjs
 var Page = class extends AbstractPage {
-<<<<<<< HEAD
   constructor(client2, response, body, options) {
     super(client2, response, body, options);
-=======
   constructor(client, response, body, options) {
     super(client, response, body, options);
->>>>>>> origin/main
     this.data = body.data || [];
     this.object = body.object;
   }
@@ -133122,13 +129438,10 @@ var Page = class extends AbstractPage {
   }
 };
 var CursorPage = class extends AbstractPage {
-<<<<<<< HEAD
   constructor(client2, response, body, options) {
     super(client2, response, body, options);
-=======
   constructor(client, response, body, options) {
     super(client, response, body, options);
->>>>>>> origin/main
     this.data = body.data || [];
     this.has_more = body.has_more || false;
   }
@@ -133168,13 +129481,10 @@ var CursorPage = class extends AbstractPage {
 
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/resource.mjs
 var APIResource = class {
-<<<<<<< HEAD
   constructor(client2) {
     this._client = client2;
-=======
   constructor(client) {
     this._client = client;
->>>>>>> origin/main
   }
 };
 
@@ -134410,11 +130720,8 @@ var AbstractChatCompletionRunner = class extends EventStream {
       this._emit("totalUsage", __classPrivateFieldGet10(this, _AbstractChatCompletionRunner_instances, "m", _AbstractChatCompletionRunner_calculateTotalUsage).call(this));
     }
   }
-<<<<<<< HEAD
   async _createChatCompletion(client2, params, options) {
-=======
   async _createChatCompletion(client, params, options) {
->>>>>>> origin/main
     const signal = options?.signal;
     if (signal) {
       if (signal.aborted)
@@ -134422,7 +130729,6 @@ var AbstractChatCompletionRunner = class extends EventStream {
       signal.addEventListener("abort", () => this.controller.abort());
     }
     __classPrivateFieldGet10(this, _AbstractChatCompletionRunner_instances, "m", _AbstractChatCompletionRunner_validateParams).call(this, params);
-<<<<<<< HEAD
     const chatCompletion = await client2.chat.completions.create({ ...params, stream: false }, { ...options, signal: this.controller.signal });
     this._connected();
     return this._addChatCompletion(parseChatCompletion(chatCompletion, params));
@@ -134434,7 +130740,6 @@ var AbstractChatCompletionRunner = class extends EventStream {
     return await this._createChatCompletion(client2, params, options);
   }
   async _runFunctions(client2, params, options) {
-=======
     const chatCompletion = await client.chat.completions.create({ ...params, stream: false }, { ...options, signal: this.controller.signal });
     this._connected();
     return this._addChatCompletion(parseChatCompletion(chatCompletion, params));
@@ -134446,7 +130751,6 @@ var AbstractChatCompletionRunner = class extends EventStream {
     return await this._createChatCompletion(client, params, options);
   }
   async _runFunctions(client, params, options) {
->>>>>>> origin/main
     const role = "function";
     const { function_call = "auto", stream, ...restParams } = params;
     const singleFunctionToCall = typeof function_call !== "string" && function_call?.name;
@@ -134464,11 +130768,8 @@ var AbstractChatCompletionRunner = class extends EventStream {
       this._addMessage(message, false);
     }
     for (let i2 = 0; i2 < maxChatCompletions; ++i2) {
-<<<<<<< HEAD
       const chatCompletion = await this._createChatCompletion(client2, {
-=======
       const chatCompletion = await this._createChatCompletion(client, {
->>>>>>> origin/main
         ...restParams,
         function_call,
         functions,
@@ -134509,11 +130810,8 @@ var AbstractChatCompletionRunner = class extends EventStream {
         return;
     }
   }
-<<<<<<< HEAD
   async _runTools(client2, params, options) {
-=======
   async _runTools(client, params, options) {
->>>>>>> origin/main
     const role = "tool";
     const { tool_choice = "auto", stream, ...restParams } = params;
     const singleFunctionToCall = typeof tool_choice !== "string" && tool_choice?.function?.name;
@@ -134556,11 +130854,8 @@ var AbstractChatCompletionRunner = class extends EventStream {
       this._addMessage(message, false);
     }
     for (let i2 = 0; i2 < maxChatCompletions; ++i2) {
-<<<<<<< HEAD
       const chatCompletion = await this._createChatCompletion(client2, {
-=======
       const chatCompletion = await this._createChatCompletion(client, {
->>>>>>> origin/main
         ...restParams,
         tool_choice,
         tools,
@@ -134674,37 +130969,28 @@ _AbstractChatCompletionRunner_instances = /* @__PURE__ */ new WeakSet(), _Abstra
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/lib/ChatCompletionRunner.mjs
 var ChatCompletionRunner = class _ChatCompletionRunner extends AbstractChatCompletionRunner {
   /** @deprecated - please use `runTools` instead. */
-<<<<<<< HEAD
   static runFunctions(client2, params, options) {
-=======
   static runFunctions(client, params, options) {
->>>>>>> origin/main
     const runner = new _ChatCompletionRunner();
     const opts = {
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runFunctions" }
     };
-<<<<<<< HEAD
     runner._run(() => runner._runFunctions(client2, params, opts));
     return runner;
   }
   static runTools(client2, params, options) {
-=======
     runner._run(() => runner._runFunctions(client, params, opts));
     return runner;
   }
   static runTools(client, params, options) {
->>>>>>> origin/main
     const runner = new _ChatCompletionRunner();
     const opts = {
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runTools" }
     };
-<<<<<<< HEAD
     runner._run(() => runner._runTools(client2, params, opts));
-=======
     runner._run(() => runner._runTools(client, params, opts));
->>>>>>> origin/main
     return runner;
   }
   _addMessage(message, emit = true) {
@@ -134976,21 +131262,18 @@ var ChatCompletionStream = class _ChatCompletionStream extends AbstractChatCompl
     runner._run(() => runner._fromReadableStream(stream));
     return runner;
   }
-<<<<<<< HEAD
   static createChatCompletion(client2, params, options) {
     const runner = new _ChatCompletionStream(params);
     runner._run(() => runner._runChatCompletion(client2, { ...params, stream: true }, { ...options, headers: { ...options?.headers, "X-Stainless-Helper-Method": "stream" } }));
     return runner;
   }
   async _createChatCompletion(client2, params, options) {
-=======
   static createChatCompletion(client, params, options) {
     const runner = new _ChatCompletionStream(params);
     runner._run(() => runner._runChatCompletion(client, { ...params, stream: true }, { ...options, headers: { ...options?.headers, "X-Stainless-Helper-Method": "stream" } }));
     return runner;
   }
   async _createChatCompletion(client, params, options) {
->>>>>>> origin/main
     super._createChatCompletion;
     const signal = options?.signal;
     if (signal) {
@@ -134999,11 +131282,8 @@ var ChatCompletionStream = class _ChatCompletionStream extends AbstractChatCompl
       signal.addEventListener("abort", () => this.controller.abort());
     }
     __classPrivateFieldGet11(this, _ChatCompletionStream_instances, "m", _ChatCompletionStream_beginRequest).call(this);
-<<<<<<< HEAD
     const stream = await client2.chat.completions.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
-=======
     const stream = await client.chat.completions.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
->>>>>>> origin/main
     this._connected();
     for await (const chunk of stream) {
       __classPrivateFieldGet11(this, _ChatCompletionStream_instances, "m", _ChatCompletionStream_addChunk).call(this, chunk);
@@ -135439,27 +131719,21 @@ var ChatCompletionStreamingRunner = class _ChatCompletionStreamingRunner extends
     return runner;
   }
   /** @deprecated - please use `runTools` instead. */
-<<<<<<< HEAD
   static runFunctions(client2, params, options) {
-=======
   static runFunctions(client, params, options) {
->>>>>>> origin/main
     const runner = new _ChatCompletionStreamingRunner(null);
     const opts = {
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runFunctions" }
     };
-<<<<<<< HEAD
     runner._run(() => runner._runFunctions(client2, params, opts));
     return runner;
   }
   static runTools(client2, params, options) {
-=======
     runner._run(() => runner._runFunctions(client, params, opts));
     return runner;
   }
   static runTools(client, params, options) {
->>>>>>> origin/main
     const runner = new _ChatCompletionStreamingRunner(
       // @ts-expect-error TODO these types are incompatible
       params
@@ -135468,11 +131742,8 @@ var ChatCompletionStreamingRunner = class _ChatCompletionStreamingRunner extends
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "runTools" }
     };
-<<<<<<< HEAD
     runner._run(() => runner._runTools(client2, params, opts));
-=======
     runner._run(() => runner._runTools(client, params, opts));
->>>>>>> origin/main
     return runner;
   }
 };
@@ -135782,11 +132053,8 @@ var Runs = class extends APIResource {
               }
             }
           }
-<<<<<<< HEAD
           await sleep2(sleepInterval);
-=======
           await sleep3(sleepInterval);
->>>>>>> origin/main
           break;
         //We return the run in any terminal state.
         case "requires_action":
@@ -136265,11 +132533,8 @@ var Files2 = class extends APIResource {
     const start = Date.now();
     let file2 = await this.retrieve(id);
     while (!file2.status || !TERMINAL_STATES.has(file2.status)) {
-<<<<<<< HEAD
       await sleep2(pollInterval);
-=======
       await sleep3(pollInterval);
->>>>>>> origin/main
       file2 = await this.retrieve(id);
       if (Date.now() - start > maxWait) {
         throw new APIConnectionTimeoutError({
@@ -136802,25 +133067,19 @@ var ResponseStream = class _ResponseStream extends EventStream {
     _ResponseStream_finalResponse.set(this, void 0);
     __classPrivateFieldSet10(this, _ResponseStream_params, params, "f");
   }
-<<<<<<< HEAD
   static createResponse(client2, params, options) {
     const runner = new _ResponseStream(params);
     runner._run(() => runner._createOrRetrieveResponse(client2, params, {
-=======
   static createResponse(client, params, options) {
     const runner = new _ResponseStream(params);
     runner._run(() => runner._createOrRetrieveResponse(client, params, {
->>>>>>> origin/main
       ...options,
       headers: { ...options?.headers, "X-Stainless-Helper-Method": "stream" }
     }));
     return runner;
   }
-<<<<<<< HEAD
   async _createOrRetrieveResponse(client2, params, options) {
-=======
   async _createOrRetrieveResponse(client, params, options) {
->>>>>>> origin/main
     const signal = options?.signal;
     if (signal) {
       if (signal.aborted)
@@ -136831,17 +133090,14 @@ var ResponseStream = class _ResponseStream extends EventStream {
     let stream;
     let starting_after = null;
     if ("response_id" in params) {
-<<<<<<< HEAD
       stream = await client2.responses.retrieve(params.response_id, { stream: true }, { ...options, signal: this.controller.signal, stream: true });
       starting_after = params.starting_after ?? null;
     } else {
       stream = await client2.responses.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
-=======
       stream = await client.responses.retrieve(params.response_id, { stream: true }, { ...options, signal: this.controller.signal, stream: true });
       starting_after = params.starting_after ?? null;
     } else {
       stream = await client.responses.create({ ...params, stream: true }, { ...options, signal: this.controller.signal });
->>>>>>> origin/main
     }
     this._connected();
     for await (const event of stream) {
@@ -137297,11 +133553,8 @@ var Files3 = class extends APIResource {
               }
             }
           }
-<<<<<<< HEAD
           await sleep2(sleepInterval);
-=======
           await sleep3(sleepInterval);
->>>>>>> origin/main
           break;
         case "failed":
         case "completed":
@@ -137414,11 +133667,8 @@ var FileBatches = class extends APIResource {
               }
             }
           }
-<<<<<<< HEAD
           await sleep2(sleepInterval);
-=======
           await sleep3(sleepInterval);
->>>>>>> origin/main
           break;
         case "failed":
         case "cancelled":
@@ -137438,20 +133688,14 @@ var FileBatches = class extends APIResource {
     }
     const configuredConcurrency = options?.maxConcurrency ?? 5;
     const concurrencyLimit = Math.min(configuredConcurrency, files.length);
-<<<<<<< HEAD
     const client2 = this._client;
-=======
     const client = this._client;
->>>>>>> origin/main
     const fileIterator = files.values();
     const allFileIds = [...fileIds];
     async function processFiles(iterator) {
       for (let item of iterator) {
-<<<<<<< HEAD
         const fileObj = await client2.files.create({ file: item, purpose: "assistants" }, options);
-=======
         const fileObj = await client.files.create({ file: item, purpose: "assistants" }, options);
->>>>>>> origin/main
         allFileIds.push(fileObj.id);
       }
     }
@@ -137618,11 +133862,8 @@ var OpenAI = class extends APIClient {
     return { Authorization: `Bearer ${this.apiKey}` };
   }
   stringifyQuery(query) {
-<<<<<<< HEAD
     return stringify2(query, { arrayFormat: "brackets" });
-=======
     return stringify3(query, { arrayFormat: "brackets" });
->>>>>>> origin/main
   }
 };
 _a = OpenAI;
@@ -137671,7 +133912,6 @@ OpenAI.ContainerListResponsesPage = ContainerListResponsesPage;
 var openai_default = OpenAI;
 
 // src/lib/openaiClient.ts
-<<<<<<< HEAD
 var client = null;
 var clientKey = null;
 function getOpenAIClient() {
@@ -137689,7 +133929,6 @@ function getOpenAIClient() {
 // src/routes/openai/index.ts
 var router3 = (0, import_express3.Router)();
 router3.use(rateLimit);
-=======
 var openaiClient = null;
 var openaiClientKey = null;
 var xaiClient = null;
@@ -139018,18 +135257,14 @@ var rateLimit = createRateLimit();
 // src/routes/openai/index.ts
 var router3 = (0, import_express5.Router)();
 router3.use(createRateLimit({ name: "openai-chat", max: 60 }));
->>>>>>> origin/main
 router3.get("/conversations", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-<<<<<<< HEAD
   const rows = await db2.select().from(conversations).where(eq(conversations.userId, userId)).orderBy(conversations.createdAt);
-=======
   const rows = await db.select().from(conversations).where(eq(conversations.userId, userId)).orderBy(conversations.createdAt);
->>>>>>> origin/main
   res.json(rows);
 });
 router3.post("/conversations", async (req, res) => {
@@ -139039,11 +135274,8 @@ router3.post("/conversations", async (req, res) => {
     return;
   }
   const { title } = req.body;
-<<<<<<< HEAD
   const [row] = await db2.insert(conversations).values({ userId, title: title || "New conversation" }).returning();
-=======
   const [row] = await db.insert(conversations).values({ userId, title: title || "New conversation" }).returning();
->>>>>>> origin/main
   res.status(201).json(row);
 });
 router3.get("/conversations/:id", async (req, res) => {
@@ -139053,20 +135285,14 @@ router3.get("/conversations/:id", async (req, res) => {
     return;
   }
   const id = Number(req.params.id);
-<<<<<<< HEAD
   const [conv] = await db2.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
-=======
   const [conv] = await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
->>>>>>> origin/main
   if (!conv) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-<<<<<<< HEAD
   const msgs = await db2.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
-=======
   const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
->>>>>>> origin/main
   res.json({ ...conv, messages: msgs });
 });
 router3.delete("/conversations/:id", async (req, res) => {
@@ -139076,22 +135302,16 @@ router3.delete("/conversations/:id", async (req, res) => {
     return;
   }
   const id = Number(req.params.id);
-<<<<<<< HEAD
   const [conv] = await db2.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
-=======
   const [conv] = await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
->>>>>>> origin/main
   if (!conv) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-<<<<<<< HEAD
   await db2.delete(messages).where(eq(messages.conversationId, id));
   await db2.delete(conversations).where(eq(conversations.id, id));
-=======
   await db.delete(messages).where(eq(messages.conversationId, id));
   await db.delete(conversations).where(eq(conversations.id, id));
->>>>>>> origin/main
   res.status(204).send();
 });
 router3.get("/conversations/:id/messages", async (req, res) => {
@@ -139101,20 +135321,14 @@ router3.get("/conversations/:id/messages", async (req, res) => {
     return;
   }
   const id = Number(req.params.id);
-<<<<<<< HEAD
   const [conv] = await db2.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
-=======
   const [conv] = await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
->>>>>>> origin/main
   if (!conv) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-<<<<<<< HEAD
   const msgs = await db2.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
-=======
   const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
->>>>>>> origin/main
   res.json(msgs);
 });
 router3.post("/conversations/:id/messages", async (req, res) => {
@@ -139125,22 +135339,16 @@ router3.post("/conversations/:id/messages", async (req, res) => {
   }
   const id = Number(req.params.id);
   const { content, systemPrompt, deepMode } = req.body;
-<<<<<<< HEAD
   const [conv] = await db2.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
-=======
   const [conv] = await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
->>>>>>> origin/main
   if (!conv) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-<<<<<<< HEAD
   await db2.insert(messages).values({ conversationId: id, role: "user", content });
   const history = await db2.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
-=======
   await db.insert(messages).values({ conversationId: id, role: "user", content });
   const history = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
->>>>>>> origin/main
   const chatMessages2 = [];
   if (systemPrompt) chatMessages2.push({ role: "system", content: systemPrompt });
   chatMessages2.push(
@@ -139155,7 +135363,6 @@ router3.post("/conversations/:id/messages", async (req, res) => {
   let fullResponse = "";
   try {
     const routed = routeModel(content, { deepMode, conversationDepth: history.length });
-<<<<<<< HEAD
     const standard = resolveModel("standard");
     let usedModel = routed.model;
     let usedTier = routed.tier;
@@ -139182,7 +135389,6 @@ router3.post("/conversations/:id/messages", async (req, res) => {
       }
     }
     for await (const chunk of stream) {
-=======
     const completion = await createChatStreamWithFailover({
       tier: routed.tier,
       model: routed.model,
@@ -139190,7 +135396,6 @@ router3.post("/conversations/:id/messages", async (req, res) => {
       messages: chatMessages2
     });
     for await (const chunk of completion.stream) {
->>>>>>> origin/main
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
@@ -139199,12 +135404,10 @@ router3.post("/conversations/:id/messages", async (req, res) => {
 `);
       }
     }
-<<<<<<< HEAD
     await db2.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
     res.write(`data: ${JSON.stringify({ done: true, model: usedModel, tier: usedTier })}
 
 `);
-=======
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
     res.write(
       `data: ${JSON.stringify({
@@ -139217,7 +135420,6 @@ router3.post("/conversations/:id/messages", async (req, res) => {
 
 `
     );
->>>>>>> origin/main
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.write(`data: ${JSON.stringify({ error: msg })}
@@ -139229,11 +135431,8 @@ router3.post("/conversations/:id/messages", async (req, res) => {
 var openai_default2 = router3;
 
 // src/routes/openai/functions.ts
-<<<<<<< HEAD
 var import_express5 = __toESM(require_express2(), 1);
-=======
 var import_express7 = __toESM(require_express2(), 1);
->>>>>>> origin/main
 
 // src/lib/storeEvents.ts
 var clients = /* @__PURE__ */ new Map();
@@ -139265,13 +135464,10 @@ function notifyUser(userId) {
 }
 
 // src/routes/openai/functions.ts
-<<<<<<< HEAD
 var router4 = (0, import_express5.Router)();
 router4.use(rateLimit);
-=======
 var router4 = (0, import_express7.Router)();
 router4.use(createRateLimit({ name: "openai-functions", max: 180 }));
->>>>>>> origin/main
 router4.use((req, res, next) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -139281,26 +135477,20 @@ router4.use((req, res, next) => {
   next();
 });
 async function llm(systemPrompt, userPrompt, maxTokens = 1024) {
-<<<<<<< HEAD
   const resp = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     max_tokens: maxTokens,
-=======
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
     maxTokens,
->>>>>>> origin/main
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt }
     ]
   });
-<<<<<<< HEAD
   return resp.choices[0]?.message?.content ?? "";
-=======
   return result.content;
->>>>>>> origin/main
 }
 async function webSearchLLM(systemPrompt, userPrompt) {
   try {
@@ -139407,16 +135597,13 @@ async function analyzeTextContext(text3) {
   return parseContextAnalysis(raw);
 }
 async function analyzeImageContext(dataUrl) {
-<<<<<<< HEAD
   const resp = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     max_tokens: 1500,
-=======
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
     maxTokens: 1500,
->>>>>>> origin/main
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },
       {
@@ -139431,11 +135618,8 @@ async function analyzeImageContext(dataUrl) {
       }
     ]
   });
-<<<<<<< HEAD
   return parseContextAnalysis(resp.choices[0]?.message?.content ?? "");
-=======
   return parseContextAnalysis(result.content);
->>>>>>> origin/main
 }
 async function persistContextAnalysis(userId, entityId, analysis) {
   const where = and(
@@ -139443,29 +135627,23 @@ async function persistContextAnalysis(userId, entityId, analysis) {
     eq(userEntities.entityName, "UserContext"),
     eq(userEntities.entityId, entityId)
   );
-<<<<<<< HEAD
   const [row] = await db2.select().from(userEntities).where(where).limit(1);
   if (!row) return false;
   const existing = row.data ?? {};
   const merged = { ...existing, ...analysis, processing_complete: true };
   await db2.update(userEntities).set({ data: merged, updatedAt: /* @__PURE__ */ new Date() }).where(where);
-=======
   const [row] = await db.select().from(userEntities).where(where).limit(1);
   if (!row) return false;
   const existing = row.data ?? {};
   const merged = { ...existing, ...analysis, processing_complete: true };
   await db.update(userEntities).set({ data: merged, updatedAt: /* @__PURE__ */ new Date() }).where(where);
->>>>>>> origin/main
   notifyUser(userId);
   return true;
 }
 var CHARACTER_MEMORY = "CharacterMemory";
 async function loadCharacterMemories(userId, characterId) {
-<<<<<<< HEAD
   const rows = await db2.select().from(userEntities).where(
-=======
   const rows = await db.select().from(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, CHARACTER_MEMORY)
@@ -139480,11 +135658,8 @@ function normalizeFact(fact) {
 }
 async function extractCharacterMemories(userMessage, aiResponse, existing) {
   if (!userMessage.trim() && !aiResponse.trim()) return [];
-<<<<<<< HEAD
   const clip = (s3) => s3.length > 4e3 ? s3.slice(0, 4e3) : s3;
-=======
   const clip = (s4) => s4.length > 4e3 ? s4.slice(0, 4e3) : s4;
->>>>>>> origin/main
   const existingList = existing.length > 0 ? existing.slice(0, 40).map((m2) => `- ${m2.fact}`).join("\n") : "(none yet)";
   const raw = await llm(
     `You maintain a long-term memory log that an AI character keeps about the specific person they are talking to. From the latest exchange, extract durable facts genuinely worth remembering across future conversations: the person's preferences, personal details, important life events, promises made, relationship milestones, or strong lasting emotions. Ignore small talk, transient mood, and anything already listed in the existing memories. Return 0 to 3 items as a JSON array; each item is { "category": string, "fact": string }. category is one short lowercase tag like preference, personal, relationship, event, or emotion. fact is one concise sentence. If nothing is worth remembering, return []. Output ONLY the JSON array.`,
@@ -139555,11 +135730,8 @@ async function saveCharacterMemories(userId, characterId, data) {
     });
   }
   if (rows.length > 0) {
-<<<<<<< HEAD
     await db2.insert(userEntities).values(rows);
-=======
     await db.insert(userEntities).values(rows);
->>>>>>> origin/main
     notifyUser(userId);
   }
   const memories = await loadCharacterMemories(userId, characterId);
@@ -140050,11 +136222,8 @@ Rules:
       }
       case "buildUserContextPrompt": {
         const { userId } = getAuth(req);
-<<<<<<< HEAD
         const rows = await db2.select().from(userEntities).where(
-=======
         const rows = await db.select().from(userEntities).where(
->>>>>>> origin/main
           and(
             eq(userEntities.userId, userId),
             eq(userEntities.entityName, "UserContext")
@@ -140104,12 +136273,10 @@ function mapImageEditError(err) {
       error: "The image service is busy right now."
     };
   }
-<<<<<<< HEAD
   return {
     status: upstreamStatus ?? 500,
     code: "server_error",
     error: rawMessage
-=======
   if (upstreamStatus === 401 || rawCode === "invalid_api_key" || haystack.includes("incorrect api key") || haystack.includes("invalid api key") || haystack.includes("api key provided")) {
     return {
       status: 503,
@@ -140122,7 +136289,6 @@ function mapImageEditError(err) {
     status: upstreamStatus ?? 500,
     code: "server_error",
     error: safeMessage
->>>>>>> origin/main
   };
 }
 router4.post("/image-edit", async (req, res) => {
@@ -140140,7 +136306,6 @@ router4.post("/image-edit", async (req, res) => {
     res.status(400).json({ error: "An edit prompt is required." });
     return;
   }
-<<<<<<< HEAD
   const match2 = image.match(/^data:(.+?);base64,(.*)$/);
   if (!match2) {
     res.status(400).json({ error: "Malformed image data." });
@@ -140148,7 +136313,6 @@ router4.post("/image-edit", async (req, res) => {
   }
   const mime3 = match2[1];
   const buffer = Buffer.from(match2[2], "base64");
-=======
   const match3 = image.match(/^data:(.+?);base64,(.*)$/);
   if (!match3) {
     res.status(400).json({ error: "Malformed image data." });
@@ -140156,7 +136320,6 @@ router4.post("/image-edit", async (req, res) => {
   }
   const mime3 = match3[1];
   const buffer = Buffer.from(match3[2], "base64");
->>>>>>> origin/main
   if (buffer.length > 20 * 1024 * 1024) {
     res.status(413).json({ error: "Image is too large." });
     return;
@@ -140181,13 +136344,11 @@ router4.post("/image-edit", async (req, res) => {
     res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
-<<<<<<< HEAD
 var functions_default = router4;
 
 // src/routes/elevenlabs.ts
 var import_express7 = __toESM(require_express2(), 1);
 var router5 = (0, import_express7.Router)();
-=======
 router4.post("/image-generate", async (req, res) => {
   const { prompt } = req.body;
   if (typeof prompt !== "string" || !prompt.trim()) {
@@ -140216,7 +136377,6 @@ var functions_default = router4;
 // src/routes/elevenlabs.ts
 var import_express9 = __toESM(require_express2(), 1);
 var router5 = (0, import_express9.Router)();
->>>>>>> origin/main
 router5.use(["/tts", "/voices"], rateLimit);
 var DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 var EMOTION_TUNE = {
@@ -140326,13 +136486,10 @@ router5.post("/tts", async (req, res) => {
 var elevenlabs_default = router5;
 
 // src/routes/characterImage.ts
-<<<<<<< HEAD
 var import_express8 = __toESM(require_express2(), 1);
 var router6 = (0, import_express8.Router)();
-=======
 var import_express10 = __toESM(require_express2(), 1);
 var router6 = (0, import_express10.Router)();
->>>>>>> origin/main
 router6.use("/character-image", rateLimit);
 var WIKI_HEADERS = { "User-Agent": "AnimaProtocol/1.0 (character portrait lookup)" };
 async function wikiSearchTitle(query) {
@@ -140391,23 +136548,17 @@ router6.get("/character-image", async (req, res) => {
 var characterImage_default = router6;
 
 // src/routes/store.ts
-<<<<<<< HEAD
 var import_express9 = __toESM(require_express2(), 1);
 var router7 = (0, import_express9.Router)();
-=======
 var import_express11 = __toESM(require_express2(), 1);
 var router7 = (0, import_express11.Router)();
->>>>>>> origin/main
 function requireUser(req, res, next) {
   let userId = null;
   try {
     userId = getAuth(req).userId;
   } catch (err) {
-<<<<<<< HEAD
     logger2.warn({ err }, "Clerk getAuth failed in store requireUser");
-=======
     logger.warn({ err }, "Clerk getAuth failed in store requireUser");
->>>>>>> origin/main
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -140419,8 +136570,6 @@ function requireUser(req, res, next) {
   next();
 }
 router7.use(requireUser);
-<<<<<<< HEAD
-=======
 async function ensureSchemaMiddleware(_req, _res, next) {
   try {
     const result = await ensureSchemaOnce();
@@ -140445,7 +136594,6 @@ async function ensureSchemaMiddleware(_req, _res, next) {
   }
 }
 router7.use(ensureSchemaMiddleware);
->>>>>>> origin/main
 function getUserId(req) {
   return req.userId;
 }
@@ -140543,11 +136691,8 @@ function withinOffset(offset) {
 }
 async function sortFieldIsMixed(whereClause, field) {
   const key = fieldKey(field);
-<<<<<<< HEAD
   const [row] = await db2.select({
-=======
   const [row] = await db.select({
->>>>>>> origin/main
     hasNumber: sql`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) = 'number')`,
     hasOther: sql`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) in ('string', 'boolean', 'object', 'array'))`
   }).from(userEntities).where(whereClause);
@@ -140574,11 +136719,8 @@ function buildWhereClause(userId, entityName, filters, search) {
 }
 async function countEntities(userId, entityName, filters, search) {
   const whereClause = buildWhereClause(userId, entityName, filters, search);
-<<<<<<< HEAD
   const [row] = await db2.select({ count: sql`count(*)::int` }).from(userEntities).where(whereClause);
-=======
   const [row] = await db.select({ count: sql`count(*)::int` }).from(userEntities).where(whereClause);
->>>>>>> origin/main
   return row?.count ?? 0;
 }
 async function listEntities(userId, entityName, filters, sort, limit2, offset, search) {
@@ -140588,22 +136730,16 @@ async function listEntities(userId, entityName, filters, sort, limit2, offset, s
   if (typeof sort === "string" && sort) {
     const { field, desc: desc3 } = parseSort(sort);
     if (await sortFieldIsMixed(whereClause, field)) {
-<<<<<<< HEAD
       const mixedRows = await db2.select().from(userEntities).where(whereClause);
-=======
       const mixedRows = await db.select().from(userEntities).where(whereClause);
->>>>>>> origin/main
       const data = mixedRows.map((r2) => r2.data);
       data.sort(compareByField(field, desc3));
       const end = cap === void 0 ? void 0 : off + cap;
       return off > 0 || end !== void 0 ? data.slice(off, end) : data;
     }
   }
-<<<<<<< HEAD
   let q2 = db2.select().from(userEntities).where(whereClause).$dynamic();
-=======
   let q2 = db.select().from(userEntities).where(whereClause).$dynamic();
->>>>>>> origin/main
   if (typeof sort === "string" && sort) {
     q2 = q2.orderBy(...orderByParts(sort));
   }
@@ -140617,11 +136753,8 @@ async function listEntities(userId, entityName, filters, sort, limit2, offset, s
   return rows.map((r2) => r2.data);
 }
 async function upsertEntity(userId, entityName, entityId, data) {
-<<<<<<< HEAD
   await db2.insert(userEntities).values({ userId, entityName, entityId, data: stripUndefined(data) }).onConflictDoUpdate({
-=======
   await db.insert(userEntities).values({ userId, entityName, entityId, data: stripUndefined(data) }).onConflictDoUpdate({
->>>>>>> origin/main
     target: [
       userEntities.userId,
       userEntities.entityName,
@@ -140640,11 +136773,8 @@ function stripUndefined(data) {
 router7.post("/import", async (req, res) => {
   const userId = getUserId(req);
   const body = req.body;
-<<<<<<< HEAD
   const existing = await db2.select({ id: userEntities.id }).from(userEntities).where(eq(userEntities.userId, userId)).limit(1);
-=======
   const existing = await db.select({ id: userEntities.id }).from(userEntities).where(eq(userEntities.userId, userId)).limit(1);
->>>>>>> origin/main
   if (existing.length > 0) {
     res.json({ imported: false, reason: "account_not_empty" });
     return;
@@ -140664,20 +136794,14 @@ router7.post("/import", async (req, res) => {
     }
   }
   if (body.profile && typeof body.profile === "object") {
-<<<<<<< HEAD
     const [existingProfile] = await db2.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-=======
     const [existingProfile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
->>>>>>> origin/main
     const merged = {
       ...body.profile,
       ...existingProfile?.data ?? {}
     };
-<<<<<<< HEAD
     await db2.insert(userProfiles).values({ userId, data: merged }).onConflictDoUpdate({
-=======
     await db.insert(userProfiles).values({ userId, data: merged }).onConflictDoUpdate({
->>>>>>> origin/main
       target: userProfiles.userId,
       set: { data: merged, updatedAt: /* @__PURE__ */ new Date() }
     });
@@ -140693,11 +136817,8 @@ router7.post("/restore", async (req, res) => {
     res.status(400).json({ error: "Invalid backup: missing entities" });
     return;
   }
-<<<<<<< HEAD
   const result = await db2.transaction(async (tx) => {
-=======
   const result = await db.transaction(async (tx) => {
->>>>>>> origin/main
     if (mode === "replace") {
       await tx.delete(userEntities).where(eq(userEntities.userId, userId));
     }
@@ -140780,22 +136901,16 @@ router7.post("/restore", async (req, res) => {
 });
 router7.get("/export", async (req, res) => {
   const userId = getUserId(req);
-<<<<<<< HEAD
   const rows = await db2.select().from(userEntities).where(eq(userEntities.userId, userId));
-=======
   const rows = await db.select().from(userEntities).where(eq(userEntities.userId, userId));
->>>>>>> origin/main
   const entities = {};
   for (const row of rows) {
     const name = row.entityName;
     if (!entities[name]) entities[name] = [];
     entities[name].push(row.data);
   }
-<<<<<<< HEAD
   const [profileRow] = await db2.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-=======
   const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
->>>>>>> origin/main
   res.json({
     version: 1,
     exported_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -140805,19 +136920,16 @@ router7.get("/export", async (req, res) => {
 });
 router7.get("/revision", async (req, res) => {
   const userId = getUserId(req);
-<<<<<<< HEAD
   const [agg] = await db2.select({
     count: sql`count(*)::int`,
     maxEpoch: sql`coalesce(extract(epoch from max(${userEntities.updatedAt}))::text, '0')`
   }).from(userEntities).where(eq(userEntities.userId, userId));
   const [profile] = await db2.select({
-=======
   const [agg] = await db.select({
     count: sql`count(*)::int`,
     maxEpoch: sql`coalesce(extract(epoch from max(${userEntities.updatedAt}))::text, '0')`
   }).from(userEntities).where(eq(userEntities.userId, userId));
   const [profile] = await db.select({
->>>>>>> origin/main
     epoch: sql`coalesce(extract(epoch from ${userProfiles.updatedAt})::text, '0')`
   }).from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
   const count = agg?.count ?? 0;
@@ -140827,21 +136939,15 @@ router7.get("/revision", async (req, res) => {
 });
 router7.get("/profile", async (req, res) => {
   const userId = getUserId(req);
-<<<<<<< HEAD
   const [row] = await db2.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-=======
   const [row] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
->>>>>>> origin/main
   res.json(row ? row.data : null);
 });
 router7.put("/profile", async (req, res) => {
   const userId = getUserId(req);
   const data = req.body ?? {};
-<<<<<<< HEAD
   const [row] = await db2.insert(userProfiles).values({ userId, data }).onConflictDoUpdate({
-=======
   const [row] = await db.insert(userProfiles).values({ userId, data }).onConflictDoUpdate({
->>>>>>> origin/main
     target: userProfiles.userId,
     set: { data, updatedAt: /* @__PURE__ */ new Date() }
   }).returning();
@@ -140853,11 +136959,8 @@ function normalizeIdList(value) {
 }
 router7.get("/profile/ongoing-sessions", async (req, res) => {
   const userId = getUserId(req);
-<<<<<<< HEAD
   const [row] = await db2.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-=======
   const [row] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
->>>>>>> origin/main
   const data = row?.data ?? {};
   const ids = normalizeIdList(data.ongoing_sessions);
   res.json({ ongoing_sessions: ids });
@@ -140866,11 +136969,8 @@ router7.put("/profile/ongoing-sessions", async (req, res) => {
   const userId = getUserId(req);
   const body = req.body ?? {};
   const now = /* @__PURE__ */ new Date();
-<<<<<<< HEAD
   const [existingRow] = await db2.select({ data: userProfiles.data }).from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-=======
   const [existingRow] = await db.select({ data: userProfiles.data }).from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
->>>>>>> origin/main
   const existingData = (existingRow?.data ?? {}) || {};
   const current = normalizeIdList(existingData.ongoing_sessions);
   let next = current;
@@ -140888,11 +136988,8 @@ router7.put("/profile/ongoing-sessions", async (req, res) => {
     ...existingData,
     ongoing_sessions: next
   };
-<<<<<<< HEAD
   await db2.insert(userProfiles).values({ userId, data: merged }).onConflictDoUpdate({
-=======
   await db.insert(userProfiles).values({ userId, data: merged }).onConflictDoUpdate({
->>>>>>> origin/main
     target: userProfiles.userId,
     set: { data: merged, updatedAt: now }
   });
@@ -140909,17 +137006,14 @@ async function readMessages(userId, sessionId, limit2, beforeSeq) {
   }
   const cap = withinLimit(limit2);
   if (cap === void 0) {
-<<<<<<< HEAD
     const rows2 = await db2.select().from(userEntities).where(and(...conds)).orderBy(sql`(${userEntities.data} ->> 'seq')::numeric asc`);
     return rows2.map((r2) => r2.data);
   }
   const rows = await db2.select().from(userEntities).where(and(...conds)).orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`).limit(cap);
-=======
     const rows2 = await db.select().from(userEntities).where(and(...conds)).orderBy(sql`(${userEntities.data} ->> 'seq')::numeric asc`);
     return rows2.map((r2) => r2.data);
   }
   const rows = await db.select().from(userEntities).where(and(...conds)).orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`).limit(cap);
->>>>>>> origin/main
   return rows.map((r2) => r2.data).reverse();
 }
 router7.get("/messages", async (req, res) => {
@@ -140931,11 +137025,8 @@ router7.get("/messages", async (req, res) => {
   }
   const limit2 = typeof req.query.limit === "string" && req.query.limit !== "" ? Number(req.query.limit) : void 0;
   const beforeSeq = typeof req.query.before_seq === "string" && req.query.before_seq !== "" ? Number(req.query.before_seq) : void 0;
-<<<<<<< HEAD
   await db2.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
-=======
   await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
->>>>>>> origin/main
   const messages2 = await readMessages(userId, sessionId, limit2, beforeSeq);
   res.json(messages2);
 });
@@ -140949,15 +137040,12 @@ router7.post("/messages/by-sessions", async (req, res) => {
     return;
   }
   for (const sid of ids) {
-<<<<<<< HEAD
     await db2.transaction((tx) => migrateSessionMessages(tx, userId, sid));
   }
   const rows = await db2.select().from(userEntities).where(
-=======
     await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
   }
   const rows = await db.select().from(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, CHAT_MESSAGE),
@@ -140982,15 +137070,12 @@ router7.post("/messages/counts", async (req, res) => {
     return;
   }
   for (const sid of ids) {
-<<<<<<< HEAD
     await db2.transaction((tx) => migrateSessionMessages(tx, userId, sid));
   }
   const rows = await db2.select({
-=======
     await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
   }
   const rows = await db.select({
->>>>>>> origin/main
     sid: sql`(${userEntities.data} ->> 'session_id')`,
     count: sql`count(*)::int`
   }).from(userEntities).where(
@@ -141013,11 +137098,8 @@ router7.post("/messages", async (req, res) => {
     res.status(400).json({ error: "session_id and message are required" });
     return;
   }
-<<<<<<< HEAD
   const created = await db2.transaction(async (tx) => {
-=======
   const created = await db.transaction(async (tx) => {
->>>>>>> origin/main
     await migrateSessionMessages(tx, userId, sessionId);
     const [agg] = await tx.select({
       maxSeq: sql`coalesce(max((${userEntities.data} ->> 'seq')::numeric), -1)`
@@ -141059,11 +137141,8 @@ router7.post("/messages/replace", async (req, res) => {
     return;
   }
   const incoming = body.messages;
-<<<<<<< HEAD
   const out = await db2.transaction(async (tx) => {
-=======
   const out = await db.transaction(async (tx) => {
->>>>>>> origin/main
     await migrateSessionMessages(tx, userId, sessionId);
     const current = await tx.select().from(userEntities).where(
       and(
@@ -141141,11 +137220,8 @@ router7.post("/:entity/bulk-upsert", async (req, res) => {
     (data) => typeof data.id === "string" && data.id.trim() ? data.id.trim() : makeId()
   );
   try {
-<<<<<<< HEAD
     const upserted = await db2.transaction(async (tx) => {
-=======
     const upserted = await db.transaction(async (tx) => {
->>>>>>> origin/main
       const existingRows = await tx.select().from(userEntities).where(
         and(
           eq(userEntities.userId, userId),
@@ -141186,11 +137262,8 @@ router7.post("/:entity/bulk-upsert", async (req, res) => {
     });
     res.json({ count: upserted.length, items: upserted });
   } catch (err) {
-<<<<<<< HEAD
     logger2.error(
-=======
     logger.error(
->>>>>>> origin/main
       { err, entity, userId, itemCount: items.length },
       "bulk-upsert failed"
     );
@@ -141257,11 +137330,8 @@ router7.get("/:entity", async (req, res) => {
 router7.get("/:entity/:id", async (req, res) => {
   const userId = getUserId(req);
   const { entity, id } = req.params;
-<<<<<<< HEAD
   const [row] = await db2.select().from(userEntities).where(
-=======
   const [row] = await db.select().from(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, entity),
@@ -141276,11 +137346,8 @@ router7.post("/:entity", async (req, res) => {
   const data = req.body ?? {};
   if (entity === "MemoryCrystal" && typeof data.session_id === "string" && data.session_id) {
     const sessionId = data.session_id;
-<<<<<<< HEAD
     const result = await db2.transaction(async (tx) => {
-=======
     const result = await db.transaction(async (tx) => {
->>>>>>> origin/main
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`
       );
@@ -141321,11 +137388,8 @@ router7.put("/:entity/:id", async (req, res) => {
   const userId = getUserId(req);
   const { entity, id } = req.params;
   const data = req.body ?? {};
-<<<<<<< HEAD
   const [existing] = await db2.select().from(userEntities).where(
-=======
   const [existing] = await db.select().from(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, entity),
@@ -141351,11 +137415,8 @@ router7.put("/:entity/:id", async (req, res) => {
 router7.delete("/:entity/:id", async (req, res) => {
   const userId = getUserId(req);
   const { entity, id } = req.params;
-<<<<<<< HEAD
   await db2.delete(userEntities).where(
-=======
   await db.delete(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, entity),
@@ -141367,7 +137428,6 @@ router7.delete("/:entity/:id", async (req, res) => {
 var store_default = router7;
 
 // src/routes/storage.ts
-<<<<<<< HEAD
 var import_express11 = __toESM(require_express2(), 1);
 import { Readable as Readable8 } from "stream";
 
@@ -141426,7 +137486,6 @@ function v4(options, buf, offset) {
 var v4_default = v4;
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/util.js
-=======
 var import_express13 = __toESM(require_express2(), 1);
 import { Readable as Readable8 } from "stream";
 
@@ -141435,23 +137494,19 @@ var import_google_auth_library2 = __toESM(require_src6(), 1);
 import * as crypto3 from "crypto";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/util.js
->>>>>>> origin/main
 var import_projectify = __toESM(require_src7(), 1);
 
 // ../../node_modules/.pnpm/html-entities@2.6.0/node_modules/html-entities/dist/esm/named-references.js
 var __assign = function() {
   __assign = Object.assign || function(t2) {
-<<<<<<< HEAD
     for (var s3, i2 = 1, n2 = arguments.length; i2 < n2; i2++) {
       s3 = arguments[i2];
       for (var p2 in s3) if (Object.prototype.hasOwnProperty.call(s3, p2))
         t2[p2] = s3[p2];
-=======
     for (var s4, i2 = 1, n2 = arguments.length; i2 < n2; i2++) {
       s4 = arguments[i2];
       for (var p2 in s4) if (Object.prototype.hasOwnProperty.call(s4, p2))
         t2[p2] = s4[p2];
->>>>>>> origin/main
     }
     return t2;
   };
@@ -141535,17 +137590,14 @@ var getCodePoint = String.prototype.codePointAt ? function(input, position) {
 // ../../node_modules/.pnpm/html-entities@2.6.0/node_modules/html-entities/dist/esm/index.js
 var __assign2 = function() {
   __assign2 = Object.assign || function(t2) {
-<<<<<<< HEAD
     for (var s3, i2 = 1, n2 = arguments.length; i2 < n2; i2++) {
       s3 = arguments[i2];
       for (var p2 in s3) if (Object.prototype.hasOwnProperty.call(s3, p2))
         t2[p2] = s3[p2];
-=======
     for (var s4, i2 = 1, n2 = arguments.length; i2 < n2; i2++) {
       s4 = arguments[i2];
       for (var p2 in s4) if (Object.prototype.hasOwnProperty.call(s4, p2))
         t2[p2] = s4[p2];
->>>>>>> origin/main
     }
     return t2;
   };
@@ -141611,23 +137663,17 @@ function decode(text3, _a2) {
   });
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/util.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/util.js
->>>>>>> origin/main
 var import_google_auth_library = __toESM(require_src6(), 1);
 var import_retry_request = __toESM(require_retry_request(), 1);
 var import_teeny_request = __toESM(require_src9(), 1);
 import { Transform } from "stream";
-<<<<<<< HEAD
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/util.js
-=======
 import * as crypto2 from "crypto";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/util.js
->>>>>>> origin/main
 import * as querystring from "querystring";
 import { PassThrough } from "stream";
 var import_package_json_helper = __toESM(require_package_json_helper(), 1);
@@ -141672,17 +137718,14 @@ function convertObjKeysToSnakeCase(obj) {
   }
   if (obj instanceof Object) {
     return Object.keys(obj).reduce((acc, cur) => {
-<<<<<<< HEAD
       const s3 = cur[0].toLocaleLowerCase() + cur.slice(1).replace(/([A-Z]+)/g, (match2, p1) => {
         return `_${p1.toLowerCase()}`;
       });
       acc[s3] = convertObjKeysToSnakeCase(obj[cur]);
-=======
       const s4 = cur[0].toLocaleLowerCase() + cur.slice(1).replace(/([A-Z]+)/g, (match3, p1) => {
         return `_${p1.toLowerCase()}`;
       });
       acc[s4] = convertObjKeysToSnakeCase(obj[cur]);
->>>>>>> origin/main
       return acc;
     }, Object());
   }
@@ -141758,10 +137801,8 @@ var PassThroughShim = class extends PassThrough {
     callback(null);
   }
 };
-<<<<<<< HEAD
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/util.js
-=======
 function validateContexts(contexts) {
   const custom2 = contexts === null || contexts === void 0 ? void 0 : contexts.custom;
   if (!custom2)
@@ -141787,7 +137828,6 @@ function handleContextValidation(contexts, callback) {
 }
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/util.js
->>>>>>> origin/main
 var import_duplexify = __toESM(require_duplexify(), 1);
 var import_package_json_helper2 = __toESM(require_package_json_helper(), 1);
 var packageJson = (0, import_package_json_helper2.getPackageJSON)();
@@ -142323,11 +138363,8 @@ var Util = class {
   _getDefaultHeaders(gcclGcsCmd) {
     const headers = {
       "User-Agent": getUserAgentString(),
-<<<<<<< HEAD
       "x-goog-api-client": `${getRuntimeTrackingString()} gccl/${packageJson.version}-${getModuleFormat()} gccl-invocation-id/${v4_default()}`
-=======
       "x-goog-api-client": `${getRuntimeTrackingString()} gccl/${packageJson.version}-${getModuleFormat()} gccl-invocation-id/${crypto2.randomUUID()}`
->>>>>>> origin/main
     };
     if (gcclGcsCmd) {
       headers["x-goog-api-client"] += ` gccl-gcs-cmd/${gcclGcsCmd}`;
@@ -142350,11 +138387,8 @@ var ProgressStream = class extends Transform {
 };
 var util2 = new Util();
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/service.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/service.js
->>>>>>> origin/main
 var DEFAULT_PROJECT_ID_TOKEN = "{{projectId}}";
 var Service = class _Service {
   /**
@@ -142468,11 +138502,8 @@ var Service = class _Service {
     reqOpts.headers = {
       ...reqOpts.headers,
       "User-Agent": userAgent,
-<<<<<<< HEAD
       "x-goog-api-client": `${getRuntimeTrackingString()} gccl/${pkg.version}-${getModuleFormat()} gccl-invocation-id/${v4_default()}`
-=======
       "x-goog-api-client": `${getRuntimeTrackingString()} gccl/${pkg.version}-${getModuleFormat()} gccl-invocation-id/${crypto3.randomUUID()}`
->>>>>>> origin/main
     };
     if (reqOpts[GCCL_GCS_CMD_KEY]) {
       reqOpts.headers["x-goog-api-client"] += ` gccl-gcs-cmd/${reqOpts[GCCL_GCS_CMD_KEY]}`;
@@ -142505,11 +138536,8 @@ var Service = class _Service {
   }
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/service-object.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/service-object.js
->>>>>>> origin/main
 var import_promisify = __toESM(require_src10(), 1);
 import { EventEmitter } from "events";
 var ServiceObject = class _ServiceObject extends EventEmitter {
@@ -142737,20 +138765,14 @@ var ServiceObject = class _ServiceObject extends EventEmitter {
 };
 (0, import_promisify.promisifyAll)(ServiceObject, { exclude: ["getRequestInterceptors"] });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/storage.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/storage.js
->>>>>>> origin/main
 var import_paginator2 = __toESM(require_src11(), 1);
 var import_promisify9 = __toESM(require_src10(), 1);
 import { Readable as Readable6 } from "stream";
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/bucket.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/bucket.js
->>>>>>> origin/main
 var import_paginator = __toESM(require_src11(), 1);
 var import_promisify6 = __toESM(require_src10(), 1);
 var import_mime2 = __toESM(require_mime(), 1);
@@ -142760,11 +138782,8 @@ import * as fs3 from "fs";
 import * as path from "path";
 import { promisify } from "util";
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/acl.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/acl.js
->>>>>>> origin/main
 var import_promisify2 = __toESM(require_src10(), 1);
 var AclRoleAccessorMethods = class _AclRoleAccessorMethods {
   constructor() {
@@ -143244,7 +139263,6 @@ var Acl = class extends AclRoleAccessorMethods {
   exclude: ["request"]
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/file.js
 var import_promisify3 = __toESM(require_src10(), 1);
 var import_mime = __toESM(require_mime(), 1);
@@ -143252,7 +139270,6 @@ import * as crypto3 from "crypto";
 import * as fs2 from "fs";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/resumable-upload.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/file.js
 var import_promisify3 = __toESM(require_src10(), 1);
 var import_mime = __toESM(require_mime(), 1);
@@ -143260,14 +139277,12 @@ import * as crypto6 from "crypto";
 import * as fs2 from "fs";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/resumable-upload.js
->>>>>>> origin/main
 var import_abort_controller2 = __toESM(require_abort_controller(), 1);
 var gaxios = __toESM(require_src2(), 1);
 var import_google_auth_library3 = __toESM(require_src6(), 1);
 var import_async_retry = __toESM(require_lib9(), 1);
 import { createHash as createHash2 } from "crypto";
 import { Readable as Readable4, Writable } from "stream";
-<<<<<<< HEAD
 var import_package_json_helper3 = __toESM(require_package_json_helper(), 1);
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/hash-stream-validator.js
@@ -143275,7 +139290,6 @@ import { createHash } from "crypto";
 import { Transform as Transform2 } from "stream";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/crc32c.js
-=======
 import * as crypto4 from "crypto";
 var import_package_json_helper3 = __toESM(require_package_json_helper(), 1);
 
@@ -143284,7 +139298,6 @@ import { createHash } from "crypto";
 import { Transform as Transform2 } from "stream";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/crc32c.js
->>>>>>> origin/main
 import { createReadStream as createReadStream2 } from "fs";
 var __classPrivateFieldSet11 = function(receiver, state, value, kind2, f2) {
   if (kind2 === "m") throw new TypeError("Private method is not writable");
@@ -143718,11 +139731,8 @@ _CRC32C_crc32c = /* @__PURE__ */ new WeakMap();
 CRC32C.CRC32C_EXTENSIONS = CRC32C_EXTENSIONS;
 CRC32C.CRC32C_EXTENSION_TABLE = CRC32C_EXTENSION_TABLE;
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/hash-stream-validator.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/hash-stream-validator.js
->>>>>>> origin/main
 var __classPrivateFieldSet12 = function(receiver, state, value, kind2, f2) {
   if (kind2 === "m") throw new TypeError("Private method is not writable");
   if (kind2 === "a" && !f2) throw new TypeError("Private accessor was defined without a setter");
@@ -143823,11 +139833,8 @@ var HashStreamValidator = class extends Transform2 {
 };
 _HashStreamValidator_crc32cHash = /* @__PURE__ */ new WeakMap(), _HashStreamValidator_md5Hash = /* @__PURE__ */ new WeakMap(), _HashStreamValidator_md5Digest = /* @__PURE__ */ new WeakMap();
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/resumable-upload.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/resumable-upload.js
->>>>>>> origin/main
 var __classPrivateFieldSet13 = function(receiver, state, value, kind2, f2) {
   if (kind2 === "m") throw new TypeError("Private method is not writable");
   if (kind2 === "a" && !f2) throw new TypeError("Private accessor was defined without a setter");
@@ -143860,15 +139867,12 @@ var Upload = class extends Writable {
     this.numBytesWritten = 0;
     this.numRetries = 0;
     this.currentInvocationId = {
-<<<<<<< HEAD
       checkUploadStatus: v4_default(),
       chunk: v4_default(),
       uri: v4_default()
-=======
       checkUploadStatus: crypto4.randomUUID(),
       chunk: crypto4.randomUUID(),
       uri: crypto4.randomUUID()
->>>>>>> origin/main
     };
     this.writeBuffers = [];
     this.numChunksReadInRequest = 0;
@@ -144180,11 +140184,8 @@ var Upload = class extends Writable {
       var _a2, _b, _c;
       try {
         const res = await this.makeRequest(reqOpts);
-<<<<<<< HEAD
         this.currentInvocationId.uri = v4_default();
-=======
         this.currentInvocationId.uri = crypto4.randomUUID();
->>>>>>> origin/main
         return res.headers.location;
       } catch (err) {
         const e2 = err;
@@ -144342,11 +140343,8 @@ var Upload = class extends Writable {
       this.destroy(resp.data.error);
       return;
     }
-<<<<<<< HEAD
     this.currentInvocationId.chunk = v4_default();
-=======
     this.currentInvocationId.chunk = crypto4.randomUUID();
->>>>>>> origin/main
     const moreDataToUpload = await this.waitForNextChunk();
     const shouldContinueWithNextMultiChunkRequest = this.chunkSize && resp.status === RESUMABLE_INCOMPLETE_STATUS_CODE && resp.headers.range && moreDataToUpload;
     const shouldContinueUploadInAnotherRequest = this.isPartialUpload && resp.status === RESUMABLE_INCOMPLETE_STATUS_CODE && !moreDataToUpload;
@@ -144413,11 +140411,8 @@ var Upload = class extends Writable {
     };
     try {
       const resp = await this.makeRequest(opts);
-<<<<<<< HEAD
       this.currentInvocationId.checkUploadStatus = v4_default();
-=======
       this.currentInvocationId.checkUploadStatus = crypto4.randomUUID();
->>>>>>> origin/main
       return resp;
     } catch (e2) {
       if (config2.retry === false || !(e2 instanceof Error) || !this.retryOptions.retryableErrorFn(e2)) {
@@ -144621,21 +140616,18 @@ function createURI(cfg, callback) {
   up.createURI().then((r2) => callback(null, r2), callback);
 }
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/file.js
 import { Writable as Writable2, pipeline } from "stream";
 import * as zlib from "zlib";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/signer.js
 import * as crypto2 from "crypto";
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/file.js
 import { Writable as Writable2, pipeline } from "stream";
 import * as zlib from "zlib";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/signer.js
 import * as crypto5 from "crypto";
->>>>>>> origin/main
 import * as url2 from "url";
 var SignerExceptionMessages;
 (function(SignerExceptionMessages2) {
@@ -144769,11 +140761,8 @@ var URLSigner = class {
       };
       const canonicalQueryParams = this.getCanonicalQueryParams(queryParams);
       const canonicalRequest = this.getCanonicalRequest(config2.method, this.getResourcePath(!!config2.cname, config2.bucket, config2.file), canonicalQueryParams, extensionHeadersString, signedHeaders, contentSha256);
-<<<<<<< HEAD
       const hash = crypto2.createHash("sha256").update(canonicalRequest).digest("hex");
-=======
       const hash = crypto5.createHash("sha256").update(canonicalRequest).digest("hex");
->>>>>>> origin/main
       const blobToSign = [
         "GOOG4-RSA-SHA256",
         dateISO,
@@ -144867,11 +140856,8 @@ var SigningError = class extends Error {
   }
 };
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/file.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/file.js
->>>>>>> origin/main
 var import_duplexify2 = __toESM(require_duplexify(), 1);
 var import_async_retry2 = __toESM(require_lib9(), 1);
 var __classPrivateFieldGet16 = function(receiver, state, kind2, f2) {
@@ -144898,8 +140884,6 @@ var COMPRESSIBLE_MIME_REGEX = new RegExp([
   /|application\/xml|application\/xml-dtd|font\/otf|font\/ttf|image\/bmp|image\/vnd.adobe.photoshop|image\/vnd.microsoft.icon/,
   /|image\/vnd.ms-dds|image\/x-icon|image\/x-ms-bmp|message\/rfc822|model\/gltf-binary|\+json|\+text|\+xml|\+yaml/
 ].map((r2) => r2.source).join(""), "i");
-<<<<<<< HEAD
-=======
 var SkipReason;
 (function(SkipReason2) {
   SkipReason2["PATH_TRAVERSAL"] = "PATH_TRAVERSAL";
@@ -144907,7 +140891,6 @@ var SkipReason;
   SkipReason2["ALREADY_EXISTS"] = "ALREADY_EXISTS";
   SkipReason2["DOWNLOAD_ERROR"] = "DOWNLOAD_ERROR";
 })(SkipReason || (SkipReason = {}));
->>>>>>> origin/main
 var RequestError = class extends Error {
 };
 var SEVEN_DAYS2 = 7 * 24 * 60 * 60;
@@ -145596,14 +141579,11 @@ var File4 = class _File extends ServiceObject {
     } else if (optionsOrCallback) {
       options = { ...optionsOrCallback };
     }
-<<<<<<< HEAD
-=======
     if (options.contexts) {
       const validationError = handleContextValidation(options.contexts, callback);
       if (validationError)
         return validationError;
     }
->>>>>>> origin/main
     callback = callback || util2.noop;
     let destBucket;
     let destName;
@@ -146480,11 +142460,8 @@ var File4 = class _File extends ServiceObject {
   setEncryptionKey(encryptionKey) {
     this.encryptionKey = encryptionKey;
     this.encryptionKeyBase64 = Buffer.from(encryptionKey).toString("base64");
-<<<<<<< HEAD
     this.encryptionKeyHash = crypto3.createHash("sha256").update(this.encryptionKeyBase64, "base64").digest("base64");
-=======
     this.encryptionKeyHash = crypto6.createHash("sha256").update(this.encryptionKeyBase64, "base64").digest("base64");
->>>>>>> origin/main
     this.encryptionKeyInterceptor = {
       request: (reqOpts) => {
         reqOpts.headers = reqOpts.headers || {};
@@ -146874,14 +142851,11 @@ var File4 = class _File extends ServiceObject {
         fields["policy"] = policyBase64;
         fields["x-goog-signature"] = signatureHex;
         let url3;
-<<<<<<< HEAD
         if (this.storage.customEndpoint) {
-=======
         const EMULATOR_HOST = process.env.STORAGE_EMULATOR_HOST;
         if (this.storage.customEndpoint && typeof EMULATOR_HOST === "string") {
           url3 = `${this.storage.apiEndpoint}/${this.bucket.name}`;
         } else if (this.storage.customEndpoint) {
->>>>>>> origin/main
           url3 = this.storage.apiEndpoint;
         } else if (options.virtualHostedStyle) {
           url3 = `https://${this.bucket.name}.storage.${universe}/`;
@@ -147873,17 +143847,14 @@ var File4 = class _File extends ServiceObject {
    * ```
    */
   save(data, optionsOrCallback, callback) {
-<<<<<<< HEAD
     callback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
     const options = typeof optionsOrCallback === "object" ? optionsOrCallback : {};
-=======
     var _a2;
     callback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
     const options = typeof optionsOrCallback === "object" ? optionsOrCallback : {};
     const validationError = handleContextValidation((_a2 = options.metadata) === null || _a2 === void 0 ? void 0 : _a2.contexts, callback);
     if (validationError)
       return validationError;
->>>>>>> origin/main
     let maxRetries = this.storage.retryOptions.maxRetries;
     if (!this.shouldRetryBasedOnPreconditionAndIdempotencyStrat(options === null || options === void 0 ? void 0 : options.preconditionOpts)) {
       maxRetries = 0;
@@ -147939,12 +143910,9 @@ var File4 = class _File extends ServiceObject {
   setMetadata(metadata, optionsOrCallback, cb) {
     const options = typeof optionsOrCallback === "object" ? optionsOrCallback : {};
     cb = typeof optionsOrCallback === "function" ? optionsOrCallback : cb;
-<<<<<<< HEAD
-=======
     const validationError = handleContextValidation(metadata.contexts, cb);
     if (validationError)
       return validationError;
->>>>>>> origin/main
     this.disableAutoRetryConditionallyIdempotent_(this.methods.setMetadata, AvailableServiceObjectMethods.setMetadata, options);
     super.setMetadata(metadata, options).then((resp) => cb(null, ...resp)).catch(cb).finally(() => {
       this.storage.retryOptions.autoRetry = this.instanceRetryValue;
@@ -148002,11 +143970,8 @@ var File4 = class _File extends ServiceObject {
     const req = {
       ...options,
       // In case we get input like `storageClass`, convert to `storage_class`.
-<<<<<<< HEAD
       storageClass: storageClass.replace(/-/g, "_").replace(/([a-z])([A-Z])/g, (_3, low, up) => {
-=======
       storageClass: storageClass.replace(/-/g, "_").replace(/([a-z])([A-Z])/g, (_4, low, up) => {
->>>>>>> origin/main
         return low + "_" + up;
       }).toUpperCase()
     };
@@ -148229,11 +144194,8 @@ async function _File_validateIntegrity2(hashCalculatingStream, verify = {}) {
   ]
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/iam.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/iam.js
->>>>>>> origin/main
 var import_promisify4 = __toESM(require_src10(), 1);
 var IAMExceptionMessages;
 (function(IAMExceptionMessages2) {
@@ -148495,11 +144457,8 @@ var Iam = class {
 };
 (0, import_promisify4.promisifyAll)(Iam);
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/notification.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/notification.js
->>>>>>> origin/main
 var import_promisify5 = __toESM(require_src10(), 1);
 var Notification = class extends ServiceObject {
   constructor(bucket, id) {
@@ -148712,11 +144671,8 @@ var Notification = class extends ServiceObject {
 };
 (0, import_promisify5.promisifyAll)(Notification);
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/bucket.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/bucket.js
->>>>>>> origin/main
 import { Readable as Readable5 } from "stream";
 import { URL as URL3 } from "url";
 var BucketActionToHTTPMethod;
@@ -149077,8 +145033,6 @@ var Bucket = class _Bucket extends ServiceObject {
        * }, function(err, apiResponse) {});
        *
        * //-
-<<<<<<< HEAD
-=======
        * // Enforce CMEK-only encryption for new objects.
        * // This blocks Google-Managed and Customer-Supplied keys.
        * //-
@@ -149098,7 +145052,6 @@ var Bucket = class _Bucket extends ServiceObject {
        * }, function(err, apiResponse) {});
        *
        * //-
->>>>>>> origin/main
        * // Set the default event-based hold value for new objects in this
        * // bucket.
        * //-
@@ -149458,14 +145411,11 @@ var Bucket = class _Bucket extends ServiceObject {
     } else if (optionsOrCallback) {
       options = optionsOrCallback;
     }
-<<<<<<< HEAD
-=======
     if (options.contexts) {
       const validationError = handleContextValidation(options.contexts, callback);
       if (validationError)
         return validationError;
     }
->>>>>>> origin/main
     this.disableAutoRetryConditionallyIdempotent_(
       this.methods.setMetadata,
       // Not relevant but param is required
@@ -149502,12 +145452,9 @@ var Bucket = class _Bucket extends ServiceObject {
       json: {
         destination: {
           contentType: destinationFile.metadata.contentType,
-<<<<<<< HEAD
           contentEncoding: destinationFile.metadata.contentEncoding
-=======
           contentEncoding: destinationFile.metadata.contentEncoding,
           contexts: options.contexts || destinationFile.metadata.contexts
->>>>>>> origin/main
         },
         sourceObjects: sources.map((source) => {
           const sourceObject = {
@@ -150294,13 +146241,10 @@ var Bucket = class _Bucket extends ServiceObject {
    * in addition to the relevant part of the object name appearing in prefixes[].
    * @property {string} [prefix] Filter results to objects whose names begin
    *     with this prefix.
-<<<<<<< HEAD
-=======
    * @property {string} [filter] Filter results using a server-side filter
    * expression. This is primarily used for filtering by Object Contexts.
    * Syntax: `contexts."<key>"="<value>"` or `contexts."<key>":*`.
    * Prepend `-` for negation (e.g., `-contexts."key":*`).
->>>>>>> origin/main
    * @property {string} [matchGlob] A glob pattern used to filter results,
    *     for example foo*bar
    * @property {number} [maxApiCalls] Maximum number of API calls to make.
@@ -150348,12 +146292,9 @@ var Bucket = class _Bucket extends ServiceObject {
    * in addition to the relevant part of the object name appearing in prefixes[].
    * @param {string} [query.prefix] Filter results to objects whose names begin
    *     with this prefix.
-<<<<<<< HEAD
-=======
    * @param {string} [query.filter] Filter results using a server-side filter
    *     expression. Supports Object Contexts with operators like `=`, `:`,
    *     and `-` for negation.
->>>>>>> origin/main
    * @param {number} [query.maxApiCalls] Maximum number of API calls to make.
    * @param {number} [query.maxResults] Maximum number of items plus prefixes to
    *     return per call.
@@ -150373,10 +146314,7 @@ var Bucket = class _Bucket extends ServiceObject {
    *     billed for the request.
    * @param {boolean} [query.versions] If true, returns File objects scoped to
    *     their versions.
-<<<<<<< HEAD
-=======
    *
->>>>>>> origin/main
    * @param {GetFilesCallback} [callback] Callback function.
    * @returns {Promise<GetFilesResponse>}
    *
@@ -150470,8 +146408,6 @@ var Bucket = class _Bucket extends ServiceObject {
    * });
    * ```
    *
-<<<<<<< HEAD
-=======
    * @example
    * //-
    * // Filter files using Object Contexts.
@@ -150497,7 +146433,6 @@ var Bucket = class _Bucket extends ServiceObject {
    * });
    * ```
    *
->>>>>>> origin/main
    * @example <caption>include:samples/files.js</caption>
    * region_tag:storage_list_files
    * Another example:
@@ -151435,11 +147370,8 @@ var Bucket = class _Bucket extends ServiceObject {
   setStorageClass(storageClass, optionsOrCallback, callback) {
     const options = typeof optionsOrCallback === "object" ? optionsOrCallback : {};
     callback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
-<<<<<<< HEAD
     storageClass = storageClass.replace(/-/g, "_").replace(/([a-z])([A-Z])/g, (_3, low, up) => {
-=======
     storageClass = storageClass.replace(/-/g, "_").replace(/([a-z])([A-Z])/g, (_4, low, up) => {
->>>>>>> origin/main
       return low + "_" + up;
     }).toUpperCase();
     this.setMetadata({ storageClass }, options, callback);
@@ -151894,11 +147826,8 @@ import_paginator.paginator.extend(Bucket, "getFiles");
   exclude: ["cloudStorageURI", "request", "file", "notification", "restore"]
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/channel.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/channel.js
->>>>>>> origin/main
 var import_promisify7 = __toESM(require_src10(), 1);
 var Channel = class extends ServiceObject {
   constructor(storage, id, resourceId) {
@@ -151964,17 +147893,14 @@ var Channel = class extends ServiceObject {
 };
 (0, import_promisify7.promisifyAll)(Channel);
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/storage.js
 var import_package_json_helper4 = __toESM(require_package_json_helper(), 1);
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/hmacKey.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/storage.js
 var import_package_json_helper4 = __toESM(require_package_json_helper(), 1);
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/hmacKey.js
->>>>>>> origin/main
 var import_promisify8 = __toESM(require_src10(), 1);
 var HmacKey = class extends ServiceObject {
   /**
@@ -152261,11 +148187,8 @@ var HmacKey = class extends ServiceObject {
 };
 (0, import_promisify8.promisifyAll)(HmacKey);
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/storage.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/storage.js
->>>>>>> origin/main
 var import_google_auth_library4 = __toESM(require_src6(), 1);
 var IdempotencyStrategy;
 (function(IdempotencyStrategy2) {
@@ -153114,11 +149037,8 @@ var Storage = class _Storage extends Service {
       const camelCaseResponse = {};
       for (const prop in resp) {
         if (resp.hasOwnProperty(prop)) {
-<<<<<<< HEAD
           const camelCaseProp = prop.replace(/_(\w)/g, (_3, match2) => match2.toUpperCase());
-=======
           const camelCaseProp = prop.replace(/_(\w)/g, (_4, match3) => match3.toUpperCase());
->>>>>>> origin/main
           camelCaseResponse[camelCaseProp] = resp[prop];
         }
       }
@@ -153167,11 +149087,8 @@ import_paginator2.paginator.extend(Storage, ["getBuckets", "getHmacKeys"]);
   exclude: ["bucket", "channel", "hmacKey"]
 });
 
-<<<<<<< HEAD
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/transfer-manager.js
-=======
 // ../../node_modules/.pnpm/@google-cloud+storage@7.21.0/node_modules/@google-cloud/storage/build/esm/src/transfer-manager.js
->>>>>>> origin/main
 var import_p_limit2 = __toESM(require_p_limit(), 1);
 var import_google_auth_library5 = __toESM(require_src6(), 1);
 var import_async_retry4 = __toESM(require_lib9(), 1);
@@ -153219,11 +149136,8 @@ _XMLMultiPartUploadHelper_instances = /* @__PURE__ */ new WeakSet(), _XMLMultiPa
 
 // src/lib/objectStorage.ts
 import { Readable as Readable7 } from "stream";
-<<<<<<< HEAD
 import { randomUUID as randomUUID2 } from "crypto";
-=======
 import { randomUUID as randomUUID4 } from "crypto";
->>>>>>> origin/main
 
 // src/lib/objectAcl.ts
 var ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
@@ -153375,11 +149289,8 @@ var ObjectStorageService = class {
         "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' tool and set PRIVATE_OBJECT_DIR env var."
       );
     }
-<<<<<<< HEAD
     const objectId = randomUUID2();
-=======
     const objectId = randomUUID4();
->>>>>>> origin/main
     const fullPath = `${privateObjectDir}/uploads/${objectId}`;
     const { bucketName, objectName } = parseObjectPath(fullPath);
     return signObjectURL({
@@ -153496,12 +149407,10 @@ async function signObjectURL({
   return signedURL;
 }
 
-<<<<<<< HEAD
 // src/routes/storage.ts
 var router8 = (0, import_express11.Router)();
 var objectStorageService = new ObjectStorageService();
 router8.use("/storage/uploads/request-url", rateLimit);
-=======
 // src/lib/imageUploads.ts
 import { randomUUID as randomUUID5 } from "crypto";
 var UPLOADS_PATH_PREFIX = "/objects/uploads/";
@@ -153611,7 +149520,6 @@ router8.post("/storage/uploads", async (req, res) => {
     res.status(status).json({ error: message });
   }
 });
->>>>>>> origin/main
 router8.post(
   "/storage/uploads/request-url",
   async (req, res) => {
@@ -153632,14 +149540,11 @@ router8.post(
       res.json({ uploadURL, objectPath });
     } catch (error40) {
       console.error("Error generating upload URL:", error40);
-<<<<<<< HEAD
       res.status(500).json({ error: "Failed to generate upload URL" });
-=======
       res.status(500).json({
         error: "Object storage is unavailable. Use the direct /api/storage/uploads endpoint (Postgres-backed) instead.",
         code: "object_storage_unavailable"
       });
->>>>>>> origin/main
     }
   }
 );
@@ -153647,13 +149552,10 @@ function pipeDownload(res, response) {
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
   if (response.body) {
-<<<<<<< HEAD
     const nodeStream = Readable8.fromWeb(response.body);
-=======
     const nodeStream = Readable8.fromWeb(
       response.body
     );
->>>>>>> origin/main
     nodeStream.pipe(res);
   } else {
     res.end();
@@ -153664,8 +149566,6 @@ router8.get("/storage/objects/*path", async (req, res) => {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
-<<<<<<< HEAD
-=======
     if (isDbUploadObjectPath(objectPath)) {
       const image = await getUploadedImage(objectPath);
       if (!image) {
@@ -153679,7 +149579,6 @@ router8.get("/storage/objects/*path", async (req, res) => {
       res.status(200).end(buffer);
       return;
     }
->>>>>>> origin/main
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
     const response = await objectStorageService.downloadObject(objectFile);
     pipeDownload(res, response);
@@ -153714,9 +149613,7 @@ router8.get(
 var storage_default = router8;
 
 // src/routes/chat.ts
-<<<<<<< HEAD
 var import_express13 = __toESM(require_express2(), 1);
-=======
 var import_express15 = __toESM(require_express2(), 1);
 
 // src/lib/llmEnsemble.ts
@@ -154011,7 +149908,6 @@ async function createEnsembleChatReply(req) {
     return draftFallbackResult(req, drafts, fastestDraft(drafts));
   }
 }
->>>>>>> origin/main
 
 // src/lib/memoryRetrieval.ts
 var TYPE_SIGNALS = {
@@ -154659,12 +150555,9 @@ function buildCharacterDefinition(character, maxChars) {
   const parts = [];
   const nameIntro = character._isAnima ? `You are ${character.name}.` : `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}.`;
   parts.push(nameIntro);
-<<<<<<< HEAD
-=======
   parts.push(
     `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`
   );
->>>>>>> origin/main
   if (character._isAnima && character.archetype) {
     parts.push(`Archetype: ${character.archetype}${character.tagline ? ` \u2014 ${character.tagline}` : ""}`);
   }
@@ -154677,14 +150570,11 @@ function buildCharacterDefinition(character, maxChars) {
   if (character.speaking_style) {
     parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
   }
-<<<<<<< HEAD
-=======
   if (!character.personality && !character.backstory && !character.speaking_style) {
     parts.push(
       `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`
     );
   }
->>>>>>> origin/main
   const result = parts.join("\n");
   return result.length > maxChars ? result.slice(0, maxChars) : result;
 }
@@ -154707,15 +150597,12 @@ CRITICAL AUTONOMY RULES:
 
 INTELLIGENCE: You are brilliant \u2014 genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory \u2014 callbacks, contradictions, unspoken needs \u2014 and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER \u2014 in your own voice, never dropping into a generic assistant tone.`;
-<<<<<<< HEAD
-=======
 var TURN_TAKING = `TURN TAKING (required):
 - Reply as ONE conversational beat, then STOP and wait for the user.
 - Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.
 - Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.
 - Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
 - If you would keep talking, cut yourself off at the first natural pause instead.`;
->>>>>>> origin/main
 var LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only \u2014 in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
 function buildCompanionPrompt(params) {
   const {
@@ -154735,22 +150622,16 @@ function buildCompanionPrompt(params) {
     arcState
   } = params;
   const evolutionDelta = params.evolutionDelta;
-<<<<<<< HEAD
   const mainChar = activeCharacter || characters2[0];
-=======
   const mainChar = activeCharacter || (mode === "group" ? characters2.length === 1 ? characters2[0] : void 0 : characters2[0]);
->>>>>>> origin/main
   const characterNames = new Map(
     characters2.map((c2) => [String(c2.id || ""), String(c2.name || "Companion")])
   );
   const corePrompt = systemPrompt || CORE_BEHAVIOR;
-<<<<<<< HEAD
   const charDef = mainChar ? buildCharacterDefinition(mainChar, BUDGET.characterDef) : characters2.length > 0 ? characters2.map((c2) => buildCharacterDefinition(c2, BUDGET.characterDef / characters2.length)).join("\n\n") : "";
-=======
   const charDef = mainChar ? buildCharacterDefinition(mainChar, BUDGET.characterDef) : mode === "group" && systemPrompt ? "" : characters2.length > 0 ? characters2.map(
     (c2) => buildCharacterDefinition(c2, BUDGET.characterDef / characters2.length)
   ).join("\n\n") : "";
->>>>>>> origin/main
   let resonanceBlock = "";
   if (synchroState) {
     resonanceBlock = synchroToPromptGuidance(synchroState);
@@ -154790,11 +150671,8 @@ function buildCompanionPrompt(params) {
   const historyBlock = buildConversationContext(recentMessages, BUDGET.history);
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
-<<<<<<< HEAD
     groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns.
-=======
     groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns. Leave a natural stopping point for the user after your beat.
->>>>>>> origin/main
 
 OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   }
@@ -154848,10 +150726,7 @@ ${charDef}` : "",
     historyBlock ? `CONVERSATION CONTEXT:
 ${historyBlock}` : "",
     groupInstruction,
-<<<<<<< HEAD
-=======
     TURN_TAKING,
->>>>>>> origin/main
     content ? `LATEST USER MESSAGE:
 ${content}` : "(Continue the scene naturally.)",
     `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
@@ -154867,21 +150742,15 @@ function truncate2(value, max = 900) {
   return text3.length > max ? `${text3.slice(0, max - 1)}\u2026` : text3;
 }
 async function loadEvolution(animaId, userId) {
-<<<<<<< HEAD
   const [row] = await db.select().from(animaEvolution).where(and(eq(animaEvolution.animaId, animaId), eq(animaEvolution.userId, userId))).limit(1);
-=======
   const [row] = await db2.select().from(animaEvolution).where(and(eq(animaEvolution.animaId, animaId), eq(animaEvolution.userId, userId))).limit(1);
->>>>>>> origin/main
   return row;
 }
 async function ensureEvolutionRow(params) {
   const existing = await loadEvolution(params.animaId, params.userId);
   if (existing) return existing;
-<<<<<<< HEAD
   await db.insert(animaEvolution).values({
-=======
   await db2.insert(animaEvolution).values({
->>>>>>> origin/main
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     userId: params.userId,
     animaId: params.animaId,
@@ -154903,11 +150772,8 @@ async function ensureEvolutionRow(params) {
 }
 async function incrementConversationCount(params) {
   await ensureEvolutionRow(params);
-<<<<<<< HEAD
   const [row] = await db.update(animaEvolution).set({
-=======
   const [row] = await db2.update(animaEvolution).set({
->>>>>>> origin/main
     conversationCount: sql`${animaEvolution.conversationCount} + 1`,
     updatedAt: /* @__PURE__ */ new Date()
   }).where(
@@ -154957,14 +150823,12 @@ OUTPUT SCHEMA:
   "voidBias": number (optional, -1..1 where positive = more void-intensity)
 }
 `;
-<<<<<<< HEAD
   const completion = await getOpenAIClient().chat.completions.create({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
     temperature: 0.4,
     messages: [{ role: "system", content: evolutionPrompt }]
   });
   const raw = completion.choices[0]?.message?.content ?? "";
-=======
   const completion = await createChatCompletionWithFailover({
     tier: "light",
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
@@ -154973,7 +150837,6 @@ OUTPUT SCHEMA:
     messages: [{ role: "system", content: evolutionPrompt }]
   });
   const raw = completion.content;
->>>>>>> origin/main
   let parsed = null;
   try {
     parsed = JSON.parse(raw);
@@ -154988,11 +150851,8 @@ OUTPUT SCHEMA:
     };
   }
   const rationale = `Generated evolution delta for milestone ${targetMilestone}.`;
-<<<<<<< HEAD
   await db.update(animaEvolution).set({
-=======
   await db2.update(animaEvolution).set({
->>>>>>> origin/main
     evolutionDelta: parsed,
     evolutionRationale: rationale,
     updatedAt: /* @__PURE__ */ new Date()
@@ -155007,11 +150867,8 @@ OUTPUT SCHEMA:
 
 // src/lib/relationshipEngine.ts
 async function loadRelationshipState(animaId, userId) {
-<<<<<<< HEAD
   const [row] = await db.select().from(animaRelationships).where(and(eq(animaRelationships.userId, userId), eq(animaRelationships.animaId, animaId))).limit(1);
-=======
   const [row] = await db2.select().from(animaRelationships).where(and(eq(animaRelationships.userId, userId), eq(animaRelationships.animaId, animaId))).limit(1);
->>>>>>> origin/main
   if (!row) return null;
   const data = row.state;
   return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
@@ -155019,20 +150876,15 @@ async function loadRelationshipState(animaId, userId) {
 
 // src/lib/narrativeArcEngine.ts
 async function loadArcState(animaId, userId) {
-<<<<<<< HEAD
   const [row] = await db.select().from(animaNarrativeArcs).where(and(eq(animaNarrativeArcs.userId, userId), eq(animaNarrativeArcs.animaId, animaId))).limit(1);
-=======
   const [row] = await db2.select().from(animaNarrativeArcs).where(and(eq(animaNarrativeArcs.userId, userId), eq(animaNarrativeArcs.animaId, animaId))).limit(1);
->>>>>>> origin/main
   if (!row) return null;
   return row.state ?? null;
 }
 
-<<<<<<< HEAD
 // src/routes/chat.ts
 var router9 = (0, import_express13.Router)();
 router9.use(rateLimit);
-=======
 // src/lib/chatParticipants.ts
 function resolveActiveCharacterId(requestedId, characterIds) {
   const participants = characterIds.map(String).filter(Boolean);
@@ -155067,7 +150919,6 @@ router9.use(async (_req, _res, next) => {
     next(err);
   }
 });
->>>>>>> origin/main
 function requireUser2(req, res) {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -155085,11 +150936,8 @@ function truncate3(value, max = 600) {
   return text3.length > max ? `${text3.slice(0, max - 1)}...` : text3;
 }
 async function loadStoreSession(userId, sessionId) {
-<<<<<<< HEAD
   const [row] = await db2.select().from(userEntities).where(
-=======
   const [row] = await db.select().from(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, CHAT_SESSION),
@@ -155100,7 +150948,6 @@ async function loadStoreSession(userId, sessionId) {
 }
 async function loadCharacters(userId, characterIds) {
   if (characterIds.length === 0) return [];
-<<<<<<< HEAD
   const rows = await db2.select().from(userEntities).where(
     and(
       eq(userEntities.userId, userId),
@@ -155113,7 +150960,6 @@ async function loadCharacters(userId, characterIds) {
 async function readRecentStoreMessages(userId, sessionId, limit2 = 20) {
   await db2.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
   const rows = await db2.select().from(userEntities).where(
-=======
   const rows = await db.select().from(userEntities).where(
     and(
       eq(userEntities.userId, userId),
@@ -155144,7 +150990,6 @@ async function readRecentStoreMessages(userId, sessionId, limit2 = 20) {
 async function readRecentStoreMessages(userId, sessionId, limit2 = 20) {
   await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
   const rows = await db.select().from(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, CHAT_MESSAGE),
@@ -155154,11 +150999,8 @@ async function readRecentStoreMessages(userId, sessionId, limit2 = 20) {
   return rows.map((row) => row.data).reverse();
 }
 async function appendStoreMessage(userId, sessionId, message) {
-<<<<<<< HEAD
   return db2.transaction(async (tx) => {
-=======
   return db.transaction(async (tx) => {
->>>>>>> origin/main
     await migrateSessionMessages(tx, userId, sessionId);
     const [agg] = await tx.select({
       maxSeq: sql`coalesce(max((${userEntities.data} ->> 'seq')::numeric), -1)`
@@ -155191,11 +151033,8 @@ async function appendStoreMessage(userId, sessionId, message) {
   });
 }
 async function syncTypedSession(params) {
-<<<<<<< HEAD
   await db2.insert(chatSessions).values({
-=======
   await db.insert(chatSessions).values({
->>>>>>> origin/main
     id: params.sessionId,
     userId: params.userId,
     title: params.title || "New session",
@@ -155217,11 +151056,8 @@ async function syncTypedSession(params) {
   });
 }
 async function persistTypedMessage(params) {
-<<<<<<< HEAD
   await db2.insert(chatMessages).values({
-=======
   await db.insert(chatMessages).values({
->>>>>>> origin/main
     id: makeId(),
     sessionId: params.sessionId,
     userId: params.userId,
@@ -155234,11 +151070,8 @@ async function persistTypedMessage(params) {
   });
 }
 async function updateStoreSessionMetadata(userId, sessionId, content, sharedFact) {
-<<<<<<< HEAD
   const [row] = await db2.select().from(userEntities).where(
-=======
   const [row] = await db.select().from(userEntities).where(
->>>>>>> origin/main
     and(
       eq(userEntities.userId, userId),
       eq(userEntities.entityName, CHAT_SESSION),
@@ -155250,11 +151083,8 @@ async function updateStoreSessionMetadata(userId, sessionId, content, sharedFact
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const currentSharedMemory = Array.isArray(data.shared_memory) ? data.shared_memory.slice(-24) : [];
   if (sharedFact) currentSharedMemory.push(sharedFact);
-<<<<<<< HEAD
   await db2.update(userEntities).set({
-=======
   await db.update(userEntities).set({
->>>>>>> origin/main
     data: {
       ...data,
       last_message: truncate3(content, 80),
@@ -155267,11 +151097,8 @@ async function updateStoreSessionMetadata(userId, sessionId, content, sharedFact
 }
 async function loadMemories(userId, characterIds) {
   if (characterIds.length === 0) return [];
-<<<<<<< HEAD
   return db2.select().from(companionMemories).where(
-=======
   return db.select().from(companionMemories).where(
->>>>>>> origin/main
     and(
       eq(companionMemories.userId, userId),
       inArray(companionMemories.characterId, characterIds)
@@ -155314,11 +151141,8 @@ async function upsertTurnMemory(params) {
     created_at: now.toISOString()
   };
   for (const characterId of params.characterIds) {
-<<<<<<< HEAD
     const [existing] = await db2.select().from(companionMemories).where(
-=======
     const [existing] = await db.select().from(companionMemories).where(
->>>>>>> origin/main
       and(
         eq(companionMemories.userId, params.userId),
         eq(companionMemories.characterId, characterId)
@@ -155326,11 +151150,8 @@ async function upsertTurnMemory(params) {
     ).limit(1);
     const facts = Array.isArray(existing?.facts) ? existing.facts.slice(-24) : [];
     facts.push(fact);
-<<<<<<< HEAD
     await db2.insert(companionMemories).values({
-=======
     await db.insert(companionMemories).values({
->>>>>>> origin/main
       userId: params.userId,
       characterId,
       summary: existing?.summary ?? "",
@@ -155380,11 +151201,8 @@ router9.get("/sessions/:sessionId/context", async (req, res) => {
 router9.get("/memories/:characterId", async (req, res) => {
   const userId = requireUser2(req, res);
   if (!userId) return;
-<<<<<<< HEAD
   const [memory] = await db2.select().from(companionMemories).where(
-=======
   const [memory] = await db.select().from(companionMemories).where(
->>>>>>> origin/main
     and(
       eq(companionMemories.userId, userId),
       eq(companionMemories.characterId, req.params.characterId)
@@ -155425,26 +151243,21 @@ router9.post("/messages", async (req, res) => {
     loadMemories(userId, characterIds),
     readRecentStoreMessages(userId, sessionId, 24)
   ]);
-<<<<<<< HEAD
   const activeCharacterId = characterIds.length > 0 ? characterIds[0] : null;
   const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
     activeCharacterId ? loadEvolution(String(activeCharacterId), userId) : Promise.resolve(null),
     activeCharacterId ? loadRelationshipState(String(activeCharacterId), userId) : Promise.resolve(null),
     activeCharacterId ? loadArcState(String(activeCharacterId), userId) : Promise.resolve(null)
   ]);
-=======
   const requestedAssistantId = body.assistant_character_id ? String(body.assistant_character_id) : null;
   const requestedAssistantName = body.assistant_character_name ? String(body.assistant_character_name).trim() : "";
->>>>>>> origin/main
   const distinctUniverses = new Set(
     characters2.map((c2) => c2.universe).filter(Boolean).map(String)
   ).size;
   const isCrossover = mode === "group" && distinctUniverses >= 2;
   const adaptedMemories = adaptMemories(memories);
   const adaptedChars = adaptCharacters(characters2);
-<<<<<<< HEAD
   const activeChar = adaptedChars.length === 1 ? adaptedChars[0] : void 0;
-=======
   const requestedParticipantId = requestedAssistantId && characterIds.includes(requestedAssistantId) ? resolveActiveCharacterId(requestedAssistantId, characterIds) : null;
   const activeChar = (requestedParticipantId ? adaptedChars.find((c2) => c2.id === String(requestedParticipantId)) : void 0) || (requestedAssistantName ? adaptedChars.find(
     (c2) => String(c2.name || "").toLowerCase() === requestedAssistantName.toLowerCase()
@@ -155461,7 +151274,6 @@ router9.post("/messages", async (req, res) => {
     activeCharacterId ? loadRelationshipState(activeCharacterId, userId) : Promise.resolve(null),
     activeCharacterId ? loadArcState(activeCharacterId, userId) : Promise.resolve(null)
   ]);
->>>>>>> origin/main
   let synchroState = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
@@ -155495,10 +151307,7 @@ router9.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length
   });
-<<<<<<< HEAD
   const standard = resolveModel("standard");
-=======
->>>>>>> origin/main
   const shouldPersist = body.persist !== false;
   await syncTypedSession({
     userId,
@@ -155536,7 +151345,6 @@ router9.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-<<<<<<< HEAD
   try {
     let stream;
     try {
@@ -155567,7 +151375,6 @@ router9.post("/messages", async (req, res) => {
       res.write(`data: ${JSON.stringify({ content: delta })}
 
 `);
-=======
   let usedProvider = "openai";
   let usedBrand;
   let failedOver = false;
@@ -155625,20 +151432,16 @@ router9.post("/messages", async (req, res) => {
     }
     if (!String(fullResponse).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
->>>>>>> origin/main
     }
     let persistedAssistant = null;
     if (shouldPersist) {
       const assistantMessage = {
         role: "assistant",
         content: fullResponse,
-<<<<<<< HEAD
         character_id: body.assistant_character_id ?? body.character_id ?? null,
         character_name: body.assistant_character_name ?? null,
-=======
         character_id: activeCharacterId,
         character_name: activeCharacterName,
->>>>>>> origin/main
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       };
       persistedAssistant = await appendStoreMessage(
@@ -155651,12 +151454,10 @@ router9.post("/messages", async (req, res) => {
         sessionId,
         role: "assistant",
         content: fullResponse,
-<<<<<<< HEAD
         characterId: body.assistant_character_id ?? body.character_id ?? null,
         characterName: body.assistant_character_name ?? null,
         isCrossover,
         metadata: { model: usedModel, tier: usedTier }
-=======
         characterId: activeCharacterId,
         characterName: activeCharacterName,
         isCrossover,
@@ -155669,7 +151470,6 @@ router9.post("/messages", async (req, res) => {
           ensemble_minds: ensembleMinds,
           ensemble_combined: ensembleCombined
         }
->>>>>>> origin/main
       });
       const sharedFact = isCrossover ? {
         type: "crossover_turn",
@@ -155712,11 +151512,8 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
         const evolved = evolveSynchroFromCompanion(synchroState, fullResponse);
         const serialized = serializeSynchroState(evolved);
         for (const cid of characterIds) {
-<<<<<<< HEAD
           await db2.update(companionMemories).set({
-=======
           await db.update(companionMemories).set({
->>>>>>> origin/main
             emotionalState: serialized,
             updatedAt: /* @__PURE__ */ new Date()
           }).where(
@@ -155733,14 +151530,11 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
         done: true,
         model: usedModel,
         tier: usedTier,
-<<<<<<< HEAD
-=======
         provider: usedProvider,
         brand: usedBrand,
         failed_over: failedOver,
         ensemble_minds: ensembleMinds,
         ensemble_combined: ensembleCombined,
->>>>>>> origin/main
         is_crossover: isCrossover,
         messages: [persistedUser, persistedAssistant].filter(Boolean)
       })}
@@ -155759,13 +151553,10 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
 var chat_default = router9;
 
 // src/routes/admin.ts
-<<<<<<< HEAD
 var import_express15 = __toESM(require_express2(), 1);
 var router10 = (0, import_express15.Router)();
-=======
 var import_express17 = __toESM(require_express2(), 1);
 var router10 = (0, import_express17.Router)();
->>>>>>> origin/main
 function requireMigrationSecret(req, res, next) {
   const configured = process.env.ADMIN_MIGRATION_SECRET?.trim();
   if (!configured) {
@@ -155809,12 +151600,10 @@ router10.post(
     }
   }
 );
-<<<<<<< HEAD
 var admin_default = router10;
 
 // src/routes/index.ts
 var router11 = (0, import_express16.Router)();
-=======
 router10.post(
   "/ensure-schema",
   requireMigrationSecret,
@@ -155838,7 +151627,6 @@ var admin_default = router10;
 
 // src/routes/index.ts
 var router11 = (0, import_express18.Router)();
->>>>>>> origin/main
 router11.use("/admin", admin_default);
 router11.use("/openai", openai_default2);
 router11.use("/openai", functions_default);
@@ -155857,14 +151645,12 @@ router11.get("/placeholder/:w/:h", (req, res) => {
 var routes_default = router11;
 
 // src/app.ts
-<<<<<<< HEAD
 var app = (0, import_express17.default)();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
 app.use(import_express17.default.json({ limit: "25mb" }));
 app.use(import_express17.default.urlencoded({ extended: true, limit: "25mb" }));
-=======
 var app = (0, import_express19.default)();
 app.set("trust proxy", 1);
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -155872,12 +151658,10 @@ app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
 app.use(import_express19.default.json({ limit: "25mb" }));
 app.use(import_express19.default.urlencoded({ extended: true, limit: "25mb" }));
->>>>>>> origin/main
 app.use("/api", health_default);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
 });
-<<<<<<< HEAD
 app.use(clerkMiddleware());
 app.use("/api", routes_default);
 app.use(
@@ -155886,7 +151670,6 @@ app.use(
     if (!res.headersSent) {
       const message = err instanceof Error ? err.message : "Internal server error";
       const isConfig3 = message.includes("DATABASE_URL") || message.includes("CLERK_SECRET_KEY") || message.includes("connection");
-=======
 app.use(safeClerkMiddleware());
 app.use("/api", routes_default);
 app.use(
@@ -155903,7 +151686,6 @@ app.use(
         });
         return;
       }
->>>>>>> origin/main
       res.status(isConfig3 ? 503 : 500).json({
         error: isConfig3 ? "API is misconfigured on the server. Check environment variables." : "Internal server error"
       });
@@ -155912,9 +151694,7 @@ app.use(
 );
 var app_default = app;
 
-<<<<<<< HEAD
 // src/vercel.ts
-=======
 // src/lib/ensureClerkPreviewRedirects.ts
 var SIGN_IN_CALLBACK = "/sign-in/sso-callback";
 var SIGN_UP_CALLBACK = "/sign-up/sso-callback";
@@ -155981,7 +151761,6 @@ async function ensureClerkPreviewRedirects() {
 
 // src/vercel.ts
 void ensureClerkPreviewRedirects();
->>>>>>> origin/main
 var vercel_default = app_default;
 export {
   vercel_default as default

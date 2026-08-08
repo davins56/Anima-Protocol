@@ -1,9 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-<<<<<<< HEAD
-=======
 import { toast } from "sonner";
->>>>>>> origin/main
 import { base44 } from "@/api/base44Client";
 import { ArrowLeft } from "lucide-react";
 import { Plus, X, Edit2, Trash2, Upload, Sparkles, Loader, Volume2, Palette, MessageSquare, Crown, Check, Clock } from "lucide-react";
@@ -278,11 +275,9 @@ Return JSON with a single "${field}" string field.`,
     const file = e.target.files[0];
     if (!file) return;
     setUploadingAvatar(true);
-<<<<<<< HEAD
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
     setForm((f) => ({ ...f, avatar_url: file_url }));
     setUploadingAvatar(false);
-=======
     try {
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
       if (file_url) {
@@ -297,7 +292,6 @@ Return JSON with a single "${field}" string field.`,
       setUploadingAvatar(false);
       e.target.value = "";
     }
->>>>>>> origin/main
   };
 
   const closeForm = () => {
@@ -474,8 +468,6 @@ Return JSON with a single "${field}" string field.`,
                       Talk
                     </button>
                     <button
-<<<<<<< HEAD
-=======
                       onClick={() => navigate(`/customise-anima?anima=${anima.id}`)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-pink-400/30 text-pink-400/70 hover:text-pink-300 hover:border-pink-400/50 font-mono text-[9px] tracking-[0.2em] uppercase transition-all"
                       title="Customise look"
@@ -484,7 +476,6 @@ Return JSON with a single "${field}" string field.`,
                       Look
                     </button>
                     <button
->>>>>>> origin/main
                       onClick={() => handleSetActive(anima)}
                       disabled={isActive || activatingId === anima.id || !me?.email}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 border font-mono text-[9px] tracking-[0.2em] uppercase transition-all disabled:cursor-not-allowed ${
@@ -516,19 +507,16 @@ Return JSON with a single "${field}" string field.`,
         <AnimaCustomizer
         anima={customizingAnima}
         onClose={() => setCustomizingAnima(null)}
-<<<<<<< HEAD
         onSave={({ avatar_url, theme_color }) => {
           setAnimas((prev) =>
             prev.map((a) =>
               a.id === customizingAnima.id
                 ? { ...a, avatar_url, theme_color }
-=======
         onSave={(patch) => {
           setAnimas((prev) =>
             prev.map((a) =>
               a.id === customizingAnima.id
                 ? { ...a, ...patch }
->>>>>>> origin/main
                 : a
             )
           );
