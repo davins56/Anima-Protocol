@@ -100,11 +100,26 @@ Dataset metadata: `scripts/llm/output/dataset_info.json`.
 
 ### Preference optimization
 
-Once you have chosen/rejected pairs (character fidelity, memory coherence, tone):
+A curated seed set of chosen/rejected pairs ships in
+`lib/llm/src/dataset/preferences.ts` — each pair anchors on an SFT seed turn
+and contrasts the vetted reply against a realistic failure mode (fact-dumping
+memory, generic-assistant disclaimers, negotiating past a stated boundary,
+narrating another companion's lines, over-apologizing). Expand it with your
+own pairs as you spot real model mistakes worth correcting.
 
-- Export with `toPreferencePair` from `@workspace/llm/dataset`  
-- Run a DPO / ORPO / SimPO stage in LLaMA-Factory (`stage: dpo` / `orpo`)  
-- Keep base instruction-following intact so character cards and system prompts still work  
+```bash
+pnpm llm:prepare-dpo
+# → scripts/llm/output/dpo-pairs.jsonl ({prompt, chosen, rejected, system} per line)
+
+# On a CUDA box, after the SFT stage above:
+python scripts/llm/finetune/unsloth_dpo.py \
+  --data scripts/llm/output/dpo-pairs.jsonl \
+  --base scripts/llm/checkpoints/anima-ministral8b-qlora \
+  --out scripts/llm/checkpoints/anima-ministral8b-dpo
+```
+
+Or LLaMA-Factory (`stage: dpo` / `orpo`) with the same JSONL. Keep base
+instruction-following intact so character cards and system prompts still work.
 
 ---
 
@@ -219,6 +234,7 @@ Before making local the default in production:
 ```bash
 pnpm llm:list-models
 pnpm llm:prepare-finetune
+pnpm llm:prepare-dpo
 pnpm llm:serve-hint
 pnpm llm:test
 pnpm --filter @workspace/api-server test

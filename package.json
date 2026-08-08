@@ -17,6 +17,7 @@
     "llm:tunnel": "bash scripts/llm/tunnel-cloudflared.sh",
     "llm:chat": "pnpm --filter @workspace/llm run cli -- chat",
     "llm:prepare-finetune": "pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt",
+    "llm:prepare-dpo": "pnpm --filter @workspace/llm run cli -- prepare-dpo",
     "llm:export-turns": "pnpm --filter @workspace/llm run cli -- export-turns",
     "llm:list-models": "pnpm --filter @workspace/llm run cli -- list-models --provider ollama",
     "llm:serve-hint": "pnpm --filter @workspace/llm run cli -- serve-hint",

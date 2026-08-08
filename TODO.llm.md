@@ -41,11 +41,22 @@ documentation.
 - [x] Step 19: Docs clarify ChatGPT/Gemini/Groq weights are closed; Anima uses open weights
 - [x] Step 20: `docker-compose.dev.yml` + `pnpm dev:infra:up/down/logs` — bundles Postgres + the branded `anima-chat` Ollama model behind one command (validated with `docker compose config`; image pulls not exercised in this sandbox's network policy)
 
+## Phase F — Model quality: bigger SFT seed set + DPO tooling
+
+- [x] Step 21: Expanded `ANIMA_SEED_EXAMPLES` — identity anchoring, boundaries/consent,
+      two-speaker crossover, repair-after-mismatch, light/humor tone (4 → 10 seed turns)
+- [x] Step 22: `lib/llm/src/dataset/preferences.ts` — curated chosen/rejected pairs for
+      DPO/ORPO/SimPO, anchored on real seed turns vs. realistic failure modes
+- [x] Step 23: `preferencesToJsonl` / `preferenceToExportRow` formatters + `prepare-dpo`
+      CLI command + `pnpm llm:prepare-dpo` root script
+- [x] Step 24: `scripts/llm/finetune/unsloth_dpo.py` — DPO stage that runs after SFT
+- [x] Step 25: tests for the expanded seed set and preference pairs; docs updated
+
 ## Still manual (GPU / data ops)
 
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
 - [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
-- [ ] Optional DPO/ORPO/SimPO preference stage
+- [ ] Run the DPO preference stage (`unsloth_dpo.py`, tooling now scaffolded above)
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
 - [x] `ANIMA_LLM_PROVIDER=custom|anima|local` = self-hosted Anima LLM (no cloud BYOK)
 - [x] `ANIMA_ALLOW_CLOUD_LLM=true` gate — every cloud-capable mode (auto/local-first/gemini/groq/kimi/xai/openai/gateway/ensemble) is silently downgraded to `local` unless this second flag is also set, so a mistyped `ANIMA_LLM_PROVIDER` can never switch chat onto a flagship provider
