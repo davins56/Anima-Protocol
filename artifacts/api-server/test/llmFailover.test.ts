@@ -136,8 +136,10 @@ function fakeCompletion(content = "ok") {
 }
 
 describe("isProviderAuthError", () => {
-  it("detects 401 / invalid API key (including SDK 'no body' message)", () => {
+  it("detects 401 / 403 / invalid API key (including SDK 'no body' message)", () => {
     expect(isProviderAuthError({ status: 401, message: "401 status code (no body)" })).toBe(true);
+    expect(isProviderAuthError({ status: 403, message: "403 status code (no body)" })).toBe(true);
+    expect(isProviderAuthError({ status: 403 })).toBe(true);
     expect(isProviderAuthError({ status: 429, message: "rate limited" })).toBe(false);
   });
 });
