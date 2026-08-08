@@ -5,8 +5,11 @@ import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
-import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
-import { createChatCompletionWithFailover } from "../../lib/llmFailover";
+import { resolveModel } from "../../lib/modelRouter";
+import {
+  createChatCompletionWithFailover,
+  isAnimaCustomMode,
+} from "../../lib/llmFailover";
 import { getOpenAIClient } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
 
@@ -38,7 +41,12 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
 // Web-grounded LLM call: uses the OpenAI Responses API with the web_search
 // tool so the model can scour the live web (cast to any to stay compatible
 // across SDK minor versions). Falls back to the plain model if unavailable.
+// Skipped entirely in Anima custom mode — that mode is meant to stay off the
+// cloud flagship models even when an OPENAI_API_KEY happens to be present.
 async function webSearchLLM(systemPrompt: string, userPrompt: string): Promise<string> {
+  if (isAnimaCustomMode()) {
+    return llm(systemPrompt, userPrompt);
+  }
   try {
     const resp = await (getOpenAIClient() as any).responses.create({
       model: "gpt-4o",
@@ -910,36 +918,22 @@ Rules:
           ...rawMessages,
         ];
 
-        const runCompletion = (model: string, maxTokens: number) =>
-          getOpenAIClient().chat.completions.create({
-            model,
-            max_tokens: maxTokens,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            messages: baseMessages as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tools: tools as any,
-            tool_choice: "auto",
-          });
-
         const heavy = resolveModel("heavy");
-        let completion;
-        try {
-          completion = await runCompletion(heavy.model, heavy.maxTokens);
-        } catch (err) {
-          if (isModelUnavailableError(err)) {
-            const std = resolveModel("standard");
-            completion = await runCompletion(std.model, std.maxTokens);
-          } else {
-            throw err;
-          }
-        }
+        const completion = await createChatCompletionWithFailover({
+          tier: "heavy",
+          model: heavy.model,
+          maxTokens: heavy.maxTokens,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          messages: baseMessages as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tools: tools as any,
+        });
 
-        const choice = completion.choices[0]?.message;
         result = {
           message: {
             role: "assistant",
-            content: choice?.content ?? "",
-            tool_calls: choice?.tool_calls ?? null,
+            content: completion.content ?? "",
+            tool_calls: completion.toolCalls ?? null,
           },
         };
         break;
