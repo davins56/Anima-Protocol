@@ -94126,7 +94126,12 @@ var REQUIRED_TABLES = [
   "chat_messages",
   "companion_memories",
   "memory_embeddings",
-  "uploaded_images"
+  "uploaded_images",
+  // Companion state used on every /api/chat/messages turn. Missing these
+  // previously 500'd the whole reply before the LLM was even called.
+  "anima_evolution",
+  "anima_relationships",
+  "anima_narrative_arcs"
 ];
 async function listPresentTables(db3, names) {
   const { rows } = await db3.query(
@@ -94290,6 +94295,57 @@ async function ensureSchema(db3 = getPool()) {
       "updated_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:memory_embeddings"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_evolution" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "conversation_count" integer DEFAULT 0 NOT NULL,
+      "void_sessions" integer DEFAULT 0 NOT NULL,
+      "evolution_delta" jsonb DEFAULT '{"version":1,"appliedAt":"1970-01-01T00:00:00.000Z","milestone":0,"traitsDelta":{},"quirkAdditions":[],"voidBias":0}'::jsonb NOT NULL,
+      "evolution_rationale" text DEFAULT '' NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_evolution"
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_evolution_user_anima_uq"
+       ON "anima_evolution" USING btree ("user_id","anima_id")`,
+    "index:anima_evolution_user_anima_uq"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_relationships" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_relationships"
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_relationships_user_anima_uq"
+       ON "anima_relationships" USING btree ("user_id","anima_id")`,
+    "index:anima_relationships_user_anima_uq"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_narrative_arcs" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_narrative_arcs"
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_narrative_arcs_user_anima_uq"
+       ON "anima_narrative_arcs" USING btree ("user_id","anima_id")`,
+    "index:anima_narrative_arcs_user_anima_uq"
   );
   await run(
     `ALTER TABLE "conversations" ALTER COLUMN "user_id" SET DEFAULT ''`,
@@ -105261,6 +105317,27 @@ function localLlmBaseUrl() {
 function hasLocalLlm() {
   return Boolean(localLlmBaseUrl());
 }
+var CLOUD_FLAGSHIP_LLM_HOSTS = /* @__PURE__ */ new Set([
+  "api.openai.com",
+  "openai.com",
+  "api.groq.com",
+  "groq.com",
+  "generativelanguage.googleapis.com",
+  "api.anthropic.com",
+  "api.x.ai",
+  "api.moonshot.ai",
+  "api.moonshot.cn"
+]);
+function isCloudFlagshipLlmHost(host) {
+  if (!host) return false;
+  const h2 = host.trim().toLowerCase().replace(/\.$/, "");
+  if (!h2) return false;
+  if (CLOUD_FLAGSHIP_LLM_HOSTS.has(h2)) return true;
+  for (const blocked of CLOUD_FLAGSHIP_LLM_HOSTS) {
+    if (h2.endsWith(`.${blocked}`)) return true;
+  }
+  return false;
+}
 function localLlmMaxRetries() {
   const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
   if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
@@ -105274,7 +105351,8 @@ function summarizeLocalLlmBaseUrl() {
       host: null,
       hasV1Path: false,
       isHttps: false,
-      isLocalhost: false
+      isLocalhost: false,
+      isCloudFlagship: false
     };
   }
   try {
@@ -105287,15 +105365,19 @@ function summarizeLocalLlmBaseUrl() {
       host,
       hasV1Path: path2 === "/v1" || path2.endsWith("/v1"),
       isHttps: url3.protocol === "https:",
-      isLocalhost
+      isLocalhost,
+      isCloudFlagship: isCloudFlagshipLlmHost(host)
     };
   } catch {
+    const hostMatch = base.match(/^https?:\/\/([^/:]+)/i);
+    const host = hostMatch?.[1] ?? null;
     return {
       configured: true,
-      host: null,
+      host,
       hasV1Path: /\/v1\/?$/.test(base),
       isHttps: /^https:/i.test(base),
-      isLocalhost: /localhost|127\.0\.0\.1/i.test(base)
+      isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+      isCloudFlagship: isCloudFlagshipLlmHost(host)
     };
   }
 }
@@ -105309,6 +105391,12 @@ function logLocalLlmClientInitOnce() {
   if (!summary.configured) {
     console.info(
       "[llm] ANIMA_LOCAL_LLM_BASE_URL unset \u2014 set a public HTTPS OpenAI-compatible URL (\u2026/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md."
+    );
+    return;
+  }
+  if (summary.isCloudFlagship) {
+    console.error(
+      `[llm] MISCONFIGURED: ANIMA_LOCAL_LLM_BASE_URL host=${summary.host} is a cloud flagship API. Chat requires a self-hosted Ollama/vLLM URL serving model=${model}. See docs/llm-deploy.md.`
     );
     return;
   }
@@ -105891,6 +105979,7 @@ function truncateText(text2, max) {
 }
 
 // src/lib/llmFailover.ts
+var CLOUD_FLAGSHIP_SETUP_HINT = "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy.";
 function beginChatProviderTurn() {
 }
 function resolveLocalModel(tier) {
@@ -105986,7 +106075,13 @@ async function withModelFallback(client, preferred, run) {
   explained.cause = lastErr;
   throw explained;
 }
+function cloudFlagshipMisconfigured() {
+  return summarizeLocalLlmBaseUrl().isCloudFlagship;
+}
 function requireLocalClient() {
+  if (cloudFlagshipMisconfigured()) {
+    throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
+  }
   const client = getLocalLlmClient();
   if (client) return client;
   throw new Error(
@@ -105994,9 +106089,19 @@ function requireLocalClient() {
   );
 }
 function enrichError(err) {
+  if (cloudFlagshipMisconfigured()) {
+    return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
+  }
   if (isProviderAuthError(err)) {
     return new Error(
       `Anima LLM authentication failed: ${summarizeError(err)}. Check ANIMA_LOCAL_LLM_API_KEY on the local server config, then redeploy.`
+    );
+  }
+  if (isLocalModelUnavailable(err)) {
+    const model = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel("standard").model;
+    const host = summarizeLocalLlmBaseUrl().host ?? "?";
+    return new Error(
+      `Anima LLM model "${model}" is not available on host=${host}: ${summarizeError(err)}. Create the model on that host (e.g. \`ollama create anima-chat\`) or set ANIMA_OLLAMA_MODEL_STANDARD to a model id the server actually serves. See docs/llm-deploy.md.`
     );
   }
   const base = err instanceof Error ? err : new Error(String(err));
@@ -106008,10 +106113,13 @@ function getLlmRoutingStatus(tier = "standard") {
   const localModel = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel(tier).model;
   logLocalLlmClientInitOnce();
   const noteParts = [];
+  const usable = localSummary.configured && !localSummary.isCloudFlagship;
   if (!localSummary.configured) {
     noteParts.push(
       "ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. See docs/custom-llm.md."
     );
+  } else if (localSummary.isCloudFlagship) {
+    noteParts.push(CLOUD_FLAGSHIP_SETUP_HINT);
   } else {
     noteParts.push(
       `Chat uses the self-hosted Anima LLM only (vLLM/Ollama/llama.cpp) at host=${localSummary.host ?? "?"} model=${localModel}. There is no cloud flagship fallback.`
@@ -106027,8 +106135,8 @@ function getLlmRoutingStatus(tier = "standard") {
     }
   }
   return {
-    status: hasLocalLlm() ? "ok" : "error",
-    preferred: hasLocalLlm() ? "local" : null,
+    status: usable ? "ok" : "error",
+    preferred: usable ? "local" : null,
     brand: "anima",
     localEndpoint: {
       configured: localSummary.configured,
@@ -106036,6 +106144,7 @@ function getLlmRoutingStatus(tier = "standard") {
       hasV1Path: localSummary.hasV1Path,
       isHttps: localSummary.isHttps,
       isLocalhost: localSummary.isLocalhost,
+      isCloudFlagship: localSummary.isCloudFlagship,
       backend,
       model: localModel
     },
@@ -106045,6 +106154,20 @@ function getLlmRoutingStatus(tier = "standard") {
 async function probeLlmProviders(tier = "standard") {
   if (!hasLocalLlm()) {
     return [{ provider: "local", configured: false, ok: false }];
+  }
+  if (cloudFlagshipMisconfigured()) {
+    const resolved2 = resolveLocalModel(tier);
+    return [
+      {
+        provider: "local",
+        configured: true,
+        ok: false,
+        status: 400,
+        errorKind: "other",
+        message: CLOUD_FLAGSHIP_SETUP_HINT.slice(0, 160),
+        model: resolved2.model
+      }
+    ];
   }
   const resolved = resolveLocalModel(tier);
   const started = Date.now();
@@ -121264,9 +121387,18 @@ function truncate2(value, max = 900) {
   const text2 = String(value ?? "").trim().replace(/\s+/g, " ");
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
+function isMissingRelationError(err) {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /relation .* does not exist/i.test(msg) || /Failed query:[\s\S]*anima_evolution/i.test(msg);
+}
 async function loadEvolution(animaId, userId) {
-  const [row] = await db2.select().from(animaEvolution).where(and(eq(animaEvolution.animaId, animaId), eq(animaEvolution.userId, userId))).limit(1);
-  return row;
+  try {
+    const [row] = await db2.select().from(animaEvolution).where(and(eq(animaEvolution.animaId, animaId), eq(animaEvolution.userId, userId))).limit(1);
+    return row;
+  } catch (err) {
+    if (isMissingRelationError(err)) return void 0;
+    throw err;
+  }
 }
 async function ensureEvolutionRow(params) {
   const existing = await loadEvolution(params.animaId, params.userId);
@@ -121402,11 +121534,20 @@ function chooseAttachmentStyle(state) {
   if (jealousy < 25 && relationship_level >= 50) return "secure";
   return "avoidant";
 }
+function isMissingRelationError2(err) {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /relation .* does not exist/i.test(msg) || /Failed query:[\s\S]*anima_relationships/i.test(msg);
+}
 async function loadRelationshipState(animaId, userId) {
-  const [row] = await db2.select().from(animaRelationships).where(and(eq(animaRelationships.userId, userId), eq(animaRelationships.animaId, animaId))).limit(1);
-  if (!row) return null;
-  const data = row.state;
-  return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
+  try {
+    const [row] = await db2.select().from(animaRelationships).where(and(eq(animaRelationships.userId, userId), eq(animaRelationships.animaId, animaId))).limit(1);
+    if (!row) return null;
+    const data = row.state;
+    return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
+  } catch (err) {
+    if (isMissingRelationError2(err)) return null;
+    throw err;
+  }
 }
 async function ensureRelationshipRow(params) {
   const existing = await loadRelationshipState(params.animaId, params.userId);
@@ -121487,10 +121628,19 @@ function stageFromProgress(progress) {
   if (progress < 90) return "Resonance Crisis";
   return "Fusion";
 }
+function isMissingRelationError3(err) {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /relation .* does not exist/i.test(msg) || /Failed query:[\s\S]*anima_narrative_arcs/i.test(msg);
+}
 async function loadArcState(animaId, userId) {
-  const [row] = await db2.select().from(animaNarrativeArcs).where(and(eq(animaNarrativeArcs.userId, userId), eq(animaNarrativeArcs.animaId, animaId))).limit(1);
-  if (!row) return null;
-  return row.state ?? null;
+  try {
+    const [row] = await db2.select().from(animaNarrativeArcs).where(and(eq(animaNarrativeArcs.userId, userId), eq(animaNarrativeArcs.animaId, animaId))).limit(1);
+    if (!row) return null;
+    return row.state ?? null;
+  } catch (err) {
+    if (isMissingRelationError3(err)) return null;
+    throw err;
+  }
 }
 async function ensureArcRow(params) {
   const existing = await loadArcState(params.animaId, params.userId);
