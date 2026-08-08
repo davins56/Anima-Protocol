@@ -10,7 +10,6 @@
 #
 # Then point the api-server at this stack (matches .env.example defaults):
 #   export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
-#   export ANIMA_LLM_PROVIDER=custom
 #   export ANIMA_LOCAL_LLM_BACKEND=ollama
 #   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 #   export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat

@@ -23,6 +23,7 @@ import {
   type ProviderName,
 } from "./registry";
 import {
+  cleanExamples,
   listSeedExamples,
   toJsonl,
   type ExportFormat,
@@ -41,11 +42,15 @@ function usage(): never {
 
 Commands:
   list-models [--provider vllm|ollama|openai|groq|mock]
-  export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
-  prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
+  export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N] [--no-clean]
+  prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b] [--with-db] [--no-clean]
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
   serve-hint
   seed-stats
+
+export-turns / prepare-finetune drop error-artifact turns, redact obvious PII,
+filter out low-signal examples, and de-duplicate near-identical conversations
+by default. Pass --no-clean to write the raw export instead.
 
 Examples:
   pnpm llm:up                               # bootstrap open-weight anima-chat
@@ -98,9 +103,18 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
     examples = [...examples, ...fromDb];
   }
 
+  const { kept, dropped, deduped } = hasFlag(args, "--no-clean")
+    ? { kept: examples, dropped: 0, deduped: 0 }
+    : cleanExamples(examples);
+
   await mkdir(path.dirname(out), { recursive: true });
-  await writeFile(out, toJsonl(examples, format), "utf8");
-  console.log(`Wrote ${examples.length} examples → ${out} (${format})`);
+  await writeFile(out, toJsonl(kept, format), "utf8");
+  console.log(`Wrote ${kept.length} examples → ${out} (${format})`);
+  if (dropped || deduped) {
+    console.log(
+      `Cleaned: dropped ${dropped} low-quality, ${deduped} duplicate (of ${examples.length} candidates). Use --no-clean to skip.`,
+    );
+  }
   console.log(`Fine-tune base: ${ANIMA_FINETUNE_BASE_MODEL}`);
   console.log(`Serve target:   ${ANIMA_PRIMARY_MODEL}`);
 }
@@ -118,9 +132,17 @@ async function cmdExportTurns(args: string[]): Promise<void> {
     limit: Number(argValue(args, "--limit") || 200),
     minTurns: Number(argValue(args, "--min-turns") || 4),
   });
+  const { kept, dropped, deduped } = hasFlag(args, "--no-clean")
+    ? { kept: examples, dropped: 0, deduped: 0 }
+    : cleanExamples(examples);
   await mkdir(path.dirname(out), { recursive: true });
-  await writeFile(out, toJsonl(examples, "messages"), "utf8");
-  console.log(`Exported ${examples.length} sessions → ${out}`);
+  await writeFile(out, toJsonl(kept, "messages"), "utf8");
+  console.log(`Exported ${kept.length} sessions → ${out}`);
+  if (dropped || deduped) {
+    console.log(
+      `Cleaned: dropped ${dropped} low-quality, ${deduped} duplicate (of ${examples.length} sessions). Use --no-clean to skip.`,
+    );
+  }
 }
 
 async function cmdChat(args: string[]): Promise<void> {
@@ -189,7 +211,6 @@ public open weights + local serving instead.
 1) Bootstrap (CPU / laptop — works today):
    bash scripts/llm/bootstrap-anima-llm.sh
    # pulls ${ANIMA_BOOTSTRAP_BASE_MODEL}, creates ${ANIMA_OLLAMA_CHAT_TAG}
-   export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BACKEND=ollama
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
    export ANIMA_OLLAMA_MODEL_STANDARD=${ANIMA_OLLAMA_CHAT_TAG}
@@ -197,7 +218,6 @@ public open weights + local serving instead.
 
 2) GPU upgrade (Ministral 3 8B fine-tune → vLLM):
    docker compose -f scripts/llm/docker-compose.vllm.yml up
-   export ANIMA_LLM_PROVIDER=custom
    export ANIMA_LOCAL_LLM_BACKEND=vllm
    export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
    export ANIMA_VLLM_MODEL_STANDARD=${ANIMA_PRIMARY_MODEL}
@@ -211,10 +231,9 @@ Fine-tune (LoRA on CUDA):
     --data scripts/llm/output/finetune-sharegpt.jsonl \\
     --base ${ANIMA_FINETUNE_BASE_MODEL}
 
-Modes:
-  ANIMA_LLM_PROVIDER=custom   # self-hosted Anima LLM only (recommended)
-  ANIMA_LLM_PROVIDER=local    # same as custom
-  ANIMA_LLM_PROVIDER=local-first  # local, then optional cloud BYOK if keys exist
+Chat has exactly one backend — ANIMA_LOCAL_LLM_BASE_URL above. There is no
+mode switch and no cloud fallback; ANIMA_LOCAL_LLM_BACKEND only picks which
+local server (ollama or vllm) that URL points at.
 `);
 }
 
