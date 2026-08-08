@@ -104,21 +104,33 @@ function fromTranscriptText(
   const lines = text.split(/\r?\n/);
   const conversation: ChatTurn[] = [];
   const speakerCounts = new Map<string, number>();
-  // Non-target speaker lines (narrator, other companions) are context for
-  // the target character's *next* reply, not for whichever turn happens to
-  // be last — that could be the user's own line, or there may be no turn
-  // yet at all if the interjection comes first.
+  // Non-target speaker lines (narrator, other companions) are always queued
+  // as context for the target character's *next* reply.
   let lastAssistantTurn: ChatTurn | null = null;
   let pendingContext: string[] = [];
+  // What a continuation line (no "Speaker:" prefix) should attach to. A
+  // pending interjection can outlive an intervening user turn — it isn't
+  // consumed until the target character's next reply — so this can't be
+  // inferred from pendingContext.length alone; it has to track the actual
+  // last thing written.
+  let lastWrite: "turn" | "pending" | "none" = "none";
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
     const match = line.match(TRANSCRIPT_LINE);
     if (!match) {
-      const last = conversation[conversation.length - 1];
-      if (last) last.content += `\n${line}`;
-      else pendingContext.push(line);
+      if (lastWrite === "pending") {
+        pendingContext[pendingContext.length - 1] += `\n${line}`;
+      } else {
+        const last = conversation[conversation.length - 1];
+        if (last) {
+          last.content += `\n${line}`;
+        } else {
+          pendingContext.push(line);
+          lastWrite = "pending";
+        }
+      }
       continue;
     }
     const [, speakerRaw, content] = match;
@@ -126,19 +138,18 @@ function fromTranscriptText(
 
     if (USER_ALIASES.test(speaker)) {
       conversation.push({ role: "user", content: content.trim() });
+      lastWrite = "turn";
       continue;
     }
 
     if (restrictToCharacter && speaker.toLowerCase() !== restrictToCharacter.toLowerCase()) {
-      // Narrator / other-character line — keep as context instead of
-      // training it as the target character's own speech. Only fold onto
-      // the assistant's turn if nothing has happened since (i.e. it's still
-      // the most recent turn) — otherwise a user turn came in between, so
-      // this interjection belongs to the *next* reply, not the last one.
-      const note = `[${speaker}]: ${content.trim()}`;
-      const last = conversation[conversation.length - 1];
-      if (lastAssistantTurn && last === lastAssistantTurn) lastAssistantTurn.content += `\n${note}`;
-      else pendingContext.push(note);
+      // Narrator / other-character line — always queue as context for the
+      // character's *next* reply. Never mutate an already-emitted turn: that
+      // would put foreign dialogue inside a turn attributed to the target
+      // character regardless of whether it's appended or prefixed, teaching
+      // the model to speak for someone else.
+      pendingContext.push(`[${speaker}]: ${content.trim()}`);
+      lastWrite = "pending";
       continue;
     }
 
@@ -148,6 +159,7 @@ function fromTranscriptText(
     const turn: ChatTurn = { role: "assistant", content: `${prefix}${content.trim()}`, name: speaker };
     conversation.push(turn);
     lastAssistantTurn = turn;
+    lastWrite = "turn";
   }
 
   // If a character was requested but never actually spoke, every "assistant"
