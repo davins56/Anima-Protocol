@@ -108,21 +108,28 @@ function fromTranscriptText(
   // as context for the target character's *next* reply.
   let lastAssistantTurn: ChatTurn | null = null;
   let pendingContext: string[] = [];
+  // What a continuation line (no "Speaker:" prefix) should attach to. A
+  // pending interjection can outlive an intervening user turn — it isn't
+  // consumed until the target character's next reply — so this can't be
+  // inferred from pendingContext.length alone; it has to track the actual
+  // last thing written.
+  let lastWrite: "turn" | "pending" | "none" = "none";
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
     const match = line.match(TRANSCRIPT_LINE);
     if (!match) {
-      // A continuation line belongs to whatever was written last — an
-      // in-progress interjection if one is still pending, otherwise the
-      // most recent conversation turn.
-      if (pendingContext.length) {
+      if (lastWrite === "pending") {
         pendingContext[pendingContext.length - 1] += `\n${line}`;
       } else {
         const last = conversation[conversation.length - 1];
-        if (last) last.content += `\n${line}`;
-        else pendingContext.push(line);
+        if (last) {
+          last.content += `\n${line}`;
+        } else {
+          pendingContext.push(line);
+          lastWrite = "pending";
+        }
       }
       continue;
     }
@@ -131,6 +138,7 @@ function fromTranscriptText(
 
     if (USER_ALIASES.test(speaker)) {
       conversation.push({ role: "user", content: content.trim() });
+      lastWrite = "turn";
       continue;
     }
 
@@ -141,6 +149,7 @@ function fromTranscriptText(
       // character regardless of whether it's appended or prefixed, teaching
       // the model to speak for someone else.
       pendingContext.push(`[${speaker}]: ${content.trim()}`);
+      lastWrite = "pending";
       continue;
     }
 
@@ -150,6 +159,7 @@ function fromTranscriptText(
     const turn: ChatTurn = { role: "assistant", content: `${prefix}${content.trim()}`, name: speaker };
     conversation.push(turn);
     lastAssistantTurn = turn;
+    lastWrite = "turn";
   }
 
   // If a character was requested but never actually spoke, every "assistant"
