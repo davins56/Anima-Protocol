@@ -43,7 +43,12 @@ export const PROVIDER_NAMES: ProviderName[] = [
   "mock",
 ];
 export const MODEL_TIERS: ModelTier[] = ["light", "standard", "heavy"];
-export const DEFAULT_PROVIDER: ProviderName = "openai";
+/**
+ * Matches the api-server's actual default (llmFailover.ts `defaultProviderMode()`
+ * returns "local" when ANIMA_LLM_PROVIDER is unset, which resolves to ollama here).
+ * Anima chat must never default to a cloud flagship provider.
+ */
+export const DEFAULT_PROVIDER: ProviderName = "ollama";
 
 /**
  * Canonical GPU serve target for Anima companions (Ministral 3 8B Instruct).
@@ -222,8 +227,10 @@ const SAMPLINGS: Record<ProviderName, Record<ModelTier, SamplingPreset>> = {
 
 /**
  * Resolve the active provider from an explicit value or `ANIMA_LLM_PROVIDER`.
- * Anything unrecognized falls back to OpenAI so a typo never silently disables
- * the runtime.
+ * Unset or unrecognized (e.g. a typo, or an API key pasted into the wrong
+ * field) both fall back to the self-hosted `ollama` default — matching
+ * llmFailover.ts's `defaultProviderMode()` — so a stray env var can never
+ * silently switch chat onto a cloud flagship provider.
  */
 export function resolveProvider(envValue?: string | null): ProviderName {
   const raw = (envValue ?? process.env.ANIMA_LLM_PROVIDER ?? "")
@@ -232,6 +239,7 @@ export function resolveProvider(envValue?: string | null): ProviderName {
   if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
     return raw;
   }
+  if (raw === "openai") return "openai";
   // custom / anima / local / local-first → honor ANIMA_LOCAL_LLM_BACKEND.
   // Default ollama (bootstrap anima-chat); set backend=vllm for GPU Ministral.
   if (
@@ -246,7 +254,8 @@ export function resolveProvider(envValue?: string | null): ProviderName {
     if (backend === "vllm") return "vllm";
     return "ollama";
   }
-  return "openai";
+  // Unset or unrecognized (typo, stray API key, …) → safe self-hosted default.
+  return DEFAULT_PROVIDER;
 }
 
 /** The env key for a per-provider model override (ANIMA_<P>_MODEL_<T>). */
