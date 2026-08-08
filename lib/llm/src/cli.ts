@@ -23,7 +23,9 @@ import {
   type ProviderName,
 } from "./registry";
 import {
+  listPreferenceExamples,
   listSeedExamples,
+  preferencesToJsonl,
   toJsonl,
   type ExportFormat,
   type TrainingExample,
@@ -43,6 +45,7 @@ Commands:
   list-models [--provider vllm|ollama|openai|groq|mock]
   export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
+  prepare-dpo [--out path] [--tags a,b]   Preference pairs for DPO/ORPO/SimPO
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
   serve-hint
   seed-stats
@@ -103,6 +106,22 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
   console.log(`Wrote ${examples.length} examples → ${out} (${format})`);
   console.log(`Fine-tune base: ${ANIMA_FINETUNE_BASE_MODEL}`);
   console.log(`Serve target:   ${ANIMA_PRIMARY_MODEL}`);
+}
+
+async function cmdPrepareDpo(args: string[]): Promise<void> {
+  const out = resolveOutPath(
+    argValue(args, "--out") || path.join("scripts", "llm", "output", "dpo-pairs.jsonl"),
+  );
+  const tagsRaw = argValue(args, "--tags");
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+
+  const preferences = listPreferenceExamples(tags);
+  await mkdir(path.dirname(out), { recursive: true });
+  await writeFile(out, preferencesToJsonl(preferences), "utf8");
+  console.log(`Wrote ${preferences.length} preference pairs → ${out}`);
+  console.log(
+    "Run: python scripts/llm/finetune/unsloth_dpo.py --data " + path.relative(REPO_ROOT, out),
+  );
 }
 
 async function cmdExportTurns(args: string[]): Promise<void> {
@@ -238,6 +257,9 @@ async function main(): Promise<void> {
       break;
     case "prepare-finetune":
       await cmdPrepareFinetune(args.slice(1));
+      break;
+    case "prepare-dpo":
+      await cmdPrepareDpo(args.slice(1));
       break;
     case "export-turns":
       await cmdExportTurns(args.slice(1));
