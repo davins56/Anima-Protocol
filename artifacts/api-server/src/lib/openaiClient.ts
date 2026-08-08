@@ -54,6 +54,17 @@ export function hasLocalLlm(): boolean {
 }
 
 /**
+ * Transport-level retries for the self-hosted endpoint. Tunables via
+ * ANIMA_LOCAL_LLM_MAX_RETRIES (0 disables) for hosts where a retry is more
+ * expensive than a failed turn — e.g. a single-slot GPU box.
+ */
+export function localLlmMaxRetries(): number {
+  const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 2;
+}
+
+/**
  * Secret-free summary of the configured local LLM base URL for healthz / logs.
  * Returns hostname + whether the path looks OpenAI-compatible (`/v1`).
  */
@@ -163,7 +174,13 @@ export function getLocalLlmClient(): OpenAI | null {
     localLlmClient = new OpenAI({
       apiKey,
       baseURL,
-      maxRetries: 0,
+      // Self-hosted endpoints are usually reached over a tunnel (cloudflared,
+      // Fly, a VPS reverse proxy), where a dropped connection or a cold-start
+      // 502 is routine. With no retries every one of those killed a chat turn
+      // outright. The SDK only retries connection errors and 408/409/429/5xx,
+      // and only before a stream has started, so this cannot duplicate a
+      // partially-delivered reply.
+      maxRetries: localLlmMaxRetries(),
     });
     localLlmClientKey = cacheKey;
     logLocalLlmClientInitOnce();

@@ -20,6 +20,14 @@ import {
   logLocalLlmClientInitOnce,
   summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
+import {
+  chooseLocalModel,
+  describeModelMismatch,
+  forgetModelSubstitution,
+  getRememberedModel,
+  listLocalModels,
+  rememberModelSubstitution,
+} from "./localModelCatalog";
 import { resolveModelSpec } from "@workspace/llm";
 
 /** Only one chat provider exists: the self-hosted Anima LLM. */
@@ -58,7 +66,12 @@ export interface LlmProviderProbeResult {
   status?: number;
   errorKind?: "auth" | "quota" | "other";
   message?: string;
+  /** The model the turn actually ran on (may differ from `configuredModel`). */
   model?: string;
+  /** The tag from ANIMA_*_MODEL_* / the registry, before any discovery. */
+  configuredModel?: string;
+  /** Model ids the endpoint reports via `/v1/models` — empty if unsupported. */
+  availableModels?: string[];
   latencyMs?: number;
 }
 
@@ -167,43 +180,91 @@ function isLocalModelUnavailable(err: unknown): boolean {
   return isModelUnavailableError(err);
 }
 
-function rescueModelsForLocal(preferred: ResolvedModel): ResolvedModel[] {
+/**
+ * Model tags to try before asking the endpoint what it serves: a stand-in
+ * learned on an earlier turn first (the endpoint already told us the
+ * configured tag isn't there — re-asking just burns a round trip on every
+ * message), then the configured tag, then the other tiers.
+ */
+function configuredCandidates(preferred: ResolvedModel): ResolvedModel[] {
   const seen = new Set<string>();
   const out: ResolvedModel[] = [];
-  const push = (model: string) => {
-    const id = model.trim();
+  const push = (model: string | null | undefined) => {
+    const id = (model || "").trim();
     if (!id || seen.has(id)) return;
     seen.add(id);
     out.push({ ...preferred, model: id });
   };
+  push(getRememberedModel(preferred.model));
   push(preferred.model);
   push(resolveLocalModel("standard").model);
   push(resolveLocalModel("light").model);
   return out;
 }
 
+/**
+ * Run a chat call against the first model tag the endpoint will accept.
+ *
+ * The single-model Ollama lineup collapses all three tiers onto one tag, so
+ * the tier chain alone rescues nothing: if `anima-chat` isn't on the host,
+ * every candidate is `anima-chat` and every turn 404s identically. When the
+ * configured tags are exhausted this asks `/v1/models` and uses whatever the
+ * host really serves, so a mis-tagged or freshly-provisioned box still holds
+ * a conversation instead of failing every message.
+ */
 async function withModelFallback<T>(
+  client: OpenAI,
   preferred: ResolvedModel,
   run: (resolved: ResolvedModel) => Promise<T>,
 ): Promise<{ value: T; resolved: ResolvedModel }> {
-  const candidates = rescueModelsForLocal(preferred);
+  const attempted = new Set<string>();
   let lastErr: unknown;
 
-  for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i]!;
+  const attempt = async (
+    candidate: ResolvedModel,
+  ): Promise<{ value: T; resolved: ResolvedModel } | null> => {
+    if (attempted.has(candidate.model)) return null;
+    attempted.add(candidate.model);
     try {
-      return { value: await run(candidate), resolved: candidate };
+      const value = await run(candidate);
+      if (candidate.model !== preferred.model) {
+        rememberModelSubstitution(preferred.model, candidate.model);
+      }
+      return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      const hasNext = i < candidates.length - 1;
-      if (!hasNext || !isLocalModelUnavailable(err)) {
-        throw err;
-      }
-      // Retired / unknown model tag → try the next candidate on the local server.
+      // Anything other than "unknown model" (quota, auth, network, bad
+      // request) is not fixed by trying a different tag — surface it as is.
+      if (!isLocalModelUnavailable(err)) throw err;
+      return null;
+    }
+  };
+
+  for (const candidate of configuredCandidates(preferred)) {
+    const hit = await attempt(candidate);
+    if (hit) return hit;
+  }
+
+  // Every configured tag came back "unknown model" — including any stand-in
+  // we had remembered, so drop that and re-read the host's real lineup.
+  forgetModelSubstitution(preferred.model);
+  const catalog = await listLocalModels(client, { force: true });
+  const discovered = chooseLocalModel(preferred.model, catalog.models);
+  if (discovered && !attempted.has(discovered)) {
+    const hit = await attempt({ ...preferred, model: discovered });
+    if (hit) {
+      console.info(
+        `[llm] "${preferred.model}" is not served by this endpoint — using "${discovered}" instead (found via /v1/models). Set ANIMA_OLLAMA_MODEL_STANDARD to silence this.`,
+      );
+      return hit;
     }
   }
 
-  throw lastErr;
+  // Nothing on the host can hold a conversation. Fail with the fix, not just
+  // the symptom: name the host, what it does serve, and the command to run.
+  const explained = new Error(describeModelMismatch(preferred.model, catalog.models));
+  (explained as Error & { cause?: unknown }).cause = lastErr;
+  throw explained;
 }
 
 function requireLocalClient(): OpenAI {
@@ -286,6 +347,7 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
   try {
     const client = requireLocalClient();
     const { resolved: used } = await withModelFallback(
+      client,
       { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
       (m) =>
         client.chat.completions.create({
@@ -295,12 +357,16 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
           temperature: 0,
         }),
     );
+    const catalog = await listLocalModels(client);
     return [
       {
         provider: "local",
         configured: true,
         ok: true,
         model: used.model,
+        // Operators need to see the tag mismatch, not just that chat works.
+        configuredModel: resolved.model,
+        availableModels: catalog.models,
         latencyMs: Date.now() - started,
       },
     ];
@@ -309,6 +375,9 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
       err && typeof err === "object" && "status" in err
         ? Number((err as { status?: unknown }).status)
         : undefined;
+    // Best-effort: `requireLocalClient()` above may be what threw.
+    const probeClient = getLocalLlmClient();
+    const catalog = probeClient ? await listLocalModels(probeClient) : null;
     return [
       {
         provider: "local",
@@ -318,6 +387,8 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
         errorKind: isProviderAuthError(err) ? "auth" : "other",
         message: summarizeError(err),
         model: resolved.model,
+        configuredModel: resolved.model,
+        availableModels: catalog?.models ?? [],
         latencyMs: Date.now() - started,
       },
     ];
@@ -331,7 +402,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
   const preferred = resolveLocalModel(req.tier);
 
   try {
-    const { value: stream, resolved } = await withModelFallback(preferred, (m) =>
+    const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
       client.chat.completions.create({
         model: m.model,
         max_tokens: m.maxTokens,
@@ -364,7 +435,7 @@ export async function createChatCompletionWithFailover(
   const preferred = resolveLocalModel(req.tier);
 
   try {
-    const { value: completion, resolved } = await withModelFallback(preferred, (m) =>
+    const { value: completion, resolved } = await withModelFallback(client, preferred, (m) =>
       client.chat.completions.create(
         {
           model: m.model,
