@@ -1,6 +1,6 @@
 # Custom Anima LLM — replace ChatGPT / Gemini / Groq
 
-**What “build an LLM” means here:** OpenAI, Google, and Groq do **not** publish ChatGPT / Gemini / Groq model weights or training code. You cannot copy those products. What *is* public — and what Anima uses — is:
+**What "build an LLM" means here:** OpenAI, Google, and Groq do **not** publish ChatGPT / Gemini / Groq model weights or training code. You cannot copy those products. What *is* public — and what Anima uses — is:
 
 | Public piece | Role |
 |--------------|------|
@@ -8,15 +8,16 @@
 | Ollama / llama.cpp / vLLM | Inference engines that run those weights locally |
 | Anima Modelfiles + system prompts | Brand the model as your companion LLM |
 | Fine-tune scripts (Unsloth / LLaMA-Factory) | Specialize it on Anima chats + memory |
+| DPO/ORPO preference pairs (Unsloth) | Sharpen character fidelity after SFT — corrects specific bad habits |
 | `ANIMA_LLM_PROVIDER=custom` | Api-server talks **only** to your model — no cloud chat BYOK |
 
-The React app still calls `POST /api/chat/messages`. The brain behind it becomes **yours**.
+The React app still calls `POST /api/chat/messages`. The brain behind it is **yours** — chat has exactly one backend, the self-hosted Anima LLM. There is no cloud flagship fallback chain in the code (no Gemini/Groq/Kimi/Grok/ChatGPT chat routing exists to fall back to), so the app can never silently switch models on you.
 
 ---
 
 ## Path A — Bootstrap today (CPU / laptop)
 
-Creates `anima-chat` from public **Qwen2.5 3B** weights (~2 GB). Good enough to engage in real chats without Gemini/Groq/OpenAI keys.
+Creates `anima-chat` from public **Qwen2.5 3B** weights (~2 GB). Good enough to engage in real chats with no cloud API keys at all.
 
 ```bash
 # Install Ollama from https://ollama.com if needed, then:
@@ -29,19 +30,16 @@ pnpm llm:chat -- "Who are you?"
 Point the api-server at it (also the defaults in `.env.example`):
 
 ```bash
-export ANIMA_LLM_PROVIDER=custom
 export ANIMA_LOCAL_LLM_BACKEND=ollama
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 ```
 
-Leave `GEMINI_API_KEY`, `GROQ_API_KEY`, `KIMI_API_KEY`, `XAI_API_KEY`, and `AI_GATEWAY_API_KEY` unset.
-
 Verify:
 
 ```bash
 curl -s http://localhost:8080/api/healthz/llm | jq
-# expect: "mode":"local", "preferred":"local", "brand":"anima"
+# expect: "status":"ok", "preferred":"local", "brand":"anima"
 ```
 
 ---
@@ -83,7 +81,6 @@ Or LLaMA-Factory: `llamafactory-cli train scripts/llm/finetune/llama_factory_min
 ```bash
 export ANIMA_VLLM_MODEL=mistralai/Ministral-3-8B-Instruct-2512
 docker compose -f scripts/llm/docker-compose.vllm.yml up
-export ANIMA_LLM_PROVIDER=custom
 export ANIMA_LOCAL_LLM_BACKEND=vllm
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 ```
@@ -95,54 +92,109 @@ ollama create anima-ministral8b -f scripts/llm/Modelfile.anima-ministral8b
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
 ```
 
----
+### 4. Optional: sharpen with DPO preference pairs
 
-## Modes
-
-| `ANIMA_LLM_PROVIDER` | Behavior |
-|----------------------|----------|
-| *(unset)* / `custom` / `anima` / `local` | **Self-hosted Anima LLM only** (product default) |
-| `local-first` | Local first, then optional cloud BYOK if keys exist |
-| `auto` | Cloud BYOK only (Gemini → Groq → …) — opt-in only |
-
-If `ANIMA_LLM_PROVIDER` contains an API key (`AQ.*`, `sk-`, …), it is ignored and chat **stays on custom** — it does not fall back to the cloud chain.
-
-### The cloud gate — `ANIMA_ALLOW_CLOUD_LLM`
-
-Every cloud-capable mode (`auto`, `local-first`, `gemini`, `groq`, `kimi`, `xai`, `openai`, `gateway`, `ensemble`) needs a **second, explicit** flag to actually take effect:
+SFT teaches the model to imitate good replies; DPO teaches it to actively
+prefer them over specific bad habits it still shows — breaking character,
+dumping raw memory facts instead of weaving them in, negotiating past a
+boundary the user just set, or over-apologizing during repair. Run this
+**after** step 2, on top of the SFT adapter:
 
 ```bash
-ANIMA_ALLOW_CLOUD_LLM=true
+pnpm llm:prepare-dpo
+# → scripts/llm/output/dpo-pairs.jsonl (chosen/rejected pairs, see
+#   lib/llm/src/dataset/preferences.ts for the curated set + rationale)
+
+python scripts/llm/finetune/unsloth_dpo.py \
+  --data scripts/llm/output/dpo-pairs.jsonl \
+  --base scripts/llm/checkpoints/anima-ministral8b-qlora \
+  --out scripts/llm/checkpoints/anima-ministral8b-dpo
 ```
 
-Without it, `ANIMA_LLM_PROVIDER` is silently downgraded to `local` — chat stays on the self-hosted Anima LLM even if someone sets `ANIMA_LLM_PROVIDER=auto` (or pastes a leftover value) by mistake. This means a single stray env var can never make Anima start calling Gemini/Groq/Kimi/Grok/ChatGPT/AI Gateway; both vars have to be set together on purpose. `/api/healthz/llm` reports this with a note like *"ANIMA_LLM_PROVIDER=auto requested a cloud provider chain, but it was blocked… because ANIMA_ALLOW_CLOUD_LLM is not set to true."*
+Then merge / convert to GGUF or serve the DPO adapter the same way as the
+SFT one in step 3. Add your own pairs to `preferences.ts` as you catch the
+model doing something specific and wrong — each pair should target one
+concrete failure mode, not a vague "be better." Full walkthrough:
+[`docs/llm-build.md`](./llm-build.md#preference-optimization).
 
-More detail: [`docs/llm-build.md`](./llm-build.md).
+---
+
+## There is only one backend
+
+Chat has a single backend: the self-hosted Anima LLM, reached through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). There is no `ANIMA_LLM_PROVIDER` mode switch and no cloud BYOK chain — Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat, regardless of which API keys happen to be set in the environment.
+
+`OPENAI_API_KEY` still exists as an env var, but only for image generation/edit (`/api/openai/functions` image routes) — it is never read for chat.
+
+If the local endpoint is unavailable, the turn fails with a clear setup error instead of silently switching to a different model — see the diagnostic checklist below.
+
+More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
+
+### Optional: parallel local minds
+
+There's one opt-in multi-draft path, and it's still entirely local: set `ANIMA_LOCAL_LLM_ENSEMBLE=true` and the same self-hosted model drafts a few replies in parallel at different sampling temperatures (`ANIMA_ENSEMBLE_MINDS`, default `Steady,Vivid,Playful`), then one more local call combines them into a single in-character reply. No cloud provider is ever involved — it's the same one model, sampled several times. Off by default: it costs roughly `N` drafts + 1 synthesis call in latency and GPU load per turn. Tune with `ANIMA_ENSEMBLE_MAX_MINDS` (default 4) and `ANIMA_ENSEMBLE_MIND_TIMEOUT_MS` (default 20000 — a mind that's still generating past this is dropped, not awaited).
+
+---
+
+## Verifying the wiring without pulling real weights (sandboxed / offline dev)
+
+Some dev environments block outbound access to `ollama.com` / Hugging Face
+(egress allowlists, CI runners, restricted sandboxes). `pnpm llm:up` can't
+pull weights there, but the api-server's routing/failover code is still
+fully testable against a tiny OpenAI-compatible stand-in that answers on the
+same `/v1/chat/completions` shape Ollama and vLLM serve:
+
+```bash
+pnpm llm:stub &                      # http://127.0.0.1:41777/v1
+export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:41777/v1
+pnpm --filter @workspace/api-server run build
+DATABASE_URL=... CLERK_SECRET_KEY=... PORT=8080 \
+  node artifacts/api-server/dist/index.mjs &
+
+curl -s "http://localhost:8080/api/healthz/llm?probe=1" | jq '{status,preferred,probeOk}'
+# {"status":"ok","preferred":"local","probeOk":true} — no cloud keys needed
+```
+
+`artifacts/api-server/test/localLlmLive.test.ts` runs the same proof as an
+automated test: it boots a real local HTTP server (not a mock of the OpenAI
+SDK) and calls `createChatCompletionWithFailover` for real, asserting the
+reply came from that server, `provider === "local"`, and that an unreachable
+local endpoint fails clearly instead of silently falling through to a
+flagship cloud model. Swap the stub's URL for a real Ollama/vLLM host and
+nothing else about this code path changes.
 
 ## Production note (Vercel)
 
-### Exact fix — “Anima custom LLM is selected…”
+### Exact fix — "Anima custom LLM is not configured…"
 
-That banner is intentional: custom mode is on, but `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable. Cloud BYOK (Gemini/Groq/Kimi/Grok/ChatGPT/Gateway) is **deliberately disabled**.
+That error is intentional: `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable, and there is no cloud fallback to fall through to.
 
-1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS**.  
-   Example with Ollama: expose it via a reverse proxy / Cloudflare Tunnel / ngrok → `https://your-tunnel.example.com`.
+1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
+   - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
+   - **One-paste VPS:** [`scripts/llm/cloud-init-vps.sh`](../scripts/llm/cloud-init-vps.sh) (`pnpm llm:vps-init`) — installs Ollama + `anima-chat` + a Cloudflare quick tunnel as systemd services on any fresh Debian/Ubuntu box. See [`docs/llm-deploy.md`](./llm-deploy.md).
+   - Or run Ollama/vLLM anywhere else with a public HTTPS URL (a reverse proxy, Cloudflare Tunnel, ngrok, another cloud VM, …) — just make sure it's actually authenticated; Ollama has none built in.
 2. **Set these on Vercel (Production)** and redeploy **without build cache**:
 
 ```bash
-ANIMA_LLM_PROVIDER=custom                    # literal word "custom" — never an API key
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
 ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or the model id your server serves
 ```
 
-3. Do **not** leave `ANIMA_LLM_PROVIDER=auto` (or paste a key into that field). Custom mode will not fall through to the cloud chain.
-
 ### Quick diagnostic checklist
 
+One-shot check (both endpoints, pass/fail summary):
+
 ```bash
-curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,keys,localEndpoint,note}'
-# healthy custom mode: mode=local, preferred=local, keys.local=true,
+pnpm llm:verify-deploy -- https://www.anima-protocol.com
+# also check your model host directly:
+pnpm llm:verify-deploy -- https://www.anima-protocol.com https://your-tunnel-host
+```
+
+Or by hand:
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,brand,localEndpoint,note}'
+# healthy: status=ok, preferred=local, brand=anima,
 # localEndpoint.configured=true, localEndpoint.host=<your-host>, hasV1Path=true
 
 # Live probe (tiny completion against the configured endpoint):
@@ -163,12 +215,8 @@ curl -sS https://<your-host>/v1/models
 | `/api/healthz/llm` → `localEndpoint` | `configured: true`, correct `host`, `hasV1Path: true` |
 | Vercel function logs | One `[llm] local client: host=… model=…` line at init |
 
-Once those two vars are set and the endpoint is reachable, the banner disappears and the next chat turn uses your model.
+Once those two vars are set and the endpoint is reachable, the error disappears and the next chat turn uses your model.
 
 Don't have a host to point at yet? [`docs/llm-deploy.md`](./llm-deploy.md) walks through a concrete, cheap path (VPS + Cloudflare Tunnel today, GPU/vLLM upgrade later).
-
-### Cloud-chain confusion
-
-If chat shows **“LLM credits/quota exhausted (tried Gemini → …)”**, production is still on the cloud chain — not Anima LLM. Set `ANIMA_LLM_PROVIDER=custom` and a public `ANIMA_LOCAL_LLM_BASE_URL` as above.
 
 Full troubleshooting: [`docs/vercel-api-migration.md`](./vercel-api-migration.md).

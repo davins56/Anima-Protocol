@@ -98569,6 +98569,75 @@ function databaseTargetHint(rawUrl = process.env.DATABASE_URL) {
   }
 }
 
+// src/lib/modelRouter.ts
+var DEFAULT_MODELS = {
+  light: "gpt-4.1-mini",
+  standard: "gpt-4o",
+  heavy: "gpt-4.1"
+};
+var MAX_TOKENS = {
+  light: 4096,
+  standard: 8192,
+  heavy: 8192
+};
+var ENV_KEYS = {
+  light: "ANIMA_MODEL_LIGHT",
+  standard: "ANIMA_MODEL_STANDARD",
+  heavy: "ANIMA_MODEL_HEAVY"
+};
+var DEEP_CONVERSATION_DEPTH = (() => {
+  const raw = Number(process.env.ANIMA_DEEP_CONVERSATION_DEPTH);
+  return Number.isFinite(raw) && raw > 0 ? raw : 24;
+})();
+function resolveModel(tier) {
+  const override = process.env[ENV_KEYS[tier]]?.trim();
+  return {
+    tier,
+    model: override || DEFAULT_MODELS[tier],
+    maxTokens: MAX_TOKENS[tier]
+  };
+}
+var GREETING_RE = /^(hi+|hey+|hello+|yo|sup|hiya|howdy|good\s?(morning|afternoon|evening|night)|gm|gn|thanks(\s?you)?|thank\s?you|thx|ty|ok(ay)?|k|cool|nice|great|awesome|lol|lmao|haha+|yes|no|yep|nope|yeah|nah|sure|got\s?it|np|wow|aww?)[\s!.,?❤️🙂😊]*$/i;
+var SMALL_TALK_RE = /^(bye+|goodbye|see\s?(you|ya|u)(\s?(soon|later|around|tomorrow))?|cya|talk\s?(to\s?you\s?)?(later|soon)|later|ttyl|take\s?care|sweet\s?dreams|night+|brb|g2g|gtg)[\s!.,?❤️🙂😊]*$/i;
+var EMOTIONAL_RE = /\b(love|hate|miss|lonely|alone|scared|afraid|fear|anxious|anxiety|depress\w*|sad|cry|crying|hurt\w*|pain|painful|awful|terrible|horrible|worst|rough|stress\w*|overwhelm\w*|breakup|broke up|grief|grieving|heartbroken|need you|need someone|leave me|hopeless|worthless|panic|trauma|abuse|suicid\w*|kill myself)\b/i;
+var ANALYTICAL_RE = /\b(explain|compare|contrast|analy[sz]e|debug|fix|code|coding|program|programming|summari[sz]e|translate|calculate|solve|prove|derive|plan|strateg\w*|write|compose|draft|essay|poem|story|argue|evaluate|elaborate|brainstorm|how\s+(do|does|can|to)|why\s+(do|does|is|are)|step.by.step|pros and cons)\b/i;
+var CODE_RE = /(=>|[{}]|`|console\.|;\s|\b(function|const|let|var|def|class)\s+[\w$]+\s*[=(])/;
+function isHighStakesMessage(text2) {
+  if (text2.includes("?")) return true;
+  if (EMOTIONAL_RE.test(text2)) return true;
+  if (ANALYTICAL_RE.test(text2)) return true;
+  if (CODE_RE.test(text2)) return true;
+  const words = text2.split(/\s+/).filter(Boolean).length;
+  if (words >= 30 || text2.length >= 200) return true;
+  return false;
+}
+function classifyComplexity(content, ctx = {}) {
+  const text2 = (content || "").trim();
+  if (!text2) return "standard";
+  if (GREETING_RE.test(text2) || SMALL_TALK_RE.test(text2)) return "light";
+  if (isHighStakesMessage(text2)) return "heavy";
+  if (ctx.deepMode) return "heavy";
+  if ((ctx.conversationDepth ?? 0) >= DEEP_CONVERSATION_DEPTH) return "heavy";
+  return "standard";
+}
+function routeModel(content, ctx = {}) {
+  return resolveModel(classifyComplexity(content, ctx));
+}
+function isModelUnavailableError(err) {
+  if (!err || typeof err !== "object") return false;
+  const e2 = err;
+  const code = (e2.code || e2.type || "").toLowerCase();
+  if (code.includes("model_not_found") || code.includes("model_not_available") || code.includes("not_found")) {
+    return true;
+  }
+  const msg = (e2.message || "").toLowerCase();
+  if (msg.includes("does not exist") || msg.includes("do not have access") || msg.includes("no longer available") || msg.includes("not available to new users") || msg.includes("please update your code to use a newer model") || msg.includes("is not found") || msg.includes("model not found")) {
+    return true;
+  }
+  if (e2.status === 404) return true;
+  return false;
+}
+
 // ../../node_modules/.pnpm/openai@4.104.0_zod@3.25.76/node_modules/openai/internal/qs/formats.mjs
 var default_format = "RFC3986";
 var formatters = {
@@ -105168,14 +105237,6 @@ var openai_default = OpenAI;
 // src/lib/openaiClient.ts
 var openaiClient = null;
 var openaiClientKey = null;
-var xaiClient = null;
-var xaiClientKey = null;
-var kimiClient = null;
-var kimiClientKey = null;
-var groqClient = null;
-var groqClientKey = null;
-var gatewayClient = null;
-var gatewayClientKey = null;
 var localLlmClient = null;
 var localLlmClientKey = null;
 function normalizeApiKey(raw) {
@@ -105186,46 +105247,9 @@ function normalizeApiKey(raw) {
   }
   return key || null;
 }
-function gatewayAuthToken() {
-  return normalizeApiKey(process.env.AI_GATEWAY_API_KEY) || normalizeApiKey(process.env.VERCEL_OIDC_TOKEN);
-}
-function hasOpenAIKey() {
-  return Boolean(normalizeApiKey(process.env.OPENAI_API_KEY));
-}
-function hasXaiKey() {
-  return Boolean(normalizeApiKey(process.env.XAI_API_KEY));
-}
-function hasGeminiKey() {
-  return Boolean(
-    normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY)
-  );
-}
-function hasKimiKey() {
-  return Boolean(
-    normalizeApiKey(process.env.KIMI_API_KEY) || normalizeApiKey(process.env.MOONSHOT_API_KEY)
-  );
-}
-function hasGroqKey() {
-  return Boolean(normalizeApiKey(process.env.GROQ_API_KEY));
-}
-function hasGatewayAuth() {
-  return Boolean(gatewayAuthToken());
-}
-function isCloudLlmAllowedHere() {
-  const raw = (process.env.ANIMA_ALLOW_CLOUD_LLM || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
-}
 function localLlmBaseUrl() {
   const explicit = process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
-  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim();
-  const mode = raw.toLowerCase();
-  const looksLikeKey = /^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(raw) || raw.length > 32;
-  const cloudOnly = !looksLikeKey && isCloudLlmAllowedHere() && (mode === "auto" || mode === "gemini" || mode === "groq" || mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway" || mode === "ensemble");
-  if (cloudOnly) return null;
-  const forceOllama = process.env.ANIMA_USE_OLLAMA_OPENAI === "1" || process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
-  const customLike = !raw || looksLikeKey || mode === "local" || mode === "custom" || mode === "anima" || mode === "local-first" || mode === "ollama" || mode === "vllm";
-  if (!customLike && !forceOllama) return null;
   const ollama = process.env.OLLAMA_BASE_URL?.trim();
   if (ollama) {
     const root = ollama.replace(/\/$/, "");
@@ -105279,7 +105303,7 @@ function logLocalLlmClientInitOnce() {
   const model = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || "(default from registry)";
   if (!summary.configured) {
     console.info(
-      "[llm] custom/local mode: ANIMA_LOCAL_LLM_BASE_URL unset \u2014 set a public HTTPS OpenAI-compatible URL (\u2026/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md."
+      "[llm] ANIMA_LOCAL_LLM_BASE_URL unset \u2014 set a public HTTPS OpenAI-compatible URL (\u2026/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md."
     );
     return;
   }
@@ -105297,58 +105321,6 @@ function getOpenAIClient() {
     openaiClientKey = apiKey;
   }
   return openaiClient;
-}
-function getXaiClient() {
-  const apiKey = normalizeApiKey(process.env.XAI_API_KEY);
-  if (!apiKey) return null;
-  if (!xaiClient || xaiClientKey !== apiKey) {
-    xaiClient = new openai_default({
-      apiKey,
-      baseURL: process.env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1"
-    });
-    xaiClientKey = apiKey;
-  }
-  return xaiClient;
-}
-function getKimiClient() {
-  const apiKey = normalizeApiKey(process.env.KIMI_API_KEY) || normalizeApiKey(process.env.MOONSHOT_API_KEY);
-  if (!apiKey) return null;
-  if (!kimiClient || kimiClientKey !== apiKey) {
-    kimiClient = new openai_default({
-      apiKey,
-      baseURL: process.env.KIMI_BASE_URL?.trim() || process.env.MOONSHOT_BASE_URL?.trim() || "https://api.moonshot.ai/v1",
-      // Moonshot Tier-0 accounts can burn RPM on SDK auto-retries after 429.
-      maxRetries: 0
-    });
-    kimiClientKey = apiKey;
-  }
-  return kimiClient;
-}
-function getGroqClient() {
-  const apiKey = normalizeApiKey(process.env.GROQ_API_KEY);
-  if (!apiKey) return null;
-  if (!groqClient || groqClientKey !== apiKey) {
-    groqClient = new openai_default({
-      apiKey,
-      baseURL: process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai/v1",
-      maxRetries: 0
-    });
-    groqClientKey = apiKey;
-  }
-  return groqClient;
-}
-function getGatewayClient() {
-  const apiKey = gatewayAuthToken();
-  if (!apiKey) return null;
-  if (!gatewayClient || gatewayClientKey !== apiKey) {
-    gatewayClient = new openai_default({
-      apiKey,
-      baseURL: process.env.AI_GATEWAY_BASE_URL?.trim() || "https://ai-gateway.vercel.sh/v1",
-      maxRetries: 0
-    });
-    gatewayClientKey = apiKey;
-  }
-  return gatewayClient;
 }
 function getLocalLlmClient() {
   const baseURL = localLlmBaseUrl();
@@ -105370,373 +105342,9 @@ function getLocalLlmClient() {
   return localLlmClient;
 }
 
-// src/lib/geminiNative.ts
-var GeminiApiError = class extends Error {
-  status;
-  code;
-  constructor(message, opts) {
-    super(message, opts?.cause !== void 0 ? { cause: opts.cause } : void 0);
-    this.name = "GeminiApiError";
-    this.status = opts?.status;
-    this.code = opts?.code;
-  }
-};
-function thinkingBudgetForModel(model) {
-  const raw = process.env.ANIMA_GEMINI_THINKING_BUDGET?.trim();
-  if (raw !== void 0 && raw !== "") {
-    const n2 = Number(raw);
-    if (Number.isFinite(n2)) return Math.trunc(n2);
-  }
-  const m2 = model.toLowerCase();
-  if (m2.includes("pro") && !m2.includes("flash")) return 1024;
-  return 0;
-}
-function geminiApiKey() {
-  const key = normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY);
-  if (!key) {
-    throw new GeminiApiError(
-      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
-      { status: 401, code: "missing_api_key" }
-    );
-  }
-  return key;
-}
-function geminiNativeBaseUrl() {
-  const raw = process.env.GEMINI_NATIVE_BASE_URL?.trim() || process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta";
-  return raw.replace(/\/openai\/?$/i, "").replace(/\/+$/, "");
-}
-function messageText(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((part) => {
-    if (typeof part === "string") return part;
-    if (part && typeof part === "object" && "type" in part) {
-      if (part.type === "text" && "text" in part) return String(part.text || "");
-    }
-    return "";
-  }).filter(Boolean).join("\n");
-}
-function toGeminiGenerateRequest(messages2, opts) {
-  const systemChunks = [];
-  const contents = [];
-  for (const message of messages2) {
-    const text2 = messageText(message.content).trim();
-    if (!text2) continue;
-    if (message.role === "system" || message.role === "developer") {
-      systemChunks.push(text2);
-      continue;
-    }
-    const role = message.role === "assistant" ? "model" : "user";
-    const last = contents[contents.length - 1];
-    if (last && last.role === role) {
-      last.parts.push({ text: text2 });
-    } else {
-      contents.push({ role, parts: [{ text: text2 }] });
-    }
-  }
-  const systemText = systemChunks.join("\n\n").trim();
-  let systemAsUserContent = false;
-  if (contents.length === 0) {
-    if (!systemText) {
-      throw new GeminiApiError("Gemini request has no message content.", {
-        status: 400,
-        code: "empty_messages"
-      });
-    }
-    contents.push({ role: "user", parts: [{ text: systemText }] });
-    systemAsUserContent = true;
-  }
-  if (contents[0]?.role === "model") {
-    contents.unshift({
-      role: "user",
-      parts: [{ text: "(continue)" }]
-    });
-  }
-  const body = { contents };
-  if (systemText && !systemAsUserContent) {
-    body.systemInstruction = { parts: [{ text: systemText }] };
-  }
-  const generationConfig = {};
-  if (typeof opts?.maxTokens === "number" && opts.maxTokens > 0) {
-    generationConfig.maxOutputTokens = opts.maxTokens;
-  }
-  if (typeof opts?.temperature === "number") {
-    generationConfig.temperature = opts.temperature;
-  }
-  const thinkingBudget = thinkingBudgetForModel(opts?.model || "");
-  if (typeof thinkingBudget === "number") {
-    generationConfig.thinkingConfig = { thinkingBudget };
-  }
-  if (Object.keys(generationConfig).length > 0) {
-    body.generationConfig = generationConfig;
-  }
-  return body;
-}
-function extractCandidateText(payload) {
-  if (!payload || typeof payload !== "object") return "";
-  const candidates = payload.candidates;
-  if (!Array.isArray(candidates) || !candidates[0]) return "";
-  const content = candidates[0].content;
-  const parts = content?.parts;
-  if (!Array.isArray(parts)) return "";
-  return parts.map((part) => {
-    if (!part || typeof part !== "object") return "";
-    if ("thought" in part && part.thought) {
-      return "";
-    }
-    return "text" in part ? String(part.text || "") : "";
-  }).join("");
-}
-function extractFinishReason(payload) {
-  if (!payload || typeof payload !== "object") return void 0;
-  const candidates = payload.candidates;
-  if (!Array.isArray(candidates) || !candidates[0]) return void 0;
-  const reason = candidates[0].finishReason;
-  return typeof reason === "string" ? reason : void 0;
-}
-async function readErrorBody(res) {
-  const raw = await res.text().catch(() => "");
-  if (!raw) {
-    return { message: `${res.status} status code (no body)` };
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    const message = parsed.error?.message || parsed.message || raw;
-    const code = typeof parsed.error?.status === "string" ? parsed.error.status : typeof parsed.error?.code === "string" ? parsed.error.code : void 0;
-    return { message: String(message), code };
-  } catch {
-    return { message: raw };
-  }
-}
-async function geminiFetch(url3, init2) {
-  try {
-    return await fetch(url3, init2);
-  } catch (err) {
-    throw new GeminiApiError(
-      err instanceof Error ? err.message : `Gemini request failed: ${String(err)}`,
-      { status: 502, code: "network_error", cause: err }
-    );
-  }
-}
-function openaiChunk(content) {
-  return {
-    id: "gemini-native",
-    object: "chat.completion.chunk",
-    created: Math.floor(Date.now() / 1e3),
-    model: "gemini",
-    choices: [
-      {
-        index: 0,
-        delta: { content },
-        finish_reason: null
-      }
-    ]
-  };
-}
-function openaiCompletion(content, model) {
-  return {
-    id: "gemini-native",
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1e3),
-    model,
-    choices: [
-      {
-        index: 0,
-        message: { role: "assistant", content, refusal: null },
-        finish_reason: "stop",
-        logprobs: null
-      }
-    ]
-  };
-}
-async function* parseGeminiSse(body) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let emittedText = false;
-  let lastFinishReason;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let sep;
-    while ((sep = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
-      const dataLines = frame.split("\n").filter((line2) => line2.startsWith("data:")).map((line2) => line2.slice(5).trimStart());
-      if (dataLines.length === 0) continue;
-      const data = dataLines.join("\n").trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const payload = JSON.parse(data);
-        const finish = extractFinishReason(payload);
-        if (finish) lastFinishReason = finish;
-        const text2 = extractCandidateText(payload);
-        if (text2) {
-          emittedText = true;
-          yield openaiChunk(text2);
-        }
-      } catch {
-      }
-    }
-  }
-  if (!emittedText) {
-    const reason = lastFinishReason || "EMPTY";
-    throw new GeminiApiError(
-      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
-      { status: 502, code: "empty_visible_text" }
-    );
-  }
-}
-async function createGeminiChatCompletion(opts) {
-  if (!hasGeminiKey()) {
-    throw new GeminiApiError(
-      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
-      { status: 401, code: "missing_api_key" }
-    );
-  }
-  const apiKey = geminiApiKey();
-  const body = toGeminiGenerateRequest(opts.messages, {
-    maxTokens: opts.maxTokens,
-    temperature: opts.temperature,
-    model: opts.model
-  });
-  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:generateContent`;
-  const res = await geminiFetch(url3, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey
-    },
-    body: JSON.stringify(body),
-    signal: opts.signal
-  });
-  if (!res.ok) {
-    const err = await readErrorBody(res);
-    throw new GeminiApiError(err.message, {
-      status: res.status,
-      code: err.code
-    });
-  }
-  const payload = await res.json();
-  const text2 = extractCandidateText(payload);
-  if (!text2.trim()) {
-    const reason = extractFinishReason(payload) || "EMPTY";
-    throw new GeminiApiError(
-      `Gemini returned no visible text (finishReason=${reason}). Thinking tokens may have consumed maxOutputTokens \u2014 retry, or set ANIMA_GEMINI_THINKING_BUDGET=0 for Flash models.`,
-      { status: 502, code: "empty_visible_text" }
-    );
-  }
-  return openaiCompletion(text2, opts.model);
-}
-async function createGeminiChatStream(opts) {
-  if (!hasGeminiKey()) {
-    throw new GeminiApiError(
-      "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set to use the Gemini provider.",
-      { status: 401, code: "missing_api_key" }
-    );
-  }
-  const apiKey = geminiApiKey();
-  const body = toGeminiGenerateRequest(opts.messages, {
-    maxTokens: opts.maxTokens,
-    model: opts.model
-  });
-  const url3 = `${geminiNativeBaseUrl()}/models/${encodeURIComponent(opts.model)}:streamGenerateContent?alt=sse`;
-  const res = await geminiFetch(url3, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey
-    },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const err = await readErrorBody(res);
-    throw new GeminiApiError(err.message, {
-      status: res.status,
-      code: err.code
-    });
-  }
-  if (!res.body) {
-    throw new GeminiApiError("Gemini stream returned an empty body.", {
-      status: 502,
-      code: "empty_stream"
-    });
-  }
-  return parseGeminiSse(res.body);
-}
-
-// src/lib/modelRouter.ts
-var DEFAULT_MODELS = {
-  light: "gpt-4.1-mini",
-  standard: "gpt-4o",
-  heavy: "gpt-4.1"
-};
-var MAX_TOKENS = {
-  light: 4096,
-  standard: 8192,
-  heavy: 8192
-};
-var ENV_KEYS = {
-  light: "ANIMA_MODEL_LIGHT",
-  standard: "ANIMA_MODEL_STANDARD",
-  heavy: "ANIMA_MODEL_HEAVY"
-};
-var DEEP_CONVERSATION_DEPTH = (() => {
-  const raw = Number(process.env.ANIMA_DEEP_CONVERSATION_DEPTH);
-  return Number.isFinite(raw) && raw > 0 ? raw : 24;
-})();
-function resolveModel(tier) {
-  const override = process.env[ENV_KEYS[tier]]?.trim();
-  return {
-    tier,
-    model: override || DEFAULT_MODELS[tier],
-    maxTokens: MAX_TOKENS[tier]
-  };
-}
-var GREETING_RE = /^(hi+|hey+|hello+|yo|sup|hiya|howdy|good\s?(morning|afternoon|evening|night)|gm|gn|thanks(\s?you)?|thank\s?you|thx|ty|ok(ay)?|k|cool|nice|great|awesome|lol|lmao|haha+|yes|no|yep|nope|yeah|nah|sure|got\s?it|np|wow|aww?)[\s!.,?❤️🙂😊]*$/i;
-var SMALL_TALK_RE = /^(bye+|goodbye|see\s?(you|ya|u)(\s?(soon|later|around|tomorrow))?|cya|talk\s?(to\s?you\s?)?(later|soon)|later|ttyl|take\s?care|sweet\s?dreams|night+|brb|g2g|gtg)[\s!.,?❤️🙂😊]*$/i;
-var EMOTIONAL_RE = /\b(love|hate|miss|lonely|alone|scared|afraid|fear|anxious|anxiety|depress\w*|sad|cry|crying|hurt\w*|pain|painful|awful|terrible|horrible|worst|rough|stress\w*|overwhelm\w*|breakup|broke up|grief|grieving|heartbroken|need you|need someone|leave me|hopeless|worthless|panic|trauma|abuse|suicid\w*|kill myself)\b/i;
-var ANALYTICAL_RE = /\b(explain|compare|contrast|analy[sz]e|debug|fix|code|coding|program|programming|summari[sz]e|translate|calculate|solve|prove|derive|plan|strateg\w*|write|compose|draft|essay|poem|story|argue|evaluate|elaborate|brainstorm|how\s+(do|does|can|to)|why\s+(do|does|is|are)|step.by.step|pros and cons)\b/i;
-var CODE_RE = /(=>|[{}]|`|console\.|;\s|\b(function|const|let|var|def|class)\s+[\w$]+\s*[=(])/;
-function isHighStakesMessage(text2) {
-  if (text2.includes("?")) return true;
-  if (EMOTIONAL_RE.test(text2)) return true;
-  if (ANALYTICAL_RE.test(text2)) return true;
-  if (CODE_RE.test(text2)) return true;
-  const words = text2.split(/\s+/).filter(Boolean).length;
-  if (words >= 30 || text2.length >= 200) return true;
-  return false;
-}
-function classifyComplexity(content, ctx = {}) {
-  const text2 = (content || "").trim();
-  if (!text2) return "standard";
-  if (GREETING_RE.test(text2) || SMALL_TALK_RE.test(text2)) return "light";
-  if (isHighStakesMessage(text2)) return "heavy";
-  if (ctx.deepMode) return "heavy";
-  if ((ctx.conversationDepth ?? 0) >= DEEP_CONVERSATION_DEPTH) return "heavy";
-  return "standard";
-}
-function routeModel(content, ctx = {}) {
-  return resolveModel(classifyComplexity(content, ctx));
-}
-function isModelUnavailableError(err) {
-  if (!err || typeof err !== "object") return false;
-  const e2 = err;
-  const code = (e2.code || e2.type || "").toLowerCase();
-  if (code.includes("model_not_found") || code.includes("model_not_available") || code.includes("not_found")) {
-    return true;
-  }
-  const msg = (e2.message || "").toLowerCase();
-  if (msg.includes("does not exist") || msg.includes("do not have access") || msg.includes("no longer available") || msg.includes("not available to new users") || msg.includes("please update your code to use a newer model") || msg.includes("is not found") || msg.includes("model not found")) {
-    return true;
-  }
-  if (e2.status === 404) return true;
-  return false;
-}
-
 // ../../lib/llm/src/registry.ts
 var MODEL_TIERS = ["light", "standard", "heavy"];
+var DEFAULT_PROVIDER = "ollama";
 var ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
 var ANIMA_MEMORY_SPECIALIST_MODEL = "mistralai/Ministral-3-3B-Instruct-2512";
 var ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
@@ -105839,12 +105447,13 @@ function resolveProvider(envValue) {
   if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
     return raw;
   }
+  if (raw === "openai") return "openai";
   if (raw === "custom" || raw === "anima" || raw === "local" || raw === "local-first") {
     const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
     if (backend === "vllm") return "vllm";
     return "ollama";
   }
-  return "openai";
+  return DEFAULT_PROVIDER;
 }
 function envKey(provider, tier) {
   return `ANIMA_${provider.toUpperCase()}_MODEL_${tier.toUpperCase()}`;
@@ -106145,508 +105754,7 @@ function truncateText(text2, max) {
 }
 
 // src/lib/llmFailover.ts
-var preferNonOpenAI = false;
-var preferNonXai = false;
-var preferNonKimi = false;
-var preferNonGemini = false;
-var preferNonGroq = false;
-var preferNonGateway = false;
-var preferNonLocal = false;
-function clearAllStickySkips() {
-  preferNonOpenAI = false;
-  preferNonXai = false;
-  preferNonKimi = false;
-  preferNonGemini = false;
-  preferNonGroq = false;
-  preferNonGateway = false;
-  preferNonLocal = false;
-}
 function beginChatProviderTurn() {
-  clearAllStickySkips();
-}
-function envFlagEnabled(name) {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
-}
-function sanitizeProviderEnv(raw) {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (/^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(trimmed) || trimmed.length > 32) {
-    return null;
-  }
-  return trimmed.toLowerCase();
-}
-function defaultProviderMode() {
-  return "local";
-}
-function isCloudLlmAllowed() {
-  return envFlagEnabled("ANIMA_ALLOW_CLOUD_LLM");
-}
-var CLOUD_CAPABLE_MODES = /* @__PURE__ */ new Set([
-  "auto",
-  "openai",
-  "xai",
-  "gemini",
-  "groq",
-  "kimi",
-  "gateway",
-  "local-first"
-]);
-function resolveRequestedProviderMode() {
-  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
-  if (!raw) return defaultProviderMode();
-  if (raw === "grok") return "xai";
-  if (raw === "moonshot") return "kimi";
-  if (raw === "ai-gateway" || raw === "vercel-gateway") return "gateway";
-  if (raw === "custom" || raw === "anima" || raw === "local") {
-    return "local";
-  }
-  if (raw === "ensemble") {
-    return "auto";
-  }
-  if (raw === "local-first" || raw === "vllm" || raw === "ollama") {
-    if (envFlagEnabled("ANIMA_LOCAL_ONLY")) return "local";
-    return "local-first";
-  }
-  if (raw === "xai" || raw === "openai" || raw === "kimi" || raw === "auto" || raw === "gemini" || raw === "groq" || raw === "gateway") {
-    return raw;
-  }
-  return defaultProviderMode();
-}
-function wasCloudModeBlockedByGate() {
-  const requested = resolveRequestedProviderMode();
-  return CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed();
-}
-function getConfiguredProviderMode() {
-  const requested = resolveRequestedProviderMode();
-  if (CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed()) {
-    return "local";
-  }
-  return requested;
-}
-function isAnimaCustomMode() {
-  const mode = getConfiguredProviderMode();
-  return mode === "local" || mode === "local-first";
-}
-function isOpenAIBlocked() {
-  const mode = getConfiguredProviderMode();
-  if (mode === "xai" || mode === "kimi" || mode === "gemini" || mode === "groq" || mode === "gateway" || mode === "local") {
-    return true;
-  }
-  return envFlagEnabled("ANIMA_DISABLE_OPENAI");
-}
-function isGroqBlocked() {
-  const mode = getConfiguredProviderMode();
-  if (mode === "kimi" || mode === "gemini" || mode === "xai" || mode === "gateway" || mode === "local") {
-    return true;
-  }
-  return envFlagEnabled("ANIMA_DISABLE_GROQ");
-}
-function isXaiBlocked() {
-  const mode = getConfiguredProviderMode();
-  if (mode === "kimi" || mode === "gemini" || mode === "groq" || mode === "gateway" || mode === "local") {
-    return true;
-  }
-  return envFlagEnabled("ANIMA_DISABLE_XAI");
-}
-function isGatewayBlocked() {
-  const mode = getConfiguredProviderMode();
-  if (mode === "kimi" || mode === "gemini" || mode === "groq" || mode === "xai" || mode === "openai" || mode === "local") {
-    return true;
-  }
-  return envFlagEnabled("ANIMA_DISABLE_GATEWAY");
-}
-function isOpenAIStickySkipped() {
-  return preferNonOpenAI;
-}
-function isGeminiStickySkipped() {
-  return preferNonGemini;
-}
-function isGroqStickySkipped() {
-  return preferNonGroq;
-}
-function hasAnyStickySkip() {
-  return preferNonKimi || preferNonXai || preferNonOpenAI || preferNonGemini || preferNonGroq || preferNonGateway || preferNonLocal;
-}
-function hasAnyChatKey() {
-  return hasLocalLlm() || hasGeminiKey() || hasGroqKey() || hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth();
-}
-function reviveStickySkippedProvidersIfNeeded() {
-  if (!hasAnyStickySkip()) return false;
-  if (!hasAnyChatKey()) return false;
-  const localOk = hasLocalLlm() && !preferNonLocal;
-  const geminiOk = hasGeminiKey() && !preferNonGemini && !isGeminiConfigBlocked();
-  const groqOk = hasGroqKey() && !preferNonGroq && !isGroqBlocked();
-  const kimiOk = hasKimiKey() && !preferNonKimi && !isKimiConfigBlocked();
-  const xaiOk = hasXaiKey() && !isXaiBlocked() && !preferNonXai;
-  const openaiOk = hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
-  const gatewayOk = hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
-  const nothingLeft = !localOk && !geminiOk && !groqOk && !kimiOk && !xaiOk && !openaiOk && !gatewayOk;
-  const hidingPreferred = preferNonLocal && hasLocalLlm() || preferNonGemini && hasGeminiKey() && !isGeminiConfigBlocked() || preferNonKimi && hasKimiKey() && !isKimiConfigBlocked();
-  if (!nothingLeft && !hidingPreferred) return false;
-  clearAllStickySkips();
-  return true;
-}
-function isGeminiConfigBlocked() {
-  const mode = getConfiguredProviderMode();
-  return mode === "kimi" || mode === "xai" || mode === "openai" || mode === "groq" || mode === "gateway" || mode === "local";
-}
-function isKimiConfigBlocked() {
-  const mode = getConfiguredProviderMode();
-  return mode === "gemini" || mode === "groq" || mode === "gateway" || mode === "local";
-}
-function providerAvailable(id) {
-  if (id === "local") {
-    return hasLocalLlm() && !preferNonLocal;
-  }
-  if (id === "gemini") {
-    return hasGeminiKey() && !isGeminiConfigBlocked() && !preferNonGemini;
-  }
-  if (id === "groq") {
-    return hasGroqKey() && !isGroqBlocked() && !preferNonGroq;
-  }
-  if (id === "openai") {
-    return hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
-  }
-  if (id === "xai") {
-    return hasXaiKey() && !isXaiBlocked() && !preferNonXai;
-  }
-  if (id === "kimi") {
-    return hasKimiKey() && !isKimiConfigBlocked() && !preferNonKimi;
-  }
-  if (id === "gateway") {
-    return hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
-  }
-  return false;
-}
-function getAnimaTierProviderOrder(_tier) {
-  return ["gemini", "groq", "openai"];
-}
-function getProviderChain(_tier = "standard") {
-  reviveStickySkippedProvidersIfNeeded();
-  const mode = getConfiguredProviderMode();
-  const chain = [];
-  const push2 = (id) => {
-    if (providerAvailable(id) && !chain.includes(id)) chain.push(id);
-  };
-  const pushCloudAuto = () => {
-    push2("gemini");
-    push2("groq");
-    push2("kimi");
-    push2("xai");
-    push2("openai");
-    push2("gateway");
-  };
-  if (mode === "local") {
-    push2("local");
-    return chain;
-  }
-  if (mode === "local-first") {
-    push2("local");
-    pushCloudAuto();
-    return chain;
-  }
-  if (mode === "kimi") {
-    push2("kimi");
-    return chain;
-  }
-  if (mode === "gemini") {
-    push2("gemini");
-    return chain;
-  }
-  if (mode === "groq") {
-    push2("groq");
-    return chain;
-  }
-  if (mode === "gateway") {
-    push2("gateway");
-    return chain;
-  }
-  if (mode === "openai") {
-    push2("openai");
-    push2("gemini");
-    push2("groq");
-    push2("kimi");
-    push2("xai");
-    push2("gateway");
-    return chain;
-  }
-  if (mode === "xai") {
-    push2("xai");
-    push2("gemini");
-    push2("groq");
-    push2("kimi");
-    push2("gateway");
-    return chain;
-  }
-  pushCloudAuto();
-  return chain;
-}
-function getLlmRoutingStatus(tier = "standard") {
-  const rawInput = (process.env.ANIMA_LLM_PROVIDER || "").trim() || null;
-  const sanitized = sanitizeProviderEnv(rawInput);
-  const mode = getConfiguredProviderMode();
-  const chain = getProviderChain(tier);
-  const preferred = chain[0] ?? null;
-  const localSummary = summarizeLocalLlmBaseUrl();
-  const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() || "ollama";
-  const localModel = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel(tier).model;
-  if (mode === "local" || mode === "local-first") {
-    logLocalLlmClientInitOnce();
-  }
-  const noteParts = [];
-  if (rawInput && !sanitized) {
-    noteParts.push(
-      "ANIMA_LLM_PROVIDER looks like an API key and was ignored \u2014 chat stays on custom Anima LLM (not the cloud chain). Put the key in GEMINI_API_KEY / GROQ_API_KEY / \u2026 and set ANIMA_LLM_PROVIDER=custom (or delete it). Use auto only if you want cloud BYOK."
-    );
-  }
-  if (wasCloudModeBlockedByGate()) {
-    noteParts.push(
-      `ANIMA_LLM_PROVIDER=${sanitized} requested a cloud provider chain, but it was blocked and chat stayed on the self-hosted Anima LLM because ANIMA_ALLOW_CLOUD_LLM is not set to true. Set ANIMA_ALLOW_CLOUD_LLM=true if you really want Gemini/Groq/Kimi/Grok/ChatGPT/Gateway to be reachable.`
-    );
-  }
-  if (preferNonLocal) {
-    noteParts.push("Local LLM sticky-skipped after a prior failure this process.");
-  }
-  if (preferNonGemini) {
-    noteParts.push("Gemini sticky-skipped after a prior quota/auth failure this process.");
-  }
-  if (preferNonGroq) {
-    noteParts.push("Groq sticky-skipped after a prior quota/auth failure this process.");
-  }
-  if (preferNonKimi) {
-    noteParts.push("Kimi sticky-skipped after a prior quota/auth failure this process.");
-  }
-  if (preferNonGateway) {
-    noteParts.push(
-      "AI Gateway sticky-skipped after a prior quota/auth failure this process."
-    );
-  }
-  if (mode === "auto") {
-    noteParts.push(
-      "Chat uses the cloud BYOK chain (Gemini \u2192 Groq \u2192 Kimi \u2192 Grok \u2192 OpenAI \u2192 Gateway). Set ANIMA_LLM_PROVIDER=custom to use only the Anima LLM."
-    );
-  } else if (mode === "local") {
-    if (!localSummary.configured) {
-      noteParts.push(
-        "Anima custom LLM is selected, but ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. Gemini/Groq/Kimi/Grok/ChatGPT/Gateway are intentionally NOT used in custom mode. Only set ANIMA_LLM_PROVIDER=auto if you want the cloud BYOK chain. See docs/custom-llm.md."
-      );
-    } else {
-      noteParts.push(
-        `Chat uses the custom self-hosted Anima LLM only (vLLM/Ollama/llama.cpp) at host=${localSummary.host ?? "?"} model=${localModel}. No Gemini/Groq/Kimi/Grok/Gateway.`
-      );
-      if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
-        noteParts.push(
-          "WARNING: local endpoint is localhost on Vercel \u2014 serverless cannot reach it. Use a public HTTPS tunnel URL."
-        );
-      } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
-        noteParts.push(
-          "WARNING: local endpoint is not HTTPS \u2014 Vercel egress often requires https://\u2026/v1."
-        );
-      } else if (!localSummary.hasV1Path) {
-        noteParts.push(
-          "WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions."
-        );
-      }
-    }
-  } else if (mode === "local-first") {
-    noteParts.push(
-      "Chat prefers the custom local model, then fails over to the cloud auto chain if the local endpoint fails."
-    );
-  } else if (mode === "gemini") {
-    noteParts.push("Chat is Gemini-only (ANIMA_LLM_PROVIDER=gemini).");
-  } else if (mode === "groq") {
-    noteParts.push("Chat is Groq-only (ANIMA_LLM_PROVIDER=groq).");
-  } else if (mode === "kimi") {
-    noteParts.push(
-      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=custom for a self-hosted model."
-    );
-  } else if (mode === "gateway") {
-    noteParts.push(
-      "Chat is AI Gateway-only (ANIMA_LLM_PROVIDER=gateway). Uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN."
-    );
-  } else if (preferred) {
-    noteParts.push("Chat uses the configured provider chain.");
-  } else {
-    noteParts.push(
-      "No chat LLM configured. For a custom model set ANIMA_LLM_PROVIDER=custom and ANIMA_LOCAL_LLM_BASE_URL (vLLM/Ollama)."
-    );
-  }
-  return {
-    status: preferred ? "ok" : "error",
-    mode,
-    preferred,
-    chain,
-    brand: isAnimaCustomMode() ? "anima" : null,
-    keys: {
-      kimi: hasKimiKey(),
-      openai: hasOpenAIKey(),
-      xai: hasXaiKey(),
-      gemini: hasGeminiKey(),
-      groq: hasGroqKey(),
-      gateway: hasGatewayAuth(),
-      local: hasLocalLlm()
-    },
-    localEndpoint: {
-      configured: localSummary.configured,
-      host: localSummary.host,
-      hasV1Path: localSummary.hasV1Path,
-      isHttps: localSummary.isHttps,
-      isLocalhost: localSummary.isLocalhost,
-      backend,
-      model: localModel
-    },
-    geminiRetiredForChat: false,
-    // Never echo API-key-like values that were pasted into the wrong field.
-    rawProviderEnv: sanitized,
-    note: noteParts.join(" ")
-  };
-}
-function isProviderAuthError(err) {
-  if (!err || typeof err !== "object") return false;
-  const e2 = err;
-  const code = (e2.code || e2.type || "").toLowerCase();
-  const msg = (e2.message || "").toLowerCase();
-  if (code.includes("invalid_api_key") || code.includes("authentication_error") || code.includes("invalid_auth")) {
-    return true;
-  }
-  if (msg.includes("incorrect api key") || msg.includes("invalid api key") || msg.includes("api key provided") || msg.includes("authentication") || // OpenAI SDK surfaces empty 401 bodies as: "401 status code (no body)"
-  msg.includes("status code (no body)") || msg.includes("401 status code")) {
-    return true;
-  }
-  if (e2.status === 401) return true;
-  return false;
-}
-function isProviderUnusableError(err) {
-  if (!err || typeof err !== "object") return false;
-  if (isProviderAuthError(err)) return true;
-  const e2 = err;
-  const code = (e2.code || e2.type || "").toLowerCase();
-  const msg = (e2.message || "").toLowerCase();
-  if (code.includes("insufficient_quota") || code.includes("billing_not_active") || code.includes("billing_hard_limit") || code.includes("account_deactivated") || code.includes("resource_exhausted")) {
-    return true;
-  }
-  if (msg.includes("no credits remaining") || msg.includes("doesn't have any credits") || msg.includes("does not have any credits") || msg.includes("no credits or licenses") || msg.includes("credits or licenses") || msg.includes("insufficient_quota") || msg.includes("exceeded your current quota") || msg.includes("resource_exhausted") || msg.includes("billing") && msg.includes("limit") || msg.includes("add credits") || msg.includes("purchase those") || msg.includes("payment required") || msg.includes("console.x.ai") || msg.includes("platform.kimi.ai") || msg.includes("quota exhausted") || msg.includes("quota exceeded")) {
-    return true;
-  }
-  if (e2.status === 429) return true;
-  if (e2.status === 402) return true;
-  if (e2.status === 403 && (msg.includes("credit") || msg.includes("license"))) {
-    return true;
-  }
-  return false;
-}
-function extractXaiBillingUrl(err) {
-  const text2 = err instanceof Error ? err.message : typeof err === "object" && err && "message" in err ? String(err.message || "") : String(err || "");
-  const match2 = text2.match(/https:\/\/console\.x\.ai\/[^\s"']+/i);
-  if (!match2?.[0]) return null;
-  return match2[0].replace(/[.,;:]+$/g, "");
-}
-var DEFAULT_XAI_MODELS = {
-  light: "grok-3-mini",
-  standard: "grok-3",
-  heavy: "grok-4"
-};
-var XAI_ENV_KEYS = {
-  light: "ANIMA_XAI_MODEL_LIGHT",
-  standard: "ANIMA_XAI_MODEL_STANDARD",
-  heavy: "ANIMA_XAI_MODEL_HEAVY"
-};
-var DEFAULT_GEMINI_MODELS = {
-  light: "gemini-3.1-flash-lite",
-  standard: "gemini-2.5-flash",
-  heavy: "gemini-2.5-pro"
-};
-var GEMINI_RESCUE_MODELS = [
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-flash-latest"
-];
-var GEMINI_ENV_KEYS = {
-  light: "ANIMA_GEMINI_MODEL_LIGHT",
-  standard: "ANIMA_GEMINI_MODEL_STANDARD",
-  heavy: "ANIMA_GEMINI_MODEL_HEAVY"
-};
-var DEFAULT_KIMI_MODELS = {
-  light: "kimi-k2.6",
-  standard: "kimi-k2.6",
-  heavy: "kimi-k3"
-};
-var KIMI_ENV_KEYS = {
-  light: "ANIMA_KIMI_MODEL_LIGHT",
-  standard: "ANIMA_KIMI_MODEL_STANDARD",
-  heavy: "ANIMA_KIMI_MODEL_HEAVY"
-};
-var DEFAULT_GROQ_MODELS = {
-  light: "llama-3.1-8b-instant",
-  standard: "llama-3.3-70b-versatile",
-  heavy: "llama-3.3-70b-versatile"
-};
-var GROQ_ENV_KEYS = {
-  light: "ANIMA_GROQ_MODEL_LIGHT",
-  standard: "ANIMA_GROQ_MODEL_STANDARD",
-  heavy: "ANIMA_GROQ_MODEL_HEAVY"
-};
-var DEFAULT_GATEWAY_MODELS = {
-  light: "google/gemini-3.1-flash-lite",
-  standard: "google/gemini-2.5-flash",
-  heavy: "google/gemini-2.5-pro"
-};
-var GATEWAY_RESCUE_MODELS = [
-  "google/gemini-3.1-flash-lite",
-  "google/gemini-2.5-flash",
-  "google/gemini-flash-latest"
-];
-var GATEWAY_ENV_KEYS = {
-  light: "ANIMA_GATEWAY_MODEL_LIGHT",
-  standard: "ANIMA_GATEWAY_MODEL_STANDARD",
-  heavy: "ANIMA_GATEWAY_MODEL_HEAVY"
-};
-function resolveXaiModel(tier) {
-  const override = process.env[XAI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_XAI_MODEL?.trim();
-  const openaiResolved = resolveModel(tier);
-  return {
-    tier,
-    model: override || DEFAULT_XAI_MODELS[tier],
-    maxTokens: openaiResolved.maxTokens
-  };
-}
-function resolveGeminiModel(tier) {
-  const override = process.env[GEMINI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GEMINI_MODEL?.trim();
-  const openaiResolved = resolveModel(tier);
-  return {
-    tier,
-    model: override || DEFAULT_GEMINI_MODELS[tier],
-    maxTokens: openaiResolved.maxTokens
-  };
-}
-function resolveKimiModel(tier) {
-  const override = process.env[KIMI_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_KIMI_MODEL?.trim();
-  const openaiResolved = resolveModel(tier);
-  return {
-    tier,
-    model: override || DEFAULT_KIMI_MODELS[tier],
-    maxTokens: openaiResolved.maxTokens
-  };
-}
-function resolveGroqModel(tier) {
-  const override = process.env[GROQ_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GROQ_MODEL?.trim();
-  const openaiResolved = resolveModel(tier);
-  return {
-    tier,
-    model: override || DEFAULT_GROQ_MODELS[tier],
-    maxTokens: openaiResolved.maxTokens
-  };
-}
-function resolveGatewayModel(tier) {
-  const override = process.env[GATEWAY_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GATEWAY_MODEL?.trim();
-  const openaiResolved = resolveModel(tier);
-  return {
-    tier,
-    model: override || DEFAULT_GATEWAY_MODELS[tier],
-    maxTokens: openaiResolved.maxTokens
-  };
 }
 function resolveLocalModel(tier) {
   const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
@@ -106658,137 +105766,7 @@ function resolveLocalModel(tier) {
     maxTokens: spec.maxTokens
   };
 }
-function providerLabel(id) {
-  if (id === "local") return "Local LLM";
-  if (id === "xai") return "Grok (xAI)";
-  if (id === "gemini") return "Gemini";
-  if (id === "groq") return "Groq";
-  if (id === "kimi") return "Kimi (Moonshot)";
-  if (id === "gateway") return "AI Gateway";
-  return "ChatGPT (OpenAI)";
-}
-function clientFor(provider) {
-  if (provider === "local") {
-    const client = getLocalLlmClient();
-    if (!client) {
-      throw new Error(
-        "ANIMA_LOCAL_LLM_BASE_URL (or VLLM_BASE_URL / OLLAMA_BASE_URL) must be set to use the local LLM provider."
-      );
-    }
-    return client;
-  }
-  if (provider === "xai") {
-    const client = getXaiClient();
-    if (!client) {
-      throw new Error("XAI_API_KEY must be set to use the Grok provider.");
-    }
-    return client;
-  }
-  if (provider === "groq") {
-    const client = getGroqClient();
-    if (!client) {
-      throw new Error("GROQ_API_KEY must be set to use the Groq provider.");
-    }
-    return client;
-  }
-  if (provider === "kimi") {
-    const client = getKimiClient();
-    if (!client) {
-      throw new Error(
-        "KIMI_API_KEY (or MOONSHOT_API_KEY) must be set to use the Kimi provider."
-      );
-    }
-    return client;
-  }
-  if (provider === "gateway") {
-    const client = getGatewayClient();
-    if (!client) {
-      throw new Error(
-        "AI_GATEWAY_API_KEY (or VERCEL_OIDC_TOKEN) must be set to use AI Gateway."
-      );
-    }
-    return client;
-  }
-  return getOpenAIClient();
-}
-function resolveForProvider(provider, tier) {
-  if (provider === "local") return resolveLocalModel(tier);
-  if (provider === "gemini") return resolveGeminiModel(tier);
-  if (provider === "groq") return resolveGroqModel(tier);
-  if (provider === "xai") return resolveXaiModel(tier);
-  if (provider === "kimi") return resolveKimiModel(tier);
-  if (provider === "gateway") return resolveGatewayModel(tier);
-  return resolveModel(tier);
-}
-function otherVendorAvailable(excluding) {
-  if (excluding !== "local" && hasLocalLlm()) return true;
-  if (excluding !== "gemini" && hasGeminiKey()) return true;
-  if (excluding !== "groq" && hasGroqKey()) return true;
-  if (excluding !== "kimi" && hasKimiKey()) return true;
-  if (excluding !== "xai" && hasXaiKey()) return true;
-  if (excluding !== "openai" && hasOpenAIKey()) return true;
-  if (excluding !== "gateway" && hasGatewayAuth()) return true;
-  return false;
-}
-function markOpenAIUnusable(err) {
-  if (isProviderUnusableError(err) && otherVendorAvailable("openai")) {
-    preferNonOpenAI = true;
-  }
-}
-function markKimiUnusable(err) {
-  if (isProviderUnusableError(err) && otherVendorAvailable("kimi")) {
-    preferNonKimi = true;
-  }
-}
-function markGeminiUnusable(err) {
-  if ((isProviderUnusableError(err) || isModelUnavailableError(err)) && otherVendorAvailable("gemini")) {
-    preferNonGemini = true;
-  }
-}
-function shouldTryNextProvider(err) {
-  if (isProviderUnusableError(err) || isModelUnavailableError(err)) return true;
-  if (!err || typeof err !== "object") return false;
-  const code = String(err.code || "").toLowerCase();
-  return code === "empty_visible_text" || code === "empty_stream";
-}
-function recordProviderFailure(provider, err) {
-  if (provider === "local") {
-    if (otherVendorAvailable("local")) {
-      preferNonLocal = true;
-    }
-    return;
-  }
-  if (provider === "openai") {
-    markOpenAIUnusable(err);
-    return;
-  }
-  if (provider === "kimi") {
-    markKimiUnusable(err);
-    return;
-  }
-  if (provider === "gemini") {
-    markGeminiUnusable(err);
-    return;
-  }
-  if (provider === "groq") {
-    if (isProviderUnusableError(err) && otherVendorAvailable("groq")) {
-      preferNonGroq = true;
-    }
-    return;
-  }
-  if (provider === "gateway") {
-    markGatewayUnusable(err);
-    return;
-  }
-  if (provider === "xai") {
-    if (isProviderUnusableError(err) && otherVendorAvailable("xai")) {
-      preferNonXai = true;
-      return;
-    }
-    markXaiUnusable(err);
-  }
-}
-function summarizeProviderError(err) {
+function summarizeError(err) {
   if (!err) return "unknown error";
   if (typeof err === "string") return err.slice(0, 160);
   if (err instanceof Error) return err.message.slice(0, 160);
@@ -106802,148 +105780,23 @@ function summarizeProviderError(err) {
   }
   return String(err).slice(0, 160);
 }
-function formatFailureTrail(failures) {
-  if (failures.length === 0) return "";
-  return failures.map((f2) => `${providerLabel(f2.provider)}: ${summarizeProviderError(f2.err)}`).join(" | ");
-}
-function isXaiCreditsError(err) {
-  if (!isProviderUnusableError(err)) return false;
-  if (extractXaiBillingUrl(err)) return true;
-  const msg = err instanceof Error ? err.message.toLowerCase() : typeof err === "object" && err && "message" in err ? String(err.message || "").toLowerCase() : String(err || "").toLowerCase();
-  return msg.includes("credits or licenses") || msg.includes("no credits or licenses") || msg.includes("console.x.ai") && msg.includes("credit");
-}
-function markXaiUnusable(err) {
-  if (isXaiCreditsError(err) && otherVendorAvailable("xai")) {
-    preferNonXai = true;
+function isProviderAuthError(err) {
+  if (!err || typeof err !== "object") return false;
+  const e2 = err;
+  const code = (e2.code || e2.type || "").toLowerCase();
+  const msg = (e2.message || "").toLowerCase();
+  if (code.includes("invalid_api_key") || code.includes("authentication_error") || code.includes("invalid_auth")) {
+    return true;
   }
+  if (msg.includes("incorrect api key") || msg.includes("invalid api key") || msg.includes("authentication") || msg.includes("status code (no body)") || msg.includes("401 status code")) {
+    return true;
+  }
+  return e2.status === 401;
 }
-function markGatewayUnusable(err) {
-  if ((isProviderUnusableError(err) || isModelUnavailableError(err)) && otherVendorAvailable("gateway")) {
-    preferNonGateway = true;
-  }
+function isLocalModelUnavailable(err) {
+  return isModelUnavailableError(err);
 }
-function enrichError(err, attempted, failures = []) {
-  const names = attempted.map(providerLabel).join(" \u2192 ");
-  const trail = formatFailureTrail(failures);
-  const trailSuffix = trail ? ` Details: ${trail}` : "";
-  if (isProviderAuthError(err)) {
-    const keyHints = attempted.map((id) => {
-      if (id === "local") return "ANIMA_LOCAL_LLM_BASE_URL";
-      if (id === "xai") return "XAI_API_KEY";
-      if (id === "kimi") return "KIMI_API_KEY";
-      if (id === "gemini") return "GEMINI_API_KEY";
-      if (id === "groq") return "GROQ_API_KEY";
-      if (id === "gateway") return "AI_GATEWAY_API_KEY";
-      return "OPENAI_API_KEY";
-    });
-    const uniqueKeys = [...new Set(keyHints)].join(" / ");
-    return new Error(
-      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("gemini") ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. " : "") + (attempted.includes("groq") ? "Groq uses keys from https://console.groq.com. " : "") + (attempted.includes("kimi") ? "Kimi uses Moonshot keys from https://platform.kimi.ai. " : "") + (attempted.includes("gateway") ? "AI Gateway uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN (https://vercel.com/docs/ai-gateway). " : "") + "Set ANIMA_LLM_PROVIDER=auto to allow multi-provider failover." + trailSuffix
-    );
-  }
-  if (isProviderUnusableError(err)) {
-    const xaiBilling = extractXaiBillingUrl(err);
-    if (xaiBilling && attempted.includes("xai") && attempted.length === 1) {
-      return new Error(
-        `Grok (xAI) has no team credits/licenses yet (tried ${names}). Buy credits at ${xaiBilling}` + (hasGeminiKey() ? ", or set ANIMA_LLM_PROVIDER=gemini / auto to use Gemini." : hasKimiKey() ? ", or set ANIMA_LLM_PROVIDER=kimi to use Kimi instead." : hasGatewayAuth() ? ", or set ANIMA_LLM_PROVIDER=gateway / auto to use AI Gateway." : ". Set GEMINI_API_KEY, KIMI_API_KEY, or AI_GATEWAY_API_KEY for backup chat.") + trailSuffix
-      );
-    }
-    if (attempted.length === 1 && attempted[0] === "gemini") {
-      return new Error(
-        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` + (hasGroqKey() || hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth() ? " Or set ANIMA_LLM_PROVIDER=auto to allow Groq/Kimi/Grok/OpenAI/Gateway failover." : "") + trailSuffix
-      );
-    }
-    if (attempted.length === 1 && attempted[0] === "groq") {
-      return new Error(
-        `Groq credits/quota exhausted (or the key was rejected). Check GROQ_API_KEY at https://console.groq.com, then redeploy.` + (hasGeminiKey() || hasOpenAIKey() || hasGatewayAuth() ? " Or set ANIMA_LLM_PROVIDER=auto so Gemini/ChatGPT/Gateway can cover." : "") + trailSuffix
-      );
-    }
-    if (attempted.length === 1 && attempted[0] === "kimi") {
-      return new Error(
-        `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, or set ANIMA_LLM_PROVIDER=auto so Gemini/Groq/OpenAI/Gateway can cover, then redeploy.` + trailSuffix
-      );
-    }
-    if (attempted.length === 1 && attempted[0] === "gateway") {
-      return new Error(
-        `AI Gateway credits/quota exhausted (or auth failed). Check AI_GATEWAY_API_KEY / Vercel AI Gateway credits at https://vercel.com/docs/ai-gateway, then redeploy.` + trailSuffix
-      );
-    }
-    const missingUnused = [];
-    if (!attempted.includes("gemini") && !hasGeminiKey()) {
-      missingUnused.push("GEMINI_API_KEY");
-    }
-    if (!attempted.includes("groq") && !hasGroqKey()) {
-      missingUnused.push("GROQ_API_KEY (often has a free tier at console.groq.com)");
-    }
-    if (!attempted.includes("kimi") && !hasKimiKey()) {
-      missingUnused.push("KIMI_API_KEY");
-    }
-    if (!attempted.includes("xai") && !hasXaiKey()) {
-      missingUnused.push("XAI_API_KEY");
-    }
-    if (!attempted.includes("openai") && !isOpenAIBlocked() && !hasOpenAIKey()) {
-      missingUnused.push("OPENAI_API_KEY");
-    }
-    if (!attempted.includes("gateway") && !hasGatewayAuth()) {
-      missingUnused.push("AI_GATEWAY_API_KEY");
-    }
-    if (!attempted.includes("local") && !hasLocalLlm()) {
-      missingUnused.push("ANIMA_LOCAL_LLM_BASE_URL (Anima open LLM via Ollama/vLLM)");
-    }
-    const parts = [
-      " Every cloud provider that was tried rejected the request (quota, billing, or revoked key) \u2014 re-pasting the same keys will not restore chat.",
-      " Fix options: (1) Preferred \u2014 host Anima LLM and set ANIMA_LLM_PROVIDER=custom plus ANIMA_LOCAL_LLM_BASE_URL (see docs/custom-llm.md), then redeploy.",
-      " (2) Top up credits for the providers you already use (Google AI Studio / Moonshot / xAI / OpenAI / AI Gateway)."
-    ];
-    if (missingUnused.length > 0) {
-      parts.push(` (3) Optional unused backup: set ${missingUnused.join("; ")}.`);
-    }
-    parts.push(
-      " Note: ANIMA_LLM_PROVIDER must be a mode name (custom|auto|gemini|groq|\u2026), never an API key. Live-check: /api/healthz/llm?probe=1."
-    );
-    return new Error(
-      `LLM credits/quota exhausted (tried ${names}).${parts.join("")}${trailSuffix}`
-    );
-  }
-  const base = err instanceof Error ? err : new Error(String(err));
-  if (trail && !base.message.includes("Details:")) {
-    return new Error(`${base.message}${trailSuffix}`);
-  }
-  return base;
-}
-async function createStream(provider, resolved, messages2) {
-  if (provider === "gemini") {
-    return createGeminiChatStream({
-      model: resolved.model,
-      maxTokens: resolved.maxTokens,
-      messages: messages2
-    });
-  }
-  return clientFor(provider).chat.completions.create({
-    model: resolved.model,
-    max_tokens: resolved.maxTokens,
-    messages: messages2,
-    stream: true
-  });
-}
-async function createCompletion(provider, resolved, messages2, temperature, tools, toolChoice) {
-  if (provider === "gemini") {
-    return createGeminiChatCompletion({
-      model: resolved.model,
-      maxTokens: resolved.maxTokens,
-      messages: messages2,
-      temperature
-    });
-  }
-  return clientFor(provider).chat.completions.create({
-    model: resolved.model,
-    max_tokens: resolved.maxTokens,
-    messages: messages2,
-    ...typeof temperature === "number" ? { temperature } : {},
-    ...tools && tools.length ? { tools, tool_choice: toolChoice ?? "auto" } : {}
-  });
-}
-function rescueModelsForProvider(provider, preferred) {
+function rescueModelsForLocal(preferred) {
   const seen = /* @__PURE__ */ new Set();
   const out = [];
   const push2 = (model) => {
@@ -106953,194 +105806,182 @@ function rescueModelsForProvider(provider, preferred) {
     out.push({ ...preferred, model: id });
   };
   push2(preferred.model);
-  push2(resolveForProvider(provider, "standard").model);
-  push2(resolveForProvider(provider, "light").model);
-  if (provider === "gemini") {
-    for (const model of GEMINI_RESCUE_MODELS) push2(model);
-  } else if (provider === "gateway") {
-    for (const model of GATEWAY_RESCUE_MODELS) push2(model);
-  }
+  push2(resolveLocalModel("standard").model);
+  push2(resolveLocalModel("light").model);
   return out;
 }
-async function withModelFallback(provider, preferred, run) {
-  const candidates = rescueModelsForProvider(provider, preferred);
+async function withModelFallback(preferred, run) {
+  const candidates = rescueModelsForLocal(preferred);
   let lastErr;
   for (let i2 = 0; i2 < candidates.length; i2++) {
     const candidate = candidates[i2];
     try {
       return { value: await run(candidate), resolved: candidate };
-    } catch (modelErr) {
-      lastErr = modelErr;
+    } catch (err) {
+      lastErr = err;
       const hasNext = i2 < candidates.length - 1;
-      if (!hasNext || !isModelUnavailableError(modelErr)) {
-        throw modelErr;
+      if (!hasNext || !isLocalModelUnavailable(err)) {
+        throw err;
       }
     }
   }
   throw lastErr;
 }
-function requireProviderChain() {
-  const chain = getProviderChain();
-  if (chain.length === 0) {
-    const mode = getConfiguredProviderMode();
-    if (mode === "local" || mode === "local-first") {
-      throw new Error(
-        "Anima custom LLM is selected, but ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. Gemini/Groq/Kimi/Grok/ChatGPT/Gateway are intentionally NOT used in custom mode. Only set ANIMA_LLM_PROVIDER=auto if you want the cloud BYOK chain. See docs/custom-llm.md."
-      );
-    }
-    const missing = [];
-    if (!hasLocalLlm()) missing.push("ANIMA_LOCAL_LLM_BASE_URL");
-    if (!hasGeminiKey()) missing.push("GEMINI_API_KEY");
-    if (!hasGroqKey()) missing.push("GROQ_API_KEY");
-    if (!hasKimiKey()) missing.push("KIMI_API_KEY");
-    if (!hasXaiKey()) missing.push("XAI_API_KEY");
-    if (!hasOpenAIKey()) missing.push("OPENAI_API_KEY");
-    if (!hasGatewayAuth()) missing.push("AI_GATEWAY_API_KEY");
-    const configNote = isOpenAIBlocked() ? " OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI." : "";
-    const modeNote = mode === "kimi" ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY." : mode === "gemini" ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY." : mode === "groq" ? " ANIMA_LLM_PROVIDER=groq requires a working GROQ_API_KEY." : mode === "gateway" ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN." : "";
-    throw new Error(
-      missing.length >= 4 ? `No LLM provider configured. Set ANIMA_LOCAL_LLM_BASE_URL for the Anima LLM, or GEMINI_API_KEY / GROQ_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY with ANIMA_LLM_PROVIDER=auto.${configNote}${modeNote}` : `No usable LLM provider right now.${configNote}${modeNote} Check local endpoint / API keys and redeploy.`
+function requireLocalClient() {
+  const client = getLocalLlmClient();
+  if (client) return client;
+  throw new Error(
+    "Anima custom LLM is not configured: ANIMA_LOCAL_LLM_BASE_URL is unset (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. See docs/custom-llm.md and docs/llm-deploy.md."
+  );
+}
+function enrichError(err) {
+  if (isProviderAuthError(err)) {
+    return new Error(
+      `Anima LLM authentication failed: ${summarizeError(err)}. Check ANIMA_LOCAL_LLM_API_KEY on the local server config, then redeploy.`
     );
   }
-  return chain;
+  const base = err instanceof Error ? err : new Error(String(err));
+  return base;
 }
-async function createChatStreamWithFailover(req) {
-  beginChatProviderTurn();
-  const chain = requireProviderChain();
-  const brand = isAnimaCustomMode() ? "anima" : void 0;
-  const attempted = [];
-  const failures = [];
-  let lastErr;
-  for (let i2 = 0; i2 < chain.length; i2++) {
-    const provider = chain[i2];
-    attempted.push(provider);
-    const routed = resolveForProvider(provider, req.tier);
-    const preferredModel = provider === "openai" ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens } : routed;
-    try {
-      const { value: stream, resolved } = await withModelFallback(
-        provider,
-        preferredModel,
-        (m2) => createStream(provider, m2, req.messages)
+function getLlmRoutingStatus(tier = "standard") {
+  const localSummary = summarizeLocalLlmBaseUrl();
+  const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() || "ollama";
+  const localModel = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel(tier).model;
+  logLocalLlmClientInitOnce();
+  const noteParts = [];
+  if (!localSummary.configured) {
+    noteParts.push(
+      "ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. See docs/custom-llm.md."
+    );
+  } else {
+    noteParts.push(
+      `Chat uses the self-hosted Anima LLM only (vLLM/Ollama/llama.cpp) at host=${localSummary.host ?? "?"} model=${localModel}. There is no cloud flagship fallback.`
+    );
+    if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+      noteParts.push(
+        "WARNING: local endpoint is localhost on Vercel \u2014 serverless cannot reach it. Use a public HTTPS tunnel URL."
       );
-      return {
-        stream,
-        provider,
-        brand,
-        model: resolved.model,
-        tier: resolved.tier,
-        failedOver: i2 > 0,
-        previousProvider: i2 > 0 ? chain[0] : void 0
-      };
-    } catch (err) {
-      lastErr = err;
-      failures.push({ provider, err });
-      recordProviderFailure(provider, err);
-      if (provider !== "local" && !shouldTryNextProvider(err)) {
-        throw enrichError(err, attempted, failures);
-      }
+    } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+      noteParts.push("WARNING: local endpoint is not HTTPS \u2014 Vercel egress often requires https://\u2026/v1.");
+    } else if (!localSummary.hasV1Path) {
+      noteParts.push("WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions.");
     }
   }
-  throw enrichError(lastErr, attempted, failures);
-}
-async function createChatCompletionWithFailover(req) {
-  beginChatProviderTurn();
-  const chain = requireProviderChain();
-  const brand = isAnimaCustomMode() ? "anima" : void 0;
-  const attempted = [];
-  const failures = [];
-  let lastErr;
-  for (let i2 = 0; i2 < chain.length; i2++) {
-    const provider = chain[i2];
-    attempted.push(provider);
-    const routed = resolveForProvider(provider, req.tier);
-    const preferredModel = provider === "openai" && req.model ? { tier: req.tier, model: req.model, maxTokens: req.maxTokens } : routed;
-    try {
-      const { value: completion, resolved } = await withModelFallback(
-        provider,
-        preferredModel,
-        (m2) => createCompletion(
-          provider,
-          m2,
-          req.messages,
-          req.temperature,
-          req.tools,
-          req.toolChoice
-        )
-      );
-      const content = completion.choices?.[0]?.message?.content ?? "";
-      return {
-        content: typeof content === "string" ? content : "",
-        provider,
-        brand,
-        model: resolved.model,
-        tier: resolved.tier,
-        failedOver: i2 > 0,
-        previousProvider: i2 > 0 ? chain[0] : void 0,
-        toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null
-      };
-    } catch (err) {
-      lastErr = err;
-      failures.push({ provider, err });
-      recordProviderFailure(provider, err);
-      if (provider !== "local" && !shouldTryNextProvider(err)) {
-        throw enrichError(err, attempted, failures);
-      }
-    }
-  }
-  throw enrichError(lastErr, attempted, failures);
+  return {
+    status: hasLocalLlm() ? "ok" : "error",
+    preferred: hasLocalLlm() ? "local" : null,
+    brand: "anima",
+    localEndpoint: {
+      configured: localSummary.configured,
+      host: localSummary.host,
+      hasV1Path: localSummary.hasV1Path,
+      isHttps: localSummary.isHttps,
+      isLocalhost: localSummary.isLocalhost,
+      backend,
+      model: localModel
+    },
+    note: noteParts.join(" ")
+  };
 }
 async function probeLlmProviders(tier = "standard") {
-  const candidates = [
-    "local",
-    "gemini",
-    "groq",
-    "kimi",
-    "xai",
-    "openai",
-    "gateway"
-  ];
-  const results = [];
-  for (const provider of candidates) {
-    const configured = provider === "local" && hasLocalLlm() || provider === "gemini" && hasGeminiKey() || provider === "groq" && hasGroqKey() || provider === "kimi" && hasKimiKey() || provider === "xai" && hasXaiKey() || provider === "openai" && hasOpenAIKey() || provider === "gateway" && hasGatewayAuth();
-    if (!configured) {
-      results.push({ provider, configured: false, ok: false });
-      continue;
-    }
-    const resolved = resolveForProvider(provider, tier);
-    const started = Date.now();
-    try {
-      const { resolved: used } = await withModelFallback(
-        provider,
-        { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
-        (m2) => createCompletion(
-          provider,
-          m2,
-          [{ role: "user", content: "Reply with the single word: ok" }],
-          0
-        )
-      );
-      results.push({
-        provider,
+  if (!hasLocalLlm()) {
+    return [{ provider: "local", configured: false, ok: false }];
+  }
+  const resolved = resolveLocalModel(tier);
+  const started = Date.now();
+  try {
+    const client = requireLocalClient();
+    const { resolved: used } = await withModelFallback(
+      { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
+      (m2) => client.chat.completions.create({
+        model: m2.model,
+        max_tokens: m2.maxTokens,
+        messages: [{ role: "user", content: "Reply with the single word: ok" }],
+        temperature: 0
+      })
+    );
+    return [
+      {
+        provider: "local",
         configured: true,
         ok: true,
         model: used.model,
         latencyMs: Date.now() - started
-      });
-    } catch (err) {
-      const status = err && typeof err === "object" && "status" in err ? Number(err.status) : void 0;
-      results.push({
-        provider,
+      }
+    ];
+  } catch (err) {
+    const status = err && typeof err === "object" && "status" in err ? Number(err.status) : void 0;
+    return [
+      {
+        provider: "local",
         configured: true,
         ok: false,
         status: Number.isFinite(status) ? status : void 0,
-        errorKind: isProviderAuthError(err) ? "auth" : isProviderUnusableError(err) ? "quota" : "other",
-        message: summarizeProviderError(err),
+        errorKind: isProviderAuthError(err) ? "auth" : "other",
+        message: summarizeError(err),
         model: resolved.model,
         latencyMs: Date.now() - started
-      });
-    }
+      }
+    ];
   }
-  return results;
+}
+async function createChatStreamWithFailover(req) {
+  beginChatProviderTurn();
+  const client = requireLocalClient();
+  const preferred = resolveLocalModel(req.tier);
+  try {
+    const { value: stream, resolved } = await withModelFallback(
+      preferred,
+      (m2) => client.chat.completions.create({
+        model: m2.model,
+        max_tokens: m2.maxTokens,
+        messages: req.messages,
+        stream: true
+      })
+    );
+    return {
+      stream,
+      provider: "local",
+      brand: "anima",
+      model: resolved.model,
+      tier: resolved.tier,
+      failedOver: false
+    };
+  } catch (err) {
+    throw enrichError(err);
+  }
+}
+async function createChatCompletionWithFailover(req) {
+  beginChatProviderTurn();
+  const client = requireLocalClient();
+  const preferred = resolveLocalModel(req.tier);
+  try {
+    const { value: completion, resolved } = await withModelFallback(
+      preferred,
+      (m2) => client.chat.completions.create(
+        {
+          model: m2.model,
+          max_tokens: m2.maxTokens,
+          messages: req.messages,
+          ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
+          ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
+        },
+        req.signal ? { signal: req.signal } : void 0
+      )
+    );
+    const content = completion.choices?.[0]?.message?.content ?? "";
+    return {
+      content: typeof content === "string" ? content : "",
+      provider: "local",
+      brand: "anima",
+      model: resolved.model,
+      tier: resolved.tier,
+      failedOver: false,
+      toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null
+    };
+  } catch (err) {
+    throw enrichError(err);
+  }
 }
 
 // src/routes/health.ts
@@ -107628,22 +106469,7 @@ async function llm(systemPrompt, userPrompt, maxTokens = 1024) {
   return result.content;
 }
 async function webSearchLLM(systemPrompt, userPrompt) {
-  if (isAnimaCustomMode()) {
-    return llm(systemPrompt, userPrompt);
-  }
-  try {
-    const resp = await getOpenAIClient().responses.create({
-      model: "gpt-4o",
-      tools: [{ type: "web_search_preview" }],
-      instructions: systemPrompt,
-      input: userPrompt
-    });
-    const text2 = resp.output_text;
-    if (typeof text2 === "string" && text2.trim()) return text2;
-    return await llm(systemPrompt, userPrompt);
-  } catch {
-    return llm(systemPrompt, userPrompt);
-  }
+  return llm(systemPrompt, userPrompt);
 }
 function parseTraits(raw) {
   const empty = { personality: "", backstory: "", speaking_style: "" };
@@ -121504,318 +120330,78 @@ var storage_default = router8;
 // src/routes/chat.ts
 var import_express17 = __toESM(require_express2(), 1);
 
-// src/lib/llmEnsemble.ts
-function envFlagEnabled2(name) {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
-}
-function mindTimeoutMs() {
-  const raw = Number(process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw >= 2e3 ? raw : 14e3;
+// src/lib/localEnsemble.ts
+var DEFAULT_MINDS = [
+  { label: "Steady", temperature: 0.6 },
+  { label: "Vivid", temperature: 0.95 },
+  { label: "Playful", temperature: 1.15 }
+];
+var DEFAULT_MIND_TIMEOUT_MS = 2e4;
+var DEFAULT_MAX_MINDS = 4;
+function isLocalEnsembleEnabled() {
+  return /^(1|true|yes)$/i.test((process.env.ANIMA_LOCAL_LLM_ENSEMBLE || "").trim());
 }
 function maxMinds() {
   const raw = Number(process.env.ANIMA_ENSEMBLE_MAX_MINDS);
-  return Number.isFinite(raw) && raw >= 1 ? Math.min(3, Math.floor(raw)) : 3;
+  const floored = Number.isFinite(raw) ? Math.floor(raw) : 0;
+  return floored > 0 ? floored : DEFAULT_MAX_MINDS;
 }
-function isEnsembleMode() {
-  if (!isCloudLlmAllowed()) return false;
-  if (envFlagEnabled2("ANIMA_LLM_ENSEMBLE")) return true;
-  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
-  return raw === "ensemble";
+function mindSpecs() {
+  const cap = maxMinds();
+  const raw = (process.env.ANIMA_ENSEMBLE_MINDS || "").trim();
+  if (!raw) return DEFAULT_MINDS.slice(0, cap);
+  const labels = raw.split(",").map((s3) => s3.trim()).filter(Boolean).slice(0, cap);
+  if (!labels.length) return DEFAULT_MINDS.slice(0, cap);
+  return labels.map((label, i2) => ({
+    label,
+    temperature: DEFAULT_MINDS[i2 % DEFAULT_MINDS.length].temperature
+  }));
 }
-function getEnsembleMinds(tier = "standard") {
-  reviveStickySkippedProvidersIfNeeded();
-  const disableOpenAI = envFlagEnabled2("ANIMA_DISABLE_OPENAI");
-  const disableGroq = envFlagEnabled2("ANIMA_DISABLE_GROQ");
-  const minds = [];
-  for (const id of getAnimaTierProviderOrder(tier)) {
-    if (id === "gemini" && hasGeminiKey() && !isGeminiStickySkipped()) {
-      minds.push("gemini");
-      continue;
-    }
-    if (id === "groq" && hasGroqKey() && !disableGroq && !isGroqStickySkipped()) {
-      minds.push("groq");
-      continue;
-    }
-    if (id === "openai" && hasOpenAIKey() && !disableOpenAI && !isOpenAIStickySkipped()) {
-      minds.push("openai");
-    }
-  }
-  return minds.slice(0, maxMinds());
+function mindTimeoutMs() {
+  const raw = Number(process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MIND_TIMEOUT_MS;
 }
-function providerLabel2(id) {
-  if (id === "gemini") return "Gemini";
-  if (id === "groq") return "Groq";
-  return "ChatGPT";
-}
-function resolveMindModel(provider, tier) {
-  if (provider === "gemini") return resolveGeminiModel(tier);
-  if (provider === "groq") return resolveGroqModel(tier);
-  return resolveModel(tier);
-}
-async function withAbortTimeout(run, ms, label) {
+function draftOneMind(req, spec, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await run(controller.signal);
-  } catch (err) {
-    if (controller.signal.aborted) {
-      throw new Error(`${label} timed out after ${ms}ms`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-async function draftFromMind(provider, tier, messages2, maxTokens, signal) {
-  const started = Date.now();
-  const draftMax = Math.min(maxTokens, 1200);
-  const resolved = resolveMindModel(provider, tier);
-  let content = "";
-  if (provider === "gemini") {
-    const completion = await createGeminiChatCompletion({
-      model: resolved.model,
-      maxTokens: draftMax,
-      messages: messages2,
-      temperature: 0.8,
-      signal
-    });
-    content = String(completion.choices[0]?.message?.content ?? "").trim();
-  } else {
-    const client = provider === "groq" ? getGroqClient() : getOpenAIClient();
-    if (!client) {
-      throw new Error(`${providerLabel2(provider)} client is not configured.`);
-    }
-    const completion = await client.chat.completions.create(
-      {
-        model: resolved.model,
-        max_tokens: draftMax,
-        messages: messages2,
-        temperature: 0.8
-      },
-      { signal }
-    );
-    content = String(completion.choices[0]?.message?.content ?? "").trim();
-  }
-  if (!content) {
-    throw new Error(`${providerLabel2(provider)} returned an empty draft.`);
-  }
-  return {
-    provider,
-    model: resolved.model,
-    content,
-    latencyMs: Date.now() - started
-  };
-}
-function pickSynthesizer(drafts) {
-  const order = ["gemini", "groq", "openai"];
-  for (const id of order) {
-    if (drafts.some((d2) => d2.provider === id)) return id;
-  }
-  return drafts[0].provider;
-}
-function buildSynthesisMessages(originalMessages, drafts) {
-  const system = originalMessages.find((m2) => m2.role === "system");
-  const systemText = typeof system?.content === "string" ? system.content : "You are an in-character AI companion.";
-  const draftBlock = drafts.map(
-    (d2, i2) => `--- Mind ${i2 + 1}: ${providerLabel2(d2.provider)} (${d2.model}) ---
-${d2.content}`
-  ).join("\n\n");
-  const userTurns = originalMessages.filter((m2) => m2.role !== "system");
-  return [
-    {
-      role: "system",
-      content: `${systemText}
-
-MULTI-MIND SYNTHESIS MODE:
-Several AI minds drafted candidate replies below. Produce ONE final in-character companion reply that blends the strongest emotional truth, voice, and specificity from those drafts. Do not mention the minds, drafts, Gemini, Groq, ChatGPT, or that you are combining answers. Stay fully in character. Output only the final reply.`
-    },
-    ...userTurns,
-    {
-      role: "user",
-      content: `Here are the mind drafts to synthesize into your single reply:
-
-${draftBlock}
-
-Write the final in-character reply now.`
-    }
-  ];
-}
-async function synthesizeDrafts(synthesizer, tier, originalMessages, drafts, maxTokens, signal) {
-  const resolved = resolveMindModel(synthesizer, tier);
-  const messages2 = buildSynthesisMessages(originalMessages, drafts);
-  if (synthesizer === "gemini") {
-    const completion2 = await createGeminiChatCompletion({
-      model: resolved.model,
-      maxTokens,
-      messages: messages2,
-      temperature: 0.7,
-      signal
-    });
-    return {
-      content: String(completion2.choices[0]?.message?.content ?? "").trim(),
-      model: resolved.model
-    };
-  }
-  const client = synthesizer === "groq" ? getGroqClient() : getOpenAIClient();
-  if (!client) {
-    throw new Error(`${providerLabel2(synthesizer)} client is not configured.`);
-  }
-  const completion = await client.chat.completions.create(
-    {
-      model: resolved.model,
-      max_tokens: maxTokens,
-      messages: messages2,
-      temperature: 0.7
-    },
-    { signal }
-  );
-  return {
-    content: String(completion.choices[0]?.message?.content ?? "").trim(),
-    model: resolved.model
-  };
-}
-function fastestDraft(drafts) {
-  return [...drafts].sort((a2, b2) => a2.latencyMs - b2.latencyMs)[0];
-}
-function draftFallbackResult(req, drafts, best) {
-  req.onProgress?.({
-    status: "ensemble",
-    phase: "streaming",
-    minds: drafts.map((d2) => d2.provider),
-    drafts: drafts.length,
-    synthesizer: best.provider
-  });
-  return {
-    content: best.content,
-    provider: best.provider,
-    brand: "anima",
-    model: best.model,
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return createChatCompletionWithFailover({
     tier: req.tier,
-    minds: drafts.map((d2) => d2.provider),
-    drafts,
-    synthesizer: best.provider,
-    combined: false
-  };
+    maxTokens: req.maxTokens,
+    messages: req.messages,
+    temperature: spec.temperature,
+    signal: controller.signal
+  }).finally(() => clearTimeout(timer));
 }
-async function* chunkTextAsStream(text2, chunkSize = 24) {
-  for (let i2 = 0; i2 < text2.length; i2 += chunkSize) {
-    yield { choices: [{ delta: { content: text2.slice(i2, i2 + chunkSize) } }] };
-  }
-}
-async function createEnsembleChatReply(req) {
-  beginChatProviderTurn();
-  const minds = getEnsembleMinds(req.tier);
-  if (minds.length === 0) {
-    throw new Error(
-      "No LLM minds configured for ensemble. Set GEMINI_API_KEY, GROQ_API_KEY, and/or OPENAI_API_KEY."
-    );
-  }
-  req.onProgress?.({
-    status: "ensemble",
-    phase: "gathering",
-    minds
-  });
-  const timeout = mindTimeoutMs();
-  const settled = await Promise.allSettled(
-    minds.map(
-      (provider) => withAbortTimeout(
-        (signal) => draftFromMind(provider, req.tier, req.messages, req.maxTokens, signal),
-        timeout,
-        providerLabel2(provider)
-      )
-    )
-  );
+async function draftLocalMinds(req) {
+  const specs = mindSpecs();
+  const timeoutMs = mindTimeoutMs();
+  const settled = await Promise.allSettled(specs.map((spec) => draftOneMind(req, spec, timeoutMs)));
   const drafts = [];
-  for (let i2 = 0; i2 < settled.length; i2++) {
-    const result = settled[i2];
-    const provider = minds[i2];
-    if (result.status === "fulfilled") {
-      drafts.push(result.value);
-      continue;
+  settled.forEach((result, i2) => {
+    if (result.status === "fulfilled" && result.value.content.trim()) {
+      drafts.push({ label: specs[i2].label, content: result.value.content.trim(), model: result.value.model });
     }
-    const reason = result.reason;
-    if (isProviderUnusableError(reason)) {
-      recordProviderFailure(provider, reason);
-    }
-  }
-  if (drafts.length === 0) {
-    const reasons = settled.map(
-      (r2, i2) => r2.status === "rejected" ? `${providerLabel2(minds[i2])}: ${r2.reason instanceof Error ? r2.reason.message : String(r2.reason)}` : null
-    ).filter(Boolean);
-    throw new Error(
-      `All ensemble minds failed. ${reasons.join(" | ") || "No drafts returned."}`
-    );
-  }
-  if (drafts.length === 1) {
-    const only = drafts[0];
-    req.onProgress?.({
-      status: "ensemble",
-      phase: "streaming",
-      minds: [only.provider],
-      drafts: 1,
-      synthesizer: only.provider
-    });
-    return {
-      content: only.content,
-      provider: only.provider,
-      brand: "anima",
-      model: only.model,
-      tier: req.tier,
-      minds: [only.provider],
-      drafts,
-      synthesizer: only.provider,
-      combined: false
-    };
-  }
-  const synthesizer = pickSynthesizer(drafts);
-  req.onProgress?.({
-    status: "ensemble",
-    phase: "combining",
-    minds: drafts.map((d2) => d2.provider),
-    drafts: drafts.length,
-    synthesizer
   });
-  try {
-    const synthesized = await withAbortTimeout(
-      (signal) => synthesizeDrafts(
-        synthesizer,
-        req.tier,
-        req.messages,
-        drafts,
-        req.maxTokens,
-        signal
-      ),
-      mindTimeoutMs() + 4e3,
-      `${providerLabel2(synthesizer)} synthesis`
-    );
-    if (!synthesized.content) {
-      return draftFallbackResult(req, drafts, fastestDraft(drafts));
-    }
-    req.onProgress?.({
-      status: "ensemble",
-      phase: "streaming",
-      minds: drafts.map((d2) => d2.provider),
-      drafts: drafts.length,
-      synthesizer
-    });
-    return {
-      content: synthesized.content,
-      provider: synthesizer,
-      brand: "anima",
-      model: synthesized.model,
-      tier: req.tier,
-      minds: drafts.map((d2) => d2.provider),
-      drafts,
-      synthesizer,
-      combined: true
-    };
-  } catch (err) {
-    if (isProviderUnusableError(err)) {
-      recordProviderFailure(synthesizer, err);
-    }
-    return draftFallbackResult(req, drafts, fastestDraft(drafts));
-  }
+  return drafts;
+}
+var COMBINE_INSTRUCTIONS = "You are combining multiple draft replies from the same companion into ONE final in-character reply. The drafts below are different attempts at the same turn, not a conversation with each other. Write a single reply that keeps the character's voice, blends the strongest ideas, and does not repeat itself or reference the drafts. Output ONLY the final reply text \u2014 no labels, no explanation, no meta-commentary.";
+function systemContentOf(messages2) {
+  const system = messages2.find((m2) => m2.role === "system");
+  return system && typeof system.content === "string" ? system.content : "";
+}
+async function combineLocalDrafts(drafts, originalMessages, opts) {
+  const draftsBlock = drafts.map((d2, i2) => `Draft ${i2 + 1} (${d2.label}):
+${d2.content}`).join("\n\n");
+  const messages2 = [
+    { role: "system", content: [systemContentOf(originalMessages), COMBINE_INSTRUCTIONS].filter(Boolean).join("\n\n") },
+    { role: "user", content: draftsBlock }
+  ];
+  return createChatStreamWithFailover({
+    tier: opts.tier,
+    model: "",
+    maxTokens: opts.maxTokens,
+    messages: messages2
+  });
 }
 
 // src/lib/resonanceState.ts
@@ -123589,39 +122175,59 @@ router9.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-  let usedProvider = "openai";
+  let usedProvider = "local";
   let usedBrand;
   let failedOver = false;
   let ensembleMinds;
   let ensembleCombined = false;
   try {
     const messages2 = [{ role: "system", content: prompt }];
-    if (isEnsembleMode()) {
-      const ensemble = await createEnsembleChatReply({
+    if (isLocalEnsembleEnabled()) {
+      res.write(
+        `data: ${JSON.stringify({ status: "ensemble", phase: "gathering", minds: [] })}
+
+`
+      );
+      const drafts = await draftLocalMinds({
         tier: routed.tier,
-        model: routed.model,
         maxTokens: routed.maxTokens,
-        messages: messages2,
-        onProgress: (event) => {
-          res.write(`data: ${JSON.stringify(event)}
+        messages: messages2
+      });
+      if (!drafts.length) {
+        throw new Error("The companion returned an empty reply. Please try again.");
+      }
+      ensembleMinds = drafts.map((d2) => d2.label);
+      if (drafts.length === 1) {
+        usedModel = drafts[0].model;
+        usedBrand = "anima";
+        fullResponse = drafts[0].content;
+        res.write(`data: ${JSON.stringify({ content: fullResponse })}
+
+`);
+      } else {
+        res.write(
+          `data: ${JSON.stringify({ status: "ensemble", phase: "combining", minds: ensembleMinds, drafts: drafts.length })}
+
+`
+        );
+        const completion = await combineLocalDrafts(drafts, messages2, {
+          tier: routed.tier,
+          maxTokens: routed.maxTokens
+        });
+        usedModel = completion.model;
+        usedTier = completion.tier;
+        usedProvider = completion.provider;
+        usedBrand = completion.brand;
+        failedOver = completion.failedOver;
+        ensembleCombined = true;
+        for await (const chunk of completion.stream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (!delta) continue;
+          fullResponse += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}
 
 `);
         }
-      });
-      usedModel = ensemble.model;
-      usedTier = ensemble.tier;
-      usedProvider = ensemble.provider;
-      usedBrand = ensemble.brand;
-      ensembleMinds = ensemble.minds;
-      ensembleCombined = ensemble.combined;
-      failedOver = false;
-      for await (const chunk of chunkTextAsStream(ensemble.content)) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (!delta) continue;
-        fullResponse += delta;
-        res.write(`data: ${JSON.stringify({ content: delta })}
-
-`);
       }
     } else {
       const completion = await createChatStreamWithFailover({

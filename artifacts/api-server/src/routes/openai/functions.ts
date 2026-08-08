@@ -6,10 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
-import {
-  createChatCompletionWithFailover,
-  isAnimaCustomMode,
-} from "../../lib/llmFailover";
+import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { getOpenAIClient } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
 
@@ -38,28 +35,11 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
   return result.content;
 }
 
-// Web-grounded LLM call: uses the OpenAI Responses API with the web_search
-// tool so the model can scour the live web (cast to any to stay compatible
-// across SDK minor versions). Falls back to the plain model if unavailable.
-// Skipped entirely in Anima custom mode — that mode is meant to stay off the
-// cloud flagship models even when an OPENAI_API_KEY happens to be present.
+// Web search grounding is an OpenAI Responses API feature and chat never
+// calls OpenAI (the self-hosted Anima LLM has no equivalent tool), so this
+// always resolves to the plain model call.
 async function webSearchLLM(systemPrompt: string, userPrompt: string): Promise<string> {
-  if (isAnimaCustomMode()) {
-    return llm(systemPrompt, userPrompt);
-  }
-  try {
-    const resp = await (getOpenAIClient() as any).responses.create({
-      model: "gpt-4o",
-      tools: [{ type: "web_search_preview" }],
-      instructions: systemPrompt,
-      input: userPrompt,
-    });
-    const text = (resp as any).output_text;
-    if (typeof text === "string" && text.trim()) return text;
-    return await llm(systemPrompt, userPrompt);
-  } catch {
-    return llm(systemPrompt, userPrompt);
-  }
+  return llm(systemPrompt, userPrompt);
 }
 
 function parseTraits(raw: string): { personality: string; backstory: string; speaking_style: string } {

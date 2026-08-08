@@ -54,8 +54,7 @@ echo "${RESP}" | grep -qi 'anima' || {
 echo
 echo "✓ Anima LLM is ready (open weights, local only)."
 echo
-echo "Wire the api-server (no Gemini/Groq/OpenAI chat keys needed):"
-echo "  export ANIMA_LLM_PROVIDER=custom"
+echo "Wire the api-server (this is the only chat backend, no cloud keys needed):"
 echo "  export ANIMA_LOCAL_LLM_BACKEND=ollama"
 echo "  export ANIMA_LOCAL_LLM_BASE_URL=http://${OLLAMA_HOST}/v1"
 echo "  export ANIMA_OLLAMA_MODEL_STANDARD=${ANIMA_TAG}"

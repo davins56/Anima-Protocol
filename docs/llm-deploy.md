@@ -2,10 +2,10 @@
 
 This is the recommended path when you don't already have a GPU box, VPS, or
 cloud account picked out. Goal: a public HTTPS endpoint serving the branded
-`anima-chat` model, wired into Vercel via `ANIMA_LOCAL_LLM_BASE_URL`, so
-production chat never touches Gemini/Groq/Kimi/Grok/ChatGPT (see
-[`docs/custom-llm.md`](./custom-llm.md) for the routing rules and the
-`ANIMA_ALLOW_CLOUD_LLM` gate that keeps it that way).
+`anima-chat` model, wired into Vercel via `ANIMA_LOCAL_LLM_BASE_URL`. Chat has
+no cloud fallback in the code at all — Gemini/Groq/Kimi/Grok/ChatGPT chat
+routing does not exist — so once this endpoint is live, it's the only place
+chat can ever come from. See [`docs/custom-llm.md`](./custom-llm.md).
 
 Two stages: get it working (cheap CPU VPS, minutes to set up), then upgrade to
 GPU (Ministral 3 8B) once you've validated the product loop end-to-end.
@@ -14,6 +14,27 @@ GPU (Ministral 3 8B) once you've validated the product loop end-to-end.
 
 `anima-chat` (Qwen2.5 3B) runs acceptably on CPU — this is the same model
 `pnpm llm:up` bootstraps locally. No GPU required to get a real endpoint live.
+
+### Fast path — one script, no repo clone needed on the box
+
+`scripts/llm/cloud-init-vps.sh` does steps 2–3 below in one shot: installs
+Ollama as a systemd service, pulls the weights, creates `anima-chat`, installs
+`cloudflared`, and runs the tunnel as a systemd service (auto-restarts, logs
+the public URL to `/var/log/anima-tunnel.log`). It's standalone — it doesn't
+need this repo cloned onto the VPS, so you can paste it directly into most
+providers' "user data" / "cloud-init" box when creating the VPS, or copy it
+over after the fact:
+
+```bash
+pnpm llm:vps-init > cloud-init-vps.sh   # or open the file directly
+scp cloud-init-vps.sh root@<your-vps-ip>:~
+ssh root@<your-vps-ip> 'bash cloud-init-vps.sh'
+# prints the public https://….trycloudflare.com URL + the exact Vercel env vars
+```
+
+Then skip to [step 4 — wire Vercel to the tunnel](#4-wire-vercel-to-the-tunnel).
+Prefer to do it by hand, or want Docker instead? Steps 1–3 below walk through
+the same result manually.
 
 ### 1. Get a small VPS
 
@@ -74,7 +95,6 @@ that survives VPS/process restarts — the URL doesn't change every time):
 Set on Vercel (Production) and redeploy without build cache:
 
 ```bash
-ANIMA_LLM_PROVIDER=custom
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<your-tunnel-host>/v1
 ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
@@ -83,8 +103,14 @@ ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 ### 5. Verify
 
 ```bash
-curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,localEndpoint,note}'
-# expect: mode=local, preferred=local, localEndpoint.configured=true, hasV1Path=true
+pnpm llm:verify-deploy -- https://www.anima-protocol.com https://<your-tunnel-host>
+```
+
+Or by hand:
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,localEndpoint,note}'
+# expect: status=ok, preferred=local, localEndpoint.configured=true, hasV1Path=true
 
 curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' | jq '{preferred,probeOk,probes}'
 ```
@@ -125,6 +151,38 @@ this same GPU, see the "Path B — GPU upgrade" section of
 [`docs/custom-llm.md`](./custom-llm.md) — `pnpm llm:prepare-finetune`, then
 `scripts/llm/finetune/unsloth_sft.py` or LLaMA-Factory, then point
 `ANIMA_VLLM_MODEL` at the resulting checkpoint.
+
+## Alternative: Render (no VPS/SSH/tunnel needed)
+
+If you'd rather not manage a VPS, SSH, or a Cloudflare Tunnel, Render can host
+the same `anima-chat` model as a Docker web service with a stable public
+HTTPS URL out of the box.
+
+**Do not use Render's auto-detected Node build** — that deploys the *main*
+Anima Protocol app, not the LLM. Create a **second, separate** service
+specifically for the model:
+
+1. Render dashboard → New → Web Service → pick this repo.
+2. **Language: switch to `Docker`** (not the auto-detected Node).
+3. **Dockerfile Path**: `scripts/llm/render/Dockerfile`
+4. **Name**: something distinct from the main app, e.g. `anima-llm`.
+5. **Instance Type**: at least **Standard** (2 GB RAM / $25mo). The Free and
+   Starter tiers (512 MB) are too small to hold the ~2 GB `anima-chat`
+   (Qwen2.5 3B) weights — the process will OOM. **Pro** (4 GB / $85mo) gives
+   comfortable headroom if you later swap in a bigger model.
+6. **Advanced → Add Disk**: mount path `/root/.ollama`, size ≥10 GB. Without
+   this, every redeploy re-downloads the ~2 GB weights from scratch.
+7. Deploy. First boot pulls the base weights and creates `anima-chat` — watch
+   the logs for `Anima LLM ready on :11434`. This can take a few minutes.
+8. Copy the service's `onrender.com` URL, then set on Vercel (Production) and
+   redeploy without build cache:
+   ```bash
+   ANIMA_LLM_PROVIDER=custom
+   ANIMA_LOCAL_LLM_BACKEND=ollama
+   ANIMA_LOCAL_LLM_BASE_URL=https://<your-service>.onrender.com/v1
+   ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+   ```
+9. Verify with the same `/api/healthz/llm` checks as Stage 1.
 
 ## Cost-cutting notes
 

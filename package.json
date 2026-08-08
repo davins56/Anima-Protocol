@@ -14,13 +14,19 @@
     "dev:infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
     "llm:cli": "pnpm --filter @workspace/llm run cli",
     "llm:up": "bash scripts/llm/bootstrap-anima-llm.sh",
+    "llm:mock": "node scripts/llm/mock-server.mjs",
     "llm:tunnel": "bash scripts/llm/tunnel-cloudflared.sh",
+    "llm:vps-init": "cat scripts/llm/cloud-init-vps.sh",
     "llm:chat": "pnpm --filter @workspace/llm run cli -- chat",
     "llm:prepare-finetune": "pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt",
+    "llm:prepare-dpo": "pnpm --filter @workspace/llm run cli -- prepare-dpo",
     "llm:export-turns": "pnpm --filter @workspace/llm run cli -- export-turns",
     "llm:list-models": "pnpm --filter @workspace/llm run cli -- list-models --provider ollama",
     "llm:serve-hint": "pnpm --filter @workspace/llm run cli -- serve-hint",
-    "llm:test": "pnpm --filter @workspace/llm run test"
+    "llm:test": "pnpm --filter @workspace/llm run test",
+    "llm:stub": "node scripts/llm/dev-local-stub-server.mjs",
+    "llm:eval": "node scripts/llm/eval/run-evals.mjs",
+    "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh"
   },
   "private": true,
   "devDependencies": {

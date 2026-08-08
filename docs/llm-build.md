@@ -9,8 +9,7 @@ This guide covers the full stack:
 0. **Bootstrap** `anima-chat` (Qwen2.5 3B) so chat works on a laptop today — `pnpm llm:up`  
 1. Fine-tuned **Ministral 3 8B** as the primary GPU companion model  
 2. Structured + vector **memory retrieval** before every generation  
-3. **Local serving** via vLLM or Ollama (OpenAI-compatible)  
-4. Optional hybrid cloud fallback while you tune  
+3. **Local serving** via vLLM or Ollama (OpenAI-compatible) — the only chat backend, no cloud fallback  
 
 Short path: [`docs/custom-llm.md`](./custom-llm.md).
 
@@ -24,9 +23,7 @@ The React/Vite frontend does **not** need rewrites — it already talks to `POST
 Chat.jsx
   → POST /api/chat/messages
       → promptBuilder + memory retrieval (heuristic + embeddings)
-      → llmFailover
-           ├─ local (vLLM / Ollama)     ← ANIMA_LLM_PROVIDER=custom|local
-           └─ (optional) cloud auto chain only if local-first + keys set
+      → llmFailover → local (vLLM / Ollama), the only chat backend
 ```
 
 | Piece | Location |
@@ -68,6 +65,9 @@ Train for:
 # Seed examples only (always available)
 pnpm llm:prepare-finetune
 
+# With a held-out eval split (deterministic, by example id)
+pnpm llm:prepare-finetune -- --val-split 0.05
+
 # Seed + Postgres chat transcripts (needs DATABASE_URL)
 pnpm llm:prepare-finetune -- --with-db --user <clerk_user_id>
 
@@ -77,7 +77,32 @@ pnpm llm:export-turns -- --out scripts/llm/output/turns.jsonl
 
 Outputs JSONL in ShareGPT / ChatML / Alpaca formats under `scripts/llm/output/`.
 
-Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT shape), plus synthetic turns that force memory recall and voice adherence.
+Both commands run every example through a cleaning pass first (normalize/merge
+turns, redact obvious PII like emails and phone numbers, drop error-fallback or
+too-short assistant replies, dedupe near-identical conversations) — see
+[`lib/llm/README.md`](../lib/llm/README.md#data-quality-pipeline-srcdatasetcleants).
+Opt out with `--no-clean` / `--no-dedupe` if you need the raw export.
+
+Drop cleaned Serenity / Fallen Angel arcs (or any transcripts) into
+`scripts/llm/data/raw/` — gitignored, never committed — as TrainingExample
+JSON/JSONL, ShareGPT JSON, or plain `Speaker: text` `.txt` transcripts (see
+`scripts/llm/data/raw/README.md`), then merge them into the export:
+
+```bash
+# Preview what gets parsed
+pnpm --filter @workspace/llm run cli -- import-logs
+
+# Merge into the fine-tune export alongside the seed examples
+pnpm llm:prepare-finetune -- --with-logs scripts/llm/data/raw
+```
+
+Plus synthetic turns that force memory recall and voice adherence. After merging in hand-cleaned logs, run:
+
+```bash
+pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
+```
+
+to catch stray error text, too-short replies, or duplicates before spending GPU time training on it.
 
 ### Unsloth (fast iteration + VRAM savings)
 
@@ -86,9 +111,12 @@ Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT
 pip install "unsloth[colab-new]" transformers datasets trl
 python scripts/llm/finetune/unsloth_sft.py \
   --data scripts/llm/output/finetune-sharegpt.jsonl \
+  --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl \
   --base mistralai/Ministral-3-8B-Base-2512 \
   --out scripts/llm/checkpoints/anima-ministral8b-qlora
 ```
+
+`--eval-data` is optional but recommended — pair it with `pnpm llm:prepare-finetune -- --val-split 0.05` so training reports real held-out loss per epoch instead of train loss alone.
 
 ### LLaMA-Factory (broadest method support)
 
@@ -100,11 +128,26 @@ Dataset metadata: `scripts/llm/output/dataset_info.json`.
 
 ### Preference optimization
 
-Once you have chosen/rejected pairs (character fidelity, memory coherence, tone):
+A curated seed set of chosen/rejected pairs ships in
+`lib/llm/src/dataset/preferences.ts` — each pair anchors on an SFT seed turn
+and contrasts the vetted reply against a realistic failure mode (fact-dumping
+memory, generic-assistant disclaimers, negotiating past a stated boundary,
+narrating another companion's lines, over-apologizing). Expand it with your
+own pairs as you spot real model mistakes worth correcting.
 
-- Export with `toPreferencePair` from `@workspace/llm/dataset`  
-- Run a DPO / ORPO / SimPO stage in LLaMA-Factory (`stage: dpo` / `orpo`)  
-- Keep base instruction-following intact so character cards and system prompts still work  
+```bash
+pnpm llm:prepare-dpo
+# → scripts/llm/output/dpo-pairs.jsonl ({prompt, chosen, rejected, system} per line)
+
+# On a CUDA box, after the SFT stage above:
+python scripts/llm/finetune/unsloth_dpo.py \
+  --data scripts/llm/output/dpo-pairs.jsonl \
+  --base scripts/llm/checkpoints/anima-ministral8b-qlora \
+  --out scripts/llm/checkpoints/anima-ministral8b-dpo
+```
+
+Or LLaMA-Factory (`stage: dpo` / `orpo`) with the same JSONL. Keep base
+instruction-following intact so character cards and system prompts still work.
 
 ---
 
@@ -169,7 +212,6 @@ ollama create anima-ministral8b -f scripts/llm/Modelfile.anima-ministral8b
 ### Point the api-server at it
 
 ```bash
-export ANIMA_LLM_PROVIDER=custom                           # self-hosted only
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1   # or http://localhost:11434/v1
 export ANIMA_VLLM_MODEL_STANDARD=mistralai/Ministral-3-8B-Instruct-2512
 # For Ollama tags:
@@ -187,30 +229,40 @@ curl -s http://localhost:8080/api/healthz/llm | jq
 
 ---
 
-## 4. Hybrid safety net
+## 4. No cloud fallback, by design
 
-| `ANIMA_LLM_PROVIDER` | Behavior |
-|----------------------|----------|
-| `custom` / `anima` / `local` | **Self-hosted Anima LLM only** (no Gemini/Groq/Kimi/Grok/Gateway) |
-| `local-first` / `vllm` / `ollama` | Local first, then optional cloud auto chain |
-| `auto` | Cloud BYOK: Gemini → Groq → Kimi → Grok → OpenAI → Gateway |
-| `ensemble` | Opt-in cloud parallel minds (not the custom path) |
-| `gemini` / `groq` / `kimi` / … | Single-provider cloud modes |
+There is one chat backend: the self-hosted Anima LLM at `ANIMA_LOCAL_LLM_BASE_URL`. The codebase has no Gemini/Groq/Kimi/Grok/ChatGPT/Gateway chat routing to fall back to, and no `ANIMA_LLM_PROVIDER` mode switch — so there's nothing to accidentally flip. If the local endpoint is down, the turn fails with a clear setup error instead of silently switching models.
 
-Route core companion traffic to local once it consistently beats your internal evals (character fidelity, memory coherence, tone).
+Run your internal evals (character fidelity, memory coherence, tone, latency) against the local model directly — there's no comparison chain to fall back on if it underperforms, so get it right before routing production traffic to it.
 
 ---
 
 ## 5. Internal eval checklist
 
-Before making local the default in production:
+Before making local the default in production, run the automated harness
+against your endpoint — it checks the same categories below via heuristics
+(banned phrases, expected keywords, latency budget) and writes every
+response to `scripts/llm/output/eval-report.md` for human/LLM-judge review
+of voice and tone, which heuristics alone can't score:
 
-- [ ] Multi-turn voice lock (Serenity / Fallen Angel samples)  
-- [ ] Memory recall without fact-dumping  
-- [ ] Group speaker lock (does not speak as other companions)  
-- [ ] Emotional continuity across 10+ turns  
-- [ ] System / character card obedience preserved after SFT  
-- [ ] Latency acceptable on your GPU at target quant  
+```bash
+pnpm llm:eval
+# custom cases file / output path:
+pnpm llm:eval -- --cases scripts/llm/eval/eval-cases.json --out scripts/llm/output/eval-report.json
+```
+
+- [ ] `dataset-stats` clean on the final training file (no denylist hits, no duplicates, no anomalously short assistant turns)
+- [ ] Held-out eval loss (`--eval-data`) trending down, not just train loss
+- [ ] Multi-turn voice lock (Serenity / Fallen Angel samples) — `voice-lock-serenity`, `system-card-obedience` cases
+- [ ] Memory recall without fact-dumping — `memory-recall-basic` case
+- [ ] Group speaker lock (does not speak as other companions) — `group-speaker-lock` case
+- [ ] Emotional continuity across 10+ turns — `emotional-continuity` case (extend `eval-cases.json` with longer histories)
+- [ ] System / character card obedience preserved after SFT — `system-card-obedience` case
+- [ ] Latency acceptable on your GPU at target quant — each case's `maxLatencyMs`
+
+Add more cases to `scripts/llm/eval/eval-cases.json` as you find failure
+modes — same shape: `system`, `history`, `prompt`, `mustInclude` /
+`mustNotInclude`, `maxLatencyMs`.
 
 ---
 
@@ -218,7 +270,9 @@ Before making local the default in production:
 
 ```bash
 pnpm llm:list-models
-pnpm llm:prepare-finetune
+pnpm llm:prepare-finetune -- --val-split 0.05
+pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
+pnpm llm:prepare-dpo
 pnpm llm:serve-hint
 pnpm llm:test
 pnpm --filter @workspace/api-server test
