@@ -83,6 +83,12 @@ ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 ### 5. Verify
 
 ```bash
+pnpm llm:verify-deploy -- https://www.anima-protocol.com https://<your-tunnel-host>
+```
+
+Or by hand:
+
+```bash
 curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,localEndpoint,note}'
 # expect: mode=local, preferred=local, localEndpoint.configured=true, hasV1Path=true
 

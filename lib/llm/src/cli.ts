@@ -42,7 +42,9 @@ function usage(): never {
 Commands:
   list-models [--provider vllm|ollama|openai|groq|mock]
   export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
+  import-logs [--dir path] [--character name] [--tags a,b] [--out path] [--format …]
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
+                    [--with-logs dir] [--with-db [--user <clerkUserId>]]
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
   serve-hint
   seed-stats
@@ -84,6 +86,15 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
 
   let examples: TrainingExample[] = listSeedExamples(tags);
 
+  // Optionally merge your own cleaned logs (Serenity / Fallen Angel arcs, …).
+  const logsDir = argValue(args, "--with-logs");
+  if (logsDir) {
+    const { importLogsDir } = await import("./dataset/import");
+    const fromLogs = await importLogsDir(resolveOutPath(logsDir), { tags });
+    console.log(`Imported ${fromLogs.length} examples from ${logsDir}`);
+    examples = [...examples, ...fromLogs];
+  }
+
   // Optionally merge DB transcripts when --with-db is set.
   if (hasFlag(args, "--with-db")) {
     if (!process.env.DATABASE_URL) {
@@ -121,6 +132,38 @@ async function cmdExportTurns(args: string[]): Promise<void> {
   await mkdir(path.dirname(out), { recursive: true });
   await writeFile(out, toJsonl(examples, "messages"), "utf8");
   console.log(`Exported ${examples.length} sessions → ${out}`);
+}
+
+async function cmdImportLogs(args: string[]): Promise<void> {
+  const dir = resolveOutPath(argValue(args, "--dir") || path.join("scripts", "llm", "data", "raw"));
+  const { importLogsDir } = await import("./dataset/import");
+  const character = argValue(args, "--character");
+  const tagsRaw = argValue(args, "--tags");
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+
+  const examples = await importLogsDir(dir, { defaultCharacterName: character, tags });
+  console.log(`Parsed ${examples.length} training example(s) from ${dir}`);
+  for (const ex of examples) {
+    const turns = ex.conversation.filter((t) => t.role !== "system").length;
+    console.log(`- ${ex.id} [${ex.character.name}] turns=${turns}`);
+  }
+  if (!examples.length) {
+    console.log(
+      `No logs found. Drop .json (TrainingExample or ShareGPT) / .jsonl / .txt transcripts into ${dir} and re-run.`,
+    );
+    return;
+  }
+
+  const out = argValue(args, "--out");
+  if (out) {
+    const format = (argValue(args, "--format") || "sharegpt") as ExportFormat;
+    const outPath = resolveOutPath(out);
+    await mkdir(path.dirname(outPath), { recursive: true });
+    await writeFile(outPath, toJsonl(examples, format), "utf8");
+    console.log(`Wrote ${examples.length} examples → ${outPath} (${format})`);
+  } else {
+    console.log(`Re-run with --out <path> to write these to JSONL, or use prepare-finetune --with-logs ${dir}.`);
+  }
 }
 
 async function cmdChat(args: string[]): Promise<void> {
@@ -241,6 +284,9 @@ async function main(): Promise<void> {
       break;
     case "export-turns":
       await cmdExportTurns(args.slice(1));
+      break;
+    case "import-logs":
+      await cmdImportLogs(args.slice(1));
       break;
     case "serve-hint":
       await cmdServeHint();

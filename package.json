@@ -20,7 +20,9 @@
     "llm:export-turns": "pnpm --filter @workspace/llm run cli -- export-turns",
     "llm:list-models": "pnpm --filter @workspace/llm run cli -- list-models --provider ollama",
     "llm:serve-hint": "pnpm --filter @workspace/llm run cli -- serve-hint",
-    "llm:test": "pnpm --filter @workspace/llm run test"
+    "llm:test": "pnpm --filter @workspace/llm run test",
+    "llm:eval": "node scripts/llm/eval/run-evals.mjs",
+    "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh"
   },
   "private": true,
   "devDependencies": {

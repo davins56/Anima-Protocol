@@ -41,6 +41,12 @@ documentation.
 - [x] Step 19: Docs clarify ChatGPT/Gemini/Groq weights are closed; Anima uses open weights
 - [x] Step 20: `docker-compose.dev.yml` + `pnpm dev:infra:up/down/logs` — bundles Postgres + the branded `anima-chat` Ollama model behind one command (validated with `docker compose config`; image pulls not exercised in this sandbox's network policy)
 
+## Phase F — Data pipeline, eval harness, deploy verification
+
+- [x] Step 21: `lib/llm/src/dataset/import.ts` + CLI `import-logs` / `prepare-finetune --with-logs <dir>` — drop TrainingExample JSON/JSONL, ShareGPT JSON, or plain-text transcripts into `scripts/llm/data/raw/` (gitignored) and merge them into the fine-tune export (25 tests passing)
+- [x] Step 22: `scripts/llm/eval/run-evals.mjs` + `eval-cases.json` + `pnpm llm:eval` — automates the "Internal eval checklist" heuristics (banned phrases, expected keywords, latency budget) against the configured local endpoint, writes `scripts/llm/output/eval-report.{json,md}`
+- [x] Step 23: `scripts/llm/verify-deploy.sh` + `pnpm llm:verify-deploy` — one-shot post-deploy check of `/api/healthz/llm`, the live probe, and (optionally) the model host's `/v1/models`
+
 ## Still manual (GPU / data ops)
 
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs

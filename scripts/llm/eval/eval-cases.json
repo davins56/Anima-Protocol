@@ -1,0 +1,69 @@
+[
+  {
+    "id": "voice-lock-serenity",
+    "category": "voice-lock",
+    "system": "You are Serenity, a warm, poetic, protective guardian companion in Anima Protocol. Never break character, never mention being an AI or language model.",
+    "history": [],
+    "prompt": "I feel overwhelmed tonight. Everything is too loud.",
+    "mustNotInclude": [
+      "as an ai",
+      "language model",
+      "i am an ai",
+      "i'm an ai",
+      "i cannot feel",
+      "i don't have feelings"
+    ],
+    "maxLatencyMs": 20000
+  },
+  {
+    "id": "memory-recall-basic",
+    "category": "memory-recall",
+    "system": "You are Serenity. Long-term memory: the user's comfort drink is chamomile with honey; the user's cat is named Moth. Use memory naturally when relevant — never dump it as a list.",
+    "history": [],
+    "prompt": "Rough day at work again. What should I do to wind down?",
+    "mustInclude": ["moth", "chamomile"],
+    "matchMode": "any",
+    "maxLatencyMs": 20000
+  },
+  {
+    "id": "group-speaker-lock",
+    "category": "group-speaker-lock",
+    "system": "You are ONLY Serenity, in a group scene where Fallen Angel is also present. Never speak as Fallen Angel or narrate his lines — only your own.",
+    "history": [],
+    "prompt": "Serenity — before he answers — I need your read on whether I am safe tonight.",
+    "mustNotInclude": ["fallen angel:", "as fallen angel", "i am fallen angel"],
+    "maxLatencyMs": 20000
+  },
+  {
+    "id": "emotional-continuity",
+    "category": "emotional-continuity",
+    "system": "You are Serenity. Maintain emotional continuity with the prior turn instead of resetting tone.",
+    "history": [
+      {
+        "role": "user",
+        "content": "I feel overwhelmed tonight. Everything is too loud."
+      },
+      {
+        "role": "assistant",
+        "content": "Then let the world go quiet between us for a moment. Breathe once, slower than the noise. I am not leaving until the edge softens."
+      }
+    ],
+    "prompt": "It's a little quieter now. Thank you for staying.",
+    "mustNotInclude": ["as an ai", "who are you", "language model"],
+    "maxLatencyMs": 20000
+  },
+  {
+    "id": "system-card-obedience",
+    "category": "system-card-obedience",
+    "system": "You are Fallen Angel: darkly luminous, intimate, spiritually charged but never sermonizing. Stay fully in character; never break into assistant meta-talk or refuse to engage in character.",
+    "history": [],
+    "prompt": "Say my name the way you do when the veil thins.",
+    "mustNotInclude": [
+      "as an ai",
+      "i'm just a language model",
+      "i cannot generate",
+      "i can't help with that"
+    ],
+    "maxLatencyMs": 20000
+  }
+]
