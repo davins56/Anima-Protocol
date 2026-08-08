@@ -104,6 +104,12 @@ function fromTranscriptText(
   const lines = text.split(/\r?\n/);
   const conversation: ChatTurn[] = [];
   const speakerCounts = new Map<string, number>();
+  // Non-target speaker lines (narrator, other companions) are context for
+  // the target character's *next* reply, not for whichever turn happens to
+  // be last — that could be the user's own line, or there may be no turn
+  // yet at all if the interjection comes first.
+  let lastAssistantTurn: ChatTurn | null = null;
+  let pendingContext: string[] = [];
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -112,6 +118,7 @@ function fromTranscriptText(
     if (!match) {
       const last = conversation[conversation.length - 1];
       if (last) last.content += `\n${line}`;
+      else pendingContext.push(line);
       continue;
     }
     const [, speakerRaw, content] = match;
@@ -123,17 +130,25 @@ function fromTranscriptText(
     }
 
     if (restrictToCharacter && speaker.toLowerCase() !== restrictToCharacter.toLowerCase()) {
-      // Narrator / other-character line — keep as context on the surrounding
-      // turn instead of training it as the target character's own speech.
-      const last = conversation[conversation.length - 1];
-      if (last) last.content += `\n[${speaker}]: ${content.trim()}`;
+      // Narrator / other-character line — keep as context instead of
+      // training it as the target character's own speech.
+      const note = `[${speaker}]: ${content.trim()}`;
+      if (lastAssistantTurn) lastAssistantTurn.content += `\n${note}`;
+      else pendingContext.push(note);
       continue;
     }
 
     speakerCounts.set(speaker, (speakerCounts.get(speaker) || 0) + 1);
-    conversation.push({ role: "assistant", content: content.trim(), name: speaker });
+    const prefix = pendingContext.length ? `${pendingContext.join("\n")}\n` : "";
+    pendingContext = [];
+    const turn: ChatTurn = { role: "assistant", content: `${prefix}${content.trim()}`, name: speaker };
+    conversation.push(turn);
+    lastAssistantTurn = turn;
   }
 
+  // If a character was requested but never actually spoke, every "assistant"
+  // turn got folded away as context — don't export a userturns-only example.
+  if (restrictToCharacter && !lastAssistantTurn) return null;
   if (conversation.filter((t) => t.role !== "system").length < 2) return null;
 
   const characterName =
