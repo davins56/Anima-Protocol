@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
+const modelsListMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
   const client = {
     chat: { completions: { create: (...args: unknown[]) => createMock(...args) } },
+    models: { list: (...args: unknown[]) => modelsListMock(...args) },
   };
   return {
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
@@ -105,10 +107,12 @@ vi.mock("../src/lib/openaiClient", () => {
       return client;
     },
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
+    localLlmMaxRetries: () => 2,
     resetLlmClientsForTests: () => {},
   };
 });
 
+import { resetLocalModelCatalogForTests } from "../src/lib/localModelCatalog";
 import {
   createChatCompletionWithFailover,
   createChatStreamWithFailover,
@@ -216,6 +220,8 @@ describe("createChatStreamWithFailover", () => {
     process.env = { ...SAVED };
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     createMock.mockReset();
+    modelsListMock.mockReset();
+    resetLocalModelCatalogForTests();
   });
 
   afterEach(() => {
@@ -291,6 +297,104 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 
+  it("falls back to a model the endpoint actually serves when the configured tag is missing", async () => {
+    // The real-world failure: every tier resolves to `anima-chat`, but the
+    // host only ever had the base weights pulled — `ollama create` was never
+    // run — so the configured tag 404s on every single turn.
+    createMock
+      .mockRejectedValueOnce({
+        status: 404,
+        message: "The model `anima-chat` does not exist or you do not have access to it.",
+      })
+      .mockResolvedValueOnce(fakeStream("recovered"));
+    modelsListMock.mockResolvedValueOnce({
+      data: [{ id: "nomic-embed-text:latest" }, { id: "qwen2.5:3b" }],
+    });
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(result.model).toBe("qwen2.5:3b");
+    expect(modelsListMock).toHaveBeenCalledTimes(1);
+    expect(createMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ model: "qwen2.5:3b" }));
+  });
+
+  it("reuses the discovered model on later turns instead of re-earning the 404", async () => {
+    createMock
+      .mockRejectedValueOnce({ status: 404, message: "model `anima-chat` does not exist" })
+      .mockResolvedValueOnce(fakeStream("first"))
+      .mockResolvedValueOnce(fakeStream("second"));
+    modelsListMock.mockResolvedValueOnce({ data: [{ id: "qwen2.5:3b" }] });
+
+    const req = {
+      tier: "standard" as const,
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hi" }],
+    };
+    await createChatStreamWithFailover(req);
+    const second = await createChatStreamWithFailover(req);
+
+    expect(second.model).toBe("qwen2.5:3b");
+    // Three calls total, not four: the second turn skipped the dead tag.
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ model: "qwen2.5:3b" }));
+    // And discovery was not repeated either.
+    expect(modelsListMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never substitutes an embedding model for chat", async () => {
+    createMock.mockRejectedValue({ status: 404, message: "model `anima-chat` does not exist" });
+    modelsListMock.mockResolvedValueOnce({
+      data: [{ id: "nomic-embed-text:latest" }, { id: "bge-large" }],
+    });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toThrow(/does not serve a model named "anima-chat"/i);
+
+    // Only the configured tag was tried — no embedding model was ever called.
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains the mismatch with the host's real lineup when nothing works", async () => {
+    createMock.mockRejectedValue({ status: 404, message: "model not found" });
+    modelsListMock.mockResolvedValueOnce({ data: [{ id: "llama3.2:1b" }] });
+    createMock.mockRejectedValue({ status: 404, message: "model not found" });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toThrow(/llama3\.2:1b/);
+  });
+
+  it("still fails clearly when the endpoint lists no models at all", async () => {
+    createMock.mockRejectedValue({ status: 404, message: "model `anima-chat` does not exist" });
+    modelsListMock.mockRejectedValueOnce(new Error("404 page not found"));
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toThrow(/reported no models at all/i);
+  });
+
   it("does not retry on a quota/rate-limit error — surfaces it immediately", async () => {
     createMock.mockRejectedValueOnce({ status: 429, message: "rate limited" });
 
@@ -314,6 +418,8 @@ describe("createChatCompletionWithFailover", () => {
     process.env = { ...SAVED };
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     createMock.mockReset();
+    modelsListMock.mockReset();
+    resetLocalModelCatalogForTests();
   });
 
   afterEach(() => {
@@ -339,6 +445,8 @@ describe("probeLlmProviders", () => {
   beforeEach(() => {
     process.env = { ...SAVED };
     createMock.mockReset();
+    modelsListMock.mockReset();
+    resetLocalModelCatalogForTests();
   });
 
   afterEach(() => {
