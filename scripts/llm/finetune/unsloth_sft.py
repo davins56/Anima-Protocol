@@ -72,8 +72,7 @@ def main() -> None:
     try:
         from unsloth import FastLanguageModel  # type: ignore
         from datasets import Dataset  # type: ignore
-        from trl import SFTTrainer  # type: ignore
-        from transformers import TrainingArguments  # type: ignore
+        from trl import SFTConfig, SFTTrainer  # type: ignore
     except ImportError as exc:
         raise SystemExit(
             "Unsloth stack not installed. On a CUDA machine:\n"
@@ -111,25 +110,26 @@ def main() -> None:
         use_gradient_checkpointing="unsloth",
     )
 
-    def formatting_func(example: dict) -> list[str]:
-        return [
-            tokenizer.apply_chat_template(
-                msgs, tokenize=False, add_generation_prompt=False
-            )
-            for msgs in example["messages"]
-        ]
+    # trl calls this per-row (batched=False), so `example` is one
+    # {"messages": [...]} conversation, not a batch — must return one string.
+    def formatting_func(example: dict) -> str:
+        return tokenizer.apply_chat_template(
+            example["messages"], tokenize=False, add_generation_prompt=False
+        )
 
     dataset = Dataset.from_list(rows)
 
+    # trl >= 0.12 moved tokenizer/max_seq_length/packing off SFTTrainer's own
+    # kwargs and onto SFTConfig (processing_class= replaces tokenizer=).
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=dataset,
         formatting_func=formatting_func,
-        max_seq_length=args.max_seq_len,
-        packing=False,
-        args=TrainingArguments(
+        args=SFTConfig(
             output_dir=args.out,
+            max_length=args.max_seq_len,
+            packing=False,
             per_device_train_batch_size=args.batch_size,
             gradient_accumulation_steps=args.grad_accum,
             num_train_epochs=args.epochs,

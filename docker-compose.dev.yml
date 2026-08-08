@@ -1,0 +1,82 @@
+# Local dev infra: Postgres + the self-hosted Anima LLM (Ollama, branded
+# `anima-chat`), bundled behind one command so the whole stack — including the
+# model the AI talks to — comes up together instead of a separate manual
+# `pnpm llm:up` step.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d
+#   # wait for anima-llm-bootstrap to finish pulling weights + creating the model
+#   docker compose -f docker-compose.dev.yml logs -f anima-llm-bootstrap
+#
+# Then point the api-server at this stack (matches .env.example defaults):
+#   export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
+#   export ANIMA_LLM_PROVIDER=custom
+#   export ANIMA_LOCAL_LLM_BACKEND=ollama
+#   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+#   export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+#   pnpm --filter @workspace/db run push
+#   pnpm --filter @workspace/api-server run dev
+#
+# api-server and the frontend stay as regular `pnpm dev` processes (see
+# README.md) — only the infra pieces that aren't already `pnpm dev`-able
+# (Postgres, the Anima LLM) are containerized here. GPU / vLLM Ministral serving
+# is a separate opt-in file: scripts/llm/docker-compose.vllm.yml.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: anima
+      POSTGRES_PASSWORD: anima_dev
+      POSTGRES_DB: anima_dev
+    ports:
+      - "${ANIMA_DEV_PG_PORT:-5432}:5432"
+    volumes:
+      - anima_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anima -d anima_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "${ANIMA_DEV_OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - anima_ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # One-shot: pulls the open base weights and brands them as `anima-chat`
+  # (scripts/llm/Modelfile.anima-chat), then exits. Re-run is a no-op once the
+  # model exists (`ollama create` overwrites, `ollama pull` is idempotent).
+  anima-llm-bootstrap:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ollama:11434
+      ANIMA_BOOTSTRAP_BASE: ${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "Pulling open weights: $$ANIMA_BOOTSTRAP_BASE"
+        ollama pull "$$ANIMA_BOOTSTRAP_BASE"
+        echo "Creating Anima chat model: anima-chat"
+        ollama create anima-chat -f /Modelfile.anima-chat
+        echo "Anima LLM ready: anima-chat (no ChatGPT/Gemini/Groq weights involved)"
+    volumes:
+      - ./scripts/llm/Modelfile.anima-chat:/Modelfile.anima-chat:ro
+    restart: "no"
+
+volumes:
+  anima_postgres_data:
+  anima_ollama_data:

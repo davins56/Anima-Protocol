@@ -20,6 +20,7 @@ import {
 import {
   beginChatProviderTurn,
   getAnimaTierProviderOrder,
+  isCloudLlmAllowed,
   isGeminiStickySkipped,
   isGroqStickySkipped,
   isOpenAIStickySkipped,
@@ -88,8 +89,14 @@ function maxMinds(): number {
   return Number.isFinite(raw) && raw >= 1 ? Math.min(3, Math.floor(raw)) : 3;
 }
 
-/** True when chat should gather parallel cloud minds + combine (opt-in only). */
+/**
+ * True when chat should gather parallel cloud minds + combine.
+ * Opt-in only, and gated behind ANIMA_ALLOW_CLOUD_LLM=true — this path calls
+ * Gemini/Groq/ChatGPT directly, so a stray ANIMA_LLM_ENSEMBLE flag must never
+ * be enough on its own to put chat back on flagship cloud providers.
+ */
 export function isEnsembleMode(): boolean {
+  if (!isCloudLlmAllowed()) return false;
   if (envFlagEnabled("ANIMA_LLM_ENSEMBLE")) return true;
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   return raw === "ensemble";

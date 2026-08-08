@@ -19,6 +19,13 @@
 // GEMINI_API_KEY / GROQ_API_KEY / … and set ANIMA_LLM_PROVIDER=auto only if you
 // explicitly want cloud BYOK.
 //
+// Hard gate: no cloud-capable mode (auto / local-first / openai / xai / gemini /
+// groq / kimi / gateway) — and no ensemble parallel-minds path — can activate
+// unless ANIMA_ALLOW_CLOUD_LLM=true is also set. Without that second flag,
+// ANIMA_LLM_PROVIDER=auto (or any other cloud mode) is silently downgraded to
+// `local` so a mistyped/leftover env var can never switch chat onto a flagship
+// provider. See isCloudLlmAllowed() / wasCloudModeBlockedByGate().
+//
 // ANIMA_DISABLE_OPENAI=true blocks OpenAI under `auto`.
 // ANIMA_DISABLE_GROQ=true blocks Groq under `auto` / `openai`.
 // ANIMA_DISABLE_XAI=true blocks Grok under `auto` / `openai`.
@@ -242,7 +249,30 @@ function defaultProviderMode(): LlmProviderMode {
   return "local";
 }
 
-export function getConfiguredProviderMode(): LlmProviderMode {
+/**
+ * Master switch for every cloud/flagship code path (sequential failover chain
+ * AND the ensemble parallel-minds path). Anima chat must never silently start
+ * calling Gemini/Groq/Kimi/Grok/ChatGPT just because ANIMA_LLM_PROVIDER got
+ * fat-fingered to "auto" (or a stray ensemble flag) in an env panel — it takes
+ * a second, explicit opt-in to unlock the cloud chain at all.
+ */
+export function isCloudLlmAllowed(): boolean {
+  return envFlagEnabled("ANIMA_ALLOW_CLOUD_LLM");
+}
+
+/** Modes that can dial out to a cloud flagship provider (directly or as fallback). */
+const CLOUD_CAPABLE_MODES: ReadonlySet<LlmProviderMode> = new Set([
+  "auto",
+  "openai",
+  "xai",
+  "gemini",
+  "groq",
+  "kimi",
+  "gateway",
+  "local-first",
+]);
+
+function resolveRequestedProviderMode(): LlmProviderMode {
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   // Unset OR API-key pasted into the wrong field → custom Anima LLM (not auto).
   if (!raw) return defaultProviderMode();
@@ -274,6 +304,26 @@ export function getConfiguredProviderMode(): LlmProviderMode {
     return raw;
   }
   return defaultProviderMode();
+}
+
+/**
+ * True when ANIMA_LLM_PROVIDER asked for a cloud-capable mode but it was
+ * downgraded to `local` because ANIMA_ALLOW_CLOUD_LLM is not set.
+ */
+export function wasCloudModeBlockedByGate(): boolean {
+  const requested = resolveRequestedProviderMode();
+  return CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed();
+}
+
+export function getConfiguredProviderMode(): LlmProviderMode {
+  const requested = resolveRequestedProviderMode();
+  if (CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed()) {
+    // Cloud chain requested but the explicit gate isn't set — stay on the
+    // self-hosted Anima LLM instead of silently dialing out to a flagship
+    // provider chain.
+    return "local";
+  }
+  return requested;
 }
 
 /** True when using the branded self-hosted Anima LLM (not cloud ensemble). */
@@ -615,6 +665,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   if (rawInput && !sanitized) {
     noteParts.push(
       "ANIMA_LLM_PROVIDER looks like an API key and was ignored — chat stays on custom Anima LLM (not the cloud chain). Put the key in GEMINI_API_KEY / GROQ_API_KEY / … and set ANIMA_LLM_PROVIDER=custom (or delete it). Use auto only if you want cloud BYOK.",
+    );
+  }
+  if (wasCloudModeBlockedByGate()) {
+    noteParts.push(
+      `ANIMA_LLM_PROVIDER=${sanitized} requested a cloud provider chain, but it was blocked and chat stayed on the self-hosted Anima LLM because ANIMA_ALLOW_CLOUD_LLM is not set to true. Set ANIMA_ALLOW_CLOUD_LLM=true if you really want Gemini/Groq/Kimi/Grok/ChatGPT/Gateway to be reachable.`,
     );
   }
   if (preferNonLocal) {
