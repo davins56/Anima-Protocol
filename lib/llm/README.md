@@ -11,11 +11,14 @@ pnpm llm:up                                          # bootstrap anima-chat via 
 pnpm llm:chat -- "Who are you?"
 pnpm --filter @workspace/llm run test
 pnpm --filter @workspace/llm run cli -- list-models --provider ollama
-pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt
+pnpm --filter @workspace/llm run cli -- import-logs               # preview scripts/llm/data/raw/*
+pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt --with-logs scripts/llm/data/raw
 pnpm --filter @workspace/llm run cli -- serve-hint
+pnpm llm:eval                                        # run docs/llm-build.md's eval checklist
+pnpm llm:verify-deploy -- https://your-deployment.example.com
 ```
 
-Root shortcuts: `pnpm llm:up`, `pnpm llm:chat`, `pnpm llm:prepare-finetune`, `pnpm llm:serve-hint`, `pnpm llm:test`.
+Root shortcuts: `pnpm llm:up`, `pnpm llm:chat`, `pnpm llm:prepare-finetune`, `pnpm llm:serve-hint`, `pnpm llm:test`, `pnpm llm:eval`, `pnpm llm:verify-deploy`.
 
 ## Packages surface
 
