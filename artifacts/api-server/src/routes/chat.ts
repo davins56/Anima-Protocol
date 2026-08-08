@@ -23,6 +23,11 @@ import {
   type LlmProviderId,
 } from "../lib/llmFailover";
 import {
+  combineLocalDrafts,
+  draftLocalMinds,
+  isLocalEnsembleEnabled,
+} from "../lib/localEnsemble";
+import {
   attachStoredEmbeddings,
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
@@ -866,27 +871,73 @@ router.post("/messages", async (req, res) => {
   let usedProvider: LlmProviderId = "local";
   let usedBrand: "anima" | undefined;
   let failedOver = false;
+  let ensembleMinds: string[] | undefined;
+  let ensembleCombined = false;
 
   try {
     const messages = [{ role: "system" as const, content: prompt }];
 
-    const completion = await createChatStreamWithFailover({
-      tier: routed.tier,
-      model: routed.model,
-      maxTokens: routed.maxTokens,
-      messages,
-    });
-    usedModel = completion.model;
-    usedTier = completion.tier;
-    usedProvider = completion.provider;
-    usedBrand = completion.brand;
-    failedOver = completion.failedOver;
+    if (isLocalEnsembleEnabled()) {
+      res.write(
+        `data: ${JSON.stringify({ status: "ensemble", phase: "gathering", minds: [] })}\n\n`,
+      );
+      const drafts = await draftLocalMinds({
+        tier: routed.tier,
+        maxTokens: routed.maxTokens,
+        messages,
+      });
+      if (!drafts.length) {
+        throw new Error("The companion returned an empty reply. Please try again.");
+      }
+      ensembleMinds = drafts.map((d) => d.label);
 
-    for await (const chunk of completion.stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (!delta) continue;
-      fullResponse += delta;
-      res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+      if (drafts.length === 1) {
+        // Only one mind produced anything usable — nothing to combine.
+        usedModel = drafts[0]!.model;
+        usedBrand = "anima";
+        fullResponse = drafts[0]!.content;
+        res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
+      } else {
+        res.write(
+          `data: ${JSON.stringify({ status: "ensemble", phase: "combining", minds: ensembleMinds, drafts: drafts.length })}\n\n`,
+        );
+        const completion = await combineLocalDrafts(drafts, messages, {
+          tier: routed.tier,
+          maxTokens: routed.maxTokens,
+        });
+        usedModel = completion.model;
+        usedTier = completion.tier;
+        usedProvider = completion.provider;
+        usedBrand = completion.brand;
+        failedOver = completion.failedOver;
+        ensembleCombined = true;
+
+        for await (const chunk of completion.stream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (!delta) continue;
+          fullResponse += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        }
+      }
+    } else {
+      const completion = await createChatStreamWithFailover({
+        tier: routed.tier,
+        model: routed.model,
+        maxTokens: routed.maxTokens,
+        messages,
+      });
+      usedModel = completion.model;
+      usedTier = completion.tier;
+      usedProvider = completion.provider;
+      usedBrand = completion.brand;
+      failedOver = completion.failedOver;
+
+      for await (const chunk of completion.stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (!delta) continue;
+        fullResponse += delta;
+        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+      }
     }
 
     // An empty completion used to look like a successful turn on the client
@@ -923,6 +974,8 @@ router.post("/messages", async (req, res) => {
           provider: usedProvider,
           brand: usedBrand,
           failed_over: failedOver,
+          ensemble_minds: ensembleMinds,
+          ensemble_combined: ensembleCombined,
         },
       });
       const sharedFact = isCrossover
@@ -1005,6 +1058,8 @@ router.post("/messages", async (req, res) => {
         provider: usedProvider,
         brand: usedBrand,
         failed_over: failedOver,
+        ensemble_minds: ensembleMinds,
+        ensemble_combined: ensembleCombined,
         is_crossover: isCrossover,
         assistant_character_id: activeCharacterId,
         assistant_character_name: activeCharacterName,

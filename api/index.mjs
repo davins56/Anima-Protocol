@@ -105958,13 +105958,16 @@ async function createChatCompletionWithFailover(req) {
   try {
     const { value: completion, resolved } = await withModelFallback(
       preferred,
-      (m2) => client.chat.completions.create({
-        model: m2.model,
-        max_tokens: m2.maxTokens,
-        messages: req.messages,
-        ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
-        ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
-      })
+      (m2) => client.chat.completions.create(
+        {
+          model: m2.model,
+          max_tokens: m2.maxTokens,
+          messages: req.messages,
+          ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
+          ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
+        },
+        req.signal ? { signal: req.signal } : void 0
+      )
     );
     const content = completion.choices?.[0]?.message?.content ?? "";
     return {
@@ -120300,6 +120303,80 @@ var storage_default = router8;
 // src/routes/chat.ts
 var import_express15 = __toESM(require_express2(), 1);
 
+// src/lib/localEnsemble.ts
+var DEFAULT_MINDS = [
+  { label: "Steady", temperature: 0.6 },
+  { label: "Vivid", temperature: 0.95 },
+  { label: "Playful", temperature: 1.15 }
+];
+var DEFAULT_MIND_TIMEOUT_MS = 2e4;
+var DEFAULT_MAX_MINDS = 4;
+function isLocalEnsembleEnabled() {
+  return /^(1|true|yes)$/i.test((process.env.ANIMA_LOCAL_LLM_ENSEMBLE || "").trim());
+}
+function maxMinds() {
+  const raw = Number(process.env.ANIMA_ENSEMBLE_MAX_MINDS);
+  const floored = Number.isFinite(raw) ? Math.floor(raw) : 0;
+  return floored > 0 ? floored : DEFAULT_MAX_MINDS;
+}
+function mindSpecs() {
+  const cap = maxMinds();
+  const raw = (process.env.ANIMA_ENSEMBLE_MINDS || "").trim();
+  if (!raw) return DEFAULT_MINDS.slice(0, cap);
+  const labels = raw.split(",").map((s3) => s3.trim()).filter(Boolean).slice(0, cap);
+  if (!labels.length) return DEFAULT_MINDS.slice(0, cap);
+  return labels.map((label, i2) => ({
+    label,
+    temperature: DEFAULT_MINDS[i2 % DEFAULT_MINDS.length].temperature
+  }));
+}
+function mindTimeoutMs() {
+  const raw = Number(process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MIND_TIMEOUT_MS;
+}
+function draftOneMind(req, spec, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return createChatCompletionWithFailover({
+    tier: req.tier,
+    maxTokens: req.maxTokens,
+    messages: req.messages,
+    temperature: spec.temperature,
+    signal: controller.signal
+  }).finally(() => clearTimeout(timer));
+}
+async function draftLocalMinds(req) {
+  const specs = mindSpecs();
+  const timeoutMs = mindTimeoutMs();
+  const settled = await Promise.allSettled(specs.map((spec) => draftOneMind(req, spec, timeoutMs)));
+  const drafts = [];
+  settled.forEach((result, i2) => {
+    if (result.status === "fulfilled" && result.value.content.trim()) {
+      drafts.push({ label: specs[i2].label, content: result.value.content.trim(), model: result.value.model });
+    }
+  });
+  return drafts;
+}
+var COMBINE_INSTRUCTIONS = "You are combining multiple draft replies from the same companion into ONE final in-character reply. The drafts below are different attempts at the same turn, not a conversation with each other. Write a single reply that keeps the character's voice, blends the strongest ideas, and does not repeat itself or reference the drafts. Output ONLY the final reply text \u2014 no labels, no explanation, no meta-commentary.";
+function systemContentOf(messages2) {
+  const system = messages2.find((m2) => m2.role === "system");
+  return system && typeof system.content === "string" ? system.content : "";
+}
+async function combineLocalDrafts(drafts, originalMessages, opts) {
+  const draftsBlock = drafts.map((d2, i2) => `Draft ${i2 + 1} (${d2.label}):
+${d2.content}`).join("\n\n");
+  const messages2 = [
+    { role: "system", content: [systemContentOf(originalMessages), COMBINE_INSTRUCTIONS].filter(Boolean).join("\n\n") },
+    { role: "user", content: draftsBlock }
+  ];
+  return createChatStreamWithFailover({
+    tier: opts.tier,
+    model: "",
+    maxTokens: opts.maxTokens,
+    messages: messages2
+  });
+}
+
 // src/lib/resonanceState.ts
 var DEFAULT_VECTOR = {
   intimacy: 30,
@@ -121923,26 +122000,77 @@ router9.post("/messages", async (req, res) => {
   let usedProvider = "local";
   let usedBrand;
   let failedOver = false;
+  let ensembleMinds;
+  let ensembleCombined = false;
   try {
     const messages2 = [{ role: "system", content: prompt }];
-    const completion = await createChatStreamWithFailover({
-      tier: routed.tier,
-      model: routed.model,
-      maxTokens: routed.maxTokens,
-      messages: messages2
-    });
-    usedModel = completion.model;
-    usedTier = completion.tier;
-    usedProvider = completion.provider;
-    usedBrand = completion.brand;
-    failedOver = completion.failedOver;
-    for await (const chunk of completion.stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (!delta) continue;
-      fullResponse += delta;
-      res.write(`data: ${JSON.stringify({ content: delta })}
+    if (isLocalEnsembleEnabled()) {
+      res.write(
+        `data: ${JSON.stringify({ status: "ensemble", phase: "gathering", minds: [] })}
+
+`
+      );
+      const drafts = await draftLocalMinds({
+        tier: routed.tier,
+        maxTokens: routed.maxTokens,
+        messages: messages2
+      });
+      if (!drafts.length) {
+        throw new Error("The companion returned an empty reply. Please try again.");
+      }
+      ensembleMinds = drafts.map((d2) => d2.label);
+      if (drafts.length === 1) {
+        usedModel = drafts[0].model;
+        usedBrand = "anima";
+        fullResponse = drafts[0].content;
+        res.write(`data: ${JSON.stringify({ content: fullResponse })}
 
 `);
+      } else {
+        res.write(
+          `data: ${JSON.stringify({ status: "ensemble", phase: "combining", minds: ensembleMinds, drafts: drafts.length })}
+
+`
+        );
+        const completion = await combineLocalDrafts(drafts, messages2, {
+          tier: routed.tier,
+          maxTokens: routed.maxTokens
+        });
+        usedModel = completion.model;
+        usedTier = completion.tier;
+        usedProvider = completion.provider;
+        usedBrand = completion.brand;
+        failedOver = completion.failedOver;
+        ensembleCombined = true;
+        for await (const chunk of completion.stream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (!delta) continue;
+          fullResponse += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}
+
+`);
+        }
+      }
+    } else {
+      const completion = await createChatStreamWithFailover({
+        tier: routed.tier,
+        model: routed.model,
+        maxTokens: routed.maxTokens,
+        messages: messages2
+      });
+      usedModel = completion.model;
+      usedTier = completion.tier;
+      usedProvider = completion.provider;
+      usedBrand = completion.brand;
+      failedOver = completion.failedOver;
+      for await (const chunk of completion.stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (!delta) continue;
+        fullResponse += delta;
+        res.write(`data: ${JSON.stringify({ content: delta })}
+
+`);
+      }
     }
     if (!String(fullResponse).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
@@ -121974,7 +122102,9 @@ router9.post("/messages", async (req, res) => {
           tier: usedTier,
           provider: usedProvider,
           brand: usedBrand,
-          failed_over: failedOver
+          failed_over: failedOver,
+          ensemble_minds: ensembleMinds,
+          ensemble_combined: ensembleCombined
         }
       });
       const sharedFact = isCrossover ? {
@@ -122038,6 +122168,8 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
         provider: usedProvider,
         brand: usedBrand,
         failed_over: failedOver,
+        ensemble_minds: ensembleMinds,
+        ensemble_combined: ensembleCombined,
         is_crossover: isCrossover,
         assistant_character_id: activeCharacterId,
         assistant_character_name: activeCharacterName,
