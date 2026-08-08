@@ -76,13 +76,24 @@ documentation.
 - [x] Step 32: `scripts/llm/eval/run-evals.mjs` + `eval-cases.json` + `pnpm llm:eval` — automates the "Internal eval checklist" heuristics (banned phrases, expected keywords, latency budget) against the configured local endpoint, writes `scripts/llm/output/eval-report.{json,md}`
 - [x] Step 33: `scripts/llm/verify-deploy.sh` + `pnpm llm:verify-deploy` — one-shot post-deploy check of `/api/healthz/llm`, the live probe, and (optionally) the model host's `/v1/models`
 
+## Phase I — Model quality: bigger SFT seed set + DPO tooling
+
+- [x] Step 36: Expanded `ANIMA_SEED_EXAMPLES` — identity anchoring, boundaries/consent,
+      two-speaker crossover, repair-after-mismatch, light/humor tone (4 → 10 seed turns)
+- [x] Step 37: `lib/llm/src/dataset/preferences.ts` — curated chosen/rejected pairs for
+      DPO/ORPO/SimPO, anchored on real seed turns vs. realistic failure modes
+- [x] Step 38: `preferencesToJsonl` / `preferenceToExportRow` formatters + `prepare-dpo`
+      CLI command + `pnpm llm:prepare-dpo` root script
+- [x] Step 39: `scripts/llm/finetune/unsloth_dpo.py` — DPO stage that runs after SFT
+- [x] Step 40: tests for the expanded seed set and preference pairs; docs updated
+
 ## Still manual (GPU / data ops)
 
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
   (the pipeline above now auto-drops junk/dupes and reports stats, but curating
   which raw logs are worth including is still a human judgment call)
 - [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
-- [ ] Optional DPO/ORPO/SimPO preference stage
+- [ ] Run the DPO preference stage (`unsloth_dpo.py`, tooling now scaffolded above)
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
 - [x] Step 21: Deleted the cloud failover/ensemble chain entirely — `llmEnsemble.ts`,
       `geminiNative.ts`, and every Gemini/Groq/Kimi/xAI/OpenAI/Gateway chat code

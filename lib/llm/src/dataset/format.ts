@@ -7,6 +7,8 @@ import type {
   ChatMlExample,
   ChatTurn,
   ExportFormat,
+  PreferenceExample,
+  PreferencePairExport,
   ShareGptExample,
   TrainingExample,
 } from "./types";
@@ -147,12 +149,7 @@ export function toPreferencePair(
   example: TrainingExample,
   chosen: string,
   rejected: string,
-): {
-  prompt: string;
-  chosen: string;
-  rejected: string;
-  system: string;
-} {
+): PreferencePairExport {
   const system = buildSystemMessage(example);
   const turns = nonSystemTurns(example);
   const lastUser = [...turns].reverse().find((t) => t.role === "user");
@@ -164,4 +161,17 @@ export function toPreferencePair(
     .filter(Boolean)
     .join("\n");
   return { prompt, chosen, rejected, system };
+}
+
+/** Convert a curated `PreferenceExample` into the DPO/ORPO export row. */
+export function preferenceToExportRow(pref: PreferenceExample): PreferencePairExport {
+  return toPreferencePair(pref.example, pref.chosen, pref.rejected);
+}
+
+/** Serialize preference pairs as JSONL (`prompt`/`chosen`/`rejected`/`system` per line). */
+export function preferencesToJsonl(preferences: PreferenceExample[]): string {
+  return preferences
+    .map((p) => JSON.stringify(preferenceToExportRow(p)))
+    .join("\n")
+    .concat(preferences.length ? "\n" : "");
 }
