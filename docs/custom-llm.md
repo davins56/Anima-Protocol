@@ -168,6 +168,35 @@ nothing else about this code path changes.
 
 If `/api/healthz/llm` shows `localEndpoint.host=api.openai.com` (or Groq/Gemini/etc.) with `model=anima-chat`, Vercel is pointed at a **cloud chat API**, not a self-hosted Anima LLM. OpenAI has no model named `anima-chat`, so every chat turn 404s. Chat never uses ChatGPT/Gemini/Groq — set `ANIMA_LOCAL_LLM_BASE_URL` to your **Ollama/vLLM** HTTPS URL instead (steps below). Healthy response: `status=ok`, `localEndpoint.isCloudFlagship=false`, `host` is your tunnel/Fly/Render hostname.
 
+### Exact fix — 403 / "Anima LLM authentication failed…"
+
+`/api/healthz/llm?probe=1` shows `probeOk=false`, `errorKind: "auth"`, and
+`status` 401 or 403 (often `403 status code (no body)`). The host
+(`anima-chat-llm.fly.dev` or your tunnel) is up, but the bearer token Vercel
+sends does **not** match the proxy secret on the LLM host.
+
+1. Reset the Fly secret and keep the value:
+   ```bash
+   cd deploy/ollama-fly
+   NEW_TOKEN=$(openssl rand -hex 32)
+   fly secrets set PROXY_AUTH_TOKEN=$NEW_TOKEN -a anima-chat-llm
+   echo "$NEW_TOKEN"
+   ```
+2. Set **the same value** on Vercel Production as `ANIMA_LOCAL_LLM_API_KEY`
+   (with `ANIMA_LOCAL_LLM_BASE_URL=https://anima-chat-llm.fly.dev/v1`).
+3. Redeploy Vercel **without build cache**.
+4. Confirm:
+   ```bash
+   curl -sS https://anima-chat-llm.fly.dev/v1/models \
+     -H "Authorization: Bearer $NEW_TOKEN" | jq '.data[].id'
+   curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' \
+     | jq '{probeOk, probes}'
+   # expect probeOk=true
+   ```
+
+Unauthenticated calls to the Fly host should return **401** (proves the proxy
+is locked). A matching bearer must list `anima-chat` under `/v1/models`.
+
 ### Exact fix — "Anima custom LLM is not configured…"
 
 That error is intentional: `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable, and there is no cloud fallback to fall through to.

@@ -73,6 +73,8 @@ export interface LlmProviderProbeResult {
   status?: number;
   errorKind?: "auth" | "quota" | "other";
   message?: string;
+  /** Operator-facing fix when errorKind is auth (secret-free). */
+  hint?: string;
   /** The model the turn actually ran on (may differ from `configuredModel`). */
   model?: string;
   /** The tag from ANIMA_*_MODEL_* / the registry, before any discovery. */
@@ -161,7 +163,17 @@ function summarizeError(err: unknown): string {
   return String(err).slice(0, 160);
 }
 
-/** True when the local server rejected auth (unlikely, but worth a clear message). */
+/**
+ * Shared operator hint when the self-hosted LLM rejects the bearer token.
+ * Fly's Caddy proxy (`deploy/ollama-fly`) returns 401; some edges/proxies
+ * surface the same failure as 403 with an empty body.
+ */
+export const LOCAL_LLM_AUTH_FIX_HINT =
+  "ANIMA_LOCAL_LLM_API_KEY on Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
+  "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
+  "as ANIMA_LOCAL_LLM_API_KEY and redeploy without build cache). See deploy/ollama-fly/README.md.";
+
+/** True when the local server rejected auth (wrong/missing bearer token). */
 export function isProviderAuthError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { status?: number; code?: string; type?: string; message?: string };
@@ -175,11 +187,14 @@ export function isProviderAuthError(err: unknown): boolean {
     msg.includes("invalid api key") ||
     msg.includes("authentication") ||
     msg.includes("status code (no body)") ||
-    msg.includes("401 status code")
+    msg.includes("401 status code") ||
+    msg.includes("403 status code")
   ) {
     return true;
   }
-  return e.status === 401;
+  // 401 = standard unauthorized. 403 = some reverse proxies / edges reject a
+  // bad bearer the same way (production probe against anima-chat-llm.fly.dev).
+  return e.status === 401 || e.status === 403;
 }
 
 /** True when the local server said the requested model isn't loaded / known. */
@@ -297,7 +312,7 @@ function enrichError(err: unknown): Error {
   }
   if (isProviderAuthError(err)) {
     return new Error(
-      `Anima LLM authentication failed: ${summarizeError(err)}. Check ANIMA_LOCAL_LLM_API_KEY on the local server config, then redeploy.`,
+      `Anima LLM authentication failed: ${summarizeError(err)}. ${LOCAL_LLM_AUTH_FIX_HINT}`,
     );
   }
   if (isLocalModelUnavailable(err)) {
@@ -425,14 +440,16 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
     // Best-effort: `requireLocalClient()` above may be what threw.
     const probeClient = getLocalLlmClient();
     const catalog = probeClient ? await listLocalModels(probeClient) : null;
+    const auth = isProviderAuthError(err);
     return [
       {
         provider: "local",
         configured: true,
         ok: false,
         status: Number.isFinite(status) ? status : undefined,
-        errorKind: isProviderAuthError(err) ? "auth" : "other",
+        errorKind: auth ? "auth" : "other",
         message: summarizeError(err),
+        ...(auth ? { hint: LOCAL_LLM_AUTH_FIX_HINT } : {}),
         model: resolved.model,
         configuredModel: resolved.model,
         availableModels: catalog?.models ?? [],
