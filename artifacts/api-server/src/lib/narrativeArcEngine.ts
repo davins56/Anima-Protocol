@@ -34,15 +34,28 @@ function stageFromProgress(progress: number): ArcStage {
   return "Fusion";
 }
 
-export async function loadArcState(animaId: string, userId: string): Promise<ArcState | null> {
-  const [row] = await db
-    .select()
-    .from(animaNarrativeArcs)
-    .where(and(eq(animaNarrativeArcs.userId, userId), eq(animaNarrativeArcs.animaId, animaId)))
-    .limit(1);
+function isMissingRelationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return (
+    /relation .* does not exist/i.test(msg) ||
+    /Failed query:[\s\S]*anima_narrative_arcs/i.test(msg)
+  );
+}
 
-  if (!row) return null;
-  return (row.state as ArcState) ?? null;
+export async function loadArcState(animaId: string, userId: string): Promise<ArcState | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(animaNarrativeArcs)
+      .where(and(eq(animaNarrativeArcs.userId, userId), eq(animaNarrativeArcs.animaId, animaId)))
+      .limit(1);
+
+    if (!row) return null;
+    return (row.state as ArcState) ?? null;
+  } catch (err) {
+    if (isMissingRelationError(err)) return null;
+    throw err;
+  }
 }
 
 export async function ensureArcRow(params: { animaId: string; userId: string }) {
