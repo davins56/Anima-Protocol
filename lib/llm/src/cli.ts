@@ -44,7 +44,7 @@ Commands:
   export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
   import-logs [--dir path] [--character name] [--tags a,b] [--out path] [--format …]
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
-                    [--with-logs dir] [--with-db [--user <clerkUserId>]]
+                    [--with-logs dir] [--character name] [--with-db [--user <clerkUserId>]]
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
   serve-hint
   seed-stats
@@ -67,6 +67,16 @@ function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
 }
 
+const SUPPORTED_FORMATS: ExportFormat[] = ["sharegpt", "chatml", "alpaca", "messages"];
+
+function parseFormat(raw: string | undefined): ExportFormat {
+  const format = raw || "sharegpt";
+  if (!SUPPORTED_FORMATS.includes(format as ExportFormat)) {
+    throw new Error(`Unsupported --format "${format}" (expected one of: ${SUPPORTED_FORMATS.join(", ")})`);
+  }
+  return format as ExportFormat;
+}
+
 async function cmdListModels(args: string[]): Promise<void> {
   const provider = resolveProvider(argValue(args, "--provider"));
   console.log(`Provider: ${provider}`);
@@ -76,7 +86,7 @@ async function cmdListModels(args: string[]): Promise<void> {
 }
 
 async function cmdPrepareFinetune(args: string[]): Promise<void> {
-  const format = (argValue(args, "--format") || "sharegpt") as ExportFormat;
+  const format = parseFormat(argValue(args, "--format"));
   const out = resolveOutPath(
     argValue(args, "--out") ||
       path.join("scripts", "llm", "output", `finetune-${format}.jsonl`),
@@ -90,7 +100,10 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
   const logsDir = argValue(args, "--with-logs");
   if (logsDir) {
     const { importLogsDir } = await import("./dataset/import");
-    const fromLogs = await importLogsDir(resolveOutPath(logsDir), { tags });
+    const fromLogs = await importLogsDir(resolveOutPath(logsDir), {
+      tags,
+      defaultCharacterName: argValue(args, "--character"),
+    });
     console.log(`Imported ${fromLogs.length} examples from ${logsDir}`);
     examples = [...examples, ...fromLogs];
   }
@@ -156,7 +169,7 @@ async function cmdImportLogs(args: string[]): Promise<void> {
 
   const out = argValue(args, "--out");
   if (out) {
-    const format = (argValue(args, "--format") || "sharegpt") as ExportFormat;
+    const format = parseFormat(argValue(args, "--format"));
     const outPath = resolveOutPath(out);
     await mkdir(path.dirname(outPath), { recursive: true });
     await writeFile(outPath, toJsonl(examples, format), "utf8");
