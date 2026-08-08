@@ -104,10 +104,8 @@ function fromTranscriptText(
   const lines = text.split(/\r?\n/);
   const conversation: ChatTurn[] = [];
   const speakerCounts = new Map<string, number>();
-  // Non-target speaker lines (narrator, other companions) are context for
-  // the target character's *next* reply, not for whichever turn happens to
-  // be last — that could be the user's own line, or there may be no turn
-  // yet at all if the interjection comes first.
+  // Non-target speaker lines (narrator, other companions) are always queued
+  // as context for the target character's *next* reply.
   let lastAssistantTurn: ChatTurn | null = null;
   let pendingContext: string[] = [];
 
@@ -130,15 +128,12 @@ function fromTranscriptText(
     }
 
     if (restrictToCharacter && speaker.toLowerCase() !== restrictToCharacter.toLowerCase()) {
-      // Narrator / other-character line — keep as context instead of
-      // training it as the target character's own speech. Only fold onto
-      // the assistant's turn if nothing has happened since (i.e. it's still
-      // the most recent turn) — otherwise a user turn came in between, so
-      // this interjection belongs to the *next* reply, not the last one.
-      const note = `[${speaker}]: ${content.trim()}`;
-      const last = conversation[conversation.length - 1];
-      if (lastAssistantTurn && last === lastAssistantTurn) lastAssistantTurn.content += `\n${note}`;
-      else pendingContext.push(note);
+      // Narrator / other-character line — always queue as context for the
+      // character's *next* reply. Never mutate an already-emitted turn: that
+      // would put foreign dialogue inside a turn attributed to the target
+      // character regardless of whether it's appended or prefixed, teaching
+      // the model to speak for someone else.
+      pendingContext.push(`[${speaker}]: ${content.trim()}`);
       continue;
     }
 
