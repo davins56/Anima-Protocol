@@ -57,6 +57,13 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 
 Short guide: [`docs/custom-llm.md`](../../docs/custom-llm.md) · Full: [`docs/llm-build.md`](../../docs/llm-build.md).
 
+## Production (always-on, public HTTPS)
+
+The commands above run on your laptop only — Vercel can't reach `localhost`.
+For a real deployment, see [`deploy/ollama-fly/`](../../deploy/ollama-fly/README.md):
+one `fly deploy` gets you the same `anima-chat` model behind an authenticated,
+always-on public URL, ready to plug into `ANIMA_LOCAL_LLM_BASE_URL`.
+
 ## Lineup
 
 | Role | Model | Notes |

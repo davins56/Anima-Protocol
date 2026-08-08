@@ -155,8 +155,9 @@ nothing else about this code path changes.
 
 That banner is intentional: custom mode is on, but `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable. Cloud BYOK (Gemini/Groq/Kimi/Grok/ChatGPT/Gateway) is **deliberately disabled**.
 
-1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS**.  
-   Example with Ollama: expose it via a reverse proxy / Cloudflare Tunnel / ngrok → `https://your-tunnel.example.com`.
+1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
+   - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
+   - Or run Ollama/vLLM anywhere else with a public HTTPS URL (a reverse proxy, Cloudflare Tunnel, ngrok, another cloud VM, …) — just make sure it's actually authenticated; Ollama has none built in.
 2. **Set these on Vercel (Production)** and redeploy **without build cache**:
 
 ```bash
