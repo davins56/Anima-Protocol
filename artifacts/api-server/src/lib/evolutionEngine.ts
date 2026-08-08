@@ -26,14 +26,25 @@ function truncate(value: string, max = 900): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-export async function loadEvolution(animaId: string, userId: string) {
-  const [row] = await db
-    .select()
-    .from(animaEvolution)
-    .where(and(eq(animaEvolution.animaId, animaId), eq(animaEvolution.userId, userId)))
-    .limit(1);
+function isMissingRelationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /relation .* does not exist/i.test(msg) || /Failed query:[\s\S]*anima_evolution/i.test(msg);
+}
 
-  return row;
+export async function loadEvolution(animaId: string, userId: string) {
+  try {
+    const [row] = await db
+      .select()
+      .from(animaEvolution)
+      .where(and(eq(animaEvolution.animaId, animaId), eq(animaEvolution.userId, userId)))
+      .limit(1);
+
+    return row;
+  } catch (err) {
+    // Schema self-heal may not have run yet; never block the chat turn.
+    if (isMissingRelationError(err)) return undefined;
+    throw err;
+  }
 }
 
 export async function ensureEvolutionRow(params: {
