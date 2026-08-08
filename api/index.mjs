@@ -105958,13 +105958,16 @@ async function createChatCompletionWithFailover(req) {
   try {
     const { value: completion, resolved } = await withModelFallback(
       preferred,
-      (m2) => client.chat.completions.create({
-        model: m2.model,
-        max_tokens: m2.maxTokens,
-        messages: req.messages,
-        ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
-        ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
-      })
+      (m2) => client.chat.completions.create(
+        {
+          model: m2.model,
+          max_tokens: m2.maxTokens,
+          messages: req.messages,
+          ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
+          ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
+        },
+        req.signal ? { signal: req.signal } : void 0
+      )
     );
     const content = completion.choices?.[0]?.message?.content ?? "";
     return {
@@ -120313,7 +120316,8 @@ function isLocalEnsembleEnabled() {
 }
 function maxMinds() {
   const raw = Number(process.env.ANIMA_ENSEMBLE_MAX_MINDS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_MINDS;
+  const floored = Number.isFinite(raw) ? Math.floor(raw) : 0;
+  return floored > 0 ? floored : DEFAULT_MAX_MINDS;
 }
 function mindSpecs() {
   const cap = maxMinds();
@@ -120330,38 +120334,21 @@ function mindTimeoutMs() {
   const raw = Number(process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MIND_TIMEOUT_MS;
 }
-function withTimeout(promise2, ms, label) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`mind "${label}" timed out after ${ms}ms`)), ms);
-    promise2.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
+function draftOneMind(req, spec, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return createChatCompletionWithFailover({
+    tier: req.tier,
+    maxTokens: req.maxTokens,
+    messages: req.messages,
+    temperature: spec.temperature,
+    signal: controller.signal
+  }).finally(() => clearTimeout(timer));
 }
 async function draftLocalMinds(req) {
   const specs = mindSpecs();
   const timeoutMs = mindTimeoutMs();
-  const settled = await Promise.allSettled(
-    specs.map(
-      (spec) => withTimeout(
-        createChatCompletionWithFailover({
-          tier: req.tier,
-          maxTokens: req.maxTokens,
-          messages: req.messages,
-          temperature: spec.temperature
-        }),
-        timeoutMs,
-        spec.label
-      )
-    )
-  );
+  const settled = await Promise.allSettled(specs.map((spec) => draftOneMind(req, spec, timeoutMs)));
   const drafts = [];
   settled.forEach((result, i2) => {
     if (result.status === "fulfilled" && result.value.content.trim()) {
