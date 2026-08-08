@@ -131,9 +131,13 @@ function fromTranscriptText(
 
     if (restrictToCharacter && speaker.toLowerCase() !== restrictToCharacter.toLowerCase()) {
       // Narrator / other-character line — keep as context instead of
-      // training it as the target character's own speech.
+      // training it as the target character's own speech. Only fold onto
+      // the assistant's turn if nothing has happened since (i.e. it's still
+      // the most recent turn) — otherwise a user turn came in between, so
+      // this interjection belongs to the *next* reply, not the last one.
       const note = `[${speaker}]: ${content.trim()}`;
-      if (lastAssistantTurn) lastAssistantTurn.content += `\n${note}`;
+      const last = conversation[conversation.length - 1];
+      if (lastAssistantTurn && last === lastAssistantTurn) lastAssistantTurn.content += `\n${note}`;
       else pendingContext.push(note);
       continue;
     }
