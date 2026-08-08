@@ -1007,7 +1007,24 @@ router.post("/messages", async (req, res) => {
             isVoidTurn,
           });
 
-          // No need to reload evolutionDelta here; next turn will pick it up.
+          await maybeTriggerRelationshipEvolution({
+            userId,
+            animaId,
+            conversationCount: nextCount,
+            historySummary,
+            isVoidTurn,
+          });
+
+          await maybeTriggerNarrativeArc({
+            userId,
+            animaId,
+            conversationCount: nextCount,
+            content: historySummary,
+          });
+
+          // No need to reload evolutionDelta / relationship / arc state here;
+          // next turn will pick it up via loadEvolution/loadRelationshipState/
+          // loadArcState.
 
         }
       }

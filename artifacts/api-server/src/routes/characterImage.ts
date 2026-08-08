@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getAuth } from "@clerk/express";
 import { rateLimit } from "../lib/rateLimit";
 
 const router = Router();
@@ -6,6 +7,14 @@ const router = Router();
 // path prefix, so an unscoped `router.use(rateLimit)` would run for every /api
 // request passing through (e.g. /api/store/*) and exhaust the shared IP budget.
 router.use("/character-image", rateLimit);
+router.use("/character-image", (req, res, next) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 
 const WIKI_HEADERS = { "User-Agent": "AnimaProtocol/1.0 (character portrait lookup)" };
 
