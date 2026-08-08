@@ -22,6 +22,11 @@ import {
 } from "./openaiClient";
 import { resolveModelSpec } from "@workspace/llm";
 
+const CLOUD_FLAGSHIP_SETUP_HINT =
+  "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. " +
+  "Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set " +
+  "ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy.";
+
 /** Only one chat provider exists: the self-hosted Anima LLM. */
 export type LlmProviderId = "local";
 
@@ -44,6 +49,8 @@ export interface LlmRoutingStatus {
     hasV1Path: boolean;
     isHttps: boolean;
     isLocalhost: boolean;
+    /** True when base URL is OpenAI/Groq/Gemini/etc. (invalid for Anima chat). */
+    isCloudFlagship: boolean;
     backend: string;
     model: string;
   };
@@ -206,7 +213,14 @@ async function withModelFallback<T>(
   throw lastErr;
 }
 
+function cloudFlagshipMisconfigured(): boolean {
+  return summarizeLocalLlmBaseUrl().isCloudFlagship;
+}
+
 function requireLocalClient(): OpenAI {
+  if (cloudFlagshipMisconfigured()) {
+    throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
+  }
   const client = getLocalLlmClient();
   if (client) return client;
   throw new Error(
@@ -217,9 +231,23 @@ function requireLocalClient(): OpenAI {
 }
 
 function enrichError(err: unknown): Error {
+  if (cloudFlagshipMisconfigured()) {
+    return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
+  }
   if (isProviderAuthError(err)) {
     return new Error(
       `Anima LLM authentication failed: ${summarizeError(err)}. Check ANIMA_LOCAL_LLM_API_KEY on the local server config, then redeploy.`,
+    );
+  }
+  if (isLocalModelUnavailable(err)) {
+    const model =
+      process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
+      process.env.ANIMA_VLLM_MODEL?.trim() ||
+      resolveLocalModel("standard").model;
+    const host = summarizeLocalLlmBaseUrl().host ?? "?";
+    return new Error(
+      `Anima LLM model "${model}" is not available on host=${host}: ${summarizeError(err)}. ` +
+        `Create the model on that host (e.g. \`ollama create anima-chat\`) or set ANIMA_OLLAMA_MODEL_STANDARD to a model id the server actually serves. See docs/llm-deploy.md.`,
     );
   }
   const base = err instanceof Error ? err : new Error(String(err));
@@ -239,10 +267,13 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   logLocalLlmClientInitOnce();
 
   const noteParts: string[] = [];
+  const usable = localSummary.configured && !localSummary.isCloudFlagship;
   if (!localSummary.configured) {
     noteParts.push(
       "ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. See docs/custom-llm.md.",
     );
+  } else if (localSummary.isCloudFlagship) {
+    noteParts.push(CLOUD_FLAGSHIP_SETUP_HINT);
   } else {
     noteParts.push(
       `Chat uses the self-hosted Anima LLM only (vLLM/Ollama/llama.cpp) at host=${localSummary.host ?? "?"} model=${localModel}. There is no cloud flagship fallback.`,
@@ -259,8 +290,8 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   }
 
   return {
-    status: hasLocalLlm() ? "ok" : "error",
-    preferred: hasLocalLlm() ? "local" : null,
+    status: usable ? "ok" : "error",
+    preferred: usable ? "local" : null,
     brand: "anima",
     localEndpoint: {
       configured: localSummary.configured,
@@ -268,6 +299,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       hasV1Path: localSummary.hasV1Path,
       isHttps: localSummary.isHttps,
       isLocalhost: localSummary.isLocalhost,
+      isCloudFlagship: localSummary.isCloudFlagship,
       backend,
       model: localModel,
     },
@@ -279,6 +311,21 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
 export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<LlmProviderProbeResult[]> {
   if (!hasLocalLlm()) {
     return [{ provider: "local", configured: false, ok: false }];
+  }
+
+  if (cloudFlagshipMisconfigured()) {
+    const resolved = resolveLocalModel(tier);
+    return [
+      {
+        provider: "local",
+        configured: true,
+        ok: false,
+        status: 400,
+        errorKind: "other",
+        message: CLOUD_FLAGSHIP_SETUP_HINT.slice(0, 160),
+        model: resolved.model,
+      },
+    ];
   }
 
   const resolved = resolveLocalModel(tier);

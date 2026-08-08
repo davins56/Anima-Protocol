@@ -30,6 +30,16 @@ vi.mock("../src/lib/openaiClient", () => {
       if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
       return true;
     },
+    isCloudFlagshipLlmHost: (host: string | null | undefined) => {
+      if (!host) return false;
+      const h = host.trim().toLowerCase();
+      return (
+        h === "api.openai.com" ||
+        h === "openai.com" ||
+        h === "api.groq.com" ||
+        h.endsWith(".api.openai.com")
+      );
+    },
     summarizeLocalLlmBaseUrl: () => {
       const explicit =
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
@@ -46,18 +56,31 @@ vi.mock("../src/lib/openaiClient", () => {
         base = "http://localhost:11434/v1";
       }
       if (!base) {
-        return { configured: false, host: null, hasV1Path: false, isHttps: false, isLocalhost: false };
+        return {
+          configured: false,
+          host: null,
+          hasV1Path: false,
+          isHttps: false,
+          isLocalhost: false,
+          isCloudFlagship: false,
+        };
       }
       try {
         const url = new URL(base);
         const host = url.hostname || null;
         const path = (url.pathname || "").replace(/\/$/, "");
+        const isCloudFlagship =
+          host === "api.openai.com" ||
+          host === "openai.com" ||
+          host === "api.groq.com" ||
+          Boolean(host?.endsWith(".api.openai.com"));
         return {
           configured: true,
           host,
           hasV1Path: path === "/v1" || path.endsWith("/v1"),
           isHttps: url.protocol === "https:",
           isLocalhost: host === "localhost" || host === "127.0.0.1" || host === "::1",
+          isCloudFlagship,
         };
       } catch {
         return {
@@ -66,6 +89,7 @@ vi.mock("../src/lib/openaiClient", () => {
           hasV1Path: /\/v1\/?$/.test(base),
           isHttps: /^https:/i.test(base),
           isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+          isCloudFlagship: /api\.openai\.com|api\.groq\.com/i.test(base),
         };
       }
     },
@@ -170,6 +194,19 @@ describe("getLlmRoutingStatus", () => {
     expect(status.localEndpoint.model).toBe("anima-chat");
     expect(status.note).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/i);
   });
+
+  it("reports error when ANIMA_LOCAL_LLM_BASE_URL points at api.openai.com", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://api.openai.com/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("error");
+    expect(status.preferred).toBeNull();
+    expect(status.localEndpoint.configured).toBe(true);
+    expect(status.localEndpoint.isCloudFlagship).toBe(true);
+    expect(status.localEndpoint.host).toBe("api.openai.com");
+    expect(status.note).toMatch(/cloud chat API/i);
+    expect(status.note).toMatch(/self-hosted/i);
+  });
 });
 
 describe("createChatStreamWithFailover", () => {
@@ -213,6 +250,22 @@ describe("createChatStreamWithFailover", () => {
         messages: [{ role: "user", content: "hello" }],
       }),
     ).rejects.toThrow(/ANIMA_LOCAL_LLM_BASE_URL/i);
+
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("throws a clear setup error when base URL is api.openai.com (not a self-hosted LLM)", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://api.openai.com/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/cloud chat API/i);
 
     expect(createMock).not.toHaveBeenCalled();
   });

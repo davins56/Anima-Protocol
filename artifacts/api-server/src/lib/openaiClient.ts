@@ -54,6 +54,37 @@ export function hasLocalLlm(): boolean {
 }
 
 /**
+ * Hostnames of closed cloud chat APIs that must never be used as
+ * ANIMA_LOCAL_LLM_BASE_URL. Chat only talks to a self-hosted Anima LLM
+ * (Ollama / vLLM / llama.cpp). Pointing at these hosts with model tag
+ * `anima-chat` produces OpenAI's "model does not exist" 404 in production.
+ */
+const CLOUD_FLAGSHIP_LLM_HOSTS = new Set([
+  "api.openai.com",
+  "openai.com",
+  "api.groq.com",
+  "groq.com",
+  "generativelanguage.googleapis.com",
+  "api.anthropic.com",
+  "api.x.ai",
+  "api.moonshot.ai",
+  "api.moonshot.cn",
+]);
+
+/** True when hostname is a known closed cloud chat API (not a self-hosted Anima LLM). */
+export function isCloudFlagshipLlmHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase().replace(/\.$/, "");
+  if (!h) return false;
+  if (CLOUD_FLAGSHIP_LLM_HOSTS.has(h)) return true;
+  // Catch regional / CDN variants like eastus.api.openai.com
+  for (const blocked of CLOUD_FLAGSHIP_LLM_HOSTS) {
+    if (h.endsWith(`.${blocked}`)) return true;
+  }
+  return false;
+}
+
+/**
  * Secret-free summary of the configured local LLM base URL for healthz / logs.
  * Returns hostname + whether the path looks OpenAI-compatible (`/v1`).
  */
@@ -63,6 +94,8 @@ export function summarizeLocalLlmBaseUrl(): {
   hasV1Path: boolean;
   isHttps: boolean;
   isLocalhost: boolean;
+  /** True when ANIMA_LOCAL_LLM_BASE_URL points at OpenAI/Groq/Gemini/etc. */
+  isCloudFlagship: boolean;
 } {
   const base = localLlmBaseUrl();
   if (!base) {
@@ -72,6 +105,7 @@ export function summarizeLocalLlmBaseUrl(): {
       hasV1Path: false,
       isHttps: false,
       isLocalhost: false,
+      isCloudFlagship: false,
     };
   }
   try {
@@ -89,14 +123,18 @@ export function summarizeLocalLlmBaseUrl(): {
       hasV1Path: path === "/v1" || path.endsWith("/v1"),
       isHttps: url.protocol === "https:",
       isLocalhost,
+      isCloudFlagship: isCloudFlagshipLlmHost(host),
     };
   } catch {
+    const hostMatch = base.match(/^https?:\/\/([^/:]+)/i);
+    const host = hostMatch?.[1] ?? null;
     return {
       configured: true,
-      host: null,
+      host,
       hasV1Path: /\/v1\/?$/.test(base),
       isHttps: /^https:/i.test(base),
       isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+      isCloudFlagship: isCloudFlagshipLlmHost(host),
     };
   }
 }
@@ -118,6 +156,13 @@ export function logLocalLlmClientInitOnce(): void {
   if (!summary.configured) {
     console.info(
       "[llm] ANIMA_LOCAL_LLM_BASE_URL unset — set a public HTTPS OpenAI-compatible URL (…/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md.",
+    );
+    return;
+  }
+  if (summary.isCloudFlagship) {
+    console.error(
+      `[llm] MISCONFIGURED: ANIMA_LOCAL_LLM_BASE_URL host=${summary.host} is a cloud flagship API. ` +
+        `Chat requires a self-hosted Ollama/vLLM URL serving model=${model}. See docs/llm-deploy.md.`,
     );
     return;
   }
