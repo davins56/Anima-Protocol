@@ -42,7 +42,8 @@ export function isLocalEnsembleEnabled(): boolean {
 
 function maxMinds(): number {
   const raw = Number(process.env.ANIMA_ENSEMBLE_MAX_MINDS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_MINDS;
+  const floored = Number.isFinite(raw) ? Math.floor(raw) : 0;
+  return floored > 0 ? floored : DEFAULT_MAX_MINDS;
 }
 
 /** Mind labels + sampling temperatures. Override labels via ANIMA_ENSEMBLE_MINDS (comma-separated). */
@@ -67,20 +68,27 @@ function mindTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MIND_TIMEOUT_MS;
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`mind "${label}" timed out after ${ms}ms`)), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
+/**
+ * Draft one mind's reply with a hard deadline. Unlike a bare Promise.race,
+ * this actually cancels the in-flight request via AbortSignal when the
+ * deadline passes — a request that's merely raced against a timer keeps
+ * running server-side (consuming local model capacity) even after the
+ * caller has moved on.
+ */
+function draftOneMind(
+  req: DraftLocalMindsRequest,
+  spec: LocalMindSpec,
+  timeoutMs: number,
+): Promise<{ content: string; model: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return createChatCompletionWithFailover({
+    tier: req.tier,
+    maxTokens: req.maxTokens,
+    messages: req.messages,
+    temperature: spec.temperature,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
 }
 
 export interface DraftLocalMindsRequest {
@@ -99,20 +107,7 @@ export async function draftLocalMinds(req: DraftLocalMindsRequest): Promise<Loca
   const specs = mindSpecs();
   const timeoutMs = mindTimeoutMs();
 
-  const settled = await Promise.allSettled(
-    specs.map((spec) =>
-      withTimeout(
-        createChatCompletionWithFailover({
-          tier: req.tier,
-          maxTokens: req.maxTokens,
-          messages: req.messages,
-          temperature: spec.temperature,
-        }),
-        timeoutMs,
-        spec.label,
-      ),
-    ),
-  );
+  const settled = await Promise.allSettled(specs.map((spec) => draftOneMind(req, spec, timeoutMs)));
 
   const drafts: LocalMindDraft[] = [];
   settled.forEach((result, i) => {

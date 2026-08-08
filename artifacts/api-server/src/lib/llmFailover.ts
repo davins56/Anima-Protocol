@@ -87,6 +87,8 @@ export interface ChatCompletionRequest {
   temperature?: number;
   tools?: OpenAI.Chat.Completions.ChatCompletionTool[];
   toolChoice?: OpenAI.Chat.Completions.ChatCompletionToolChoiceOption;
+  /** Cancel the in-flight request (e.g. a caller-side timeout) instead of leaving it running server-side. */
+  signal?: AbortSignal;
 }
 
 export interface ChatCompletionResult {
@@ -363,15 +365,18 @@ export async function createChatCompletionWithFailover(
 
   try {
     const { value: completion, resolved } = await withModelFallback(preferred, (m) =>
-      client.chat.completions.create({
-        model: m.model,
-        max_tokens: m.maxTokens,
-        messages: req.messages,
-        ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-        ...(req.tools && req.tools.length
-          ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
-          : {}),
-      }),
+      client.chat.completions.create(
+        {
+          model: m.model,
+          max_tokens: m.maxTokens,
+          messages: req.messages,
+          ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+          ...(req.tools && req.tools.length
+            ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
+            : {}),
+        },
+        req.signal ? { signal: req.signal } : undefined,
+      ),
     );
     const content = completion.choices?.[0]?.message?.content ?? "";
     return {

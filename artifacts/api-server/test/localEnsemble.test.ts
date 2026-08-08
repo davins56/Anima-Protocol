@@ -116,11 +116,20 @@ describe("draftLocalMinds", () => {
     expect(drafts.map((d) => d.label)).toEqual(["Steady", "Playful"]);
   });
 
-  it("drops a mind that times out", async () => {
+  it("drops a mind that times out, and aborts its in-flight request", async () => {
     process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS = "20";
+    let sawAbort = false;
     createMock
       .mockResolvedValueOnce(fakeCompletion("steady reply"))
-      .mockImplementationOnce(() => new Promise(() => {})) // never resolves
+      .mockImplementationOnce(
+        (_body: unknown, options?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              sawAbort = true;
+              reject(new Error("aborted"));
+            });
+          }),
+      )
       .mockResolvedValueOnce(fakeCompletion("playful reply"));
 
     const drafts = await draftLocalMinds({
@@ -130,6 +139,7 @@ describe("draftLocalMinds", () => {
     });
 
     expect(drafts.map((d) => d.label)).toEqual(["Steady", "Playful"]);
+    expect(sawAbort).toBe(true);
   });
 
   it("drops a mind that returns empty content", async () => {
@@ -171,6 +181,20 @@ describe("draftLocalMinds", () => {
 
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(drafts).toHaveLength(2);
+  });
+
+  it("falls back to the default mind count for a sub-1 ANIMA_ENSEMBLE_MAX_MINDS instead of drafting zero", async () => {
+    process.env.ANIMA_ENSEMBLE_MAX_MINDS = "0.5";
+    createMock.mockResolvedValue(fakeCompletion("reply"));
+
+    const drafts = await draftLocalMinds({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(drafts).toHaveLength(3);
   });
 });
 
