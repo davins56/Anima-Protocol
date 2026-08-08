@@ -184,6 +184,40 @@ ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
 ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or the model id your server serves
 ```
 
+### "The model `anima-chat` does not exist or you do not have access to it"
+
+This one means the opposite of the error above: `ANIMA_LOCAL_LLM_BASE_URL` **is** set and the host **is** reachable — it just doesn't serve a model by that name. Usual causes:
+
+- `ollama create anima-chat -f scripts/llm/Modelfile.anima-chat` was never run on the host, so it only has the base weights (`qwen2.5:3b`).
+- The tag exists as `anima-chat:latest` behind a gateway that doesn't do Ollama's implicit `:latest` resolution.
+- The URL points at a vLLM host or another OpenAI-compatible gateway serving its own model ids.
+
+**Chat no longer hard-fails on this.** When the configured tag is rejected, the API asks the endpoint what it actually serves (`GET /v1/models`) and runs the turn on the best available chat model — preferring an exact/`:latest` match, then anything `anima*`, then a known open-weight family (Qwen, Ministral, Llama, …). Embedding, image, and audio models are never picked. The substitution is remembered for 10 minutes so later turns don't re-pay the failed round trip, and it re-checks your configured tag after that, so creating the real tag takes effect without a redeploy.
+
+You'll see this in the API logs when it kicks in:
+
+```
+[llm] "anima-chat" is not served by this endpoint — using "qwen2.5:3b" instead (found via /v1/models).
+```
+
+That keeps the app talking, but it's still a misconfiguration — see exactly what the host has and pin it:
+
+```bash
+curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' \
+  | jq '.probes[0] | {ok, configuredModel, model, availableModels}'
+# configuredModel = what you asked for, model = what actually answered
+```
+
+Then either create the expected tag on the host, or point the env at what's already there and redeploy:
+
+```bash
+ANIMA_OLLAMA_MODEL_LIGHT=qwen2.5:3b
+ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:3b
+ANIMA_OLLAMA_MODEL_HEAVY=qwen2.5:3b
+```
+
+If the endpoint serves *nothing* usable for chat, the turn fails with a message naming your host, the ids it does serve, and the command that fixes it — not a bare 404.
+
 ### Quick diagnostic checklist
 
 One-shot check (both endpoints, pass/fail summary):
