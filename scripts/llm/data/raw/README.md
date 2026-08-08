@@ -7,7 +7,10 @@ never get committed by accident.
 ## Supported formats (auto-detected per file)
 
 - **`.json` / `.jsonl` — TrainingExample shape** (see
-  `lib/llm/src/dataset/types.ts`): passed through as-is.
+  `lib/llm/src/dataset/types.ts`): passed through with `id`/`source` filled
+  in if missing. Like every format here, examples with fewer than 2
+  non-system turns are dropped (`--min-turns`, default 2) — a single lone
+  exchange won't show up in the output.
 - **`.json` / `.jsonl` — ShareGPT shape**:
   `{ "conversations": [{ "from": "human"|"gpt"|"system", "value": "…" }], "system": "…" }`
 - **`.txt` / `.md` — plain transcript**: alternating speaker lines, e.g.
@@ -22,7 +25,12 @@ never get committed by accident.
   Lines starting with `User:` / `You:` / `Me:` become `user` turns; any other
   `Name:` prefix becomes an `assistant` turn attributed to that character.
   Lines with no `Speaker:` prefix are treated as a continuation of the
-  previous turn (useful for multi-paragraph replies).
+  previous turn (useful for multi-paragraph replies). If a transcript has
+  more than one non-user speaker (a narrator, another companion), pass
+  `--character <name>` to restrict assistant turns to that speaker only —
+  other speakers' lines are folded into context instead of being trained
+  as that character's own voice. Without `--character`, the example is
+  attributed to whichever speaker talks most.
 
 ## Usage
 
