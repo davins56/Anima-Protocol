@@ -57068,16 +57068,16 @@ var require_jwtaccess = __commonJS({
        * @returns A string that returns the cached key.
        */
       getCachedKey(url3, scopes) {
-        let cacheKey = url3;
+        let cacheKey2 = url3;
         if (scopes && Array.isArray(scopes) && scopes.length) {
-          cacheKey = url3 ? `${url3}_${scopes.join("_")}` : `${scopes.join("_")}`;
+          cacheKey2 = url3 ? `${url3}_${scopes.join("_")}` : `${scopes.join("_")}`;
         } else if (typeof scopes === "string") {
-          cacheKey = url3 ? `${url3}_${scopes}` : scopes;
+          cacheKey2 = url3 ? `${url3}_${scopes}` : scopes;
         }
-        if (!cacheKey) {
+        if (!cacheKey2) {
           throw Error("Scopes or url must be provided");
         }
-        return cacheKey;
+        return cacheKey2;
       }
       /**
        * Get a non-expired access token, after refreshing if necessary.
@@ -69045,8 +69045,8 @@ function getFromCache(kid) {
 function getCacheValues() {
   return Object.values(cache);
 }
-function setInCache(cacheKey, jwk, shouldExpire = true) {
-  cache[cacheKey] = jwk;
+function setInCache(cacheKey2, jwk, shouldExpire = true) {
+  cache[cacheKey2] = jwk;
   lastUpdatedAt = shouldExpire ? Date.now() : -1;
 }
 var PEM_HEADER = "-----BEGIN PUBLIC KEY-----";
@@ -105261,6 +105261,11 @@ function localLlmBaseUrl() {
 function hasLocalLlm() {
   return Boolean(localLlmBaseUrl());
 }
+function localLlmMaxRetries() {
+  const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 2;
+}
 function summarizeLocalLlmBaseUrl() {
   const base = localLlmBaseUrl();
   if (!base) {
@@ -105329,17 +105334,149 @@ function getLocalLlmClient() {
     return null;
   }
   const apiKey = normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) || normalizeApiKey(process.env.VLLM_API_KEY) || "local";
-  const cacheKey = `${baseURL}::${apiKey}`;
-  if (!localLlmClient || localLlmClientKey !== cacheKey) {
+  const cacheKey2 = `${baseURL}::${apiKey}`;
+  if (!localLlmClient || localLlmClientKey !== cacheKey2) {
     localLlmClient = new openai_default({
       apiKey,
       baseURL,
-      maxRetries: 0
+      // Self-hosted endpoints are usually reached over a tunnel (cloudflared,
+      // Fly, a VPS reverse proxy), where a dropped connection or a cold-start
+      // 502 is routine. With no retries every one of those killed a chat turn
+      // outright. The SDK only retries connection errors and 408/409/429/5xx,
+      // and only before a stream has started, so this cannot duplicate a
+      // partially-delivered reply.
+      maxRetries: localLlmMaxRetries()
     });
-    localLlmClientKey = cacheKey;
+    localLlmClientKey = cacheKey2;
     logLocalLlmClientInitOnce();
   }
   return localLlmClient;
+}
+
+// src/lib/localModelCatalog.ts
+var CATALOG_TTL_MS = 6e4;
+var CATALOG_ERROR_TTL_MS = 1e4;
+var SUBSTITUTION_TTL_MS = 10 * 6e4;
+var CATALOG_TIMEOUT_MS = 5e3;
+var NON_CHAT_MODEL_RE = /(embed|embedding|nomic|bge-|gte-|e5-|rerank|whisper|tts|voice|dall-?e|clip|moderation|stable-?diffusion|sdxl|flux)/i;
+var KNOWN_CHAT_FAMILY_RE = /(qwen|ministral|mistral|llama|phi|gemma|deepseek|hermes|olmo)/i;
+var catalogByBaseUrl = /* @__PURE__ */ new Map();
+var substitutions = /* @__PURE__ */ new Map();
+function cacheKey() {
+  return localLlmBaseUrl() ?? "(unconfigured)";
+}
+function normalizeModelId(id) {
+  return id.trim().toLowerCase().replace(/:latest$/, "");
+}
+async function extractModelIds(page) {
+  const ids = [];
+  const push2 = (entry) => {
+    if (!entry) return;
+    const id = typeof entry === "string" ? entry : typeof entry.id === "string" ? entry.id : null;
+    if (id && id.trim()) ids.push(id.trim());
+  };
+  if (Array.isArray(page)) {
+    page.forEach(push2);
+    return ids;
+  }
+  const data = page?.data;
+  if (Array.isArray(data)) {
+    data.forEach(push2);
+    return ids;
+  }
+  if (page && typeof page[Symbol.asyncIterator] === "function") {
+    for await (const entry of page) push2(entry);
+  }
+  return ids;
+}
+async function listLocalModels(client, opts = {}) {
+  const key = cacheKey();
+  const now = Date.now();
+  const cached2 = catalogByBaseUrl.get(key);
+  if (!opts.force && cached2 && cached2.expiresAt > now) {
+    return { models: cached2.models, ok: cached2.ok, error: cached2.error, cached: true };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
+  try {
+    const page = await client.models.list({ signal: controller.signal });
+    const models = await extractModelIds(page);
+    catalogByBaseUrl.set(key, {
+      models,
+      ok: true,
+      error: null,
+      expiresAt: now + CATALOG_TTL_MS
+    });
+    return { models, ok: true, error: null, cached: false };
+  } catch (err) {
+    const error40 = (err instanceof Error ? err.message : String(err)).slice(0, 160);
+    catalogByBaseUrl.set(key, {
+      models: [],
+      ok: false,
+      error: error40,
+      expiresAt: now + CATALOG_ERROR_TTL_MS
+    });
+    return { models: [], ok: false, error: error40, cached: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function scoreCandidate(preferred, candidate) {
+  const want = normalizeModelId(preferred);
+  const have = normalizeModelId(candidate);
+  if (!have) return -1;
+  if (NON_CHAT_MODEL_RE.test(have)) return -1;
+  if (want && have === want) return 1e3;
+  if (want && (have.startsWith(want) || want.startsWith(have))) return 900;
+  if (/^anima/.test(have)) return 800;
+  if (KNOWN_CHAT_FAMILY_RE.test(have)) return 600;
+  return 100;
+}
+function chooseLocalModel(preferred, available) {
+  let best = null;
+  for (const candidate of available) {
+    const score = scoreCandidate(preferred, candidate);
+    if (score < 0) continue;
+    if (!best || score > best.score) best = { model: candidate.trim(), score };
+  }
+  return best?.model ?? null;
+}
+function rememberModelSubstitution(preferred, actual) {
+  if (!preferred || !actual || normalizeModelId(preferred) === normalizeModelId(actual)) return;
+  substitutions.set(`${cacheKey()}::${normalizeModelId(preferred)}`, {
+    model: actual,
+    expiresAt: Date.now() + SUBSTITUTION_TTL_MS
+  });
+}
+function getRememberedModel(preferred) {
+  const key = `${cacheKey()}::${normalizeModelId(preferred)}`;
+  const hit = substitutions.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    substitutions.delete(key);
+    return null;
+  }
+  return hit.model;
+}
+function forgetModelSubstitution(preferred) {
+  substitutions.delete(`${cacheKey()}::${normalizeModelId(preferred)}`);
+}
+function describeModelMismatch(preferred, available) {
+  const host = (() => {
+    const base = localLlmBaseUrl();
+    if (!base) return "the configured endpoint";
+    try {
+      return new URL(base).host;
+    } catch {
+      return "the configured endpoint";
+    }
+  })();
+  if (!available.length) {
+    return `The Anima LLM at ${host} does not serve a model named "${preferred}", and it reported no models at all. Check that the host is running and has weights loaded \u2014 on Ollama: \`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`. See docs/custom-llm.md.`;
+  }
+  const shown = available.slice(0, 10).join(", ");
+  const more = available.length > 10 ? `, +${available.length - 10} more` : "";
+  return `The Anima LLM at ${host} does not serve a model named "${preferred}". It serves: ${shown}${more}. Either create the expected tag (\`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`) or point ANIMA_OLLAMA_MODEL_LIGHT/_STANDARD/_HEAVY at one of the ids above, then redeploy. See docs/custom-llm.md.`;
 }
 
 // ../../lib/llm/src/registry.ts
@@ -105796,36 +105933,58 @@ function isProviderAuthError(err) {
 function isLocalModelUnavailable(err) {
   return isModelUnavailableError(err);
 }
-function rescueModelsForLocal(preferred) {
+function configuredCandidates(preferred) {
   const seen = /* @__PURE__ */ new Set();
   const out = [];
   const push2 = (model) => {
-    const id = model.trim();
+    const id = (model || "").trim();
     if (!id || seen.has(id)) return;
     seen.add(id);
     out.push({ ...preferred, model: id });
   };
+  push2(getRememberedModel(preferred.model));
   push2(preferred.model);
   push2(resolveLocalModel("standard").model);
   push2(resolveLocalModel("light").model);
   return out;
 }
-async function withModelFallback(preferred, run) {
-  const candidates = rescueModelsForLocal(preferred);
+async function withModelFallback(client, preferred, run) {
+  const attempted = /* @__PURE__ */ new Set();
   let lastErr;
-  for (let i2 = 0; i2 < candidates.length; i2++) {
-    const candidate = candidates[i2];
+  const attempt = async (candidate) => {
+    if (attempted.has(candidate.model)) return null;
+    attempted.add(candidate.model);
     try {
-      return { value: await run(candidate), resolved: candidate };
+      const value = await run(candidate);
+      if (candidate.model !== preferred.model) {
+        rememberModelSubstitution(preferred.model, candidate.model);
+      }
+      return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      const hasNext = i2 < candidates.length - 1;
-      if (!hasNext || !isLocalModelUnavailable(err)) {
-        throw err;
-      }
+      if (!isLocalModelUnavailable(err)) throw err;
+      return null;
+    }
+  };
+  for (const candidate of configuredCandidates(preferred)) {
+    const hit = await attempt(candidate);
+    if (hit) return hit;
+  }
+  forgetModelSubstitution(preferred.model);
+  const catalog = await listLocalModels(client, { force: true });
+  const discovered = chooseLocalModel(preferred.model, catalog.models);
+  if (discovered && !attempted.has(discovered)) {
+    const hit = await attempt({ ...preferred, model: discovered });
+    if (hit) {
+      console.info(
+        `[llm] "${preferred.model}" is not served by this endpoint \u2014 using "${discovered}" instead (found via /v1/models). Set ANIMA_OLLAMA_MODEL_STANDARD to silence this.`
+      );
+      return hit;
     }
   }
-  throw lastErr;
+  const explained = new Error(describeModelMismatch(preferred.model, catalog.models));
+  explained.cause = lastErr;
+  throw explained;
 }
 function requireLocalClient() {
   const client = getLocalLlmClient();
@@ -105892,6 +106051,7 @@ async function probeLlmProviders(tier = "standard") {
   try {
     const client = requireLocalClient();
     const { resolved: used } = await withModelFallback(
+      client,
       { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
       (m2) => client.chat.completions.create({
         model: m2.model,
@@ -105900,17 +106060,23 @@ async function probeLlmProviders(tier = "standard") {
         temperature: 0
       })
     );
+    const catalog = await listLocalModels(client);
     return [
       {
         provider: "local",
         configured: true,
         ok: true,
         model: used.model,
+        // Operators need to see the tag mismatch, not just that chat works.
+        configuredModel: resolved.model,
+        availableModels: catalog.models,
         latencyMs: Date.now() - started
       }
     ];
   } catch (err) {
     const status = err && typeof err === "object" && "status" in err ? Number(err.status) : void 0;
+    const probeClient = getLocalLlmClient();
+    const catalog = probeClient ? await listLocalModels(probeClient) : null;
     return [
       {
         provider: "local",
@@ -105920,6 +106086,8 @@ async function probeLlmProviders(tier = "standard") {
         errorKind: isProviderAuthError(err) ? "auth" : "other",
         message: summarizeError(err),
         model: resolved.model,
+        configuredModel: resolved.model,
+        availableModels: catalog?.models ?? [],
         latencyMs: Date.now() - started
       }
     ];
@@ -105931,6 +106099,7 @@ async function createChatStreamWithFailover(req) {
   const preferred = resolveLocalModel(req.tier);
   try {
     const { value: stream, resolved } = await withModelFallback(
+      client,
       preferred,
       (m2) => client.chat.completions.create({
         model: m2.model,
@@ -105957,6 +106126,7 @@ async function createChatCompletionWithFailover(req) {
   const preferred = resolveLocalModel(req.tier);
   try {
     const { value: completion, resolved } = await withModelFallback(
+      client,
       preferred,
       (m2) => client.chat.completions.create(
         {
