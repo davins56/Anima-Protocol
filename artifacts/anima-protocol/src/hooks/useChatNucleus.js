@@ -19,9 +19,16 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
   const [error, setError] = useState(null);
   const [providerStatus, setProviderStatus] = useState(null);
 
+  // Re-sync from initialMessages when the underlying session changes, not on
+  // every render — depending on [initialMessages] instead would infinite-loop
+  // whenever a caller passes a non-memoized array (e.g. an inline `[]`
+  // default, or `messages || []`): a new array reference every render keeps
+  // retriggering this effect, which calls setMessages, which triggers the
+  // next render, forever.
   useEffect(() => {
     setMessages(initialMessages);
-  }, [initialMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   const session = useMemo(
     () => ({

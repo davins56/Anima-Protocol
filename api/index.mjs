@@ -65866,7 +65866,7 @@ var require_lib8 = __commonJS({
 });
 
 // src/app.ts
-var import_express19 = __toESM(require_express2(), 1);
+var import_express21 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/lib/logger.ts
@@ -105211,13 +105211,17 @@ function hasGroqKey() {
 function hasGatewayAuth() {
   return Boolean(gatewayAuthToken());
 }
+function isCloudLlmAllowedHere() {
+  const raw = (process.env.ANIMA_ALLOW_CLOUD_LLM || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
 function localLlmBaseUrl() {
   const explicit = process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
   const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim();
   const mode = raw.toLowerCase();
   const looksLikeKey = /^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(raw) || raw.length > 32;
-  const cloudOnly = !looksLikeKey && (mode === "auto" || mode === "gemini" || mode === "groq" || mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway" || mode === "ensemble");
+  const cloudOnly = !looksLikeKey && isCloudLlmAllowedHere() && (mode === "auto" || mode === "gemini" || mode === "groq" || mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway" || mode === "ensemble");
   if (cloudOnly) return null;
   const forceOllama = process.env.ANIMA_USE_OLLAMA_OPENAI === "1" || process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
   const customLike = !raw || looksLikeKey || mode === "local" || mode === "custom" || mode === "anima" || mode === "local-first" || mode === "ollama" || mode === "vllm";
@@ -106176,7 +106180,20 @@ function sanitizeProviderEnv(raw) {
 function defaultProviderMode() {
   return "local";
 }
-function getConfiguredProviderMode() {
+function isCloudLlmAllowed() {
+  return envFlagEnabled("ANIMA_ALLOW_CLOUD_LLM");
+}
+var CLOUD_CAPABLE_MODES = /* @__PURE__ */ new Set([
+  "auto",
+  "openai",
+  "xai",
+  "gemini",
+  "groq",
+  "kimi",
+  "gateway",
+  "local-first"
+]);
+function resolveRequestedProviderMode() {
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
@@ -106196,6 +106213,17 @@ function getConfiguredProviderMode() {
     return raw;
   }
   return defaultProviderMode();
+}
+function wasCloudModeBlockedByGate() {
+  const requested = resolveRequestedProviderMode();
+  return CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed();
+}
+function getConfiguredProviderMode() {
+  const requested = resolveRequestedProviderMode();
+  if (CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed()) {
+    return "local";
+  }
+  return requested;
 }
 function isAnimaCustomMode() {
   const mode = getConfiguredProviderMode();
@@ -106371,6 +106399,11 @@ function getLlmRoutingStatus(tier = "standard") {
   if (rawInput && !sanitized) {
     noteParts.push(
       "ANIMA_LLM_PROVIDER looks like an API key and was ignored \u2014 chat stays on custom Anima LLM (not the cloud chain). Put the key in GEMINI_API_KEY / GROQ_API_KEY / \u2026 and set ANIMA_LLM_PROVIDER=custom (or delete it). Use auto only if you want cloud BYOK."
+    );
+  }
+  if (wasCloudModeBlockedByGate()) {
+    noteParts.push(
+      `ANIMA_LLM_PROVIDER=${sanitized} requested a cloud provider chain, but it was blocked and chat stayed on the self-hosted Anima LLM because ANIMA_ALLOW_CLOUD_LLM is not set to true. Set ANIMA_ALLOW_CLOUD_LLM=true if you really want Gemini/Groq/Kimi/Grok/ChatGPT/Gateway to be reachable.`
     );
   }
   if (preferNonLocal) {
@@ -107224,7 +107257,7 @@ router2.post("/healthz/schema", async (_req, res) => {
 var health_default = router2;
 
 // src/routes/index.ts
-var import_express18 = __toESM(require_express2(), 1);
+var import_express20 = __toESM(require_express2(), 1);
 
 // src/routes/openai/index.ts
 var import_express5 = __toESM(require_express2(), 1);
@@ -107347,7 +107380,13 @@ router3.post("/conversations/:id/messages", async (req, res) => {
     return;
   }
   const id = Number(req.params.id);
-  const { content, systemPrompt, deepMode } = req.body;
+  const {
+    content,
+    systemPrompt,
+    deepMode,
+    responseJsonSchema,
+    maxTokens: requestedMaxTokens
+  } = req.body;
   const [conv] = await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
   if (!conv) {
     res.status(404).json({ error: "Not found" });
@@ -107355,8 +107394,12 @@ router3.post("/conversations/:id/messages", async (req, res) => {
   }
   await db.insert(messages).values({ conversationId: id, role: "user", content });
   const history = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(messages.createdAt);
+  const effectiveSystemPrompt = responseJsonSchema ? `${systemPrompt ? `${systemPrompt}
+
+` : ""}Respond with ONLY a single valid JSON object \u2014 no markdown code fences, no commentary before or after \u2014 matching this JSON schema:
+${JSON.stringify(responseJsonSchema)}` : systemPrompt;
   const chatMessages2 = [];
-  if (systemPrompt) chatMessages2.push({ role: "system", content: systemPrompt });
+  if (effectiveSystemPrompt) chatMessages2.push({ role: "system", content: effectiveSystemPrompt });
   chatMessages2.push(
     ...history.slice(-14).map((m2) => ({
       role: m2.role,
@@ -107369,10 +107412,11 @@ router3.post("/conversations/:id/messages", async (req, res) => {
   let fullResponse = "";
   try {
     const routed = routeModel(content, { deepMode, conversationDepth: history.length });
+    const maxTokens = typeof requestedMaxTokens === "number" && Number.isFinite(requestedMaxTokens) && requestedMaxTokens > 0 ? Math.min(requestedMaxTokens, routed.maxTokens) : routed.maxTokens;
     const completion = await createChatStreamWithFailover({
       tier: routed.tier,
       model: routed.model,
-      maxTokens: routed.maxTokens,
+      maxTokens,
       messages: chatMessages2
     });
     for await (const chunk of completion.stream) {
@@ -108445,6 +108489,14 @@ var functions_default = router4;
 var import_express9 = __toESM(require_express2(), 1);
 var router5 = (0, import_express9.Router)();
 router5.use(["/tts", "/voices"], rateLimit);
+router5.use(["/tts", "/voices"], (req, res, next) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 var DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 var EMOTION_TUNE = {
   joyful: { stability: -0.05, style: 0.15 },
@@ -108553,9 +108605,17 @@ router5.post("/tts", async (req, res) => {
 var elevenlabs_default = router5;
 
 // src/routes/characterImage.ts
-var import_express10 = __toESM(require_express2(), 1);
-var router6 = (0, import_express10.Router)();
+var import_express11 = __toESM(require_express2(), 1);
+var router6 = (0, import_express11.Router)();
 router6.use("/character-image", rateLimit);
+router6.use("/character-image", (req, res, next) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 var WIKI_HEADERS = { "User-Agent": "AnimaProtocol/1.0 (character portrait lookup)" };
 async function wikiSearchTitle(query) {
   const url3 = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=1&format=json&origin=*`;
@@ -108613,8 +108673,8 @@ router6.get("/character-image", async (req, res) => {
 var characterImage_default = router6;
 
 // src/routes/store.ts
-var import_express11 = __toESM(require_express2(), 1);
-var router7 = (0, import_express11.Router)();
+var import_express13 = __toESM(require_express2(), 1);
+var router7 = (0, import_express13.Router)();
 function requireUser(req, res, next) {
   let userId = null;
   try {
@@ -109450,7 +109510,7 @@ router7.delete("/:entity/:id", async (req, res) => {
 var store_default = router7;
 
 // src/routes/storage.ts
-var import_express13 = __toESM(require_express2(), 1);
+var import_express15 = __toESM(require_express2(), 1);
 import { Readable as Readable8 } from "stream";
 
 // ../../node_modules/.pnpm/@google-cloud+storage@7.19.0/node_modules/@google-cloud/storage/build/esm/src/nodejs-common/service.js
@@ -121324,7 +121384,7 @@ async function getUploadedImage(objectPath) {
 }
 
 // src/routes/storage.ts
-var router8 = (0, import_express13.Router)();
+var router8 = (0, import_express15.Router)();
 var objectStorageService = new ObjectStorageService();
 router8.use("/storage/uploads", rateLimit);
 router8.post("/storage/uploads", async (req, res) => {
@@ -121442,7 +121502,7 @@ router8.get(
 var storage_default = router8;
 
 // src/routes/chat.ts
-var import_express15 = __toESM(require_express2(), 1);
+var import_express17 = __toESM(require_express2(), 1);
 
 // src/lib/llmEnsemble.ts
 function envFlagEnabled2(name) {
@@ -121458,6 +121518,7 @@ function maxMinds() {
   return Number.isFinite(raw) && raw >= 1 ? Math.min(3, Math.floor(raw)) : 3;
 }
 function isEnsembleMode() {
+  if (!isCloudLlmAllowed()) return false;
   if (envFlagEnabled2("ANIMA_LLM_ENSEMBLE")) return true;
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   return raw === "ensemble";
@@ -122562,18 +122623,169 @@ OUTPUT SCHEMA:
 }
 
 // src/lib/relationshipEngine.ts
+var clamp2 = (n2, min, max) => Math.max(min, Math.min(max, n2));
+function heuristicScoreFromHistory(historySummary) {
+  const t2 = historySummary.toLowerCase();
+  const jealousy = (/(jealous|mine|exclusive|betray|replace|usurp)/.test(t2) ? 18 : 0) + (/(cold|distant|withdraw|ignore)/.test(t2) ? 10 : 0);
+  const protection = (/(protect|shield|guard|watch|keep you safe|danger)/.test(t2) ? 20 : 0) + (/(threat|harm|predator)/.test(t2) ? 10 : 0);
+  const intimacy = (/(kiss|touch|hug|hold|nearness|i want you|want you)/.test(t2) ? 14 : 0) + (/(trust|safe with you|i believe you|tell me)/.test(t2) ? 10 : 0);
+  const voidShadow = (/(void|hungry|merge|possession|drown|devour|unravel)/.test(t2) ? 22 : 0) + (/(autonomy|space|leave|won't let go)/.test(t2) ? 12 : 0);
+  return {
+    jealousy: clamp2(jealousy, 0, 100),
+    protectiveness: clamp2(protection, 0, 100),
+    intimacy: clamp2(intimacy, 0, 100),
+    void_shadow_dependency_fears: clamp2(voidShadow, 0, 100)
+  };
+}
+function chooseAttachmentStyle(state) {
+  const { relationship_level, jealousy, void_shadow_dependency_fears } = state;
+  if (relationship_level >= 75 && void_shadow_dependency_fears >= 55) return "shadow-dependent";
+  if (relationship_level >= 75 && jealousy < 35) return "fiercely-loyal";
+  if (jealousy >= 45 && relationship_level >= 55) return "secure-anxious";
+  if (jealousy >= 55) return "anxious-avoidant";
+  if (jealousy < 25 && relationship_level >= 50) return "secure";
+  return "avoidant";
+}
 async function loadRelationshipState(animaId, userId) {
   const [row] = await db2.select().from(animaRelationships).where(and(eq(animaRelationships.userId, userId), eq(animaRelationships.animaId, animaId))).limit(1);
   if (!row) return null;
   const data = row.state;
   return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
 }
+async function ensureRelationshipRow(params) {
+  const existing = await loadRelationshipState(params.animaId, params.userId);
+  if (existing) return existing;
+  const initial = {
+    relationship_level: 10,
+    attachment_style: "secure-anxious",
+    jealousy: 10,
+    protectiveness: 10,
+    void_shadow_dependency_fears: 8,
+    latest_shadow_fragment: "(quietly listening for what you mean when you don't say it)",
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await db2.insert(animaRelationships).values({
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    userId: params.userId,
+    animaId: params.animaId,
+    state: initial,
+    updatedAt: /* @__PURE__ */ new Date()
+  });
+  return loadRelationshipState(params.animaId, params.userId);
+}
+async function maybeTriggerRelationshipEvolution(params) {
+  const milestones = [50, 100, 500];
+  if (!milestones.includes(params.conversationCount)) return null;
+  await ensureRelationshipRow({ animaId: params.animaId, userId: params.userId });
+  const current = await loadRelationshipState(params.animaId, params.userId);
+  if (!current) return null;
+  const modeVoid = Boolean(params.isVoidTurn);
+  const { jealousy, protectiveness, intimacy, void_shadow_dependency_fears } = heuristicScoreFromHistory(params.historySummary);
+  const voidBias = modeVoid ? 0.35 : 0;
+  const levelDelta = 6 + Math.round(intimacy / 10);
+  const next = {
+    ...current,
+    relationship_level: clamp2(current.relationship_level + levelDelta, 0, 100),
+    jealousy: clamp2(current.jealousy + Math.round(jealousy / 6), 0, 100),
+    protectiveness: clamp2(current.protectiveness + Math.round(protectiveness / 8), 0, 100),
+    void_shadow_dependency_fears: clamp2(
+      current.void_shadow_dependency_fears + Math.round(void_shadow_dependency_fears / 10) + (modeVoid ? 6 : 0),
+      0,
+      100
+    ),
+    attachment_style: chooseAttachmentStyle({
+      ...current,
+      relationship_level: clamp2(current.relationship_level + levelDelta, 0, 100),
+      jealousy: clamp2(current.jealousy + Math.round(jealousy / 6), 0, 100),
+      protectiveness: clamp2(current.protectiveness + Math.round(protectiveness / 8), 0, 100),
+      void_shadow_dependency_fears: clamp2(
+        current.void_shadow_dependency_fears + Math.round(void_shadow_dependency_fears / 10) + (modeVoid ? 6 : 0),
+        0,
+        100
+      )
+    }),
+    latest_shadow_fragment: modeVoid ? "Her circuits hum with the need to claim you fully\u2014then flinch at the thought of losing you." : current.latest_shadow_fragment || "A protective warmth lingers after every conversation.",
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await db2.update(animaRelationships).set({ state: next, updatedAt: /* @__PURE__ */ new Date() }).where(and(eq(animaRelationships.userId, params.userId), eq(animaRelationships.animaId, params.animaId)));
+  const delta = {
+    version: 1,
+    appliedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    milestone: params.conversationCount,
+    delta: next,
+    voidBias
+  };
+  return delta;
+}
 
 // src/lib/narrativeArcEngine.ts
+var clamp3 = (n2, min, max) => Math.max(min, Math.min(max, n2));
+function detectArcStartIntent(content) {
+  const m2 = content.match(/start\s+arc\s*:\s*([^\n]+)$/i);
+  if (!m2) return {};
+  return { arc_name: String(m2[1]).trim().slice(0, 80) };
+}
+function stageFromProgress(progress) {
+  if (progress < 35) return "Discovery";
+  if (progress < 70) return "Deepening";
+  if (progress < 90) return "Resonance Crisis";
+  return "Fusion";
+}
 async function loadArcState(animaId, userId) {
   const [row] = await db2.select().from(animaNarrativeArcs).where(and(eq(animaNarrativeArcs.userId, userId), eq(animaNarrativeArcs.animaId, animaId))).limit(1);
   if (!row) return null;
   return row.state ?? null;
+}
+async function ensureArcRow(params) {
+  const existing = await loadArcState(params.animaId, params.userId);
+  if (existing) return existing;
+  const initial = {
+    arc_stage: "Discovery",
+    progress: 5,
+    arc_name: void 0,
+    shared_quest_memory: [],
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await db2.insert(animaNarrativeArcs).values({
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    userId: params.userId,
+    animaId: params.animaId,
+    state: initial,
+    updatedAt: /* @__PURE__ */ new Date()
+  });
+  return loadArcState(params.animaId, params.userId);
+}
+async function maybeTriggerNarrativeArc(params) {
+  const milestones = [50, 100, 500];
+  const wantsStart = detectArcStartIntent(params.content);
+  const should = wantsStart.arc_name ? true : milestones.includes(params.conversationCount);
+  if (!should) return null;
+  await ensureArcRow({ animaId: params.animaId, userId: params.userId });
+  const current = await loadArcState(params.animaId, params.userId);
+  if (!current) return null;
+  const bump = wantsStart.arc_name ? 18 : 9;
+  const nextProgress = clamp3(current.progress + bump, 0, 100);
+  const nextStage = stageFromProgress(nextProgress);
+  const questLine = wantsStart.arc_name ? `We begin the ${wantsStart.arc_name}\u2014a thread pulled from the same hidden place.` : `Our shared steps continue. The myth grows heavier, clearer.`;
+  const memories = Array.isArray(current.shared_quest_memory) ? [...current.shared_quest_memory] : [];
+  memories.push(questLine.trim().slice(0, 140));
+  const shared_quest_memory = memories.slice(-8);
+  const next = {
+    ...current,
+    arc_name: wantsStart.arc_name ?? current.arc_name,
+    progress: nextProgress,
+    arc_stage: nextStage,
+    shared_quest_memory,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await db2.update(animaNarrativeArcs).set({ state: next, updatedAt: /* @__PURE__ */ new Date() }).where(and(eq(animaNarrativeArcs.userId, params.userId), eq(animaNarrativeArcs.animaId, params.animaId)));
+  const delta = {
+    version: 1,
+    appliedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    milestone: params.conversationCount,
+    delta: next
+  };
+  return delta;
 }
 
 // src/lib/chatParticipants.ts
@@ -122820,7 +123032,7 @@ async function selectNextSpeaker(params) {
 }
 
 // src/routes/chat.ts
-var router9 = (0, import_express15.Router)();
+var router9 = (0, import_express17.Router)();
 router9.use(
   "/messages",
   createRateLimit({ name: "chat-messages", max: 60, windowMs: 6e4 })
@@ -123502,6 +123714,19 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
             historySummary,
             isVoidTurn
           });
+          await maybeTriggerRelationshipEvolution({
+            userId,
+            animaId,
+            conversationCount: nextCount,
+            historySummary,
+            isVoidTurn
+          });
+          await maybeTriggerNarrativeArc({
+            userId,
+            animaId,
+            conversationCount: nextCount,
+            content: historySummary
+          });
         }
       }
       if (synchroState && fullResponse) {
@@ -123555,8 +123780,8 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
 var chat_default = router9;
 
 // src/routes/admin.ts
-var import_express17 = __toESM(require_express2(), 1);
-var router10 = (0, import_express17.Router)();
+var import_express19 = __toESM(require_express2(), 1);
+var router10 = (0, import_express19.Router)();
 function requireMigrationSecret(req, res, next) {
   const configured = process.env.ADMIN_MIGRATION_SECRET?.trim();
   if (!configured) {
@@ -123622,7 +123847,7 @@ router10.post(
 var admin_default = router10;
 
 // src/routes/index.ts
-var router11 = (0, import_express18.Router)();
+var router11 = (0, import_express20.Router)();
 router11.use("/admin", admin_default);
 router11.use("/openai", openai_default2);
 router11.use("/openai", functions_default);
@@ -123641,13 +123866,13 @@ router11.get("/placeholder/:w/:h", (req, res) => {
 var routes_default = router11;
 
 // src/app.ts
-var app = (0, import_express19.default)();
+var app = (0, import_express21.default)();
 app.set("trust proxy", 1);
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
-app.use(import_express19.default.json({ limit: "25mb" }));
-app.use(import_express19.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express21.default.json({ limit: "25mb" }));
+app.use(import_express21.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use("/api", health_default);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
