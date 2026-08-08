@@ -22,6 +22,25 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 ```
 
+### No GPU / no network to Ollama or Hugging Face? Smoke-test the wiring
+
+`pnpm llm:up` needs to reach `ollama.com` to pull real weights. In a sandboxed
+dev container without that egress (or without a GPU), use the mock server to
+verify the *wiring* — env vars, `ANIMA_LLM_PROVIDER=custom` routing,
+`/api/healthz/llm` — end-to-end without a real brain behind it:
+
+```bash
+pnpm llm:mock -- --port 11555     # canned OpenAI-compatible /v1 server, NOT a real model
+
+export ANIMA_LLM_PROVIDER=custom
+export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:11555/v1
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat-mock
+pnpm llm:chat -- "Who are you?"   # should echo back through the mock
+```
+
+Swap the mock's URL for a real Ollama/vLLM endpoint once you have GPU/hosting
+— nothing else in the wiring changes.
+
 ## GPU fine-tune path
 
 ```bash
@@ -37,6 +56,13 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 ```
 
 Short guide: [`docs/custom-llm.md`](../../docs/custom-llm.md) · Full: [`docs/llm-build.md`](../../docs/llm-build.md).
+
+## Production (always-on, public HTTPS)
+
+The commands above run on your laptop only — Vercel can't reach `localhost`.
+For a real deployment, see [`deploy/ollama-fly/`](../../deploy/ollama-fly/README.md):
+one `fly deploy` gets you the same `anima-chat` model behind an authenticated,
+always-on public URL, ready to plug into `ANIMA_LOCAL_LLM_BASE_URL`.
 
 ## Lineup
 

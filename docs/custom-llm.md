@@ -119,14 +119,45 @@ Without it, `ANIMA_LLM_PROVIDER` is silently downgraded to `local` — chat stay
 
 More detail: [`docs/llm-build.md`](./llm-build.md).
 
+---
+
+## Verifying the wiring without pulling real weights (sandboxed / offline dev)
+
+Some dev environments block outbound access to `ollama.com` / Hugging Face
+(egress allowlists, CI runners, restricted sandboxes). `pnpm llm:up` can't
+pull weights there, but the api-server's routing/failover code is still
+fully testable against a tiny OpenAI-compatible stand-in that answers on the
+same `/v1/chat/completions` shape Ollama and vLLM serve:
+
+```bash
+pnpm llm:stub &                      # http://127.0.0.1:41777/v1
+export ANIMA_LLM_PROVIDER=custom
+export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:41777/v1
+pnpm --filter @workspace/api-server run build
+DATABASE_URL=... CLERK_SECRET_KEY=... PORT=8080 \
+  node artifacts/api-server/dist/index.mjs &
+
+curl -s "http://localhost:8080/api/healthz/llm?probe=1" | jq '{mode,preferred,probeOk}'
+# {"mode":"local","preferred":"local","probeOk":true} — no cloud keys needed
+```
+
+`artifacts/api-server/test/localLlmLive.test.ts` runs the same proof as an
+automated test: it boots a real local HTTP server (not a mock of the OpenAI
+SDK) and calls `createChatCompletionWithFailover` for real, asserting the
+reply came from that server, `provider === "local"`, and that an unreachable
+local endpoint fails clearly instead of silently falling through to a
+flagship cloud model. Swap the stub's URL for a real Ollama/vLLM host and
+nothing else about this code path changes.
+
 ## Production note (Vercel)
 
 ### Exact fix — “Anima custom LLM is selected…”
 
 That banner is intentional: custom mode is on, but `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable. Cloud BYOK (Gemini/Groq/Kimi/Grok/ChatGPT/Gateway) is **deliberately disabled**.
 
-1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS**.  
-   Example with Ollama: expose it via a reverse proxy / Cloudflare Tunnel / ngrok → `https://your-tunnel.example.com`.
+1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
+   - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
+   - Or run Ollama/vLLM anywhere else with a public HTTPS URL (a reverse proxy, Cloudflare Tunnel, ngrok, another cloud VM, …) — just make sure it's actually authenticated; Ollama has none built in.
 2. **Set these on Vercel (Production)** and redeploy **without build cache**:
 
 ```bash
