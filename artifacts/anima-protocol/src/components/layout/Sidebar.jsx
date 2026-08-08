@@ -1,31 +1,23 @@
-<<<<<<< HEAD
 import { useState } from "react";
 import { Plus, Zap, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-=======
 import { useRef, useState } from "react";
 import { Plus, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
->>>>>>> origin/main
 import SessionSummary from "../sidebar/SessionSummary";
 
 import SidebarFooterMenu from "./SidebarFooterMenu";
 
-<<<<<<< HEAD
-=======
 const SWIPE_DELETE_THRESHOLD = -80;
 const SWIPE_REVEAL_THRESHOLD = -40;
 
->>>>>>> origin/main
 export default function Sidebar({ sessions, activeSessionId, onNewSession, onDeleteSession, mode, onModeChange, onNavigate, collapsed, onToggleCollapse, hasMore, currentPage, onNextPage, onPrevPage }) {
 
   const paged = typeof currentPage === "number";
   const showPager = paged && (hasMore || currentPage > 0);
 
   const navigate = useNavigate();
-<<<<<<< HEAD
-=======
   const [swipeStart, setSwipeStart] = useState({});
   const [swipeOffset, setSwipeOffset] = useState({});
   const swipeAxisRef = useRef({});
@@ -69,7 +61,6 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
     setSwipeOffset({});
     delete swipeAxisRef.current[sessionId];
   };
->>>>>>> origin/main
 
   if (collapsed) {
     return (
@@ -149,17 +140,13 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
       </div>
 
       {/* Sessions List */}
-<<<<<<< HEAD
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 min-h-0">
-=======
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 min-h-0" data-no-swipe>
->>>>>>> origin/main
         {sessions.length === 0 && (
           <p className="text-center text-primary/20 font-mono text-[10px] py-8 tracking-widest uppercase">
             No sessions
           </p>
         )}
-<<<<<<< HEAD
         {sessions.map((session) => (
 
           <div key={session.id}>
@@ -200,7 +187,6 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
               >
                 <Trash2 className="w-3 h-3" />
               </button>
-=======
         {sessions.map((session) => {
           const offset = swipeOffset[session.id] || 0;
 
@@ -266,18 +252,14 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
               >
                 <Trash2 className="w-4 h-4 text-red-400" />
               </motion.div>
->>>>>>> origin/main
             </div>
             {activeSessionId === session.id && (
               <SessionSummary sessionId={session.id} characterId={session.character_id} />
             )}
           </div>
-<<<<<<< HEAD
         ))}
-=======
           );
         })}
->>>>>>> origin/main
 
         {showPager && (
           <div className="flex items-center justify-between gap-2 pt-2 mt-1 border-t border-primary/10">
@@ -326,8 +308,5 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
 
     </div>
   );
-<<<<<<< HEAD
 }
-=======
 }
->>>>>>> origin/main

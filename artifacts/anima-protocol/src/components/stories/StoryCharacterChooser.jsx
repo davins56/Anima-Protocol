@@ -6,10 +6,7 @@ import StoryPointSelector from "./StoryPointSelector";
 import { motion, AnimatePresence } from "framer-motion";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
-<<<<<<< HEAD
-=======
 import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
->>>>>>> origin/main
 
 export default function StoryCharacterChooser({
   onClose,
@@ -41,7 +38,6 @@ export default function StoryCharacterChooser({
     });
   };
 
-<<<<<<< HEAD
   const loadCharacters = useCallback(async () => {
     setLoading(true);
     try {
@@ -56,7 +52,6 @@ export default function StoryCharacterChooser({
         universe: "Anima",
       }));
       setCharacters([...animaAsChars, ...(chars || [])]);
-=======
   const loadCharacters = useCallback(async ({ retrySeed = false } = {}) => {
     setLoading(true);
     try {
@@ -65,7 +60,6 @@ export default function StoryCharacterChooser({
         waitBootstrap: false,
       });
       setCharacters(roster);
->>>>>>> origin/main
     } catch (err) {
       console.error("Error loading characters:", err);
     } finally {
@@ -77,11 +71,8 @@ export default function StoryCharacterChooser({
     if (step !== "character") return;
     let cancelled = false;
     whenBootstrapReady().then(() => {
-<<<<<<< HEAD
       if (!cancelled) loadCharacters();
-=======
       if (!cancelled) loadCharacters({ retrySeed: true });
->>>>>>> origin/main
     });
     return () => {
       cancelled = true;
@@ -89,11 +80,8 @@ export default function StoryCharacterChooser({
   }, [step, loadCharacters]);
 
   useStoreSync(() => {
-<<<<<<< HEAD
     if (step === "character") loadCharacters();
-=======
     if (step === "character") loadCharacters({ retrySeed: false });
->>>>>>> origin/main
   });
 
   // Show all of the user's characters and Animas — any of them can be dropped

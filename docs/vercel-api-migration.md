@@ -29,10 +29,8 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `DATABASE_URL` | Yes | Postgres connection string (Replit DB still works remotely) |
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
-<<<<<<< HEAD
 | `OPENAI_API_KEY` | Yes | For chat / AI features |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
-=======
 | `OPENAI_API_KEY` | Recommended | Image edit/generate (Customise Anima → Generate Look). Also chat backup under `auto`. |
 | `GEMINI_API_KEY` | Recommended | Preferred chat LLM under `auto` (native Google AI Studio, including `AQ.*` keys). |
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Optional | Kimi / Moonshot backup. Base URL `https://api.moonshot.ai/v1`. |
@@ -60,7 +58,6 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 **If chat says “Too many requests. Please slow down” after one message:** that is the API’s own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
 
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
->>>>>>> origin/main
 
 If `DATABASE_URL` or `CLERK_SECRET_KEY` is missing, `/api/*` returns **503**
 (with a JSON body) instead of crashing the Vercel function.
@@ -74,7 +71,6 @@ if those features are needed.
 
 Clerk has **two separate instances**: **Development** (`pk_test_…`) and **Production** (`pk_live_…`). SSO connections you enable in the Development tab (as in the Clerk dashboard screenshot) apply only when the site is built with a `pk_test_` publishable key. If Vercel uses `pk_live_`, you must enable Apple/GitHub again under the **Production** instance → Configure → SSO connections (shared dev credentials do not carry over).
 
-<<<<<<< HEAD
 The frontend proxies Clerk’s Frontend API through **`/api/__clerk`** on production
 (same origin as the Vite app). That is required for GitHub and Apple sign-in on
 `anima-protocol.com` when there is no `clerk.{domain}` DNS CNAME. Do **not** use
@@ -88,7 +84,6 @@ In the **Clerk Dashboard** for the **same instance as your publishable key**:
 2. **Domains → Proxy URL** — set to `https://www.anima-protocol.com/api/__clerk`
    (and the apex host if you use it without `www`).
 3. **Redirect URLs** — allow:
-=======
 Production uses a Clerk **custom domain** (`clerk.anima-protocol.com`). The
 frontend talks to that host directly — leave `VITE_CLERK_PROXY_URL` empty.
 `/api/__clerk` is only needed when there is no `clerk.{domain}` CNAME.
@@ -101,19 +96,15 @@ In the **Clerk Dashboard** for the **same instance as your publishable key**:
    each provider’s OAuth app (Google Cloud / GitHub / Apple). Do **not** put
    `/sign-in/sso-callback` in those provider apps — that is Clerk → Anima only.
 2. **Redirect URLs** (Clerk → Paths) — allow:
->>>>>>> origin/main
    - `https://www.anima-protocol.com/sign-in/sso-callback`
    - `https://www.anima-protocol.com/sign-up/sso-callback`
    - Same paths for preview hosts you test on (e.g. `*.vercel.app`).
 
-<<<<<<< HEAD
 Until `/api/*` returns healthy responses (not `FUNCTION_INVOCATION_FAILED`),
 OAuth will fail because the Clerk proxy route is on the same API function.
-=======
 See `docs/clerk-github-login.md` for the full Google/GitHub/Apple checklist.
 Google `redirect_uri_mismatch` means the provider app is missing
 `https://clerk.anima-protocol.com/v1/oauth_callback`.
->>>>>>> origin/main
 
 ## 4. Verify
 
@@ -121,16 +112,13 @@ After deploy:
 
 ```bash
 curl https://www.anima-protocol.com/api/healthz
-<<<<<<< HEAD
 ```
 
 Expect: `{"status":"ok"}`
-=======
 curl https://clerk.anima-protocol.com/v1/environment
 ```
 
 Expect healthz `{"status":"ok"}` and Clerk environment HTTP 200.
->>>>>>> origin/main
 
 Sign in on the site, open **Characters → Add From Series**, add a Marvel character.
 It should save without "Session not recognized by the server".

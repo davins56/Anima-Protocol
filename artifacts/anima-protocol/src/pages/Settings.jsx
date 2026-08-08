@@ -1,18 +1,12 @@
 import { useState, useEffect } from "react";
-<<<<<<< HEAD
 import { Link, useNavigate } from "react-router-dom";
-=======
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
->>>>>>> origin/main
 import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
-<<<<<<< HEAD
   ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle
-=======
   ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle, Wand2, Palette
->>>>>>> origin/main
 } from "lucide-react";
 import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
 import {
@@ -25,10 +19,8 @@ import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
-<<<<<<< HEAD
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
-=======
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 
 const SECTION = {
@@ -40,7 +32,6 @@ const SECTION = {
   DATA: "data",
   LEGAL: "legal",
 };
->>>>>>> origin/main
 
 const defaultPrefs = {
   ai_creativity: 0.7,
@@ -341,10 +332,7 @@ export default function Settings() {
 
   const navItems = [
     { id: SECTION.ACCOUNT, label: "Account", icon: User },
-<<<<<<< HEAD
-=======
     { id: SECTION.CUSTOMISE_ANIMA, label: "Customise Anima", icon: Wand2 },
->>>>>>> origin/main
     { id: SECTION.BACKGROUND, label: "Background", icon: BookOpen },
     { id: SECTION.AI, label: "AI Behavior", icon: Bot },
     { id: SECTION.INTERFACE, label: "Interface", icon: Sliders },
@@ -414,8 +402,6 @@ export default function Settings() {
                 </div>
               </button>
 
-<<<<<<< HEAD
-=======
               <SectionTitle>Customise Anima</SectionTitle>
               <button
                 onClick={() => navigate("/customise-anima")}
@@ -433,7 +419,6 @@ export default function Settings() {
                 </div>
               </button>
 
->>>>>>> origin/main
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
                 <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
@@ -460,8 +445,6 @@ export default function Settings() {
             </div>
           )}
 
-<<<<<<< HEAD
-=======
           {/* ── CUSTOMISE ANIMA ── */}
           {section === SECTION.CUSTOMISE_ANIMA && (
             <div className="space-y-4">
@@ -513,7 +496,6 @@ export default function Settings() {
             </div>
           )}
 
->>>>>>> origin/main
           {/* ── BACKGROUND CONTEXT ── */}
           {section === SECTION.BACKGROUND && (
             <div className="space-y-4">
@@ -526,8 +508,6 @@ export default function Settings() {
           {/* ── AI BEHAVIOR ── */}
           {section === SECTION.AI && (
             <div className="space-y-4">
-<<<<<<< HEAD
-=======
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
@@ -554,7 +534,6 @@ export default function Settings() {
                 ))}
               </div>
 
->>>>>>> origin/main
               <SectionTitle>AI Behavior</SectionTitle>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-5">
@@ -675,17 +654,14 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-<<<<<<< HEAD
                       Enables explicit, lewd, and sexual roleplay content. By enabling this you confirm you are 18 years of age or older.
                     </p>
                     {prefs.adult_content_enabled && (
                       <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — explicit content permitted</p>
-=======
                       Enables explicit, lewd, and sexual roleplay. Characters escalate when the moment invites it — and hold back during grief, support, or non-intimate beats. By enabling this you confirm you are 18 years of age or older.
                     </p>
                     {prefs.adult_content_enabled && (
                       <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — heat when the beat is right</p>
->>>>>>> origin/main
                     )}
                   </div>
                   <button
@@ -1090,14 +1066,11 @@ export default function Settings() {
               <SectionTitle>About</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
-<<<<<<< HEAD
                 <InfoRow label="AI Engine" value="Core LLM" />
-=======
                 <InfoRow
                   label="AI Engine"
                   value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(" → ")}
                 />
->>>>>>> origin/main
                 <InfoRow label="Platform" value="Base44" />
               </div>
             </div>

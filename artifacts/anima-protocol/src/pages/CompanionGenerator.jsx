@@ -1,18 +1,12 @@
 import { useState } from "react";
-<<<<<<< HEAD
 import { base44 } from "@/api/base44Client";
-=======
 import { base44, uploadDataUrl } from "@/api/base44Client";
->>>>>>> origin/main
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
 import { track } from "@/lib/analytics";
 import { Wand2, Copy, Check, AlertCircle, Loader, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-<<<<<<< HEAD
-=======
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
->>>>>>> origin/main
 
 export default function CompanionGenerator() {
   const [prompt, setPrompt] = useState("");
@@ -21,10 +15,7 @@ export default function CompanionGenerator() {
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
-<<<<<<< HEAD
-=======
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
->>>>>>> origin/main
   const [resonanceSettings, setResonanceSettings] = useState({
     tone: "intimate",
     intensity: 60,
@@ -87,8 +78,6 @@ export default function CompanionGenerator() {
   const updateField = (field, value) =>
     setCompanion((prev) => (prev ? { ...prev, [field]: value } : prev));
 
-<<<<<<< HEAD
-=======
   const handleGenerateAvatar = async () => {
     if (!companion) return;
     setGeneratingAvatar(true);
@@ -131,7 +120,6 @@ export default function CompanionGenerator() {
     }
   };
 
->>>>>>> origin/main
   const handleCreateCompanion = async () => {
     if (!companion) return;
     if (!companion.name?.trim()) {
@@ -141,11 +129,8 @@ export default function CompanionGenerator() {
 
     setCreating(true);
     try {
-<<<<<<< HEAD
-=======
       const avatar_url =
         typeof companion.avatar_url === "string" ? companion.avatar_url.trim() : "";
->>>>>>> origin/main
       const newChar = await base44.entities.Character.create({
         name: companion.name.trim(),
         universe: companion.universe || "",
@@ -157,10 +142,7 @@ export default function CompanionGenerator() {
         traits: companion.traits || "",
         system_prompt: companion.system_prompt || buildSystemPrompt(companion),
         avatar_seed: companion.avatar_seed || avatarSeedFor(companion),
-<<<<<<< HEAD
-=======
         avatar_url,
->>>>>>> origin/main
         resonance_settings: resonanceSettings,
         memory_depth: resonanceSettings.memory_depth,
         crossover_preference: resonanceSettings.crossover_preference,
@@ -169,15 +151,12 @@ export default function CompanionGenerator() {
         is_default: false,
       });
 
-<<<<<<< HEAD
       // Auto-search a portrait in the background — never blocks creation.
       autoAssignCharacterPhoto(newChar).catch(() => {});
-=======
       // Auto-search a portrait only when the user did not set a custom one.
       if (!avatar_url) {
         autoAssignCharacterPhoto(newChar).catch(() => {});
       }
->>>>>>> origin/main
 
       track("character_created", {
         creation_method: "ai_prompt",
@@ -367,8 +346,6 @@ export default function CompanionGenerator() {
                     onChange={(v) => updateField("avatar_seed", v)}
                   />
 
-<<<<<<< HEAD
-=======
                   <AvatarUploadField
                     value={companion.avatar_url || ""}
                     onChange={(url) => updateField("avatar_url", url)}
@@ -378,7 +355,6 @@ export default function CompanionGenerator() {
                     generateLabel="Generate From Seed"
                   />
 
->>>>>>> origin/main
                   <div className="border border-primary/15 bg-primary/5 rounded p-3 space-y-3">
                     <div className="flex items-center gap-2 text-primary/70">
                       <SlidersHorizontal className="w-4 h-4" />

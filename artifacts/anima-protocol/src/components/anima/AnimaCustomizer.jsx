@@ -1,5 +1,4 @@
 import { useState } from "react";
-<<<<<<< HEAD
 import { base44 } from "@/api/base44Client";
 import { X, Wand2, Loader, RefreshCw, Check, ChevronRight } from "lucide-react";
 
@@ -130,7 +129,6 @@ export default function AnimaCustomizer({ anima, onClose, onSave }) {
             <div className="flex-1 p-5 flex flex-col gap-4">
               {FEATURES.filter((f) => f.key === activeFeature).map((feature) => (
                 <div key={feature.key} className="flex-1 flex flex-col gap-3">
-=======
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import {
   APPEARANCE_FEATURES,
@@ -302,29 +300,24 @@ export default function AnimaCustomizer({
             {APPEARANCE_FEATURES.filter((f) => f.key === activeFeature).map(
               (feature) => (
                 <div key={feature.key} className="flex flex-col gap-3">
->>>>>>> origin/main
                   <label className="font-mono text-[9px] text-primary/50 tracking-[0.25em] uppercase flex items-center gap-2">
                     <span>{feature.icon}</span>
                     {feature.label}
                   </label>
                   <textarea
                     value={prompts[feature.key]}
-<<<<<<< HEAD
                     onChange={(e) => setPrompts((p) => ({ ...p, [feature.key]: e.target.value }))}
-=======
                     onChange={(e) =>
                       setPrompts((p) => ({
                         ...p,
                         [feature.key]: e.target.value,
                       }))
                     }
->>>>>>> origin/main
                     placeholder={feature.placeholder}
                     rows={4}
                     className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-sm px-3 py-3 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
                   />
                 </div>
-<<<<<<< HEAD
               ))}
 
               {/* Quick suggestions */}
@@ -442,7 +435,6 @@ export default function AnimaCustomizer({
                 Fill feature prompts on the left → Generate → Save
               </p>
             </div>
-=======
               ),
             )}
 
@@ -632,13 +624,11 @@ export default function AnimaCustomizer({
             <p className="font-mono text-[8px] text-primary/20 tracking-widest text-center">
               Describe features → Generate Look → Apply & Save
             </p>
->>>>>>> origin/main
           </div>
         </div>
       </div>
     </div>
   );
-<<<<<<< HEAD
 }
 
 function getSuggestions(feature) {
@@ -652,7 +642,6 @@ function getSuggestions(feature) {
   };
   return map[feature] || [];
 }
-=======
 
   if (isPage) return body;
 
@@ -662,4 +651,3 @@ function getSuggestions(feature) {
     </div>
   );
 }
->>>>>>> origin/main

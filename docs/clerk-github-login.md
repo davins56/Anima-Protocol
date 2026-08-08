@@ -3,7 +3,6 @@
 Use this checklist when Google/Gmail, GitHub, or Apple sign-in is unavailable on
 `www.anima-protocol.com` or on a Vercel preview deployment.
 
-<<<<<<< HEAD
 ## Code requirements (already in the app)
 
 The frontend must pass **relative** paths to Clerk `signIn.sso()` (not absolute
@@ -17,7 +16,6 @@ The frontend must pass **relative** paths to Clerk `signIn.sso()` (not absolute
 
 Absolute URLs cause Clerk validation errors such as *"The string did not match
 the expected pattern"* and prevent redirects to Google/GitHub/Apple.
-=======
 ## Two different redirect URLs (do not mix them up)
 
 | URL | Where it belongs | Purpose |
@@ -57,7 +55,6 @@ publishable key, Clerk talks to `clerk.anima-protocol.com` directly
 **Use https://www.anima-protocol.com/sign-in** for GitHub login. Protected
 `*.vercel.app` preview URLs block OAuth callbacks (Vercel Deployment Protection)
 and often show false “Clerk SDK did not finish loading” warnings.
->>>>>>> origin/main
 
 ## 1. Fix Vercel production keys
 
@@ -66,17 +63,13 @@ In Vercel Project Settings -> Environment Variables -> Production:
 - `CLERK_SECRET_KEY`: Clerk Production secret key, `sk_live_...`
 - `CLERK_PUBLISHABLE_KEY`: matching Clerk Production publishable key, `pk_live_...`
 - `VITE_CLERK_PUBLISHABLE_KEY`: same `pk_live_...` value
-<<<<<<< HEAD
 - `VITE_CLERK_PROXY_URL`: leave empty
-=======
 - `VITE_CLERK_PROXY_URL`: leave empty (custom domain — do not force proxy)
->>>>>>> origin/main
 
 Redeploy without build cache after changing these values.
 
 ## 2. Give Google OAuth keys to Clerk
 
-<<<<<<< HEAD
 In Google Cloud Console, create or open the OAuth client used for Anima Protocol:
 
 - Application type: Web application
@@ -85,13 +78,10 @@ In Google Cloud Console, create or open the OAuth client used for Anima Protocol
 
 Copy the Google OAuth **Client ID** and **Client Secret**.
 
-=======
->>>>>>> origin/main
 In Clerk Dashboard -> Production -> Configure -> SSO connections:
 
 1. Add or open the **Google** connection.
 2. Enable it for all users.
-<<<<<<< HEAD
 3. Turn on custom credentials if Clerk asks for production credentials.
 4. Paste the Google OAuth Client ID and Client Secret.
 5. Save.
@@ -114,7 +104,6 @@ In Clerk Dashboard -> Production -> Configure -> SSO connections:
 5. Save.
 
 ## 4. Vercel preview deployments (`*.vercel.app`)
-=======
 3. Turn on custom credentials.
 4. Copy the **Authorized Redirect URI** Clerk shows (must be
    `https://clerk.anima-protocol.com/v1/oauth_callback` for this project).
@@ -169,7 +158,6 @@ OAuth provider.
 `vercel.com/sso-api`), which blocks Clerk OAuth callbacks and breaks email
 login. The app toast “The string did not match the expected pattern” on those
 hosts usually means the preview callback URL was not in Clerk → Paths yet.
->>>>>>> origin/main
 
 Clerk does **not** support wildcard redirect URLs. Every preview host needs its
 own entries in **Clerk Dashboard → Paths → Redirect URLs** (Production for
@@ -181,12 +169,9 @@ For each preview URL (example:
 - `https://<preview-host>/sign-in/sso-callback`
 - `https://<preview-host>/sign-up/sso-callback`
 
-<<<<<<< HEAD
-=======
 These are **app** callbacks (Clerk → your preview). Provider OAuth apps still use
 the Clerk FAPI callback from the instance’s publishable key / SSO page.
 
->>>>>>> origin/main
 **Automatic registration:** the API registers `VERCEL_URL` callback URLs on cold
 start when `CLERK_SECRET_KEY` is set. Redeploy the preview after merging the
 latest API build, or run manually:
@@ -199,12 +184,9 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- \
 
 **Recommended:** use **`pk_test_` / `sk_test_`** on Vercel **Preview** only and
 `pk_live_` / `sk_live_` on **Production**, so preview OAuth uses the Clerk
-<<<<<<< HEAD
 Development instance (easier to iterate).
-=======
 Development instance (easier to iterate; shared Google credentials, no custom
 provider redirect URI).
->>>>>>> origin/main
 
 Preview builds need `CLERK_SECRET_KEY` as `sk_*` (never `pk_*`). After changing
 env vars, redeploy **without build cache**.
@@ -213,7 +195,6 @@ If **Vercel Deployment Protection** is enabled on previews, OAuth callbacks to
 `/sign-in/sso-callback` may be blocked — disable protection for preview or test
 on `www.anima-protocol.com` instead.
 
-<<<<<<< HEAD
 Verify the Clerk proxy on the preview host:
 
 ```bash
@@ -225,7 +206,6 @@ Both should return `200`. A `503` with `clerk_proxy_invalid_secret` means
 `CLERK_SECRET_KEY` is set to a publishable `pk_*` key instead of `sk_*`.
 
 ## 5. Apple (optional)
-=======
 ## 6. Sign-in methods that work today (Production)
 
 | Method | Status | Notes |
@@ -254,17 +234,14 @@ Sign-up on Production may be **waitlist** mode — a brand-new Gmail signup can 
 blocked even when sign-in for an existing username works.
 
 ## 8. Apple (optional)
->>>>>>> origin/main
 
 In Clerk Dashboard → Production (or Development) → Configure → SSO connections:
 
 1. Enable **Apple**.
-<<<<<<< HEAD
 2. Follow Clerk’s Apple setup wizard (Services ID, domain verification).
 3. Add the same redirect URLs as above for each host you test on.
 
 ## 6. Verify
-=======
 2. Follow Clerk’s Apple setup wizard (Services ID, Team ID, Key ID, `.p8` key).
 3. Production **must** use custom credentials — an empty Services ID / client ID
    produces `invalid_request` / “Invalid OAuth Client Request” on
@@ -292,7 +269,6 @@ Do **not** put `/sign-in/sso-callback` into Google/GitHub/Apple — that only be
 in Clerk → Paths.
 
 ## 10. Verify
->>>>>>> origin/main
 
 Run from the repo root with the production Clerk keys in the environment:
 
@@ -300,7 +276,6 @@ Run from the repo root with the production Clerk keys in the environment:
 pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
 ```
 
-<<<<<<< HEAD
 Then verify the proxy:
 
 ```bash
@@ -310,7 +285,6 @@ curl -I https://www.anima-protocol.com/api/__clerk/npm/@clerk/clerk-js@6/dist/cl
 ```
 
 All three must return `200`.
-=======
 Then verify Clerk + API health:
 
 ```bash
@@ -321,7 +295,6 @@ curl https://clerk.anima-protocol.com/v1/environment
 Both must return `200`. Production with the custom domain does **not** require
 `/api/__clerk` to succeed — the browser talks to `clerk.anima-protocol.com`
 directly.
->>>>>>> origin/main
 
 ## Production checklist (dashboard only — do not commit secrets)
 
@@ -329,13 +302,11 @@ directly.
 |------|--------|--------|
 | Secret key | Vercel Production | `CLERK_SECRET_KEY` = `sk_live_*` (**not** `pk_*`) |
 | Publishable keys | Vercel Production + build | `CLERK_PUBLISHABLE_KEY` and `VITE_CLERK_PUBLISHABLE_KEY` = matching `pk_live_*` |
-<<<<<<< HEAD
 | Proxy env | Vercel | `VITE_CLERK_PROXY_URL` empty (app uses `/api/__clerk/` automatically) |
 | SSO providers | Clerk Production → SSO connections | Google + GitHub with **custom** OAuth credentials |
 | Redirect URLs | Clerk → Paths | Per host: `…/sign-in/sso-callback` and `…/sign-up/sso-callback` |
 | Google OAuth | Google Cloud Console | Authorized origin + redirect for each host |
 | GitHub OAuth | GitHub OAuth App | Homepage + callback URL for each host |
-=======
 | Proxy env | Vercel | `VITE_CLERK_PROXY_URL` empty (custom domain skips `/api/__clerk`) |
 | SSO providers | Clerk Production → SSO connections | Google + GitHub + Apple with **custom** OAuth credentials |
 | Provider redirect URI | Google / GitHub / Apple OAuth apps | `https://clerk.anima-protocol.com/v1/oauth_callback` |
@@ -343,4 +314,3 @@ directly.
 
 Deploying app code alone cannot fix `redirect_uri_mismatch` or an empty Apple
 `client_id` — those live in Google Cloud / Apple Developer / Clerk SSO settings.
->>>>>>> origin/main
