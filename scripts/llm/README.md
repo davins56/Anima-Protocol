@@ -22,6 +22,25 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 ```
 
+### No GPU / no network to Ollama or Hugging Face? Smoke-test the wiring
+
+`pnpm llm:up` needs to reach `ollama.com` to pull real weights. In a sandboxed
+dev container without that egress (or without a GPU), use the mock server to
+verify the *wiring* — env vars, `ANIMA_LLM_PROVIDER=custom` routing,
+`/api/healthz/llm` — end-to-end without a real brain behind it:
+
+```bash
+pnpm llm:mock -- --port 11555     # canned OpenAI-compatible /v1 server, NOT a real model
+
+export ANIMA_LLM_PROVIDER=custom
+export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:11555/v1
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat-mock
+pnpm llm:chat -- "Who are you?"   # should echo back through the mock
+```
+
+Swap the mock's URL for a real Ollama/vLLM endpoint once you have GPU/hosting
+— nothing else in the wiring changes.
+
 ## GPU fine-tune path
 
 ```bash

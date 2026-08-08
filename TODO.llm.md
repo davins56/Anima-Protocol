@@ -41,6 +41,23 @@ documentation.
 - [x] Step 19: Docs clarify ChatGPT/Gemini/Groq weights are closed; Anima uses open weights
 - [x] Step 20: `docker-compose.dev.yml` + `pnpm dev:infra:up/down/logs` — bundles Postgres + the branded `anima-chat` Ollama model behind one command (validated with `docker compose config`; image pulls not exercised in this sandbox's network policy)
 
+## Phase F — Audit + sandbox smoke test (no GPU / no ollama.com or huggingface.co egress)
+
+- [x] Step 21: Removed `lib/modelProvider.ts` — an orphaned, unused provider-selection
+  module that read `ANIMA_LLM_PROVIDER` directly and could dial Groq/OpenAI with
+  none of `llmFailover.ts`'s `ANIMA_ALLOW_CLOUD_LLM` gate, sanitization, or sticky-skip
+  protections. Nothing imported it outside its own test — dead code, but a foot-gun
+  if it had ever been wired into a route.
+- [x] Step 22: Audited every live chat call site (`chat.ts`, `routes/openai/functions.ts`,
+  `evolutionEngine.ts`) — all go through `createChatCompletionWithFailover` /
+  `isAnimaCustomMode()`. No bypass found in the routes that actually run.
+- [x] Step 23: `scripts/llm/mock-server.mjs` (`pnpm llm:mock`) — canned OpenAI-compatible
+  `/v1` server for smoke-testing the custom-LLM wiring without a GPU or network access
+  to Ollama/Hugging Face (both blocked in this sandbox). Confirmed live against real
+  `llmFailover.ts` code (not just mocks): with fake Gemini/Groq/OpenAI keys present
+  *and* a stray `ANIMA_LLM_ENSEMBLE=true`, `ANIMA_LLM_PROVIDER=custom` still resolved
+  to `mode: "local"`, `chain: ["local"]` and answered from the mock endpoint only.
+
 ## Still manual (GPU / data ops)
 
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
