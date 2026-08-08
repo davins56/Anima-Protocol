@@ -30,7 +30,12 @@ function argValue(args, name, fallback) {
 const args = process.argv.slice(2).filter((a) => a !== "--");
 const casesPath = path.resolve(ROOT, argValue(args, "--cases", "scripts/llm/eval/eval-cases.json"));
 const outJsonPath = path.resolve(ROOT, argValue(args, "--out", "scripts/llm/output/eval-report.json"));
-const outMdPath = outJsonPath.replace(/\.json$/, ".md");
+// Always distinct from outJsonPath, even when --out doesn't end in ".json"
+// (e.g. "report" or "report.jsonl") — otherwise the .md write below would
+// overwrite the machine-readable JSON report.
+const outMdPath = /\.json$/i.test(outJsonPath) ? outJsonPath.replace(/\.json$/i, ".md") : `${outJsonPath}.md`;
+
+const DEFAULT_TIMEOUT_MS = 30000;
 
 const base = (process.env.ANIMA_LOCAL_LLM_BASE_URL || "http://127.0.0.1:11434/v1").replace(/\/$/, "");
 const model =
@@ -81,12 +86,20 @@ async function runCase(testCase) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages, max_tokens: 220, temperature: 0.85 }),
+      // Abort a stalled/never-responding endpoint instead of hanging the
+      // whole sequential run — a timeout is itself a failed eval result.
+      signal: AbortSignal.timeout(testCase.maxLatencyMs ?? DEFAULT_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     const data = await res.json();
     content = data?.choices?.[0]?.message?.content?.trim() || "";
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
+    error =
+      err instanceof Error && err.name === "TimeoutError"
+        ? `timed out after ${testCase.maxLatencyMs ?? DEFAULT_TIMEOUT_MS}ms`
+        : err instanceof Error
+          ? err.message
+          : String(err);
   }
   const latencyMs = Date.now() - start;
   const checks = error
