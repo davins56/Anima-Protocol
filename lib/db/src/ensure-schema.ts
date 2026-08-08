@@ -12,6 +12,11 @@ export const REQUIRED_TABLES = [
   "companion_memories",
   "memory_embeddings",
   "uploaded_images",
+  // Companion state used on every /api/chat/messages turn. Missing these
+  // previously 500'd the whole reply before the LLM was even called.
+  "anima_evolution",
+  "anima_relationships",
+  "anima_narrative_arcs",
 ] as const;
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
@@ -228,6 +233,60 @@ export async function ensureSchema(
       "updated_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:memory_embeddings",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_evolution" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "conversation_count" integer DEFAULT 0 NOT NULL,
+      "void_sessions" integer DEFAULT 0 NOT NULL,
+      "evolution_delta" jsonb DEFAULT '{"version":1,"appliedAt":"1970-01-01T00:00:00.000Z","milestone":0,"traitsDelta":{},"quirkAdditions":[],"voidBias":0}'::jsonb NOT NULL,
+      "evolution_rationale" text DEFAULT '' NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_evolution",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_evolution_user_anima_uq"
+       ON "anima_evolution" USING btree ("user_id","anima_id")`,
+    "index:anima_evolution_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_relationships" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_relationships",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_relationships_user_anima_uq"
+       ON "anima_relationships" USING btree ("user_id","anima_id")`,
+    "index:anima_relationships_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_narrative_arcs" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_narrative_arcs",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_narrative_arcs_user_anima_uq"
+       ON "anima_narrative_arcs" USING btree ("user_id","anima_id")`,
+    "index:anima_narrative_arcs_user_anima_uq",
   );
 
   // Column default added after initial conversations table existed in prod.
