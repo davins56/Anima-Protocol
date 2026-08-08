@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animaApi } from "@/api/animaApi";
 
 function createChatMessage(role, content, { characterName = null, attachments = [], type = undefined } = {}) {
@@ -19,9 +19,15 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
   const [error, setError] = useState(null);
   const [providerStatus, setProviderStatus] = useState(null);
 
+  // Reset messages when switching to a different session. Keyed on `sessionId`
+  // rather than `initialMessages` itself — callers commonly pass a fresh array
+  // reference each render (inline literals, derived slices), and depending on
+  // the array identity would re-fire this effect every render, looping forever.
+  const initialMessagesRef = useRef(initialMessages);
+  initialMessagesRef.current = initialMessages;
   useEffect(() => {
-    setMessages(initialMessages);
-  }, [initialMessages]);
+    setMessages(initialMessagesRef.current);
+  }, [sessionId]);
 
   const session = useMemo(
     () => ({
