@@ -162,6 +162,13 @@ export interface ChatCompletionRequest {
   maxTokens: number;
   messages: ChatCompletionMessageParam[];
   temperature?: number;
+  /**
+   * OpenAI-compatible tool schemas. Honored by every provider in the chain
+   * except native Gemini (no tool-calling support in geminiNative.ts) — that
+   * leg simply ignores tools rather than dropping out of the chain.
+   */
+  tools?: OpenAI.Chat.Completions.ChatCompletionTool[];
+  toolChoice?: OpenAI.Chat.Completions.ChatCompletionToolChoiceOption;
 }
 
 export interface ChatCompletionResult {
@@ -173,6 +180,7 @@ export interface ChatCompletionResult {
   tier: ModelTier;
   failedOver: boolean;
   previousProvider?: LlmProviderId;
+  toolCalls?: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] | null;
 }
 
 // Sticky preference after OpenAI billing/credits failure in this process.
@@ -1403,8 +1411,12 @@ async function createCompletion(
   resolved: ResolvedModel,
   messages: ChatCompletionMessageParam[],
   temperature?: number,
+  tools?: OpenAI.Chat.Completions.ChatCompletionTool[],
+  toolChoice?: OpenAI.Chat.Completions.ChatCompletionToolChoiceOption,
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   if (provider === "gemini") {
+    // Native Gemini call has no tool-calling support here — the turn still
+    // runs, just without tools, rather than dropping this leg of the chain.
     return createGeminiChatCompletion({
       model: resolved.model,
       maxTokens: resolved.maxTokens,
@@ -1417,6 +1429,7 @@ async function createCompletion(
     max_tokens: resolved.maxTokens,
     messages,
     ...(typeof temperature === "number" ? { temperature } : {}),
+    ...(tools && tools.length ? { tools, tool_choice: toolChoice ?? "auto" } : {}),
   });
 }
 
@@ -1598,7 +1611,15 @@ export async function createChatCompletionWithFailover(
       const { value: completion, resolved } = await withModelFallback(
         provider,
         preferredModel,
-        (m) => createCompletion(provider, m, req.messages, req.temperature),
+        (m) =>
+          createCompletion(
+            provider,
+            m,
+            req.messages,
+            req.temperature,
+            req.tools,
+            req.toolChoice,
+          ),
       );
       const content = completion.choices?.[0]?.message?.content ?? "";
       return {
@@ -1609,6 +1630,7 @@ export async function createChatCompletionWithFailover(
         tier: resolved.tier,
         failedOver: i > 0,
         previousProvider: i > 0 ? chain[0] : undefined,
+        toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
       };
     } catch (err) {
       lastErr = err;
