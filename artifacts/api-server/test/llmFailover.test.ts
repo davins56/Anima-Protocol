@@ -204,6 +204,7 @@ import {
   isProviderAuthError,
   extractXaiBillingUrl,
   isProviderUnusableError,
+  probeLlmProviders,
   recordProviderFailure,
   resetLlmFailoverStateForTests,
   resolveGatewayModel,
@@ -889,5 +890,80 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("gemini reply");
     expect(result.provider).toBe("gemini");
     expect(createMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("probeLlmProviders", () => {
+  const SAVED = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...SAVED };
+    resetLlmFailoverStateForTests();
+    createMock.mockReset();
+    geminiCompletionMock.mockReset();
+  });
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmFailoverStateForTests();
+  });
+
+  // Regression: this powers the PUBLIC, unauthenticated
+  // /api/healthz/llm?probe=1 route. A leftover cloud key must never let an
+  // anonymous visitor trigger a real billed call to a flagship provider when
+  // the product is on custom-only mode (ANIMA_ALLOW_CLOUD_LLM unset).
+  it("does not call cloud providers when ANIMA_ALLOW_CLOUD_LLM is unset, even with keys present", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    delete process.env.ANIMA_ALLOW_CLOUD_LLM;
+    process.env.GEMINI_API_KEY = "gemini-test";
+    process.env.GROQ_API_KEY = "groq-test";
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.XAI_API_KEY = "xai-test";
+    process.env.KIMI_API_KEY = "kimi-test";
+    process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    createMock.mockResolvedValueOnce(fakeCompletion("ok"));
+
+    const results = await probeLlmProviders("standard");
+
+    // Gemini is never routed through the shared OpenAI-shaped `createMock` —
+    // it has its own native client — so this alone proves no cloud call fired.
+    expect(geminiCompletionMock).not.toHaveBeenCalled();
+    // `createMock` backs local, OpenAI, Groq, xAI, Kimi, and Gateway alike in
+    // this mock, so a call count of 1 (not 0) proves exactly the local probe
+    // ran and none of the five gated cloud providers reached the network.
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const local = results.find((r) => r.provider === "local")!;
+    expect(local.ok).toBe(true);
+
+    const cloud = results.filter((r) => r.provider !== "local");
+    expect(cloud.length).toBeGreaterThan(0);
+    for (const r of cloud) {
+      expect(r.configured).toBe(true);
+      expect(r.ok).toBe(false);
+      expect(r.message).toMatch(/ANIMA_ALLOW_CLOUD_LLM/);
+    }
+  });
+
+  it("does live-probe cloud providers once ANIMA_ALLOW_CLOUD_LLM=true", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "auto";
+    process.env.ANIMA_ALLOW_CLOUD_LLM = "true";
+    process.env.GEMINI_API_KEY = "gemini-test";
+    delete process.env.GROQ_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.XAI_API_KEY;
+    delete process.env.KIMI_API_KEY;
+    delete process.env.AI_GATEWAY_API_KEY;
+
+    geminiCompletionMock.mockResolvedValueOnce(fakeCompletion("ok"));
+
+    const results = await probeLlmProviders("standard");
+
+    expect(geminiCompletionMock).toHaveBeenCalled();
+    const gemini = results.find((r) => r.provider === "gemini")!;
+    expect(gemini.configured).toBe(true);
+    expect(gemini.ok).toBe(true);
   });
 });
