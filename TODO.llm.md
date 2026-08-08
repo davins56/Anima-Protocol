@@ -39,6 +39,7 @@ documentation.
 - [x] Step 17: `scripts/llm/bootstrap-anima-llm.sh` + `pnpm llm:up` / `pnpm llm:chat`
 - [x] Step 18: Registry defaults Ollama lineup to `anima-chat`; custom → ollama unless `ANIMA_LOCAL_LLM_BACKEND=vllm`
 - [x] Step 19: Docs clarify ChatGPT/Gemini/Groq weights are closed; Anima uses open weights
+- [x] Step 20: `docker-compose.dev.yml` + `pnpm dev:infra:up/down/logs` — bundles Postgres + the branded `anima-chat` Ollama model behind one command (validated with `docker compose config`; image pulls not exercised in this sandbox's network policy)
 
 ## Still manual (GPU / data ops)
 
@@ -47,6 +48,8 @@ documentation.
 - [ ] Optional DPO/ORPO/SimPO preference stage
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
 - [x] `ANIMA_LLM_PROVIDER=custom|anima|local` = self-hosted Anima LLM (no cloud BYOK)
+- [x] `ANIMA_ALLOW_CLOUD_LLM=true` gate — every cloud-capable mode (auto/local-first/gemini/groq/kimi/xai/openai/gateway/ensemble) is silently downgraded to `local` unless this second flag is also set, so a mistyped `ANIMA_LLM_PROVIDER` can never switch chat onto a flagship provider
 - [ ] Host Ollama/vLLM with a public HTTPS URL and flip production to `custom`
   - Do **not** point `ANIMA_LOCAL_LLM_BASE_URL` at `api.openai.com` — that is cloud OpenAI, not Anima LLM
   - For OpenAI chat responses use `ANIMA_LLM_PROVIDER=openai` (or `auto`) + `OPENAI_API_KEY` instead
+  - Concrete no-infra-yet path (VPS + Cloudflare Tunnel, then GPU/vLLM upgrade): `docs/llm-deploy.md` + `scripts/llm/tunnel-cloudflared.sh` / `pnpm llm:tunnel` — still requires someone to actually rent the box and run it

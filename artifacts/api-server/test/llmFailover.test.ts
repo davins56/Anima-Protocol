@@ -8,6 +8,10 @@ vi.mock("../src/lib/openaiClient", () => {
   const client = {
     chat: { completions: { create: (...args: unknown[]) => createMock(...args) } },
   };
+  const cloudGateOpen = () => {
+    const raw = (process.env.ANIMA_ALLOW_CLOUD_LLM || "").trim().toLowerCase();
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  };
   return {
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasXaiKey: () => Boolean(process.env.XAI_API_KEY?.trim()),
@@ -32,16 +36,18 @@ vi.mock("../src/lib/openaiClient", () => {
       }
       if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
       const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
-      const cloudOnly = [
-        "auto",
-        "gemini",
-        "groq",
-        "kimi",
-        "xai",
-        "openai",
-        "gateway",
-        "ensemble",
-      ].includes(mode);
+      const cloudOnly =
+        cloudGateOpen() &&
+        [
+          "auto",
+          "gemini",
+          "groq",
+          "kimi",
+          "xai",
+          "openai",
+          "gateway",
+          "ensemble",
+        ].includes(mode);
       if (cloudOnly) return null;
       return "http://localhost:11434/v1";
     },
@@ -53,16 +59,19 @@ vi.mock("../src/lib/openaiClient", () => {
       if (explicit) return true;
       if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
       const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
-      return ![
-        "auto",
-        "gemini",
-        "groq",
-        "kimi",
-        "xai",
-        "openai",
-        "gateway",
-        "ensemble",
-      ].includes(mode);
+      const cloudOnly =
+        cloudGateOpen() &&
+        [
+          "auto",
+          "gemini",
+          "groq",
+          "kimi",
+          "xai",
+          "openai",
+          "gateway",
+          "ensemble",
+        ].includes(mode);
+      return !cloudOnly;
     },
     summarizeLocalLlmBaseUrl: () => {
       const explicit =
@@ -78,16 +87,18 @@ vi.mock("../src/lib/openaiClient", () => {
       }
       if (!base && !(process.env.VERCEL || process.env.VERCEL_ENV)) {
         const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
-        const cloudOnly = [
-          "auto",
-          "gemini",
-          "groq",
-          "kimi",
-          "xai",
-          "openai",
-          "gateway",
-          "ensemble",
-        ].includes(mode);
+        const cloudOnly =
+          cloudGateOpen() &&
+          [
+            "auto",
+            "gemini",
+            "groq",
+            "kimi",
+            "xai",
+            "openai",
+            "gateway",
+            "ensemble",
+          ].includes(mode);
         if (!cloudOnly) base = "http://localhost:11434/v1";
       }
       if (!base) {
@@ -146,6 +157,7 @@ vi.mock("../src/lib/openaiClient", () => {
       if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
       const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
       if (
+        cloudGateOpen() &&
         [
           "auto",
           "gemini",
@@ -262,6 +274,7 @@ describe("isModelUnavailableError (via Gemini retired-model failover)", () => {
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
     process.env.ANIMA_LLM_PROVIDER = "auto";
+    process.env.ANIMA_ALLOW_CLOUD_LLM = "true";
     delete process.env.GROQ_API_KEY;
     delete process.env.ANIMA_GEMINI_MODEL;
     delete process.env.ANIMA_GEMINI_MODEL_LIGHT;
@@ -369,6 +382,7 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     process.env.GEMINI_API_KEY = "gemini-test";
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
+    process.env.ANIMA_ALLOW_CLOUD_LLM = "true";
     delete process.env.GROQ_API_KEY;
     delete process.env.ANIMA_LLM_PROVIDER;
     delete process.env.ANIMA_DISABLE_OPENAI;
@@ -533,6 +547,49 @@ describe("ANIMA_LLM_PROVIDER / provider chain", () => {
     ]);
     expect(getLlmRoutingStatus().keys.local).toBe(true);
   });
+
+  it("gates every cloud-capable mode back to local without ANIMA_ALLOW_CLOUD_LLM=true", () => {
+    delete process.env.ANIMA_ALLOW_CLOUD_LLM;
+    for (const mode of [
+      "auto",
+      "gemini",
+      "groq",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+      "local-first",
+    ] as const) {
+      process.env.ANIMA_LLM_PROVIDER = mode;
+      expect(getConfiguredProviderMode()).toBe("local");
+      expect(isAnimaCustomMode()).toBe(true);
+      expect(getProviderChain()).toEqual(["local"]);
+    }
+  });
+
+  it("unlocks the requested cloud mode once ANIMA_ALLOW_CLOUD_LLM=true is set", () => {
+    delete process.env.ANIMA_ALLOW_CLOUD_LLM;
+    process.env.ANIMA_LLM_PROVIDER = "auto";
+    expect(getConfiguredProviderMode()).toBe("local");
+
+    process.env.ANIMA_ALLOW_CLOUD_LLM = "true";
+    expect(getConfiguredProviderMode()).toBe("auto");
+    expect(getProviderChain()).toEqual([
+      "gemini",
+      "kimi",
+      "xai",
+      "openai",
+      "gateway",
+    ]);
+  });
+
+  it("surfaces a note when a cloud mode is requested but blocked by the gate", () => {
+    delete process.env.ANIMA_ALLOW_CLOUD_LLM;
+    process.env.ANIMA_LLM_PROVIDER = "auto";
+    const status = getLlmRoutingStatus();
+    expect(status.mode).toBe("local");
+    expect(status.note).toMatch(/ANIMA_ALLOW_CLOUD_LLM/);
+  });
 });
 
 describe("createChatStreamWithFailover", () => {
@@ -546,6 +603,7 @@ describe("createChatStreamWithFailover", () => {
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
     process.env.ANIMA_LLM_PROVIDER = "auto";
+    process.env.ANIMA_ALLOW_CLOUD_LLM = "true";
     delete process.env.GROQ_API_KEY;
     delete process.env.ANIMA_DISABLE_OPENAI;
     delete process.env.ANIMA_DISABLE_GROQ;
@@ -808,6 +866,7 @@ describe("createChatCompletionWithFailover", () => {
     process.env.KIMI_API_KEY = "kimi-test";
     process.env.AI_GATEWAY_API_KEY = "gateway-test";
     process.env.ANIMA_LLM_PROVIDER = "auto";
+    process.env.ANIMA_ALLOW_CLOUD_LLM = "true";
     delete process.env.GROQ_API_KEY;
     resetLlmFailoverStateForTests();
     createMock.mockReset();

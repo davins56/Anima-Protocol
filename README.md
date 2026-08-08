@@ -92,6 +92,19 @@ export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
 pnpm --filter @workspace/db run push
 ```
 
+### One-command dev infra (Postgres + Anima LLM)
+
+`docker-compose.dev.yml` bundles the two infra pieces that aren't already a `pnpm dev` process — Postgres and the self-hosted Anima LLM (Ollama, branded `anima-chat` from open Qwen2.5 weights) — so both come up together instead of running `pnpm llm:up` separately:
+
+```bash
+pnpm dev:infra:up            # starts postgres + ollama, then bootstraps anima-chat
+pnpm dev:infra:logs          # watch the anima-llm-bootstrap step pull weights
+export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
+pnpm --filter @workspace/db run push
+```
+
+Then start the api-server / frontend as usual (below) — they connect to this stack via `DATABASE_URL` and `ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1` (the `.env.example` defaults already point here). `pnpm dev:infra:down` tears it down. GPU vLLM serving is a separate opt-in file: `scripts/llm/docker-compose.vllm.yml` (see `docs/custom-llm.md`). Deploying this to production with a public HTTPS endpoint: `docs/llm-deploy.md`.
+
 ## Running Services
 
 Start the API:
@@ -137,8 +150,9 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Kimi (Moonshot) backup in the auto chain |
 | `XAI_API_KEY` | API | Grok backup in the auto chain |
 | `AI_GATEWAY_API_KEY` | API | Vercel AI Gateway last-resort unpaid path (or use `VERCEL_OIDC_TOKEN` on Vercel). Live-test with `/api/healthz/llm?probe=1` |
-| `ANIMA_LLM_PROVIDER` | API | Default `auto` = Gemini → Kimi → Grok → OpenAI → AI Gateway. Or `gemini` / `kimi` / `xai` / `openai` / `gateway` / `anima`. Do **not** paste API keys here |
-| `ANIMA_LLM_ENSEMBLE` | API | Set `true` to force parallel mind drafts even when provider mode is not `anima` |
+| `ANIMA_LLM_PROVIDER` | API | Default (unset) / `custom` / `anima` / `local` = self-hosted Anima LLM only. Cloud modes (`auto`, `gemini`, `kimi`, `xai`, `openai`, `gateway`, `local-first`) also require `ANIMA_ALLOW_CLOUD_LLM=true`, or they're silently downgraded to `local`. Do **not** paste API keys here |
+| `ANIMA_ALLOW_CLOUD_LLM` | API | Second, explicit flag required before any cloud-capable `ANIMA_LLM_PROVIDER` mode (or `ANIMA_LLM_ENSEMBLE`) can dial out to Gemini/Groq/Kimi/Grok/ChatGPT/AI Gateway. See `docs/custom-llm.md` |
+| `ANIMA_LLM_ENSEMBLE` | API | Set `true` (with `ANIMA_ALLOW_CLOUD_LLM=true`) to force parallel cloud mind drafts even when provider mode is not `ensemble` |
 
 | `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
 | `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
