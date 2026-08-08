@@ -141,4 +141,95 @@ describe("dataset/import", () => {
     const examples = await importLogsDir(dir, { tags: ["custom-import"] });
     expect(examples[0].tags).toContain("custom-import");
   });
+
+  it("skips a malformed .json file and keeps importing the rest of the directory", async () => {
+    await writeFile(path.join(dir, "a-broken.json"), "{not valid json");
+    await writeFile(path.join(dir, "b-ok.txt"), "User: hi\nSerenity: hello there friend");
+
+    const examples = await importLogsDir(dir);
+    expect(examples).toHaveLength(1);
+    expect(examples[0].character.name).toBe("Serenity");
+  });
+
+  it("rejects TrainingExample JSON with non-string turn content", async () => {
+    const file = path.join(dir, "bad-shape.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        id: "bad",
+        source: "x",
+        character: { name: "Serenity" },
+        conversation: [
+          { role: "user", content: "hi" },
+          { role: "assistant", content: { nested: "not a string" } },
+        ],
+      }),
+    );
+
+    const examples = await importLogFile(file);
+    expect(examples).toHaveLength(0);
+  });
+
+  it("skips ShareGPT turns with an unsupported role instead of treating them as assistant speech", async () => {
+    const file = path.join(dir, "sharegpt-bad-role.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        conversations: [
+          { from: "human", value: "Say my name." },
+          { from: "tool", value: "some tool output that is not companion speech" },
+          { from: "gpt", value: "Come closer." },
+        ],
+      }),
+    );
+
+    const examples = await importLogFile(file, { defaultCharacterName: "Fallen Angel" });
+    expect(examples).toHaveLength(1);
+    expect(examples[0].conversation).toEqual([
+      { role: "user", content: "Say my name." },
+      { role: "assistant", content: "Come closer.", name: "Fallen Angel" },
+    ]);
+  });
+
+  it("restricts assistant turns to the requested character and folds other speakers into context", async () => {
+    const file = path.join(dir, "group.txt");
+    await writeFile(
+      file,
+      [
+        "User: Serenity, before he answers, am I safe tonight?",
+        "Serenity: You are safe with us tonight.",
+        "Fallen Angel: I would not let harm reach you either.",
+        "User: Thank you both.",
+        "Serenity: Rest, then. We are not going anywhere.",
+      ].join("\n"),
+    );
+
+    const examples = await importLogFile(file, { defaultCharacterName: "Serenity" });
+    expect(examples).toHaveLength(1);
+    const [example] = examples;
+    expect(example.character.name).toBe("Serenity");
+    expect(example.conversation.filter((t) => t.name === "Fallen Angel")).toHaveLength(0);
+    // The other companion's line is preserved as context, not trained as Serenity's own speech.
+    const withContext = example.conversation.find((t) => t.content.includes("Fallen Angel"));
+    expect(withContext?.role).toBe("assistant");
+    expect(withContext?.name).toBe("Serenity");
+  });
+
+  it("uses the most-frequent speaker for character.name when no character is requested", async () => {
+    const file = path.join(dir, "mixed-speakers.txt");
+    await writeFile(
+      file,
+      [
+        "User: hi",
+        "Serenity: hello",
+        "User: hi again",
+        "Serenity: hello again",
+        "User: one more",
+        "Narrator: the room falls quiet",
+      ].join("\n"),
+    );
+
+    const examples = await importLogFile(file);
+    expect(examples[0].character.name).toBe("Serenity");
+  });
 });
