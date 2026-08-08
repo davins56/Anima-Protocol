@@ -41,15 +41,32 @@ documentation.
 - [x] Step 19: Docs clarify ChatGPT/Gemini/Groq weights are closed; Anima uses open weights
 - [x] Step 20: `docker-compose.dev.yml` + `pnpm dev:infra:up/down/logs` — bundles Postgres + the branded `anima-chat` Ollama model behind one command (validated with `docker compose config`; image pulls not exercised in this sandbox's network policy)
 
-## Phase F — Data quality pipeline (dataset/clean.ts)
+## Phase F — Audit + sandbox smoke test (no GPU / no ollama.com or huggingface.co egress)
 
-- [x] Step 21: `normalizeTurns` — trim, drop empty, merge consecutive same-role turns
-- [x] Step 22: Quality gate — drop no-assistant / too-short / error-fallback-denylist / echoed-reply examples, with drop reasons logged
-- [x] Step 23: `dedupeExamples` — drop exact/near-duplicate conversations
-- [x] Step 24: `splitExamples` — deterministic train/val split by id hash, wired into `prepare-finetune --val-split`
-- [x] Step 25: `dataset-stats` CLI — quality/shape report on any exported (or hand-merged) JSONL
-- [x] Step 26: `unsloth_sft.py --eval-data` — real held-out eval loss during QLoRA SFT
-- [x] Step 27: Tests (`lib/llm/test/clean.test.ts`) + docs (`lib/llm/README.md`, `docs/llm-build.md`)
+- [x] Step 21: Removed `lib/modelProvider.ts` — an orphaned, unused provider-selection
+  module that read `ANIMA_LLM_PROVIDER` directly and could dial Groq/OpenAI with
+  none of `llmFailover.ts`'s `ANIMA_ALLOW_CLOUD_LLM` gate, sanitization, or sticky-skip
+  protections. Nothing imported it outside its own test — dead code, but a foot-gun
+  if it had ever been wired into a route.
+- [x] Step 22: Audited every live chat call site (`chat.ts`, `routes/openai/functions.ts`,
+  `evolutionEngine.ts`) — all go through `createChatCompletionWithFailover` /
+  `isAnimaCustomMode()`. No bypass found in the routes that actually run.
+- [x] Step 23: `scripts/llm/mock-server.mjs` (`pnpm llm:mock`) — canned OpenAI-compatible
+  `/v1` server for smoke-testing the custom-LLM wiring without a GPU or network access
+  to Ollama/Hugging Face (both blocked in this sandbox). Confirmed live against real
+  `llmFailover.ts` code (not just mocks): with fake Gemini/Groq/OpenAI keys present
+  *and* a stray `ANIMA_LLM_ENSEMBLE=true`, `ANIMA_LLM_PROVIDER=custom` still resolved
+  to `mode: "local"`, `chain: ["local"]` and answered from the mock endpoint only.
+
+## Phase G — Data quality pipeline (dataset/clean.ts)
+
+- [x] Step 24: `normalizeTurns` — trim, drop empty, merge consecutive same-role turns
+- [x] Step 25: Quality gate — drop no-assistant / too-short / error-fallback-denylist / echoed-reply examples, with drop reasons logged
+- [x] Step 26: `dedupeExamples` — drop exact/near-duplicate conversations
+- [x] Step 27: `splitExamples` — deterministic train/val split by id hash, wired into `prepare-finetune --val-split`
+- [x] Step 28: `dataset-stats` CLI — quality/shape report on any exported (or hand-merged) JSONL
+- [x] Step 29: `unsloth_sft.py --eval-data` — real held-out eval loss during QLoRA SFT
+- [x] Step 30: Tests (`lib/llm/test/clean.test.ts`) + docs (`lib/llm/README.md`, `docs/llm-build.md`)
 
 ## Still manual (GPU / data ops)
 
