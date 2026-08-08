@@ -14,6 +14,7 @@
     "dev:infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
     "llm:cli": "pnpm --filter @workspace/llm run cli",
     "llm:up": "bash scripts/llm/bootstrap-anima-llm.sh",
+    "llm:mock": "node scripts/llm/mock-server.mjs",
     "llm:tunnel": "bash scripts/llm/tunnel-cloudflared.sh",
     "llm:chat": "pnpm --filter @workspace/llm run cli -- chat",
     "llm:prepare-finetune": "pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt",
