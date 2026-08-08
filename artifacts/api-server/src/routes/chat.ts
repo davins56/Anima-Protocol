@@ -27,11 +27,6 @@ import {
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
 import {
-  chunkTextAsStream,
-  createEnsembleChatReply,
-  isEnsembleMode,
-} from "../lib/llmEnsemble";
-import {
   buildCompanionPrompt,
   type CompanionMemoryRecord,
   type CharacterData,
@@ -868,58 +863,30 @@ router.post("/messages", async (req, res) => {
   let fullResponse = "";
   let usedModel = routed.model;
   let usedTier = routed.tier;
-  let usedProvider: LlmProviderId = "openai";
+  let usedProvider: LlmProviderId = "local";
   let usedBrand: "anima" | undefined;
   let failedOver = false;
-  let ensembleMinds: string[] | undefined;
-  let ensembleCombined = false;
 
   try {
     const messages = [{ role: "system" as const, content: prompt }];
 
-    if (isEnsembleMode()) {
-      const ensemble = await createEnsembleChatReply({
-        tier: routed.tier,
-        model: routed.model,
-        maxTokens: routed.maxTokens,
-        messages,
-        onProgress: (event) => {
-          res.write(`data: ${JSON.stringify(event)}\n\n`);
-        },
-      });
-      usedModel = ensemble.model;
-      usedTier = ensemble.tier;
-      usedProvider = ensemble.provider;
-      usedBrand = ensemble.brand;
-      ensembleMinds = ensemble.minds;
-      ensembleCombined = ensemble.combined;
-      failedOver = false;
+    const completion = await createChatStreamWithFailover({
+      tier: routed.tier,
+      model: routed.model,
+      maxTokens: routed.maxTokens,
+      messages,
+    });
+    usedModel = completion.model;
+    usedTier = completion.tier;
+    usedProvider = completion.provider;
+    usedBrand = completion.brand;
+    failedOver = completion.failedOver;
 
-      for await (const chunk of chunkTextAsStream(ensemble.content)) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (!delta) continue;
-        fullResponse += delta;
-        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
-      }
-    } else {
-      const completion = await createChatStreamWithFailover({
-        tier: routed.tier,
-        model: routed.model,
-        maxTokens: routed.maxTokens,
-        messages,
-      });
-      usedModel = completion.model;
-      usedTier = completion.tier;
-      usedProvider = completion.provider;
-      usedBrand = completion.brand;
-      failedOver = completion.failedOver;
-
-      for await (const chunk of completion.stream) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (!delta) continue;
-        fullResponse += delta;
-        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
-      }
+    for await (const chunk of completion.stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (!delta) continue;
+      fullResponse += delta;
+      res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
     }
 
     // An empty completion used to look like a successful turn on the client
@@ -956,8 +923,6 @@ router.post("/messages", async (req, res) => {
           provider: usedProvider,
           brand: usedBrand,
           failed_over: failedOver,
-          ensemble_minds: ensembleMinds,
-          ensemble_combined: ensembleCombined,
         },
       });
       const sharedFact = isCrossover
@@ -1040,8 +1005,6 @@ router.post("/messages", async (req, res) => {
         provider: usedProvider,
         brand: usedBrand,
         failed_over: failedOver,
-        ensemble_minds: ensembleMinds,
-        ensemble_combined: ensembleCombined,
         is_crossover: isCrossover,
         assistant_character_id: activeCharacterId,
         assistant_character_name: activeCharacterName,

@@ -10,8 +10,8 @@
 #   # or path to your LoRA/merged checkpoint under ./checkpoints
 #   docker compose -f scripts/llm/docker-compose.vllm.yml up
 #
-# Then point the api-server at it (custom = self-hosted only):
-#   export ANIMA_LLM_PROVIDER=custom
+# Then point the api-server at it (the only chat backend):
+#   export ANIMA_LOCAL_LLM_BACKEND=vllm
 #   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 
 services:

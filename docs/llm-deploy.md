@@ -2,10 +2,10 @@
 
 This is the recommended path when you don't already have a GPU box, VPS, or
 cloud account picked out. Goal: a public HTTPS endpoint serving the branded
-`anima-chat` model, wired into Vercel via `ANIMA_LOCAL_LLM_BASE_URL`, so
-production chat never touches Gemini/Groq/Kimi/Grok/ChatGPT (see
-[`docs/custom-llm.md`](./custom-llm.md) for the routing rules and the
-`ANIMA_ALLOW_CLOUD_LLM` gate that keeps it that way).
+`anima-chat` model, wired into Vercel via `ANIMA_LOCAL_LLM_BASE_URL`. Chat has
+no cloud fallback in the code at all — Gemini/Groq/Kimi/Grok/ChatGPT chat
+routing does not exist — so once this endpoint is live, it's the only place
+chat can ever come from. See [`docs/custom-llm.md`](./custom-llm.md).
 
 Two stages: get it working (cheap CPU VPS, minutes to set up), then upgrade to
 GPU (Ministral 3 8B) once you've validated the product loop end-to-end.
@@ -14,6 +14,27 @@ GPU (Ministral 3 8B) once you've validated the product loop end-to-end.
 
 `anima-chat` (Qwen2.5 3B) runs acceptably on CPU — this is the same model
 `pnpm llm:up` bootstraps locally. No GPU required to get a real endpoint live.
+
+### Fast path — one script, no repo clone needed on the box
+
+`scripts/llm/cloud-init-vps.sh` does steps 2–3 below in one shot: installs
+Ollama as a systemd service, pulls the weights, creates `anima-chat`, installs
+`cloudflared`, and runs the tunnel as a systemd service (auto-restarts, logs
+the public URL to `/var/log/anima-tunnel.log`). It's standalone — it doesn't
+need this repo cloned onto the VPS, so you can paste it directly into most
+providers' "user data" / "cloud-init" box when creating the VPS, or copy it
+over after the fact:
+
+```bash
+pnpm llm:vps-init > cloud-init-vps.sh   # or open the file directly
+scp cloud-init-vps.sh root@<your-vps-ip>:~
+ssh root@<your-vps-ip> 'bash cloud-init-vps.sh'
+# prints the public https://….trycloudflare.com URL + the exact Vercel env vars
+```
+
+Then skip to [step 4 — wire Vercel to the tunnel](#4-wire-vercel-to-the-tunnel).
+Prefer to do it by hand, or want Docker instead? Steps 1–3 below walk through
+the same result manually.
 
 ### 1. Get a small VPS
 
@@ -74,7 +95,6 @@ that survives VPS/process restarts — the URL doesn't change every time):
 Set on Vercel (Production) and redeploy without build cache:
 
 ```bash
-ANIMA_LLM_PROVIDER=custom
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<your-tunnel-host>/v1
 ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
@@ -83,8 +103,8 @@ ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 ### 5. Verify
 
 ```bash
-curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{mode,preferred,localEndpoint,note}'
-# expect: mode=local, preferred=local, localEndpoint.configured=true, hasV1Path=true
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,localEndpoint,note}'
+# expect: status=ok, preferred=local, localEndpoint.configured=true, hasV1Path=true
 
 curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' | jq '{preferred,probeOk,probes}'
 ```
