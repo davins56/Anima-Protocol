@@ -72,3 +72,27 @@ export interface AlpacaExample {
 export interface ChatMlExample {
   messages: ChatTurn[];
 }
+
+/**
+ * A chosen/rejected pair anchored on one of the SFT `TrainingExample`s, for
+ * DPO / ORPO / SimPO preference optimization. `rejected` should be a
+ * realistic failure mode (breaking character, generic assistant disclaimers,
+ * fact-dumping memory, ignoring a stated boundary) — not a strawman.
+ */
+export interface PreferenceExample {
+  id: string;
+  /** The SFT example whose final user turn this pair responds to. */
+  example: TrainingExample;
+  chosen: string;
+  rejected: string;
+  /** Why the rejected reply is worse — documentation, not used in training. */
+  rejectionReason: string;
+  tags?: string[];
+}
+
+export interface PreferencePairExport {
+  prompt: string;
+  chosen: string;
+  rejected: string;
+  system: string;
+}
