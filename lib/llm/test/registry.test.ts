@@ -15,9 +15,15 @@ afterEach(() => {
 });
 
 describe("registry", () => {
-  it("defaults unrecognized providers to openai", () => {
-    expect(resolveProvider("nope")).toBe("openai");
-    expect(resolveProvider(null)).toBe("openai");
+  it("defaults unset/unrecognized providers to the self-hosted ollama default", () => {
+    // Must match llmFailover.ts's defaultProviderMode() — chat should never
+    // silently default to a cloud flagship provider from a typo or unset env.
+    expect(resolveProvider("nope")).toBe("ollama");
+    expect(resolveProvider(null)).toBe("ollama");
+  });
+
+  it("still honors an explicit openai selection", () => {
+    expect(resolveProvider("openai")).toBe("openai");
   });
 
   it("maps custom / anima / local / local-first to ollama by default", () => {
