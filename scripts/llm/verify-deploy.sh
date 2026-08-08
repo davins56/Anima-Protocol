@@ -46,8 +46,8 @@ json_field() {
 }
 
 # Looks up probes[].ok for the entry whose provider matches $2 (e.g. "local")
-# — the aggregate probeOk can be true from a cloud provider even when local
-# is broken, so this checks the provider that actually matters here.
+# — chat has exactly one backend, but checking the named entry rather than
+# just the aggregate probeOk keeps this resilient to that array ever growing.
 json_probe_ok() {
   node -e '
     let data = "";
@@ -70,17 +70,17 @@ fetch "${APP_URL%/}/api/healthz/llm"
 if [[ "${FETCH_STATUS}" == "000" || -z "${FETCH_BODY}" ]]; then
   fail "unreachable"
 else
-  MODE="$(json_field "${FETCH_BODY}" mode)"
+  STATUS="$(json_field "${FETCH_BODY}" status)"
   PREFERRED="$(json_field "${FETCH_BODY}" preferred)"
   CONFIGURED="$(json_field "${FETCH_BODY}" localEndpoint.configured)"
   HOST="$(json_field "${FETCH_BODY}" localEndpoint.host)"
   HAS_V1="$(json_field "${FETCH_BODY}" localEndpoint.hasV1Path)"
   NOTE="$(json_field "${FETCH_BODY}" note)"
 
-  echo "  HTTP ${FETCH_STATUS} · mode=${MODE} preferred=${PREFERRED} localEndpoint.host=${HOST:-<none>} hasV1Path=${HAS_V1}"
+  echo "  HTTP ${FETCH_STATUS} · status=${STATUS} preferred=${PREFERRED} localEndpoint.host=${HOST:-<none>} hasV1Path=${HAS_V1}"
   [[ -n "${NOTE}" ]] && echo "  note: ${NOTE}"
 
-  [[ "${MODE}" == "local" ]] && pass "mode=local" || fail "mode=${MODE:-<empty>} (expected local — check ANIMA_LLM_PROVIDER)"
+  [[ "${STATUS}" == "ok" ]] && pass "status=ok" || fail "status=${STATUS:-<empty>} (expected ok — check ANIMA_LOCAL_LLM_BASE_URL)"
   [[ "${CONFIGURED}" == "true" ]] && pass "localEndpoint.configured=true" || fail "localEndpoint not configured — check ANIMA_LOCAL_LLM_BASE_URL"
   [[ "${HAS_V1}" == "true" ]] && pass "localEndpoint.hasV1Path=true" || fail "ANIMA_LOCAL_LLM_BASE_URL is missing a /v1 path"
 fi
@@ -95,8 +95,6 @@ else
   PROBE_ERROR="$(json_field "${FETCH_BODY}" probeError)"
   echo "  HTTP ${FETCH_STATUS}"
   [[ -n "${PROBE_ERROR}" ]] && echo "  probeError: ${PROBE_ERROR}"
-  # Check the "local" probe specifically — the aggregate probeOk can be true
-  # from a cloud provider while local (what custom mode actually uses) fails.
   [[ "${LOCAL_PROBE_OK}" == "true" ]] && pass "local probe ok=true" || fail "local probe ok=${LOCAL_PROBE_OK:-<missing>} — the app can't reach your model endpoint"
 fi
 
