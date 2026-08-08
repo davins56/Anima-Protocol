@@ -290,4 +290,31 @@ describe("dataset/import", () => {
     expect(assistantTurn?.content).toContain("Fallen Angel");
     expect(assistantTurn?.content).toContain("You are safe with us.");
   });
+
+  it("attaches an interjection to the next reply, not a past reply, once a user turn has intervened", async () => {
+    const file = path.join(dir, "interjection-after-reply.txt");
+    await writeFile(
+      file,
+      [
+        "User: are you here?",
+        "Serenity: I am here.",
+        "User: what about him?",
+        "Fallen Angel: I would guard you too.",
+        "User: thanks.",
+        "Serenity: Always.",
+      ].join("\n"),
+    );
+
+    const examples = await importLogFile(file, { defaultCharacterName: "Serenity" });
+    expect(examples).toHaveLength(1);
+    const [example] = examples;
+    const assistantTurns = example.conversation.filter((t) => t.role === "assistant");
+    expect(assistantTurns).toHaveLength(2);
+    // The interjection came after "I am here." with a user turn in between —
+    // it belongs to the *next* Serenity reply, not retroactively glued onto
+    // the past one.
+    expect(assistantTurns[0].content).toBe("I am here.");
+    expect(assistantTurns[1].content).toContain("Fallen Angel");
+    expect(assistantTurns[1].content).toContain("Always.");
+  });
 });

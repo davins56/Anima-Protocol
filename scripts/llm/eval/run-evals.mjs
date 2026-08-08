@@ -44,7 +44,7 @@ const HANG_GRACE_MS = 15000;
 const rawBase = (process.env.ANIMA_LOCAL_LLM_BASE_URL || "http://127.0.0.1:11434/v1").trim().replace(/\/$/, "");
 // Match cmdChat's tolerance in cli.ts: append /v1 if the operator left it off.
 const base = rawBase.endsWith("/v1") ? rawBase : `${rawBase}/v1`;
-const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "ollama").toLowerCase();
+const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "ollama").trim().toLowerCase();
 const model =
   backend === "vllm"
     ? process.env.ANIMA_VLLM_MODEL_STANDARD || process.env.ANIMA_OLLAMA_MODEL_STANDARD || "anima-chat"
