@@ -126,6 +126,38 @@ this same GPU, see the "Path B — GPU upgrade" section of
 `scripts/llm/finetune/unsloth_sft.py` or LLaMA-Factory, then point
 `ANIMA_VLLM_MODEL` at the resulting checkpoint.
 
+## Alternative: Render (no VPS/SSH/tunnel needed)
+
+If you'd rather not manage a VPS, SSH, or a Cloudflare Tunnel, Render can host
+the same `anima-chat` model as a Docker web service with a stable public
+HTTPS URL out of the box.
+
+**Do not use Render's auto-detected Node build** — that deploys the *main*
+Anima Protocol app, not the LLM. Create a **second, separate** service
+specifically for the model:
+
+1. Render dashboard → New → Web Service → pick this repo.
+2. **Language: switch to `Docker`** (not the auto-detected Node).
+3. **Dockerfile Path**: `scripts/llm/render/Dockerfile`
+4. **Name**: something distinct from the main app, e.g. `anima-llm`.
+5. **Instance Type**: at least **Standard** (2 GB RAM / $25mo). The Free and
+   Starter tiers (512 MB) are too small to hold the ~2 GB `anima-chat`
+   (Qwen2.5 3B) weights — the process will OOM. **Pro** (4 GB / $85mo) gives
+   comfortable headroom if you later swap in a bigger model.
+6. **Advanced → Add Disk**: mount path `/root/.ollama`, size ≥10 GB. Without
+   this, every redeploy re-downloads the ~2 GB weights from scratch.
+7. Deploy. First boot pulls the base weights and creates `anima-chat` — watch
+   the logs for `Anima LLM ready on :11434`. This can take a few minutes.
+8. Copy the service's `onrender.com` URL, then set on Vercel (Production) and
+   redeploy without build cache:
+   ```bash
+   ANIMA_LLM_PROVIDER=custom
+   ANIMA_LOCAL_LLM_BACKEND=ollama
+   ANIMA_LOCAL_LLM_BASE_URL=https://<your-service>.onrender.com/v1
+   ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+   ```
+9. Verify with the same `/api/healthz/llm` checks as Stage 1.
+
 ## Cost-cutting notes
 
 - Stop/pause the GPU pod when not actively serving traffic if your provider
