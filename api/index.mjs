@@ -105211,13 +105211,17 @@ function hasGroqKey() {
 function hasGatewayAuth() {
   return Boolean(gatewayAuthToken());
 }
+function isCloudLlmAllowedHere() {
+  const raw = (process.env.ANIMA_ALLOW_CLOUD_LLM || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
 function localLlmBaseUrl() {
   const explicit = process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
   const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim();
   const mode = raw.toLowerCase();
   const looksLikeKey = /^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(raw) || raw.length > 32;
-  const cloudOnly = !looksLikeKey && (mode === "auto" || mode === "gemini" || mode === "groq" || mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway" || mode === "ensemble");
+  const cloudOnly = !looksLikeKey && isCloudLlmAllowedHere() && (mode === "auto" || mode === "gemini" || mode === "groq" || mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway" || mode === "ensemble");
   if (cloudOnly) return null;
   const forceOllama = process.env.ANIMA_USE_OLLAMA_OPENAI === "1" || process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
   const customLike = !raw || looksLikeKey || mode === "local" || mode === "custom" || mode === "anima" || mode === "local-first" || mode === "ollama" || mode === "vllm";
@@ -105733,6 +105737,7 @@ function isModelUnavailableError(err) {
 
 // ../../lib/llm/src/registry.ts
 var MODEL_TIERS = ["light", "standard", "heavy"];
+var DEFAULT_PROVIDER = "ollama";
 var ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
 var ANIMA_MEMORY_SPECIALIST_MODEL = "mistralai/Ministral-3-3B-Instruct-2512";
 var ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
@@ -105835,12 +105840,13 @@ function resolveProvider(envValue) {
   if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
     return raw;
   }
+  if (raw === "openai") return "openai";
   if (raw === "custom" || raw === "anima" || raw === "local" || raw === "local-first") {
     const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
     if (backend === "vllm") return "vllm";
     return "ollama";
   }
-  return "openai";
+  return DEFAULT_PROVIDER;
 }
 function envKey(provider, tier) {
   return `ANIMA_${provider.toUpperCase()}_MODEL_${tier.toUpperCase()}`;
@@ -106176,7 +106182,20 @@ function sanitizeProviderEnv(raw) {
 function defaultProviderMode() {
   return "local";
 }
-function getConfiguredProviderMode() {
+function isCloudLlmAllowed() {
+  return envFlagEnabled("ANIMA_ALLOW_CLOUD_LLM");
+}
+var CLOUD_CAPABLE_MODES = /* @__PURE__ */ new Set([
+  "auto",
+  "openai",
+  "xai",
+  "gemini",
+  "groq",
+  "kimi",
+  "gateway",
+  "local-first"
+]);
+function resolveRequestedProviderMode() {
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   if (!raw) return defaultProviderMode();
   if (raw === "grok") return "xai";
@@ -106196,6 +106215,17 @@ function getConfiguredProviderMode() {
     return raw;
   }
   return defaultProviderMode();
+}
+function wasCloudModeBlockedByGate() {
+  const requested = resolveRequestedProviderMode();
+  return CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed();
+}
+function getConfiguredProviderMode() {
+  const requested = resolveRequestedProviderMode();
+  if (CLOUD_CAPABLE_MODES.has(requested) && !isCloudLlmAllowed()) {
+    return "local";
+  }
+  return requested;
 }
 function isAnimaCustomMode() {
   const mode = getConfiguredProviderMode();
@@ -106371,6 +106401,11 @@ function getLlmRoutingStatus(tier = "standard") {
   if (rawInput && !sanitized) {
     noteParts.push(
       "ANIMA_LLM_PROVIDER looks like an API key and was ignored \u2014 chat stays on custom Anima LLM (not the cloud chain). Put the key in GEMINI_API_KEY / GROQ_API_KEY / \u2026 and set ANIMA_LLM_PROVIDER=custom (or delete it). Use auto only if you want cloud BYOK."
+    );
+  }
+  if (wasCloudModeBlockedByGate()) {
+    noteParts.push(
+      `ANIMA_LLM_PROVIDER=${sanitized} requested a cloud provider chain, but it was blocked and chat stayed on the self-hosted Anima LLM because ANIMA_ALLOW_CLOUD_LLM is not set to true. Set ANIMA_ALLOW_CLOUD_LLM=true if you really want Gemini/Groq/Kimi/Grok/ChatGPT/Gateway to be reachable.`
     );
   }
   if (preferNonLocal) {
@@ -121458,6 +121493,7 @@ function maxMinds() {
   return Number.isFinite(raw) && raw >= 1 ? Math.min(3, Math.floor(raw)) : 3;
 }
 function isEnsembleMode() {
+  if (!isCloudLlmAllowed()) return false;
   if (envFlagEnabled2("ANIMA_LLM_ENSEMBLE")) return true;
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
   return raw === "ensemble";
