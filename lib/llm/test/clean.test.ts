@@ -1,148 +1,182 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkExampleQuality,
+  cleanExample,
   cleanExamples,
-  cleanTurns,
-  conversationFingerprint,
-  isLowQuality,
-  type TrainingExample,
-} from "../src/dataset";
+  dedupeExamples,
+  hasDenylistedAssistantContent,
+  normalizeTurns,
+  splitExamples,
+} from "../src/dataset/clean";
+import type { TrainingExample } from "../src/dataset/types";
 
-function example(overrides: Partial<TrainingExample> = {}): TrainingExample {
+function example(over: Partial<TrainingExample> = {}): TrainingExample {
   return {
-    id: "ex-1",
+    id: over.id || "ex-1",
     source: "test",
     character: { name: "Serenity" },
     conversation: [
-      { role: "user", content: "I feel overwhelmed tonight." },
-      {
-        role: "assistant",
-        content: "Then let the world go quiet between us for a moment. I am here.",
-      },
-      { role: "user", content: "Do you remember what I told you?" },
-      {
-        role: "assistant",
-        content: "Yes. I remember, and I am not tidying it away from you.",
-      },
+      { role: "user", content: "Hi" },
+      { role: "assistant", content: "Hello there, glad you're here." },
     ],
-    ...overrides,
+    ...over,
   };
 }
 
-describe("cleanTurns", () => {
-  it("drops empty and error-artifact turns", () => {
-    const cleaned = cleanTurns([
-      { role: "user", content: "hello" },
-      { role: "assistant", content: "The companion returned an empty reply. Please try again." },
-      { role: "user", content: "   " },
-      { role: "assistant", content: "real reply here" },
+describe("normalizeTurns", () => {
+  it("trims whitespace and drops empty turns", () => {
+    const turns = normalizeTurns([
+      { role: "user", content: "  hi  " },
+      { role: "assistant", content: "   " },
+      { role: "assistant", content: "hey" },
     ]);
-    expect(cleaned).toEqual([
-      { role: "user", content: "hello" },
-      { role: "assistant", content: "real reply here" },
+    expect(turns).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hey" },
     ]);
   });
 
-  it("collapses accidental consecutive duplicate turns", () => {
-    const cleaned = cleanTurns([
-      { role: "user", content: "hi there" },
-      { role: "user", content: "hi there" },
-      { role: "assistant", content: "hello!" },
+  it("merges consecutive same-role turns", () => {
+    const turns = normalizeTurns([
+      { role: "user", content: "first" },
+      { role: "user", content: "second" },
+      { role: "assistant", content: "reply" },
     ]);
-    expect(cleaned).toHaveLength(2);
+    expect(turns).toHaveLength(2);
+    expect(turns[0]?.content).toBe("first\n\nsecond");
   });
 
   it("redacts emails and phone numbers by default", () => {
-    const cleaned = cleanTurns([
+    const turns = normalizeTurns([
       { role: "user", content: "reach me at jane@example.com or 555-123-4567" },
     ]);
-    expect(cleaned[0]?.content).toBe("reach me at [email] or [phone]");
+    expect(turns[0]?.content).toBe("reach me at [email] or [phone]");
   });
 
   it("skips redaction when redactPii is false", () => {
-    const cleaned = cleanTurns(
+    const turns = normalizeTurns(
       [{ role: "user", content: "email me at jane@example.com" }],
       { redactPii: false },
     );
-    expect(cleaned[0]?.content).toContain("jane@example.com");
+    expect(turns[0]?.content).toContain("jane@example.com");
   });
 });
 
-describe("isLowQuality", () => {
-  it("keeps a substantive multi-turn example", () => {
-    expect(isLowQuality(example())).toBe(false);
-  });
-
-  it("drops examples below the minimum turn count", () => {
+describe("hasDenylistedAssistantContent", () => {
+  it("flags known error/fallback text", () => {
     expect(
-      isLowQuality(
-        example({
-          conversation: [
-            { role: "user", content: "hi" },
-            { role: "assistant", content: "hello there, how are you today?" },
-          ],
-        }),
-      ),
+      hasDenylistedAssistantContent([
+        { role: "assistant", content: "The companion returned an empty reply. Please try again." },
+      ]),
     ).toBe(true);
   });
 
-  it("drops examples whose assistant replies are too short on average", () => {
+  it("flags generic AI refusal boilerplate", () => {
     expect(
-      isLowQuality(
-        example({
-          conversation: [
-            { role: "user", content: "hi" },
-            { role: "assistant", content: "ok" },
-            { role: "user", content: "really?" },
-            { role: "assistant", content: "yep" },
-          ],
-        }),
-      ),
+      hasDenylistedAssistantContent([
+        { role: "assistant", content: "I'm sorry, but I cannot help with that." },
+      ]),
     ).toBe(true);
   });
-});
 
-describe("conversationFingerprint", () => {
-  it("is stable for the same conversation regardless of whitespace/case", () => {
-    const a = conversationFingerprint(example());
-    const b = conversationFingerprint(
-      example({
-        conversation: example().conversation.map((t) => ({
-          ...t,
-          content: t.content.toUpperCase(),
-        })),
-      }),
-    );
-    expect(a).toBe(b);
-  });
-
-  it("differs for different conversations", () => {
-    const a = conversationFingerprint(example());
-    const b = conversationFingerprint(example({ id: "ex-2", conversation: [
-      { role: "user", content: "totally different opener" },
-      { role: "assistant", content: "totally different, substantive reply back to you" },
-      { role: "user", content: "another distinct line" },
-      { role: "assistant", content: "and another distinct, substantive reply" },
-    ] }));
-    expect(a).not.toBe(b);
+  it("does not flag normal in-character replies", () => {
+    expect(
+      hasDenylistedAssistantContent([
+        { role: "assistant", content: "I'm here. Tell me what happened." },
+      ]),
+    ).toBe(false);
   });
 });
 
-describe("cleanExamples", () => {
-  it("keeps good examples, drops low-quality ones, and de-dupes near-identical ones", () => {
-    const good = example();
-    const duplicate = example({ id: "ex-1-dup" });
-    const thin = example({
-      id: "ex-thin",
+describe("checkExampleQuality", () => {
+  it("passes a well-formed example", () => {
+    expect(checkExampleQuality(example()).ok).toBe(true);
+  });
+
+  it("rejects an example with no assistant turn", () => {
+    const ex = example({ conversation: [{ role: "user", content: "hi" }] });
+    expect(checkExampleQuality(ex)).toEqual({ ok: false, reason: "no assistant turn" });
+  });
+
+  it("rejects a too-short assistant turn", () => {
+    const ex = example({
       conversation: [
         { role: "user", content: "hi" },
         { role: "assistant", content: "ok" },
       ],
     });
+    expect(checkExampleQuality(ex, { minAssistantChars: 5 }).ok).toBe(false);
+  });
 
-    const { kept, dropped, deduped } = cleanExamples([good, duplicate, thin]);
-    expect(kept).toHaveLength(1);
-    expect(kept[0]?.id).toBe("ex-1");
-    expect(dropped).toBe(1);
-    expect(deduped).toBe(1);
+  it("rejects denylisted assistant content", () => {
+    const ex = example({
+      conversation: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "Error: quota exhausted, please try again later." },
+      ],
+    });
+    expect(checkExampleQuality(ex).ok).toBe(false);
+  });
+
+  it("rejects a repeated/echoed assistant turn", () => {
+    const ex = example({
+      conversation: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "Same reply every time." },
+        { role: "user", content: "really?" },
+        { role: "assistant", content: "Same reply every time." },
+      ],
+    });
+    expect(checkExampleQuality(ex).ok).toBe(false);
+  });
+});
+
+describe("cleanExample / cleanExamples", () => {
+  it("returns null and reports the drop reason for bad examples", () => {
+    const dropped: string[] = [];
+    const ex = example({ conversation: [{ role: "user", content: "hi" }] });
+    const result = cleanExample(ex, { onDrop: (_e, reason) => dropped.push(reason) });
+    expect(result).toBeNull();
+    expect(dropped).toEqual(["no assistant turn"]);
+  });
+
+  it("keeps good examples and filters out bad ones from a batch", () => {
+    const good = example({ id: "good" });
+    const bad = example({ id: "bad", conversation: [{ role: "user", content: "hi" }] });
+    const result = cleanExamples([good, bad]);
+    expect(result.map((e) => e.id)).toEqual(["good"]);
+  });
+});
+
+describe("dedupeExamples", () => {
+  it("drops exact/near-duplicate conversations, keeping the first", () => {
+    const a = example({ id: "a" });
+    const b = example({
+      id: "b",
+      conversation: [
+        { role: "user", content: "  Hi  " },
+        { role: "assistant", content: "Hello There, Glad You're Here." },
+      ],
+    });
+    const c = example({ id: "c", conversation: [{ role: "user", content: "different" }, { role: "assistant", content: "totally different reply" }] });
+    const result = dedupeExamples([a, b, c]);
+    expect(result.map((e) => e.id)).toEqual(["a", "c"]);
+  });
+});
+
+describe("splitExamples", () => {
+  it("returns everything as train when valRatio is 0", () => {
+    const examples = [example({ id: "a" }), example({ id: "b" })];
+    const { train, val } = splitExamples(examples, 0);
+    expect(train).toHaveLength(2);
+    expect(val).toHaveLength(0);
+  });
+
+  it("is deterministic across calls for the same ids", () => {
+    const examples = Array.from({ length: 50 }, (_, i) => example({ id: `ex-${i}` }));
+    const first = splitExamples(examples, 0.2);
+    const second = splitExamples(examples, 0.2);
+    expect(first.val.map((e) => e.id)).toEqual(second.val.map((e) => e.id));
+    expect(first.train.length + first.val.length).toBe(examples.length);
   });
 });

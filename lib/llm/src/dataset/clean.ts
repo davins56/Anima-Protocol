@@ -1,121 +1,195 @@
 /**
- * Data-quality pass for fine-tune examples: drop error/placeholder artifacts,
- * collapse accidental duplicate turns, redact obvious PII, filter out
- * low-signal conversations, and de-duplicate near-identical transcripts.
+ * Data-quality pipeline for fine-tune export: normalize turns, drop
+ * error/fallback junk, dedupe near-identical examples, and split a
+ * deterministic held-out set.
  *
- * Quality > quantity — this trims noisy bulk exports down to turns worth
- * training on, without needing a human to hand-review every session.
+ * Runs on both curated seed examples and raw DB transcripts so a bad
+ * generation (empty reply, provider error text) never trains the model to
+ * reproduce it.
  */
 
-import { createHash } from "node:crypto";
 import type { ChatTurn, TrainingExample } from "./types";
 
-/** Artifacts that leak into transcripts from failed turns, not real replies. */
-const ARTIFACT_RE =
-  /^(the companion returned an empty reply\.?( please try again\.?)?|error:.*|\.\.\.|undefined|null|\[object object\])$/i;
+/**
+ * Known error/fallback strings that can end up stored as assistant content
+ * (see artifacts/api-server/src/routes/chat.ts) plus generic refusal/apology
+ * boilerplate that is never a desirable SFT target.
+ */
+const ASSISTANT_DENYLIST_PATTERNS: RegExp[] = [
+  /companion returned an empty reply/i,
+  /^\s*(error|failed to generate|internal error)\b/i,
+  /quota exhausted/i,
+  /rate limit(ed)?/i,
+  /^\s*i'?m sorry,? (but )?i (can'?t|cannot|am unable to)/i,
+  /^\s*as an ai( language model)?\b/i,
+  /^\s*i'?m (just )?an ai\b/i,
+];
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const PHONE_RE = /\b(\+?\d{1,2}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g;
 
+function redactPii(text: string): string {
+  return text.replace(EMAIL_RE, "[email]").replace(PHONE_RE, "[phone]");
+}
+
 export interface CleanOptions {
-  /** Minimum non-system turns remaining after per-turn cleaning (default 4). */
-  minTurns?: number;
-  /** Below this average assistant reply length, the example is dropped (default 12). */
-  minAvgAssistantChars?: number;
+  /** Minimum non-whitespace length for an assistant turn (default 4). */
+  minAssistantChars?: number;
   /** Redact emails / phone numbers found in turn content (default true). */
   redactPii?: boolean;
 }
 
-const DEFAULTS: Required<CleanOptions> = {
-  minTurns: 4,
-  minAvgAssistantChars: 12,
-  redactPii: true,
-};
-
-function redact(text: string): string {
-  return text.replace(EMAIL_RE, "[email]").replace(PHONE_RE, "[phone]");
-}
-
 /**
- * Per-turn cleanup: trim, drop empty/error-artifact turns, collapse
- * consecutive duplicate turns from the same role (accidental double-sends).
+ * Trim whitespace, drop empty turns, redact obvious PII (emails, phone
+ * numbers), and merge consecutive turns of the same role (e.g. two user
+ * messages sent back-to-back before a reply) so the conversation strictly
+ * alternates — required by most chat templates.
  */
-export function cleanTurns(turns: ChatTurn[], opts: CleanOptions = {}): ChatTurn[] {
-  const { redactPii } = { ...DEFAULTS, ...opts };
-  const cleaned: ChatTurn[] = [];
-
+export function normalizeTurns(
+  turns: ChatTurn[],
+  opts: Pick<CleanOptions, "redactPii"> = {},
+): ChatTurn[] {
+  const shouldRedact = opts.redactPii ?? true;
+  const merged: ChatTurn[] = [];
   for (const turn of turns) {
-    const trimmed = (turn.content || "").trim();
-    if (!trimmed || ARTIFACT_RE.test(trimmed)) continue;
-
-    const content = redactPii ? redact(trimmed) : trimmed;
-    const prev = cleaned[cleaned.length - 1];
-    if (prev && prev.role === turn.role && prev.content === content) {
-      // Accidental duplicate send/regenerate — keep the first occurrence only.
+    let content = turn.content?.trim() ?? "";
+    if (!content) continue;
+    if (shouldRedact) content = redactPii(content);
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === turn.role) {
+      prev.content = `${prev.content}\n\n${content}`;
       continue;
     }
-    cleaned.push({ ...turn, content });
+    merged.push({ ...turn, content });
   }
-
-  return cleaned;
+  return merged;
 }
 
-/** True when an example is too thin or low-signal to train on. */
-export function isLowQuality(example: TrainingExample, opts: CleanOptions = {}): boolean {
-  const { minTurns, minAvgAssistantChars } = { ...DEFAULTS, ...opts };
+/** True if any assistant turn matches a known error/fallback/refusal pattern. */
+export function hasDenylistedAssistantContent(turns: ChatTurn[]): boolean {
+  return turns.some(
+    (t) =>
+      t.role === "assistant" &&
+      ASSISTANT_DENYLIST_PATTERNS.some((re) => re.test(t.content)),
+  );
+}
+
+export interface QualityCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+/** Quality gate for a single training example. */
+export function checkExampleQuality(
+  example: TrainingExample,
+  opts: CleanOptions = {},
+): QualityCheck {
+  const minAssistantChars = opts.minAssistantChars ?? 4;
   const turns = example.conversation.filter((t) => t.role !== "system");
-  if (turns.length < minTurns) return true;
 
+  if (!turns.some((t) => t.role === "user")) {
+    return { ok: false, reason: "no user turn" };
+  }
   const assistantTurns = turns.filter((t) => t.role === "assistant");
-  if (assistantTurns.length === 0) return true;
-
-  const avgLen =
-    assistantTurns.reduce((sum, t) => sum + t.content.length, 0) / assistantTurns.length;
-  if (avgLen < minAvgAssistantChars) return true;
-
-  return false;
-}
-
-/** Stable hash of the normalized conversation, used to drop near-identical examples. */
-export function conversationFingerprint(example: TrainingExample): string {
-  const normalized = example.conversation
-    .filter((t) => t.role !== "system")
-    .map((t) => `${t.role}:${t.content.trim().toLowerCase().replace(/\s+/g, " ")}`)
-    .join("\n");
-  return createHash("sha1").update(normalized).digest("hex");
+  if (!assistantTurns.length) {
+    return { ok: false, reason: "no assistant turn" };
+  }
+  if (assistantTurns.some((t) => t.content.trim().length < minAssistantChars)) {
+    return { ok: false, reason: "assistant turn too short" };
+  }
+  if (hasDenylistedAssistantContent(turns)) {
+    return { ok: false, reason: "assistant turn matches error/refusal denylist" };
+  }
+  for (let i = 1; i < assistantTurns.length; i++) {
+    if (assistantTurns[i]!.content.trim() === assistantTurns[i - 1]!.content.trim()) {
+      return { ok: false, reason: "repeated assistant turn (likely echo/stuck reply)" };
+    }
+  }
+  return { ok: true };
 }
 
 /**
- * Full pipeline: clean turns, drop low-quality examples, then drop
- * near-identical duplicates (keeping the first occurrence — seed examples are
- * merged before DB transcripts, so curated data wins ties).
+ * Normalize turns and apply the quality gate. Returns null (and, if
+ * `onDrop` is given, reports why) when the example should be excluded.
  */
+export function cleanExample(
+  example: TrainingExample,
+  opts: CleanOptions & { onDrop?: (example: TrainingExample, reason: string) => void } = {},
+): TrainingExample | null {
+  const conversation = normalizeTurns(example.conversation, { redactPii: opts.redactPii });
+  const candidate: TrainingExample = { ...example, conversation };
+  const check = checkExampleQuality(candidate, opts);
+  if (!check.ok) {
+    opts.onDrop?.(example, check.reason || "failed quality check");
+    return null;
+  }
+  return candidate;
+}
+
 export function cleanExamples(
   examples: TrainingExample[],
-  opts: CleanOptions = {},
-): { kept: TrainingExample[]; dropped: number; deduped: number } {
-  const seen = new Set<string>();
-  const kept: TrainingExample[] = [];
-  let dropped = 0;
-  let deduped = 0;
-
+  opts: CleanOptions & { onDrop?: (example: TrainingExample, reason: string) => void } = {},
+): TrainingExample[] {
+  const out: TrainingExample[] = [];
   for (const example of examples) {
-    const conversation = cleanTurns(example.conversation, opts);
-    const candidate: TrainingExample = { ...example, conversation };
-
-    if (isLowQuality(candidate, opts)) {
-      dropped++;
-      continue;
-    }
-
-    const fingerprint = conversationFingerprint(candidate);
-    if (seen.has(fingerprint)) {
-      deduped++;
-      continue;
-    }
-    seen.add(fingerprint);
-    kept.push(candidate);
+    const cleaned = cleanExample(example, opts);
+    if (cleaned) out.push(cleaned);
   }
+  return out;
+}
 
-  return { kept, dropped, deduped };
+/** Normalize conversation text into a stable dedupe key (case/whitespace-insensitive). */
+function dedupeKey(example: TrainingExample): string {
+  return example.conversation
+    .filter((t) => t.role !== "system")
+    .map((t) => `${t.role}:${t.content.trim().toLowerCase().replace(/\s+/g, " ")}`)
+    .join("|");
+}
+
+/** Drop exact/near-duplicate conversations, keeping the first occurrence. */
+export function dedupeExamples(examples: TrainingExample[]): TrainingExample[] {
+  const seen = new Set<string>();
+  const out: TrainingExample[] = [];
+  for (const example of examples) {
+    const key = dedupeKey(example);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(example);
+  }
+  return out;
+}
+
+/** Small stable string hash (FNV-1a) — no crypto dependency needed. */
+function stableHash(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+export interface SplitResult {
+  train: TrainingExample[];
+  val: TrainingExample[];
+}
+
+/**
+ * Deterministic train/val split keyed by example id (stable across runs and
+ * across re-exports, so the held-out set doesn't silently change turn by turn).
+ */
+export function splitExamples(examples: TrainingExample[], valRatio = 0): SplitResult {
+  if (valRatio <= 0) return { train: examples.slice(), val: [] };
+  const ratio = Math.min(valRatio, 0.5);
+  const train: TrainingExample[] = [];
+  const val: TrainingExample[] = [];
+  for (const example of examples) {
+    const bucket = stableHash(example.id) % 1000;
+    if (bucket < ratio * 1000) {
+      val.push(example);
+    } else {
+      train.push(example);
+    }
+  }
+  return { train, val };
 }
