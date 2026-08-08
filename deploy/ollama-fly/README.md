@@ -81,9 +81,10 @@ ANIMA_OLLAMA_MODEL_HEAVY=anima-chat
 
 `ANIMA_LOCAL_LLM_API_KEY` is what the api-server's OpenAI-compatible client
 sends as `Authorization: Bearer …` on every request — it must exactly match
-`PROXY_AUTH_TOKEN`, or Caddy will reject it with 401 and chat will report the
-"custom LLM is selected, but the endpoint is unreachable" error described in
-`../../docs/custom-llm.md`.
+`PROXY_AUTH_TOKEN`, or Caddy will reject it with 401 (some edges surface the
+same failure as 403). Chat / `/api/healthz/llm?probe=1` then report
+`errorKind: "auth"` — regenerate the Fly secret and copy it into Vercel, then
+redeploy. See `../../docs/custom-llm.md` ("403 / authentication failed").
 
 Confirm from the app side:
 

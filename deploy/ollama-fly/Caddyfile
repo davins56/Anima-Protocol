@@ -16,7 +16,9 @@
 	# Ollama itself has no auth — without this, anyone who finds the .fly.dev
 	# URL could run inference on your bill or overwrite/delete models.
 	@unauthorized not header Authorization "Bearer {$PROXY_AUTH_TOKEN}"
-	respond @unauthorized 401
+	# Short body so clients (and /api/healthz/llm?probe=1) can tell this apart
+	# from an empty-body 403 at some other hop. Status stays 401 (Unauthorized).
+	respond @unauthorized "unauthorized\n" 401
 
 	reverse_proxy 127.0.0.1:11434
 }
