@@ -151,6 +151,16 @@ ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or the model id your server serve
 
 ### Quick diagnostic checklist
 
+One-shot check (both endpoints, pass/fail summary):
+
+```bash
+pnpm llm:verify-deploy -- https://www.anima-protocol.com
+# also check your model host directly:
+pnpm llm:verify-deploy -- https://www.anima-protocol.com https://your-tunnel-host
+```
+
+Or by hand:
+
 ```bash
 curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,brand,localEndpoint,note}'
 # healthy: status=ok, preferred=local, brand=anima,

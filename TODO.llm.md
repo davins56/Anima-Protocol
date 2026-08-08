@@ -70,6 +70,12 @@ documentation.
 - [x] Step 29: `unsloth_sft.py --eval-data` — real held-out eval loss during QLoRA SFT
 - [x] Step 30: Tests (`lib/llm/test/clean.test.ts`) + docs (`lib/llm/README.md`, `docs/llm-build.md`)
 
+## Phase H — Data pipeline, eval harness, deploy verification
+
+- [x] Step 31: `lib/llm/src/dataset/import.ts` + CLI `import-logs` / `prepare-finetune --with-logs <dir>` — drop TrainingExample JSON/JSONL, ShareGPT JSON, or plain-text transcripts into `scripts/llm/data/raw/` (gitignored) and merge them into the fine-tune export (25 tests passing)
+- [x] Step 32: `scripts/llm/eval/run-evals.mjs` + `eval-cases.json` + `pnpm llm:eval` — automates the "Internal eval checklist" heuristics (banned phrases, expected keywords, latency budget) against the configured local endpoint, writes `scripts/llm/output/eval-report.{json,md}`
+- [x] Step 33: `scripts/llm/verify-deploy.sh` + `pnpm llm:verify-deploy` — one-shot post-deploy check of `/api/healthz/llm`, the live probe, and (optionally) the model host's `/v1/models`
+
 ## Still manual (GPU / data ops)
 
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs

@@ -48,9 +48,11 @@ Commands:
   list-models [--provider vllm|ollama|openai|groq|mock]
   export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
                [--no-clean] [--min-assistant-chars N]
+  import-logs [--dir path] [--character name] [--tags a,b] [--out path] [--format …]
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
                [--with-db] [--user <clerkUserId>] [--no-clean] [--no-dedupe]
                [--min-assistant-chars N] [--val-split 0.0-0.5]
+               [--with-logs dir] [--character name]
   dataset-stats [--file path]   Quality/shape report on an exported JSONL
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
   serve-hint
@@ -76,6 +78,16 @@ function argValue(args: string[], name: string): string | undefined {
 
 function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
+}
+
+const SUPPORTED_FORMATS: ExportFormat[] = ["sharegpt", "chatml", "alpaca", "messages"];
+
+function parseFormat(raw: string | undefined): ExportFormat {
+  const format = raw || "sharegpt";
+  if (!SUPPORTED_FORMATS.includes(format as ExportFormat)) {
+    throw new Error(`Unsupported --format "${format}" (expected one of: ${SUPPORTED_FORMATS.join(", ")})`);
+  }
+  return format as ExportFormat;
 }
 
 async function cmdListModels(args: string[]): Promise<void> {
@@ -136,7 +148,7 @@ async function writeSplitJsonl(
 }
 
 async function cmdPrepareFinetune(args: string[]): Promise<void> {
-  const format = (argValue(args, "--format") || "sharegpt") as ExportFormat;
+  const format = parseFormat(argValue(args, "--format"));
   const out = resolveOutPath(
     argValue(args, "--out") ||
       path.join("scripts", "llm", "output", `finetune-${format}.jsonl`),
@@ -146,6 +158,18 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
   const valSplit = Number(argValue(args, "--val-split") || 0);
 
   let examples: TrainingExample[] = listSeedExamples(tags);
+
+  // Optionally merge your own cleaned logs (Serenity / Fallen Angel arcs, …).
+  const logsDir = argValue(args, "--with-logs");
+  if (logsDir) {
+    const { importLogsDir } = await import("./dataset/import");
+    const fromLogs = await importLogsDir(resolveOutPath(logsDir), {
+      tags,
+      defaultCharacterName: argValue(args, "--character"),
+    });
+    console.log(`Imported ${fromLogs.length} examples from ${logsDir}`);
+    examples = [...examples, ...fromLogs];
+  }
 
   // Optionally merge DB transcripts when --with-db is set.
   if (hasFlag(args, "--with-db")) {
@@ -259,6 +283,38 @@ async function cmdDatasetStats(args: string[]): Promise<void> {
   console.log(`  exact/near duplicates:    ${duplicates}`);
   if (denylistHits || duplicates) {
     console.log(`  → re-run with prepare-finetune/export-turns (cleaning is on by default) to drop these`);
+  }
+}
+
+async function cmdImportLogs(args: string[]): Promise<void> {
+  const dir = resolveOutPath(argValue(args, "--dir") || path.join("scripts", "llm", "data", "raw"));
+  const { importLogsDir } = await import("./dataset/import");
+  const character = argValue(args, "--character");
+  const tagsRaw = argValue(args, "--tags");
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+
+  const examples = await importLogsDir(dir, { defaultCharacterName: character, tags });
+  console.log(`Parsed ${examples.length} training example(s) from ${dir}`);
+  for (const ex of examples) {
+    const turns = ex.conversation.filter((t) => t.role !== "system").length;
+    console.log(`- ${ex.id} [${ex.character.name}] turns=${turns}`);
+  }
+  if (!examples.length) {
+    console.log(
+      `No logs found. Drop .json (TrainingExample or ShareGPT) / .jsonl / .txt transcripts into ${dir} and re-run.`,
+    );
+    return;
+  }
+
+  const out = argValue(args, "--out");
+  if (out) {
+    const format = parseFormat(argValue(args, "--format"));
+    const outPath = resolveOutPath(out);
+    await mkdir(path.dirname(outPath), { recursive: true });
+    await writeFile(outPath, toJsonl(examples, format), "utf8");
+    console.log(`Wrote ${examples.length} examples → ${outPath} (${format})`);
+  } else {
+    console.log(`Re-run with --out <path> to write these to JSONL, or use prepare-finetune --with-logs ${dir}.`);
   }
 }
 
@@ -380,6 +436,9 @@ async function main(): Promise<void> {
       break;
     case "dataset-stats":
       await cmdDatasetStats(args.slice(1));
+      break;
+    case "import-logs":
+      await cmdImportLogs(args.slice(1));
       break;
     case "serve-hint":
       await cmdServeHint();
