@@ -1636,6 +1636,27 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         ],
       }));
 
+      // Optional local "parallel minds" mode (ANIMA_LOCAL_LLM_ENSEMBLE=true on
+      // the server): several drafts from the same self-hosted model, combined
+      // into one reply. Shows progress in the typing bubble while it's gathering.
+      const showEnsembleStatus = (event) => {
+        if (event?.status !== "ensemble") return;
+        const mindsList = Array.isArray(event.minds) ? event.minds.filter(Boolean).join(", ") : "";
+        const label =
+          event.phase === "combining"
+            ? "Combining mind drafts…"
+            : mindsList
+              ? `Minds drafting: ${mindsList}…`
+              : "Minds drafting…";
+        setActiveSession((prev) => ({
+          ...prev,
+          messages: [
+            ...updatedMessages,
+            { role: "assistant", content: label, character_name: "__typing__", timestamp: streamTs },
+          ],
+        }));
+      };
+
       const resultPayload = await streamChatReply(
         animaApi.chat.sendMessage({
           sessionId: activeSession.id,
@@ -1664,7 +1685,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             scene_mind_speaker_id: activeChar?.id || null,
           },
         }),
-        { onDelta: showStreamingPartial },
+        { onDelta: showStreamingPartial, onStatus: showEnsembleStatus },
       );
       const result = resultPayload.content || "";
       // An empty "success" used to replace the thinking/typing bubble with a
@@ -1672,6 +1693,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // the catch path can surface an error instead of silently vanishing.
       if (!String(result).trim()) {
         throw new Error("The companion returned an empty reply. Please try again.");
+      }
+
+      if (resultPayload.ensemble_combined && Array.isArray(resultPayload.ensemble_minds)) {
+        toast.success(`Combined from ${resultPayload.ensemble_minds.length} minds: ${resultPayload.ensemble_minds.join(", ")}`);
       }
 
       // Surface which backend LLM served this turn (always the self-hosted Anima LLM).
