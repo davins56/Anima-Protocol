@@ -83,9 +83,12 @@ export interface Base44Integrations {
     InvokeLLM(args: {
       prompt: string;
       systemPrompt?: string;
+      system_prompt?: string;
       deepMode?: boolean;
       history?: unknown[];
-    }): Promise<string>;
+      response_json_schema?: Record<string, unknown>;
+      max_tokens?: number;
+    }): Promise<string | Record<string, unknown>>;
     GenerateImage(...args: any[]): Promise<any>;
     UploadFile(...args: any[]): Promise<{ url: string | null }>;
     GetStripeLifetimePrices(...args: any[]): Promise<{ prices: any[] }>;
