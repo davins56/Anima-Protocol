@@ -1648,10 +1648,20 @@ export async function createChatCompletionWithFailover(
 /**
  * Live-probe every configured chat provider with a tiny completion.
  * Secret-free — only returns status / short error kind for operators.
+ *
+ * This is called from the PUBLIC, unauthenticated /api/healthz/llm?probe=1
+ * route, so cloud (flagship) providers must respect the same
+ * ANIMA_ALLOW_CLOUD_LLM gate that guards chat — otherwise a leftover
+ * GEMINI_API_KEY / GROQ_API_KEY / … left in env while the product is
+ * configured for custom-only mode would let any anonymous visitor trigger
+ * real billed calls to those providers just by hitting the health endpoint
+ * repeatedly. Local is never gated: it's the self-hosted default and has no
+ * third-party cost.
  */
 export async function probeLlmProviders(
   tier: ModelTier = "standard",
 ): Promise<LlmProviderProbeResult[]> {
+  const cloudAllowed = isCloudLlmAllowed();
   const candidates: LlmProviderId[] = [
     "local",
     "gemini",
@@ -1675,6 +1685,18 @@ export async function probeLlmProviders(
 
     if (!configured) {
       results.push({ provider, configured: false, ok: false });
+      continue;
+    }
+
+    if (provider !== "local" && !cloudAllowed) {
+      // Same gate as chat: configured but never dialed out to.
+      results.push({
+        provider,
+        configured: true,
+        ok: false,
+        message:
+          "Configured but not probed: ANIMA_ALLOW_CLOUD_LLM is not set, so cloud providers are never called (matches chat routing). Set ANIMA_ALLOW_CLOUD_LLM=true to include this provider in live probes.",
+      });
       continue;
     }
 
