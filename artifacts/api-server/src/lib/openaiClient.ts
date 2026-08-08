@@ -79,12 +79,25 @@ export function hasGatewayAuth(): boolean {
 }
 
 /**
+ * True when a second, explicit env flag unlocks cloud-capable modes. Mirrors
+ * isCloudLlmAllowed() in llmFailover.ts (duplicated, not imported, to avoid a
+ * circular module dependency — llmFailover.ts imports the client getters from
+ * this file).
+ */
+function isCloudLlmAllowedHere(): boolean {
+  const raw = (process.env.ANIMA_ALLOW_CLOUD_LLM || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+/**
  * Base URL for a local OpenAI-compatible server (vLLM, Ollama `/v1`, llama.cpp).
  * Prefers ANIMA_LOCAL_LLM_BASE_URL, then VLLM_BASE_URL, then Ollama's OpenAI path.
  *
  * Product default is custom/local. Cloud-only modes (auto/gemini/…) never get a
- * localhost Ollama URL. On Vercel, localhost is never invented — set
- * ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS host.
+ * localhost Ollama URL — but only once ANIMA_ALLOW_CLOUD_LLM=true actually
+ * unlocks the cloud chain; otherwise those modes are gated back to local and
+ * must still be able to find the local endpoint. On Vercel, localhost is never
+ * invented — set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS host.
  */
 export function localLlmBaseUrl(): string | null {
   const explicit =
@@ -98,6 +111,7 @@ export function localLlmBaseUrl(): string | null {
     /^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(raw) || raw.length > 32;
   const cloudOnly =
     !looksLikeKey &&
+    isCloudLlmAllowedHere() &&
     (mode === "auto" ||
       mode === "gemini" ||
       mode === "groq" ||

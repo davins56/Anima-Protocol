@@ -107,6 +107,16 @@ export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
 
 If `ANIMA_LLM_PROVIDER` contains an API key (`AQ.*`, `sk-`, …), it is ignored and chat **stays on custom** — it does not fall back to the cloud chain.
 
+### The cloud gate — `ANIMA_ALLOW_CLOUD_LLM`
+
+Every cloud-capable mode (`auto`, `local-first`, `gemini`, `groq`, `kimi`, `xai`, `openai`, `gateway`, `ensemble`) needs a **second, explicit** flag to actually take effect:
+
+```bash
+ANIMA_ALLOW_CLOUD_LLM=true
+```
+
+Without it, `ANIMA_LLM_PROVIDER` is silently downgraded to `local` — chat stays on the self-hosted Anima LLM even if someone sets `ANIMA_LLM_PROVIDER=auto` (or pastes a leftover value) by mistake. This means a single stray env var can never make Anima start calling Gemini/Groq/Kimi/Grok/ChatGPT/AI Gateway; both vars have to be set together on purpose. `/api/healthz/llm` reports this with a note like *"ANIMA_LLM_PROVIDER=auto requested a cloud provider chain, but it was blocked… because ANIMA_ALLOW_CLOUD_LLM is not set to true."*
+
 More detail: [`docs/llm-build.md`](./llm-build.md).
 
 ## Production note (Vercel)
@@ -154,6 +164,8 @@ curl -sS https://<your-host>/v1/models
 | Vercel function logs | One `[llm] local client: host=… model=…` line at init |
 
 Once those two vars are set and the endpoint is reachable, the banner disappears and the next chat turn uses your model.
+
+Don't have a host to point at yet? [`docs/llm-deploy.md`](./llm-deploy.md) walks through a concrete, cheap path (VPS + Cloudflare Tunnel today, GPU/vLLM upgrade later).
 
 ### Cloud-chain confusion
 
