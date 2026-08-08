@@ -83,7 +83,20 @@ too-short assistant replies, dedupe near-identical conversations) — see
 [`lib/llm/README.md`](../lib/llm/README.md#data-quality-pipeline-srcdatasetcleants).
 Opt out with `--no-clean` / `--no-dedupe` if you need the raw export.
 
-Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT shape), plus synthetic turns that force memory recall and voice adherence. After merging in hand-cleaned logs, run:
+Drop cleaned Serenity / Fallen Angel arcs (or any transcripts) into
+`scripts/llm/data/raw/` — gitignored, never committed — as TrainingExample
+JSON/JSONL, ShareGPT JSON, or plain `Speaker: text` `.txt` transcripts (see
+`scripts/llm/data/raw/README.md`), then merge them into the export:
+
+```bash
+# Preview what gets parsed
+pnpm --filter @workspace/llm run cli -- import-logs
+
+# Merge into the fine-tune export alongside the seed examples
+pnpm llm:prepare-finetune -- --with-logs scripts/llm/data/raw
+```
+
+Plus synthetic turns that force memory recall and voice adherence. After merging in hand-cleaned logs, run:
 
 ```bash
 pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
@@ -211,16 +224,30 @@ Run your internal evals (character fidelity, memory coherence, tone, latency) ag
 
 ## 5. Internal eval checklist
 
-Before making local the default in production:
+Before making local the default in production, run the automated harness
+against your endpoint — it checks the same categories below via heuristics
+(banned phrases, expected keywords, latency budget) and writes every
+response to `scripts/llm/output/eval-report.md` for human/LLM-judge review
+of voice and tone, which heuristics alone can't score:
+
+```bash
+pnpm llm:eval
+# custom cases file / output path:
+pnpm llm:eval -- --cases scripts/llm/eval/eval-cases.json --out scripts/llm/output/eval-report.json
+```
 
 - [ ] `dataset-stats` clean on the final training file (no denylist hits, no duplicates, no anomalously short assistant turns)
 - [ ] Held-out eval loss (`--eval-data`) trending down, not just train loss
-- [ ] Multi-turn voice lock (Serenity / Fallen Angel samples)  
-- [ ] Memory recall without fact-dumping  
-- [ ] Group speaker lock (does not speak as other companions)  
-- [ ] Emotional continuity across 10+ turns  
-- [ ] System / character card obedience preserved after SFT  
-- [ ] Latency acceptable on your GPU at target quant  
+- [ ] Multi-turn voice lock (Serenity / Fallen Angel samples) — `voice-lock-serenity`, `system-card-obedience` cases
+- [ ] Memory recall without fact-dumping — `memory-recall-basic` case
+- [ ] Group speaker lock (does not speak as other companions) — `group-speaker-lock` case
+- [ ] Emotional continuity across 10+ turns — `emotional-continuity` case (extend `eval-cases.json` with longer histories)
+- [ ] System / character card obedience preserved after SFT — `system-card-obedience` case
+- [ ] Latency acceptable on your GPU at target quant — each case's `maxLatencyMs`
+
+Add more cases to `scripts/llm/eval/eval-cases.json` as you find failure
+modes — same shape: `system`, `history`, `prompt`, `mustInclude` /
+`mustNotInclude`, `maxLatencyMs`.
 
 ---
 
