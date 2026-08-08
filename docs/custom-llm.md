@@ -8,6 +8,7 @@
 | Ollama / llama.cpp / vLLM | Inference engines that run those weights locally |
 | Anima Modelfiles + system prompts | Brand the model as your companion LLM |
 | Fine-tune scripts (Unsloth / LLaMA-Factory) | Specialize it on Anima chats + memory |
+| DPO/ORPO preference pairs (Unsloth) | Sharpen character fidelity after SFT — corrects specific bad habits |
 | `ANIMA_LLM_PROVIDER=custom` | Api-server talks **only** to your model — no cloud chat BYOK |
 
 The React app still calls `POST /api/chat/messages`. The brain behind it becomes **yours**.
@@ -94,6 +95,31 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 ollama create anima-ministral8b -f scripts/llm/Modelfile.anima-ministral8b
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-ministral8b
 ```
+
+### 4. Optional: sharpen with DPO preference pairs
+
+SFT teaches the model to imitate good replies; DPO teaches it to actively
+prefer them over specific bad habits it still shows — breaking character,
+dumping raw memory facts instead of weaving them in, negotiating past a
+boundary the user just set, or over-apologizing during repair. Run this
+**after** step 2, on top of the SFT adapter:
+
+```bash
+pnpm llm:prepare-dpo
+# → scripts/llm/output/dpo-pairs.jsonl (chosen/rejected pairs, see
+#   lib/llm/src/dataset/preferences.ts for the curated set + rationale)
+
+python scripts/llm/finetune/unsloth_dpo.py \
+  --data scripts/llm/output/dpo-pairs.jsonl \
+  --base scripts/llm/checkpoints/anima-ministral8b-qlora \
+  --out scripts/llm/checkpoints/anima-ministral8b-dpo
+```
+
+Then merge / convert to GGUF or serve the DPO adapter the same way as the
+SFT one in step 3. Add your own pairs to `preferences.ts` as you catch the
+model doing something specific and wrong — each pair should target one
+concrete failure mode, not a vague "be better." Full walkthrough:
+[`docs/llm-build.md`](./llm-build.md#preference-optimization).
 
 ---
 
