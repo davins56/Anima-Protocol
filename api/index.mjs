@@ -105172,6 +105172,8 @@ var xaiClient = null;
 var xaiClientKey = null;
 var kimiClient = null;
 var kimiClientKey = null;
+var groqClient = null;
+var groqClientKey = null;
 var gatewayClient = null;
 var gatewayClientKey = null;
 var localLlmClient = null;
@@ -105203,21 +105205,83 @@ function hasKimiKey() {
     normalizeApiKey(process.env.KIMI_API_KEY) || normalizeApiKey(process.env.MOONSHOT_API_KEY)
   );
 }
+function hasGroqKey() {
+  return Boolean(normalizeApiKey(process.env.GROQ_API_KEY));
+}
 function hasGatewayAuth() {
   return Boolean(gatewayAuthToken());
 }
 function localLlmBaseUrl() {
   const explicit = process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
-  const mode = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
-  const ollamaAsLocal = mode === "local" || mode === "local-first" || mode === "ollama" || mode === "vllm" || process.env.ANIMA_USE_OLLAMA_OPENAI === "1" || process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
-  if (!ollamaAsLocal) return null;
-  const ollama = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
-  const root = ollama.replace(/\/$/, "");
-  return root.endsWith("/v1") ? root : `${root}/v1`;
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim();
+  const mode = raw.toLowerCase();
+  const looksLikeKey = /^(AQ\.|sk-|xai-|AIza|Bearer\s)/i.test(raw) || raw.length > 32;
+  const cloudOnly = !looksLikeKey && (mode === "auto" || mode === "gemini" || mode === "groq" || mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway" || mode === "ensemble");
+  if (cloudOnly) return null;
+  const forceOllama = process.env.ANIMA_USE_OLLAMA_OPENAI === "1" || process.env.ANIMA_USE_OLLAMA_OPENAI === "true";
+  const customLike = !raw || looksLikeKey || mode === "local" || mode === "custom" || mode === "anima" || mode === "local-first" || mode === "ollama" || mode === "vllm";
+  if (!customLike && !forceOllama) return null;
+  const ollama = process.env.OLLAMA_BASE_URL?.trim();
+  if (ollama) {
+    const root = ollama.replace(/\/$/, "");
+    return root.endsWith("/v1") ? root : `${root}/v1`;
+  }
+  if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+  return "http://localhost:11434/v1";
 }
 function hasLocalLlm() {
   return Boolean(localLlmBaseUrl());
+}
+function summarizeLocalLlmBaseUrl() {
+  const base = localLlmBaseUrl();
+  if (!base) {
+    return {
+      configured: false,
+      host: null,
+      hasV1Path: false,
+      isHttps: false,
+      isLocalhost: false
+    };
+  }
+  try {
+    const url3 = new URL(base);
+    const host = url3.hostname || null;
+    const path2 = (url3.pathname || "").replace(/\/$/, "");
+    const isLocalhost = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0.0.0.0";
+    return {
+      configured: true,
+      host,
+      hasV1Path: path2 === "/v1" || path2.endsWith("/v1"),
+      isHttps: url3.protocol === "https:",
+      isLocalhost
+    };
+  } catch {
+    return {
+      configured: true,
+      host: null,
+      hasV1Path: /\/v1\/?$/.test(base),
+      isHttps: /^https:/i.test(base),
+      isLocalhost: /localhost|127\.0\.0\.1/i.test(base)
+    };
+  }
+}
+var loggedLocalLlmInit = false;
+function logLocalLlmClientInitOnce() {
+  if (loggedLocalLlmInit) return;
+  loggedLocalLlmInit = true;
+  const summary = summarizeLocalLlmBaseUrl();
+  const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() || "ollama";
+  const model = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || "(default from registry)";
+  if (!summary.configured) {
+    console.info(
+      "[llm] custom/local mode: ANIMA_LOCAL_LLM_BASE_URL unset \u2014 set a public HTTPS OpenAI-compatible URL (\u2026/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md."
+    );
+    return;
+  }
+  console.info(
+    `[llm] local client: host=${summary.host ?? "?"} https=${summary.isHttps} v1=${summary.hasV1Path} localhost=${summary.isLocalhost} backend=${backend} model=${model}`
+  );
 }
 function getOpenAIClient() {
   const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
@@ -105256,6 +105320,19 @@ function getKimiClient() {
   }
   return kimiClient;
 }
+function getGroqClient() {
+  const apiKey = normalizeApiKey(process.env.GROQ_API_KEY);
+  if (!apiKey) return null;
+  if (!groqClient || groqClientKey !== apiKey) {
+    groqClient = new openai_default({
+      apiKey,
+      baseURL: process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai/v1",
+      maxRetries: 0
+    });
+    groqClientKey = apiKey;
+  }
+  return groqClient;
+}
 function getGatewayClient() {
   const apiKey = gatewayAuthToken();
   if (!apiKey) return null;
@@ -105271,7 +105348,10 @@ function getGatewayClient() {
 }
 function getLocalLlmClient() {
   const baseURL = localLlmBaseUrl();
-  if (!baseURL) return null;
+  if (!baseURL) {
+    logLocalLlmClientInitOnce();
+    return null;
+  }
   const apiKey = normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) || normalizeApiKey(process.env.VLLM_API_KEY) || "local";
   const cacheKey = `${baseURL}::${apiKey}`;
   if (!localLlmClient || localLlmClientKey !== cacheKey) {
@@ -105281,6 +105361,7 @@ function getLocalLlmClient() {
       maxRetries: 0
     });
     localLlmClientKey = cacheKey;
+    logLocalLlmClientInitOnce();
   }
   return localLlmClient;
 }
@@ -105303,7 +105384,7 @@ function thinkingBudgetForModel(model) {
     if (Number.isFinite(n2)) return Math.trunc(n2);
   }
   const m2 = model.toLowerCase();
-  if (m2.includes("pro")) return 1024;
+  if (m2.includes("pro") && !m2.includes("flash")) return 1024;
   return 0;
 }
 function geminiApiKey() {
@@ -105523,7 +105604,8 @@ async function createGeminiChatCompletion(opts) {
       "Content-Type": "application/json",
       "x-goog-api-key": apiKey
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: opts.signal
   });
   if (!res.ok) {
     const err = await readErrorBody(res);
@@ -105638,17 +105720,22 @@ function isModelUnavailableError(err) {
   if (!err || typeof err !== "object") return false;
   const e2 = err;
   const code = (e2.code || e2.type || "").toLowerCase();
-  if (code.includes("model_not_found") || code.includes("model_not_available")) return true;
+  if (code.includes("model_not_found") || code.includes("model_not_available") || code.includes("not_found")) {
+    return true;
+  }
   const msg = (e2.message || "").toLowerCase();
-  if (msg.includes("does not exist") || msg.includes("do not have access")) return true;
+  if (msg.includes("does not exist") || msg.includes("do not have access") || msg.includes("no longer available") || msg.includes("not available to new users") || msg.includes("please update your code to use a newer model") || msg.includes("is not found") || msg.includes("model not found")) {
+    return true;
+  }
   if (e2.status === 404) return true;
   return false;
 }
 
 // ../../lib/llm/src/registry.ts
 var MODEL_TIERS = ["light", "standard", "heavy"];
-var ANIMA_PRIMARY_MODEL = "Qwen/Qwen3.6-27B";
-var ANIMA_MEMORY_SPECIALIST_MODEL = "Qwen/Qwen2.5-7B-Instruct";
+var ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
+var ANIMA_MEMORY_SPECIALIST_MODEL = "mistralai/Ministral-3-3B-Instruct-2512";
+var ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
 var OPENAI_DEFAULTS = {
   light: { model: "gpt-4.1-mini", maxTokens: 4096, description: "Cheap tier for greetings and small talk" },
   standard: { model: "gpt-4o", maxTokens: 8192, description: "Routine conversational turns" },
@@ -105671,22 +105758,22 @@ var GROQ_SAMPLING = {
 };
 var OLLAMA_DEFAULTS = {
   light: {
-    model: "qwen2.5:7b",
+    model: ANIMA_OLLAMA_CHAT_TAG,
     alias: "anima-mini",
     maxTokens: 4096,
-    description: "Self-hosted mini / memory specialist (~4\u20135 GB Q4)"
+    description: "Anima bootstrap chat (Qwen2.5 3B open weights, ~2 GB)"
   },
   standard: {
-    model: "anima-qwen27b",
+    model: ANIMA_OLLAMA_CHAT_TAG,
     alias: "anima-base",
     maxTokens: 8192,
-    description: "Fine-tuned Qwen3.6-27B Q4_K_M / Q5 (~16\u201320 GB)"
+    description: "Anima open chat LLM \u2014 replaces cloud ChatGPT/Gemini/Groq for companions"
   },
   heavy: {
-    model: "anima-qwen27b",
+    model: ANIMA_OLLAMA_CHAT_TAG,
     alias: "anima-pro",
     maxTokens: 8192,
-    description: "Same 27B at higher ctx / sampling for deep turns"
+    description: "Same bootstrap model; point at anima-ministral8b after GPU fine-tune"
   }
 };
 var OLLAMA_SAMPLING = {
@@ -105699,19 +105786,19 @@ var VLLM_DEFAULTS = {
     model: ANIMA_MEMORY_SPECIALIST_MODEL,
     alias: "anima-memory",
     maxTokens: 4096,
-    description: "Optional 7B specialist for memory summarization"
+    description: "Optional Ministral 3 3B specialist for memory summarization"
   },
   standard: {
     model: ANIMA_PRIMARY_MODEL,
     alias: "anima-base",
     maxTokens: 8192,
-    description: "Primary fine-tuned Qwen3.6-27B conversational model"
+    description: "Primary fine-tuned Ministral 3 8B conversational model"
   },
   heavy: {
     model: ANIMA_PRIMARY_MODEL,
     alias: "anima-pro",
     maxTokens: 8192,
-    description: "Primary model with richer sampling for deep turns"
+    description: "Primary Ministral 8B with richer sampling for deep turns"
   }
 };
 var VLLM_SAMPLING = {
@@ -105748,7 +105835,11 @@ function resolveProvider(envValue) {
   if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
     return raw;
   }
-  if (raw === "local" || raw === "local-first") return "vllm";
+  if (raw === "custom" || raw === "anima" || raw === "local" || raw === "local-first") {
+    const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
+    if (backend === "vllm") return "vllm";
+    return "ollama";
+  }
   return "openai";
 }
 function envKey(provider, tier) {
@@ -106054,6 +106145,7 @@ var preferNonOpenAI = false;
 var preferNonXai = false;
 var preferNonKimi = false;
 var preferNonGemini = false;
+var preferNonGroq = false;
 var preferNonGateway = false;
 var preferNonLocal = false;
 function clearAllStickySkips() {
@@ -106061,6 +106153,7 @@ function clearAllStickySkips() {
   preferNonXai = false;
   preferNonKimi = false;
   preferNonGemini = false;
+  preferNonGroq = false;
   preferNonGateway = false;
   preferNonLocal = false;
 }
@@ -106081,7 +106174,7 @@ function sanitizeProviderEnv(raw) {
   return trimmed.toLowerCase();
 }
 function defaultProviderMode() {
-  return "auto";
+  return "local";
 }
 function getConfiguredProviderMode() {
   const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
@@ -106089,69 +106182,79 @@ function getConfiguredProviderMode() {
   if (raw === "grok") return "xai";
   if (raw === "moonshot") return "kimi";
   if (raw === "ai-gateway" || raw === "vercel-gateway") return "gateway";
-  if (raw === "custom" || raw === "ensemble" || raw === "anima") {
+  if (raw === "custom" || raw === "anima" || raw === "local") {
+    return "local";
+  }
+  if (raw === "ensemble") {
     return "auto";
   }
-  if (raw === "local") return "local";
   if (raw === "local-first" || raw === "vllm" || raw === "ollama") {
     if (envFlagEnabled("ANIMA_LOCAL_ONLY")) return "local";
     return "local-first";
   }
-  if (raw === "xai" || raw === "openai" || raw === "kimi" || raw === "auto" || raw === "gemini" || raw === "gateway") {
+  if (raw === "xai" || raw === "openai" || raw === "kimi" || raw === "auto" || raw === "gemini" || raw === "groq" || raw === "gateway") {
     return raw;
   }
   return defaultProviderMode();
 }
 function isAnimaCustomMode() {
-  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
-  return raw === "anima" || raw === "custom" || raw === "ensemble";
+  const mode = getConfiguredProviderMode();
+  return mode === "local" || mode === "local-first";
 }
 function isOpenAIBlocked() {
   const mode = getConfiguredProviderMode();
-  if (mode === "xai" || mode === "kimi" || mode === "gemini" || mode === "gateway" || mode === "local") {
+  if (mode === "xai" || mode === "kimi" || mode === "gemini" || mode === "groq" || mode === "gateway" || mode === "local") {
     return true;
   }
   return envFlagEnabled("ANIMA_DISABLE_OPENAI");
 }
+function isGroqBlocked() {
+  const mode = getConfiguredProviderMode();
+  if (mode === "kimi" || mode === "gemini" || mode === "xai" || mode === "gateway" || mode === "local") {
+    return true;
+  }
+  return envFlagEnabled("ANIMA_DISABLE_GROQ");
+}
 function isXaiBlocked() {
   const mode = getConfiguredProviderMode();
-  if (mode === "kimi" || mode === "gemini" || mode === "gateway" || mode === "local") {
+  if (mode === "kimi" || mode === "gemini" || mode === "groq" || mode === "gateway" || mode === "local") {
     return true;
   }
   return envFlagEnabled("ANIMA_DISABLE_XAI");
 }
 function isGatewayBlocked() {
   const mode = getConfiguredProviderMode();
-  if (mode === "kimi" || mode === "gemini" || mode === "xai" || mode === "openai" || mode === "local") {
+  if (mode === "kimi" || mode === "gemini" || mode === "groq" || mode === "xai" || mode === "openai" || mode === "local") {
     return true;
   }
   return envFlagEnabled("ANIMA_DISABLE_GATEWAY");
 }
-function isXaiStickySkipped() {
-  return preferNonXai;
-}
 function isOpenAIStickySkipped() {
   return preferNonOpenAI;
 }
-function isKimiStickySkipped() {
-  return preferNonKimi;
+function isGeminiStickySkipped() {
+  return preferNonGemini;
+}
+function isGroqStickySkipped() {
+  return preferNonGroq;
 }
 function hasAnyStickySkip() {
-  return preferNonKimi || preferNonXai || preferNonOpenAI || preferNonGemini || preferNonGateway || preferNonLocal;
+  return preferNonKimi || preferNonXai || preferNonOpenAI || preferNonGemini || preferNonGroq || preferNonGateway || preferNonLocal;
 }
 function hasAnyChatKey() {
-  return hasLocalLlm() || hasGeminiKey() || hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth();
+  return hasLocalLlm() || hasGeminiKey() || hasGroqKey() || hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth();
 }
 function reviveStickySkippedProvidersIfNeeded() {
   if (!hasAnyStickySkip()) return false;
   if (!hasAnyChatKey()) return false;
   const localOk = hasLocalLlm() && !preferNonLocal;
   const geminiOk = hasGeminiKey() && !preferNonGemini && !isGeminiConfigBlocked();
+  const groqOk = hasGroqKey() && !preferNonGroq && !isGroqBlocked();
   const kimiOk = hasKimiKey() && !preferNonKimi && !isKimiConfigBlocked();
   const xaiOk = hasXaiKey() && !isXaiBlocked() && !preferNonXai;
   const openaiOk = hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
   const gatewayOk = hasGatewayAuth() && !isGatewayBlocked() && !preferNonGateway;
-  const nothingLeft = !localOk && !geminiOk && !kimiOk && !xaiOk && !openaiOk && !gatewayOk;
+  const nothingLeft = !localOk && !geminiOk && !groqOk && !kimiOk && !xaiOk && !openaiOk && !gatewayOk;
   const hidingPreferred = preferNonLocal && hasLocalLlm() || preferNonGemini && hasGeminiKey() && !isGeminiConfigBlocked() || preferNonKimi && hasKimiKey() && !isKimiConfigBlocked();
   if (!nothingLeft && !hidingPreferred) return false;
   clearAllStickySkips();
@@ -106159,11 +106262,11 @@ function reviveStickySkippedProvidersIfNeeded() {
 }
 function isGeminiConfigBlocked() {
   const mode = getConfiguredProviderMode();
-  return mode === "kimi" || mode === "xai" || mode === "openai" || mode === "gateway" || mode === "local";
+  return mode === "kimi" || mode === "xai" || mode === "openai" || mode === "groq" || mode === "gateway" || mode === "local";
 }
 function isKimiConfigBlocked() {
   const mode = getConfiguredProviderMode();
-  return mode === "gemini" || mode === "gateway" || mode === "local";
+  return mode === "gemini" || mode === "groq" || mode === "gateway" || mode === "local";
 }
 function providerAvailable(id) {
   if (id === "local") {
@@ -106171,6 +106274,9 @@ function providerAvailable(id) {
   }
   if (id === "gemini") {
     return hasGeminiKey() && !isGeminiConfigBlocked() && !preferNonGemini;
+  }
+  if (id === "groq") {
+    return hasGroqKey() && !isGroqBlocked() && !preferNonGroq;
   }
   if (id === "openai") {
     return hasOpenAIKey() && !isOpenAIBlocked() && !preferNonOpenAI;
@@ -106187,7 +106293,7 @@ function providerAvailable(id) {
   return false;
 }
 function getAnimaTierProviderOrder(_tier) {
-  return ["gemini", "kimi", "xai", "openai"];
+  return ["gemini", "groq", "openai"];
 }
 function getProviderChain(_tier = "standard") {
   reviveStickySkippedProvidersIfNeeded();
@@ -106198,6 +106304,7 @@ function getProviderChain(_tier = "standard") {
   };
   const pushCloudAuto = () => {
     push2("gemini");
+    push2("groq");
     push2("kimi");
     push2("xai");
     push2("openai");
@@ -106220,6 +106327,10 @@ function getProviderChain(_tier = "standard") {
     push2("gemini");
     return chain;
   }
+  if (mode === "groq") {
+    push2("groq");
+    return chain;
+  }
   if (mode === "gateway") {
     push2("gateway");
     return chain;
@@ -106227,6 +106338,7 @@ function getProviderChain(_tier = "standard") {
   if (mode === "openai") {
     push2("openai");
     push2("gemini");
+    push2("groq");
     push2("kimi");
     push2("xai");
     push2("gateway");
@@ -106235,6 +106347,7 @@ function getProviderChain(_tier = "standard") {
   if (mode === "xai") {
     push2("xai");
     push2("gemini");
+    push2("groq");
     push2("kimi");
     push2("gateway");
     return chain;
@@ -106248,10 +106361,16 @@ function getLlmRoutingStatus(tier = "standard") {
   const mode = getConfiguredProviderMode();
   const chain = getProviderChain(tier);
   const preferred = chain[0] ?? null;
+  const localSummary = summarizeLocalLlmBaseUrl();
+  const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() || "ollama";
+  const localModel = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel(tier).model;
+  if (mode === "local" || mode === "local-first") {
+    logLocalLlmClientInitOnce();
+  }
   const noteParts = [];
   if (rawInput && !sanitized) {
     noteParts.push(
-      "ANIMA_LLM_PROVIDER looks like an API key and was ignored \u2014 set it to auto|gemini|kimi|xai|openai|gateway|local|local-first (put the Gemini key in GEMINI_API_KEY)."
+      "ANIMA_LLM_PROVIDER looks like an API key and was ignored \u2014 chat stays on custom Anima LLM (not the cloud chain). Put the key in GEMINI_API_KEY / GROQ_API_KEY / \u2026 and set ANIMA_LLM_PROVIDER=custom (or delete it). Use auto only if you want cloud BYOK."
     );
   }
   if (preferNonLocal) {
@@ -106259,6 +106378,9 @@ function getLlmRoutingStatus(tier = "standard") {
   }
   if (preferNonGemini) {
     noteParts.push("Gemini sticky-skipped after a prior quota/auth failure this process.");
+  }
+  if (preferNonGroq) {
+    noteParts.push("Groq sticky-skipped after a prior quota/auth failure this process.");
   }
   if (preferNonKimi) {
     noteParts.push("Kimi sticky-skipped after a prior quota/auth failure this process.");
@@ -106270,21 +106392,42 @@ function getLlmRoutingStatus(tier = "standard") {
   }
   if (mode === "auto") {
     noteParts.push(
-      "Chat prefers Gemini, then fails over to Kimi \u2192 Grok \u2192 OpenAI \u2192 AI Gateway on quota or auth errors."
+      "Chat uses the cloud BYOK chain (Gemini \u2192 Groq \u2192 Kimi \u2192 Grok \u2192 OpenAI \u2192 Gateway). Set ANIMA_LLM_PROVIDER=custom to use only the Anima LLM."
     );
   } else if (mode === "local") {
-    noteParts.push(
-      "Chat is local-only (vLLM/Ollama). Set ANIMA_LOCAL_LLM_BASE_URL and ANIMA_LLM_PROVIDER=local-first for cloud backup."
-    );
+    if (!localSummary.configured) {
+      noteParts.push(
+        "Anima custom LLM is selected, but ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. Gemini/Groq/Kimi/Grok/ChatGPT/Gateway are intentionally NOT used in custom mode. Only set ANIMA_LLM_PROVIDER=auto if you want the cloud BYOK chain. See docs/custom-llm.md."
+      );
+    } else {
+      noteParts.push(
+        `Chat uses the custom self-hosted Anima LLM only (vLLM/Ollama/llama.cpp) at host=${localSummary.host ?? "?"} model=${localModel}. No Gemini/Groq/Kimi/Grok/Gateway.`
+      );
+      if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+        noteParts.push(
+          "WARNING: local endpoint is localhost on Vercel \u2014 serverless cannot reach it. Use a public HTTPS tunnel URL."
+        );
+      } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+        noteParts.push(
+          "WARNING: local endpoint is not HTTPS \u2014 Vercel egress often requires https://\u2026/v1."
+        );
+      } else if (!localSummary.hasV1Path) {
+        noteParts.push(
+          "WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions."
+        );
+      }
+    }
   } else if (mode === "local-first") {
     noteParts.push(
-      "Chat prefers the local OpenAI-compatible model, then fails over to the cloud auto chain."
+      "Chat prefers the custom local model, then fails over to the cloud auto chain if the local endpoint fails."
     );
   } else if (mode === "gemini") {
     noteParts.push("Chat is Gemini-only (ANIMA_LLM_PROVIDER=gemini).");
+  } else if (mode === "groq") {
+    noteParts.push("Chat is Groq-only (ANIMA_LLM_PROVIDER=groq).");
   } else if (mode === "kimi") {
     noteParts.push(
-      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=auto for Gemini/Grok/OpenAI/Gateway backup."
+      "Chat is Kimi-only (ANIMA_LLM_PROVIDER=kimi). Set ANIMA_LLM_PROVIDER=custom for a self-hosted model."
     );
   } else if (mode === "gateway") {
     noteParts.push(
@@ -106294,7 +106437,7 @@ function getLlmRoutingStatus(tier = "standard") {
     noteParts.push("Chat uses the configured provider chain.");
   } else {
     noteParts.push(
-      "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for local Qwen, or GEMINI_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY."
+      "No chat LLM configured. For a custom model set ANIMA_LLM_PROVIDER=custom and ANIMA_LOCAL_LLM_BASE_URL (vLLM/Ollama)."
     );
   }
   return {
@@ -106308,8 +106451,18 @@ function getLlmRoutingStatus(tier = "standard") {
       openai: hasOpenAIKey(),
       xai: hasXaiKey(),
       gemini: hasGeminiKey(),
+      groq: hasGroqKey(),
       gateway: hasGatewayAuth(),
       local: hasLocalLlm()
+    },
+    localEndpoint: {
+      configured: localSummary.configured,
+      host: localSummary.host,
+      hasV1Path: localSummary.hasV1Path,
+      isHttps: localSummary.isHttps,
+      isLocalhost: localSummary.isLocalhost,
+      backend,
+      model: localModel
     },
     geminiRetiredForChat: false,
     // Never echo API-key-like values that were pasted into the wrong field.
@@ -106368,10 +106521,15 @@ var XAI_ENV_KEYS = {
   heavy: "ANIMA_XAI_MODEL_HEAVY"
 };
 var DEFAULT_GEMINI_MODELS = {
-  light: "gemini-2.5-flash-lite",
+  light: "gemini-3.1-flash-lite",
   standard: "gemini-2.5-flash",
   heavy: "gemini-2.5-pro"
 };
+var GEMINI_RESCUE_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-flash-latest"
+];
 var GEMINI_ENV_KEYS = {
   light: "ANIMA_GEMINI_MODEL_LIGHT",
   standard: "ANIMA_GEMINI_MODEL_STANDARD",
@@ -106387,11 +106545,26 @@ var KIMI_ENV_KEYS = {
   standard: "ANIMA_KIMI_MODEL_STANDARD",
   heavy: "ANIMA_KIMI_MODEL_HEAVY"
 };
+var DEFAULT_GROQ_MODELS = {
+  light: "llama-3.1-8b-instant",
+  standard: "llama-3.3-70b-versatile",
+  heavy: "llama-3.3-70b-versatile"
+};
+var GROQ_ENV_KEYS = {
+  light: "ANIMA_GROQ_MODEL_LIGHT",
+  standard: "ANIMA_GROQ_MODEL_STANDARD",
+  heavy: "ANIMA_GROQ_MODEL_HEAVY"
+};
 var DEFAULT_GATEWAY_MODELS = {
-  light: "google/gemini-2.5-flash-lite",
+  light: "google/gemini-3.1-flash-lite",
   standard: "google/gemini-2.5-flash",
   heavy: "google/gemini-2.5-pro"
 };
+var GATEWAY_RESCUE_MODELS = [
+  "google/gemini-3.1-flash-lite",
+  "google/gemini-2.5-flash",
+  "google/gemini-flash-latest"
+];
 var GATEWAY_ENV_KEYS = {
   light: "ANIMA_GATEWAY_MODEL_LIGHT",
   standard: "ANIMA_GATEWAY_MODEL_STANDARD",
@@ -106424,6 +106597,15 @@ function resolveKimiModel(tier) {
     maxTokens: openaiResolved.maxTokens
   };
 }
+function resolveGroqModel(tier) {
+  const override = process.env[GROQ_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GROQ_MODEL?.trim();
+  const openaiResolved = resolveModel(tier);
+  return {
+    tier,
+    model: override || DEFAULT_GROQ_MODELS[tier],
+    maxTokens: openaiResolved.maxTokens
+  };
+}
 function resolveGatewayModel(tier) {
   const override = process.env[GATEWAY_ENV_KEYS[tier]]?.trim() || process.env.ANIMA_GATEWAY_MODEL?.trim();
   const openaiResolved = resolveModel(tier);
@@ -106434,7 +106616,8 @@ function resolveGatewayModel(tier) {
   };
 }
 function resolveLocalModel(tier) {
-  const registryProvider = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() === "ollama" ? "ollama" : "vllm";
+  const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
+  const registryProvider = backend === "vllm" ? "vllm" : "ollama";
   const spec = resolveModelSpec(tier, registryProvider);
   return {
     tier,
@@ -106446,9 +106629,10 @@ function providerLabel(id) {
   if (id === "local") return "Local LLM";
   if (id === "xai") return "Grok (xAI)";
   if (id === "gemini") return "Gemini";
+  if (id === "groq") return "Groq";
   if (id === "kimi") return "Kimi (Moonshot)";
   if (id === "gateway") return "AI Gateway";
-  return "OpenAI";
+  return "ChatGPT (OpenAI)";
 }
 function clientFor(provider) {
   if (provider === "local") {
@@ -106464,6 +106648,13 @@ function clientFor(provider) {
     const client = getXaiClient();
     if (!client) {
       throw new Error("XAI_API_KEY must be set to use the Grok provider.");
+    }
+    return client;
+  }
+  if (provider === "groq") {
+    const client = getGroqClient();
+    if (!client) {
+      throw new Error("GROQ_API_KEY must be set to use the Groq provider.");
     }
     return client;
   }
@@ -106490,6 +106681,7 @@ function clientFor(provider) {
 function resolveForProvider(provider, tier) {
   if (provider === "local") return resolveLocalModel(tier);
   if (provider === "gemini") return resolveGeminiModel(tier);
+  if (provider === "groq") return resolveGroqModel(tier);
   if (provider === "xai") return resolveXaiModel(tier);
   if (provider === "kimi") return resolveKimiModel(tier);
   if (provider === "gateway") return resolveGatewayModel(tier);
@@ -106498,6 +106690,7 @@ function resolveForProvider(provider, tier) {
 function otherVendorAvailable(excluding) {
   if (excluding !== "local" && hasLocalLlm()) return true;
   if (excluding !== "gemini" && hasGeminiKey()) return true;
+  if (excluding !== "groq" && hasGroqKey()) return true;
   if (excluding !== "kimi" && hasKimiKey()) return true;
   if (excluding !== "xai" && hasXaiKey()) return true;
   if (excluding !== "openai" && hasOpenAIKey()) return true;
@@ -106515,9 +106708,15 @@ function markKimiUnusable(err) {
   }
 }
 function markGeminiUnusable(err) {
-  if (isProviderUnusableError(err) && otherVendorAvailable("gemini")) {
+  if ((isProviderUnusableError(err) || isModelUnavailableError(err)) && otherVendorAvailable("gemini")) {
     preferNonGemini = true;
   }
+}
+function shouldTryNextProvider(err) {
+  if (isProviderUnusableError(err) || isModelUnavailableError(err)) return true;
+  if (!err || typeof err !== "object") return false;
+  const code = String(err.code || "").toLowerCase();
+  return code === "empty_visible_text" || code === "empty_stream";
 }
 function recordProviderFailure(provider, err) {
   if (provider === "local") {
@@ -106536,6 +106735,12 @@ function recordProviderFailure(provider, err) {
   }
   if (provider === "gemini") {
     markGeminiUnusable(err);
+    return;
+  }
+  if (provider === "groq") {
+    if (isProviderUnusableError(err) && otherVendorAvailable("groq")) {
+      preferNonGroq = true;
+    }
     return;
   }
   if (provider === "gateway") {
@@ -106580,7 +106785,7 @@ function markXaiUnusable(err) {
   }
 }
 function markGatewayUnusable(err) {
-  if (isProviderUnusableError(err) && otherVendorAvailable("gateway")) {
+  if ((isProviderUnusableError(err) || isModelUnavailableError(err)) && otherVendorAvailable("gateway")) {
     preferNonGateway = true;
   }
 }
@@ -106594,12 +106799,13 @@ function enrichError(err, attempted, failures = []) {
       if (id === "xai") return "XAI_API_KEY";
       if (id === "kimi") return "KIMI_API_KEY";
       if (id === "gemini") return "GEMINI_API_KEY";
+      if (id === "groq") return "GROQ_API_KEY";
       if (id === "gateway") return "AI_GATEWAY_API_KEY";
       return "OPENAI_API_KEY";
     });
     const uniqueKeys = [...new Set(keyHints)].join(" / ");
     return new Error(
-      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("gemini") ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. " : "") + (attempted.includes("kimi") ? "Kimi uses Moonshot keys from https://platform.kimi.ai. " : "") + (attempted.includes("gateway") ? "AI Gateway uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN (https://vercel.com/docs/ai-gateway). " : "") + "Set ANIMA_LLM_PROVIDER=auto to allow multi-provider failover." + trailSuffix
+      `LLM authentication failed (tried ${names}). Check ${uniqueKeys} on Vercel \u2014 paste the key without quotes, then redeploy. ` + (attempted.includes("gemini") ? "Gemini uses Google AI Studio keys (including AQ.* auth keys) via the native API. " : "") + (attempted.includes("groq") ? "Groq uses keys from https://console.groq.com. " : "") + (attempted.includes("kimi") ? "Kimi uses Moonshot keys from https://platform.kimi.ai. " : "") + (attempted.includes("gateway") ? "AI Gateway uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN (https://vercel.com/docs/ai-gateway). " : "") + "Set ANIMA_LLM_PROVIDER=auto to allow multi-provider failover." + trailSuffix
     );
   }
   if (isProviderUnusableError(err)) {
@@ -106611,12 +106817,17 @@ function enrichError(err, attempted, failures = []) {
     }
     if (attempted.length === 1 && attempted[0] === "gemini") {
       return new Error(
-        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` + (hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth() ? " Or set ANIMA_LLM_PROVIDER=auto to allow Kimi/Grok/OpenAI/Gateway failover." : "") + trailSuffix
+        `Gemini credits/quota exhausted (or the key was rejected). Check GEMINI_API_KEY / Google AI Studio quota on Vercel, then redeploy.` + (hasGroqKey() || hasKimiKey() || hasXaiKey() || hasOpenAIKey() || hasGatewayAuth() ? " Or set ANIMA_LLM_PROVIDER=auto to allow Groq/Kimi/Grok/OpenAI/Gateway failover." : "") + trailSuffix
+      );
+    }
+    if (attempted.length === 1 && attempted[0] === "groq") {
+      return new Error(
+        `Groq credits/quota exhausted (or the key was rejected). Check GROQ_API_KEY at https://console.groq.com, then redeploy.` + (hasGeminiKey() || hasOpenAIKey() || hasGatewayAuth() ? " Or set ANIMA_LLM_PROVIDER=auto so Gemini/ChatGPT/Gateway can cover." : "") + trailSuffix
       );
     }
     if (attempted.length === 1 && attempted[0] === "kimi") {
       return new Error(
-        `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, or set ANIMA_LLM_PROVIDER=auto so Gemini/Grok/OpenAI/Gateway can cover, then redeploy.` + trailSuffix
+        `Kimi (Moonshot) credits/quota exhausted (or the key was rejected). Check KIMI_API_KEY / MOONSHOT_API_KEY on Vercel and your balance at https://platform.kimi.ai, or set ANIMA_LLM_PROVIDER=auto so Gemini/Groq/OpenAI/Gateway can cover, then redeploy.` + trailSuffix
       );
     }
     if (attempted.length === 1 && attempted[0] === "gateway") {
@@ -106624,17 +106835,41 @@ function enrichError(err, attempted, failures = []) {
         `AI Gateway credits/quota exhausted (or auth failed). Check AI_GATEWAY_API_KEY / Vercel AI Gateway credits at https://vercel.com/docs/ai-gateway, then redeploy.` + trailSuffix
       );
     }
-    const hints = [];
-    if (!hasGeminiKey()) hints.push("Set GEMINI_API_KEY for Gemini");
-    if (!hasKimiKey()) hints.push("Set KIMI_API_KEY for Kimi");
-    if (!hasXaiKey()) hints.push("Set XAI_API_KEY for Grok");
-    if (!isOpenAIBlocked() && !hasOpenAIKey()) hints.push("Set OPENAI_API_KEY");
-    if (!hasGatewayAuth()) {
-      hints.push("Set AI_GATEWAY_API_KEY (or deploy on Vercel with OIDC)");
+    const missingUnused = [];
+    if (!attempted.includes("gemini") && !hasGeminiKey()) {
+      missingUnused.push("GEMINI_API_KEY");
     }
-    const hint = hints.length > 0 ? ` ${hints.join("; ")}. Or set ANIMA_LLM_PROVIDER=auto|gemini|kimi|xai|gateway.` : " Keys are present on the server, but every provider rejected the request (quota, billing, or revoked key) \u2014 re-checking env values will not fix this. Add credits in Google AI Studio / Moonshot / xAI / OpenAI, or top up AI Gateway. Live-check: /api/healthz/llm?probe=1.";
+    if (!attempted.includes("groq") && !hasGroqKey()) {
+      missingUnused.push("GROQ_API_KEY (often has a free tier at console.groq.com)");
+    }
+    if (!attempted.includes("kimi") && !hasKimiKey()) {
+      missingUnused.push("KIMI_API_KEY");
+    }
+    if (!attempted.includes("xai") && !hasXaiKey()) {
+      missingUnused.push("XAI_API_KEY");
+    }
+    if (!attempted.includes("openai") && !isOpenAIBlocked() && !hasOpenAIKey()) {
+      missingUnused.push("OPENAI_API_KEY");
+    }
+    if (!attempted.includes("gateway") && !hasGatewayAuth()) {
+      missingUnused.push("AI_GATEWAY_API_KEY");
+    }
+    if (!attempted.includes("local") && !hasLocalLlm()) {
+      missingUnused.push("ANIMA_LOCAL_LLM_BASE_URL (Anima open LLM via Ollama/vLLM)");
+    }
+    const parts = [
+      " Every cloud provider that was tried rejected the request (quota, billing, or revoked key) \u2014 re-pasting the same keys will not restore chat.",
+      " Fix options: (1) Preferred \u2014 host Anima LLM and set ANIMA_LLM_PROVIDER=custom plus ANIMA_LOCAL_LLM_BASE_URL (see docs/custom-llm.md), then redeploy.",
+      " (2) Top up credits for the providers you already use (Google AI Studio / Moonshot / xAI / OpenAI / AI Gateway)."
+    ];
+    if (missingUnused.length > 0) {
+      parts.push(` (3) Optional unused backup: set ${missingUnused.join("; ")}.`);
+    }
+    parts.push(
+      " Note: ANIMA_LLM_PROVIDER must be a mode name (custom|auto|gemini|groq|\u2026), never an API key. Live-check: /api/healthz/llm?probe=1."
+    );
     return new Error(
-      `LLM credits/quota exhausted (tried ${names}).${hint}${trailSuffix}`
+      `LLM credits/quota exhausted (tried ${names}).${parts.join("")}${trailSuffix}`
     );
   }
   const base = err instanceof Error ? err : new Error(String(err));
@@ -106658,7 +106893,7 @@ async function createStream(provider, resolved, messages2) {
     stream: true
   });
 }
-async function createCompletion(provider, resolved, messages2, temperature) {
+async function createCompletion(provider, resolved, messages2, temperature, tools, toolChoice) {
   if (provider === "gemini") {
     return createGeminiChatCompletion({
       model: resolved.model,
@@ -106671,35 +106906,67 @@ async function createCompletion(provider, resolved, messages2, temperature) {
     model: resolved.model,
     max_tokens: resolved.maxTokens,
     messages: messages2,
-    ...typeof temperature === "number" ? { temperature } : {}
+    ...typeof temperature === "number" ? { temperature } : {},
+    ...tools && tools.length ? { tools, tool_choice: toolChoice ?? "auto" } : {}
   });
 }
-async function withModelFallback(provider, preferred, run) {
-  try {
-    return { value: await run(preferred), resolved: preferred };
-  } catch (modelErr) {
-    const standard = resolveForProvider(provider, "standard");
-    if (preferred.model !== standard.model && isModelUnavailableError(modelErr)) {
-      return { value: await run(standard), resolved: standard };
-    }
-    throw modelErr;
+function rescueModelsForProvider(provider, preferred) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  const push2 = (model) => {
+    const id = model.trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ ...preferred, model: id });
+  };
+  push2(preferred.model);
+  push2(resolveForProvider(provider, "standard").model);
+  push2(resolveForProvider(provider, "light").model);
+  if (provider === "gemini") {
+    for (const model of GEMINI_RESCUE_MODELS) push2(model);
+  } else if (provider === "gateway") {
+    for (const model of GATEWAY_RESCUE_MODELS) push2(model);
   }
+  return out;
+}
+async function withModelFallback(provider, preferred, run) {
+  const candidates = rescueModelsForProvider(provider, preferred);
+  let lastErr;
+  for (let i2 = 0; i2 < candidates.length; i2++) {
+    const candidate = candidates[i2];
+    try {
+      return { value: await run(candidate), resolved: candidate };
+    } catch (modelErr) {
+      lastErr = modelErr;
+      const hasNext = i2 < candidates.length - 1;
+      if (!hasNext || !isModelUnavailableError(modelErr)) {
+        throw modelErr;
+      }
+    }
+  }
+  throw lastErr;
 }
 function requireProviderChain() {
   const chain = getProviderChain();
   if (chain.length === 0) {
+    const mode = getConfiguredProviderMode();
+    if (mode === "local" || mode === "local-first") {
+      throw new Error(
+        "Anima custom LLM is selected, but ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. Gemini/Groq/Kimi/Grok/ChatGPT/Gateway are intentionally NOT used in custom mode. Only set ANIMA_LLM_PROVIDER=auto if you want the cloud BYOK chain. See docs/custom-llm.md."
+      );
+    }
     const missing = [];
     if (!hasLocalLlm()) missing.push("ANIMA_LOCAL_LLM_BASE_URL");
     if (!hasGeminiKey()) missing.push("GEMINI_API_KEY");
+    if (!hasGroqKey()) missing.push("GROQ_API_KEY");
     if (!hasKimiKey()) missing.push("KIMI_API_KEY");
     if (!hasXaiKey()) missing.push("XAI_API_KEY");
     if (!hasOpenAIKey()) missing.push("OPENAI_API_KEY");
     if (!hasGatewayAuth()) missing.push("AI_GATEWAY_API_KEY");
     const configNote = isOpenAIBlocked() ? " OpenAI is blocked via ANIMA_LLM_PROVIDER / ANIMA_DISABLE_OPENAI." : "";
-    const mode = getConfiguredProviderMode();
-    const modeNote = mode === "local" || mode === "local-first" ? " Local mode requires ANIMA_LOCAL_LLM_BASE_URL (vLLM) or OLLAMA_BASE_URL with ANIMA_LLM_PROVIDER=local|local-first." : mode === "kimi" ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY." : mode === "gemini" ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY." : mode === "gateway" ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN." : "";
+    const modeNote = mode === "kimi" ? " ANIMA_LLM_PROVIDER=kimi requires a working KIMI_API_KEY." : mode === "gemini" ? " ANIMA_LLM_PROVIDER=gemini requires a working GEMINI_API_KEY." : mode === "groq" ? " ANIMA_LLM_PROVIDER=groq requires a working GROQ_API_KEY." : mode === "gateway" ? " ANIMA_LLM_PROVIDER=gateway requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN." : "";
     throw new Error(
-      missing.length >= 4 ? `No LLM provider configured. Set ANIMA_LOCAL_LLM_BASE_URL for local Qwen, or GEMINI_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY.${configNote}${modeNote}` : `No usable LLM provider right now.${configNote}${modeNote} Check local endpoint / API keys and redeploy.`
+      missing.length >= 4 ? `No LLM provider configured. Set ANIMA_LOCAL_LLM_BASE_URL for the Anima LLM, or GEMINI_API_KEY / GROQ_API_KEY / KIMI_API_KEY / XAI_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY with ANIMA_LLM_PROVIDER=auto.${configNote}${modeNote}` : `No usable LLM provider right now.${configNote}${modeNote} Check local endpoint / API keys and redeploy.`
     );
   }
   return chain;
@@ -106735,7 +107002,7 @@ async function createChatStreamWithFailover(req) {
       lastErr = err;
       failures.push({ provider, err });
       recordProviderFailure(provider, err);
-      if (provider !== "local" && !isProviderUnusableError(err)) {
+      if (provider !== "local" && !shouldTryNextProvider(err)) {
         throw enrichError(err, attempted, failures);
       }
     }
@@ -106758,7 +107025,14 @@ async function createChatCompletionWithFailover(req) {
       const { value: completion, resolved } = await withModelFallback(
         provider,
         preferredModel,
-        (m2) => createCompletion(provider, m2, req.messages, req.temperature)
+        (m2) => createCompletion(
+          provider,
+          m2,
+          req.messages,
+          req.temperature,
+          req.tools,
+          req.toolChoice
+        )
       );
       const content = completion.choices?.[0]?.message?.content ?? "";
       return {
@@ -106768,13 +107042,14 @@ async function createChatCompletionWithFailover(req) {
         model: resolved.model,
         tier: resolved.tier,
         failedOver: i2 > 0,
-        previousProvider: i2 > 0 ? chain[0] : void 0
+        previousProvider: i2 > 0 ? chain[0] : void 0,
+        toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null
       };
     } catch (err) {
       lastErr = err;
       failures.push({ provider, err });
       recordProviderFailure(provider, err);
-      if (provider !== "local" && !isProviderUnusableError(err)) {
+      if (provider !== "local" && !shouldTryNextProvider(err)) {
         throw enrichError(err, attempted, failures);
       }
     }
@@ -106785,6 +107060,7 @@ async function probeLlmProviders(tier = "standard") {
   const candidates = [
     "local",
     "gemini",
+    "groq",
     "kimi",
     "xai",
     "openai",
@@ -106792,7 +107068,7 @@ async function probeLlmProviders(tier = "standard") {
   ];
   const results = [];
   for (const provider of candidates) {
-    const configured = provider === "local" && hasLocalLlm() || provider === "gemini" && hasGeminiKey() || provider === "kimi" && hasKimiKey() || provider === "xai" && hasXaiKey() || provider === "openai" && hasOpenAIKey() || provider === "gateway" && hasGatewayAuth();
+    const configured = provider === "local" && hasLocalLlm() || provider === "gemini" && hasGeminiKey() || provider === "groq" && hasGroqKey() || provider === "kimi" && hasKimiKey() || provider === "xai" && hasXaiKey() || provider === "openai" && hasOpenAIKey() || provider === "gateway" && hasGatewayAuth();
     if (!configured) {
       results.push({ provider, configured: false, ok: false });
       continue;
@@ -106800,17 +107076,21 @@ async function probeLlmProviders(tier = "standard") {
     const resolved = resolveForProvider(provider, tier);
     const started = Date.now();
     try {
-      await createCompletion(
+      const { resolved: used } = await withModelFallback(
         provider,
         { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
-        [{ role: "user", content: "Reply with the single word: ok" }],
-        0
+        (m2) => createCompletion(
+          provider,
+          m2,
+          [{ role: "user", content: "Reply with the single word: ok" }],
+          0
+        )
       );
       results.push({
         provider,
         configured: true,
         ok: true,
-        model: resolved.model,
+        model: used.model,
         latencyMs: Date.now() - started
       });
     } catch (err) {
@@ -106846,7 +107126,7 @@ router2.get("/healthz/llm", async (req, res) => {
     return;
   }
   try {
-    const probes = await probeLlmProviders("light");
+    const probes = await probeLlmProviders("standard");
     const anyOk = probes.some((p2) => p2.ok);
     res.status(anyOk || routing.status === "ok" ? 200 : 503).json({
       ...routing,
@@ -107164,6 +107444,54 @@ function factIdFor(text2, explicitId) {
   if (explicitId?.trim()) return explicitId.trim();
   return createHash("sha256").update(text2.trim()).digest("hex").slice(0, 24);
 }
+async function upsertMemoryEmbeddings(opts) {
+  const { userId, characterId, facts } = opts;
+  const texts = facts.map((f2) => (f2.text || "").trim()).filter(Boolean);
+  if (texts.length === 0) return 0;
+  const embedded = await embedTexts(texts);
+  let written = 0;
+  for (let i2 = 0; i2 < facts.length; i2++) {
+    const fact = facts[i2];
+    const text2 = (fact.text || "").trim();
+    if (!text2) continue;
+    const embedding = embedded.embeddings[i2] || hashEmbed(text2);
+    const factId = factIdFor(text2, fact.fact_id ? String(fact.fact_id) : void 0);
+    const memoryType = classifyFact(fact);
+    await db.insert(memoryEmbeddings).values({
+      userId,
+      characterId,
+      factId,
+      text: text2,
+      memoryType,
+      embedding,
+      model: embedded.model,
+      metadata: {
+        source_type: fact.type || null,
+        session_id: fact.session_id || null
+      },
+      updatedAt: /* @__PURE__ */ new Date()
+    }).onConflictDoUpdate({
+      target: [
+        memoryEmbeddings.userId,
+        memoryEmbeddings.characterId,
+        memoryEmbeddings.factId
+      ],
+      set: {
+        text: text2,
+        memoryType,
+        embedding,
+        model: embedded.model,
+        metadata: {
+          source_type: fact.type || null,
+          session_id: fact.session_id || null
+        },
+        updatedAt: /* @__PURE__ */ new Date()
+      }
+    });
+    written += 1;
+  }
+  return written;
+}
 async function attachStoredEmbeddings(userId, memories) {
   if (memories.length === 0) return memories;
   const characterIds = [...new Set(memories.map((m2) => m2.characterId).filter(Boolean))];
@@ -107256,6 +107584,9 @@ async function llm(systemPrompt, userPrompt, maxTokens = 1024) {
   return result.content;
 }
 async function webSearchLLM(systemPrompt, userPrompt) {
+  if (isAnimaCustomMode()) {
+    return llm(systemPrompt, userPrompt);
+  }
   try {
     const resp = await getOpenAIClient().responses.create({
       model: "gpt-4o",
@@ -107933,33 +108264,21 @@ Rules:
           { role: "system", content: systemPrompt },
           ...rawMessages
         ];
-        const runCompletion = (model, maxTokens) => getOpenAIClient().chat.completions.create({
-          model,
-          max_tokens: maxTokens,
+        const heavy = resolveModel("heavy");
+        const completion = await createChatCompletionWithFailover({
+          tier: "heavy",
+          model: heavy.model,
+          maxTokens: heavy.maxTokens,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           messages: baseMessages,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          tools,
-          tool_choice: "auto"
+          tools
         });
-        const heavy = resolveModel("heavy");
-        let completion;
-        try {
-          completion = await runCompletion(heavy.model, heavy.maxTokens);
-        } catch (err) {
-          if (isModelUnavailableError(err)) {
-            const std = resolveModel("standard");
-            completion = await runCompletion(std.model, std.maxTokens);
-          } else {
-            throw err;
-          }
-        }
-        const choice = completion.choices[0]?.message;
         result = {
           message: {
             role: "assistant",
-            content: choice?.content ?? "",
-            tool_calls: choice?.tool_calls ?? null
+            content: completion.content ?? "",
+            tool_calls: completion.toolCalls ?? null
           }
         };
         break;
@@ -121140,21 +121459,21 @@ function maxMinds() {
 }
 function isEnsembleMode() {
   if (envFlagEnabled2("ANIMA_LLM_ENSEMBLE")) return true;
-  return isAnimaCustomMode();
+  const raw = sanitizeProviderEnv(process.env.ANIMA_LLM_PROVIDER);
+  return raw === "ensemble";
 }
 function getEnsembleMinds(tier = "standard") {
   reviveStickySkippedProvidersIfNeeded();
   const disableOpenAI = envFlagEnabled2("ANIMA_DISABLE_OPENAI");
-  const disableXai = envFlagEnabled2("ANIMA_DISABLE_XAI");
+  const disableGroq = envFlagEnabled2("ANIMA_DISABLE_GROQ");
   const minds = [];
   for (const id of getAnimaTierProviderOrder(tier)) {
-    if (id === "gemini") continue;
-    if (id === "kimi" && hasKimiKey() && !isKimiStickySkipped()) {
-      minds.push("kimi");
+    if (id === "gemini" && hasGeminiKey() && !isGeminiStickySkipped()) {
+      minds.push("gemini");
       continue;
     }
-    if (id === "xai" && hasXaiKey() && !disableXai && !isXaiStickySkipped()) {
-      minds.push("xai");
+    if (id === "groq" && hasGroqKey() && !disableGroq && !isGroqStickySkipped()) {
+      minds.push("groq");
       continue;
     }
     if (id === "openai" && hasOpenAIKey() && !disableOpenAI && !isOpenAIStickySkipped()) {
@@ -121164,19 +121483,14 @@ function getEnsembleMinds(tier = "standard") {
   return minds.slice(0, maxMinds());
 }
 function providerLabel2(id) {
-  if (id === "kimi") return "Kimi";
-  if (id === "xai") return "Grok";
+  if (id === "gemini") return "Gemini";
+  if (id === "groq") return "Groq";
   return "ChatGPT";
 }
 function resolveMindModel(provider, tier) {
-  if (provider === "kimi") return resolveKimiModel(tier);
-  if (provider === "xai") return resolveXaiModel(tier);
+  if (provider === "gemini") return resolveGeminiModel(tier);
+  if (provider === "groq") return resolveGroqModel(tier);
   return resolveModel(tier);
-}
-function clientFor2(provider) {
-  if (provider === "kimi") return getKimiClient();
-  if (provider === "xai") return getXaiClient();
-  return getOpenAIClient();
 }
 async function withAbortTimeout(run, ms, label) {
   const controller = new AbortController();
@@ -121196,20 +121510,32 @@ async function draftFromMind(provider, tier, messages2, maxTokens, signal) {
   const started = Date.now();
   const draftMax = Math.min(maxTokens, 1200);
   const resolved = resolveMindModel(provider, tier);
-  const client = clientFor2(provider);
-  if (!client) {
-    throw new Error(`${providerLabel2(provider)} client is not configured.`);
-  }
-  const completion = await client.chat.completions.create(
-    {
+  let content = "";
+  if (provider === "gemini") {
+    const completion = await createGeminiChatCompletion({
       model: resolved.model,
-      max_tokens: draftMax,
+      maxTokens: draftMax,
       messages: messages2,
-      temperature: 0.8
-    },
-    { signal }
-  );
-  const content = String(completion.choices[0]?.message?.content ?? "").trim();
+      temperature: 0.8,
+      signal
+    });
+    content = String(completion.choices[0]?.message?.content ?? "").trim();
+  } else {
+    const client = provider === "groq" ? getGroqClient() : getOpenAIClient();
+    if (!client) {
+      throw new Error(`${providerLabel2(provider)} client is not configured.`);
+    }
+    const completion = await client.chat.completions.create(
+      {
+        model: resolved.model,
+        max_tokens: draftMax,
+        messages: messages2,
+        temperature: 0.8
+      },
+      { signal }
+    );
+    content = String(completion.choices[0]?.message?.content ?? "").trim();
+  }
   if (!content) {
     throw new Error(`${providerLabel2(provider)} returned an empty draft.`);
   }
@@ -121221,7 +121547,7 @@ async function draftFromMind(provider, tier, messages2, maxTokens, signal) {
   };
 }
 function pickSynthesizer(drafts) {
-  const order = ["kimi", "xai", "openai"];
+  const order = ["gemini", "groq", "openai"];
   for (const id of order) {
     if (drafts.some((d2) => d2.provider === id)) return id;
   }
@@ -121241,7 +121567,7 @@ ${d2.content}`
       content: `${systemText}
 
 MULTI-MIND SYNTHESIS MODE:
-Several AI minds drafted candidate replies below. Produce ONE final in-character companion reply that blends the strongest emotional truth, voice, and specificity from those drafts. Do not mention the minds, drafts, Kimi, Grok, ChatGPT, or that you are combining answers. Stay fully in character. Output only the final reply.`
+Several AI minds drafted candidate replies below. Produce ONE final in-character companion reply that blends the strongest emotional truth, voice, and specificity from those drafts. Do not mention the minds, drafts, Gemini, Groq, ChatGPT, or that you are combining answers. Stay fully in character. Output only the final reply.`
     },
     ...userTurns,
     {
@@ -121257,7 +121583,20 @@ Write the final in-character reply now.`
 async function synthesizeDrafts(synthesizer, tier, originalMessages, drafts, maxTokens, signal) {
   const resolved = resolveMindModel(synthesizer, tier);
   const messages2 = buildSynthesisMessages(originalMessages, drafts);
-  const client = clientFor2(synthesizer);
+  if (synthesizer === "gemini") {
+    const completion2 = await createGeminiChatCompletion({
+      model: resolved.model,
+      maxTokens,
+      messages: messages2,
+      temperature: 0.7,
+      signal
+    });
+    return {
+      content: String(completion2.choices[0]?.message?.content ?? "").trim(),
+      model: resolved.model
+    };
+  }
+  const client = synthesizer === "groq" ? getGroqClient() : getOpenAIClient();
   if (!client) {
     throw new Error(`${providerLabel2(synthesizer)} client is not configured.`);
   }
@@ -121308,7 +121647,7 @@ async function createEnsembleChatReply(req) {
   const minds = getEnsembleMinds(req.tier);
   if (minds.length === 0) {
     throw new Error(
-      "No LLM minds configured for ensemble. Set KIMI_API_KEY (required), and optionally XAI_API_KEY / OPENAI_API_KEY."
+      "No LLM minds configured for ensemble. Set GEMINI_API_KEY, GROQ_API_KEY, and/or OPENAI_API_KEY."
     );
   }
   req.onProgress?.({
@@ -122257,6 +122596,229 @@ function resolveActiveCharacterName(params) {
   return null;
 }
 
+// src/lib/sceneMind.ts
+function normalizeId(value) {
+  return value == null ? "" : String(value).trim();
+}
+function normalizeName(value) {
+  return value == null ? "" : String(value).trim();
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function isCharacterAddressed(userMessage, characterName) {
+  const name = normalizeName(characterName);
+  const text2 = String(userMessage || "");
+  if (!name || !text2.trim()) return false;
+  const escaped = escapeRegExp(name);
+  const atMention = new RegExp(`@${escaped}\\b`, "i");
+  const wholeWord = new RegExp(`\\b${escaped}\\b`, "i");
+  return atMention.test(text2) || wholeWord.test(text2);
+}
+function findCharacterByName(characters2, name) {
+  const needle = normalizeName(name).toLowerCase();
+  if (!needle) return null;
+  return characters2.find((c2) => normalizeName(c2.name).toLowerCase() === needle) || null;
+}
+function findCharacterById(characters2, id) {
+  const needle = normalizeId(id);
+  if (!needle) return null;
+  return characters2.find((c2) => normalizeId(c2.id) === needle) || null;
+}
+function speakerIdFromMessage(msg, characters2) {
+  const byId = normalizeId(msg.character_id ?? msg.characterId);
+  if (byId && characters2.some((c2) => normalizeId(c2.id) === byId)) return byId;
+  const byName = findCharacterByName(
+    characters2,
+    msg.character_name ?? msg.characterName
+  );
+  return byName ? normalizeId(byName.id) : null;
+}
+function speakerNameFromMessage(msg, characters2) {
+  const id = speakerIdFromMessage(msg, characters2);
+  if (id) {
+    const match2 = findCharacterById(characters2, id);
+    if (match2) return normalizeName(match2.name);
+  }
+  const raw = normalizeName(msg.character_name ?? msg.characterName);
+  return raw || null;
+}
+function recentAssistantSpeakers(messages2, characters2, limit2 = 6) {
+  const ignored = /* @__PURE__ */ new Set([
+    "narrator",
+    "__typing__",
+    "__thinking__",
+    "orchestrator"
+  ]);
+  const out = [];
+  for (let i2 = messages2.length - 1; i2 >= 0 && out.length < limit2; i2--) {
+    const msg = messages2[i2];
+    if (!msg || msg.role !== "assistant") continue;
+    const name = speakerNameFromMessage(msg, characters2);
+    if (!name || ignored.has(name.toLowerCase())) continue;
+    out.unshift({
+      id: speakerIdFromMessage(msg, characters2),
+      name
+    });
+  }
+  return out;
+}
+function resolveEligiblePool(characters2, eligibleCharacterIds) {
+  if (!eligibleCharacterIds?.length) return characters2;
+  const allowed = new Set(eligibleCharacterIds.map((id) => normalizeId(id)));
+  const filtered = characters2.filter((c2) => allowed.has(normalizeId(c2.id)));
+  return filtered.length > 0 ? filtered : characters2;
+}
+function buildDirectorPrompt(params) {
+  const charSummaries = params.characters.map(
+    (c2) => `- ${c2.name}${c2.universe ? ` (${c2.universe})` : ""}: ${(c2.personality || "").slice(0, 120)}`
+  ).join("\n");
+  const recentConvoSnippet = params.recentMessages.slice(-6).map((m2) => {
+    const speaker = m2.role === "user" ? "User" : String(m2.character_name || m2.characterName || "Character");
+    return `${speaker}: ${String(m2.content || "").slice(0, 120)}`;
+  }).join("\n");
+  const continueNote = params.isContinue ? "\n- The user asked to Continue \u2014 advance the scene with whoever should take the next beat" : "";
+  return `You are the Scene Mind for a multi-character chat \u2014 a narrative director that picks ONE companion to speak next.
+
+Characters:
+${charSummaries}
+
+Recent conversation:
+${recentConvoSnippet || "(empty)"}
+
+Latest user message: ${String(params.userMessage || "").slice(0, 240) || "(continue)"}
+Last speaker: ${params.lastSpeakerName || "none"}
+
+Rules:
+- Choose whoever has the strongest in-character reason to react RIGHT NOW
+- The same character can speak again if it makes narrative sense
+- Consider who might be provoked, excited, curious, threatened, or emotionally moved
+- Pick the character who would most authentically respond
+- Reply with ONLY the character's exact name \u2014 nothing else${continueNote}`;
+}
+function pickLeastRecent(pool3, recentSpeakerNames) {
+  const lower = new Set(
+    [...recentSpeakerNames].map((n2) => n2.toLowerCase())
+  );
+  return pool3.find((c2) => !lower.has(normalizeName(c2.name).toLowerCase())) || pool3[0];
+}
+function pickInterrupter(pool3, preferred, recentMessages, recentSpeakerNames) {
+  const interruptPool = pool3.filter(
+    (c2) => normalizeId(c2.id) !== normalizeId(preferred.id)
+  );
+  if (interruptPool.length === 0) return null;
+  const recentMentioned = recentMessages.slice(-10).map((m2) => normalizeName(m2.character_name ?? m2.characterName).toLowerCase()).filter(Boolean);
+  const preferredMentioned = interruptPool.filter(
+    (c2) => recentMentioned.includes(normalizeName(c2.name).toLowerCase())
+  );
+  if (preferredMentioned[0]) return preferredMentioned[0];
+  const lowerRecent = new Set(
+    [...recentSpeakerNames].map((n2) => n2.toLowerCase())
+  );
+  return interruptPool.find(
+    (c2) => !lowerRecent.has(normalizeName(c2.name).toLowerCase())
+  ) || interruptPool[0] || null;
+}
+async function selectNextSpeaker(params) {
+  const characters2 = (params.characters || []).filter(
+    (c2) => normalizeId(c2.id) && normalizeName(c2.name)
+  );
+  if (characters2.length === 0) return null;
+  const recentMessages = params.recentMessages || [];
+  const random = params.random ?? Math.random;
+  const interruptChance = typeof params.interruptChance === "number" ? Math.min(1, Math.max(0, params.interruptChance)) : 0.35;
+  const speakers = recentAssistantSpeakers(recentMessages, characters2);
+  const last = speakers[speakers.length - 1] || null;
+  const recentSpeakerNames = new Set(
+    speakers.map((s3) => s3.name).filter(Boolean)
+  );
+  const forced = findCharacterById(characters2, params.forceCharacterId);
+  if (forced) {
+    return {
+      characterId: forced.id,
+      characterName: forced.name,
+      reason: "forced",
+      interrupted: false,
+      preferredCharacterId: forced.id,
+      lastSpeakerId: last?.id ?? null,
+      lastSpeakerName: last?.name ?? null
+    };
+  }
+  const pool3 = resolveEligiblePool(characters2, params.eligibleCharacterIds);
+  const userMessage = String(params.userMessage || "");
+  if (userMessage.trim() && !params.isContinue) {
+    const addressed = pool3.filter(
+      (c2) => isCharacterAddressed(userMessage, c2.name)
+    );
+    if (addressed.length === 1) {
+      const chosen = addressed[0];
+      return {
+        characterId: chosen.id,
+        characterName: chosen.name,
+        reason: "addressed",
+        interrupted: false,
+        preferredCharacterId: chosen.id,
+        lastSpeakerId: last?.id ?? null,
+        lastSpeakerName: last?.name ?? null
+      };
+    }
+  }
+  let preferred = null;
+  let reason = "least_recent";
+  const shouldAskDirector = params.useDirector !== false && typeof params.askDirector === "function" && pool3.length >= 2;
+  if (shouldAskDirector) {
+    try {
+      const prompt = buildDirectorPrompt({
+        characters: pool3,
+        recentMessages,
+        lastSpeakerName: last?.name ?? null,
+        userMessage,
+        isContinue: params.isContinue
+      });
+      const raw = await params.askDirector(prompt);
+      const directed = findCharacterByName(pool3, raw);
+      if (directed) {
+        preferred = directed;
+        reason = "director";
+      }
+    } catch {
+    }
+  }
+  if (!preferred) {
+    preferred = pickLeastRecent(pool3, recentSpeakerNames);
+    reason = "least_recent";
+  }
+  const allowInterrupt = !params.isContinue && pool3.length >= 2 && random() < interruptChance;
+  if (allowInterrupt) {
+    const interrupter = pickInterrupter(
+      pool3,
+      preferred,
+      recentMessages,
+      recentSpeakerNames
+    );
+    if (interrupter) {
+      return {
+        characterId: interrupter.id,
+        characterName: interrupter.name,
+        reason: "interrupt",
+        interrupted: true,
+        preferredCharacterId: preferred.id,
+        lastSpeakerId: last?.id ?? null,
+        lastSpeakerName: last?.name ?? null
+      };
+    }
+  }
+  return {
+    characterId: preferred.id,
+    characterName: preferred.name,
+    reason,
+    interrupted: false,
+    preferredCharacterId: preferred.id,
+    lastSpeakerId: last?.id ?? null,
+    lastSpeakerName: last?.name ?? null
+  };
+}
+
 // src/routes/chat.ts
 var router9 = (0, import_express15.Router)();
 router9.use(
@@ -122500,6 +123062,21 @@ async function upsertTurnMemory(params) {
         updatedAt: now
       }
     });
+    try {
+      await upsertMemoryEmbeddings({
+        userId: params.userId,
+        characterId,
+        facts: [
+          {
+            type: fact.type,
+            session_id: fact.session_id,
+            text: fact.text,
+            created_at: fact.created_at
+          }
+        ]
+      });
+    } catch {
+    }
   }
 }
 router9.get("/sessions/:sessionId/context", async (req, res) => {
@@ -122539,6 +123116,120 @@ router9.get("/memories/:characterId", async (req, res) => {
     )
   ).limit(1);
   res.json({ memory: memory ?? null });
+});
+function toSceneMindCharacters(characters2) {
+  return characters2.map((c2) => ({
+    id: String(c2.id || ""),
+    name: String(c2.name || ""),
+    universe: c2.universe ? String(c2.universe) : null,
+    personality: c2.personality ? String(c2.personality) : null
+  })).filter((c2) => c2.id && c2.name);
+}
+async function runSceneMindDirector(prompt) {
+  try {
+    const routed = routeModel("who speaks next", { deepMode: false });
+    const result = await createChatCompletionWithFailover({
+      tier: "light",
+      model: routed.model,
+      maxTokens: 32,
+      temperature: 0.4,
+      messages: [
+        {
+          role: "system",
+          content: "You are a narrative director. Reply with ONLY one character's exact name."
+        },
+        { role: "user", content: prompt }
+      ]
+    });
+    const name = String(result.content || "").trim().split(/\n/)[0]?.replace(/^["'\s]+|["'\s.]+$/g, "");
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+router9.post("/scene-mind", async (req, res) => {
+  const userId = requireUser2(req, res);
+  if (!userId) return;
+  const body = req.body;
+  const sessionId = body.session_id;
+  if (!sessionId) {
+    res.status(400).json({ error: "session_id is required" });
+    return;
+  }
+  const session = await loadStoreSession(userId, sessionId);
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+  const sessionData = asObject(session.data);
+  const sessionCharacterIds = [
+    ...asStringArray2(sessionData.group_character_ids),
+    ...sessionData.character_id ? [String(sessionData.character_id)] : []
+  ];
+  const characterIds = [
+    ...new Set(
+      (body.character_ids?.length ? asStringArray2(body.character_ids) : sessionCharacterIds).filter(Boolean)
+    )
+  ];
+  if (characterIds.length === 0) {
+    res.status(400).json({ error: "No characters in session" });
+    return;
+  }
+  const [characters2, recentMessages] = await Promise.all([
+    loadCharacters(userId, characterIds),
+    readRecentStoreMessages(userId, sessionId, 24)
+  ]);
+  const sceneChars = toSceneMindCharacters(characters2);
+  const useDirector = body.use_director !== false;
+  const decision = await selectNextSpeaker({
+    characters: sceneChars,
+    recentMessages,
+    userMessage: String(body.content ?? ""),
+    forceCharacterId: body.force_character_id ? String(body.force_character_id) : null,
+    eligibleCharacterIds: body.eligible_character_ids?.length ? asStringArray2(body.eligible_character_ids) : null,
+    useDirector,
+    askDirector: useDirector ? runSceneMindDirector : void 0,
+    isContinue: Boolean(body.is_continue),
+    interruptChance: typeof body.interrupt_chance === "number" ? body.interrupt_chance : void 0
+  });
+  if (!decision) {
+    res.status(400).json({ error: "Unable to select a speaker" });
+    return;
+  }
+  const [row] = await db.select().from(userEntities).where(
+    and(
+      eq(userEntities.userId, userId),
+      eq(userEntities.entityName, CHAT_SESSION),
+      eq(userEntities.entityId, sessionId)
+    )
+  ).limit(1);
+  if (row) {
+    const data = asObject(row.data);
+    await db.update(userEntities).set({
+      data: {
+        ...data,
+        last_speaker_id: decision.characterId,
+        last_speaker_name: decision.characterName,
+        scene_mind: {
+          reason: decision.reason,
+          interrupted: decision.interrupted,
+          preferred_character_id: decision.preferredCharacterId,
+          at: (/* @__PURE__ */ new Date()).toISOString()
+        },
+        updated_date: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq(userEntities.id, row.id));
+  }
+  res.json({
+    character_id: decision.characterId,
+    character_name: decision.characterName,
+    reason: decision.reason,
+    interrupted: decision.interrupted,
+    preferred_character_id: decision.preferredCharacterId,
+    last_speaker_id: decision.lastSpeakerId,
+    last_speaker_name: decision.lastSpeakerName
+  });
 });
 router9.post("/messages", async (req, res) => {
   const userId = requireUser2(req, res);
@@ -122584,15 +123275,31 @@ router9.post("/messages", async (req, res) => {
     adaptMemories(memories)
   );
   const adaptedChars = adaptCharacters(characters2);
-  const requestedParticipantId = requestedAssistantId && characterIds.includes(requestedAssistantId) ? resolveActiveCharacterId(requestedAssistantId, characterIds) : null;
-  const activeChar = (requestedParticipantId ? adaptedChars.find((c2) => c2.id === String(requestedParticipantId)) : void 0) || (requestedAssistantName ? adaptedChars.find(
+  const forcedSpeakerId = body.force_character_id ? String(body.force_character_id) : null;
+  const requestedParticipantId = (forcedSpeakerId && characterIds.includes(forcedSpeakerId) ? resolveActiveCharacterId(forcedSpeakerId, characterIds) : null) || (requestedAssistantId && characterIds.includes(requestedAssistantId) ? resolveActiveCharacterId(requestedAssistantId, characterIds) : null);
+  let sceneMindDecision = null;
+  const needsSceneMind = mode === "group" && adaptedChars.length > 1 && !requestedParticipantId && !requestedAssistantName && body.use_scene_mind !== false;
+  if (needsSceneMind) {
+    sceneMindDecision = await selectNextSpeaker({
+      characters: toSceneMindCharacters(characters2),
+      recentMessages,
+      userMessage: content,
+      forceCharacterId: forcedSpeakerId,
+      eligibleCharacterIds: body.eligible_character_ids?.length ? asStringArray2(body.eligible_character_ids) : null,
+      useDirector: true,
+      askDirector: runSceneMindDirector,
+      isContinue: Boolean(body.is_continue)
+    });
+  }
+  const sceneMindId = sceneMindDecision?.characterId ?? null;
+  const activeChar = (requestedParticipantId ? adaptedChars.find((c2) => c2.id === String(requestedParticipantId)) : void 0) || (sceneMindId ? adaptedChars.find((c2) => c2.id === String(sceneMindId)) : void 0) || (requestedAssistantName ? adaptedChars.find(
     (c2) => String(c2.name || "").toLowerCase() === requestedAssistantName.toLowerCase()
   ) : void 0) || (adaptedChars.length === 1 ? adaptedChars[0] : void 0);
   const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
   const activeCharacterName = resolveActiveCharacterName({
-    requestedId: requestedParticipantId,
+    requestedId: requestedParticipantId || sceneMindId,
     resolvedId: activeCharacterId,
-    requestedName: requestedAssistantName,
+    requestedName: requestedAssistantName || sceneMindDecision?.characterName || "",
     loadedName: activeChar?.name ?? null
   });
   const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
@@ -122824,6 +123531,13 @@ Companion replied: ${truncate3(fullResponse, 520)}`;
         ensemble_minds: ensembleMinds,
         ensemble_combined: ensembleCombined,
         is_crossover: isCrossover,
+        assistant_character_id: activeCharacterId,
+        assistant_character_name: activeCharacterName,
+        scene_mind: sceneMindDecision ? {
+          reason: sceneMindDecision.reason,
+          interrupted: sceneMindDecision.interrupted,
+          preferred_character_id: sceneMindDecision.preferredCharacterId
+        } : null,
         messages: [persistedUser, persistedAssistant].filter(Boolean)
       })}
 
