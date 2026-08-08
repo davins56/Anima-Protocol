@@ -164,6 +164,10 @@ nothing else about this code path changes.
 
 ## Production note (Vercel)
 
+### Exact fix — "The model \`anima-chat\` does not exist…" / cloud host misconfig
+
+If `/api/healthz/llm` shows `localEndpoint.host=api.openai.com` (or Groq/Gemini/etc.) with `model=anima-chat`, Vercel is pointed at a **cloud chat API**, not a self-hosted Anima LLM. OpenAI has no model named `anima-chat`, so every chat turn 404s. Chat never uses ChatGPT/Gemini/Groq — set `ANIMA_LOCAL_LLM_BASE_URL` to your **Ollama/vLLM** HTTPS URL instead (steps below). Healthy response: `status=ok`, `localEndpoint.isCloudFlagship=false`, `host` is your tunnel/Fly/Render hostname.
+
 ### Exact fix — "Anima custom LLM is not configured…"
 
 That error is intentional: `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable, and there is no cloud fallback to fall through to.
