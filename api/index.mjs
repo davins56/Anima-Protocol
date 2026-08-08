@@ -105344,6 +105344,7 @@ function getLocalLlmClient() {
 
 // ../../lib/llm/src/registry.ts
 var MODEL_TIERS = ["light", "standard", "heavy"];
+var DEFAULT_PROVIDER = "ollama";
 var ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
 var ANIMA_MEMORY_SPECIALIST_MODEL = "mistralai/Ministral-3-3B-Instruct-2512";
 var ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
@@ -105446,12 +105447,13 @@ function resolveProvider(envValue) {
   if (raw === "groq" || raw === "ollama" || raw === "vllm" || raw === "mock") {
     return raw;
   }
+  if (raw === "openai") return "openai";
   if (raw === "custom" || raw === "anima" || raw === "local" || raw === "local-first") {
     const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
     if (backend === "vllm") return "vllm";
     return "ollama";
   }
-  return "openai";
+  return DEFAULT_PROVIDER;
 }
 function envKey(provider, tier) {
   return `ANIMA_${provider.toUpperCase()}_MODEL_${tier.toUpperCase()}`;
