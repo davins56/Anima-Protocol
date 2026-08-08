@@ -119,15 +119,19 @@ concrete failure mode, not a vague "be better." Full walkthrough:
 
 ---
 
-## There is only one mode
+## There is only one backend
 
-Chat has a single backend: the self-hosted Anima LLM, reached through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). There is no `ANIMA_LLM_PROVIDER` mode switch, no cloud BYOK chain, and no ensemble/multi-mind path in the code — Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat, regardless of which API keys happen to be set in the environment.
+Chat has a single backend: the self-hosted Anima LLM, reached through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). There is no `ANIMA_LLM_PROVIDER` mode switch and no cloud BYOK chain — Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat, regardless of which API keys happen to be set in the environment.
 
 `OPENAI_API_KEY` still exists as an env var, but only for image generation/edit (`/api/openai/functions` image routes) — it is never read for chat.
 
 If the local endpoint is unavailable, the turn fails with a clear setup error instead of silently switching to a different model — see the diagnostic checklist below.
 
 More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
+
+### Optional: parallel local minds
+
+There's one opt-in multi-draft path, and it's still entirely local: set `ANIMA_LOCAL_LLM_ENSEMBLE=true` and the same self-hosted model drafts a few replies in parallel at different sampling temperatures (`ANIMA_ENSEMBLE_MINDS`, default `Steady,Vivid,Playful`), then one more local call combines them into a single in-character reply. No cloud provider is ever involved — it's the same one model, sampled several times. Off by default: it costs roughly `N` drafts + 1 synthesis call in latency and GPU load per turn. Tune with `ANIMA_ENSEMBLE_MAX_MINDS` (default 4) and `ANIMA_ENSEMBLE_MIND_TIMEOUT_MS` (default 20000 — a mind that's still generating past this is dropped, not awaited).
 
 ---
 
