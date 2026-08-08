@@ -15,6 +15,12 @@ Run (defaults to Ministral 3 8B Base for fine-tuning):
     --base mistralai/Ministral-3-8B-Base-2512 \\
     --out scripts/llm/checkpoints/anima-ministral8b-qlora
 
+Track held-out eval loss (recommended — `pnpm llm:prepare-finetune -- --val-split 0.05`
+produces the matching `*.val.jsonl` file):
+  python scripts/llm/finetune/unsloth_sft.py \\
+    --data scripts/llm/output/finetune-sharegpt.jsonl \\
+    --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl
+
 Then merge / convert to GGUF or serve the adapter with vLLM LoRA.
 Accept Hugging Face terms for mistralai/* and set HUGGING_FACE_HUB_TOKEN if needed.
 """
@@ -59,6 +65,12 @@ def main() -> None:
         description="Unsloth QLoRA SFT for Anima (Ministral 3 8B)"
     )
     parser.add_argument("--data", required=True, type=Path)
+    parser.add_argument(
+        "--eval-data",
+        type=Path,
+        default=None,
+        help="Optional held-out JSONL (same ShareGPT/messages shape) for eval loss during training.",
+    )
     parser.add_argument("--base", default=DEFAULT_BASE)
     parser.add_argument("--out", default=DEFAULT_OUT)
     parser.add_argument("--max-seq-len", type=int, default=4096)
@@ -84,7 +96,13 @@ def main() -> None:
     if not rows:
         raise SystemExit(f"No training rows found in {args.data}")
 
+    eval_rows = load_sharegpt(args.eval_data) if args.eval_data else []
+    if args.eval_data and not eval_rows:
+        raise SystemExit(f"No eval rows found in {args.eval_data}")
+
     print(f"Loaded {len(rows)} conversations from {args.data}")
+    if eval_rows:
+        print(f"Loaded {len(eval_rows)} eval conversations from {args.eval_data}")
     print(f"Base model: {args.base}")
 
     model, tokenizer = FastLanguageModel.from_pretrained(
@@ -118,6 +136,7 @@ def main() -> None:
         )
 
     dataset = Dataset.from_list(rows)
+    eval_dataset = Dataset.from_list(eval_rows) if eval_rows else None
 
     # trl >= 0.12 moved tokenizer/max_seq_length/packing off SFTTrainer's own
     # kwargs and onto SFTConfig (processing_class= replaces tokenizer=).
@@ -125,17 +144,20 @@ def main() -> None:
         model=model,
         processing_class=tokenizer,
         train_dataset=dataset,
+        eval_dataset=eval_dataset,
         formatting_func=formatting_func,
         args=SFTConfig(
             output_dir=args.out,
             max_length=args.max_seq_len,
             packing=False,
             per_device_train_batch_size=args.batch_size,
+            per_device_eval_batch_size=args.batch_size,
             gradient_accumulation_steps=args.grad_accum,
             num_train_epochs=args.epochs,
             learning_rate=args.lr,
             logging_steps=10,
             save_strategy="epoch",
+            eval_strategy="epoch" if eval_dataset is not None else "no",
             bf16=True,
             optim="adamw_8bit",
             report_to=[],
