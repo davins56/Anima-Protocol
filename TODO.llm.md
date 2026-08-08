@@ -60,9 +60,21 @@ documentation.
   *and* a stray `ANIMA_LLM_ENSEMBLE=true`, `ANIMA_LLM_PROVIDER=custom` still resolved
   to `mode: "local"`, `chain: ["local"]` and answered from the mock endpoint only.
 
+## Phase G — Data quality pipeline (dataset/clean.ts)
+
+- [x] Step 24: `normalizeTurns` — trim, drop empty, merge consecutive same-role turns
+- [x] Step 25: Quality gate — drop no-assistant / too-short / error-fallback-denylist / echoed-reply examples, with drop reasons logged
+- [x] Step 26: `dedupeExamples` — drop exact/near-duplicate conversations
+- [x] Step 27: `splitExamples` — deterministic train/val split by id hash, wired into `prepare-finetune --val-split`
+- [x] Step 28: `dataset-stats` CLI — quality/shape report on any exported (or hand-merged) JSONL
+- [x] Step 29: `unsloth_sft.py --eval-data` — real held-out eval loss during QLoRA SFT
+- [x] Step 30: Tests (`lib/llm/test/clean.test.ts`) + docs (`lib/llm/README.md`, `docs/llm-build.md`)
+
 ## Still manual (GPU / data ops)
 
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
+  (the pipeline above now auto-drops junk/dupes and reports stats, but curating
+  which raw logs are worth including is still a human judgment call)
 - [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
 - [ ] Optional DPO/ORPO/SimPO preference stage
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals

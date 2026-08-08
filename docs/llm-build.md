@@ -65,6 +65,9 @@ Train for:
 # Seed examples only (always available)
 pnpm llm:prepare-finetune
 
+# With a held-out eval split (deterministic, by example id)
+pnpm llm:prepare-finetune -- --val-split 0.05
+
 # Seed + Postgres chat transcripts (needs DATABASE_URL)
 pnpm llm:prepare-finetune -- --with-db --user <clerk_user_id>
 
@@ -74,9 +77,19 @@ pnpm llm:export-turns -- --out scripts/llm/output/turns.jsonl
 
 Outputs JSONL in ShareGPT / ChatML / Alpaca formats under `scripts/llm/output/`.
 
-Both commands run `cleanExamples()` (`lib/llm/src/dataset/clean.ts`) automatically before writing: it drops error/placeholder artifacts (e.g. "The companion returned an empty reply"), collapses accidental duplicate sends, redacts emails/phone numbers, filters out examples that are too short or whose assistant replies average under ~12 characters, and de-dupes near-identical conversations by a content fingerprint. The CLI prints how many rows were dropped/deduped; pass `--no-clean` to write the raw export instead.
+Both commands run every example through a cleaning pass first (normalize/merge
+turns, redact obvious PII like emails and phone numbers, drop error-fallback or
+too-short assistant replies, dedupe near-identical conversations) — see
+[`lib/llm/README.md`](../lib/llm/README.md#data-quality-pipeline-srcdatasetcleants).
+Opt out with `--no-clean` / `--no-dedupe` if you need the raw export.
 
-Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT shape), plus synthetic turns that force memory recall and voice adherence.
+Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT shape), plus synthetic turns that force memory recall and voice adherence. After merging in hand-cleaned logs, run:
+
+```bash
+pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
+```
+
+to catch stray error text, too-short replies, or duplicates before spending GPU time training on it.
 
 ### Unsloth (fast iteration + VRAM savings)
 
@@ -85,9 +98,12 @@ Add cleaned Serenity / Fallen Angel arcs as additional JSONL rows (same ShareGPT
 pip install "unsloth[colab-new]" transformers datasets trl
 python scripts/llm/finetune/unsloth_sft.py \
   --data scripts/llm/output/finetune-sharegpt.jsonl \
+  --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl \
   --base mistralai/Ministral-3-8B-Base-2512 \
   --out scripts/llm/checkpoints/anima-ministral8b-qlora
 ```
+
+`--eval-data` is optional but recommended — pair it with `pnpm llm:prepare-finetune -- --val-split 0.05` so training reports real held-out loss per epoch instead of train loss alone.
 
 ### LLaMA-Factory (broadest method support)
 
@@ -197,6 +213,8 @@ Run your internal evals (character fidelity, memory coherence, tone, latency) ag
 
 Before making local the default in production:
 
+- [ ] `dataset-stats` clean on the final training file (no denylist hits, no duplicates, no anomalously short assistant turns)
+- [ ] Held-out eval loss (`--eval-data`) trending down, not just train loss
 - [ ] Multi-turn voice lock (Serenity / Fallen Angel samples)  
 - [ ] Memory recall without fact-dumping  
 - [ ] Group speaker lock (does not speak as other companions)  
@@ -210,7 +228,8 @@ Before making local the default in production:
 
 ```bash
 pnpm llm:list-models
-pnpm llm:prepare-finetune
+pnpm llm:prepare-finetune -- --val-split 0.05
+pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
 pnpm llm:serve-hint
 pnpm llm:test
 pnpm --filter @workspace/api-server test
