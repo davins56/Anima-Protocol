@@ -104,10 +104,10 @@ if [[ -n "${TUNNEL_URL}" ]]; then
   echo
   echo "== ${TUNNEL_URL%/}/v1/models (direct check of your model host) =="
   fetch "${TUNNEL_URL%/}/v1/models"
-  if [[ "${FETCH_STATUS}" == "000" || -z "${FETCH_BODY}" ]]; then
-    fail "unreachable"
+  echo "  HTTP ${FETCH_STATUS}"
+  if [[ "${FETCH_STATUS}" == "000" || -z "${FETCH_BODY}" || ! "${FETCH_STATUS}" =~ ^2[0-9]{2}$ ]]; then
+    fail "unreachable or errored: ${FETCH_BODY:-<empty body>}"
   else
-    echo "  HTTP ${FETCH_STATUS}"
     pass "reachable: ${FETCH_BODY}"
   fi
 fi

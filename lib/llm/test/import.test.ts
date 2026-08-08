@@ -232,4 +232,62 @@ describe("dataset/import", () => {
     const examples = await importLogFile(file);
     expect(examples[0].character.name).toBe("Serenity");
   });
+
+  it("drops the example when --character never actually speaks", async () => {
+    const file = path.join(dir, "no-match.txt");
+    await writeFile(
+      file,
+      ["User: is anyone there?", "Fallen Angel: I am here.", "User: good."].join("\n"),
+    );
+
+    const examples = await importLogFile(file, { defaultCharacterName: "Serenity" });
+    expect(examples).toHaveLength(0);
+  });
+
+  it("folds a leading interjection as context on the character's next reply instead of dropping it", async () => {
+    const file = path.join(dir, "leading-narrator.txt");
+    await writeFile(
+      file,
+      [
+        "Narrator: the room is dim.",
+        "User: Serenity, are you there?",
+        "Serenity: I am here.",
+        "User: good.",
+        "Serenity: Always.",
+      ].join("\n"),
+    );
+
+    const examples = await importLogFile(file, { defaultCharacterName: "Serenity" });
+    expect(examples).toHaveLength(1);
+    const [example] = examples;
+    // The leading narrator line is folded into the first Serenity reply, not lost.
+    const firstReply = example.conversation.find((t) => t.role === "assistant");
+    expect(firstReply?.content).toContain("Narrator");
+    expect(firstReply?.content).toContain("I am here.");
+  });
+
+  it("attributes an interjection between two user lines to the next reply, not the user turn", async () => {
+    const file = path.join(dir, "interjection.txt");
+    await writeFile(
+      file,
+      [
+        "User: Serenity, before he answers, am I safe tonight?",
+        "Fallen Angel: I would not let harm reach you either.",
+        "User: Thank you.",
+        "Serenity: You are safe with us.",
+      ].join("\n"),
+    );
+
+    const examples = await importLogFile(file, { defaultCharacterName: "Serenity" });
+    expect(examples).toHaveLength(1);
+    const [example] = examples;
+    const userTurns = example.conversation.filter((t) => t.role === "user");
+    // Neither user turn absorbed the other companion's line.
+    for (const turn of userTurns) {
+      expect(turn.content).not.toContain("Fallen Angel");
+    }
+    const assistantTurn = example.conversation.find((t) => t.role === "assistant");
+    expect(assistantTurn?.content).toContain("Fallen Angel");
+    expect(assistantTurn?.content).toContain("You are safe with us.");
+  });
 });

@@ -36,6 +36,10 @@ const outJsonPath = path.resolve(ROOT, argValue(args, "--out", "scripts/llm/outp
 const outMdPath = /\.json$/i.test(outJsonPath) ? outJsonPath.replace(/\.json$/i, ".md") : `${outJsonPath}.md`;
 
 const DEFAULT_TIMEOUT_MS = 30000;
+// Extra room beyond a case's own maxLatencyMs before we call it truly
+// stalled — keeps "slow but functional" (fails the latency check with a
+// real recorded response) distinct from "hung" (aborted, no data).
+const HANG_GRACE_MS = 15000;
 
 const rawBase = (process.env.ANIMA_LOCAL_LLM_BASE_URL || "http://127.0.0.1:11434/v1").trim().replace(/\/$/, "");
 // Match cmdChat's tolerance in cli.ts: append /v1 if the operator left it off.
@@ -83,6 +87,12 @@ async function runCase(testCase) {
     { role: "user", content: testCase.prompt },
   ];
 
+  // Generous ceiling for "hung" detection, independent of the case's own
+  // latency budget — a response that lands after maxLatencyMs but before
+  // this should still complete and get recorded, failing the latency check
+  // with real data instead of being aborted with none.
+  const hangTimeoutMs = Math.max(DEFAULT_TIMEOUT_MS, (testCase.maxLatencyMs ?? 0) + HANG_GRACE_MS);
+
   const start = Date.now();
   let content = "";
   let error;
@@ -91,9 +101,9 @@ async function runCase(testCase) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages, max_tokens: 220, temperature: 0.85 }),
-      // Abort a stalled/never-responding endpoint instead of hanging the
-      // whole sequential run — a timeout is itself a failed eval result.
-      signal: AbortSignal.timeout(testCase.maxLatencyMs ?? DEFAULT_TIMEOUT_MS),
+      // Abort a truly stalled/never-responding endpoint instead of hanging
+      // the whole sequential run — a timeout is itself a failed eval result.
+      signal: AbortSignal.timeout(hangTimeoutMs),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     const data = await res.json();
@@ -101,7 +111,7 @@ async function runCase(testCase) {
   } catch (err) {
     error =
       err instanceof Error && err.name === "TimeoutError"
-        ? `timed out after ${testCase.maxLatencyMs ?? DEFAULT_TIMEOUT_MS}ms`
+        ? `timed out after ${hangTimeoutMs}ms`
         : err instanceof Error
           ? err.message
           : String(err);
