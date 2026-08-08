@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getAuth } from "@clerk/express";
 import { rateLimit } from "../lib/rateLimit";
 
 const router = Router();
@@ -6,6 +7,18 @@ const router = Router();
 // path prefix, so an unscoped `router.use(rateLimit)` would run for every /api
 // request passing through (e.g. /api/store/*) and exhaust the shared IP budget.
 router.use(["/tts", "/voices"], rateLimit);
+
+// Both endpoints proxy to the paid ElevenLabs API using the server's own key —
+// require a signed-in user so an anonymous caller can't burn the account's
+// TTS quota/billing.
+router.use(["/tts", "/voices"], (req, res, next) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 
 const DEFAULT_VOICE_ID =
   process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";

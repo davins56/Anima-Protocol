@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback } from 'react';
 import { apiUrl } from '@/lib/apiOrigin';
+import { authHeaders } from '@/api/authBridge';
 
 function stripMarkup(text) {
   return text
@@ -12,7 +13,7 @@ function stripMarkup(text) {
 async function fetchTTSAudio(payload) {
   const res = await fetch(apiUrl('/tts'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(),
     body: JSON.stringify(payload),
   });
 

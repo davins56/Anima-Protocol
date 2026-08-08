@@ -29,14 +29,27 @@ export const animaApi = {
       request(`/openai/conversations/${id}`, { method: "DELETE" }),
   },
 
-  sendMessage: async function* (conversationId, content, systemPrompt, deepMode) {
+  sendMessage: async function* (
+    conversationId,
+    content,
+    systemPrompt,
+    deepMode,
+    responseJsonSchema,
+    maxTokens,
+  ) {
     const res = await fetch(
       apiUrl(`/openai/conversations/${conversationId}/messages`),
       {
         method: "POST",
         headers: await authHeaders(),
         credentials: 'same-origin',
-        body: JSON.stringify({ content, systemPrompt, deepMode: !!deepMode }),
+        body: JSON.stringify({
+          content,
+          systemPrompt,
+          deepMode: !!deepMode,
+          ...(responseJsonSchema ? { responseJsonSchema } : {}),
+          ...(typeof maxTokens === "number" ? { maxTokens } : {}),
+        }),
       }
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
