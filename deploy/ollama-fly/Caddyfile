@@ -1,0 +1,22 @@
+{
+	# No admin API, no auto HTTPS inside the machine — Fly terminates TLS at
+	# its edge and forwards plain HTTP to internal_port 8080.
+	admin off
+	auto_https off
+}
+
+:8080 {
+	# Unauthenticated liveness path for Fly's health checks only — never
+	# proxies to Ollama, never exposes model output.
+	@health path /healthz
+	respond @health "ok" 200
+
+	# Everything else requires the shared secret the api-server sends as
+	# ANIMA_LOCAL_LLM_API_KEY (standard OpenAI-compatible Bearer auth).
+	# Ollama itself has no auth — without this, anyone who finds the .fly.dev
+	# URL could run inference on your bill or overwrite/delete models.
+	@unauthorized not header Authorization "Bearer {$PROXY_AUTH_TOKEN}"
+	respond @unauthorized 401
+
+	reverse_proxy 127.0.0.1:11434
+}
