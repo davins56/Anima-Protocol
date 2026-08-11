@@ -1,77 +1,126 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
-const geminiStreamMock = vi.fn();
-const geminiCompletionMock = vi.fn();
+const modelsListMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
   const client = {
     chat: { completions: { create: (...args: unknown[]) => createMock(...args) } },
+    models: { list: (...args: unknown[]) => modelsListMock(...args) },
   };
   return {
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
-    hasXaiKey: () => Boolean(process.env.XAI_API_KEY?.trim()),
-    hasGeminiKey: () =>
-      Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
-    hasKimiKey: () =>
-      Boolean(process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()),
-    hasGatewayAuth: () =>
-      Boolean(
-        process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
-      ),
-    getOpenAIClient: () => client,
-    getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
-    getGeminiClient: () =>
-      process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()
-        ? client
-        : null,
-    getKimiClient: () =>
-      process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()
-        ? client
-        : null,
-    getGatewayClient: () =>
-      process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim()
-        ? client
-        : null,
-    normalizeApiKey: (raw: string | undefined) => {
-      if (!raw) return null;
-      return raw.trim() || null;
+    localLlmBaseUrl: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim();
+      if (explicit) return explicit.replace(/\/$/, "");
+      const ollama = process.env.OLLAMA_BASE_URL?.trim();
+      if (ollama) {
+        const root = ollama.replace(/\/$/, "");
+        return root.endsWith("/v1") ? root : `${root}/v1`;
+      }
+      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      return "http://localhost:11434/v1";
     },
+    hasLocalLlm: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim() ||
+        process.env.OLLAMA_BASE_URL?.trim();
+      if (explicit) return true;
+      if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
+      return true;
+    },
+    isCloudFlagshipLlmHost: (host: string | null | undefined) => {
+      if (!host) return false;
+      const h = host.trim().toLowerCase();
+      return (
+        h === "api.openai.com" ||
+        h === "openai.com" ||
+        h === "api.groq.com" ||
+        h.endsWith(".api.openai.com")
+      );
+    },
+    summarizeLocalLlmBaseUrl: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim();
+      let base = explicit?.replace(/\/$/, "") || null;
+      if (!base) {
+        const ollama = process.env.OLLAMA_BASE_URL?.trim();
+        if (ollama) {
+          const root = ollama.replace(/\/$/, "");
+          base = root.endsWith("/v1") ? root : `${root}/v1`;
+        }
+      }
+      if (!base && !(process.env.VERCEL || process.env.VERCEL_ENV)) {
+        base = "http://localhost:11434/v1";
+      }
+      if (!base) {
+        return {
+          configured: false,
+          host: null,
+          hasV1Path: false,
+          isHttps: false,
+          isLocalhost: false,
+          isCloudFlagship: false,
+        };
+      }
+      try {
+        const url = new URL(base);
+        const host = url.hostname || null;
+        const path = (url.pathname || "").replace(/\/$/, "");
+        const isCloudFlagship =
+          host === "api.openai.com" ||
+          host === "openai.com" ||
+          host === "api.groq.com" ||
+          Boolean(host?.endsWith(".api.openai.com"));
+        return {
+          configured: true,
+          host,
+          hasV1Path: path === "/v1" || path.endsWith("/v1"),
+          isHttps: url.protocol === "https:",
+          isLocalhost: host === "localhost" || host === "127.0.0.1" || host === "::1",
+          isCloudFlagship,
+        };
+      } catch {
+        return {
+          configured: true,
+          host: null,
+          hasV1Path: /\/v1\/?$/.test(base),
+          isHttps: /^https:/i.test(base),
+          isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+          isCloudFlagship: /api\.openai\.com|api\.groq\.com/i.test(base),
+        };
+      }
+    },
+    logLocalLlmClientInitOnce: () => {},
+    getOpenAIClient: () => client,
+    getLocalLlmClient: () => {
+      const explicit =
+        process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+        process.env.VLLM_BASE_URL?.trim() ||
+        process.env.OLLAMA_BASE_URL?.trim();
+      if (explicit) return client;
+      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      return client;
+    },
+    normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
+    localLlmMaxRetries: () => 2,
     resetLlmClientsForTests: () => {},
   };
 });
 
-vi.mock("../src/lib/geminiNative", () => ({
-  createGeminiChatStream: (...args: unknown[]) => geminiStreamMock(...args),
-  createGeminiChatCompletion: (...args: unknown[]) => geminiCompletionMock(...args),
-}));
-
+import { resetLocalModelCatalogForTests } from "../src/lib/localModelCatalog";
 import {
   createChatCompletionWithFailover,
   createChatStreamWithFailover,
-  getAnimaTierProviderOrder,
-  getConfiguredProviderMode,
   getLlmRoutingStatus,
-  getPreferredProvider,
-  getProviderChain,
   isAnimaCustomMode,
-  isGeminiStickySkipped,
-  isKimiStickySkipped,
-  isOpenAIBlocked,
-  isOpenAIStickySkipped,
-  isXaiBlocked,
-  isXaiStickySkipped,
   isProviderAuthError,
-  extractXaiBillingUrl,
-  isProviderUnusableError,
-  recordProviderFailure,
-  resetLlmFailoverStateForTests,
-  resolveGatewayModel,
-  resolveGeminiModel,
-  resolveKimiModel,
-  resolveXaiModel,
-  reviveStickySkippedProvidersIfNeeded,
-  sanitizeProviderEnv,
+  probeLlmProviders,
+  resolveLocalModel,
 } from "../src/lib/llmFailover";
 
 function fakeStream(label = "ok") {
@@ -86,147 +135,83 @@ function fakeCompletion(content = "ok") {
   return { choices: [{ message: { content } }] };
 }
 
-describe("isProviderUnusableError", () => {
-  it("detects OpenAI credit / quota exhaustion", () => {
-    expect(
-      isProviderUnusableError({
-        status: 429,
-        message:
-          "429 You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/",
-      }),
-    ).toBe(true);
-    expect(
-      isProviderUnusableError({ status: 429, code: "insufficient_quota" }),
-    ).toBe(true);
-  });
-
-  it("detects 401 / invalid API key (including SDK 'no body' message)", () => {
-    expect(isProviderAuthError({ status: 401, message: "401 status code (no body)" })).toBe(
-      true,
-    );
-    expect(isProviderUnusableError({ status: 401, message: "401 status code (no body)" })).toBe(
-      true,
-    );
-  });
-
-  it("detects xAI team with no credits/licenses (403)", () => {
-    const xaiTeamError = {
-      status: 403,
-      message:
-        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374."',
-    };
-    expect(isProviderUnusableError(xaiTeamError)).toBe(true);
-    expect(extractXaiBillingUrl(xaiTeamError)).toBe(
-      "https://console.x.ai/team/dd82a210-6dbf-46a7-b5cf-c7cdffdd7374",
-    );
+describe("isProviderAuthError", () => {
+  it("detects 401 / 403 / invalid API key (including SDK 'no body' message)", () => {
+    expect(isProviderAuthError({ status: 401, message: "401 status code (no body)" })).toBe(true);
+    expect(isProviderAuthError({ status: 403, message: "403 status code (no body)" })).toBe(true);
+    expect(isProviderAuthError({ status: 403 })).toBe(true);
+    expect(isProviderAuthError({ status: 429, message: "rate limited" })).toBe(false);
   });
 });
 
-describe("sanitizeProviderEnv", () => {
-  it("rejects Gemini AQ keys pasted into ANIMA_LLM_PROVIDER", () => {
-    expect(
-      sanitizeProviderEnv("AQ.Ab8RN6LnPybKM8XuEVGP3i6PPJsaLJel5DeEfows_E_ZuL3_MQ"),
-    ).toBeNull();
-    expect(sanitizeProviderEnv("auto")).toBe("auto");
-    expect(sanitizeProviderEnv("gemini")).toBe("gemini");
+describe("isAnimaCustomMode", () => {
+  it("is always true — chat only ever runs on the self-hosted Anima LLM", () => {
+    expect(isAnimaCustomMode()).toBe(true);
   });
 });
 
-describe("resolve models", () => {
+describe("resolveLocalModel", () => {
   const SAVED = { ...process.env };
   afterEach(() => {
     process.env = { ...SAVED };
   });
 
-  it("defaults Gemini / Kimi / xAI / Gateway models per tier", () => {
-    delete process.env.ANIMA_GEMINI_MODEL;
-    delete process.env.ANIMA_KIMI_MODEL;
-    delete process.env.ANIMA_XAI_MODEL;
-    delete process.env.ANIMA_GATEWAY_MODEL;
-    expect(resolveGeminiModel("standard").model).toBe("gemini-2.5-flash");
-    expect(resolveKimiModel("standard").model).toBe("kimi-k2.6");
-    expect(resolveXaiModel("standard").model).toBe("grok-3");
-    expect(resolveGatewayModel("standard").model).toBe("google/gemini-2.5-flash");
+  it("defaults to the ollama registry lineup", () => {
+    delete process.env.ANIMA_LOCAL_LLM_BACKEND;
+    expect(resolveLocalModel("standard").model).toBeTruthy();
+  });
+
+  it("switches to the vLLM lineup when ANIMA_LOCAL_LLM_BACKEND=vllm", () => {
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "vllm";
+    expect(resolveLocalModel("standard").model).toBeTruthy();
   });
 });
 
-describe("ANIMA_LLM_PROVIDER / provider chain", () => {
+describe("getLlmRoutingStatus", () => {
   const SAVED = { ...process.env };
 
   beforeEach(() => {
     process.env = { ...SAVED };
-    process.env.OPENAI_API_KEY = "sk-test-openai";
-    process.env.XAI_API_KEY = "xai-test";
-    process.env.GEMINI_API_KEY = "gemini-test";
-    process.env.KIMI_API_KEY = "kimi-test";
-    process.env.AI_GATEWAY_API_KEY = "gateway-test";
-    delete process.env.ANIMA_LLM_PROVIDER;
-    delete process.env.ANIMA_DISABLE_OPENAI;
-    delete process.env.ANIMA_DISABLE_XAI;
-    delete process.env.ANIMA_DISABLE_GATEWAY;
-    resetLlmFailoverStateForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
-    resetLlmFailoverStateForTests();
   });
 
-  it("defaults to Gemini-first auto chain with AI Gateway last resort", () => {
-    delete process.env.ANIMA_LLM_PROVIDER;
-    expect(getConfiguredProviderMode()).toBe("auto");
-    expect(getProviderChain()).toEqual([
-      "gemini",
-      "kimi",
-      "xai",
-      "openai",
-      "gateway",
-    ]);
-    expect(getPreferredProvider()).toBe("gemini");
-  });
-
-  it("honors ANIMA_LLM_PROVIDER=gemini as Gemini-only", () => {
-    process.env.ANIMA_LLM_PROVIDER = "gemini";
-    expect(getConfiguredProviderMode()).toBe("gemini");
-    expect(isOpenAIBlocked()).toBe(true);
-    expect(isXaiBlocked()).toBe(true);
-    expect(getProviderChain()).toEqual(["gemini"]);
-  });
-
-  it("uses Kimi-only when ANIMA_LLM_PROVIDER=kimi", () => {
-    process.env.ANIMA_LLM_PROVIDER = "kimi";
-    expect(getProviderChain()).toEqual(["kimi"]);
-  });
-
-  it("ignores API-key-like ANIMA_LLM_PROVIDER and still prefers Gemini", () => {
-    process.env.ANIMA_LLM_PROVIDER =
-      "AQ.Ab8RN6LnPybKM8XuEVGP3i6PPJsaLJel5DeEfows_E_ZuL3_MQ";
-    expect(getConfiguredProviderMode()).toBe("auto");
-    expect(getProviderChain()[0]).toBe("gemini");
+  it("reports ok with brand anima when a local endpoint is configured", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     const status = getLlmRoutingStatus();
-    expect(status.rawProviderEnv).toBeNull();
-    expect(status.geminiRetiredForChat).toBe(false);
-    expect(status.note).toMatch(/Gemini/i);
+    expect(status.status).toBe("ok");
+    expect(status.preferred).toBe("local");
+    expect(status.brand).toBe("anima");
+    expect(status.note).toMatch(/self-hosted Anima LLM only/i);
   });
 
-  it("auto without Gemini uses Kimi → Grok → OpenAI → Gateway", () => {
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_API_KEY;
-    expect(getProviderChain()).toEqual(["kimi", "xai", "openai", "gateway"]);
+  it("reports error and a setup hint when no local endpoint is configured on Vercel", () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("error");
+    expect(status.preferred).toBeNull();
+    expect(status.localEndpoint.configured).toBe(false);
+    expect(status.localEndpoint.model).toBe("anima-chat");
+    expect(status.note).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/i);
   });
 
-  it("uses gateway-only when ANIMA_LLM_PROVIDER=gateway", () => {
-    process.env.ANIMA_LLM_PROVIDER = "gateway";
-    expect(getConfiguredProviderMode()).toBe("gateway");
-    expect(getProviderChain()).toEqual(["gateway"]);
-  });
-
-  it("treats anima mode as auto chain with brand chip", () => {
-    process.env.ANIMA_LLM_PROVIDER = "anima";
-    expect(getConfiguredProviderMode()).toBe("auto");
-    expect(isAnimaCustomMode()).toBe(true);
-    expect(getProviderChain()[0]).toBe("gemini");
-    expect(getAnimaTierProviderOrder("standard")).toContain("gemini");
+  it("reports error when ANIMA_LOCAL_LLM_BASE_URL points at api.openai.com", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://api.openai.com/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("error");
+    expect(status.preferred).toBeNull();
+    expect(status.localEndpoint.configured).toBe(true);
+    expect(status.localEndpoint.isCloudFlagship).toBe(true);
+    expect(status.localEndpoint.host).toBe("api.openai.com");
+    expect(status.note).toMatch(/cloud chat API/i);
+    expect(status.note).toMatch(/self-hosted/i);
   });
 });
 
@@ -235,186 +220,196 @@ describe("createChatStreamWithFailover", () => {
 
   beforeEach(() => {
     process.env = { ...SAVED };
-    process.env.OPENAI_API_KEY = "sk-test-openai";
-    process.env.XAI_API_KEY = "xai-test";
-    process.env.GEMINI_API_KEY = "gemini-test";
-    process.env.KIMI_API_KEY = "kimi-test";
-    process.env.AI_GATEWAY_API_KEY = "gateway-test";
-    delete process.env.ANIMA_LLM_PROVIDER;
-    delete process.env.ANIMA_DISABLE_OPENAI;
-    delete process.env.ANIMA_DISABLE_GATEWAY;
-    resetLlmFailoverStateForTests();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     createMock.mockReset();
-    geminiStreamMock.mockReset();
-    geminiCompletionMock.mockReset();
+    modelsListMock.mockReset();
+    resetLocalModelCatalogForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
-    resetLlmFailoverStateForTests();
   });
 
-  it("uses Gemini first under auto (restored working path)", async () => {
-    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini"));
+  it("streams from the local Anima LLM", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
     const result = await createChatStreamWithFailover({
       tier: "standard",
-      model: "gpt-4o",
+      model: "anima-chat",
       maxTokens: 8192,
       messages: [{ role: "user", content: "hello" }],
     });
-    expect(result.provider).toBe("gemini");
-    expect(result.model).toBe("gemini-2.5-flash");
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
-    expect(createMock).not.toHaveBeenCalled();
+    expect(result.provider).toBe("local");
+    expect(result.brand).toBe("anima");
+    expect(result.failedOver).toBe(false);
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it("fails over from exhausted Kimi to next provider when Gemini is absent", async () => {
-    delete process.env.GEMINI_API_KEY;
-    process.env.ANIMA_LLM_PROVIDER = "auto";
-    createMock
-      .mockRejectedValueOnce({ status: 429, message: "quota exhausted" })
-      .mockResolvedValueOnce(fakeStream("grok-backup"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "gpt-4o",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("xai");
-    expect(result.failedOver).toBe(true);
-    expect(isKimiStickySkipped()).toBe(true);
-  });
-
-  it("fails over from Gemini quota to Kimi", async () => {
-    geminiStreamMock.mockRejectedValueOnce({
-      status: 429,
-      message: "quota exhausted",
-    });
-    createMock.mockResolvedValueOnce(fakeStream("kimi-backup"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "gpt-4o",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("kimi");
-    expect(result.failedOver).toBe(true);
-    expect(result.previousProvider).toBe("gemini");
-    expect(isGeminiStickySkipped()).toBe(true);
-  });
-
-  it("revives sticky skips that would hide Gemini/Kimi (avoids OpenAI-only)", () => {
-    recordProviderFailure("gemini", { status: 429, message: "quota exhausted" });
-    recordProviderFailure("kimi", { status: 429, message: "quota exhausted" });
-    recordProviderFailure("xai", {
-      status: 403,
-      message:
-        '403 "Your newly created team doesn\'t have any credits or licenses yet. You can purchase those on https://console.x.ai/team/abc."',
-    });
-
-    // Without revive this collapsed to OpenAI-only → "tried OpenAI".
-    expect(getProviderChain()).toEqual([
-      "gemini",
-      "kimi",
-      "xai",
-      "openai",
-      "gateway",
-    ]);
-    expect(isGeminiStickySkipped()).toBe(false);
-  });
-
-  it("fails over to AI Gateway when every BYOK provider is exhausted", async () => {
-    geminiStreamMock.mockRejectedValueOnce({
-      status: 429,
-      message: "quota exhausted",
-    });
-    createMock
-      .mockRejectedValueOnce({ status: 429, message: "quota exhausted" }) // kimi
-      .mockRejectedValueOnce({ status: 403, message: "no credits or licenses" }) // xai
-      .mockRejectedValueOnce({ status: 429, code: "insufficient_quota" }) // openai
-      .mockResolvedValueOnce(fakeStream("gateway-ok")); // gateway
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "gpt-4o",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("gateway");
-    expect(result.failedOver).toBe(true);
-    expect(result.model).toBe("google/gemini-2.5-flash");
-  });
-
-  it("includes per-provider details when the whole chain is exhausted", async () => {
-    geminiStreamMock.mockRejectedValueOnce({
-      status: 429,
-      message: "gemini quota gone",
-    });
-    createMock
-      .mockRejectedValueOnce({ status: 429, message: "kimi quota gone" })
-      .mockRejectedValueOnce({ status: 403, message: "xai no credits" })
-      .mockRejectedValueOnce({ status: 429, message: "openai quota gone" })
-      .mockRejectedValueOnce({ status: 402, message: "gateway budget exceeded" });
+  it("throws a setup error when no local endpoint is configured", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
 
     await expect(
       createChatStreamWithFailover({
         tier: "standard",
-        model: "gpt-4o",
+        model: "anima-chat",
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toThrow(/Keys are present on the server[\s\S]*Details:.*Gemini:.*Kimi/i);
-  });
+    ).rejects.toThrow(/ANIMA_LOCAL_LLM_BASE_URL/i);
 
-  it("starts each chat turn on Gemini even after prior sticky failures", async () => {
-    recordProviderFailure("gemini", { status: 429, message: "quota exhausted" });
-    recordProviderFailure("kimi", { status: 429, message: "quota exhausted" });
-    recordProviderFailure("xai", {
-      status: 403,
-      message: "no credits or licenses https://console.x.ai/team/abc",
-    });
-    expect(isGeminiStickySkipped()).toBe(true);
-
-    geminiStreamMock.mockResolvedValueOnce(fakeStream("gemini-again"));
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "gpt-4o",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "try again" }],
-    });
-
-    expect(result.provider).toBe("gemini");
-    expect(result.failedOver).toBe(false);
-    expect(geminiStreamMock).toHaveBeenCalledTimes(1);
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("retries Kimi standard model on model-unavailable", async () => {
-    delete process.env.GEMINI_API_KEY;
-    process.env.ANIMA_LLM_PROVIDER = "kimi";
+  it("throws a clear setup error when base URL is api.openai.com (not a self-hosted LLM)", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://api.openai.com/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/cloud chat API/i);
+
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("retries the standard-tier model on model-unavailable before giving up", async () => {
+    // Distinct tags per tier so the rescue chain has more than one candidate
+    // (the default single-model ollama lineup collapses all tiers to one tag).
+    process.env.ANIMA_OLLAMA_MODEL_HEAVY = "anima-heavy";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     createMock
-      .mockRejectedValueOnce({
-        status: 404,
-        code: "model_not_found",
-        message: "The model does not exist",
-      })
+      .mockRejectedValueOnce({ status: 404, code: "model_not_found", message: "The model does not exist" })
       .mockResolvedValueOnce(fakeStream("standard"));
 
     const result = await createChatStreamWithFailover({
       tier: "heavy",
-      model: "gpt-4.1",
+      model: "anima-heavy",
       maxTokens: 8192,
       messages: [{ role: "user", content: "hi" }],
     });
 
-    expect(result.provider).toBe("kimi");
-    expect(result.model).toBe("kimi-k2.6");
+    expect(result.provider).toBe("local");
+    expect(result.model).toBe("anima-chat");
     expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to a model the endpoint actually serves when the configured tag is missing", async () => {
+    // The real-world failure: every tier resolves to `anima-chat`, but the
+    // host only ever had the base weights pulled — `ollama create` was never
+    // run — so the configured tag 404s on every single turn.
+    createMock
+      .mockRejectedValueOnce({
+        status: 404,
+        message: "The model `anima-chat` does not exist or you do not have access to it.",
+      })
+      .mockResolvedValueOnce(fakeStream("recovered"));
+    modelsListMock.mockResolvedValueOnce({
+      data: [{ id: "nomic-embed-text:latest" }, { id: "qwen2.5:3b" }],
+    });
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(result.model).toBe("qwen2.5:3b");
+    expect(modelsListMock).toHaveBeenCalledTimes(1);
+    expect(createMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ model: "qwen2.5:3b" }));
+  });
+
+  it("reuses the discovered model on later turns instead of re-earning the 404", async () => {
+    createMock
+      .mockRejectedValueOnce({ status: 404, message: "model `anima-chat` does not exist" })
+      .mockResolvedValueOnce(fakeStream("first"))
+      .mockResolvedValueOnce(fakeStream("second"));
+    modelsListMock.mockResolvedValueOnce({ data: [{ id: "qwen2.5:3b" }] });
+
+    const req = {
+      tier: "standard" as const,
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hi" }],
+    };
+    await createChatStreamWithFailover(req);
+    const second = await createChatStreamWithFailover(req);
+
+    expect(second.model).toBe("qwen2.5:3b");
+    // Three calls total, not four: the second turn skipped the dead tag.
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ model: "qwen2.5:3b" }));
+    // And discovery was not repeated either.
+    expect(modelsListMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never substitutes an embedding model for chat", async () => {
+    createMock.mockRejectedValue({ status: 404, message: "model `anima-chat` does not exist" });
+    modelsListMock.mockResolvedValueOnce({
+      data: [{ id: "nomic-embed-text:latest" }, { id: "bge-large" }],
+    });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toThrow(/does not serve a model named "anima-chat"/i);
+
+    // Only the configured tag was tried — no embedding model was ever called.
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains the mismatch with the host's real lineup when nothing works", async () => {
+    createMock.mockRejectedValue({ status: 404, message: "model not found" });
+    modelsListMock.mockResolvedValueOnce({ data: [{ id: "llama3.2:1b" }] });
+    createMock.mockRejectedValue({ status: 404, message: "model not found" });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toThrow(/llama3\.2:1b/);
+  });
+
+  it("still fails clearly when the endpoint lists no models at all", async () => {
+    createMock.mockRejectedValue({ status: 404, message: "model `anima-chat` does not exist" });
+    modelsListMock.mockRejectedValueOnce(new Error("404 page not found"));
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toThrow(/reported no models at all/i);
+  });
+
+  it("does not retry on a quota/rate-limit error — surfaces it immediately", async () => {
+    createMock.mockRejectedValueOnce({ status: 429, message: "rate limited" });
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toBeTruthy();
+
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -423,32 +418,57 @@ describe("createChatCompletionWithFailover", () => {
 
   beforeEach(() => {
     process.env = { ...SAVED };
-    process.env.OPENAI_API_KEY = "sk-test-openai";
-    process.env.XAI_API_KEY = "xai-test";
-    process.env.GEMINI_API_KEY = "gemini-test";
-    process.env.KIMI_API_KEY = "kimi-test";
-    process.env.AI_GATEWAY_API_KEY = "gateway-test";
-    delete process.env.ANIMA_LLM_PROVIDER;
-    resetLlmFailoverStateForTests();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     createMock.mockReset();
-    geminiStreamMock.mockReset();
-    geminiCompletionMock.mockReset();
+    modelsListMock.mockReset();
+    resetLocalModelCatalogForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
-    resetLlmFailoverStateForTests();
   });
 
-  it("uses Gemini completion under auto", async () => {
-    geminiCompletionMock.mockResolvedValueOnce(fakeCompletion("gemini reply"));
+  it("returns a completion from the local Anima LLM", async () => {
+    createMock.mockResolvedValueOnce(fakeCompletion("anima reply"));
     const result = await createChatCompletionWithFailover({
       tier: "standard",
       maxTokens: 1024,
       messages: [{ role: "system", content: "You are Serenity." }],
     });
-    expect(result.content).toBe("gemini reply");
-    expect(result.provider).toBe("gemini");
-    expect(createMock).not.toHaveBeenCalled();
+    expect(result.content).toBe("anima reply");
+    expect(result.provider).toBe("local");
+    expect(result.brand).toBe("anima");
+  });
+});
+
+describe("probeLlmProviders", () => {
+  const SAVED = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...SAVED };
+    createMock.mockReset();
+    modelsListMock.mockReset();
+    resetLocalModelCatalogForTests();
+  });
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+  });
+
+  it("reports not configured when there is no local endpoint", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    const probes = await probeLlmProviders();
+    expect(probes).toEqual([{ provider: "local", configured: false, ok: false }]);
+  });
+
+  it("probes the local endpoint with a tiny completion", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    createMock.mockResolvedValueOnce(fakeCompletion("ok"));
+    const probes = await probeLlmProviders();
+    expect(probes).toHaveLength(1);
+    expect(probes[0]).toMatchObject({ provider: "local", configured: true, ok: true });
   });
 });

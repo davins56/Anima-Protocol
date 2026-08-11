@@ -123,6 +123,42 @@ export const companionMemories = pgTable(
 
 export type CompanionMemory = typeof companionMemories.$inferSelect;
 
+/**
+ * Per-fact embedding rows for semantic memory retrieval.
+ * Vectors are stored as JSON number[] so the stack works without pgvector.
+ * Optional later upgrade: migrate `embedding` to a pgvector column.
+ */
+export const memoryEmbeddings = pgTable(
+  "memory_embeddings",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    characterId: text("character_id").notNull(),
+    /** Stable id for the fact within companion_memories.facts (or a hash of text). */
+    factId: text("fact_id").notNull(),
+    text: text("text").notNull(),
+    memoryType: text("memory_type").notNull().default("unknown"),
+    embedding: jsonb("embedding").$type<number[]>().notNull().default([]),
+    model: text("model").notNull().default("hash-bow-v1"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    memoryEmbeddingsFactUq: uniqueIndex("memory_embeddings_user_char_fact_uq").on(
+      t.userId,
+      t.characterId,
+      t.factId,
+    ),
+    memoryEmbeddingsUserCharIdx: index("memory_embeddings_user_char_idx").on(
+      t.userId,
+      t.characterId,
+    ),
+  }),
+);
+
+export type MemoryEmbedding = typeof memoryEmbeddings.$inferSelect;
+
 // Generic per-user entity store. One row per (user, entity name, entity id),
 // holding the whole record as JSON. Backs the client's base44 entity CRUD so
 // that all user progress (characters, chats, journals, inventory, quests, world

@@ -3,18 +3,12 @@ import { toFile } from "openai";
 import { getAuth } from "@clerk/express";
 import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { rateLimit } from "../../lib/rateLimit";
-import { notifyUser } from "../../lib/storeEvents";
-import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
-import { getOpenAIClient } from "../../lib/openaiClient";
-
-const router = Router();
-router.use(rateLimit);
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
-import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
+import { resolveModel } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { getOpenAIClient } from "../../lib/openaiClient";
+import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
 
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
@@ -29,9 +23,6 @@ router.use((req, res, next) => {
 });
 
 async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
-  const resp = await getOpenAIClient().chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: maxTokens,
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
@@ -41,27 +32,14 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
       { role: "user", content: userPrompt },
     ],
   });
-  return resp.choices[0]?.message?.content ?? "";
   return result.content;
 }
 
-// Web-grounded LLM call: uses the OpenAI Responses API with the web_search
-// tool so the model can scour the live web (cast to any to stay compatible
-// across SDK minor versions). Falls back to the plain model if unavailable.
+// Web search grounding is an OpenAI Responses API feature and chat never
+// calls OpenAI (the self-hosted Anima LLM has no equivalent tool), so this
+// always resolves to the plain model call.
 async function webSearchLLM(systemPrompt: string, userPrompt: string): Promise<string> {
-  try {
-    const resp = await (getOpenAIClient() as any).responses.create({
-      model: "gpt-4o",
-      tools: [{ type: "web_search_preview" }],
-      instructions: systemPrompt,
-      input: userPrompt,
-    });
-    const text = (resp as any).output_text;
-    if (typeof text === "string" && text.trim()) return text;
-    return await llm(systemPrompt, userPrompt);
-  } catch {
-    return llm(systemPrompt, userPrompt);
-  }
+  return llm(systemPrompt, userPrompt);
 }
 
 function parseTraits(raw: string): { personality: string; backstory: string; speaking_style: string } {
@@ -213,9 +191,6 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 // Reads an uploaded photo with a vision model: OCRs any visible text and
 // describes the image, then distills it into the same ContextAnalysis shape.
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
-  const resp = await getOpenAIClient().chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 1500,
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
@@ -236,7 +211,6 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
       },
     ],
   });
-  return parseContextAnalysis(resp.choices[0]?.message?.content ?? "");
   return parseContextAnalysis(result.content);
 }
 
@@ -740,7 +714,30 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "searchMemoriesSemantically": {
-        result = { memories: [] };
+        const { userId } = getAuth(req) as { userId: string };
+        const query =
+          typeof data.query === "string"
+            ? data.query
+            : typeof data.text === "string"
+              ? data.text
+              : "";
+        const characterId =
+          typeof data.character_id === "string" ? data.character_id : undefined;
+        const topK =
+          typeof data.top_k === "number" && data.top_k > 0
+            ? Math.min(48, data.top_k)
+            : 12;
+        if (!query.trim()) {
+          result = { memories: [] };
+          break;
+        }
+        const memories = await searchMemoriesSemantically({
+          userId,
+          characterId,
+          query,
+          topK,
+        });
+        result = { memories };
         break;
       }
 
@@ -901,36 +898,22 @@ Rules:
           ...rawMessages,
         ];
 
-        const runCompletion = (model: string, maxTokens: number) =>
-          getOpenAIClient().chat.completions.create({
-            model,
-            max_tokens: maxTokens,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            messages: baseMessages as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tools: tools as any,
-            tool_choice: "auto",
-          });
-
         const heavy = resolveModel("heavy");
-        let completion;
-        try {
-          completion = await runCompletion(heavy.model, heavy.maxTokens);
-        } catch (err) {
-          if (isModelUnavailableError(err)) {
-            const std = resolveModel("standard");
-            completion = await runCompletion(std.model, std.maxTokens);
-          } else {
-            throw err;
-          }
-        }
+        const completion = await createChatCompletionWithFailover({
+          tier: "heavy",
+          model: heavy.model,
+          maxTokens: heavy.maxTokens,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          messages: baseMessages as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tools: tools as any,
+        });
 
-        const choice = completion.choices[0]?.message;
         result = {
           message: {
             role: "assistant",
-            content: choice?.content ?? "",
-            tool_calls: choice?.tool_calls ?? null,
+            content: completion.content ?? "",
+            tool_calls: completion.toolCalls ?? null,
           },
         };
         break;
@@ -1059,10 +1042,6 @@ export function mapImageEditError(err: unknown): {
     };
   }
 
-  return {
-    status: upstreamStatus ?? 500,
-    code: "server_error",
-    error: rawMessage,
   // Invalid / missing OpenAI API key — never echo the key material OpenAI
   // includes in the raw 401 message (e.g. "Incorrect API key provided: sk-…").
   if (

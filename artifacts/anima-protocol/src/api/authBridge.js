@@ -2,7 +2,6 @@
 let tokenGetter = null;
 
 export function setAuthTokenGetter(fn) {
-  tokenGetter = fn;
   tokenGetter = typeof fn === 'function' ? fn : null;
 }
 
@@ -10,10 +9,6 @@ export function clearAuthTokenGetter() {
   tokenGetter = null;
 }
 
-export async function getToken(options = {}) {
-  if (!tokenGetter) return null;
-  try {
-    return await tokenGetter(options);
 /**
  * Resolve a bearer token from the registered getter.
  *
@@ -62,7 +57,6 @@ export async function authHeaders(extra, options = {}) {
     ...publicOriginHeaders(),
     ...extra,
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
   if (typeof token === 'string' && token.length > 0) {
     headers.Authorization = `Bearer ${token}`;
   }

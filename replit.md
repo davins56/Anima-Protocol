@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Anima Protocol
 
 An emotionally intelligent AI companion app with persistent memory, sci-fantasy worldbuilding, and 40+ interconnected entities.
@@ -11,6 +12,8 @@ An emotionally intelligent AI companion app with persistent memory, sci-fantasy 
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string (auto-provisioned)
 - Required env: `OPENAI_API_KEY` — OpenAI API key (stored as secret)
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 # [Project name]
 
 _Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
@@ -27,6 +30,7 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+<<<<<<< HEAD
 - Frontend: React + Vite + Tailwind CSS, react-router-dom (proxied to `/`)
 - API: Express 5 (proxied to `/api`)
 - DB: PostgreSQL + Drizzle ORM (`conversations` and `messages` tables)
@@ -50,6 +54,8 @@ _Replace the heading above with the project's name, and this line with one sente
 - AI chat uses real OpenAI streaming via SSE; all other AI functions route through `/api/openai/invoke/:fnName`
 - Auth is a guest stub — always logged in as a guest user, no login flow required
 - `Landing.jsx` was renamed to `Landing.tsx` because it contains TypeScript generics; all other pages are plain JSX
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
@@ -74,9 +80,12 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
+<<<<<<< HEAD
 - The AI disclosure modal shows on first visit only (stored in localStorage). Clicking "I Understand & Accept" dismisses it permanently.
 - `src/main.tsx` is an empty stub — the real entry is `src/main.jsx` loaded from `index.html`
 - Placeholder images served at `/api/placeholder/:w/:h` as SVG
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 _Populate as you build — sharp edges, "always run X before Y" rules._
 
 ## Pointers

@@ -1,32 +1,10 @@
 import OpenAI from "openai";
 
-let client: OpenAI | null = null;
-let clientKey: string | null = null;
-
-export function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY must be set.");
-  }
-  if (!client || clientKey !== apiKey) {
-    client = new OpenAI({ apiKey });
-    clientKey = apiKey;
-  }
-  return client;
 let openaiClient: OpenAI | null = null;
 let openaiClientKey: string | null = null;
 
-let xaiClient: OpenAI | null = null;
-let xaiClientKey: string | null = null;
-
-let geminiClient: OpenAI | null = null;
-let geminiClientKey: string | null = null;
-
-let kimiClient: OpenAI | null = null;
-let kimiClientKey: string | null = null;
-
-let gatewayClient: OpenAI | null = null;
-let gatewayClientKey: string | null = null;
+let localLlmClient: OpenAI | null = null;
+let localLlmClientKey: string | null = null;
 
 /** Normalize env keys that were pasted with surrounding quotes or whitespace. */
 export function normalizeApiKey(raw: string | undefined): string | null {
@@ -41,45 +19,175 @@ export function normalizeApiKey(raw: string | undefined): string | null {
   return key || null;
 }
 
-/**
- * Auth for Vercel AI Gateway (OpenAI-compatible). Prefers AI_GATEWAY_API_KEY;
- * on Vercel deployments falls back to the auto-injected OIDC token.
- */
-export function gatewayAuthToken(): string | null {
-  return (
-    normalizeApiKey(process.env.AI_GATEWAY_API_KEY) ||
-    normalizeApiKey(process.env.VERCEL_OIDC_TOKEN)
-  );
-}
-
+/** OpenAI key — used only for image generation/edit, never for chat. */
 export function hasOpenAIKey(): boolean {
   return Boolean(normalizeApiKey(process.env.OPENAI_API_KEY));
 }
 
-export function hasXaiKey(): boolean {
-  return Boolean(normalizeApiKey(process.env.XAI_API_KEY));
+/**
+ * Base URL for a local OpenAI-compatible server (vLLM, Ollama `/v1`, llama.cpp).
+ * Prefers ANIMA_LOCAL_LLM_BASE_URL, then VLLM_BASE_URL, then Ollama's OpenAI path.
+ * On Vercel, localhost is never invented — set ANIMA_LOCAL_LLM_BASE_URL to a
+ * public HTTPS host.
+ */
+export function localLlmBaseUrl(): string | null {
+  const explicit =
+    process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
+    process.env.VLLM_BASE_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  const ollama = process.env.OLLAMA_BASE_URL?.trim();
+  if (ollama) {
+    const root = ollama.replace(/\/$/, "");
+    return root.endsWith("/v1") ? root : `${root}/v1`;
+  }
+
+  // Never invent localhost on Vercel / serverless — operators must set a public URL.
+  if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+
+  return "http://localhost:11434/v1";
 }
 
-export function hasGeminiKey(): boolean {
-  return Boolean(
-    normalizeApiKey(process.env.GEMINI_API_KEY) ||
-      normalizeApiKey(process.env.GOOGLE_API_KEY),
+/** True when a local OpenAI-compatible LLM endpoint is configured. */
+export function hasLocalLlm(): boolean {
+  return Boolean(localLlmBaseUrl());
+}
+
+/**
+ * Hostnames of closed cloud chat APIs that must never be used as
+ * ANIMA_LOCAL_LLM_BASE_URL. Chat only talks to a self-hosted Anima LLM
+ * (Ollama / vLLM / llama.cpp). Pointing at these hosts with model tag
+ * `anima-chat` produces OpenAI's "model does not exist" 404 in production.
+ */
+const CLOUD_FLAGSHIP_LLM_HOSTS = new Set([
+  "api.openai.com",
+  "openai.com",
+  "api.groq.com",
+  "groq.com",
+  "generativelanguage.googleapis.com",
+  "api.anthropic.com",
+  "api.x.ai",
+  "api.moonshot.ai",
+  "api.moonshot.cn",
+]);
+
+/** True when hostname is a known closed cloud chat API (not a self-hosted Anima LLM). */
+export function isCloudFlagshipLlmHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase().replace(/\.$/, "");
+  if (!h) return false;
+  if (CLOUD_FLAGSHIP_LLM_HOSTS.has(h)) return true;
+  // Catch regional / CDN variants like eastus.api.openai.com
+  for (const blocked of CLOUD_FLAGSHIP_LLM_HOSTS) {
+    if (h.endsWith(`.${blocked}`)) return true;
+  }
+  return false;
+}
+
+/**
+ * Transport-level retries for the self-hosted endpoint. Tunables via
+ * ANIMA_LOCAL_LLM_MAX_RETRIES (0 disables) for hosts where a retry is more
+ * expensive than a failed turn — e.g. a single-slot GPU box.
+ */
+export function localLlmMaxRetries(): number {
+  const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 2;
+}
+
+/**
+ * Secret-free summary of the configured local LLM base URL for healthz / logs.
+ * Returns hostname + whether the path looks OpenAI-compatible (`/v1`).
+ */
+export function summarizeLocalLlmBaseUrl(): {
+  configured: boolean;
+  host: string | null;
+  hasV1Path: boolean;
+  isHttps: boolean;
+  isLocalhost: boolean;
+  /** True when ANIMA_LOCAL_LLM_BASE_URL points at OpenAI/Groq/Gemini/etc. */
+  isCloudFlagship: boolean;
+} {
+  const base = localLlmBaseUrl();
+  if (!base) {
+    return {
+      configured: false,
+      host: null,
+      hasV1Path: false,
+      isHttps: false,
+      isLocalhost: false,
+      isCloudFlagship: false,
+    };
+  }
+  try {
+    const url = new URL(base);
+    const host = url.hostname || null;
+    const path = (url.pathname || "").replace(/\/$/, "");
+    const isLocalhost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host === "0.0.0.0";
+    return {
+      configured: true,
+      host,
+      hasV1Path: path === "/v1" || path.endsWith("/v1"),
+      isHttps: url.protocol === "https:",
+      isLocalhost,
+      isCloudFlagship: isCloudFlagshipLlmHost(host),
+    };
+  } catch {
+    const hostMatch = base.match(/^https?:\/\/([^/:]+)/i);
+    const host = hostMatch?.[1] ?? null;
+    return {
+      configured: true,
+      host,
+      hasV1Path: /\/v1\/?$/.test(base),
+      isHttps: /^https:/i.test(base),
+      isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+      isCloudFlagship: isCloudFlagshipLlmHost(host),
+    };
+  }
+}
+
+let loggedLocalLlmInit = false;
+
+/** One-time operator log of local LLM routing (no API keys). */
+export function logLocalLlmClientInitOnce(): void {
+  if (loggedLocalLlmInit) return;
+  loggedLocalLlmInit = true;
+  const summary = summarizeLocalLlmBaseUrl();
+  const backend =
+    (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() ||
+    "ollama";
+  const model =
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
+    process.env.ANIMA_VLLM_MODEL?.trim() ||
+    "(default from registry)";
+  if (!summary.configured) {
+    console.info(
+      "[llm] ANIMA_LOCAL_LLM_BASE_URL unset — set a public HTTPS OpenAI-compatible URL (…/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md.",
+    );
+    return;
+  }
+  if (summary.isCloudFlagship) {
+    console.error(
+      `[llm] MISCONFIGURED: ANIMA_LOCAL_LLM_BASE_URL host=${summary.host} is a cloud flagship API. ` +
+        `Chat requires a self-hosted Ollama/vLLM URL serving model=${model}. See docs/llm-deploy.md.`,
+    );
+    return;
+  }
+  console.info(
+    `[llm] local client: host=${summary.host ?? "?"} https=${summary.isHttps} v1=${summary.hasV1Path} localhost=${summary.isLocalhost} backend=${backend} model=${model}`,
   );
 }
 
-/** Moonshot / Kimi Open Platform key (`KIMI_API_KEY` or `MOONSHOT_API_KEY`). */
-export function hasKimiKey(): boolean {
-  return Boolean(
-    normalizeApiKey(process.env.KIMI_API_KEY) ||
-      normalizeApiKey(process.env.MOONSHOT_API_KEY),
-  );
+/** Test helper — allow re-logging after env changes. */
+export function resetLocalLlmInitLogForTests(): void {
+  loggedLocalLlmInit = false;
 }
 
-/** True when Vercel AI Gateway can authenticate (API key or OIDC). */
-export function hasGatewayAuth(): boolean {
-  return Boolean(gatewayAuthToken());
-}
-
+/** OpenAI client — used only for image generation/edit, never for chat. */
 export function getOpenAIClient(): OpenAI {
   const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
   if (!apiKey) {
@@ -92,95 +200,44 @@ export function getOpenAIClient(): OpenAI {
   return openaiClient;
 }
 
-/** OpenAI-compatible xAI (Grok) client. Returns null when XAI_API_KEY is unset. */
-export function getXaiClient(): OpenAI | null {
-  const apiKey = normalizeApiKey(process.env.XAI_API_KEY);
-  if (!apiKey) return null;
-  if (!xaiClient || xaiClientKey !== apiKey) {
-    xaiClient = new OpenAI({
-      apiKey,
-      baseURL: process.env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1",
-    });
-    xaiClientKey = apiKey;
-  }
-  return xaiClient;
-}
-
 /**
- * @deprecated Chat uses the native Generative Language API in `geminiNative.ts`
- * so AQ.* AI Studio auth keys work. Kept only for any legacy callers/tests.
+ * OpenAI-compatible client for local vLLM / Ollama / llama.cpp.
+ * Returns null when no local base URL is configured.
  */
-export function getGeminiClient(): OpenAI | null {
+export function getLocalLlmClient(): OpenAI | null {
+  const baseURL = localLlmBaseUrl();
+  if (!baseURL) {
+    logLocalLlmClientInitOnce();
+    return null;
+  }
   const apiKey =
-    normalizeApiKey(process.env.GEMINI_API_KEY) ||
-    normalizeApiKey(process.env.GOOGLE_API_KEY);
-  if (!apiKey) return null;
-  if (!geminiClient || geminiClientKey !== apiKey) {
-    geminiClient = new OpenAI({
+    normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) ||
+    normalizeApiKey(process.env.VLLM_API_KEY) ||
+    "local";
+  const cacheKey = `${baseURL}::${apiKey}`;
+  if (!localLlmClient || localLlmClientKey !== cacheKey) {
+    localLlmClient = new OpenAI({
       apiKey,
-      baseURL:
-        process.env.GEMINI_BASE_URL?.trim() ||
-        "https://generativelanguage.googleapis.com/v1beta/openai/",
+      baseURL,
+      // Self-hosted endpoints are usually reached over a tunnel (cloudflared,
+      // Fly, a VPS reverse proxy), where a dropped connection or a cold-start
+      // 502 is routine. With no retries every one of those killed a chat turn
+      // outright. The SDK only retries connection errors and 408/409/429/5xx,
+      // and only before a stream has started, so this cannot duplicate a
+      // partially-delivered reply.
+      maxRetries: localLlmMaxRetries(),
     });
-    geminiClientKey = apiKey;
+    localLlmClientKey = cacheKey;
+    logLocalLlmClientInitOnce();
   }
-  return geminiClient;
-}
-
-/**
- * OpenAI-compatible Moonshot / Kimi client.
- * Accepts KIMI_API_KEY or MOONSHOT_API_KEY. Returns null when neither is set.
- */
-export function getKimiClient(): OpenAI | null {
-  const apiKey =
-    normalizeApiKey(process.env.KIMI_API_KEY) ||
-    normalizeApiKey(process.env.MOONSHOT_API_KEY);
-  if (!apiKey) return null;
-  if (!kimiClient || kimiClientKey !== apiKey) {
-    kimiClient = new OpenAI({
-      apiKey,
-      baseURL:
-        process.env.KIMI_BASE_URL?.trim() ||
-        process.env.MOONSHOT_BASE_URL?.trim() ||
-        "https://api.moonshot.ai/v1",
-      // Moonshot Tier-0 accounts can burn RPM on SDK auto-retries after 429.
-      maxRetries: 0,
-    });
-    kimiClientKey = apiKey;
-  }
-  return kimiClient;
-}
-
-/**
- * OpenAI-compatible Vercel AI Gateway client.
- * Uses AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN. Returns null when neither is set.
- */
-export function getGatewayClient(): OpenAI | null {
-  const apiKey = gatewayAuthToken();
-  if (!apiKey) return null;
-  if (!gatewayClient || gatewayClientKey !== apiKey) {
-    gatewayClient = new OpenAI({
-      apiKey,
-      baseURL:
-        process.env.AI_GATEWAY_BASE_URL?.trim() ||
-        "https://ai-gateway.vercel.sh/v1",
-      maxRetries: 0,
-    });
-    gatewayClientKey = apiKey;
-  }
-  return gatewayClient;
+  return localLlmClient;
 }
 
 /** Test helper — clears cached SDK clients between cases. */
 export function resetLlmClientsForTests(): void {
   openaiClient = null;
   openaiClientKey = null;
-  xaiClient = null;
-  xaiClientKey = null;
-  geminiClient = null;
-  geminiClientKey = null;
-  kimiClient = null;
-  kimiClientKey = null;
-  gatewayClient = null;
-  gatewayClientKey = null;
+  localLlmClient = null;
+  localLlmClientKey = null;
+  resetLocalLlmInitLogForTests();
 }

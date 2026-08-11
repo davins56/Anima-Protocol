@@ -17,11 +17,14 @@ import { upsertCharacters } from "@/lib/seedCharacters";
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
   const { createBranchForSession } = useTimelineBranching();
+<<<<<<< HEAD
   const [characters, setCharacters] = useState([]);
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   // Paint bundled starters immediately so Select Character is never blank while
   // store auth / seeding runs (and so a later empty store-sync cannot flash empty).
   const [characters, setCharacters] = useState(getBundledStarterRoster);
@@ -40,6 +43,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [canonSeed, setCanonSeed] = useState(null); // { story, insertions } from the universe browser
   const [openingScene, setOpeningScene] = useState("");
 
+<<<<<<< HEAD
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -62,6 +66,8 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       setCharacters([]);
       setGroups([]);
     } finally {
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   const loadData = useCallback(async ({ retrySeed = false } = {}) => {
     // Keep current roster visible while refreshing — never blank the grid.
     if (retrySeed) setSeeding(true);
@@ -123,7 +129,10 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   useEffect(() => {
     let cancelled = false;
     whenBootstrapReady().then(() => {
+<<<<<<< HEAD
       if (!cancelled) loadData();
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       // Retry starter seed if the roster is still empty so New Session can
       // offer preloaded characters immediately after sign-in.
       if (!cancelled) loadData({ retrySeed: true });
@@ -134,14 +143,20 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   }, [loadData]);
 
   // Refetch when starter seeding or another device updates the roster.
+<<<<<<< HEAD
   useStoreSync(loadData);
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   useStoreSync(() => loadData({ retrySeed: false }));
 
   const filteredCharacters = characters.filter((c) => {
     const searchLower = search.toLowerCase().trim();
     if (!searchLower) return true;
     return (
+<<<<<<< HEAD
       c.name.toLowerCase().includes(searchLower) ||
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       (c.name || "").toLowerCase().includes(searchLower) ||
       (c.universe || "").toLowerCase().includes(searchLower) ||
       (c.category || "").toLowerCase().includes(searchLower)
@@ -193,8 +208,11 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   };
 
   const handleCreate = async () => {
+<<<<<<< HEAD
     if (selected.length === 0) return;
     
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
     if (selected.length === 0 || creating) return;
 
     // Bundled starters are not in Postgres yet — upsert before chat so the
@@ -358,9 +376,12 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
               onSelectStory={handleCanonSelect}
               isInline={true}
             />
+<<<<<<< HEAD
           ) : loading ? (
             <div className="text-center py-12 font-mono text-primary/30 text-sm tracking-widest uppercase animate-pulse">
               Loading characters...
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           ) : filteredCharacters.length === 0 && filteredGroups.length === 0 && (loading || seeding) ? (
             <div className="text-center py-12 font-mono text-primary/30 text-sm tracking-widest uppercase animate-pulse">
               {seeding ? "Indexing starter characters..." : "Loading characters..."}
@@ -439,7 +460,10 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
                             <img src={char.avatar_url} alt={char.name} className="w-12 h-12 object-cover border border-primary/20 mb-3" />
                           ) : (
                             <div className="w-12 h-12 bg-primary/10 border border-primary/20 flex items-center justify-center mb-3">
+<<<<<<< HEAD
                               <span className="font-mono text-primary text-lg">{char.name[0]}</span>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
                               <span className="font-mono text-primary text-lg">{(char.name || "?")[0]}</span>
                             </div>
                           )}
@@ -564,10 +588,13 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
              {view === "characters" && (
                <button
                  onClick={handleCreate}
+<<<<<<< HEAD
                  disabled={selected.length === 0}
                  className="px-3 sm:px-6 py-1.5 sm:py-2 bg-primary/10 border border-primary/50 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-[9px] sm:text-xs tracking-widest uppercase transition-all hud-corner glow-border whitespace-nowrap"
                >
                  Init
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
                  disabled={selected.length === 0 || creating}
                  className="px-3 sm:px-6 py-1.5 sm:py-2 bg-primary/10 border border-primary/50 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-[9px] sm:text-xs tracking-widest uppercase transition-all hud-corner glow-border whitespace-nowrap"
                >

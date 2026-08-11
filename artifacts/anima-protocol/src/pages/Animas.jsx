@@ -275,9 +275,12 @@ Return JSON with a single "${field}" string field.`,
     const file = e.target.files[0];
     if (!file) return;
     setUploadingAvatar(true);
+<<<<<<< HEAD
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
     setForm((f) => ({ ...f, avatar_url: file_url }));
     setUploadingAvatar(false);
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
     try {
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
       if (file_url) {
@@ -507,11 +510,14 @@ Return JSON with a single "${field}" string field.`,
         <AnimaCustomizer
         anima={customizingAnima}
         onClose={() => setCustomizingAnima(null)}
+<<<<<<< HEAD
         onSave={({ avatar_url, theme_color }) => {
           setAnimas((prev) =>
             prev.map((a) =>
               a.id === customizingAnima.id
                 ? { ...a, avatar_url, theme_color }
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         onSave={(patch) => {
           setAnimas((prev) =>
             prev.map((a) =>

@@ -29,43 +29,66 @@ export const animaApi = {
       request(`/openai/conversations/${id}`, { method: "DELETE" }),
   },
 
-  sendMessage: async function* (conversationId, content, systemPrompt, deepMode) {
+  sendMessage: async function* (
+    conversationId,
+    content,
+    systemPrompt,
+    deepMode,
+    responseJsonSchema,
+    maxTokens,
+  ) {
     const res = await fetch(
       apiUrl(`/openai/conversations/${conversationId}/messages`),
       {
         method: "POST",
         headers: await authHeaders(),
         credentials: 'same-origin',
-        body: JSON.stringify({ content, systemPrompt, deepMode: !!deepMode }),
+        body: JSON.stringify({
+          content,
+          systemPrompt,
+          deepMode: !!deepMode,
+          ...(responseJsonSchema ? { responseJsonSchema } : {}),
+          ...(typeof maxTokens === "number" ? { maxTokens } : {}),
+        }),
       }
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            yield data;
-          } catch {
-            // ignore parse errors
-          }
-        }
-      }
-    }
     yield* readSseJsonStream(res.body);
   },
 
   chat: {
+    /**
+     * Scene Mind — pick which group companion speaks next.
+     * Returns { character_id, character_name, reason, interrupted, ... }.
+     */
+    selectSpeaker: async ({
+      sessionId,
+      content = "",
+      characterIds,
+      forceCharacterId,
+      eligibleCharacterIds,
+      useDirector = true,
+      isContinue = false,
+      interruptChance,
+    }) => {
+      const res = await request("/chat/scene-mind", {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: sessionId,
+          content,
+          character_ids: characterIds,
+          force_character_id: forceCharacterId || null,
+          eligible_character_ids: eligibleCharacterIds,
+          use_director: useDirector !== false,
+          is_continue: !!isContinue,
+          ...(typeof interruptChance === "number"
+            ? { interrupt_chance: interruptChance }
+            : {}),
+        }),
+      });
+      return res.json();
+    },
+
     sendMessage: async function* ({
       sessionId,
       content,
@@ -73,12 +96,15 @@ export const animaApi = {
       characterIds,
       assistantCharacterId,
       assistantCharacterName,
+      forceCharacterId,
+      eligibleCharacterIds,
+      useSceneMind,
+      isContinue,
       mode,
       systemPrompt,
       deepMode,
       persist = true,
       metadata,
-      scenario,
     }) {
       const res = await fetch(apiUrl('/chat/messages'), {
         method: "POST",
@@ -91,36 +117,15 @@ export const animaApi = {
           character_ids: characterIds,
           assistant_character_id: assistantCharacterId,
           assistant_character_name: assistantCharacterName,
+          force_character_id: forceCharacterId || null,
+          eligible_character_ids: eligibleCharacterIds,
+          use_scene_mind: useSceneMind,
+          is_continue: !!isContinue,
           mode,
           system_prompt: systemPrompt,
           deep_mode: !!deepMode,
           persist,
           metadata,
-          scenario,
-        }),
-      });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              yield JSON.parse(line.slice(6));
-            } catch {
-              // ignore parse errors
-            }
-          }
-        }
-      }
         }),
       });
       if (!res.ok) {

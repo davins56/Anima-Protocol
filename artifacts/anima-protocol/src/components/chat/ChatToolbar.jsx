@@ -41,9 +41,28 @@ export default function ChatToolbar({
   const [showDocUpload, setShowDocUpload] = useState(false);
 
   return (
+<<<<<<< HEAD
     <div className="hidden sm:flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
       <div className="flex items-center justify-end min-w-0 h-12 px-3">
         <div className="flex items-center gap-2 flex-shrink-0">
+=======
+    <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
+      {/* Single row: session info + Online button */}
+      <div className="flex items-center min-w-0 h-12">
+        <div className="flex-shrink-0 min-w-[200px] max-w-[60%]">
+          <ChatHeader
+            session={activeSession}
+            characters={characters}
+            mood={currentMood}
+            characterEmotions={characterEmotions}
+            onToggleDeepMode={onToggleDeepMode}
+            onAvatarClick={onAvatarClick}
+            llmProvider={llmProvider}
+          />
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 px-3 flex-shrink-0">
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           {/* Online / Actions button */}
           <button
             onClick={() => setShowActionsPanel(!showActionsPanel)}

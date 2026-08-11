@@ -3,6 +3,7 @@
 // which queries the web (Wikipedia) for a representative photo.
 
 import { apiUrl } from '@/lib/apiOrigin';
+import { authHeaders } from '@/api/authBridge';
 
 // Looks up a portrait for a character.
 // Resolves to an image URL string on success, or null for a *definitive*
@@ -18,7 +19,9 @@ export async function findCharacterPhoto(name, universe) {
   if (!name) return null;
   const params = new URLSearchParams({ name });
   if (universe) params.set("universe", universe);
-  const res = await fetch(`${apiUrl('/character-image')}?${params.toString()}`);
+  const res = await fetch(`${apiUrl('/character-image')}?${params.toString()}`, {
+    headers: await authHeaders(),
+  });
   if (!res.ok) {
     throw new Error(`character-image lookup failed: ${res.status}`);
   }

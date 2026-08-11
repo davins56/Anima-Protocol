@@ -8,7 +8,25 @@
     "build": "pnpm --filter @workspace/api-server run build && PORT=${PORT:-23660} BASE_PATH=${BASE_PATH:-/} VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_placeholder} pnpm --filter @workspace/anima-protocol run build && rm -rf dist && cp -R artifacts/anima-protocol/dist/public dist",
     "build:all": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "dev:infra:up": "docker compose -f docker-compose.dev.yml up -d",
+    "dev:infra:down": "docker compose -f docker-compose.dev.yml down",
+    "dev:infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "llm:cli": "pnpm --filter @workspace/llm run cli",
+    "llm:up": "bash scripts/llm/bootstrap-anima-llm.sh",
+    "llm:mock": "node scripts/llm/mock-server.mjs",
+    "llm:tunnel": "bash scripts/llm/tunnel-cloudflared.sh",
+    "llm:vps-init": "cat scripts/llm/cloud-init-vps.sh",
+    "llm:chat": "pnpm --filter @workspace/llm run cli -- chat",
+    "llm:prepare-finetune": "pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt",
+    "llm:prepare-dpo": "pnpm --filter @workspace/llm run cli -- prepare-dpo",
+    "llm:export-turns": "pnpm --filter @workspace/llm run cli -- export-turns",
+    "llm:list-models": "pnpm --filter @workspace/llm run cli -- list-models --provider ollama",
+    "llm:serve-hint": "pnpm --filter @workspace/llm run cli -- serve-hint",
+    "llm:test": "pnpm --filter @workspace/llm run test",
+    "llm:stub": "node scripts/llm/dev-local-stub-server.mjs",
+    "llm:eval": "node scripts/llm/eval/run-evals.mjs",
+    "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh"
   },
   "private": true,
   "devDependencies": {
@@ -21,7 +39,8 @@
     "overrides": { 
             "qs@6.15.1": "6.15.2",
       "esbuild": "^0.28.1",
-      "uuid": "^11.1.1"
+      "uuid": "^11.1.1",
+      "pg": "8.20.0"
     }
   },
   "dependencies": {

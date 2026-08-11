@@ -342,6 +342,7 @@ export default function MainHome() {
           <p className="text-[9px] tracking-[0.3em] text-cyan-800 mt-2 uppercase">// AI COMPANION SYSTEM</p>
         </motion.div>
 
+<<<<<<< HEAD
         {/* Greeting box — tap to customise the active Anima */}
         <motion.button
           type="button"
@@ -358,6 +359,8 @@ export default function MainHome() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
           className="relative w-full text-left border border-cyan-500/20 hover:border-cyan-400/50 bg-cyan-950/5 hover:bg-cyan-950/10 p-5 group cursor-pointer transition-colors"
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         {/* Greeting box */}
         <motion.div
           initial={{ opacity: 0, x: -10 }}
@@ -368,7 +371,10 @@ export default function MainHome() {
           <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
           <div className="space-y-3 text-[11px] tracking-wider leading-relaxed font-mono">
+<<<<<<< HEAD
             <p className="text-cyan-400/60 italic pr-24">{greeting}</p>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
             <p className="text-cyan-400/60 italic">{greeting}</p>
             <p className="text-cyan-400">
               I am {anima?.name || "your Anima"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
@@ -377,6 +383,7 @@ export default function MainHome() {
               Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
             </p>
           </div>
+<<<<<<< HEAD
           <div className="absolute top-4 right-4 flex items-center gap-1.5">
             <span className="font-mono text-[7px] tracking-widest uppercase text-cyan-900 group-hover:text-cyan-400/70 transition-colors">
               Customise
@@ -384,6 +391,8 @@ export default function MainHome() {
             <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
           </div>
         </motion.button>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         </motion.div>
 
         {/* Customise Anima — dedicated look section */}

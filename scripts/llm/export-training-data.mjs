@@ -1,43 +1,18 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
+/**
+ * Thin wrapper — prefer the typed CLI:
+ *   pnpm llm:prepare-finetune
+ */
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-async function main() {
-  const outputPath = process.argv[2] || 'scripts/llm/output/training-data.jsonl';
-  const outputDir = path.dirname(outputPath);
-  await fs.mkdir(outputDir, { recursive: true });
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const out = process.argv[2] || "scripts/llm/output/finetune-sharegpt.jsonl";
 
-  const sample = {
-    id: 'sample-001',
-    source: 'anima-chat',
-    character: {
-      name: 'Serenity',
-      archetype: 'guardian',
-      voice: 'Warm, poetic, protective',
-    },
-    scenario: {
-      id: 'comfort',
-      label: 'Comfort Mode',
-    },
-    memory: [
-      'The user is grieving and values calm, grounded support.',
-      'The user likes direct honesty over sugarcoating.',
-    ],
-    relationship: {
-      tier: 'devoted',
-      notes: 'Deeply trusted bond',
-    },
-    conversation: [
-      { role: 'user', content: 'I feel overwhelmed tonight.' },
-      { role: 'assistant', content: 'You are not alone in this. I will stay with you gently and help you find a steadier place to stand.' },
-    ],
-    instruction: 'Respond as the companion, staying in character, using the provided memory and scenario context.',
-  };
+const result = spawnSync(
+  "pnpm",
+  ["--filter", "@workspace/llm", "run", "cli", "--", "prepare-finetune", "--format", "sharegpt", "--out", out],
+  { cwd: root, stdio: "inherit", shell: process.platform === "win32" },
+);
 
-  await fs.writeFile(outputPath, `${JSON.stringify(sample)}\n`, 'utf8');
-  console.log(`Wrote ${outputPath}`);
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+process.exit(result.status ?? 1);
