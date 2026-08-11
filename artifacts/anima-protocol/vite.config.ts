@@ -14,7 +14,7 @@ loadEnv({ path: path.join(import.meta.dirname, ".env"), override: true });
 // often set without the VITE_ prefix — mirror it so production builds embed the
 // correct Clerk instance (avoids host-derived pk_live_ + missing GitHub SSO).
 const clerkPublishableKey =
-  process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ||
+  process.VITE_CLERK_PUBLISHABLE_KEY?.trim() ||
   process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
   "";
 
