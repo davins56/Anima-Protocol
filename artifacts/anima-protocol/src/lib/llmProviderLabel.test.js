@@ -10,40 +10,28 @@ import {
 } from "./llmProviderLabel";
 
 describe("llmProviderLabel", () => {
-  it("labels Gemini, Kimi, Grok, OpenAI, and AI Gateway", () => {
+  it("labels Anima/local and returns null for anything else", () => {
     expect(llmProviderShortLabel("anima")).toBe("Anima");
-    expect(llmProviderShortLabel("kimi")).toBe("Kimi");
-    expect(llmProviderShortLabel("xai")).toBe("Grok");
-    expect(llmProviderShortLabel("openai")).toBe("OpenAI");
-    expect(llmProviderShortLabel("gemini")).toBe("Gemini");
-    expect(llmProviderShortLabel("gateway")).toBe("Gateway");
+    expect(llmProviderShortLabel("local")).toBe("Anima");
+    expect(llmProviderShortLabel("kimi")).toBeNull();
     expect(llmProviderShortLabel(null)).toBeNull();
   });
 
-  it("shows Anima when brand is set, even if a concrete backend provider is present", () => {
-    expect(llmDisplayLabel("kimi", "anima")).toBe("Anima");
-    expect(llmDisplayLabel("kimi", null)).toBe("Kimi");
-    expect(llmDisplayTitle("kimi", "anima")).toMatch(/Anima/);
-    expect(llmDisplayTitle("kimi", "anima")).toMatch(/Kimi/);
-    expect(llmDisplayBadgeClass("openai", "anima")).toMatch(/rose/);
+  it("shows Anima when brand is set", () => {
+    expect(llmDisplayLabel("local", "anima")).toBe("Anima");
+    expect(llmDisplayLabel("local", null)).toBe("Anima");
+    expect(llmDisplayTitle("local", "anima")).toMatch(/Anima LLM/);
+    expect(llmDisplayTitle("local", "anima")).toMatch(/never switches/);
+    expect(llmDisplayBadgeClass("local", "anima")).toMatch(/rose/);
   });
 
-  it("lists Gemini-first auto chain providers including AI Gateway", () => {
-    expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
-      "gemini",
-      "kimi",
-      "xai",
-      "openai",
-      "gateway",
-    ]);
+  it("lists only the self-hosted Anima LLM — no cloud BYOK backends", () => {
+    expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual(["local"]);
   });
 
-  it("returns distinct badge classes", () => {
+  it("returns the Anima badge class and title", () => {
     expect(llmProviderBadgeClass("anima")).toMatch(/rose/);
-    expect(llmProviderBadgeClass("kimi")).toMatch(/emerald/);
-    expect(llmProviderBadgeClass("xai")).toMatch(/amber/);
-    expect(llmProviderBadgeClass("gateway")).toMatch(/violet/);
-    expect(llmProviderTitle("kimi")).toMatch(/Kimi/i);
-    expect(llmProviderTitle("gateway")).toMatch(/Gateway/i);
+    expect(llmProviderBadgeClass("local")).toMatch(/rose/);
+    expect(llmProviderTitle("local")).toMatch(/Anima LLM/i);
   });
 });

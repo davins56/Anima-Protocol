@@ -1,30 +1,45 @@
-# fly.toml app configuration file generated for anima-chat-llm on 2026-08-08T06:36:07Z
+# Anima chat LLM — always-on, publicly reachable Ollama host for production.
 #
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+# Deploy (from this directory):
+#   fly launch --no-deploy         # first run only — picks app name + region;
+#                                   # answer "no" to Postgres/Redis prompts
+#   fly secrets set PROXY_AUTH_TOKEN=$(openssl rand -hex 32)
+#   fly deploy
 #
+# Then set on Vercel (see ../../docs/custom-llm.md, Production note):
+#   ANIMA_LOCAL_LLM_BACKEND=ollama
+#   ANIMA_LOCAL_LLM_BASE_URL=https://<app-name>.fly.dev/v1
+#   ANIMA_LOCAL_LLM_API_KEY=<same value as PROXY_AUTH_TOKEN>
+#   ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+#   ANIMA_OLLAMA_MODEL_LIGHT=anima-chat
+#   ANIMA_OLLAMA_MODEL_HEAVY=anima-chat
+#
+# Verify: curl -sS https://<app-name>.fly.dev/v1/models \
+#           -H "Authorization: Bearer $PROXY_AUTH_TOKEN"
 
-app = 'anima-chat-llm'
-primary_region = 'iad'
+app = "anima-chat-llm"   # `fly launch` offers to rename this if it's taken
+primary_region = "iad"   # pick the region nearest your users/Vercel deployment
 
 [build]
-  dockerfile = 'Dockerfile'
+  dockerfile = "Dockerfile"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'off'
+  auto_stop_machines = false   # keep the model warm — avoids ~10-30s cold starts
   auto_start_machines = true
   min_machines_running = 1
 
   [[http_service.checks]]
-    interval = '15s'
-    timeout = '5s'
-    grace_period = '1m30s'
-    method = 'GET'
-    path = '/healthz'
+    grace_period = "90s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz"
 
+# qwen2.5:3b (Q4) needs headroom beyond its ~2GB file size for context +
+# inference. Bump to "4gb" if you see OOM restarts in `fly logs`.
 [[vm]]
-  memory = '2gb'
-  cpu_kind = 'shared'
+  memory = "2gb"
+  cpu_kind = "shared"
   cpus = 1
-  memory_mb = 2048

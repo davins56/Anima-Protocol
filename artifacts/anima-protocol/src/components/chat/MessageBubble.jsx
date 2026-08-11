@@ -16,7 +16,10 @@ import { useLoreDetection } from "@/hooks/useLoreDetection";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
+<<<<<<< HEAD
 export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [] }) {
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -71,9 +74,12 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
 
   return (
     <div className={`flex gap-2 sm:gap-3 group ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+<<<<<<< HEAD
       {/* Avatar */}
       {!isUser && (
         <div className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4">
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       {/* Avatar — tap to open bio sheet */}
       {!isUser && (
         <button
@@ -88,7 +94,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           ) : (
             <span className="font-mono text-primary text-[10px] sm:text-xs">{avatarInitial}</span>
           )}
+<<<<<<< HEAD
         </div>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         </button>
       )}
 
@@ -146,7 +155,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           ) : !isUser && loreEntries.length > 0 ? (
            <LoreTextWithKeywords content={message.content} loreEntries={loreEntries} />
           ) : (
+<<<<<<< HEAD
            renderMessageWithActions(message.content)
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
            <>
              {renderMessageWithActions(message.content)}
              {isStreaming && (
@@ -188,7 +200,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
            )}
 
            {/* Rewind button */}
+<<<<<<< HEAD
           {canRewind && onRewind && !isTyping && !isEditing && (
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           {canRewind && onRewind && !isTyping && !isStreaming && !isEditing && (
             <button
               onClick={onRewind}
@@ -198,7 +213,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
               <RotateCcw className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
             </button>
           )}
+<<<<<<< HEAD
           {!isUser && !isTyping && character?.id && !isEditing && (
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           {!isUser && !isTyping && !isStreaming && character?.id && !isEditing && (
             <div className="absolute -bottom-1.5 -right-1.5 sm:-bottom-2 sm:-right-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <EmotionalVoiceSynthesis
@@ -213,7 +231,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
         </div>
 
         {/* Action bar — edit, delete, regenerate */}
+<<<<<<< HEAD
         {!isTyping && !isThinking && !isEditing && (
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         {!isTyping && !isThinking && !isStreaming && !isEditing && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
             {isUser && onEditMessage && (
@@ -246,7 +267,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           </div>
         )}
 
+<<<<<<< HEAD
         {time && !isTyping && !isThinking && (
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         {time && !isTyping && !isThinking && !isStreaming && (
           <span className="text-[7px] sm:text-[9px] font-mono text-primary/20 tracking-widest">{time}</span>
         )}

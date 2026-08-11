@@ -122,16 +122,6 @@ describe("resolveClerkPublishableKey", () => {
     );
   });
 
-  it("uses host-based key for production custom domains", () => {
-    const prodKey =
-      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
-    const key = resolveClerkPublishableKey("www.anima-protocol.com", prodKey);
-    expect(key.startsWith("pk_")).toBe(true);
-  });
-
-  it("uses the live fallback on localhost for local dev proxy", () => {
-    const prodKey =
-      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
   it("keeps the custom-domain pk_live_ key on www (not clerk.www.*)", () => {
     const prodKey = publishableKeyFromHost("anima-protocol.com");
     expect(resolveClerkPublishableKey("www.anima-protocol.com", prodKey)).toBe(

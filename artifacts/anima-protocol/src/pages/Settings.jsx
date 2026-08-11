@@ -1,11 +1,17 @@
 import { useState, useEffect } from "react";
+<<<<<<< HEAD
 import { Link, useNavigate } from "react-router-dom";
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
+<<<<<<< HEAD
   ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle, Wand2, Palette
 } from "lucide-react";
 import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
@@ -19,8 +25,11 @@ import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
+<<<<<<< HEAD
 
 const SECTION = { ACCOUNT: "account", BACKGROUND: "background", AI: "ai", INTERFACE: "interface", DATA: "data", LEGAL: "legal" };
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 
 const SECTION = {
@@ -508,22 +517,23 @@ export default function Settings() {
           {/* ── AI BEHAVIOR ── */}
           {section === SECTION.AI && (
             <div className="space-y-4">
+<<<<<<< HEAD
               <SectionTitle>LLM Providers</SectionTitle>
+=======
+              <SectionTitle>LLM Provider</SectionTitle>
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat prefers Gemini, then fails over to Kimi / Grok / OpenAI / AI Gateway. Set GEMINI_API_KEY (or AI_GATEWAY_API_KEY) on the host (Vercel) and redeploy.
+                  Chat always runs on the self-hosted Anima LLM — there is no cloud flagship fallback. Set ANIMA_LOCAL_LLM_BASE_URL on the host and redeploy.
                 </p>
-                {CONFIGURED_LLM_PROVIDERS.map((provider, index) => (
+                {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div
                     key={provider.id}
                     className="flex items-start justify-between gap-3 border border-primary/10 bg-black/30 px-3 py-2.5"
                   >
                     <div className="min-w-0">
                       <p className="font-mono text-xs text-primary/80 tracking-wider uppercase">
-                        {index + 1}. {provider.label}
-                        {index === 0 ? (
-                          <span className="ml-2 text-[8px] text-sky-300/80 tracking-widest">Primary</span>
-                        ) : null}
+                        {provider.label}
                       </p>
                       <p className="text-[9px] font-mono text-primary/35 mt-0.5">{provider.note}</p>
                     </div>
@@ -654,10 +664,13 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
+<<<<<<< HEAD
                       Enables explicit, lewd, and sexual roleplay content. By enabling this you confirm you are 18 years of age or older.
                     </p>
                     {prefs.adult_content_enabled && (
                       <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — explicit content permitted</p>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
                       Enables explicit, lewd, and sexual roleplay. Characters escalate when the moment invites it — and hold back during grief, support, or non-intimate beats. By enabling this you confirm you are 18 years of age or older.
                     </p>
                     {prefs.adult_content_enabled && (
@@ -1066,10 +1079,13 @@ export default function Settings() {
               <SectionTitle>About</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
+<<<<<<< HEAD
                 <InfoRow label="AI Engine" value="Core LLM" />
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
                 <InfoRow
                   label="AI Engine"
-                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(" → ")}
+                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(", ")}
                 />
                 <InfoRow label="Platform" value="Base44" />
               </div>

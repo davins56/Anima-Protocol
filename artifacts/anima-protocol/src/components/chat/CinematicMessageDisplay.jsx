@@ -6,7 +6,10 @@ export default function CinematicMessageDisplay({
   message, 
   character, 
   isFocusMode, 
+<<<<<<< HEAD
   onSpeak 
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   onSpeak,
   onAvatarClick,
 }) {
@@ -63,9 +66,12 @@ export default function CinematicMessageDisplay({
       animate="animate"
       className={`flex gap-2 sm:gap-3 group ${isUser ? "flex-row-reverse" : "flex-row"} ${isFocusMode ? "mb-6 sm:mb-8" : "mb-2 sm:mb-3"}`}
     >
+<<<<<<< HEAD
       {/* Avatar */}
       {!isUser && !isFocusMode && (
         <div className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4">
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       {/* Avatar — tap to open bio sheet */}
       {!isUser && !isFocusMode && (
         <button
@@ -80,7 +86,10 @@ export default function CinematicMessageDisplay({
           ) : (
             <span className="font-mono text-primary text-[10px] sm:text-xs">{avatarInitial}</span>
           )}
+<<<<<<< HEAD
         </div>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         </button>
       )}
 
@@ -97,11 +106,14 @@ export default function CinematicMessageDisplay({
 
         {/* Large portrait in focus mode */}
         {!isUser && isFocusMode && avatarUrl && (
+<<<<<<< HEAD
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
             className="w-full max-w-sm h-64 sm:h-80 rounded-lg overflow-hidden border border-primary/30 mb-4"
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           <motion.button
             type="button"
             initial={{ opacity: 0, scale: 0.95 }}
@@ -117,7 +129,10 @@ export default function CinematicMessageDisplay({
               alt={character?.name} 
               className="w-full h-full object-cover"
             />
+<<<<<<< HEAD
           </motion.div>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           </motion.button>
         )}
 

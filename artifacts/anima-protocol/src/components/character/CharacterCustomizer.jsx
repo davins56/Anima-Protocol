@@ -73,7 +73,13 @@ export default function CharacterCustomizer({ characterId, isAnima = false }) {
     const res = await base44.integrations.Core.InvokeLLM({
       prompt: `User says: "${userText}"`,
       system_prompt: sysPrompt,
-      max_tokens: 60
+      max_tokens: 60,
+      response_json_schema: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+        },
+      },
     });
     return res?.text || "I have nothing to say.";
   };

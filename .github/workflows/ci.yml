@@ -14,6 +14,27 @@ jobs:
       VITE_CLERK_PUBLISHABLE_KEY: pk_test_placeholder
       VITE_CLERK_PROXY_URL: ""
       VITE_MIXPANEL_TOKEN: ""
+      # api-server tests exercise the real store router against Postgres (see
+      # artifacts/api-server/test/setup-db.ts) — pointed at the service below.
+      # sslmode=disable is required: lib/db/src/client.ts defaults to SSL
+      # unless told otherwise (Replit's managed Postgres needs it), but the
+      # vanilla postgres:16 service container below doesn't speak SSL at all.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -35,6 +56,12 @@ jobs:
 
       - name: Typecheck
         run: pnpm run typecheck:libs && pnpm --filter @workspace/anima-protocol run typecheck
+
+      - name: Push DB schema (for api-server tests)
+        run: pnpm --filter @workspace/db run push
+
+      - name: Test
+        run: pnpm -r --if-present run test -- --run
 
       - name: Build API
         run: pnpm --filter @workspace/api-server run build

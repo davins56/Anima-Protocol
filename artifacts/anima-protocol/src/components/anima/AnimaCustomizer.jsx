@@ -1,4 +1,5 @@
 import { useState } from "react";
+<<<<<<< HEAD
 import { base44 } from "@/api/base44Client";
 import { X, Wand2, Loader, RefreshCw, Check, ChevronRight } from "lucide-react";
 
@@ -129,6 +130,8 @@ export default function AnimaCustomizer({ anima, onClose, onSave }) {
             <div className="flex-1 p-5 flex flex-col gap-4">
               {FEATURES.filter((f) => f.key === activeFeature).map((feature) => (
                 <div key={feature.key} className="flex-1 flex flex-col gap-3">
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import {
   APPEARANCE_FEATURES,
@@ -306,7 +309,10 @@ export default function AnimaCustomizer({
                   </label>
                   <textarea
                     value={prompts[feature.key]}
+<<<<<<< HEAD
                     onChange={(e) => setPrompts((p) => ({ ...p, [feature.key]: e.target.value }))}
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
                     onChange={(e) =>
                       setPrompts((p) => ({
                         ...p,
@@ -318,6 +324,7 @@ export default function AnimaCustomizer({
                     className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-sm px-3 py-3 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
                   />
                 </div>
+<<<<<<< HEAD
               ))}
 
               {/* Quick suggestions */}
@@ -435,6 +442,8 @@ export default function AnimaCustomizer({
                 Fill feature prompts on the left → Generate → Save
               </p>
             </div>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
               ),
             )}
 
@@ -629,6 +638,7 @@ export default function AnimaCustomizer({
       </div>
     </div>
   );
+<<<<<<< HEAD
 }
 
 function getSuggestions(feature) {
@@ -642,6 +652,8 @@ function getSuggestions(feature) {
   };
   return map[feature] || [];
 }
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 
   if (isPage) return body;
 

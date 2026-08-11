@@ -7,7 +7,10 @@ export default function CinematicMessageList({
   session, 
   characters, 
   isFocusMode,
+<<<<<<< HEAD
   onSpeak 
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   onSpeak,
   onAvatarClick,
 }) {

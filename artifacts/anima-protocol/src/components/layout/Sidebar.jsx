@@ -1,6 +1,9 @@
+<<<<<<< HEAD
 import { useState } from "react";
 import { Plus, Zap, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 import { useRef, useState } from "react";
 import { Plus, MessageSquare, Users, Trash2, Wand2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
@@ -140,13 +143,17 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
       </div>
 
       {/* Sessions List */}
+<<<<<<< HEAD
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 min-h-0">
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 min-h-0" data-no-swipe>
         {sessions.length === 0 && (
           <p className="text-center text-primary/20 font-mono text-[10px] py-8 tracking-widest uppercase">
             No sessions
           </p>
         )}
+<<<<<<< HEAD
         {sessions.map((session) => (
 
           <div key={session.id}>
@@ -187,6 +194,8 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
               >
                 <Trash2 className="w-3 h-3" />
               </button>
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         {sessions.map((session) => {
           const offset = swipeOffset[session.id] || 0;
 
@@ -257,7 +266,10 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
               <SessionSummary sessionId={session.id} characterId={session.character_id} />
             )}
           </div>
+<<<<<<< HEAD
         ))}
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           );
         })}
 
@@ -309,4 +321,7 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
     </div>
   );
 }
+<<<<<<< HEAD
 }
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079

@@ -38,6 +38,7 @@ export default function StoryCharacterChooser({
     });
   };
 
+<<<<<<< HEAD
   const loadCharacters = useCallback(async () => {
     setLoading(true);
     try {
@@ -52,6 +53,8 @@ export default function StoryCharacterChooser({
         universe: "Anima",
       }));
       setCharacters([...animaAsChars, ...(chars || [])]);
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   const loadCharacters = useCallback(async ({ retrySeed = false } = {}) => {
     setLoading(true);
     try {
@@ -71,7 +74,10 @@ export default function StoryCharacterChooser({
     if (step !== "character") return;
     let cancelled = false;
     whenBootstrapReady().then(() => {
+<<<<<<< HEAD
       if (!cancelled) loadCharacters();
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       if (!cancelled) loadCharacters({ retrySeed: true });
     });
     return () => {
@@ -80,7 +86,10 @@ export default function StoryCharacterChooser({
   }, [step, loadCharacters]);
 
   useStoreSync(() => {
+<<<<<<< HEAD
     if (step === "character") loadCharacters();
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
     if (step === "character") loadCharacters({ retrySeed: false });
   });
 

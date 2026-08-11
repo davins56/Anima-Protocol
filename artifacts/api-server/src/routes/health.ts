@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
-import { getConfiguredProviderName, getProviderFallbackChain } from "../lib/modelProvider";
 import {
   ensureSchemaOnce,
   getPool,
@@ -16,15 +15,6 @@ if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
 
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
-  const fallbackChain = getProviderFallbackChain();
-  res.json({
-    ...data,
-    provider: {
-      configured: getConfiguredProviderName(),
-      fallback_chain: fallbackChain.providers,
-      mock_available: fallbackChain.providers.includes("mock"),
-    },
-  });
   res.json(data);
 });
 
@@ -49,7 +39,9 @@ router.get("/healthz/llm", async (req, res) => {
   }
 
   try {
-    const probes = await probeLlmProviders("light");
+    // Probe the routine chat tier (standard). Light used to report Gemini as
+    // dead solely because gemini-2.5-flash-lite is blocked for new AI Studio keys.
+    const probes = await probeLlmProviders("standard");
     const anyOk = probes.some((p) => p.ok);
     res.status(anyOk || routing.status === "ok" ? 200 : 503).json({
       ...routing,

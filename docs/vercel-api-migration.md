@@ -29,6 +29,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `DATABASE_URL` | Yes | Postgres connection string (Replit DB still works remotely) |
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
+<<<<<<< HEAD
 | `OPENAI_API_KEY` | Yes | For chat / AI features |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 | `OPENAI_API_KEY` | Recommended | Image edit/generate (Customise Anima → Generate Look). Also chat backup under `auto`. |
@@ -40,22 +41,38 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` to skip OpenAI entirely. |
 | `ANIMA_DISABLE_XAI` | No | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits. |
 | `ANIMA_DISABLE_GATEWAY` | No | Set `true` under `auto` to skip AI Gateway. |
+=======
+| `OPENAI_API_KEY` | Recommended | Image edit/generate only (Customise Anima → Generate Look). Never used for chat. |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Yes for chat | Public HTTPS OpenAI-compatible URL for Ollama/vLLM (e.g. `https://llm.example.com/v1`). This is the only chat backend — there is no cloud fallback. |
+| `ANIMA_LOCAL_LLM_BACKEND` | No | `ollama` (default) or `vllm`. |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | Yes for chat (Ollama) | Model tag served by your Ollama host, e.g. `anima-chat`. |
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 | `DATABASE_URL` | Yes | Also stores avatar uploads in `uploaded_images` (Vercel has no Replit object-storage sidecar) |
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
-**If chat fails for every companion with “no credits” or `401 status code (no body)`:** Prefer a working **`GEMINI_API_KEY`**, keep `ANIMA_LLM_PROVIDER=auto`, ensure backups (`KIMI_API_KEY` / `XAI_API_KEY` / `OPENAI_API_KEY`) are funded, **or** set `AI_GATEWAY_API_KEY` so the unpaid AI Gateway last resort can cover. Also check that `ANIMA_LLM_PROVIDER` is a mode name (`auto` / `gemini` / …), not an API key. Image generation still needs a funded `OPENAI_API_KEY`.
+**If chat shows "Anima custom LLM is not configured":**
+`ANIMA_LOCAL_LLM_BASE_URL` is empty or unreachable, and there is no cloud fallback to fall through to. Live status looks like:
 
-**If `/api/healthz/llm` already shows `"keys": { …: true }` for every provider:** the env values are present — the failure is upstream rejection (quota/billing/revoked), not a missing Vercel variable. Open each provider console and fund/repair the account, or set `AI_GATEWAY_API_KEY`. Confirm with `?probe=1` (look for at least one `"ok": true`).
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,localEndpoint,note}'
+# "status":"error", "preferred":null, "localEndpoint.configured":false
+```
 
-**Gemini setup (recommended):** Create a key at Google AI Studio, set `GEMINI_API_KEY` on Vercel **Production**, set `ANIMA_LLM_PROVIDER=auto` (or `gemini`), and move any `AQ.*` value out of `ANIMA_LLM_PROVIDER` into `GEMINI_API_KEY`. Redeploy. Verify at `https://www.anima-protocol.com/api/healthz/llm` — you want `"preferred":"gemini"` and a chain like `["gemini","kimi","xai","openai","gateway"]`. Live-test keys with `?probe=1`.
+Fix on **Vercel → Settings → Environment Variables → Production**, then **redeploy without build cache**:
 
-**Chat default is Gemini-first with failover:** Without any chat keys, chat fails with a clear setup error. With `ANIMA_LLM_PROVIDER=anima` / `ensemble` (or `ANIMA_LLM_ENSEMBLE=true`), available minds (**Kimi / Grok / ChatGPT**) draft in parallel, then a combined reply is streamed. Sticky provider failures are skipped on later turns; timed-out mind calls are aborted.
+```bash
+ANIMA_LOCAL_LLM_BACKEND=ollama
+ANIMA_LOCAL_LLM_BASE_URL=https://<your-public-ollama-or-vllm>/v1
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+```
 
-**If chat fails with a Grok “no team credits” error:** buy xAI credits, set `ANIMA_DISABLE_XAI=true` to skip Grok, or rely on Gemini / Kimi / OpenAI backups.
+Host Ollama with `pnpm llm:up` on a machine that Vercel can reach (HTTPS). See `docs/custom-llm.md` and `docs/llm-deploy.md` for a concrete no-infra-yet path.
 
-**If chat says “Too many requests. Please slow down” after one message:** that is the API’s own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
+Image generation still needs a funded `OPENAI_API_KEY` — that's a separate feature from chat and unaffected by the Anima LLM endpoint.
+
+**If chat says "Too many requests. Please slow down" after one message:** that is the API’s own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
 
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 
@@ -71,6 +88,7 @@ if those features are needed.
 
 Clerk has **two separate instances**: **Development** (`pk_test_…`) and **Production** (`pk_live_…`). SSO connections you enable in the Development tab (as in the Clerk dashboard screenshot) apply only when the site is built with a `pk_test_` publishable key. If Vercel uses `pk_live_`, you must enable Apple/GitHub again under the **Production** instance → Configure → SSO connections (shared dev credentials do not carry over).
 
+<<<<<<< HEAD
 The frontend proxies Clerk’s Frontend API through **`/api/__clerk`** on production
 (same origin as the Vite app). That is required for GitHub and Apple sign-in on
 `anima-protocol.com` when there is no `clerk.{domain}` DNS CNAME. Do **not** use
@@ -84,6 +102,8 @@ In the **Clerk Dashboard** for the **same instance as your publishable key**:
 2. **Domains → Proxy URL** — set to `https://www.anima-protocol.com/api/__clerk`
    (and the apex host if you use it without `www`).
 3. **Redirect URLs** — allow:
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 Production uses a Clerk **custom domain** (`clerk.anima-protocol.com`). The
 frontend talks to that host directly — leave `VITE_CLERK_PROXY_URL` empty.
 `/api/__clerk` is only needed when there is no `clerk.{domain}` CNAME.
@@ -100,8 +120,11 @@ In the **Clerk Dashboard** for the **same instance as your publishable key**:
    - `https://www.anima-protocol.com/sign-up/sso-callback`
    - Same paths for preview hosts you test on (e.g. `*.vercel.app`).
 
+<<<<<<< HEAD
 Until `/api/*` returns healthy responses (not `FUNCTION_INVOCATION_FAILED`),
 OAuth will fail because the Clerk proxy route is on the same API function.
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 See `docs/clerk-github-login.md` for the full Google/GitHub/Apple checklist.
 Google `redirect_uri_mismatch` means the provider app is missing
 `https://clerk.anima-protocol.com/v1/oauth_callback`.
@@ -112,9 +135,12 @@ After deploy:
 
 ```bash
 curl https://www.anima-protocol.com/api/healthz
+<<<<<<< HEAD
 ```
 
 Expect: `{"status":"ok"}`
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 curl https://clerk.anima-protocol.com/v1/environment
 ```
 

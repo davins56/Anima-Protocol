@@ -15,7 +15,10 @@
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY?.trim();
 const CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY?.trim();
 
+<<<<<<< HEAD
 const REQUIRED_STRATEGIES = ["oauth_github", "oauth_apple"] as const;
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 /** Strategies that must be enabled for a healthy Google/GitHub login setup. */
 const REQUIRED_STRATEGIES = ["oauth_google", "oauth_github"] as const;
 
@@ -127,9 +130,12 @@ async function fetchEnvironment(publishableKey: string) {
       identification_strategies?: string[];
       first_factors?: string[];
     };
+<<<<<<< HEAD
   }>;
 }
 
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
     display_config?: {
       google_one_tap_client_id?: string | null;
       instance_environment_type?: string;
@@ -271,6 +277,7 @@ function dashboardHint(publishableKey: string | undefined): string {
   const label = instanceLabel(publishableKey);
   const slug = publishableKey ? decodeInstanceSlug(publishableKey) : null;
   const slugNote = slug ? ` (instance: ${slug})` : "";
+<<<<<<< HEAD
   return [
     `Clerk Dashboard → ${label}${slugNote} → Configure → SSO connections`,
     "→ Add connection → For all users → Google and GitHub",
@@ -278,6 +285,8 @@ function dashboardHint(publishableKey: string | undefined): string {
       ? "→ Leave “Use custom credentials” OFF (shared dev OAuth)"
       : "→ Enable sign-up/sign-in + add your Google and GitHub OAuth app credentials",
     "→ Paths → Redirect URLs: include www.anima-protocol.com/sign-in/sso-callback",
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   const providerCallback = providerOAuthCallbackUrl(publishableKey);
   return [
     `Clerk Dashboard → ${label}${slugNote} → Configure → SSO connections`,
@@ -296,11 +305,14 @@ function dashboardHint(publishableKey: string | undefined): string {
 
 async function main(): Promise<void> {
   const fixRedirects = hasFlag("--fix-redirects");
+<<<<<<< HEAD
   assertClerkKeyPair();
 
   const slug = CLERK_PUBLISHABLE_KEY
     ? decodeInstanceSlug(CLERK_PUBLISHABLE_KEY)
     : null;
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   const requireApple = hasFlag("--require-apple");
   assertClerkKeyPair();
 
@@ -312,11 +324,14 @@ async function main(): Promise<void> {
     );
   }
 
+<<<<<<< HEAD
   console.log(`Clerk instance: ${slug} (${instanceLabel(CLERK_PUBLISHABLE_KEY)})`);
 
   const environment = await fetchEnvironment(CLERK_PUBLISHABLE_KEY);
   const strategies = environment.auth_config?.identification_strategies ?? [];
   const firstFactors = environment.auth_config?.first_factors ?? [];
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   console.log(`Clerk instance: ${slug} (${instanceLabel(publishableKey)})`);
 
   const providerCallback = providerOAuthCallbackUrl(publishableKey);
@@ -348,6 +363,7 @@ async function main(): Promise<void> {
     const enabled =
       strategies.includes(strategy) || firstFactors.includes(strategy);
     console.log(
+<<<<<<< HEAD
       enabled ? `✓ ${strategy} is enabled` : `✗ ${strategy} is NOT enabled`,
     );
     if (!enabled) oauthOk = false;
@@ -355,6 +371,8 @@ async function main(): Promise<void> {
 
   const existingRedirects = await listRedirectUrls();
   console.log("\nRedirect URLs registered:", existingRedirects.length);
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       enabled ? `✓ ${strategy} is enabled in Clerk` : `✗ ${strategy} is NOT enabled in Clerk`,
     );
     if (!enabled) {
@@ -400,7 +418,10 @@ async function main(): Promise<void> {
   );
 
   if (missingRedirects.length > 0) {
+<<<<<<< HEAD
     console.log("\nMissing redirect URLs:");
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
     console.log("\nMissing app redirect URLs:");
     for (const url of missingRedirects) {
       console.log(`  • ${url}`);
@@ -413,6 +434,7 @@ async function main(): Promise<void> {
       }
     }
   } else {
+<<<<<<< HEAD
     console.log("\n✓ All default redirect URLs are registered");
   }
 
@@ -425,6 +447,8 @@ async function main(): Promise<void> {
     console.log(
       "does not automatically enable GitHub for your app's end users.",
     );
+=======
+>>>>>>> 0b3b5d864406894277048e73490f474d3e169079
     console.log("\n✓ All default app redirect URLs are registered in Clerk");
   }
 

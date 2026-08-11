@@ -107,17 +107,6 @@ function storeError(res, message) {
   return e;
 }
 
-// AI photo edit. Sends a base64 image data URL + a text prompt to the
-// api-server (gpt-image-1 edit) and returns the transformed image as a data
-// URL. Used by the home-page "add photo" AI edit feature.
-export async function editImage({ image, prompt, signal }) {
-  const headers = await authHeaders();
-  let res;
-  try {
-    res = await fetch(apiUrl('/openai/image-edit'), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ image, prompt }),
 // Shared helper for image API calls (edit / generate). Surfaces abort vs
 // network vs server errors the same way so UI can branch consistently.
 async function postImageApi(path, body, signal) {
@@ -186,28 +175,6 @@ function readFileAsDataUrl(file) {
   });
 }
 
-// Upload an image blob via a presigned PUT and return the served object path.
-async function uploadBlob(blob) {
-  const headers = await authHeaders();
-  const res = await fetch(apiUrl('/storage/uploads/request-url'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ contentType: blob.type, size: blob.size }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
-  }
-  const { uploadURL, objectPath } = await res.json();
-  const putRes = await fetch(uploadURL, {
-    method: 'PUT',
-    headers: { 'Content-Type': blob.type },
-    body: blob,
-  });
-  if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
-  // Root-relative path so the avatar resolves against the current origin and
-  // stays portable across domains (dev preview, deployment, custom domains).
-  return `/api/storage${objectPath}`;
 // Convert a Blob to a base64 payload (no data: prefix) for the direct upload API.
 async function blobToBase64(blob) {
   const buffer = await blob.arrayBuffer();
@@ -1106,6 +1073,32 @@ let profileCache = null; // server profile data
 let profileExpiry = 0;
 const PROFILE_TTL = 2000;
 
+// Best-effort parse of an LLM's structured-output reply into an object.
+// Models are asked (via the system prompt) to return raw JSON, but often wrap
+// it in a ```json fence anyway, or add stray leading/trailing prose — so try
+// progressively looser extraction rather than let one deviation blow up every
+// caller that expects a plain object back.
+function parseLLMJsonResponse(text) {
+  const trimmed = (text || '').trim();
+  const attempts = [
+    trimmed,
+    trimmed.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim(),
+  ];
+  const braceMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (braceMatch) attempts.push(braceMatch[0]);
+
+  for (const candidate of attempts) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try the next, looser candidate
+    }
+  }
+  console.warn('[InvokeLLM] Could not parse structured response as JSON:', trimmed.slice(0, 200));
+  return {};
+}
+
 function mergedUser(profileData) {
   const email = currentIdentity?.email?.toLowerCase?.() || '';
   const adminRole = ADMIN_EMAILS.has(email) ? { role: 'admin' } : {};
@@ -1234,8 +1227,14 @@ export const base44 = {
 
   integrations: {
     Core: {
-      InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
-        // Create/reuse a conversation for LLM calls
+      InvokeLLM: async ({
+        prompt,
+        systemPrompt,
+        system_prompt,
+        deepMode,
+        response_json_schema,
+        max_tokens,
+      }) => {
         // Create/reuse a conversation for LLM calls — routes through the
         // api-server (api/index.mjs on Vercel) with auth + provider failover.
         let convId = sessionStorage.getItem('anima_llm_conv_id');
@@ -1249,19 +1248,20 @@ export const base44 = {
         for await (const chunk of animaApi.sendMessage(
           Number(convId),
           prompt,
-          systemPrompt || '',
+          systemPrompt || system_prompt || '',
           !!deepMode,
+          response_json_schema,
+          typeof max_tokens === 'number' ? max_tokens : undefined,
         )) {
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);
           if (chunk.content) result += chunk.content;
         }
-        return result;
+
+        if (!response_json_schema) return result;
+        return parseLLMJsonResponse(result);
       },
 
-      GenerateImage: async () => {
-        console.warn('GenerateImage not implemented in Replit environment');
-        return null;
       // Generate (or re-style) an image. When existing_image_urls is provided,
       // prefers the image-edit path so the current portrait is transformed;
       // otherwise generates from the prompt alone. Returns { url } as a data URL.
