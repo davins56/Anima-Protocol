@@ -145,28 +145,12 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | Variable | Used by | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
-<<<<<<< HEAD
-| `OPENAI_API_KEY` | API | Required at API import time for OpenAI routes |
-| `OPENAI_API_KEY` | API | Optional for chat when Kimi/Grok is configured; still used for image generate/edit |
-| `GEMINI_API_KEY` | API | Preferred chat LLM under `auto` (native Google AI Studio / AQ.* keys). Verify via `/api/healthz/llm` |
-| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | API | Kimi (Moonshot) backup in the auto chain |
-| `XAI_API_KEY` | API | Grok backup in the auto chain |
-| `AI_GATEWAY_API_KEY` | API | Vercel AI Gateway last-resort unpaid path (or use `VERCEL_OIDC_TOKEN` on Vercel). Live-test with `/api/healthz/llm?probe=1` |
-| `ANIMA_LLM_PROVIDER` | API | Default `auto` = Gemini → Kimi → Grok → OpenAI → AI Gateway. Or `gemini` / `kimi` / `xai` / `openai` / `gateway` / `anima`. Do **not** paste API keys here |
-| `ANIMA_LLM_ENSEMBLE` | API | Set `true` to force parallel mind drafts even when provider mode is not `anima` |
-
-| `ANIMA_DISABLE_OPENAI` | API | Set `true` under `auto` to skip OpenAI for chat |
-| `ANIMA_DISABLE_XAI` | API | Set `true` under `auto` / `openai` to skip Grok when the xAI team has no credits |
-| `ANIMA_DISABLE_GATEWAY` | API | Set `true` under `auto` to skip AI Gateway |
-| `ANIMA_XAI_MODEL` / `ANIMA_XAI_MODEL_LIGHT\|STANDARD\|HEAVY` | API | Optional xAI model overrides (defaults `grok-3-mini` / `grok-3` / `grok-4`) |
-=======
 | `OPENAI_API_KEY` | API | Image generate/edit only (Customise Anima → Generate Look). Never used for chat — there is no cloud chat path. |
 | `ANIMA_LOCAL_LLM_BASE_URL` | API | Public HTTPS OpenAI-compatible endpoint for the self-hosted Anima LLM (Ollama/vLLM). This is chat's only backend. Verify via `/api/healthz/llm` |
 | `ANIMA_LOCAL_LLM_BACKEND` | API | `ollama` (default) or `vllm` |
 | `ANIMA_OLLAMA_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | Ollama model tags per tier (default `anima-chat`). If the endpoint doesn't serve the tag, chat discovers a working model via `/v1/models` instead of failing — see [docs/custom-llm.md](docs/custom-llm.md) |
 | `ANIMA_VLLM_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | vLLM model ids per tier |
 | `ANIMA_LOCAL_LLM_MAX_RETRIES` | API | Transport retries against the LLM host (default `2`). Covers tunnel drops and cold-start 502s; `0` disables |
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
 | `CLERK_PUBLISHABLE_KEY` | API | Fallback publishable key for Clerk middleware |
@@ -177,10 +161,6 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
 | `ELEVENLABS_API_KEY` | API | Optional TTS routes |
 
-<<<<<<< HEAD
-Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard; callbacks use `/sign-in/sso-callback` and `/sign-up/sso-callback`.
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback`; Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`.
 
 ## Validation
