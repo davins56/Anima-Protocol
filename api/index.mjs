@@ -20534,27 +20534,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router11;
+    module.exports = Router12;
     module.exports.Route = Route;
-    function Router11(options) {
-      if (!(this instanceof Router11)) {
-        return new Router11(options);
+    function Router12(options) {
+      if (!(this instanceof Router12)) {
+        return new Router12(options);
       }
       const opts = options || {};
-      function router12(req, res, next) {
-        router12.handle(req, res, next);
+      function router13(req, res, next) {
+        router13.handle(req, res, next);
       }
-      Object.setPrototypeOf(router12, this);
-      router12.caseSensitive = opts.caseSensitive;
-      router12.mergeParams = opts.mergeParams;
-      router12.params = {};
-      router12.strict = opts.strict;
-      router12.stack = [];
-      return router12;
+      Object.setPrototypeOf(router13, this);
+      router13.caseSensitive = opts.caseSensitive;
+      router13.mergeParams = opts.mergeParams;
+      router13.params = {};
+      router13.strict = opts.strict;
+      router13.stack = [];
+      return router13;
     }
-    Router11.prototype = function() {
+    Router12.prototype = function() {
     };
-    Router11.prototype.param = function param(name, fn) {
+    Router12.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20574,7 +20574,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router11.prototype.handle = function handle(req, res, callback) {
+    Router12.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20701,7 +20701,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router11.prototype.use = function use(handler) {
+    Router12.prototype.use = function use(handler) {
       let offset = 0;
       let path2 = "/";
       if (typeof handler !== "function") {
@@ -20734,7 +20734,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router11.prototype.route = function route(path2) {
+    Router12.prototype.route = function route(path2) {
       const route2 = new Route(path2);
       const layer = new Layer(path2, {
         sensitive: this.caseSensitive,
@@ -20749,7 +20749,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router11.prototype[method] = function(path2) {
+      Router12.prototype[method] = function(path2) {
         const route = this.route(path2);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20932,13 +20932,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router11 = require_router();
+    var Router12 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init2() {
-      var router12 = null;
+      var router13 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20947,13 +20947,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router12 === null) {
-            router12 = new Router11({
+          if (router13 === null) {
+            router13 = new Router12({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router12;
+          return router13;
         }
       });
     };
@@ -21024,15 +21024,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router12 = this.router;
+      var router13 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router12.use(path2, fn2);
+          return router13.use(path2, fn2);
         }
         debug2(".use app under %s", path2);
         fn2.mountpath = path2;
         fn2.parent = this;
-        router12.use(path2, function mounted_app(req, res, next) {
+        router13.use(path2, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23605,7 +23605,7 @@ var require_express = __commonJS({
     var EventEmitter2 = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router11 = require_router();
+    var Router12 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23627,8 +23627,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router11.Route;
-    exports.Router = Router11;
+    exports.Route = Router12.Route;
+    exports.Router = Router12;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -65866,7 +65866,7 @@ var require_lib8 = __commonJS({
 });
 
 // src/app.ts
-var import_express21 = __toESM(require_express2(), 1);
+var import_express23 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/lib/logger.ts
@@ -105311,12 +105311,21 @@ var openRouterClientKey = null;
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 var OPENROUTER_VENICE_UNCENSORED = "cognitivecomputations/dolphin-mistral-24b-venice-edition";
 var OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+var OPENROUTER_KEY_ENV_NAMES = [
+  "OPENROUTER_API_KEY",
+  "ANIMA_OPENROUTER_API_KEY",
+  "OPEN_ROUTER_API_KEY"
+];
 function normalizeApiKey(raw) {
   if (!raw) return null;
-  let key = raw.trim();
+  let key = raw.replace(/^\uFEFF/, "").trim();
   if (key.startsWith('"') && key.endsWith('"') || key.startsWith("'") && key.endsWith("'")) {
     key = key.slice(1, -1).trim();
   }
+  if (/^bearer\s+/i.test(key)) {
+    key = key.replace(/^bearer\s+/i, "").trim();
+  }
+  key = key.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "").trim();
   return key || null;
 }
 function hasOpenAIKey() {
@@ -105460,12 +105469,25 @@ function getLocalLlmClient() {
   return localLlmClient;
 }
 function hasOpenRouterKey() {
-  return Boolean(
-    normalizeApiKey(process.env.OPENROUTER_API_KEY) || normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY)
-  );
+  return Boolean(getOpenRouterApiKey());
 }
 function getOpenRouterApiKey() {
-  return normalizeApiKey(process.env.OPENROUTER_API_KEY) || normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY);
+  for (const name of OPENROUTER_KEY_ENV_NAMES) {
+    const key = normalizeApiKey(process.env[name]);
+    if (key) return key;
+  }
+  return null;
+}
+function getOpenRouterApiKeySource() {
+  for (const name of OPENROUTER_KEY_ENV_NAMES) {
+    if (normalizeApiKey(process.env[name])) return name;
+  }
+  return null;
+}
+function openRouterKeyFingerprint() {
+  const key = getOpenRouterApiKey();
+  if (!key || key.length < 8) return null;
+  return key.slice(-4);
 }
 function getOpenRouterClient() {
   const apiKey = getOpenRouterApiKey();
@@ -105492,138 +105514,90 @@ function getOpenRouterClient() {
   return openRouterClient;
 }
 
-// src/lib/localModelCatalog.ts
-var CATALOG_TTL_MS = 6e4;
-var CATALOG_ERROR_TTL_MS = 1e4;
-var SUBSTITUTION_TTL_MS = 10 * 6e4;
-var CATALOG_TIMEOUT_MS = 5e3;
-var NON_CHAT_MODEL_RE = /(embed|embedding|nomic|bge-|gte-|e5-|rerank|whisper|tts|voice|dall-?e|clip|moderation|stable-?diffusion|sdxl|flux)/i;
-var KNOWN_CHAT_FAMILY_RE = /(qwen|ministral|mistral|llama|phi|gemma|deepseek|hermes|olmo)/i;
-var catalogByBaseUrl = /* @__PURE__ */ new Map();
-var substitutions = /* @__PURE__ */ new Map();
-function cacheKey() {
-  return localLlmBaseUrl() ?? "(unconfigured)";
-}
-function normalizeModelId(id) {
-  return id.trim().toLowerCase().replace(/:latest$/, "");
-}
-async function extractModelIds(page) {
-  const ids = [];
-  const push2 = (entry) => {
-    if (!entry) return;
-    const id = typeof entry === "string" ? entry : typeof entry.id === "string" ? entry.id : null;
-    if (id && id.trim()) ids.push(id.trim());
-  };
-  if (Array.isArray(page)) {
-    page.forEach(push2);
-    return ids;
-  }
-  const data = page?.data;
-  if (Array.isArray(data)) {
-    data.forEach(push2);
-    return ids;
-  }
-  if (page && typeof page[Symbol.asyncIterator] === "function") {
-    for await (const entry of page) push2(entry);
-  }
-  return ids;
-}
-async function listLocalModels(client, opts = {}) {
-  const key = cacheKey();
-  const now = Date.now();
-  const cached2 = catalogByBaseUrl.get(key);
-  if (!opts.force && cached2 && cached2.expiresAt > now) {
-    return { models: cached2.models, ok: cached2.ok, error: cached2.error, cached: true };
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
-  try {
-    const page = await client.models.list({ signal: controller.signal });
-    const models = await extractModelIds(page);
-    catalogByBaseUrl.set(key, {
-      models,
-      ok: true,
-      error: null,
-      expiresAt: now + CATALOG_TTL_MS
-    });
-    return { models, ok: true, error: null, cached: false };
-  } catch (err) {
-    const error40 = (err instanceof Error ? err.message : String(err)).slice(0, 160);
-    catalogByBaseUrl.set(key, {
-      models: [],
-      ok: false,
-      error: error40,
-      expiresAt: now + CATALOG_ERROR_TTL_MS
-    });
-    return { models: [], ok: false, error: error40, cached: false };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-function scoreCandidate(preferred, candidate) {
-  const want = normalizeModelId(preferred);
-  const have = normalizeModelId(candidate);
-  if (!have) return -1;
-  if (NON_CHAT_MODEL_RE.test(have)) return -1;
-  if (want && have === want) return 1e3;
-  if (want && (have.startsWith(want) || want.startsWith(have))) return 900;
-  if (/^anima/.test(have)) return 800;
-  if (KNOWN_CHAT_FAMILY_RE.test(have)) return 600;
-  return 100;
-}
-function chooseLocalModel(preferred, available) {
-  let best = null;
-  for (const candidate of available) {
-    const score = scoreCandidate(preferred, candidate);
-    if (score < 0) continue;
-    if (!best || score > best.score) best = { model: candidate.trim(), score };
-  }
-  return best?.model ?? null;
-}
-function rememberModelSubstitution(preferred, actual) {
-  if (!preferred || !actual || normalizeModelId(preferred) === normalizeModelId(actual)) return;
-  substitutions.set(`${cacheKey()}::${normalizeModelId(preferred)}`, {
-    model: actual,
-    expiresAt: Date.now() + SUBSTITUTION_TTL_MS
-  });
-}
-function getRememberedModel(preferred) {
-  const key = `${cacheKey()}::${normalizeModelId(preferred)}`;
-  const hit = substitutions.get(key);
-  if (!hit) return null;
-  if (hit.expiresAt <= Date.now()) {
-    substitutions.delete(key);
-    return null;
-  }
-  return hit.model;
-}
-function forgetModelSubstitution(preferred) {
-  substitutions.delete(`${cacheKey()}::${normalizeModelId(preferred)}`);
-}
-function describeModelMismatch(preferred, available) {
-  const host = (() => {
-    const base = localLlmBaseUrl();
-    if (!base) return "the configured endpoint";
-    try {
-      return new URL(base).host;
-    } catch {
-      return "the configured endpoint";
-    }
-  })();
-  if (!available.length) {
-    return `The Anima LLM at ${host} does not serve a model named "${preferred}", and it reported no models at all. Check that the host is running and has weights loaded \u2014 on Ollama: \`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`. See docs/custom-llm.md.`;
-  }
-  const shown = available.slice(0, 10).join(", ");
-  const more = available.length > 10 ? `, +${available.length - 10} more` : "";
-  return `The Anima LLM at ${host} does not serve a model named "${preferred}". It serves: ${shown}${more}. Either create the expected tag (\`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`) or point ANIMA_OLLAMA_MODEL_LIGHT/_STANDARD/_HEAVY at one of the ids above, then redeploy. See docs/custom-llm.md.`;
-}
-
 // ../../lib/llm/src/registry.ts
 var MODEL_TIERS = ["light", "standard", "heavy"];
+var OPEN_WEIGHT_MODEL_FAMILIES = [
+  "llama",
+  "qwen",
+  "mistral",
+  "gemma",
+  "deepseek"
+];
 var DEFAULT_PROVIDER = "ollama";
 var ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
 var ANIMA_MEMORY_SPECIALIST_MODEL = "mistralai/Ministral-3-3B-Instruct-2512";
+var ANIMA_BOOTSTRAP_BASE_MODEL = "qwen2.5:3b";
 var ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
+var OPEN_WEIGHT_CHAT_MODELS = {
+  llama: {
+    family: "llama",
+    label: "Llama",
+    aliases: ["llama", "meta-llama"],
+    ollamaModel: "llama3.1:8b",
+    vllmModel: "meta-llama/Llama-3.1-8B-Instruct",
+    openRouterModel: "meta-llama/llama-3.3-70b-instruct:free",
+    maxTokens: 8192,
+    notes: "Strong general-purpose open-weight chat baseline."
+  },
+  qwen: {
+    family: "qwen",
+    label: "Qwen",
+    aliases: ["qwen", "qwen2", "qwen3"],
+    ollamaModel: ANIMA_BOOTSTRAP_BASE_MODEL,
+    vllmModel: "Qwen/Qwen2.5-7B-Instruct",
+    openRouterModel: "qwen/qwen-2.5-7b-instruct:free",
+    maxTokens: 8192,
+    notes: "Current CPU bootstrap path for Anima via Ollama."
+  },
+  mistral: {
+    family: "mistral",
+    label: "Mistral",
+    aliases: ["mistral", "ministral"],
+    ollamaModel: "mistral:7b",
+    vllmModel: ANIMA_PRIMARY_MODEL,
+    openRouterModel: "mistralai/mistral-small-3.2-24b-instruct:free",
+    maxTokens: 8192,
+    notes: "Recommended GPU upgrade family for Anima fine-tuning."
+  },
+  gemma: {
+    family: "gemma",
+    label: "Gemma",
+    aliases: ["gemma", "google/gemma"],
+    ollamaModel: "gemma3:4b",
+    vllmModel: "google/gemma-3-4b-it",
+    openRouterModel: "google/gemma-3-12b-it:free",
+    maxTokens: 8192,
+    notes: "Compact open model family for lightweight companion deployments."
+  },
+  deepseek: {
+    family: "deepseek",
+    label: "DeepSeek",
+    aliases: ["deepseek", "deepseek-r1"],
+    ollamaModel: "deepseek-r1:7b",
+    vllmModel: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    openRouterModel: "deepseek/deepseek-r1:free",
+    maxTokens: 8192,
+    notes: "Reasoning-oriented open-weight family for analytical turns."
+  }
+};
+var ADDITIONAL_KNOWN_CHAT_ALIASES = ["phi", "hermes", "olmo"];
+function listOpenWeightChatModels() {
+  return OPEN_WEIGHT_MODEL_FAMILIES.map((family) => ({ ...OPEN_WEIGHT_CHAT_MODELS[family] }));
+}
+function getOpenWeightChatModel(family) {
+  const raw = (family || "").trim().toLowerCase();
+  if (!raw) return null;
+  return listOpenWeightChatModels().find(
+    (model) => model.family === raw || model.aliases.some((alias) => alias === raw)
+  ) ?? null;
+}
+function isKnownOpenWeightChatModel(modelId) {
+  const id = modelId.trim().toLowerCase();
+  if (!id) return false;
+  return listOpenWeightChatModels().some(
+    (model) => model.aliases.some((alias) => id.includes(alias))
+  ) || ADDITIONAL_KNOWN_CHAT_ALIASES.some((alias) => id.includes(alias));
+}
 var OPENAI_DEFAULTS = {
   light: { model: "gpt-4.1-mini", maxTokens: 4096, description: "Cheap tier for greetings and small talk" },
   standard: { model: "gpt-4o", maxTokens: 8192, description: "Routine conversational turns" },
@@ -106029,6 +106003,131 @@ function truncateText(text2, max) {
   return clean.length > max ? `${clean.slice(0, max - 1)}\u2026` : clean;
 }
 
+// src/lib/localModelCatalog.ts
+var CATALOG_TTL_MS = 6e4;
+var CATALOG_ERROR_TTL_MS = 1e4;
+var SUBSTITUTION_TTL_MS = 10 * 6e4;
+var CATALOG_TIMEOUT_MS = 5e3;
+var NON_CHAT_MODEL_RE = /(embed|embedding|nomic|bge-|gte-|e5-|rerank|whisper|tts|voice|dall-?e|clip|moderation|stable-?diffusion|sdxl|flux)/i;
+var catalogByBaseUrl = /* @__PURE__ */ new Map();
+var substitutions = /* @__PURE__ */ new Map();
+function cacheKey() {
+  return localLlmBaseUrl() ?? "(unconfigured)";
+}
+function normalizeModelId(id) {
+  return id.trim().toLowerCase().replace(/:latest$/, "");
+}
+async function extractModelIds(page) {
+  const ids = [];
+  const push2 = (entry) => {
+    if (!entry) return;
+    const id = typeof entry === "string" ? entry : typeof entry.id === "string" ? entry.id : null;
+    if (id && id.trim()) ids.push(id.trim());
+  };
+  if (Array.isArray(page)) {
+    page.forEach(push2);
+    return ids;
+  }
+  const data = page?.data;
+  if (Array.isArray(data)) {
+    data.forEach(push2);
+    return ids;
+  }
+  if (page && typeof page[Symbol.asyncIterator] === "function") {
+    for await (const entry of page) push2(entry);
+  }
+  return ids;
+}
+async function listLocalModels(client, opts = {}) {
+  const key = cacheKey();
+  const now = Date.now();
+  const cached2 = catalogByBaseUrl.get(key);
+  if (!opts.force && cached2 && cached2.expiresAt > now) {
+    return { models: cached2.models, ok: cached2.ok, error: cached2.error, cached: true };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
+  try {
+    const page = await client.models.list({ signal: controller.signal });
+    const models = await extractModelIds(page);
+    catalogByBaseUrl.set(key, {
+      models,
+      ok: true,
+      error: null,
+      expiresAt: now + CATALOG_TTL_MS
+    });
+    return { models, ok: true, error: null, cached: false };
+  } catch (err) {
+    const error40 = (err instanceof Error ? err.message : String(err)).slice(0, 160);
+    catalogByBaseUrl.set(key, {
+      models: [],
+      ok: false,
+      error: error40,
+      expiresAt: now + CATALOG_ERROR_TTL_MS
+    });
+    return { models: [], ok: false, error: error40, cached: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function scoreCandidate(preferred, candidate) {
+  const want = normalizeModelId(preferred);
+  const have = normalizeModelId(candidate);
+  if (!have) return -1;
+  if (NON_CHAT_MODEL_RE.test(have)) return -1;
+  if (want && have === want) return 1e3;
+  if (want && (have.startsWith(want) || want.startsWith(have))) return 900;
+  if (/^anima/.test(have)) return 800;
+  if (isKnownOpenWeightChatModel(have)) return 600;
+  return 100;
+}
+function chooseLocalModel(preferred, available) {
+  let best = null;
+  for (const candidate of available) {
+    const score = scoreCandidate(preferred, candidate);
+    if (score < 0) continue;
+    if (!best || score > best.score) best = { model: candidate.trim(), score };
+  }
+  return best?.model ?? null;
+}
+function rememberModelSubstitution(preferred, actual) {
+  if (!preferred || !actual || normalizeModelId(preferred) === normalizeModelId(actual)) return;
+  substitutions.set(`${cacheKey()}::${normalizeModelId(preferred)}`, {
+    model: actual,
+    expiresAt: Date.now() + SUBSTITUTION_TTL_MS
+  });
+}
+function getRememberedModel(preferred) {
+  const key = `${cacheKey()}::${normalizeModelId(preferred)}`;
+  const hit = substitutions.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    substitutions.delete(key);
+    return null;
+  }
+  return hit.model;
+}
+function forgetModelSubstitution(preferred) {
+  substitutions.delete(`${cacheKey()}::${normalizeModelId(preferred)}`);
+}
+function describeModelMismatch(preferred, available) {
+  const host = (() => {
+    const base = localLlmBaseUrl();
+    if (!base) return "the configured endpoint";
+    try {
+      return new URL(base).host;
+    } catch {
+      return "the configured endpoint";
+    }
+  })();
+  if (!available.length) {
+    return `The Anima LLM at ${host} does not serve a model named "${preferred}", and it reported no models at all. Check that the host is running and has weights loaded \u2014 on Ollama: \`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`. See docs/custom-llm.md.`;
+  }
+  const shown = available.slice(0, 10).join(", ");
+  const more = available.length > 10 ? `, +${available.length - 10} more` : "";
+  return `The Anima LLM at ${host} does not serve a model named "${preferred}". It serves: ${shown}${more}. Either create the expected tag (\`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`) or point ANIMA_OLLAMA_MODEL_LIGHT/_STANDARD/_HEAVY at one of the ids above, then redeploy. See docs/custom-llm.md.`;
+}
+
 // src/lib/llmFailover.ts
 var CLOUD_FLAGSHIP_SETUP_HINT = "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy. Or set OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter.";
 function beginChatProviderTurn() {
@@ -106037,11 +106136,23 @@ function preferOpenRouterFreeTier() {
   const raw = (process.env.ANIMA_OPENROUTER_FREE || "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "free";
 }
+function isOpenRouterFreeModel(model) {
+  return model.trim().toLowerCase().endsWith(":free");
+}
+var openRouterCreditFallback = false;
+function resolveOpenRouterFamilyModel() {
+  const family = process.env.ANIMA_OPENROUTER_MODEL_FAMILY?.trim() || process.env.ANIMA_OPEN_WEIGHT_MODEL_FAMILY?.trim();
+  return getOpenWeightChatModel(family)?.openRouterModel ?? null;
+}
 function resolveOpenRouterModel(tier) {
   const tierKey = `ANIMA_OPENROUTER_MODEL_${tier.toUpperCase()}`;
   const fromTier = process.env[tierKey]?.trim();
   const fromStandard = process.env.ANIMA_OPENROUTER_MODEL_STANDARD?.trim();
-  const model = fromTier || fromStandard || (preferOpenRouterFreeTier() ? OPENROUTER_FREE_MODEL : OPENROUTER_VENICE_UNCENSORED);
+  const fromFamily = resolveOpenRouterFamilyModel();
+  let model = fromTier || fromStandard || fromFamily || (preferOpenRouterFreeTier() ? OPENROUTER_FREE_MODEL : OPENROUTER_VENICE_UNCENSORED);
+  if (openRouterCreditFallback && !isOpenRouterFreeModel(model)) {
+    model = OPENROUTER_FREE_MODEL;
+  }
   const maxTokens = tier === "light" ? 4096 : tier === "heavy" ? 16384 : 8192;
   return { tier, model, maxTokens };
 }
@@ -106104,7 +106215,8 @@ function summarizeError(err) {
 }
 var LOCAL_LLM_AUTH_FIX_HINT = "ANIMA_LOCAL_LLM_API_KEY on Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host (for Fly: `fly secrets set PROXY_AUTH_TOKEN=\u2026 -a anima-chat-llm`, then set the same value as ANIMA_LOCAL_LLM_API_KEY and redeploy without build cache). See deploy/ollama-fly/README.md.";
 var LOCAL_LLM_CONNECTION_FIX_HINT = "The self-hosted Anima LLM host did not accept a connection. Check `fly status -a anima-chat-llm` / `fly logs -a anima-chat-llm`, then `fly apps restart anima-chat-llm` or `fly deploy -a anima-chat-llm` (see deploy/ollama-fly/README.md). Or set OPENROUTER_API_KEY for Venice Uncensored via OpenRouter.";
-var OPENROUTER_SETUP_HINT = `Set OPENROUTER_API_KEY (free at https://openrouter.ai/keys). Default model is Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). For zero-cost free-tier models set ANIMA_OPENROUTER_FREE=true (uses ${OPENROUTER_FREE_MODEL}). Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used.`;
+var OPENROUTER_SETUP_HINT = `Set OPENROUTER_API_KEY (free at https://openrouter.ai/keys). Default model is Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). A free key with no credits automatically falls back to ${OPENROUTER_FREE_MODEL}. To skip Venice entirely set ANIMA_OPENROUTER_FREE=true. Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used.`;
+var OPENROUTER_CREDITS_HINT = `Your OPENROUTER_API_KEY is configured, but this OpenRouter account has no credits for Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true to use ${OPENROUTER_FREE_MODEL}.`;
 var CONNECTION_CODE_RE = /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
 function isProviderConnectionError(err) {
   if (!err || typeof err !== "object") return false;
@@ -106143,10 +106255,10 @@ function isProviderAuthError(err) {
 function isProviderQuotaError(err) {
   if (!err || typeof err !== "object") return false;
   const e2 = err;
-  if (e2.status === 429) return true;
+  if (e2.status === 402 || e2.status === 429) return true;
   const code = errorCodeLower(e2);
   const msg = errorFieldLower(e2.message);
-  return code.includes("rate_limit") || code.includes("insufficient_quota") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("credits");
+  return code.includes("rate_limit") || code.includes("insufficient_quota") || code.includes("payment_required") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("credits") || msg.includes("payment required");
 }
 function isLocalModelUnavailable(err) {
   return isModelUnavailableError(err);
@@ -106242,7 +106354,7 @@ function enrichError(err, provider = "local") {
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
       return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true to use ${OPENROUTER_FREE_MODEL}, or host a local Anima LLM. ${OPENROUTER_SETUP_HINT}`
+        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ` + (hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT)
       );
     }
   }
@@ -106302,7 +106414,7 @@ function getLlmRoutingStatus(tier = "standard") {
     }
     if (chain.includes("openrouter")) {
       noteParts.push(
-        `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` + (chain[0] === "local" ? " (fallback after local)." : " (primary \u2014 no local endpoint).")
+        `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` + (chain[0] === "local" ? " (fallback after local)." : " (primary \u2014 no local endpoint).") + (openRouterCreditFallback ? " Paid model needed credits; using free-tier." : "")
       );
     }
   }
@@ -106324,7 +106436,10 @@ function getLlmRoutingStatus(tier = "standard") {
     openrouter: {
       configured: hasOpenRouterKey(),
       model: openRouterModel.model,
-      isFreeTier
+      isFreeTier,
+      env: getOpenRouterApiKeySource(),
+      keyTail: openRouterKeyFingerprint(),
+      creditFallback: openRouterCreditFallback
     },
     chain,
     note: noteParts.join(" ")
@@ -106342,17 +106457,20 @@ async function probeOneProvider(provider, tier) {
       if (!client) {
         return { provider: "openrouter", configured: false, ok: false };
       }
-      await client.chat.completions.create({
-        model: resolved2.model,
-        max_tokens: 16,
-        messages: [{ role: "user", content: "Reply with the single word: ok" }],
-        temperature: 0
-      });
+      const { resolved: used } = await withOpenRouterCreditFallback(
+        resolved2,
+        (m2) => client.chat.completions.create({
+          model: m2.model,
+          max_tokens: 16,
+          messages: [{ role: "user", content: "Reply with the single word: ok" }],
+          temperature: 0
+        })
+      );
       return {
         provider: "openrouter",
         configured: true,
         ok: true,
-        model: resolved2.model,
+        model: used.model,
         configuredModel: resolved2.model,
         latencyMs: Date.now() - started2
       };
@@ -106456,22 +106574,52 @@ async function probeLlmProviders(tier = "standard") {
   }
   return out;
 }
+function openRouterModelCandidates(preferred) {
+  const out = [preferred];
+  if (!isOpenRouterFreeModel(preferred.model)) {
+    out.push({ ...preferred, model: OPENROUTER_FREE_MODEL });
+  }
+  return out;
+}
+async function withOpenRouterCreditFallback(preferred, run) {
+  let lastErr;
+  for (const candidate of openRouterModelCandidates(preferred)) {
+    try {
+      const value = await run(candidate);
+      return { value, resolved: candidate };
+    } catch (err) {
+      lastErr = err;
+      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model)) {
+        openRouterCreditFallback = true;
+        console.warn(
+          `[llm] OpenRouter ${candidate.model} needs credits (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}. The OPENROUTER_API_KEY is set \u2014 this is a billing limit, not a missing key.`
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr ?? new Error(OPENROUTER_CREDITS_HINT);
+}
 async function runOpenRouterStream(req, failedOver) {
   const client = getOpenRouterClient();
   if (!client) throw new Error(OPENROUTER_SETUP_HINT);
   const preferred = resolveOpenRouterModel(req.tier);
-  const stream = await client.chat.completions.create({
-    model: preferred.model,
-    max_tokens: Math.min(req.maxTokens, preferred.maxTokens),
-    messages: req.messages,
-    stream: true
-  });
+  const { value: stream, resolved } = await withOpenRouterCreditFallback(
+    preferred,
+    (m2) => client.chat.completions.create({
+      model: m2.model,
+      max_tokens: Math.min(req.maxTokens, m2.maxTokens),
+      messages: req.messages,
+      stream: true
+    })
+  );
   return {
     stream,
     provider: "openrouter",
     brand: "openrouter",
-    model: preferred.model,
-    tier: preferred.tier,
+    model: resolved.model,
+    tier: resolved.tier,
     failedOver
   };
 }
@@ -106479,23 +106627,26 @@ async function runOpenRouterCompletion(req, failedOver) {
   const client = getOpenRouterClient();
   if (!client) throw new Error(OPENROUTER_SETUP_HINT);
   const preferred = resolveOpenRouterModel(req.tier);
-  const completion = await client.chat.completions.create(
-    {
-      model: preferred.model,
-      max_tokens: Math.min(req.maxTokens, preferred.maxTokens),
-      messages: req.messages,
-      ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
-      ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
-    },
-    req.signal ? { signal: req.signal } : void 0
+  const { value: completion, resolved } = await withOpenRouterCreditFallback(
+    preferred,
+    (m2) => client.chat.completions.create(
+      {
+        model: m2.model,
+        max_tokens: Math.min(req.maxTokens, m2.maxTokens),
+        messages: req.messages,
+        ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
+        ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
+      },
+      req.signal ? { signal: req.signal } : void 0
+    )
   );
   const content = completion.choices?.[0]?.message?.content ?? "";
   return {
     content: typeof content === "string" ? content : "",
     provider: "openrouter",
     brand: "openrouter",
-    model: preferred.model,
-    tier: preferred.tier,
+    model: resolved.model,
+    tier: resolved.tier,
     failedOver,
     toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null
   };
@@ -106719,7 +106870,7 @@ router2.post("/healthz/schema", async (_req, res) => {
 var health_default = router2;
 
 // src/routes/index.ts
-var import_express20 = __toESM(require_express2(), 1);
+var import_express22 = __toESM(require_express2(), 1);
 
 // src/routes/openai/index.ts
 var import_express5 = __toESM(require_express2(), 1);
@@ -108027,23 +108178,23 @@ function mapImageEditError(err) {
   const e2 = err ?? {};
   const rawMessage = e2.message || e2.error?.message || (typeof err === "string" ? err : "") || "Image edit failed.";
   const rawCode = (e2.code || e2.error?.code || e2.type || e2.error?.type || "").toString();
-  const haystack = `${rawCode} ${rawMessage}`.toLowerCase();
+  const haystack2 = `${rawCode} ${rawMessage}`.toLowerCase();
   const upstreamStatus = typeof e2.status === "number" && e2.status >= 400 && e2.status < 600 ? e2.status : void 0;
-  if (rawCode === "moderation_blocked" || rawCode === "content_policy_violation" || haystack.includes("content policy") || haystack.includes("safety system") || haystack.includes("moderation")) {
+  if (rawCode === "moderation_blocked" || rawCode === "content_policy_violation" || haystack2.includes("content policy") || haystack2.includes("safety system") || haystack2.includes("moderation")) {
     return {
       status: 400,
       code: "content_policy",
       error: "That request was blocked by the content safety filter."
     };
   }
-  if (upstreamStatus === 429 || rawCode === "rate_limit_exceeded" || rawCode === "insufficient_quota" || haystack.includes("rate limit") || haystack.includes("quota")) {
+  if (upstreamStatus === 429 || rawCode === "rate_limit_exceeded" || rawCode === "insufficient_quota" || haystack2.includes("rate limit") || haystack2.includes("quota")) {
     return {
       status: 429,
       code: "rate_limit",
       error: "The image service is busy right now."
     };
   }
-  if (upstreamStatus === 401 || rawCode === "invalid_api_key" || haystack.includes("incorrect api key") || haystack.includes("invalid api key") || haystack.includes("api key provided")) {
+  if (upstreamStatus === 401 || rawCode === "invalid_api_key" || haystack2.includes("incorrect api key") || haystack2.includes("invalid api key") || haystack2.includes("api key provided")) {
     return {
       status: 503,
       code: "auth_error",
@@ -123373,33 +123524,321 @@ router10.post(
 );
 var admin_default = router10;
 
-// src/routes/index.ts
+// src/routes/codeRepair.ts
+var import_express20 = __toESM(require_express2(), 1);
+
+// src/lib/codeRepair.ts
+var MAX_TEXT = 8e3;
+function compactText(value, max = MAX_TEXT) {
+  const text2 = String(value ?? "").trim();
+  return text2.length > max ? `${text2.slice(0, max - 1)}...` : text2;
+}
+function haystack(input) {
+  return `${input.issue}
+${JSON.stringify(input.context ?? {})}`.toLowerCase();
+}
+function classify(input) {
+  const text2 = haystack(input);
+  if (text2.includes("openrouter") && (text2.includes("free-models-per-day") || text2.includes("rate limit") || text2.includes("429") || text2.includes("402") || text2.includes("credits") || text2.includes("venice"))) {
+    return "openrouter_quota";
+  }
+  if (text2.includes("openrouter") || text2.includes("sk-or-") || text2.includes("anima_openrouter")) {
+    return "openrouter_key";
+  }
+  if (text2.includes("clerk") || text2.includes("session not recognized") || text2.includes("unauthorized") || text2.includes("401")) {
+    return "clerk_auth";
+  }
+  if (text2.includes("database_url") || text2.includes("postgres") || text2.includes("drizzle") || text2.includes("db push")) {
+    return "database";
+  }
+  if (text2.includes(".env") || text2.includes("secret") || text2.includes("api_key") || text2.includes("sk_")) {
+    return "env_secret";
+  }
+  return "generic";
+}
+function openRouterQuotaRepair(input) {
+  const env = input.diagnostics?.openrouterEnv || "OPENROUTER_API_KEY";
+  const model = input.diagnostics?.openrouterModel || "openai/gpt-oss-20b:free";
+  return {
+    category: "openrouter_quota",
+    confidence: "high",
+    summary: "OpenRouter is rejecting chat because the configured account is out of credits or has hit the free daily request cap.",
+    likelyCause: "The app can see an OpenRouter key, but the provider is returning a quota/rate-limit response. Setting ANIMA_OPENROUTER_FREE=true switches to free models, but it cannot bypass OpenRouter's free-models-per-day limit.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Confirm the winning OpenRouter key",
+        detail: `The server is configured to use ${env}. If an older ${env} value points at an exhausted OpenRouter account, replace that value instead of adding more aliases.`,
+        files: ["Vercel Project Settings > Environment Variables", ".env"]
+      },
+      {
+        title: "Keep the free-model switch enabled",
+        detail: "Set ANIMA_OPENROUTER_FREE=true in the same Vercel environment as the OpenRouter key, then redeploy.",
+        command: "ANIMA_OPENROUTER_FREE=true"
+      },
+      {
+        title: "Remove model overrides that force Venice",
+        detail: "Delete ANIMA_OPENROUTER_MODEL_STANDARD, ANIMA_OPENROUTER_MODEL_LIGHT, ANIMA_OPENROUTER_MODEL_HEAVY, or ANIMA_OPENROUTER_MODEL_FAMILY if they still point at Venice. Those override the free switch."
+      },
+      {
+        title: "Resolve the provider quota",
+        detail: "Add credits at https://openrouter.ai/settings/credits or replace the OpenRouter key with one from an account that has remaining quota."
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check routing status",
+        detail: `Verify the deployed API reports OpenRouter free-tier routing and model ${model}.`,
+        command: "curl https://www.anima-protocol.com/api/healthz/llm"
+      },
+      {
+        title: "Probe the provider",
+        detail: "Run a live provider probe after redeploying to confirm OpenRouter accepts a tiny completion.",
+        command: "curl https://www.anima-protocol.com/api/healthz/llm?probe=1"
+      }
+    ],
+    guardrails: [
+      "Do not commit real API keys to the repository.",
+      "Do not set multiple OpenRouter key aliases unless you know which one wins.",
+      "This console provides repair instructions; it does not mutate production settings or repository files."
+    ]
+  };
+}
+function openRouterKeyRepair() {
+  return {
+    category: "openrouter_key",
+    confidence: "medium",
+    summary: "OpenRouter configuration needs cleanup.",
+    likelyCause: "The application reads the first non-empty key in this order: OPENROUTER_API_KEY, ANIMA_OPENROUTER_API_KEY, OPEN_ROUTER_API_KEY.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Use one canonical key",
+        detail: "Prefer OPENROUTER_API_KEY and remove stale alias values so the server cannot pick the wrong account.",
+        files: ["Vercel Project Settings > Environment Variables", ".env"]
+      },
+      {
+        title: "Enable free-tier routing when needed",
+        detail: "Set ANIMA_OPENROUTER_FREE=true alongside the key to skip Venice by default.",
+        command: "OPENROUTER_API_KEY=sk-or-...\nANIMA_OPENROUTER_FREE=true"
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Verify selected key source",
+        detail: "The LLM health endpoint reports the secret-free env name that supplied the key.",
+        command: "curl https://www.anima-protocol.com/api/healthz/llm"
+      }
+    ],
+    guardrails: [
+      "Never paste secret values into chat transcripts or tracked files.",
+      "Redeploy after changing Vercel environment variables."
+    ]
+  };
+}
+function clerkRepair() {
+  return {
+    category: "clerk_auth",
+    confidence: "medium",
+    summary: "Clerk authentication settings appear inconsistent.",
+    likelyCause: "A frontend publishable key and backend secret/publishable key mismatch can produce 401s and session recognition failures.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Use matching Clerk keys",
+        detail: "Set VITE_CLERK_PUBLISHABLE_KEY, CLERK_PUBLISHABLE_KEY, and CLERK_SECRET_KEY from the same Clerk instance.",
+        files: ["Vercel Project Settings > Environment Variables", ".env"]
+      },
+      {
+        title: "Check proxy mode",
+        detail: "Leave VITE_CLERK_PROXY_URL empty for the production custom Clerk domain unless intentionally testing proxy mode."
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check API health",
+        detail: "Confirm the API responds before signing in.",
+        command: "curl https://www.anima-protocol.com/api/healthz"
+      }
+    ],
+    guardrails: ["Never put CLERK_SECRET_KEY in any VITE_ variable.", "Redeploy after changing Clerk env vars."]
+  };
+}
+function databaseRepair() {
+  return {
+    category: "database",
+    confidence: "medium",
+    summary: "Database configuration or schema setup needs attention.",
+    likelyCause: "The API depends on DATABASE_URL and the shared Drizzle schema. A missing URL, blocked Postgres connection, or unapplied schema can break persistence.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Set DATABASE_URL",
+        detail: "Configure DATABASE_URL in the target runtime environment. Local dev can use the provided Postgres database.",
+        command: "DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev"
+      },
+      {
+        title: "Apply schema locally",
+        detail: "Push the shared database schema after DATABASE_URL is set.",
+        command: "pnpm --filter @workspace/db run push"
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check health endpoint",
+        detail: "Use the public API health check to confirm the server can start.",
+        command: "curl http://127.0.0.1:8080/api/healthz"
+      }
+    ],
+    guardrails: ["Do not point preview deployments at production data unless that is intentional."]
+  };
+}
+function envSecretRepair() {
+  return {
+    category: "env_secret",
+    confidence: "medium",
+    summary: "A secret or environment value should be kept out of tracked source.",
+    likelyCause: "Secrets belong in Vercel environment variables or gitignored local env files, not in committed code.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Move the value to runtime env",
+        detail: "Put local-only values in the root .env file and deployed values in Vercel Project Settings.",
+        files: [".env", "Vercel Project Settings > Environment Variables"]
+      },
+      {
+        title: "Remove tracked copies",
+        detail: "If a secret was committed, remove it from git and rotate the secret with the provider.",
+        command: "git rm --cached <file-with-secret>"
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check git status",
+        detail: "Make sure .env is not staged or tracked.",
+        command: "git status --short"
+      }
+    ],
+    guardrails: ["Rotate any secret that was committed or shared in a screenshot.", "Keep .env.example as placeholders only."]
+  };
+}
+function genericRepair(issue2) {
+  return {
+    category: "generic",
+    confidence: "low",
+    summary: "Anima needs more structured debugging context to produce a precise fix.",
+    likelyCause: "The supplied issue does not match a known repair recipe yet. Capture the exact error, recent change, affected page, and expected behavior.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Capture the failing path",
+        detail: "Describe the page, action, current result, and expected result in one short reproduction."
+      },
+      {
+        title: "Collect the exact error",
+        detail: compactText(issue2, 500) || "Paste the browser console, server log, or API response that appears when the issue happens."
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Re-run the smallest reproduction",
+        detail: "After applying a fix, repeat the exact failing action and record whether behavior changed."
+      }
+    ],
+    guardrails: [
+      "This console does not run arbitrary code or write repository files.",
+      "Use Cursor or a reviewed PR to apply patches."
+    ]
+  };
+}
+function analyzeCodeRepairInput(input) {
+  const issue2 = compactText(input.issue);
+  const safeInput = { ...input, issue: issue2 };
+  switch (classify(safeInput)) {
+    case "openrouter_quota":
+      return openRouterQuotaRepair(safeInput);
+    case "openrouter_key":
+      return openRouterKeyRepair();
+    case "clerk_auth":
+      return clerkRepair();
+    case "database":
+      return databaseRepair();
+    case "env_secret":
+      return envSecretRepair();
+    default:
+      return genericRepair(issue2);
+  }
+}
+
+// src/routes/codeRepair.ts
 var router11 = (0, import_express20.Router)();
-router11.use("/admin", admin_default);
-router11.use("/openai", openai_default2);
-router11.use("/openai", functions_default);
-router11.use(elevenlabs_default);
-router11.use(characterImage_default);
-router11.use("/chat", chat_default);
-router11.use("/store", store_default);
-router11.use(storage_default);
-router11.get("/placeholder/:w/:h", (req, res) => {
+router11.use(createRateLimit({ name: "code-repair", max: 20, windowMs: 6e4 }));
+router11.post("/analyze", (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const body = req.body;
+  const issue2 = String(body.issue ?? "").trim();
+  if (!issue2) {
+    res.status(400).json({ error: "issue is required" });
+    return;
+  }
+  const routing = getLlmRoutingStatus("standard");
+  const analysis = analyzeCodeRepairInput({
+    issue: issue2,
+    context: body.context,
+    diagnostics: {
+      openrouterConfigured: routing.openrouter.configured,
+      openrouterEnv: routing.openrouter.env,
+      openrouterModel: routing.openrouter.model,
+      openrouterIsFreeTier: routing.openrouter.isFreeTier
+    }
+  });
+  res.json({
+    ...analysis,
+    diagnostics: {
+      openrouter: {
+        configured: routing.openrouter.configured,
+        env: routing.openrouter.env,
+        model: routing.openrouter.model,
+        isFreeTier: routing.openrouter.isFreeTier,
+        creditFallback: routing.openrouter.creditFallback
+      }
+    }
+  });
+});
+var codeRepair_default = router11;
+
+// src/routes/index.ts
+var router12 = (0, import_express22.Router)();
+router12.use("/admin", admin_default);
+router12.use("/openai", openai_default2);
+router12.use("/openai", functions_default);
+router12.use(elevenlabs_default);
+router12.use(characterImage_default);
+router12.use("/chat", chat_default);
+router12.use("/code-repair", codeRepair_default);
+router12.use("/store", store_default);
+router12.use(storage_default);
+router12.get("/placeholder/:w/:h", (req, res) => {
   const w2 = Math.min(Number(req.params.w) || 150, 1200);
   const h2 = Math.min(Number(req.params.h) || 150, 1200);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w2}" height="${h2}"><rect width="${w2}" height="${h2}" fill="#1a1a2e"/><text x="50%" y="50%" font-family="monospace" font-size="12" fill="#22d3ee" text-anchor="middle" dominant-baseline="middle">${w2}\xD7${h2}</text></svg>`;
   res.setHeader("Content-Type", "image/svg+xml");
   res.send(svg);
 });
-var routes_default = router11;
+var routes_default = router12;
 
 // src/app.ts
-var app = (0, import_express21.default)();
+var app = (0, import_express23.default)();
 app.set("trust proxy", 1);
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
-app.use(import_express21.default.json({ limit: "25mb" }));
-app.use(import_express21.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express23.default.json({ limit: "25mb" }));
+app.use(import_express23.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use("/api", health_default);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
