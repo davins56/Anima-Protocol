@@ -418,7 +418,7 @@ export default function MainHome() {
                   Customise Anima
                 </h2>
                 <p className="font-mono text-[11px] text-primary/55 leading-relaxed">
-                  Reshape {anima?.name || "your companion"}&apos;s look — hair, outfit, eyes, art style, and theme.
+                  Reshape {anima?.name || "your companion"}&apos;s look — skin colour, hair, outfit, eyes, art style, and theme.
                 </p>
               </div>
               <ChevronRight className="w-5 h-5 text-primary/30 group-hover:text-primary transition-colors flex-shrink-0" />

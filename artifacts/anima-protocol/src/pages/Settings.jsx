@@ -456,13 +456,14 @@ export default function Settings() {
                       Complete companion customiser
                     </p>
                     <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
-                      Shape look, personality, soulprint, and spoken voice in one hub —
-                      then return to chat with a companion that feels uniquely yours.
+                      Shape look (skin, hair, outfit, eyes), personality, soulprint,
+                      and spoken voice in one hub — then return to chat with a companion
+                      that feels uniquely yours.
                     </p>
                   </div>
                 </div>
                 <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
-                  <li>• Look — generate or upload a portrait, set theme accent</li>
+                  <li>• Look — skin, hair, outfit, eyes; generate or upload a portrait</li>
                   <li>• Personality — name, archetype, traits, speaking style</li>
                   <li>• Soulprint — born-once identity & bond resonance</li>
                   <li>• Voice — ElevenLabs catalog voice or custom clones</li>

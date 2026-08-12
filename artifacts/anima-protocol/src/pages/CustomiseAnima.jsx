@@ -247,8 +247,8 @@ export default function CustomiseAnima() {
               {error || "No personal Anima found yet."}
             </p>
             <p className="font-mono text-[10px] text-primary/40 tracking-widest max-w-md leading-relaxed">
-              Forge your companion first, then return here to shape their look,
-              personality, soulprint, and voice.
+              Forge your companion first, then return here to shape their look
+              (skin, hair, outfit, eyes), personality, soulprint, and voice.
             </p>
             <button
               type="button"
