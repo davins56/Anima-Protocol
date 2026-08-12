@@ -87,7 +87,6 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
   useEffect(() => {
     let cancelled = false;
     whenBootstrapReady().then(() => {
-      if (!cancelled) loadCharacters();
       if (!cancelled) loadCharacters({ retrySeed: true });
     });
     return () => {
@@ -95,7 +94,6 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
     };
   }, [loadCharacters]);
 
-  useStoreSync(loadCharacters);
   useStoreSync(() => loadCharacters({ retrySeed: false }));
 
   const filteredCharacters = useMemo(() => {

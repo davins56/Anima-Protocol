@@ -11,7 +11,7 @@
 | DPO/ORPO preference pairs (Unsloth) | Sharpen character fidelity after SFT — corrects specific bad habits |
 | `ANIMA_LLM_PROVIDER=custom` | Api-server talks **only** to your model — no cloud chat BYOK |
 
-The React app still calls `POST /api/chat/messages`. The brain behind it is **yours** — chat has exactly one backend, the self-hosted Anima LLM. There is no cloud flagship fallback chain in the code (no Gemini/Groq/Kimi/Grok/ChatGPT chat routing exists to fall back to), so the app can never silently switch models on you.
+The React app still calls `POST /api/chat/messages`. The brain behind it is **yours** — preferred backend is the self-hosted Anima LLM. There is **no** Gemini/Groq/Kimi/Grok/ChatGPT flagship chain. Optional **OpenRouter** (Venice Uncensored / free open-weight models) can cover chat when local is unset or unreachable — still open weights, not a closed flagship.
 
 ---
 
@@ -119,6 +119,30 @@ concrete failure mode, not a vague "be better." Full walkthrough:
 
 ---
 
+## Other supported open-weight families
+
+Anima now keeps a source-of-truth catalog for Llama, Qwen, Mistral, Gemma,
+and DeepSeek. Print the exact current ids with:
+
+```bash
+pnpm llm:list-open-models
+```
+
+| Family | Ollama example | vLLM / Hugging Face example | OpenRouter free example |
+|--------|----------------|-----------------------------|-------------------------|
+| Llama | `llama3.1:8b` | `meta-llama/Llama-3.1-8B-Instruct` | `meta-llama/llama-3.3-70b-instruct:free` |
+| Qwen | `qwen2.5:3b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
+| Mistral | `mistral:7b` | `mistralai/Ministral-3-8B-Instruct-2512` | `mistralai/mistral-small-3.2-24b-instruct:free` |
+| Gemma | `gemma3:4b` | `google/gemma-3-4b-it` | `google/gemma-3-12b-it:free` |
+| DeepSeek | `deepseek-r1:7b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `deepseek/deepseek-r1:free` |
+
+For self-hosted chat, set the corresponding `ANIMA_OLLAMA_MODEL_*` or
+`ANIMA_VLLM_MODEL_*` env vars to a model your server actually serves. For
+OpenRouter, set `ANIMA_OPENROUTER_MODEL_FAMILY=llama|qwen|mistral|gemma|deepseek`.
+Exact `ANIMA_OPENROUTER_MODEL_STANDARD` / tier overrides still take precedence.
+
+---
+
 ## There is only one backend
 
 Chat has a single backend: the self-hosted Anima LLM, reached through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). There is no `ANIMA_LLM_PROVIDER` mode switch and no cloud BYOK chain — Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat, regardless of which API keys happen to be set in the environment.
@@ -212,20 +236,53 @@ curl -sS https://anima-chat-llm.fly.dev/v1/models \
   -H "Authorization: Bearer $NEW_TOKEN" | jq '.data[].id'
 ```
 
-### Exact fix — "Anima custom LLM is not configured…"
+### Exact fix — "Anima custom LLM is not configured…" / "No chat LLM configured"
 
-That error is intentional: `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable, and there is no cloud fallback to fall through to.
+That error means neither a self-hosted endpoint nor OpenRouter is usable.
+
+**Fastest unblock (no GPU):** OpenRouter + Venice Uncensored (Cognitive Computations × Venice.ai Dolphin Mistral 24B — reputable open-weight uncensored). Free API key at https://openrouter.ai/keys:
+
+```bash
+OPENROUTER_API_KEY=sk-or-…
+# default model is Venice Uncensored; a $0 OpenRouter account automatically
+# retries openai/gpt-oss-20b:free on HTTP 402. To skip Venice from the first turn:
+# ANIMA_OPENROUTER_FREE=true
+```
+
+Redeploy without build cache. Verify:
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{preferred,chain,openrouter,note}'
+# expect preferred/chain to include "openrouter"
+# openrouter.configured=true, openrouter.keyTail=last 4 of your key
+```
+
+### Exact fix — "OpenRouter credits/rate limit exhausted" / HTTP 402
+
+That popup means the **key is set and OpenRouter accepted it**. Venice Uncensored is a paid model; a brand-new OpenRouter account with no credits gets HTTP 402 (`This account never purchased credits`).
+
+Chat now retries `openai/gpt-oss-20b:free` automatically. If you still see 402 after deploy, either the free-tier model is also blocked for that key, or a different key is loaded than the one you added credits to. Confirm with:
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '.openrouter'
+# configured=true, env=OPENROUTER_API_KEY, keyTail=last 4 chars
+```
+
+Then either add credits at https://openrouter.ai/settings/credits or set `ANIMA_OPENROUTER_FREE=true` and redeploy.
+
+**Self-hosted (preferred long-term):**
 
 1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
    - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
    - **One-paste VPS:** [`scripts/llm/cloud-init-vps.sh`](../scripts/llm/cloud-init-vps.sh) (`pnpm llm:vps-init`) — installs Ollama + `anima-chat` + a Cloudflare quick tunnel as systemd services on any fresh Debian/Ubuntu box. See [`docs/llm-deploy.md`](./llm-deploy.md).
+   - **Local uncensored:** `ollama pull dolphin-mistral && ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored` then set `ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored`.
    - Or run Ollama/vLLM anywhere else with a public HTTPS URL (a reverse proxy, Cloudflare Tunnel, ngrok, another cloud VM, …) — just make sure it's actually authenticated; Ollama has none built in.
 2. **Set these on Vercel (Production)** and redeploy **without build cache**:
 
 ```bash
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
-ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or the model id your server serves
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or anima-uncensored / your vLLM id
 ```
 
 ### "The model `anima-chat` does not exist or you do not have access to it"

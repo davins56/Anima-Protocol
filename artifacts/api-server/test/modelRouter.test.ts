@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   classifyComplexity,
+  errorCodeLower,
+  errorFieldLower,
   isModelUnavailableError,
   resolveModel,
   routeModel,
@@ -138,5 +140,30 @@ describe("isModelUnavailableError", () => {
     expect(isModelUnavailableError({ status: 500, message: "internal error" })).toBe(false);
     expect(isModelUnavailableError(null)).toBe(false);
     expect(isModelUnavailableError("nope")).toBe(false);
+  });
+
+  it("does not throw when code/type/message are non-strings", () => {
+    expect(() => isModelUnavailableError({ code: 404, type: {}, message: { detail: "gone" } })).not.toThrow();
+    expect(isModelUnavailableError({ code: 404, status: 404 })).toBe(true);
+    expect(isModelUnavailableError({ type: {}, message: {} })).toBe(false);
+  });
+});
+
+describe("errorFieldLower / errorCodeLower", () => {
+  it("coerces strings and finite numbers, ignores objects", () => {
+    expect(errorFieldLower("Rate_Limit")).toBe("rate_limit");
+    expect(errorFieldLower(429)).toBe("429");
+    expect(errorFieldLower({})).toBe("");
+    expect(errorFieldLower(undefined)).toBe("");
+    expect(errorFieldLower(null)).toBe("");
+  });
+
+  it("prefers a string identifier over a numeric-only code", () => {
+    expect(errorCodeLower({ code: 429, type: "rate_limit_error" })).toBe("rate_limit_error");
+    expect(errorCodeLower({ code: "ECONNREFUSED", type: 1 })).toBe("econnrefused");
+    expect(errorCodeLower({ type: "invalid_api_key" })).toBe("invalid_api_key");
+    expect(errorCodeLower({ code: {}, type: "model_not_found" })).toBe("model_not_found");
+    expect(errorCodeLower({ code: 404 })).toBe("404");
+    expect(errorCodeLower({ code: {}, type: {} })).toBe("");
   });
 });

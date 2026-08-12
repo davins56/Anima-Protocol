@@ -11,6 +11,8 @@ export default defineConfig({
       "test/localLlmLive.test.ts",
       "test/localModelCatalog.test.ts",
       "test/modelRouter.test.ts",
+      "test/openaiClientKey.test.ts",
+      "test/openaiClientCloudHost.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

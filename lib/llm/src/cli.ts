@@ -18,6 +18,7 @@ import {
   ANIMA_OLLAMA_TAG,
   ANIMA_PRIMARY_MODEL,
   describeModel,
+  listOpenWeightChatModels,
   listModels,
   resolveProvider,
   type ProviderName,
@@ -48,6 +49,7 @@ function usage(): never {
 
 Commands:
   list-models [--provider vllm|ollama|openai|groq|mock]
+  list-open-models       Llama / Qwen / Mistral / Gemma / DeepSeek model ids
   export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
                [--no-clean] [--min-assistant-chars N]
   import-logs [--dir path] [--character name] [--tags a,b] [--out path] [--format …]
@@ -98,6 +100,19 @@ async function cmdListModels(args: string[]): Promise<void> {
   console.log(`Provider: ${provider}`);
   for (const spec of listModels(provider)) {
     console.log(describeModel(spec));
+  }
+}
+
+async function cmdListOpenModels(): Promise<void> {
+  console.log("Open-weight Anima chat model families:");
+  for (const model of listOpenWeightChatModels()) {
+    console.log(
+      `- ${model.label} (${model.family})\n` +
+        `  Ollama:     ${model.ollamaModel}\n` +
+        `  vLLM:       ${model.vllmModel}\n` +
+        `  OpenRouter: ${model.openRouterModel}\n` +
+        `  Notes:      ${model.notes}`,
+    );
   }
 }
 
@@ -446,6 +461,9 @@ async function main(): Promise<void> {
   switch (cmd) {
     case "list-models":
       await cmdListModels(args.slice(1));
+      break;
+    case "list-open-models":
+      await cmdListOpenModels();
       break;
     case "prepare-finetune":
       await cmdPrepareFinetune(args.slice(1));

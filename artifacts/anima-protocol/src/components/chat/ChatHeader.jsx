@@ -1,13 +1,8 @@
 import { useState } from "react";
-import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles } from "lucide-react";
+import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
-<<<<<<< HEAD
-
-export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode }) {
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 import {
   llmDisplayBadgeClass,
   llmDisplayLabel,
@@ -70,14 +65,6 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         <ChevronLeft className="w-4 sm:w-5 h-4 sm:h-5" />
       </button>
 
-<<<<<<< HEAD
-      {/* Character Avatar(s) */}
-      {isGroup ? (
-        <div className="flex -space-x-1.5 sm:-space-x-2">
-          {activeChars.slice(0, 4).map((char, i) => (
-            <div key={char.id} className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 bg-primary/10 overflow-hidden flex-shrink-0" style={{ zIndex: 4 - i }}>
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       {/* Character Avatar(s) — tap to open bio sheet */}
       {isGroup ? (
         <div className="flex -space-x-1.5 sm:-space-x-2">
@@ -97,10 +84,6 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
                   {char.name[0]}
                 </div>
               )}
-<<<<<<< HEAD
-            </div>
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
             </button>
           ))}
           {activeChars.length > 4 && (
@@ -110,10 +93,6 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
           )}
         </div>
       ) : primaryChar ? (
-<<<<<<< HEAD
-        <div className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden flex-shrink-0">
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         <button
           type="button"
           onClick={() => onAvatarClick?.(primaryChar)}
@@ -127,10 +106,6 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
               {primaryChar.name[0]}
             </div>
           )}
-<<<<<<< HEAD
-        </div>
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         </button>
       ) : null}
 
@@ -206,6 +181,25 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         >
           <Sparkles className="w-2.5 h-2.5" />
           <span className="hidden sm:inline">Deep</span>
+        </button>
+      )}
+
+      {/* Customise Anima — solo sessions with a personal Anima companion */}
+      {!isGroup && primaryChar?._isAnima && (
+        <button
+          type="button"
+          onClick={() =>
+            navigate(
+              primaryChar.id
+                ? `/customise-anima?anima=${primaryChar.id}&tab=look`
+                : "/customise-anima?tab=look",
+            )
+          }
+          title={`Customise ${primaryChar.name}`}
+          className="flex items-center gap-1 px-2 py-1 border border-primary/20 text-primary/30 hover:text-primary/70 hover:border-primary/40 font-mono text-[8px] sm:text-[9px] tracking-widest uppercase transition-all"
+        >
+          <Palette className="w-2.5 h-2.5" />
+          <span className="hidden sm:inline">Customise</span>
         </button>
       )}
 

@@ -6,16 +6,48 @@ let openaiClientKey: string | null = null;
 let localLlmClient: OpenAI | null = null;
 let localLlmClientKey: string | null = null;
 
+let openRouterClient: OpenAI | null = null;
+let openRouterClientKey: string | null = null;
+
+/** OpenRouter OpenAI-compatible base (chat completions + models). */
+export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+/**
+ * Venice Uncensored — Cognitive Computations × Venice.ai (Dolphin Mistral 24B).
+ * Reputable open-weight uncensored instruct model via OpenRouter.
+ * @see https://openrouter.ai/cognitivecomputations/dolphin-mistral-24b-venice-edition
+ */
+export const OPENROUTER_VENICE_UNCENSORED =
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition";
+
+/**
+ * Zero-cost OpenRouter free-tier model (not uncensored-branded).
+ * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
+ */
+export const OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+
+/** Env names checked for an OpenRouter key (first non-empty wins). */
+export const OPENROUTER_KEY_ENV_NAMES = [
+  "OPENROUTER_API_KEY",
+  "ANIMA_OPENROUTER_API_KEY",
+  "OPEN_ROUTER_API_KEY",
+] as const;
+
 /** Normalize env keys that were pasted with surrounding quotes or whitespace. */
 export function normalizeApiKey(raw: string | undefined): string | null {
   if (!raw) return null;
-  let key = raw.trim();
+  let key = raw.replace(/^\uFEFF/, "").trim();
   if (
     (key.startsWith('"') && key.endsWith('"')) ||
     (key.startsWith("'") && key.endsWith("'"))
   ) {
     key = key.slice(1, -1).trim();
   }
+  // Dashboard / curl pastes often include the Bearer prefix.
+  if (/^bearer\s+/i.test(key)) {
+    key = key.replace(/^bearer\s+/i, "").trim();
+  }
+  key = key.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "").trim();
   return key || null;
 }
 
@@ -233,11 +265,75 @@ export function getLocalLlmClient(): OpenAI | null {
   return localLlmClient;
 }
 
+/** OpenRouter API key — free signup at https://openrouter.ai/keys */
+export function hasOpenRouterKey(): boolean {
+  return Boolean(getOpenRouterApiKey());
+}
+
+export function getOpenRouterApiKey(): string | null {
+  for (const name of OPENROUTER_KEY_ENV_NAMES) {
+    const key = normalizeApiKey(process.env[name]);
+    if (key) return key;
+  }
+  return null;
+}
+
+/** Which env var supplied the OpenRouter key (secret-free). */
+export function getOpenRouterApiKeySource(): string | null {
+  for (const name of OPENROUTER_KEY_ENV_NAMES) {
+    if (normalizeApiKey(process.env[name])) return name;
+  }
+  return null;
+}
+
+/** Last 4 characters of the configured OpenRouter key, or null. */
+export function openRouterKeyFingerprint(): string | null {
+  const key = getOpenRouterApiKey();
+  if (!key || key.length < 8) return null;
+  return key.slice(-4);
+}
+
+/**
+ * OpenAI-compatible OpenRouter client for free / uncensored open-weight chat.
+ * Returns null when no OpenRouter key is configured.
+ */
+export function getOpenRouterClient(): OpenAI | null {
+  const apiKey = getOpenRouterApiKey();
+  if (!apiKey) return null;
+  const baseURL = (
+    process.env.ANIMA_OPENROUTER_BASE_URL?.trim() || OPENROUTER_BASE_URL
+  ).replace(/\/$/, "");
+  const referer =
+    process.env.ANIMA_OPENROUTER_HTTP_REFERER?.trim() ||
+    "https://www.anima-protocol.com";
+  const title =
+    process.env.ANIMA_OPENROUTER_APP_TITLE?.trim() || "Anima Protocol";
+  const cacheKey = `${baseURL}::${apiKey}::${referer}::${title}`;
+  if (!openRouterClient || openRouterClientKey !== cacheKey) {
+    openRouterClient = new OpenAI({
+      apiKey,
+      baseURL,
+      maxRetries: 0,
+      defaultHeaders: {
+        "HTTP-Referer": referer,
+        "X-Title": title,
+      },
+    });
+    openRouterClientKey = cacheKey;
+    console.info(
+      `[llm] openrouter client: host=openrouter.ai uncensored=${OPENROUTER_VENICE_UNCENSORED}`,
+    );
+  }
+  return openRouterClient;
+}
+
 /** Test helper — clears cached SDK clients between cases. */
 export function resetLlmClientsForTests(): void {
   openaiClient = null;
   openaiClientKey = null;
   localLlmClient = null;
   localLlmClientKey = null;
+  openRouterClient = null;
+  openRouterClientKey = null;
   resetLocalLlmInitLogForTests();
 }
