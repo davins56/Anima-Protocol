@@ -370,7 +370,7 @@ export default function Chat() {
       });
     }
     lastMessageCountRef.current = currentCount;
-  }, [activeSession?.messages];
+  } [activeSession?.messages];
 
   // Helper: speak a message using ElevenLabs with emotional adjustment
   const speakMessage = useCallback((content, charName) => {
