@@ -358,13 +358,6 @@ export default function MainHome() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
           className="relative w-full text-left border border-cyan-500/20 hover:border-cyan-400/50 bg-cyan-950/5 hover:bg-cyan-950/10 p-5 group cursor-pointer transition-colors"
-          >
-          {/* Greeting box */}
-          <motion.div
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            className="relative w-full text-left border border-cyan-500/20 bg-cyan-950/5 p-5"
         >
           <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
@@ -385,7 +378,6 @@ export default function MainHome() {
             <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
           </div>
         </motion.button>
-        </motion.div>
 
         {/* Customise Anima — dedicated look section */}
         <motion.section
