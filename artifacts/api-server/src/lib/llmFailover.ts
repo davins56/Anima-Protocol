@@ -42,7 +42,7 @@ import {
   listLocalModels,
   rememberModelSubstitution,
 } from "./localModelCatalog";
-import { resolveModelSpec } from "@workspace/llm";
+import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 
 const CLOUD_FLAGSHIP_SETUP_HINT =
   "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. " +
@@ -190,14 +190,23 @@ export function resetOpenRouterCreditFallbackForTests(): void {
   openRouterCreditFallback = false;
 }
 
+function resolveOpenRouterFamilyModel(): string | null {
+  const family =
+    process.env.ANIMA_OPENROUTER_MODEL_FAMILY?.trim() ||
+    process.env.ANIMA_OPEN_WEIGHT_MODEL_FAMILY?.trim();
+  return getOpenWeightChatModel(family)?.openRouterModel ?? null;
+}
+
 /** Resolve OpenRouter model for a tier (Venice Uncensored by default). */
 export function resolveOpenRouterModel(tier: ModelTier): ResolvedModel {
   const tierKey = `ANIMA_OPENROUTER_MODEL_${tier.toUpperCase()}` as const;
   const fromTier = process.env[tierKey]?.trim();
   const fromStandard = process.env.ANIMA_OPENROUTER_MODEL_STANDARD?.trim();
+  const fromFamily = resolveOpenRouterFamilyModel();
   let model =
     fromTier ||
     fromStandard ||
+    fromFamily ||
     (preferOpenRouterFreeTier() ? OPENROUTER_FREE_MODEL : OPENROUTER_VENICE_UNCENSORED);
   if (openRouterCreditFallback && !isOpenRouterFreeModel(model)) {
     model = OPENROUTER_FREE_MODEL;

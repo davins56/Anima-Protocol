@@ -34,6 +34,7 @@
 
 export type ProviderName = "openai" | "groq" | "ollama" | "vllm" | "mock";
 export type ModelTier = "light" | "standard" | "heavy";
+export type OpenWeightModelFamily = "llama" | "qwen" | "mistral" | "gemma" | "deepseek";
 
 export const PROVIDER_NAMES: ProviderName[] = [
   "openai",
@@ -43,6 +44,13 @@ export const PROVIDER_NAMES: ProviderName[] = [
   "mock",
 ];
 export const MODEL_TIERS: ModelTier[] = ["light", "standard", "heavy"];
+export const OPEN_WEIGHT_MODEL_FAMILIES: OpenWeightModelFamily[] = [
+  "llama",
+  "qwen",
+  "mistral",
+  "gemma",
+  "deepseek",
+];
 /**
  * Matches the api-server's actual default (llmFailover.ts `defaultProviderMode()`
  * returns "local" when ANIMA_LLM_PROVIDER is unset, which resolves to ollama here).
@@ -73,6 +81,72 @@ export const ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
 /** Ollama tag after fine-tune GGUF + Modelfile.anima-ministral8b (GPU upgrade). */
 export const ANIMA_OLLAMA_TAG = "anima-ministral8b";
 
+export interface OpenWeightChatModel {
+  family: OpenWeightModelFamily;
+  label: string;
+  aliases: string[];
+  ollamaModel: string;
+  vllmModel: string;
+  openRouterModel: string;
+  maxTokens: number;
+  notes: string;
+}
+
+const OPEN_WEIGHT_CHAT_MODELS: Record<OpenWeightModelFamily, OpenWeightChatModel> = {
+  llama: {
+    family: "llama",
+    label: "Llama",
+    aliases: ["llama", "meta-llama"],
+    ollamaModel: "llama3.1:8b",
+    vllmModel: "meta-llama/Llama-3.1-8B-Instruct",
+    openRouterModel: "meta-llama/llama-3.3-70b-instruct:free",
+    maxTokens: 8192,
+    notes: "Strong general-purpose open-weight chat baseline.",
+  },
+  qwen: {
+    family: "qwen",
+    label: "Qwen",
+    aliases: ["qwen", "qwen2", "qwen3"],
+    ollamaModel: ANIMA_BOOTSTRAP_BASE_MODEL,
+    vllmModel: "Qwen/Qwen2.5-7B-Instruct",
+    openRouterModel: "qwen/qwen-2.5-7b-instruct:free",
+    maxTokens: 8192,
+    notes: "Current CPU bootstrap path for Anima via Ollama.",
+  },
+  mistral: {
+    family: "mistral",
+    label: "Mistral",
+    aliases: ["mistral", "ministral"],
+    ollamaModel: "mistral:7b",
+    vllmModel: ANIMA_PRIMARY_MODEL,
+    openRouterModel: "mistralai/mistral-small-3.2-24b-instruct:free",
+    maxTokens: 8192,
+    notes: "Recommended GPU upgrade family for Anima fine-tuning.",
+  },
+  gemma: {
+    family: "gemma",
+    label: "Gemma",
+    aliases: ["gemma", "google/gemma"],
+    ollamaModel: "gemma3:4b",
+    vllmModel: "google/gemma-3-4b-it",
+    openRouterModel: "google/gemma-3-12b-it:free",
+    maxTokens: 8192,
+    notes: "Compact open model family for lightweight companion deployments.",
+  },
+  deepseek: {
+    family: "deepseek",
+    label: "DeepSeek",
+    aliases: ["deepseek", "deepseek-r1"],
+    ollamaModel: "deepseek-r1:7b",
+    vllmModel: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    openRouterModel: "deepseek/deepseek-r1:free",
+    maxTokens: 8192,
+    notes: "Reasoning-oriented open-weight family for analytical turns.",
+  },
+};
+
+const ADDITIONAL_KNOWN_CHAT_ALIASES = ["phi", "hermes", "olmo"];
+
 /** Sampling / decoding parameters applied to a model call. */
 export interface SamplingPreset {
   temperature: number;
@@ -100,6 +174,35 @@ export interface ModelSpec {
   /** Model spec id to retry when the routed model is unavailable. */
   fallback?: string;
   description: string;
+}
+
+/** Recommended open-weight chat families operators can plug into Anima. */
+export function listOpenWeightChatModels(): OpenWeightChatModel[] {
+  return OPEN_WEIGHT_MODEL_FAMILIES.map((family) => ({ ...OPEN_WEIGHT_CHAT_MODELS[family] }));
+}
+
+/** Resolve a known open-weight family name or alias. */
+export function getOpenWeightChatModel(
+  family: string | null | undefined,
+): OpenWeightChatModel | null {
+  const raw = (family || "").trim().toLowerCase();
+  if (!raw) return null;
+  return (
+    listOpenWeightChatModels().find(
+      (model) => model.family === raw || model.aliases.some((alias) => alias === raw),
+    ) ?? null
+  );
+}
+
+/** True when an arbitrary served model id belongs to a supported chat family. */
+export function isKnownOpenWeightChatModel(modelId: string): boolean {
+  const id = modelId.trim().toLowerCase();
+  if (!id) return false;
+  return (
+    listOpenWeightChatModels().some((model) =>
+      model.aliases.some((alias) => id.includes(alias)),
+    ) || ADDITIONAL_KNOWN_CHAT_ALIASES.some((alias) => id.includes(alias))
+  );
 }
 
 interface TierDefaults {
