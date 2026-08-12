@@ -702,12 +702,12 @@ export default function MainHome() {
             <QuickAction
               icon={Wand2}
               label="Customise Anima"
-              desc="Shape their look"
+              desc="Look, personality & voice"
               onClick={() =>
                 navigate(
                   anima?.id
-                    ? `/customise-anima?anima=${anima.id}`
-                    : "/customise-anima",
+                    ? `/customise-anima?anima=${anima.id}&tab=look`
+                    : "/customise-anima?tab=look",
                 )
               }
             />
