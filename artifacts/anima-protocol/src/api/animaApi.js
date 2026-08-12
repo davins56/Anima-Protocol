@@ -146,4 +146,15 @@ export const animaApi = {
       return { content, ...done };
     },
   },
+
+  codeRepair: {
+    analyze: ({ issue, context } = {}) =>
+      request("/code-repair/analyze", {
+        method: "POST",
+        body: JSON.stringify({
+          issue,
+          context,
+        }),
+      }).then((r) => r.json()),
+  },
 };

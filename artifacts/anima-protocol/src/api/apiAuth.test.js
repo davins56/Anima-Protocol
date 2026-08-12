@@ -37,6 +37,22 @@ describe('API auth bridge', () => {
     expect(options.credentials).toBe('same-origin');
   });
 
+  it('posts code repair analysis requests through the authenticated API helper', async () => {
+    await animaApi.codeRepair.analyze({
+      issue: 'OpenRouter 429 free-models-per-day',
+      context: { surface: 'test' },
+    });
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(String(url)).toContain('/api/code-repair/analyze');
+    expect(options.method).toBe('POST');
+    expect(options.headers.Authorization).toBe('Bearer test-token');
+    expect(JSON.parse(options.body)).toEqual({
+      issue: 'OpenRouter 429 free-models-per-day',
+      context: { surface: 'test' },
+    });
+  });
+
   it('unwraps a double-wrapped token getter instead of stringifying the function', async () => {
     // Classic mistake: treating setAuthTokenGetter like React setState.
     setAuthTokenGetter(() => async () => 'unwrapped-token');

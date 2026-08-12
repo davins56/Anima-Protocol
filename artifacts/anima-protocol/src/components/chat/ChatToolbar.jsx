@@ -1,4 +1,4 @@
-import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare } from "lucide-react";
+import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare, Wrench } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -9,6 +9,7 @@ import EmotionalSoundscapeControl from "@/components/audio/EmotionalSoundscapeCo
 import ChatHeader from "./ChatHeader";
 import VoiceInteractionPanel from "@/components/voice/VoiceInteractionPanel";
 import StoryDocumentUpload from "./StoryDocumentUpload";
+import CodeRepairConsole from "./CodeRepairConsole";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function ChatToolbar({
@@ -40,6 +41,7 @@ export default function ChatToolbar({
 }) {
   const [showActionsPanel, setShowActionsPanel] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
+  const [showCodeRepair, setShowCodeRepair] = useState(false);
 
   return (
     <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
@@ -173,6 +175,15 @@ export default function ChatToolbar({
                       <Upload className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="font-mono text-[10px] tracking-widest uppercase">Upload Docs</span>
                     </button>
+                    <button
+                      onClick={() => { setShowCodeRepair(!showCodeRepair); setShowActionsPanel(false); }}
+                      className={`flex items-center gap-3 px-2 py-2 transition-all rounded text-left ${
+                        showCodeRepair ? "text-primary bg-primary/10" : "text-primary/50 hover:text-primary hover:bg-primary/5"
+                      }`}
+                    >
+                      <Wrench className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="font-mono text-[10px] tracking-widest uppercase">Repair Console</span>
+                    </button>
                   </div>
                 </div>
 
@@ -268,6 +279,12 @@ export default function ChatToolbar({
             onDocumentProcessed={() => setShowDocUpload(false)}
           />
         </div>
+      )}
+      {showCodeRepair && (
+        <CodeRepairConsole
+          sessionId={activeSession?.id}
+          onClose={() => setShowCodeRepair(false)}
+        />
       )}
     </div>
   );
