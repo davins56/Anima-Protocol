@@ -1,20 +1,40 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import AnimaCustomizer from "@/components/anima/AnimaCustomizer";
-import { ChevronLeft, Loader, Sparkles, UserCircle } from "lucide-react";
+import AnimaPersonalityPanel from "@/components/anima/AnimaPersonalityPanel";
+import AnimaSoulprintPanel from "@/components/anima/AnimaSoulprintPanel";
+import AnimaVoicePanel from "@/components/anima/AnimaVoicePanel";
+import {
+  ChevronLeft,
+  Fingerprint,
+  Loader,
+  Mic,
+  Palette,
+  Sparkles,
+  UserCircle,
+} from "lucide-react";
+import { normalizeCustomiseAnimaTab } from "@/lib/customiseAnimaTabs";
+
+const TABS = [
+  { id: "look", label: "Look", icon: Palette, blurb: "Portrait, theme & appearance" },
+  { id: "personality", label: "Personality", icon: UserCircle, blurb: "Name, traits & voice of mind" },
+  { id: "soulprint", label: "Soulprint", icon: Fingerprint, blurb: "Born identity & bond" },
+  { id: "voice", label: "Voice", icon: Mic, blurb: "Spoken presence" },
+];
 
 /**
- * Dedicated page to customise the look of the user's personal Anima.
- * Optional `?anima=<id>` selects a specific companion; otherwise the active
- * (assigned) Anima is used.
+ * Complete Customise Anima hub: Look · Personality · Soulprint · Voice.
+ * Deep links: `?anima=<id>&tab=look|personality|soulprint|voice`
  */
 export default function CustomiseAnima() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedId = searchParams.get("anima");
+  const activeTab = normalizeCustomiseAnimaTab(searchParams.get("tab"));
 
+  const [animas, setAnimas] = useState([]);
   const [anima, setAnima] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -33,16 +53,17 @@ export default function CustomiseAnima() {
         ]);
         if (cancelled) return;
 
-        const animas = list || [];
+        const rows = list || [];
+        setAnimas(rows);
+
         let selected = null;
         if (requestedId) {
-          selected = animas.find((a) => a.id === requestedId) || null;
+          selected = rows.find((a) => a.id === requestedId) || null;
         }
         if (!selected && me?.email) {
-          selected =
-            animas.find((a) => a.assigned_user === me.email) || null;
+          selected = rows.find((a) => a.assigned_user === me.email) || null;
         }
-        if (!selected) selected = animas[0] || null;
+        if (!selected) selected = rows[0] || null;
 
         setAnima(selected);
         if (!selected) {
@@ -63,40 +84,52 @@ export default function CustomiseAnima() {
     };
   }, [requestedId]);
 
+  const setTab = (tabId) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", tabId);
+    if (anima?.id) next.set("anima", anima.id);
+    setSearchParams(next, { replace: true });
+  };
+
+  const selectAnima = (id) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("anima", id);
+    next.set("tab", activeTab);
+    setSearchParams(next, { replace: true });
+  };
+
+  const mergeAnima = (patch) => {
+    setAnima((prev) => (prev ? { ...prev, ...patch } : prev));
+    setAnimas((prev) =>
+      prev.map((row) => (row.id === anima?.id ? { ...row, ...patch } : row)),
+    );
+  };
+
+  const activeMeta = useMemo(
+    () => TABS.find((t) => t.id === activeTab) || TABS[0],
+    [activeTab],
+  );
+
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 pb-[calc(var(--tab-bar-height,64px)+1.5rem)]">
       <div className="max-w-5xl mx-auto space-y-5">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="text-primary/40 hover:text-primary transition-colors"
+            className="text-primary/40 hover:text-primary transition-colors mt-1"
             aria-label="Back"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 space-y-1">
             <h1 className="font-mono text-xl sm:text-2xl text-primary glow-text tracking-[0.2em] uppercase">
               // Customise Anima
             </h1>
-            <p className="text-[10px] font-mono text-primary/40 mt-1 tracking-widest">
-              Personalise the look of your companion
+            <p className="text-[10px] font-mono text-primary/40 tracking-widest">
+              Look · personality · soulprint · voice — one place to shape your companion
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              navigate(
-                anima?.id
-                  ? `/customize?tab=animas&character=${anima.id}`
-                  : "/customize?tab=animas",
-              )
-            }
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-[9px] tracking-widest uppercase transition-colors"
-          >
-            <UserCircle className="w-3.5 h-3.5" />
-            Personality
-          </button>
         </div>
 
         {loading ? (
@@ -107,12 +140,106 @@ export default function CustomiseAnima() {
             </p>
           </div>
         ) : anima ? (
-          <AnimaCustomizer
-            key={anima.id}
-            anima={anima}
-            variant="page"
-            onSave={(patch) => setAnima((prev) => (prev ? { ...prev, ...patch } : prev))}
-          />
+          <>
+            {animas.length > 1 && (
+              <div className="border border-primary/15 bg-black/40 p-3 sm:p-4">
+                <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
+                  Companion
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {animas.map((row) => {
+                    const selected = row.id === anima.id;
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => selectAnima(row.id)}
+                        className={`flex items-center gap-2 px-3 py-2 border font-mono text-[10px] tracking-wider transition-all ${
+                          selected
+                            ? "border-primary/50 bg-primary/10 text-primary"
+                            : "border-primary/15 text-primary/45 hover:text-primary/75 hover:border-primary/35"
+                        }`}
+                      >
+                        <span className="w-6 h-6 border border-primary/25 overflow-hidden flex-shrink-0 bg-primary/5">
+                          {row.avatar_url ? (
+                            <img
+                              src={row.avatar_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="w-full h-full flex items-center justify-center text-[10px]">
+                              {(row.name || "?")[0]}
+                            </span>
+                          )}
+                        </span>
+                        <span className="truncate max-w-[9rem]">{row.name || "Anima"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div
+              className="flex overflow-x-auto border border-primary/20 bg-black/50"
+              role="tablist"
+              aria-label="Customise Anima sections"
+            >
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const selected = tab.id === activeTab;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setTab(tab.id)}
+                    className={`flex-shrink-0 flex items-center gap-2 px-4 py-3 font-mono text-[10px] tracking-[0.2em] uppercase border-b-2 transition-all ${
+                      selected
+                        ? "text-primary border-primary bg-primary/5"
+                        : "text-primary/35 border-transparent hover:text-primary/65"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="font-mono text-[10px] text-primary/35 tracking-widest">
+              {anima.name} · {activeMeta.blurb}
+            </p>
+
+            {activeTab === "look" && (
+              <AnimaCustomizer
+                key={`${anima.id}-look`}
+                anima={anima}
+                variant="page"
+                showHeader={false}
+                onSave={mergeAnima}
+              />
+            )}
+            {activeTab === "personality" && (
+              <AnimaPersonalityPanel
+                key={`${anima.id}-personality`}
+                anima={anima}
+                onSave={mergeAnima}
+              />
+            )}
+            {activeTab === "soulprint" && (
+              <AnimaSoulprintPanel key={`${anima.id}-soulprint`} anima={anima} />
+            )}
+            {activeTab === "voice" && (
+              <AnimaVoicePanel
+                key={`${anima.id}-voice`}
+                anima={anima}
+                onSave={mergeAnima}
+              />
+            )}
+          </>
         ) : (
           <div className="flex flex-col items-center justify-center py-16 gap-4 border border-primary/15 bg-primary/5 px-6 text-center">
             <Sparkles className="w-8 h-8 text-primary/40" />
@@ -120,8 +247,8 @@ export default function CustomiseAnima() {
               {error || "No personal Anima found yet."}
             </p>
             <p className="font-mono text-[10px] text-primary/40 tracking-widest max-w-md leading-relaxed">
-              Forge your companion first, then return here to shape their look —
-              skin colour, hair, outfit, eyes, art style, and more.
+              Forge your companion first, then return here to shape their look
+              (skin, hair, outfit, eyes), personality, soulprint, and voice.
             </p>
             <button
               type="button"

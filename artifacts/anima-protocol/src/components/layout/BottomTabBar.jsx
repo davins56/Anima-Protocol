@@ -32,7 +32,7 @@ const ALL_MODULES = [
   { label: "Memory Map", path: "/memory-map", icon: "🧠" },
   { label: "Inventory", path: "/inventory", icon: "🎒" },
   { label: "Characters", path: "/characters", icon: "👥" },
-  { label: "Customise Anima", path: "/customise-anima", icon: "✦" },
+  { label: "Customise Anima", path: "/customise-anima?tab=look", icon: "✦" },
   { label: "Check-In", path: "/check-in", icon: "✚" },
   { label: "Reflect Log", path: "/reflection-log", icon: "📝" },
 ];

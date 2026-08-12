@@ -401,11 +401,11 @@ export default function Settings() {
 
               <SectionTitle>Customise Anima</SectionTitle>
               <button
-                onClick={() => navigate("/customise-anima")}
+                onClick={() => navigate("/customise-anima?tab=look")}
                 className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
               >
                 <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
-                  Shape their look • skin, hair, outfit, eyes & style
+                  Look · personality · soulprint · voice
                 </div>
                 <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
                   <span className="flex items-center gap-2">
@@ -453,43 +453,39 @@ export default function Settings() {
                   </div>
                   <div className="space-y-2 min-w-0">
                     <p className="font-mono text-sm text-primary tracking-wider">
-                      Personalise the look of your companion
+                      Complete companion customiser
                     </p>
                     <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
-                      Choose skin colour, hair, outfit, eyes, setting, mood, and art style, then generate a new
-                      portrait for your personal Anima. Theme accent colour is saved with the look.
+                      Shape look (skin, hair, outfit, eyes), personality, soulprint,
+                      and spoken voice in one hub — then return to chat with a companion
+                      that feels uniquely yours.
                     </p>
                   </div>
                 </div>
                 <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
-                  <li>• Skin colour, hair, outfit, eyes, background, expression, art style</li>
-                  <li>• AI-generated portrait from your descriptions</li>
-                  <li>• Theme accent colour for your companion</li>
+                  <li>• Look — skin, hair, outfit, eyes; generate or upload a portrait</li>
+                  <li>• Personality — name, archetype, traits, speaking style</li>
+                  <li>• Soulprint — born-once identity & bond resonance</li>
+                  <li>• Voice — ElevenLabs catalog voice or custom clones</li>
                 </ul>
-                <button
-                  type="button"
-                  onClick={() => navigate("/customise-anima")}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
-                >
-                  <Wand2 className="w-4 h-4" />
-                  Open Customise Anima
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/customise-anima?tab=look")}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    Open Customiser
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/customise-anima?tab=personality")}
+                    className="w-full flex items-center justify-center gap-2 py-3 border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/45 font-mono text-xs tracking-widest uppercase transition-all"
+                  >
+                    Personality
+                  </button>
+                </div>
               </div>
-
-              <SectionTitle>Personality</SectionTitle>
-              <button
-                type="button"
-                onClick={() => navigate("/customize?tab=animas")}
-                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
-              >
-                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
-                  Name, tagline, voice & behaviour
-                </div>
-                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
-                  <span>Edit Anima personality</span>
-                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
-                </div>
-              </button>
             </div>
           )}
 
