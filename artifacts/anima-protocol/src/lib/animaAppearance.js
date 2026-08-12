@@ -4,6 +4,12 @@
 
 export const APPEARANCE_FEATURES = [
   {
+    key: "skin",
+    label: "Skin Colour",
+    placeholder: "e.g. warm medium brown, porcelain fair, deep ebony",
+    icon: "◎",
+  },
+  {
     key: "hair",
     label: "Hair",
     placeholder: "e.g. long silver wavy hair with braids",
@@ -45,6 +51,35 @@ export const EMPTY_APPEARANCE_PROMPTS = Object.fromEntries(
   APPEARANCE_FEATURES.map((f) => [f.key, ""]),
 );
 
+/** Rich descriptors so image models don't collapse vague skin labels to a default. */
+const SKIN_TONE_EXPANSIONS = {
+  "porcelain fair":
+    "very pale porcelain-fair skin with cool pink undertones; light complexion on face, neck, and hands (not tan, not brown)",
+  "light olive":
+    "light olive skin with soft green-gold undertones; lightly tanned Mediterranean complexion (not pale porcelain, not deep brown)",
+  "warm peach":
+    "warm peach / light beige skin with golden-pink undertones; fair-to-light complexion with a sunlit glow",
+  "golden tan":
+    "golden tan skin with warm yellow-gold undertones; clearly tanned medium-light complexion (not pale, not deep ebony)",
+  "warm medium brown":
+    "warm medium-brown skin with rich golden-bronze undertones; clearly brown complexion on face, neck, and hands (not pale, not light tan)",
+  "deep ebony":
+    "very deep ebony / dark brown skin with cool undertones and high melanin; unmistakably dark complexion on face, neck, and hands (not light, not tan, not medium-brown)",
+};
+
+/**
+ * Expand a short skin label into an unambiguous visual description.
+ * Custom free-text is kept and reinforced with face/neck/hands coverage.
+ */
+export function expandSkinToneDescriptor(raw) {
+  const skin = typeof raw === "string" ? raw.trim() : "";
+  if (!skin) return "";
+  const key = skin.toLowerCase();
+  const expanded = SKIN_TONE_EXPANSIONS[key];
+  if (expanded) return expanded;
+  return `${skin} skin tone — match this complexion exactly on face, neck, and hands; do not default to a different skin colour`;
+}
+
 export function normalizeAppearancePrompts(raw) {
   const out = { ...EMPTY_APPEARANCE_PROMPTS };
   if (!raw || typeof raw !== "object") return out;
@@ -58,13 +93,25 @@ export function normalizeAppearancePrompts(raw) {
 export function buildAppearanceImagePrompt(anima, prompts = {}) {
   const name = anima?.name || "your Anima";
   const archetype = anima?.archetype || "guardian";
-  const base = `A character portrait of ${name}, a ${archetype} archetype AI companion.`;
-  const personality = anima?.personality
-    ? `Personality: ${String(anima.personality).slice(0, 80)}.`
+  const skinRaw = typeof prompts.skin === "string" ? prompts.skin.trim() : "";
+  const skinDesc = expandSkinToneDescriptor(skinRaw);
+
+  // Hard constraint block first — image models overweight the opening tokens.
+  const skinBlock = skinDesc
+    ? [
+        `HARD REQUIREMENT — SKIN TONE: ${skinDesc}.`,
+        "The skin colour is the most important visual trait; render it accurately and consistently.",
+        "Do not lighten, darken, or ignore this complexion.",
+      ].join(" ")
     : "";
 
-  const featureParts = APPEARANCE_FEATURES.filter((f) =>
-    prompts[f.key]?.trim(),
+  const base = `Create a single character portrait of ${name}, a ${archetype} archetype AI companion.`;
+  const personality = anima?.personality
+    ? `Personality vibe (expression only, do not change skin): ${String(anima.personality).slice(0, 60)}.`
+    : "";
+
+  const featureParts = APPEARANCE_FEATURES.filter(
+    (f) => f.key !== "skin" && prompts[f.key]?.trim(),
   )
     .map((f) => {
       const labels = {
@@ -87,11 +134,27 @@ export function buildAppearanceImagePrompt(anima, prompts = {}) {
     .filter(Boolean)
     .join(", ");
 
-  return `${base} ${personality} ${featureParts}. ${defaults}. High quality, detailed, dramatic lighting, character-focused portrait.`.trim();
+  const skinClose = skinDesc
+    ? ` Final check: skin tone must remain ${skinRaw} (${skinDesc}).`
+    : "";
+
+  return [skinBlock, base, personality, featureParts, defaults, "High quality, detailed, even portrait lighting, character-focused.", skinClose]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function getAppearanceSuggestions(feature) {
   const map = {
+    skin: [
+      "porcelain fair",
+      "light olive",
+      "warm peach",
+      "golden tan",
+      "warm medium brown",
+      "deep ebony",
+    ],
     hair: [
       "long silver wavy",
       "short dark pixie cut",

@@ -4,7 +4,11 @@ import {
   ANIMA_OLLAMA_CHAT_TAG,
   ANIMA_PRIMARY_MODEL,
   describeModel,
+  getOpenWeightChatModel,
+  isKnownOpenWeightChatModel,
+  listOpenWeightChatModels,
   listModels,
+  OPEN_WEIGHT_MODEL_FAMILIES,
   resolveModelSpec,
   resolveProvider,
   samplingForOpenAI,
@@ -66,5 +70,30 @@ describe("registry", () => {
   it("describeModel includes alias", () => {
     const spec = resolveModelSpec("standard", "ollama");
     expect(describeModel(spec)).toContain("anima-base");
+  });
+
+  it("lists the supported open-weight chat families", () => {
+    expect(OPEN_WEIGHT_MODEL_FAMILIES).toEqual([
+      "llama",
+      "qwen",
+      "mistral",
+      "gemma",
+      "deepseek",
+    ]);
+    const models = listOpenWeightChatModels();
+    expect(models.map((model) => model.family)).toEqual(OPEN_WEIGHT_MODEL_FAMILIES);
+    for (const model of models) {
+      expect(model.ollamaModel).toBeTruthy();
+      expect(model.vllmModel).toBeTruthy();
+      expect(model.openRouterModel).toMatch(/:free$/);
+    }
+  });
+
+  it("resolves known open-weight aliases and served model ids", () => {
+    expect(getOpenWeightChatModel("Llama")?.family).toBe("llama");
+    expect(getOpenWeightChatModel("deepseek-r1")?.family).toBe("deepseek");
+    expect(isKnownOpenWeightChatModel("mistralai/Ministral-3-8B-Instruct-2512")).toBe(true);
+    expect(isKnownOpenWeightChatModel("google/gemma-3-4b-it")).toBe(true);
+    expect(isKnownOpenWeightChatModel("nomic-embed-text")).toBe(false);
   });
 });

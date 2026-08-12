@@ -22,6 +22,7 @@
     "llm:prepare-dpo": "pnpm --filter @workspace/llm run cli -- prepare-dpo",
     "llm:export-turns": "pnpm --filter @workspace/llm run cli -- export-turns",
     "llm:list-models": "pnpm --filter @workspace/llm run cli -- list-models --provider ollama",
+    "llm:list-open-models": "pnpm --filter @workspace/llm run cli -- list-open-models",
     "llm:serve-hint": "pnpm --filter @workspace/llm run cli -- serve-hint",
     "llm:test": "pnpm --filter @workspace/llm run test",
     "llm:stub": "node scripts/llm/dev-local-stub-server.mjs",

@@ -7,7 +7,38 @@ vi.mock("../src/lib/openaiClient", () => {
     chat: { completions: { create: (...args: unknown[]) => createMock(...args) } },
   };
   return {
+    OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
+    OPENROUTER_VENICE_UNCENSORED:
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    OPENROUTER_FREE_MODEL: "openai/gpt-oss-20b:free",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
+    hasOpenRouterKey: () =>
+      Boolean(
+        process.env.OPENROUTER_API_KEY?.trim() ||
+          process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+          process.env.OPEN_ROUTER_API_KEY?.trim(),
+      ),
+    getOpenRouterApiKey: () =>
+      process.env.OPENROUTER_API_KEY?.trim() ||
+      process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+      process.env.OPEN_ROUTER_API_KEY?.trim() ||
+      null,
+    getOpenRouterApiKeySource: () =>
+      process.env.OPENROUTER_API_KEY?.trim()
+        ? "OPENROUTER_API_KEY"
+        : process.env.ANIMA_OPENROUTER_API_KEY?.trim()
+          ? "ANIMA_OPENROUTER_API_KEY"
+          : process.env.OPEN_ROUTER_API_KEY?.trim()
+            ? "OPEN_ROUTER_API_KEY"
+            : null,
+    openRouterKeyFingerprint: () => {
+      const key =
+        process.env.OPENROUTER_API_KEY?.trim() ||
+        process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+        process.env.OPEN_ROUTER_API_KEY?.trim();
+      return key && key.length >= 8 ? key.slice(-4) : null;
+    },
+    getOpenRouterClient: () => null,
     localLlmBaseUrl: () => "http://localhost:8000/v1",
     hasLocalLlm: () => true,
     summarizeLocalLlmBaseUrl: () => ({
@@ -23,6 +54,7 @@ vi.mock("../src/lib/openaiClient", () => {
     getOpenAIClient: () => client,
     getLocalLlmClient: () => client,
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
+    localLlmMaxRetries: () => 2,
     resetLlmClientsForTests: () => {},
   };
 });

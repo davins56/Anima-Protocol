@@ -181,7 +181,7 @@ export default function CharacterCustomization() {
           <ul className="text-[9px] font-mono text-primary/60 space-y-1 ml-4">
             <li>• <strong>Characters:</strong> Customize your story participants (OCs, canon characters)</li>
             <li>• <strong>Animas:</strong> Customize Serenity and other companion AI personalities</li>
-            <li>• <strong>Look:</strong> Use <button type="button" onClick={() => navigate(characterId && tab === "animas" ? `/customise-anima?anima=${characterId}` : "/customise-anima")} className="underline text-primary/80 hover:text-primary">Customise Anima</button> to reshape hair, outfit, eyes & art style</li>
+            <li>• <strong>Full customiser:</strong> Use <button type="button" onClick={() => navigate(characterId && tab === "animas" ? `/customise-anima?anima=${characterId}&tab=look` : "/customise-anima?tab=look")} className="underline text-primary/80 hover:text-primary">Customise Anima</button> for look (skin, hair, outfit, eyes), personality, soulprint & voice</li>
             <li>• <strong>Personality:</strong> AI uses this to inform dialogue and decisions</li>
             <li>• <strong>Speaking Style:</strong> Influences tone, vocabulary, and mannerisms</li>
             <li>• <strong>Avatar:</strong> Upload an image URL to display the character</li>
