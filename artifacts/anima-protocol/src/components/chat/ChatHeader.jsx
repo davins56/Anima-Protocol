@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles } from "lucide-react";
+import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
@@ -181,6 +181,25 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
         >
           <Sparkles className="w-2.5 h-2.5" />
           <span className="hidden sm:inline">Deep</span>
+        </button>
+      )}
+
+      {/* Customise Anima — solo sessions with a personal Anima companion */}
+      {!isGroup && primaryChar?._isAnima && (
+        <button
+          type="button"
+          onClick={() =>
+            navigate(
+              primaryChar.id
+                ? `/customise-anima?anima=${primaryChar.id}&tab=look`
+                : "/customise-anima?tab=look",
+            )
+          }
+          title={`Customise ${primaryChar.name}`}
+          className="flex items-center gap-1 px-2 py-1 border border-primary/20 text-primary/30 hover:text-primary/70 hover:border-primary/40 font-mono text-[8px] sm:text-[9px] tracking-widest uppercase transition-all"
+        >
+          <Palette className="w-2.5 h-2.5" />
+          <span className="hidden sm:inline">Customise</span>
         </button>
       )}
 
