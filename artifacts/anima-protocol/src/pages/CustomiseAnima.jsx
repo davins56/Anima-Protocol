@@ -121,7 +121,7 @@ export default function CustomiseAnima() {
             </p>
             <p className="font-mono text-[10px] text-primary/40 tracking-widest max-w-md leading-relaxed">
               Forge your companion first, then return here to shape their look —
-              hair, outfit, eyes, art style, and more.
+              skin colour, hair, outfit, eyes, art style, and more.
             </p>
             <button
               type="button"

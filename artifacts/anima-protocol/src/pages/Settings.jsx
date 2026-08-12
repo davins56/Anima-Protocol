@@ -405,7 +405,7 @@ export default function Settings() {
                 className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
               >
                 <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
-                  Shape their look • hair, outfit, eyes & style
+                  Shape their look • skin, hair, outfit, eyes & style
                 </div>
                 <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
                   <span className="flex items-center gap-2">
@@ -456,13 +456,13 @@ export default function Settings() {
                       Personalise the look of your companion
                     </p>
                     <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
-                      Choose hair, outfit, eyes, setting, mood, and art style, then generate a new
+                      Choose skin colour, hair, outfit, eyes, setting, mood, and art style, then generate a new
                       portrait for your personal Anima. Theme accent colour is saved with the look.
                     </p>
                   </div>
                 </div>
                 <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
-                  <li>• Hair, outfit, eyes, background, expression, art style</li>
+                  <li>• Skin colour, hair, outfit, eyes, background, expression, art style</li>
                   <li>• AI-generated portrait from your descriptions</li>
                   <li>• Theme accent colour for your companion</li>
                 </ul>
