@@ -44,11 +44,13 @@ describe("buildAppearanceImagePrompt", () => {
     );
     expect(prompt).toContain("Serenity");
     expect(prompt).toContain("guardian");
-    expect(prompt).toContain("Skin colour / complexion: deep ebony");
+    expect(prompt).toMatch(/with deep ebony skin tone/i);
+    expect(prompt).toContain("Skin colour / complexion (required): deep ebony");
     expect(prompt).toContain("Hair: long silver wavy");
     expect(prompt).toContain("Eyes: glowing violet");
     expect(prompt).toContain("Art style: anime illustration");
     expect(prompt).toContain("character-focused portrait");
+    expect(prompt).toMatch(/accurately depict deep ebony skin colour/i);
   });
 
   it("applies defaults when style/setting/mood are empty", () => {

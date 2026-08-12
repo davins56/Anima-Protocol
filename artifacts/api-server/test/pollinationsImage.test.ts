@@ -31,23 +31,26 @@ describe("buildPollinationsImageUrl", () => {
   afterEach(() => {
     delete process.env.POLLINATIONS_BASE_URL;
     delete process.env.POLLINATIONS_MODEL;
+    delete process.env.POLLINATIONS_ENHANCE;
   });
 
-  it("encodes the prompt and defaults to flux at 1024", () => {
-    const url = buildPollinationsImageUrl("a neon anima portrait");
+  it("encodes the prompt and defaults to sana at 1024 with enhance", () => {
+    const url = buildPollinationsImageUrl("a neon anima portrait", { seed: 42 });
     expect(url).toContain("https://image.pollinations.ai/prompt/");
     expect(url).toContain(encodeURIComponent("a neon anima portrait"));
-    expect(url).toContain("model=flux");
+    expect(url).toContain("model=sana");
     expect(url).toContain("width=1024");
     expect(url).toContain("height=1024");
     expect(url).toContain("nologo=true");
     expect(url).toContain("private=true");
+    expect(url).toContain("enhance=true");
+    expect(url).toContain("seed=42");
   });
 
   it("honors model override", () => {
     process.env.POLLINATIONS_MODEL = "turbo";
     expect(pollinationsModel()).toBe("turbo");
-    const url = buildPollinationsImageUrl("test", { model: "turbo" });
+    const url = buildPollinationsImageUrl("test", { model: "turbo", seed: 1 });
     expect(url).toContain("model=turbo");
   });
 });
@@ -71,7 +74,7 @@ describe("generateImageWithPollinations", () => {
 
     const result = await generateImageWithPollinations("cyberpunk anima");
     expect(result.provider).toBe("pollinations");
-    expect(result.model).toBe("flux");
+    expect(result.model).toBe("sana");
     expect(result.image).toMatch(/^data:image\/jpeg;base64,/);
   });
 

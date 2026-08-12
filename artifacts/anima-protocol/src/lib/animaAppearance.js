@@ -64,7 +64,17 @@ export function normalizeAppearancePrompts(raw) {
 export function buildAppearanceImagePrompt(anima, prompts = {}) {
   const name = anima?.name || "your Anima";
   const archetype = anima?.archetype || "guardian";
-  const base = `A character portrait of ${name}, a ${archetype} archetype AI companion.`;
+  const skin = typeof prompts.skin === "string" ? prompts.skin.trim() : "";
+  // Lead with skin so complexion survives prompt truncation and weaker models.
+  const skinLead = skin
+    ? `with ${skin} skin tone (this complexion is required and must be clearly visible on face, neck, and hands)`
+    : "";
+  const base = [
+    `A character portrait of ${name}, a ${archetype} archetype AI companion`,
+    skinLead,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const personality = anima?.personality
     ? `Personality: ${String(anima.personality).slice(0, 80)}.`
     : "";
@@ -74,7 +84,7 @@ export function buildAppearanceImagePrompt(anima, prompts = {}) {
   )
     .map((f) => {
       const labels = {
-        skin: `Skin colour / complexion: ${prompts.skin}`,
+        skin: `Skin colour / complexion (required): ${prompts.skin}`,
         hair: `Hair: ${prompts.hair}`,
         outfit: `Outfit: ${prompts.outfit}`,
         eyes: `Eyes: ${prompts.eyes}`,
@@ -94,7 +104,11 @@ export function buildAppearanceImagePrompt(anima, prompts = {}) {
     .filter(Boolean)
     .join(", ");
 
-  return `${base} ${personality} ${featureParts}. ${defaults}. High quality, detailed, dramatic lighting, character-focused portrait.`.trim();
+  const skinReminder = skin
+    ? ` Critical: accurately depict ${skin} skin colour throughout the portrait.`
+    : "";
+
+  return `${base}. ${personality} ${featureParts}. ${defaults}. High quality, detailed, dramatic lighting, character-focused portrait.${skinReminder}`.trim();
 }
 
 export function getAppearanceSuggestions(feature) {

@@ -1242,7 +1242,7 @@ router.post("/image-edit", async (req, res) => {
 
 // AI image generation from a text prompt. Prefers OpenAI gpt-image-1 when
 // OPENAI_API_KEY is set; otherwise (or on OpenAI auth/quota/upstream failure)
-// uses the free Pollinations FLUX fallback so Customise Anima still populates.
+// uses the free Pollinations Sana fallback so Customise Anima still populates.
 // Auth is enforced by the router-level middleware above.
 router.post("/image-generate", async (req, res) => {
   const { prompt } = req.body as { prompt?: string };
