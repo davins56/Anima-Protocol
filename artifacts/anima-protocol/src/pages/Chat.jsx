@@ -1718,33 +1718,17 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         toast.success("Anima combined mind drafts.", {
           description: resultPayload.ensemble_minds.map(mindLabel).join(" · "),
         });
+      } else if (resultPayload.failed_over && resultPayload.provider === "openrouter") {
+        toast.success("Switched to Venice Uncensored via OpenRouter.", {
+          description: resultPayload.model
+            ? `Now using ${resultPayload.model}`
+            : "Open-weight uncensored fallback active",
+        });
       } else if (resultPayload.failed_over && resultPayload.brand === "anima") {
         toast.success("Anima routed to a backup model.", {
           description: resultPayload.model
             ? `Now using ${resultPayload.model}`
             : "Custom multi-model failover active",
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "kimi") {
-        toast.success("Switched to Kimi.", {
-          description: resultPayload.model
-            ? `Now using ${resultPayload.model}`
-            : "Kimi failover active for this session",
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "xai") {
-        toast.success("Switched to Grok — previous LLM was unavailable.", {
-          description: resultPayload.model
-            ? `Now using ${resultPayload.model}`
-            : "xAI failover active for this session",
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "openai") {
-        toast.success("Switched to ChatGPT — previous LLMs were unavailable.", {
-          description: resultPayload.model ? `Now using ${resultPayload.model}` : undefined,
-        });
-      } else if (resultPayload.failed_over && resultPayload.provider === "gateway") {
-        toast.success("Switched to AI Gateway — previous LLMs were unavailable.", {
-          description: resultPayload.model
-            ? `Now using ${resultPayload.model}`
-            : "Vercel AI Gateway failover active",
         });
       }
 
