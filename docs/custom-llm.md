@@ -11,7 +11,7 @@
 | DPO/ORPO preference pairs (Unsloth) | Sharpen character fidelity after SFT — corrects specific bad habits |
 | `ANIMA_LLM_PROVIDER=custom` | Api-server talks **only** to your model — no cloud chat BYOK |
 
-The React app still calls `POST /api/chat/messages`. The brain behind it is **yours** — chat has exactly one backend, the self-hosted Anima LLM. There is no cloud flagship fallback chain in the code (no Gemini/Groq/Kimi/Grok/ChatGPT chat routing exists to fall back to), so the app can never silently switch models on you.
+The React app still calls `POST /api/chat/messages`. The brain behind it is **yours** — preferred backend is the self-hosted Anima LLM. There is **no** Gemini/Groq/Kimi/Grok/ChatGPT flagship chain. Optional **OpenRouter** (Venice Uncensored / free open-weight models) can cover chat when local is unset or unreachable — still open weights, not a closed flagship.
 
 ---
 
@@ -212,20 +212,38 @@ curl -sS https://anima-chat-llm.fly.dev/v1/models \
   -H "Authorization: Bearer $NEW_TOKEN" | jq '.data[].id'
 ```
 
-### Exact fix — "Anima custom LLM is not configured…"
+### Exact fix — "Anima custom LLM is not configured…" / "No chat LLM configured"
 
-That error is intentional: `ANIMA_LOCAL_LLM_BASE_URL` is empty or the endpoint is unreachable, and there is no cloud fallback to fall through to.
+That error means neither a self-hosted endpoint nor OpenRouter is usable.
+
+**Fastest unblock (no GPU):** OpenRouter + Venice Uncensored (Cognitive Computations × Venice.ai Dolphin Mistral 24B — reputable open-weight uncensored). Free API key at https://openrouter.ai/keys:
+
+```bash
+OPENROUTER_API_KEY=sk-or-…
+# default model is Venice Uncensored; for zero-cost free-tier models instead:
+# ANIMA_OPENROUTER_FREE=true
+```
+
+Redeploy without build cache. Verify:
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{preferred,chain,openrouter,note}'
+# expect preferred/chain to include "openrouter"
+```
+
+**Self-hosted (preferred long-term):**
 
 1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
    - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
    - **One-paste VPS:** [`scripts/llm/cloud-init-vps.sh`](../scripts/llm/cloud-init-vps.sh) (`pnpm llm:vps-init`) — installs Ollama + `anima-chat` + a Cloudflare quick tunnel as systemd services on any fresh Debian/Ubuntu box. See [`docs/llm-deploy.md`](./llm-deploy.md).
+   - **Local uncensored:** `ollama pull dolphin-mistral && ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored` then set `ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored`.
    - Or run Ollama/vLLM anywhere else with a public HTTPS URL (a reverse proxy, Cloudflare Tunnel, ngrok, another cloud VM, …) — just make sure it's actually authenticated; Ollama has none built in.
 2. **Set these on Vercel (Production)** and redeploy **without build cache**:
 
 ```bash
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
-ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or the model id your server serves
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or anima-uncensored / your vLLM id
 ```
 
 ### "The model `anima-chat` does not exist or you do not have access to it"

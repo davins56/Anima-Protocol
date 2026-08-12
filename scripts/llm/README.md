@@ -4,8 +4,9 @@ Build a **chat LLM you own** — public open weights + local inference — so co
 
 ## Goals
 
-- Replace cloud chat APIs with a self-hosted Anima model — the only chat backend, no mode switch.
-- Bootstrap on a laptop (Ollama + Qwen2.5 3B → `anima-chat`).
+- Prefer a self-hosted Anima model (Ollama/vLLM) — no Gemini/Groq/ChatGPT flagship chain.
+- Optional OpenRouter path for Venice Uncensored (Cognitive Computations × Venice.ai) or free open-weight models when you have no GPU host.
+- Bootstrap on a laptop (Ollama + Qwen2.5 3B → `anima-chat`, or Dolphin → `anima-uncensored`).
 - Upgrade on GPU (fine-tune Ministral 3 8B → vLLM / GGUF).
 - Export conversation data in ShareGPT / ChatML / Alpaca JSONL.
 - Retrieve long-term memory before every generation.
@@ -19,6 +20,19 @@ pnpm llm:chat -- "Who are you?"
 export ANIMA_LOCAL_LLM_BACKEND=ollama
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+```
+
+### Uncensored (local Dolphin or OpenRouter Venice)
+
+```bash
+# Local (free forever once pulled):
+ollama pull dolphin-mistral
+ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored
+
+# Or OpenRouter (free API key at https://openrouter.ai/keys) — Venice Uncensored:
+export OPENROUTER_API_KEY=sk-or-…
+# Zero-cost free-tier models instead: ANIMA_OPENROUTER_FREE=true
 ```
 
 ### No GPU / no network to Ollama or Hugging Face? Smoke-test the wiring
