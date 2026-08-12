@@ -105514,138 +105514,90 @@ function getOpenRouterClient() {
   return openRouterClient;
 }
 
-// src/lib/localModelCatalog.ts
-var CATALOG_TTL_MS = 6e4;
-var CATALOG_ERROR_TTL_MS = 1e4;
-var SUBSTITUTION_TTL_MS = 10 * 6e4;
-var CATALOG_TIMEOUT_MS = 5e3;
-var NON_CHAT_MODEL_RE = /(embed|embedding|nomic|bge-|gte-|e5-|rerank|whisper|tts|voice|dall-?e|clip|moderation|stable-?diffusion|sdxl|flux)/i;
-var KNOWN_CHAT_FAMILY_RE = /(qwen|ministral|mistral|llama|phi|gemma|deepseek|hermes|olmo)/i;
-var catalogByBaseUrl = /* @__PURE__ */ new Map();
-var substitutions = /* @__PURE__ */ new Map();
-function cacheKey() {
-  return localLlmBaseUrl() ?? "(unconfigured)";
-}
-function normalizeModelId(id) {
-  return id.trim().toLowerCase().replace(/:latest$/, "");
-}
-async function extractModelIds(page) {
-  const ids = [];
-  const push2 = (entry) => {
-    if (!entry) return;
-    const id = typeof entry === "string" ? entry : typeof entry.id === "string" ? entry.id : null;
-    if (id && id.trim()) ids.push(id.trim());
-  };
-  if (Array.isArray(page)) {
-    page.forEach(push2);
-    return ids;
-  }
-  const data = page?.data;
-  if (Array.isArray(data)) {
-    data.forEach(push2);
-    return ids;
-  }
-  if (page && typeof page[Symbol.asyncIterator] === "function") {
-    for await (const entry of page) push2(entry);
-  }
-  return ids;
-}
-async function listLocalModels(client, opts = {}) {
-  const key = cacheKey();
-  const now = Date.now();
-  const cached2 = catalogByBaseUrl.get(key);
-  if (!opts.force && cached2 && cached2.expiresAt > now) {
-    return { models: cached2.models, ok: cached2.ok, error: cached2.error, cached: true };
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
-  try {
-    const page = await client.models.list({ signal: controller.signal });
-    const models = await extractModelIds(page);
-    catalogByBaseUrl.set(key, {
-      models,
-      ok: true,
-      error: null,
-      expiresAt: now + CATALOG_TTL_MS
-    });
-    return { models, ok: true, error: null, cached: false };
-  } catch (err) {
-    const error40 = (err instanceof Error ? err.message : String(err)).slice(0, 160);
-    catalogByBaseUrl.set(key, {
-      models: [],
-      ok: false,
-      error: error40,
-      expiresAt: now + CATALOG_ERROR_TTL_MS
-    });
-    return { models: [], ok: false, error: error40, cached: false };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-function scoreCandidate(preferred, candidate) {
-  const want = normalizeModelId(preferred);
-  const have = normalizeModelId(candidate);
-  if (!have) return -1;
-  if (NON_CHAT_MODEL_RE.test(have)) return -1;
-  if (want && have === want) return 1e3;
-  if (want && (have.startsWith(want) || want.startsWith(have))) return 900;
-  if (/^anima/.test(have)) return 800;
-  if (KNOWN_CHAT_FAMILY_RE.test(have)) return 600;
-  return 100;
-}
-function chooseLocalModel(preferred, available) {
-  let best = null;
-  for (const candidate of available) {
-    const score = scoreCandidate(preferred, candidate);
-    if (score < 0) continue;
-    if (!best || score > best.score) best = { model: candidate.trim(), score };
-  }
-  return best?.model ?? null;
-}
-function rememberModelSubstitution(preferred, actual) {
-  if (!preferred || !actual || normalizeModelId(preferred) === normalizeModelId(actual)) return;
-  substitutions.set(`${cacheKey()}::${normalizeModelId(preferred)}`, {
-    model: actual,
-    expiresAt: Date.now() + SUBSTITUTION_TTL_MS
-  });
-}
-function getRememberedModel(preferred) {
-  const key = `${cacheKey()}::${normalizeModelId(preferred)}`;
-  const hit = substitutions.get(key);
-  if (!hit) return null;
-  if (hit.expiresAt <= Date.now()) {
-    substitutions.delete(key);
-    return null;
-  }
-  return hit.model;
-}
-function forgetModelSubstitution(preferred) {
-  substitutions.delete(`${cacheKey()}::${normalizeModelId(preferred)}`);
-}
-function describeModelMismatch(preferred, available) {
-  const host = (() => {
-    const base = localLlmBaseUrl();
-    if (!base) return "the configured endpoint";
-    try {
-      return new URL(base).host;
-    } catch {
-      return "the configured endpoint";
-    }
-  })();
-  if (!available.length) {
-    return `The Anima LLM at ${host} does not serve a model named "${preferred}", and it reported no models at all. Check that the host is running and has weights loaded \u2014 on Ollama: \`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`. See docs/custom-llm.md.`;
-  }
-  const shown = available.slice(0, 10).join(", ");
-  const more = available.length > 10 ? `, +${available.length - 10} more` : "";
-  return `The Anima LLM at ${host} does not serve a model named "${preferred}". It serves: ${shown}${more}. Either create the expected tag (\`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`) or point ANIMA_OLLAMA_MODEL_LIGHT/_STANDARD/_HEAVY at one of the ids above, then redeploy. See docs/custom-llm.md.`;
-}
-
 // ../../lib/llm/src/registry.ts
 var MODEL_TIERS = ["light", "standard", "heavy"];
+var OPEN_WEIGHT_MODEL_FAMILIES = [
+  "llama",
+  "qwen",
+  "mistral",
+  "gemma",
+  "deepseek"
+];
 var DEFAULT_PROVIDER = "ollama";
 var ANIMA_PRIMARY_MODEL = "mistralai/Ministral-3-8B-Instruct-2512";
 var ANIMA_MEMORY_SPECIALIST_MODEL = "mistralai/Ministral-3-3B-Instruct-2512";
+var ANIMA_BOOTSTRAP_BASE_MODEL = "qwen2.5:3b";
 var ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
+var OPEN_WEIGHT_CHAT_MODELS = {
+  llama: {
+    family: "llama",
+    label: "Llama",
+    aliases: ["llama", "meta-llama"],
+    ollamaModel: "llama3.1:8b",
+    vllmModel: "meta-llama/Llama-3.1-8B-Instruct",
+    openRouterModel: "meta-llama/llama-3.3-70b-instruct:free",
+    maxTokens: 8192,
+    notes: "Strong general-purpose open-weight chat baseline."
+  },
+  qwen: {
+    family: "qwen",
+    label: "Qwen",
+    aliases: ["qwen", "qwen2", "qwen3"],
+    ollamaModel: ANIMA_BOOTSTRAP_BASE_MODEL,
+    vllmModel: "Qwen/Qwen2.5-7B-Instruct",
+    openRouterModel: "qwen/qwen-2.5-7b-instruct:free",
+    maxTokens: 8192,
+    notes: "Current CPU bootstrap path for Anima via Ollama."
+  },
+  mistral: {
+    family: "mistral",
+    label: "Mistral",
+    aliases: ["mistral", "ministral"],
+    ollamaModel: "mistral:7b",
+    vllmModel: ANIMA_PRIMARY_MODEL,
+    openRouterModel: "mistralai/mistral-small-3.2-24b-instruct:free",
+    maxTokens: 8192,
+    notes: "Recommended GPU upgrade family for Anima fine-tuning."
+  },
+  gemma: {
+    family: "gemma",
+    label: "Gemma",
+    aliases: ["gemma", "google/gemma"],
+    ollamaModel: "gemma3:4b",
+    vllmModel: "google/gemma-3-4b-it",
+    openRouterModel: "google/gemma-3-12b-it:free",
+    maxTokens: 8192,
+    notes: "Compact open model family for lightweight companion deployments."
+  },
+  deepseek: {
+    family: "deepseek",
+    label: "DeepSeek",
+    aliases: ["deepseek", "deepseek-r1"],
+    ollamaModel: "deepseek-r1:7b",
+    vllmModel: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    openRouterModel: "deepseek/deepseek-r1:free",
+    maxTokens: 8192,
+    notes: "Reasoning-oriented open-weight family for analytical turns."
+  }
+};
+var ADDITIONAL_KNOWN_CHAT_ALIASES = ["phi", "hermes", "olmo"];
+function listOpenWeightChatModels() {
+  return OPEN_WEIGHT_MODEL_FAMILIES.map((family) => ({ ...OPEN_WEIGHT_CHAT_MODELS[family] }));
+}
+function getOpenWeightChatModel(family) {
+  const raw = (family || "").trim().toLowerCase();
+  if (!raw) return null;
+  return listOpenWeightChatModels().find(
+    (model) => model.family === raw || model.aliases.some((alias) => alias === raw)
+  ) ?? null;
+}
+function isKnownOpenWeightChatModel(modelId) {
+  const id = modelId.trim().toLowerCase();
+  if (!id) return false;
+  return listOpenWeightChatModels().some(
+    (model) => model.aliases.some((alias) => id.includes(alias))
+  ) || ADDITIONAL_KNOWN_CHAT_ALIASES.some((alias) => id.includes(alias));
+}
 var OPENAI_DEFAULTS = {
   light: { model: "gpt-4.1-mini", maxTokens: 4096, description: "Cheap tier for greetings and small talk" },
   standard: { model: "gpt-4o", maxTokens: 8192, description: "Routine conversational turns" },
@@ -106051,6 +106003,131 @@ function truncateText(text2, max) {
   return clean.length > max ? `${clean.slice(0, max - 1)}\u2026` : clean;
 }
 
+// src/lib/localModelCatalog.ts
+var CATALOG_TTL_MS = 6e4;
+var CATALOG_ERROR_TTL_MS = 1e4;
+var SUBSTITUTION_TTL_MS = 10 * 6e4;
+var CATALOG_TIMEOUT_MS = 5e3;
+var NON_CHAT_MODEL_RE = /(embed|embedding|nomic|bge-|gte-|e5-|rerank|whisper|tts|voice|dall-?e|clip|moderation|stable-?diffusion|sdxl|flux)/i;
+var catalogByBaseUrl = /* @__PURE__ */ new Map();
+var substitutions = /* @__PURE__ */ new Map();
+function cacheKey() {
+  return localLlmBaseUrl() ?? "(unconfigured)";
+}
+function normalizeModelId(id) {
+  return id.trim().toLowerCase().replace(/:latest$/, "");
+}
+async function extractModelIds(page) {
+  const ids = [];
+  const push2 = (entry) => {
+    if (!entry) return;
+    const id = typeof entry === "string" ? entry : typeof entry.id === "string" ? entry.id : null;
+    if (id && id.trim()) ids.push(id.trim());
+  };
+  if (Array.isArray(page)) {
+    page.forEach(push2);
+    return ids;
+  }
+  const data = page?.data;
+  if (Array.isArray(data)) {
+    data.forEach(push2);
+    return ids;
+  }
+  if (page && typeof page[Symbol.asyncIterator] === "function") {
+    for await (const entry of page) push2(entry);
+  }
+  return ids;
+}
+async function listLocalModels(client, opts = {}) {
+  const key = cacheKey();
+  const now = Date.now();
+  const cached2 = catalogByBaseUrl.get(key);
+  if (!opts.force && cached2 && cached2.expiresAt > now) {
+    return { models: cached2.models, ok: cached2.ok, error: cached2.error, cached: true };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
+  try {
+    const page = await client.models.list({ signal: controller.signal });
+    const models = await extractModelIds(page);
+    catalogByBaseUrl.set(key, {
+      models,
+      ok: true,
+      error: null,
+      expiresAt: now + CATALOG_TTL_MS
+    });
+    return { models, ok: true, error: null, cached: false };
+  } catch (err) {
+    const error40 = (err instanceof Error ? err.message : String(err)).slice(0, 160);
+    catalogByBaseUrl.set(key, {
+      models: [],
+      ok: false,
+      error: error40,
+      expiresAt: now + CATALOG_ERROR_TTL_MS
+    });
+    return { models: [], ok: false, error: error40, cached: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function scoreCandidate(preferred, candidate) {
+  const want = normalizeModelId(preferred);
+  const have = normalizeModelId(candidate);
+  if (!have) return -1;
+  if (NON_CHAT_MODEL_RE.test(have)) return -1;
+  if (want && have === want) return 1e3;
+  if (want && (have.startsWith(want) || want.startsWith(have))) return 900;
+  if (/^anima/.test(have)) return 800;
+  if (isKnownOpenWeightChatModel(have)) return 600;
+  return 100;
+}
+function chooseLocalModel(preferred, available) {
+  let best = null;
+  for (const candidate of available) {
+    const score = scoreCandidate(preferred, candidate);
+    if (score < 0) continue;
+    if (!best || score > best.score) best = { model: candidate.trim(), score };
+  }
+  return best?.model ?? null;
+}
+function rememberModelSubstitution(preferred, actual) {
+  if (!preferred || !actual || normalizeModelId(preferred) === normalizeModelId(actual)) return;
+  substitutions.set(`${cacheKey()}::${normalizeModelId(preferred)}`, {
+    model: actual,
+    expiresAt: Date.now() + SUBSTITUTION_TTL_MS
+  });
+}
+function getRememberedModel(preferred) {
+  const key = `${cacheKey()}::${normalizeModelId(preferred)}`;
+  const hit = substitutions.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    substitutions.delete(key);
+    return null;
+  }
+  return hit.model;
+}
+function forgetModelSubstitution(preferred) {
+  substitutions.delete(`${cacheKey()}::${normalizeModelId(preferred)}`);
+}
+function describeModelMismatch(preferred, available) {
+  const host = (() => {
+    const base = localLlmBaseUrl();
+    if (!base) return "the configured endpoint";
+    try {
+      return new URL(base).host;
+    } catch {
+      return "the configured endpoint";
+    }
+  })();
+  if (!available.length) {
+    return `The Anima LLM at ${host} does not serve a model named "${preferred}", and it reported no models at all. Check that the host is running and has weights loaded \u2014 on Ollama: \`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`. See docs/custom-llm.md.`;
+  }
+  const shown = available.slice(0, 10).join(", ");
+  const more = available.length > 10 ? `, +${available.length - 10} more` : "";
+  return `The Anima LLM at ${host} does not serve a model named "${preferred}". It serves: ${shown}${more}. Either create the expected tag (\`ollama create ${preferred} -f scripts/llm/Modelfile.anima-chat\`) or point ANIMA_OLLAMA_MODEL_LIGHT/_STANDARD/_HEAVY at one of the ids above, then redeploy. See docs/custom-llm.md.`;
+}
+
 // src/lib/llmFailover.ts
 var CLOUD_FLAGSHIP_SETUP_HINT = "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy. Or set OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter.";
 function beginChatProviderTurn() {
@@ -106063,11 +106140,16 @@ function isOpenRouterFreeModel(model) {
   return model.trim().toLowerCase().endsWith(":free");
 }
 var openRouterCreditFallback = false;
+function resolveOpenRouterFamilyModel() {
+  const family = process.env.ANIMA_OPENROUTER_MODEL_FAMILY?.trim() || process.env.ANIMA_OPEN_WEIGHT_MODEL_FAMILY?.trim();
+  return getOpenWeightChatModel(family)?.openRouterModel ?? null;
+}
 function resolveOpenRouterModel(tier) {
   const tierKey = `ANIMA_OPENROUTER_MODEL_${tier.toUpperCase()}`;
   const fromTier = process.env[tierKey]?.trim();
   const fromStandard = process.env.ANIMA_OPENROUTER_MODEL_STANDARD?.trim();
-  let model = fromTier || fromStandard || (preferOpenRouterFreeTier() ? OPENROUTER_FREE_MODEL : OPENROUTER_VENICE_UNCENSORED);
+  const fromFamily = resolveOpenRouterFamilyModel();
+  let model = fromTier || fromStandard || fromFamily || (preferOpenRouterFreeTier() ? OPENROUTER_FREE_MODEL : OPENROUTER_VENICE_UNCENSORED);
   if (openRouterCreditFallback && !isOpenRouterFreeModel(model)) {
     model = OPENROUTER_FREE_MODEL;
   }
@@ -106179,9 +106261,20 @@ function isProviderQuotaError(err) {
   const msg = errorFieldLower(e2.message);
   return code.includes("rate_limit") || code.includes("insufficient_quota") || code.includes("payment_required") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("credits") || msg.includes("payment required");
 }
+function isOpenRouterCreditFallbackError(err) {
+  if (!err || typeof err !== "object") return false;
+  const e2 = err;
+  const code = errorCodeLower(e2);
+  const msg = errorFieldLower(e2.message);
+  return e2.status === 402 || code.includes("payment_required") || msg.includes("insufficient credits") || msg.includes("never purchased credits") || msg.includes("add credits") || msg.includes("payment required");
+}
 function isOpenRouterFreeDailyLimitError(err) {
   const hay = summarizeError(err).toLowerCase();
-  return hay.includes("free-models-per-day") || hay.includes("free-models-per-min") || hay.includes("free model requests per day");
+  return hay.includes("free-models-per-day") || hay.includes("free model requests per day");
+}
+function isOpenRouterFreeMinuteLimitError(err) {
+  const hay = summarizeError(err).toLowerCase();
+  return hay.includes("free-models-per-min") || hay.includes("free model requests per minute");
 }
 function isLocalModelUnavailable(err) {
   return isModelUnavailableError(err);
@@ -106263,7 +106356,10 @@ function configuredLocalModelLabel() {
 function localHostDownSuffix(include) {
   if (!include) return "";
   const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
-  return ` The primary LLM host (${host}) is also unreachable \u2014 run \`fly apps restart anima-chat-llm\`.`;
+  if (host === "anima-chat-llm.fly.dev") {
+    return ` The primary LLM host (${host}) is also unreachable \u2014 run \`fly apps restart anima-chat-llm\`.`;
+  }
+  return ` The primary LLM host (${host}) is also unreachable \u2014 check that the host is running and reachable from Vercel.`;
 }
 function enrichError(err, provider = "local", opts = {}) {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
@@ -106281,9 +106377,9 @@ function enrichError(err, provider = "local", opts = {}) {
   }
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
-      const hint = isOpenRouterFreeDailyLimitError(err) ? OPENROUTER_FREE_DAILY_HINT : hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT;
+      const hint = isOpenRouterFreeDailyLimitError(err) ? OPENROUTER_FREE_DAILY_HINT : isOpenRouterFreeMinuteLimitError(err) ? "OpenRouter's free model per-minute limit is temporarily throttling chat. Wait a minute and retry, or add credits at https://openrouter.ai/settings/credits for higher limits." : hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT;
       return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` + localHostDownSuffix(Boolean(opts.localFailed))
+        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` + localHostDownSuffix(Boolean(opts.localConnectionFailed))
       );
     }
   }
@@ -106518,10 +106614,13 @@ async function withOpenRouterCreditFallback(preferred, run) {
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model) && !isOpenRouterFreeDailyLimitError(err)) {
-        openRouterCreditFallback = true;
+      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model) && !isOpenRouterFreeDailyLimitError(err) && !isOpenRouterFreeMinuteLimitError(err)) {
+        const creditFallback = isOpenRouterCreditFallbackError(err);
+        if (creditFallback) {
+          openRouterCreditFallback = true;
+        }
         console.warn(
-          `[llm] OpenRouter ${candidate.model} needs credits (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}. The OPENROUTER_API_KEY is set \u2014 this is a billing limit, not a missing key.`
+          `[llm] OpenRouter ${candidate.model} ${creditFallback ? "needs credits" : "is quota/rate limited"} (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}.`
         );
         continue;
       }
@@ -106589,6 +106688,7 @@ async function createChatStreamWithFailover(req) {
   if (!chain.length) throw noProviderConfiguredError();
   let lastErr;
   let triedLocal = false;
+  let localConnectionFailed = false;
   for (const provider of chain) {
     try {
       if (provider === "local") {
@@ -106617,6 +106717,9 @@ async function createChatStreamWithFailover(req) {
       return await runOpenRouterStream(req, triedLocal);
     } catch (err) {
       lastErr = err;
+      if (provider === "local" && isProviderConnectionError(err)) {
+        localConnectionFailed = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (hasNext) {
         console.warn(
@@ -106624,11 +106727,13 @@ async function createChatStreamWithFailover(req) {
         );
         continue;
       }
-      throw enrichError(err, provider, { localFailed: triedLocal && provider === "openrouter" });
+      throw enrichError(err, provider, {
+        localConnectionFailed: localConnectionFailed && provider === "openrouter"
+      });
     }
   }
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
-    localFailed: triedLocal && chain[chain.length - 1] === "openrouter"
+    localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter"
   });
 }
 async function createChatCompletionWithFailover(req) {
@@ -106640,6 +106745,7 @@ async function createChatCompletionWithFailover(req) {
   if (!chain.length) throw noProviderConfiguredError();
   let lastErr;
   let triedLocal = false;
+  let localConnectionFailed = false;
   for (const provider of chain) {
     try {
       if (provider === "local") {
@@ -106674,6 +106780,9 @@ async function createChatCompletionWithFailover(req) {
       return await runOpenRouterCompletion(req, triedLocal);
     } catch (err) {
       lastErr = err;
+      if (provider === "local" && isProviderConnectionError(err)) {
+        localConnectionFailed = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (hasNext) {
         console.warn(
@@ -106681,11 +106790,13 @@ async function createChatCompletionWithFailover(req) {
         );
         continue;
       }
-      throw enrichError(err, provider, { localFailed: triedLocal && provider === "openrouter" });
+      throw enrichError(err, provider, {
+        localConnectionFailed: localConnectionFailed && provider === "openrouter"
+      });
     }
   }
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
-    localFailed: triedLocal && chain[chain.length - 1] === "openrouter"
+    localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter"
   });
 }
 

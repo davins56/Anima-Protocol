@@ -168,7 +168,9 @@ import {
   isProviderAuthError,
   isProviderConnectionError,
   isProviderQuotaError,
+  isOpenRouterCreditFallback,
   isOpenRouterFreeDailyLimitError,
+  isOpenRouterFreeMinuteLimitError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
   probeLlmProviders,
   resetOpenRouterCreditFallbackForTests,
@@ -269,8 +271,31 @@ describe("isOpenRouterFreeDailyLimitError", () => {
         message: "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
       }),
     ).toBe(true);
+    expect(
+      isOpenRouterFreeDailyLimitError({
+        status: 429,
+        message: "Rate limit exceeded: free-models-per-min.",
+      }),
+    ).toBe(false);
     expect(isOpenRouterFreeDailyLimitError({ status: 429, message: "rate limited" })).toBe(false);
     expect(isOpenRouterFreeDailyLimitError({ status: 402, message: "Insufficient credits" })).toBe(false);
+  });
+});
+
+describe("isOpenRouterFreeMinuteLimitError", () => {
+  it("detects OpenRouter's free-models-per-min 429 separately from daily caps", () => {
+    expect(
+      isOpenRouterFreeMinuteLimitError({
+        status: 429,
+        message: "Rate limit exceeded: free-models-per-min.",
+      }),
+    ).toBe(true);
+    expect(
+      isOpenRouterFreeMinuteLimitError({
+        status: 429,
+        message: "Rate limit exceeded: free-models-per-day.",
+      }),
+    ).toBe(false);
   });
 });
 
@@ -552,6 +577,34 @@ describe("createChatStreamWithFailover", () => {
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
     expect(createMock.mock.calls[1][0].model).toBe("openai/gpt-oss-20b:free");
+    expect(isOpenRouterCreditFallback()).toBe(true);
+  });
+
+  it("does not persist free routing when Venice has a transient HTTP 429", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    createMock
+      .mockRejectedValueOnce(Object.assign(new Error("Rate limit reached"), { status: 429 }))
+      .mockResolvedValueOnce(fakeStream("free"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe("openai/gpt-oss-20b:free");
+    expect(isOpenRouterCreditFallback()).toBe(false);
+    expect(resolveOpenRouterModel("standard").model).toBe(
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    );
   });
 
   it("does not retry the free model when Venice already hit free-models-per-day", async () => {
@@ -588,6 +641,38 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
+  it("does not describe a per-minute free limit as today's daily cap", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    createMock.mockRejectedValue(
+      Object.assign(new Error("Rate limit exceeded: free-models-per-min."), {
+        status: 429,
+      }),
+    );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected OpenRouter minute limit to reject");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/per-minute limit/i);
+      expect(message).toMatch(/Wait a minute and retry/i);
+      expect(message).not.toMatch(/Today's free OpenRouter messages are used up/i);
+      expect(message).not.toMatch(/midnight UTC/i);
+    }
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
   it("mentions the Fly host when local is down and OpenRouter hits the daily free cap", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
@@ -618,6 +703,66 @@ describe("createChatStreamWithFailover", () => {
       expect(message).toMatch(/anima-chat-llm\.fly\.dev/);
       expect(message).toMatch(/fly apps restart anima-chat-llm/);
       expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE/);
+    }
+  });
+
+  it("does not say the local host is unreachable after a local auth failure", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    createMock
+      .mockRejectedValueOnce(Object.assign(new Error("401 status code (no body)"), { status: 401 }))
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day."),
+          { status: 429 },
+        ),
+      );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected both providers to fail");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
+      expect(message).not.toMatch(/also unreachable/i);
+      expect(message).not.toMatch(/fly apps restart anima-chat-llm/);
+    }
+  });
+
+  it("uses host-neutral recovery guidance for custom local connection failures", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://custom-llm.example.com/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day."),
+          { status: 429 },
+        ),
+      );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected both providers to fail");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/custom-llm\.example\.com/);
+      expect(message).toMatch(/check that the host is running/i);
+      expect(message).not.toMatch(/fly apps restart anima-chat-llm/);
     }
   });
 
