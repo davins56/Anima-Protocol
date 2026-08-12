@@ -226,12 +226,6 @@ export default function ChatWidgetsArea({
                   content: `⚔️ Side Quest Accepted: "${quest.title}"\n${quest.description}`,
                   timestamp: new Date().toISOString(),
                 };
-<<<<<<< HEAD
-                const updated = [...(activeSession.messages || []), qMsg];
-                base44.entities.ChatSession.update(sessionId, { messages: updated }).catch(() => {});
-                setActiveSession(prev => ({ ...prev, messages: updated }));
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
                 // Append only — replace against a possibly-stale messages
                 // snapshot can delete concurrent turns.
                 appendAmbientMessage({
