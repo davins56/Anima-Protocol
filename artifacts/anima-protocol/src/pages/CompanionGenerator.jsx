@@ -1,8 +1,4 @@
 import { useState } from "react";
-<<<<<<< HEAD
-import { base44 } from "@/api/base44Client";
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
 import { track } from "@/lib/analytics";
@@ -154,11 +150,6 @@ export default function CompanionGenerator() {
         is_default: false,
       });
 
-<<<<<<< HEAD
-      // Auto-search a portrait in the background — never blocks creation.
-      autoAssignCharacterPhoto(newChar).catch(() => {});
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       // Auto-search a portrait only when the user did not set a custom one.
       if (!avatar_url) {
         autoAssignCharacterPhoto(newChar).catch(() => {});

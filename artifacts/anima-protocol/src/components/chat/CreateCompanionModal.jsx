@@ -40,10 +40,6 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         archetype,
         tagline: tagline.trim() || `Your ${archetype} companion`,
         assigned_user: userEmail,
-<<<<<<< HEAD
-        avatar_url: "https://serenity-sm2kts5ggj.replit.app/serenity-default.jpg", // Default avatar
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
         avatar_url: avatarUrl.trim(),
         personality: `You are ${name}, a ${archetype.toLowerCase()} companion. ${tagline || "You provide guidance and support."}`,
         speaking_style: "Warm, thoughtful, and personable",
@@ -118,10 +114,6 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         <motion.div
           initial={{ scale: 0.9, y: 20 }}
           animate={{ scale: 1, y: 0 }}
-<<<<<<< HEAD
-          className="w-full max-w-2xl bg-background border border-primary/30 rounded-xl p-8 space-y-6"
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
           className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-background border border-primary/30 rounded-xl p-8 space-y-6"
         >
           <h2 className="text-2xl font-mono text-primary glow-text tracking-widest uppercase">
@@ -252,7 +244,3 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
 
   return null;
 }
-<<<<<<< HEAD
-}
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079

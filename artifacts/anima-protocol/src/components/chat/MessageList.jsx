@@ -6,10 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const PAGE_SIZE = 20; // messages shown per "page"
 
-<<<<<<< HEAD
-export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage }) {
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
 export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
