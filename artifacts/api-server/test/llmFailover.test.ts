@@ -316,7 +316,20 @@ describe("resolveOpenRouterModel", () => {
   it("uses the free model when ANIMA_OPENROUTER_FREE=true", () => {
     process.env.ANIMA_OPENROUTER_FREE = "true";
     delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
+    delete process.env.ANIMA_OPENROUTER_MODEL_FAMILY;
     expect(resolveOpenRouterModel("standard").model).toBe("openai/gpt-oss-20b:free");
+  });
+
+  it("can select a supported OpenRouter family by name", () => {
+    process.env.ANIMA_OPENROUTER_MODEL_FAMILY = "deepseek";
+    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
+    expect(resolveOpenRouterModel("standard").model).toBe("deepseek/deepseek-r1:free");
+  });
+
+  it("lets exact OpenRouter model overrides beat family defaults", () => {
+    process.env.ANIMA_OPENROUTER_MODEL_FAMILY = "llama";
+    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "custom/provider-model";
+    expect(resolveOpenRouterModel("standard").model).toBe("custom/provider-model");
   });
 });
 
