@@ -48,9 +48,11 @@ export default function AnimaCustomizer({
     setSaved(false);
     try {
       const prompt = buildAppearanceImagePrompt(anima, prompts);
+      // Always generate from the feature prompts — do not image-edit the
+      // current avatar. Edit mode preserves the old complexion/hair/etc. and
+      // made Skin Colour (and other traits) appear broken.
       const result = await base44.integrations.Core.GenerateImage({
         prompt,
-        existing_image_urls: anima?.avatar_url ? [anima.avatar_url] : undefined,
       });
       if (!result?.url) {
         throw new Error("No image was returned. Try again in a moment.");
