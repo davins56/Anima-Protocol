@@ -119,6 +119,8 @@ import {
   getLlmRoutingStatus,
   isAnimaCustomMode,
   isProviderAuthError,
+  isProviderConnectionError,
+  LOCAL_LLM_CONNECTION_FIX_HINT,
   probeLlmProviders,
   resolveLocalModel,
 } from "../src/lib/llmFailover";
@@ -141,6 +143,32 @@ describe("isProviderAuthError", () => {
     expect(isProviderAuthError({ status: 403, message: "403 status code (no body)" })).toBe(true);
     expect(isProviderAuthError({ status: 403 })).toBe(true);
     expect(isProviderAuthError({ status: 429, message: "rate limited" })).toBe(false);
+  });
+});
+
+describe("isProviderConnectionError", () => {
+  it("detects OpenAI SDK Connection error. (including nested TLS cause)", () => {
+    const err = Object.assign(new Error("Connection error."), {
+      name: "APIConnectionError",
+      cause: Object.assign(new Error("Client network socket disconnected before secure TLS connection was established"), {
+        code: "ECONNRESET",
+      }),
+    });
+    expect(isProviderConnectionError(err)).toBe(true);
+    expect(isProviderAuthError(err)).toBe(false);
+  });
+
+  it("detects undici / DNS connect failures by code", () => {
+    expect(isProviderConnectionError({ code: "ECONNREFUSED", message: "connect ECONNREFUSED" })).toBe(true);
+    expect(isProviderConnectionError({ code: "ENOTFOUND", message: "getaddrinfo ENOTFOUND" })).toBe(true);
+    expect(isProviderConnectionError({ message: "fetch failed" })).toBe(true);
+  });
+
+  it("does not treat HTTP auth / quota responses as connection errors", () => {
+    expect(isProviderConnectionError({ status: 401, message: "401 status code (no body)" })).toBe(false);
+    expect(isProviderConnectionError({ status: 403, message: "403 status code (no body)" })).toBe(false);
+    expect(isProviderConnectionError({ status: 429, message: "rate limited" })).toBe(false);
+    expect(isProviderConnectionError({ status: 500, message: "internal" })).toBe(false);
   });
 });
 
@@ -411,6 +439,36 @@ describe("createChatStreamWithFailover", () => {
 
     expect(createMock).toHaveBeenCalledTimes(1);
   });
+
+  it("names the LLM host when the OpenAI SDK only says Connection error.", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    const sdkErr = Object.assign(new Error("Connection error."), {
+      name: "APIConnectionError",
+      cause: Object.assign(new Error("SSL_ERROR_SYSCALL"), { code: "ECONNRESET" }),
+    });
+    createMock.mockRejectedValueOnce(sdkErr);
+
+    let thrown: unknown;
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    expect(message).toMatch(
+      /Anima LLM connection failed for host=anima-chat-llm\.fly\.dev model=anima-chat/i,
+    );
+    expect(message).toMatch(/Connection error/i);
+    expect(message).toMatch(/SSL_ERROR_SYSCALL|ECONNRESET/i);
+    expect(message).toMatch(/fly status -a anima-chat-llm/i);
+  });
 });
 
 describe("createChatCompletionWithFailover", () => {
@@ -470,5 +528,24 @@ describe("probeLlmProviders", () => {
     const probes = await probeLlmProviders();
     expect(probes).toHaveLength(1);
     expect(probes[0]).toMatchObject({ provider: "local", configured: true, ok: true });
+  });
+
+  it("reports errorKind=connection with host + fix hint when the host is unreachable", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    createMock.mockRejectedValueOnce(
+      Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
+    );
+    const probes = await probeLlmProviders();
+    expect(probes).toHaveLength(1);
+    expect(probes[0]).toMatchObject({
+      provider: "local",
+      configured: true,
+      ok: false,
+      errorKind: "connection",
+      hint: LOCAL_LLM_CONNECTION_FIX_HINT,
+    });
+    expect(probes[0]?.message).toMatch(/host=anima-chat-llm\.fly\.dev/i);
+    expect(probes[0]?.message).toMatch(/model=anima-chat/i);
   });
 });

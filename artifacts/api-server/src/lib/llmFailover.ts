@@ -71,9 +71,9 @@ export interface LlmProviderProbeResult {
   configured: boolean;
   ok: boolean;
   status?: number;
-  errorKind?: "auth" | "quota" | "other";
+  errorKind?: "auth" | "quota" | "connection" | "other";
   message?: string;
-  /** Operator-facing fix when errorKind is auth (secret-free). */
+  /** Operator-facing fix when errorKind is auth or connection (secret-free). */
   hint?: string;
   /** The model the turn actually ran on (may differ from `configuredModel`). */
   model?: string;
@@ -148,19 +148,52 @@ export function resolveLocalModel(tier: ModelTier): ResolvedModel {
   };
 }
 
+/** Collect message / code / cause fragments without secrets (max ~200 chars). */
 function summarizeError(err: unknown): string {
   if (!err) return "unknown error";
-  if (typeof err === "string") return err.slice(0, 160);
-  if (err instanceof Error) return err.message.slice(0, 160);
-  if (typeof err === "object") {
-    const e = err as { status?: number; code?: string; message?: unknown };
-    const parts: string[] = [];
+  if (typeof err === "string") return err.slice(0, 200);
+
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  // Walk Error.cause so "Connection error." + SSL_ERROR_SYSCALL both show up.
+  for (let depth = 0; current && depth < 4; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current === "string") {
+      parts.push(current.slice(0, 120));
+      break;
+    }
+    if (typeof current !== "object") {
+      parts.push(String(current).slice(0, 120));
+      break;
+    }
+    const e = current as {
+      name?: string;
+      status?: number;
+      code?: string;
+      type?: string;
+      message?: unknown;
+      cause?: unknown;
+    };
     if (typeof e.status === "number") parts.push(`HTTP ${e.status}`);
     if (e.code) parts.push(String(e.code));
+    else if (e.type) parts.push(String(e.type));
     if (e.message) parts.push(String(e.message).slice(0, 120));
-    if (parts.length) return parts.join(": ");
+    else if (e.name && e.name !== "Error") parts.push(e.name);
+    current = e.cause;
   }
-  return String(err).slice(0, 160);
+
+  if (!parts.length) return String(err).slice(0, 200);
+  // Deduplicate near-identical fragments ("Connection error." twice).
+  const uniq: string[] = [];
+  for (const p of parts) {
+    const norm = p.trim().toLowerCase();
+    if (!norm) continue;
+    if (uniq.some((u) => u.toLowerCase() === norm)) continue;
+    uniq.push(p.trim());
+  }
+  return uniq.join(" — ").slice(0, 200);
 }
 
 /**
@@ -172,6 +205,63 @@ export const LOCAL_LLM_AUTH_FIX_HINT =
   "ANIMA_LOCAL_LLM_API_KEY on Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
   "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
   "as ANIMA_LOCAL_LLM_API_KEY and redeploy without build cache). See deploy/ollama-fly/README.md.";
+
+/**
+ * Shared operator hint when Vercel cannot open a TCP/TLS session to the LLM host.
+ * Distinct from auth (401/403): the machine is down, sleeping, or TLS is broken.
+ */
+export const LOCAL_LLM_CONNECTION_FIX_HINT =
+  "The self-hosted Anima LLM host did not accept a connection. " +
+  "Check `fly status -a anima-chat-llm` / `fly logs -a anima-chat-llm`, then " +
+  "`fly apps restart anima-chat-llm` or `fly deploy -a anima-chat-llm` " +
+  "(see deploy/ollama-fly/README.md). Chat has no cloud fallback.";
+
+const CONNECTION_CODE_RE =
+  /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
+
+/** True when the OpenAI SDK / undici could not reach the LLM host at all. */
+export function isProviderConnectionError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  // Auth failures are HTTP responses — never classify them as connection.
+  if (isProviderAuthError(err)) return false;
+
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current !== "object") break;
+    const e = current as {
+      name?: string;
+      status?: number;
+      code?: string;
+      type?: string;
+      message?: string;
+      cause?: unknown;
+    };
+    // A real HTTP status means we reached something — not a connect failure.
+    if (typeof e.status === "number" && e.status > 0) return false;
+
+    const name = (e.name || "").toLowerCase();
+    const code = (e.code || e.type || "").toLowerCase();
+    const msg = (e.message || "").toLowerCase();
+    if (
+      name.includes("apiconnectionerror") ||
+      name.includes("connectionerror") ||
+      CONNECTION_CODE_RE.test(code) ||
+      msg.includes("connection error") ||
+      msg.includes("fetch failed") ||
+      msg.includes("socket hang up") ||
+      msg.includes("network is unreachable") ||
+      msg.includes("ssl_error_syscall") ||
+      msg.includes("client network socket disconnected")
+    ) {
+      return true;
+    }
+    current = e.cause;
+  }
+  return false;
+}
 
 /** True when the local server rejected auth (wrong/missing bearer token). */
 export function isProviderAuthError(err: unknown): boolean {
@@ -306,6 +396,14 @@ function requireLocalClient(): OpenAI {
   );
 }
 
+function configuredLocalModelLabel(): string {
+  return (
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
+    process.env.ANIMA_VLLM_MODEL?.trim() ||
+    resolveLocalModel("standard").model
+  );
+}
+
 function enrichError(err: unknown): Error {
   if (cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
@@ -315,11 +413,16 @@ function enrichError(err: unknown): Error {
       `Anima LLM authentication failed: ${summarizeError(err)}. ${LOCAL_LLM_AUTH_FIX_HINT}`,
     );
   }
+  if (isProviderConnectionError(err)) {
+    const model = configuredLocalModelLabel();
+    const host = summarizeLocalLlmBaseUrl().host ?? "?";
+    return new Error(
+      `Anima LLM connection failed for host=${host} model=${model}: ${summarizeError(err)}. ` +
+        LOCAL_LLM_CONNECTION_FIX_HINT,
+    );
+  }
   if (isLocalModelUnavailable(err)) {
-    const model =
-      process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
-      process.env.ANIMA_VLLM_MODEL?.trim() ||
-      resolveLocalModel("standard").model;
+    const model = configuredLocalModelLabel();
     const host = summarizeLocalLlmBaseUrl().host ?? "?";
     return new Error(
       `Anima LLM model "${model}" is not available on host=${host}: ${summarizeError(err)}. ` +
@@ -441,15 +544,23 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
     const probeClient = getLocalLlmClient();
     const catalog = probeClient ? await listLocalModels(probeClient) : null;
     const auth = isProviderAuthError(err);
+    const connection = !auth && isProviderConnectionError(err);
+    const errorKind = auth ? "auth" : connection ? "connection" : "other";
+    // Prefer the same operator-facing copy chat toasts get (host + model + fix).
+    const enriched = enrichError(err);
     return [
       {
         provider: "local",
         configured: true,
         ok: false,
         status: Number.isFinite(status) ? status : undefined,
-        errorKind: auth ? "auth" : "other",
-        message: summarizeError(err),
-        ...(auth ? { hint: LOCAL_LLM_AUTH_FIX_HINT } : {}),
+        errorKind,
+        message: enriched.message,
+        ...(auth
+          ? { hint: LOCAL_LLM_AUTH_FIX_HINT }
+          : connection
+            ? { hint: LOCAL_LLM_CONNECTION_FIX_HINT }
+            : {}),
         model: resolved.model,
         configuredModel: resolved.model,
         availableModels: catalog?.models ?? [],
