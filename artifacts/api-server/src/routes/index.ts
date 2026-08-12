@@ -7,6 +7,7 @@ import storeRouter from "./store";
 import storageRouter from "./storage";
 import chatRouter from "./chat";
 import adminRouter from "./admin";
+import codeRepairRouter from "./codeRepair";
 
 const router: IRouter = Router();
 
@@ -16,6 +17,7 @@ router.use("/openai", openaiFunctionsRouter);
 router.use(elevenLabsRouter);
 router.use(characterImageRouter);
 router.use("/chat", chatRouter);
+router.use("/code-repair", codeRepairRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
 
