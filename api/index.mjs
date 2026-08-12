@@ -98679,14 +98679,25 @@ function classifyComplexity(content, ctx = {}) {
 function routeModel(content, ctx = {}) {
   return resolveModel(classifyComplexity(content, ctx));
 }
+function errorFieldLower(value) {
+  if (typeof value === "string") return value.toLowerCase();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+function errorCodeLower(err) {
+  const fromCode = errorFieldLower(err.code);
+  const fromType = errorFieldLower(err.type);
+  if (fromCode && !/^\d+$/.test(fromCode)) return fromCode;
+  return fromType || fromCode;
+}
 function isModelUnavailableError(err) {
   if (!err || typeof err !== "object") return false;
   const e2 = err;
-  const code = (e2.code || e2.type || "").toLowerCase();
+  const code = errorCodeLower(e2);
   if (code.includes("model_not_found") || code.includes("model_not_available") || code.includes("not_found")) {
     return true;
   }
-  const msg = (e2.message || "").toLowerCase();
+  const msg = errorFieldLower(e2.message);
   if (msg.includes("does not exist") || msg.includes("do not have access") || msg.includes("no longer available") || msg.includes("not available to new users") || msg.includes("please update your code to use a newer model") || msg.includes("is not found") || msg.includes("model not found")) {
     return true;
   }
@@ -105295,6 +105306,11 @@ var openaiClient = null;
 var openaiClientKey = null;
 var localLlmClient = null;
 var localLlmClientKey = null;
+var openRouterClient = null;
+var openRouterClientKey = null;
+var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+var OPENROUTER_VENICE_UNCENSORED = "cognitivecomputations/dolphin-mistral-24b-venice-edition";
+var OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
 function normalizeApiKey(raw) {
   if (!raw) return null;
   let key = raw.trim();
@@ -105442,6 +105458,38 @@ function getLocalLlmClient() {
     logLocalLlmClientInitOnce();
   }
   return localLlmClient;
+}
+function hasOpenRouterKey() {
+  return Boolean(
+    normalizeApiKey(process.env.OPENROUTER_API_KEY) || normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY)
+  );
+}
+function getOpenRouterApiKey() {
+  return normalizeApiKey(process.env.OPENROUTER_API_KEY) || normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY);
+}
+function getOpenRouterClient() {
+  const apiKey = getOpenRouterApiKey();
+  if (!apiKey) return null;
+  const baseURL = (process.env.ANIMA_OPENROUTER_BASE_URL?.trim() || OPENROUTER_BASE_URL).replace(/\/$/, "");
+  const referer = process.env.ANIMA_OPENROUTER_HTTP_REFERER?.trim() || "https://www.anima-protocol.com";
+  const title = process.env.ANIMA_OPENROUTER_APP_TITLE?.trim() || "Anima Protocol";
+  const cacheKey2 = `${baseURL}::${apiKey}::${referer}::${title}`;
+  if (!openRouterClient || openRouterClientKey !== cacheKey2) {
+    openRouterClient = new openai_default({
+      apiKey,
+      baseURL,
+      maxRetries: 0,
+      defaultHeaders: {
+        "HTTP-Referer": referer,
+        "X-Title": title
+      }
+    });
+    openRouterClientKey = cacheKey2;
+    console.info(
+      `[llm] openrouter client: host=openrouter.ai uncensored=${OPENROUTER_VENICE_UNCENSORED}`
+    );
+  }
+  return openRouterClient;
 }
 
 // src/lib/localModelCatalog.ts
@@ -105982,8 +106030,20 @@ function truncateText(text2, max) {
 }
 
 // src/lib/llmFailover.ts
-var CLOUD_FLAGSHIP_SETUP_HINT = "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy.";
+var CLOUD_FLAGSHIP_SETUP_HINT = "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy. Or set OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter.";
 function beginChatProviderTurn() {
+}
+function preferOpenRouterFreeTier() {
+  const raw = (process.env.ANIMA_OPENROUTER_FREE || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "free";
+}
+function resolveOpenRouterModel(tier) {
+  const tierKey = `ANIMA_OPENROUTER_MODEL_${tier.toUpperCase()}`;
+  const fromTier = process.env[tierKey]?.trim();
+  const fromStandard = process.env.ANIMA_OPENROUTER_MODEL_STANDARD?.trim();
+  const model = fromTier || fromStandard || (preferOpenRouterFreeTier() ? OPENROUTER_FREE_MODEL : OPENROUTER_VENICE_UNCENSORED);
+  const maxTokens = tier === "light" ? 4096 : tier === "heavy" ? 16384 : 8192;
+  return { tier, model, maxTokens };
 }
 function resolveLocalModel(tier) {
   const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
@@ -105995,26 +106055,83 @@ function resolveLocalModel(tier) {
     maxTokens: spec.maxTokens
   };
 }
+function localUsable() {
+  return hasLocalLlm() && !cloudFlagshipMisconfigured();
+}
+function getProviderChain() {
+  const chain = [];
+  if (localUsable()) chain.push("local");
+  if (hasOpenRouterKey()) chain.push("openrouter");
+  return chain;
+}
+function brandFor(provider) {
+  return provider === "openrouter" ? "openrouter" : "anima";
+}
 function summarizeError(err) {
   if (!err) return "unknown error";
-  if (typeof err === "string") return err.slice(0, 160);
-  if (err instanceof Error) return err.message.slice(0, 160);
-  if (typeof err === "object") {
-    const e2 = err;
-    const parts = [];
+  if (typeof err === "string") return err.slice(0, 200);
+  const parts = [];
+  const seen = /* @__PURE__ */ new Set();
+  let current = err;
+  for (let depth = 0; current && depth < 4; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current === "string") {
+      parts.push(current.slice(0, 120));
+      break;
+    }
+    if (typeof current !== "object") {
+      parts.push(String(current).slice(0, 120));
+      break;
+    }
+    const e2 = current;
     if (typeof e2.status === "number") parts.push(`HTTP ${e2.status}`);
     if (e2.code) parts.push(String(e2.code));
+    else if (e2.type) parts.push(String(e2.type));
     if (e2.message) parts.push(String(e2.message).slice(0, 120));
-    if (parts.length) return parts.join(": ");
+    else if (e2.name && e2.name !== "Error") parts.push(e2.name);
+    current = e2.cause;
   }
-  return String(err).slice(0, 160);
+  if (!parts.length) return String(err).slice(0, 200);
+  const uniq = [];
+  for (const p2 of parts) {
+    const norm = p2.trim().toLowerCase();
+    if (!norm) continue;
+    if (uniq.some((u2) => u2.toLowerCase() === norm)) continue;
+    uniq.push(p2.trim());
+  }
+  return uniq.join(" \u2014 ").slice(0, 200);
 }
 var LOCAL_LLM_AUTH_FIX_HINT = "ANIMA_LOCAL_LLM_API_KEY on Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host (for Fly: `fly secrets set PROXY_AUTH_TOKEN=\u2026 -a anima-chat-llm`, then set the same value as ANIMA_LOCAL_LLM_API_KEY and redeploy without build cache). See deploy/ollama-fly/README.md.";
+var LOCAL_LLM_CONNECTION_FIX_HINT = "The self-hosted Anima LLM host did not accept a connection. Check `fly status -a anima-chat-llm` / `fly logs -a anima-chat-llm`, then `fly apps restart anima-chat-llm` or `fly deploy -a anima-chat-llm` (see deploy/ollama-fly/README.md). Or set OPENROUTER_API_KEY for Venice Uncensored via OpenRouter.";
+var OPENROUTER_SETUP_HINT = `Set OPENROUTER_API_KEY (free at https://openrouter.ai/keys). Default model is Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). For zero-cost free-tier models set ANIMA_OPENROUTER_FREE=true (uses ${OPENROUTER_FREE_MODEL}). Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used.`;
+var CONNECTION_CODE_RE = /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
+function isProviderConnectionError(err) {
+  if (!err || typeof err !== "object") return false;
+  if (isProviderAuthError(err)) return false;
+  const seen = /* @__PURE__ */ new Set();
+  let current = err;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current !== "object") break;
+    const e2 = current;
+    if (typeof e2.status === "number" && e2.status > 0) return false;
+    const name = errorFieldLower(e2.name);
+    const code = errorCodeLower(e2);
+    const msg = errorFieldLower(e2.message);
+    if (name.includes("apiconnectionerror") || name.includes("connectionerror") || CONNECTION_CODE_RE.test(code) || msg.includes("connection error") || msg.includes("fetch failed") || msg.includes("socket hang up") || msg.includes("network is unreachable") || msg.includes("ssl_error_syscall") || msg.includes("client network socket disconnected")) {
+      return true;
+    }
+    current = e2.cause;
+  }
+  return false;
+}
 function isProviderAuthError(err) {
   if (!err || typeof err !== "object") return false;
   const e2 = err;
-  const code = (e2.code || e2.type || "").toLowerCase();
-  const msg = (e2.message || "").toLowerCase();
+  const code = errorCodeLower(e2);
+  const msg = errorFieldLower(e2.message);
   if (code.includes("invalid_api_key") || code.includes("authentication_error") || code.includes("invalid_auth")) {
     return true;
   }
@@ -106022,6 +106139,14 @@ function isProviderAuthError(err) {
     return true;
   }
   return e2.status === 401 || e2.status === 403;
+}
+function isProviderQuotaError(err) {
+  if (!err || typeof err !== "object") return false;
+  const e2 = err;
+  if (e2.status === 429) return true;
+  const code = errorCodeLower(e2);
+  const msg = errorFieldLower(e2.message);
+  return code.includes("rate_limit") || code.includes("insufficient_quota") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("credits");
 }
 function isLocalModelUnavailable(err) {
   return isModelUnavailableError(err);
@@ -106082,6 +106207,11 @@ async function withModelFallback(client, preferred, run) {
 function cloudFlagshipMisconfigured() {
   return summarizeLocalLlmBaseUrl().isCloudFlagship;
 }
+function noProviderConfiguredError() {
+  return new Error(
+    "No chat LLM configured. Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL (ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1, ANIMA_OLLAMA_MODEL_STANDARD=anima-chat), or set OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat (see https://openrouter.ai/keys). Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md."
+  );
+}
 function requireLocalClient() {
   if (cloudFlagshipMisconfigured()) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
@@ -106089,20 +106219,47 @@ function requireLocalClient() {
   const client = getLocalLlmClient();
   if (client) return client;
   throw new Error(
-    "Anima custom LLM is not configured: ANIMA_LOCAL_LLM_BASE_URL is unset (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. See docs/custom-llm.md and docs/llm-deploy.md."
+    "Anima custom LLM is not configured: ANIMA_LOCAL_LLM_BASE_URL is unset (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. Or set OPENROUTER_API_KEY for Venice Uncensored via OpenRouter. See docs/custom-llm.md and docs/llm-deploy.md."
   );
 }
-function enrichError(err) {
-  if (cloudFlagshipMisconfigured()) {
+function configuredLocalModelLabel() {
+  return process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel("standard").model;
+}
+function enrichError(err, provider = "local") {
+  if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   if (isProviderAuthError(err)) {
+    if (provider === "openrouter") {
+      return new Error(
+        `OpenRouter authentication failed: ${summarizeError(err)}. Check OPENROUTER_API_KEY on Vercel (https://openrouter.ai/keys), then redeploy.`
+      );
+    }
     return new Error(
       `Anima LLM authentication failed: ${summarizeError(err)}. ${LOCAL_LLM_AUTH_FIX_HINT}`
     );
   }
-  if (isLocalModelUnavailable(err)) {
-    const model = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel("standard").model;
+  if (isProviderQuotaError(err)) {
+    if (provider === "openrouter") {
+      return new Error(
+        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true to use ${OPENROUTER_FREE_MODEL}, or host a local Anima LLM. ${OPENROUTER_SETUP_HINT}`
+      );
+    }
+  }
+  if (isProviderConnectionError(err)) {
+    if (provider === "openrouter") {
+      return new Error(
+        `OpenRouter connection failed: ${summarizeError(err)}. Check network egress to openrouter.ai, then retry.`
+      );
+    }
+    const model = configuredLocalModelLabel();
+    const host = summarizeLocalLlmBaseUrl().host ?? "?";
+    return new Error(
+      `Anima LLM connection failed for host=${host} model=${model}: ${summarizeError(err)}. ` + LOCAL_LLM_CONNECTION_FIX_HINT
+    );
+  }
+  if (provider === "local" && isLocalModelUnavailable(err)) {
+    const model = configuredLocalModelLabel();
     const host = summarizeLocalLlmBaseUrl().host ?? "?";
     return new Error(
       `Anima LLM model "${model}" is not available on host=${host}: ${summarizeError(err)}. Create the model on that host (e.g. \`ollama create anima-chat\`) or set ANIMA_OLLAMA_MODEL_STANDARD to a model id the server actually serves. See docs/llm-deploy.md.`
@@ -106115,33 +106272,45 @@ function getLlmRoutingStatus(tier = "standard") {
   const localSummary = summarizeLocalLlmBaseUrl();
   const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() || "ollama";
   const localModel = process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel(tier).model;
+  const openRouterModel = resolveOpenRouterModel(tier);
+  const chain = getProviderChain();
+  const isFreeTier = preferOpenRouterFreeTier() || openRouterModel.model.endsWith(":free");
   logLocalLlmClientInitOnce();
   const noteParts = [];
-  const usable = localSummary.configured && !localSummary.isCloudFlagship;
-  if (!localSummary.configured) {
-    noteParts.push(
-      "ANIMA_LOCAL_LLM_BASE_URL is not set (or the endpoint is unreachable). Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. See docs/custom-llm.md."
-    );
-  } else if (localSummary.isCloudFlagship) {
-    noteParts.push(CLOUD_FLAGSHIP_SETUP_HINT);
-  } else {
-    noteParts.push(
-      `Chat uses the self-hosted Anima LLM only (vLLM/Ollama/llama.cpp) at host=${localSummary.host ?? "?"} model=${localModel}. There is no cloud flagship fallback.`
-    );
-    if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+  if (chain.length === 0) {
+    if (localSummary.isCloudFlagship) {
+      noteParts.push(CLOUD_FLAGSHIP_SETUP_HINT);
+    } else {
       noteParts.push(
-        "WARNING: local endpoint is localhost on Vercel \u2014 serverless cannot reach it. Use a public HTTPS tunnel URL."
+        "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, or OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter. Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md."
       );
-    } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
-      noteParts.push("WARNING: local endpoint is not HTTPS \u2014 Vercel egress often requires https://\u2026/v1.");
-    } else if (!localSummary.hasV1Path) {
-      noteParts.push("WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions.");
+    }
+  } else {
+    if (chain.includes("local")) {
+      noteParts.push(
+        `Self-hosted Anima LLM at host=${localSummary.host ?? "?"} model=${localModel}.`
+      );
+      if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+        noteParts.push(
+          "WARNING: local endpoint is localhost on Vercel \u2014 serverless cannot reach it. Use a public HTTPS tunnel URL."
+        );
+      } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+        noteParts.push("WARNING: local endpoint is not HTTPS \u2014 Vercel egress often requires https://\u2026/v1.");
+      } else if (!localSummary.hasV1Path) {
+        noteParts.push("WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions.");
+      }
+    }
+    if (chain.includes("openrouter")) {
+      noteParts.push(
+        `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` + (chain[0] === "local" ? " (fallback after local)." : " (primary \u2014 no local endpoint).")
+      );
     }
   }
+  const preferred = chain[0] ?? null;
   return {
-    status: usable ? "ok" : "error",
-    preferred: usable ? "local" : null,
-    brand: "anima",
+    status: chain.length > 0 ? "ok" : "error",
+    preferred,
+    brand: preferred ? brandFor(preferred) : "anima",
     localEndpoint: {
       configured: localSummary.configured,
       host: localSummary.host,
@@ -106152,26 +106321,74 @@ function getLlmRoutingStatus(tier = "standard") {
       backend,
       model: localModel
     },
+    openrouter: {
+      configured: hasOpenRouterKey(),
+      model: openRouterModel.model,
+      isFreeTier
+    },
+    chain,
     note: noteParts.join(" ")
   };
 }
-async function probeLlmProviders(tier = "standard") {
+async function probeOneProvider(provider, tier) {
+  if (provider === "openrouter") {
+    if (!hasOpenRouterKey()) {
+      return { provider: "openrouter", configured: false, ok: false };
+    }
+    const resolved2 = resolveOpenRouterModel(tier);
+    const started2 = Date.now();
+    try {
+      const client = getOpenRouterClient();
+      if (!client) {
+        return { provider: "openrouter", configured: false, ok: false };
+      }
+      await client.chat.completions.create({
+        model: resolved2.model,
+        max_tokens: 16,
+        messages: [{ role: "user", content: "Reply with the single word: ok" }],
+        temperature: 0
+      });
+      return {
+        provider: "openrouter",
+        configured: true,
+        ok: true,
+        model: resolved2.model,
+        configuredModel: resolved2.model,
+        latencyMs: Date.now() - started2
+      };
+    } catch (err) {
+      const status = err && typeof err === "object" && "status" in err ? Number(err.status) : void 0;
+      const auth = isProviderAuthError(err);
+      const connection = !auth && isProviderConnectionError(err);
+      const quota = !auth && !connection && isProviderQuotaError(err);
+      const enriched = enrichError(err, "openrouter");
+      return {
+        provider: "openrouter",
+        configured: true,
+        ok: false,
+        status: Number.isFinite(status) ? status : void 0,
+        errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
+        message: enriched.message,
+        model: resolved2.model,
+        configuredModel: resolved2.model,
+        latencyMs: Date.now() - started2
+      };
+    }
+  }
   if (!hasLocalLlm()) {
-    return [{ provider: "local", configured: false, ok: false }];
+    return { provider: "local", configured: false, ok: false };
   }
   if (cloudFlagshipMisconfigured()) {
     const resolved2 = resolveLocalModel(tier);
-    return [
-      {
-        provider: "local",
-        configured: true,
-        ok: false,
-        status: 400,
-        errorKind: "other",
-        message: CLOUD_FLAGSHIP_SETUP_HINT.slice(0, 160),
-        model: resolved2.model
-      }
-    ];
+    return {
+      provider: "local",
+      configured: true,
+      ok: false,
+      status: 400,
+      errorKind: "other",
+      message: CLOUD_FLAGSHIP_SETUP_HINT.slice(0, 160),
+      model: resolved2.model
+    };
   }
   const resolved = resolveLocalModel(tier);
   const started = Date.now();
@@ -106188,99 +106405,204 @@ async function probeLlmProviders(tier = "standard") {
       })
     );
     const catalog = await listLocalModels(client);
-    return [
-      {
-        provider: "local",
-        configured: true,
-        ok: true,
-        model: used.model,
-        // Operators need to see the tag mismatch, not just that chat works.
-        configuredModel: resolved.model,
-        availableModels: catalog.models,
-        latencyMs: Date.now() - started
-      }
-    ];
+    return {
+      provider: "local",
+      configured: true,
+      ok: true,
+      model: used.model,
+      configuredModel: resolved.model,
+      availableModels: catalog.models,
+      latencyMs: Date.now() - started
+    };
   } catch (err) {
     const status = err && typeof err === "object" && "status" in err ? Number(err.status) : void 0;
     const probeClient = getLocalLlmClient();
     const catalog = probeClient ? await listLocalModels(probeClient) : null;
     const auth = isProviderAuthError(err);
+    const connection = !auth && isProviderConnectionError(err);
+    const errorKind = auth ? "auth" : connection ? "connection" : "other";
+    const enriched = enrichError(err, "local");
+    return {
+      provider: "local",
+      configured: true,
+      ok: false,
+      status: Number.isFinite(status) ? status : void 0,
+      errorKind,
+      message: enriched.message,
+      ...auth ? { hint: LOCAL_LLM_AUTH_FIX_HINT } : connection ? { hint: LOCAL_LLM_CONNECTION_FIX_HINT } : {},
+      model: resolved.model,
+      configuredModel: resolved.model,
+      availableModels: catalog?.models ?? [],
+      latencyMs: Date.now() - started
+    };
+  }
+}
+async function probeLlmProviders(tier = "standard") {
+  const chain = getProviderChain();
+  if (chain.length === 0) {
     return [
+      { provider: "local", configured: hasLocalLlm(), ok: false },
       {
-        provider: "local",
-        configured: true,
+        provider: "openrouter",
+        configured: hasOpenRouterKey(),
         ok: false,
-        status: Number.isFinite(status) ? status : void 0,
-        errorKind: auth ? "auth" : "other",
-        message: summarizeError(err),
-        ...auth ? { hint: LOCAL_LLM_AUTH_FIX_HINT } : {},
-        model: resolved.model,
-        configuredModel: resolved.model,
-        availableModels: catalog?.models ?? [],
-        latencyMs: Date.now() - started
+        message: hasOpenRouterKey() ? void 0 : OPENROUTER_SETUP_HINT.slice(0, 200)
       }
     ];
   }
+  const out = [];
+  for (const provider of chain) {
+    out.push(await probeOneProvider(provider, tier));
+  }
+  return out;
+}
+async function runOpenRouterStream(req, failedOver) {
+  const client = getOpenRouterClient();
+  if (!client) throw new Error(OPENROUTER_SETUP_HINT);
+  const preferred = resolveOpenRouterModel(req.tier);
+  const stream = await client.chat.completions.create({
+    model: preferred.model,
+    max_tokens: Math.min(req.maxTokens, preferred.maxTokens),
+    messages: req.messages,
+    stream: true
+  });
+  return {
+    stream,
+    provider: "openrouter",
+    brand: "openrouter",
+    model: preferred.model,
+    tier: preferred.tier,
+    failedOver
+  };
+}
+async function runOpenRouterCompletion(req, failedOver) {
+  const client = getOpenRouterClient();
+  if (!client) throw new Error(OPENROUTER_SETUP_HINT);
+  const preferred = resolveOpenRouterModel(req.tier);
+  const completion = await client.chat.completions.create(
+    {
+      model: preferred.model,
+      max_tokens: Math.min(req.maxTokens, preferred.maxTokens),
+      messages: req.messages,
+      ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
+      ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
+    },
+    req.signal ? { signal: req.signal } : void 0
+  );
+  const content = completion.choices?.[0]?.message?.content ?? "";
+  return {
+    content: typeof content === "string" ? content : "",
+    provider: "openrouter",
+    brand: "openrouter",
+    model: preferred.model,
+    tier: preferred.tier,
+    failedOver,
+    toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null
+  };
 }
 async function createChatStreamWithFailover(req) {
   beginChatProviderTurn();
-  const client = requireLocalClient();
-  const preferred = resolveLocalModel(req.tier);
-  try {
-    const { value: stream, resolved } = await withModelFallback(
-      client,
-      preferred,
-      (m2) => client.chat.completions.create({
-        model: m2.model,
-        max_tokens: m2.maxTokens,
-        messages: req.messages,
-        stream: true
-      })
-    );
-    return {
-      stream,
-      provider: "local",
-      brand: "anima",
-      model: resolved.model,
-      tier: resolved.tier,
-      failedOver: false
-    };
-  } catch (err) {
-    throw enrichError(err);
+  if (cloudFlagshipMisconfigured() && !hasOpenRouterKey()) {
+    throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
+  const chain = getProviderChain();
+  if (!chain.length) throw noProviderConfiguredError();
+  let lastErr;
+  let triedLocal = false;
+  for (const provider of chain) {
+    try {
+      if (provider === "local") {
+        triedLocal = true;
+        const client = requireLocalClient();
+        const preferred = resolveLocalModel(req.tier);
+        const { value: stream, resolved } = await withModelFallback(
+          client,
+          preferred,
+          (m2) => client.chat.completions.create({
+            model: m2.model,
+            max_tokens: m2.maxTokens,
+            messages: req.messages,
+            stream: true
+          })
+        );
+        return {
+          stream,
+          provider: "local",
+          brand: "anima",
+          model: resolved.model,
+          tier: resolved.tier,
+          failedOver: false
+        };
+      }
+      return await runOpenRouterStream(req, triedLocal);
+    } catch (err) {
+      lastErr = err;
+      const hasNext = chain.indexOf(provider) < chain.length - 1;
+      if (hasNext) {
+        console.warn(
+          `[llm] ${provider} failed (${summarizeError(err)}); trying next provider in chain=[${chain.join(",")}]`
+        );
+        continue;
+      }
+      throw enrichError(err, provider);
+    }
+  }
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
 }
 async function createChatCompletionWithFailover(req) {
   beginChatProviderTurn();
-  const client = requireLocalClient();
-  const preferred = resolveLocalModel(req.tier);
-  try {
-    const { value: completion, resolved } = await withModelFallback(
-      client,
-      preferred,
-      (m2) => client.chat.completions.create(
-        {
-          model: m2.model,
-          max_tokens: m2.maxTokens,
-          messages: req.messages,
-          ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
-          ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
-        },
-        req.signal ? { signal: req.signal } : void 0
-      )
-    );
-    const content = completion.choices?.[0]?.message?.content ?? "";
-    return {
-      content: typeof content === "string" ? content : "",
-      provider: "local",
-      brand: "anima",
-      model: resolved.model,
-      tier: resolved.tier,
-      failedOver: false,
-      toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null
-    };
-  } catch (err) {
-    throw enrichError(err);
+  if (cloudFlagshipMisconfigured() && !hasOpenRouterKey()) {
+    throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
+  const chain = getProviderChain();
+  if (!chain.length) throw noProviderConfiguredError();
+  let lastErr;
+  let triedLocal = false;
+  for (const provider of chain) {
+    try {
+      if (provider === "local") {
+        triedLocal = true;
+        const client = requireLocalClient();
+        const preferred = resolveLocalModel(req.tier);
+        const { value: completion, resolved } = await withModelFallback(
+          client,
+          preferred,
+          (m2) => client.chat.completions.create(
+            {
+              model: m2.model,
+              max_tokens: m2.maxTokens,
+              messages: req.messages,
+              ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
+              ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}
+            },
+            req.signal ? { signal: req.signal } : void 0
+          )
+        );
+        const content = completion.choices?.[0]?.message?.content ?? "";
+        return {
+          content: typeof content === "string" ? content : "",
+          provider: "local",
+          brand: "anima",
+          model: resolved.model,
+          tier: resolved.tier,
+          failedOver: false,
+          toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null
+        };
+      }
+      return await runOpenRouterCompletion(req, triedLocal);
+    } catch (err) {
+      lastErr = err;
+      const hasNext = chain.indexOf(provider) < chain.length - 1;
+      if (hasNext) {
+        console.warn(
+          `[llm] ${provider} failed (${summarizeError(err)}); trying next provider in chain=[${chain.join(",")}]`
+        );
+        continue;
+      }
+      throw enrichError(err, provider);
+    }
+  }
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
 }
 
 // src/routes/health.ts
