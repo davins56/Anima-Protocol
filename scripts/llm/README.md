@@ -85,3 +85,19 @@ always-on public URL, ready to plug into `ANIMA_LOCAL_LLM_BASE_URL`.
 | Primary GPU chat | Fine-tuned Ministral 3 8B | Q4_K_M / FP8 on ~8–16 GB |
 | Fine-tune base | `mistralai/Ministral-3-8B-Base-2512` | BF16 Base for LoRA/QLoRA |
 | Chat backend | `ANIMA_LOCAL_LLM_BASE_URL` | The only chat backend — no Gemini/Groq/Kimi/Grok/Gateway path exists |
+
+## Supported open-weight families
+
+Run `pnpm llm:list-open-models` for the source-of-truth catalog. The five
+documented families are:
+
+| Family | Ollama example | vLLM / Hugging Face example | OpenRouter free example |
+|--------|----------------|-----------------------------|-------------------------|
+| Llama | `llama3.1:8b` | `meta-llama/Llama-3.1-8B-Instruct` | `meta-llama/llama-3.3-70b-instruct:free` |
+| Qwen | `qwen2.5:3b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
+| Mistral | `mistral:7b` | `mistralai/Ministral-3-8B-Instruct-2512` | `mistralai/mistral-small-3.2-24b-instruct:free` |
+| Gemma | `gemma3:4b` | `google/gemma-3-4b-it` | `google/gemma-3-12b-it:free` |
+| DeepSeek | `deepseek-r1:7b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `deepseek/deepseek-r1:free` |
+
+For OpenRouter, set `ANIMA_OPENROUTER_MODEL_FAMILY=llama|qwen|mistral|gemma|deepseek`.
+Exact `ANIMA_OPENROUTER_MODEL_STANDARD` / tier overrides still take precedence.
