@@ -149,6 +149,7 @@ import {
   isAnimaCustomMode,
   isProviderAuthError,
   isProviderConnectionError,
+  isProviderQuotaError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
   probeLlmProviders,
   resolveLocalModel,
@@ -173,6 +174,12 @@ describe("isProviderAuthError", () => {
     expect(isProviderAuthError({ status: 403, message: "403 status code (no body)" })).toBe(true);
     expect(isProviderAuthError({ status: 403 })).toBe(true);
     expect(isProviderAuthError({ status: 429, message: "rate limited" })).toBe(false);
+  });
+
+  it("does not throw when code/type/message are non-strings", () => {
+    expect(() => isProviderAuthError({ code: 401, type: { nested: true }, message: { raw: true } })).not.toThrow();
+    expect(isProviderAuthError({ code: 401, status: 401 })).toBe(true);
+    expect(isProviderAuthError({ type: {}, message: {} })).toBe(false);
   });
 });
 
@@ -199,6 +206,28 @@ describe("isProviderConnectionError", () => {
     expect(isProviderConnectionError({ status: 403, message: "403 status code (no body)" })).toBe(false);
     expect(isProviderConnectionError({ status: 429, message: "rate limited" })).toBe(false);
     expect(isProviderConnectionError({ status: 500, message: "internal" })).toBe(false);
+  });
+
+  it("does not throw when code/type/message are non-strings", () => {
+    expect(() => isProviderConnectionError({ code: -111, type: {}, message: { errno: -111 } })).not.toThrow();
+    expect(isProviderConnectionError({ code: -111, type: {} })).toBe(false);
+    expect(isProviderConnectionError({ code: "ECONNREFUSED", type: 1 })).toBe(true);
+  });
+});
+
+describe("isProviderQuotaError", () => {
+  it("detects HTTP 429 and rate-limit codes", () => {
+    expect(isProviderQuotaError({ status: 429 })).toBe(true);
+    expect(isProviderQuotaError({ code: "rate_limit_exceeded" })).toBe(true);
+    expect(isProviderQuotaError({ code: "insufficient_quota" })).toBe(true);
+    expect(isProviderQuotaError({ message: "Rate limit reached" })).toBe(true);
+    expect(isProviderQuotaError({ status: 500, message: "internal" })).toBe(false);
+  });
+
+  it("does not throw when code is a number (OpenAI-compatible servers)", () => {
+    expect(() => isProviderQuotaError({ code: 429, type: "rate_limit_error" })).not.toThrow();
+    expect(isProviderQuotaError({ code: 429, type: "rate_limit_error" })).toBe(true);
+    expect(isProviderQuotaError({ code: 500, type: {} })).toBe(false);
   });
 });
 
