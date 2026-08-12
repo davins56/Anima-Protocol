@@ -81,6 +81,6 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "openrouter",
     label: "Venice Uncensored",
     env: "OPENROUTER_API_KEY",
-    note: "Free OpenRouter key → Cognitive Computations × Venice.ai Dolphin Mistral 24B (or set ANIMA_OPENROUTER_FREE=true for zero-cost free models)",
+    note: "OpenRouter key (free signup). Venice Uncensored when the account has credits; otherwise auto-falls back to openai/gpt-oss-20b:free",
   },
 ];

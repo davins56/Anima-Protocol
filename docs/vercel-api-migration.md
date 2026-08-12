@@ -33,7 +33,7 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `ANIMA_LOCAL_LLM_BASE_URL` | Yes for chat (or OpenRouter) | Public HTTPS OpenAI-compatible URL for Ollama/vLLM (e.g. `https://llm.example.com/v1`). Preferred chat backend. |
 | `ANIMA_LOCAL_LLM_BACKEND` | No | `ollama` (default) or `vllm`. |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | Yes for chat (Ollama) | Model tag served by your Ollama host, e.g. `anima-chat` or `anima-uncensored`. |
-| `OPENROUTER_API_KEY` | Yes for chat (or local) | Free key at https://openrouter.ai/keys. Defaults to Venice Uncensored (open-weight). Set `ANIMA_OPENROUTER_FREE=true` for zero-cost free models. |
+| `OPENROUTER_API_KEY` | Yes for chat (or local) | Free key at https://openrouter.ai/keys. Defaults to Venice Uncensored (open-weight). A $0 account auto-falls back to `openai/gpt-oss-20b:free` on HTTP 402. Set `ANIMA_OPENROUTER_FREE=true` to skip Venice. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
