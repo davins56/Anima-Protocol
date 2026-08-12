@@ -146,6 +146,7 @@ export default function Chat() {
   const [llmBrand, setLlmBrand] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState("solo");
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [bgTheme, setBgTheme] = useState("default");
   const [bgImage, setBgImage] = useState("");
