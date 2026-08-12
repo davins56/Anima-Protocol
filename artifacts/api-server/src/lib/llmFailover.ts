@@ -320,6 +320,11 @@ const OPENROUTER_CREDITS_HINT =
   `Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true ` +
   `to use ${OPENROUTER_FREE_MODEL}.`;
 
+const OPENROUTER_FREE_DAILY_HINT =
+  "Today's free OpenRouter messages are used up. " +
+  "Add $10 at https://openrouter.ai/settings/credits to unlock 1000 requests/day and paid Venice Uncensored. " +
+  "The free daily limit resets at midnight UTC.";
+
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
 
@@ -407,6 +412,20 @@ export function isProviderQuotaError(err: unknown): boolean {
     msg.includes("quota") ||
     msg.includes("credits") ||
     msg.includes("payment required")
+  );
+}
+
+/**
+ * OpenRouter's account-wide cap on `:free` models (50/day without a $10
+ * lifetime purchase, 1000/day after). Retrying another free model cannot
+ * bypass this — it is the same quota.
+ */
+export function isOpenRouterFreeDailyLimitError(err: unknown): boolean {
+  const hay = summarizeError(err).toLowerCase();
+  return (
+    hay.includes("free-models-per-day") ||
+    hay.includes("free-models-per-min") ||
+    hay.includes("free model requests per day")
   );
 }
 
@@ -538,7 +557,17 @@ function configuredLocalModelLabel(): string {
   );
 }
 
-function enrichError(err: unknown, provider: LlmProviderId = "local"): Error {
+function localHostDownSuffix(include: boolean): string {
+  if (!include) return "";
+  const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
+  return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
+}
+
+function enrichError(
+  err: unknown,
+  provider: LlmProviderId = "local",
+  opts: { localFailed?: boolean } = {},
+): Error {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
@@ -554,9 +583,14 @@ function enrichError(err: unknown, provider: LlmProviderId = "local"): Error {
   }
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
+      const hint = isOpenRouterFreeDailyLimitError(err)
+        ? OPENROUTER_FREE_DAILY_HINT
+        : hasOpenRouterKey()
+          ? OPENROUTER_CREDITS_HINT
+          : OPENROUTER_SETUP_HINT;
       return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ` +
-          (hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT),
+        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` +
+          localHostDownSuffix(Boolean(opts.localFailed)),
       );
     }
   }
@@ -835,7 +869,11 @@ async function withOpenRouterCreditFallback<T>(
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model)) {
+      if (
+        isProviderQuotaError(err) &&
+        !isOpenRouterFreeModel(candidate.model) &&
+        !isOpenRouterFreeDailyLimitError(err)
+      ) {
         openRouterCreditFallback = true;
         console.warn(
           `[llm] OpenRouter ${candidate.model} needs credits (${summarizeError(err)}); ` +
@@ -957,11 +995,13 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         );
         continue;
       }
-      throw enrichError(err, provider);
+      throw enrichError(err, provider, { localFailed: triedLocal && provider === "openrouter" });
     }
   }
 
-  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
+    localFailed: triedLocal && chain[chain.length - 1] === "openrouter",
+  });
 }
 
 /**
@@ -1023,9 +1063,11 @@ export async function createChatCompletionWithFailover(
         );
         continue;
       }
-      throw enrichError(err, provider);
+      throw enrichError(err, provider, { localFailed: triedLocal && provider === "openrouter" });
     }
   }
 
-  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
+    localFailed: triedLocal && chain[chain.length - 1] === "openrouter",
+  });
 }

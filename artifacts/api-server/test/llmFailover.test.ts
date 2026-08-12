@@ -168,6 +168,7 @@ import {
   isProviderAuthError,
   isProviderConnectionError,
   isProviderQuotaError,
+  isOpenRouterFreeDailyLimitError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
   probeLlmProviders,
   resetOpenRouterCreditFallbackForTests,
@@ -257,6 +258,19 @@ describe("isProviderQuotaError", () => {
     expect(() => isProviderQuotaError({ code: 429, type: "rate_limit_error" })).not.toThrow();
     expect(isProviderQuotaError({ code: 429, type: "rate_limit_error" })).toBe(true);
     expect(isProviderQuotaError({ code: 500, type: {} })).toBe(false);
+  });
+});
+
+describe("isOpenRouterFreeDailyLimitError", () => {
+  it("detects OpenRouter's free-models-per-day 429", () => {
+    expect(
+      isOpenRouterFreeDailyLimitError({
+        status: 429,
+        message: "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
+      }),
+    ).toBe(true);
+    expect(isOpenRouterFreeDailyLimitError({ status: 429, message: "rate limited" })).toBe(false);
+    expect(isOpenRouterFreeDailyLimitError({ status: 402, message: "Insufficient credits" })).toBe(false);
   });
 });
 
@@ -525,6 +539,73 @@ describe("createChatStreamWithFailover", () => {
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
     expect(createMock.mock.calls[1][0].model).toBe("openai/gpt-oss-20b:free");
+  });
+
+  it("does not retry the free model when Venice already hit free-models-per-day", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    createMock.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
+        ),
+        { status: 429 },
+      ),
+    );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected OpenRouter daily limit to reject");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
+      expect(message).toMatch(/openrouter\.ai\/settings\/credits/);
+      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE/);
+    }
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("mentions the Fly host when local is down and OpenRouter hits the daily free cap", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day."),
+          { status: 429 },
+        ),
+      );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected both providers to fail");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
+      expect(message).toMatch(/anima-chat-llm\.fly\.dev/);
+      expect(message).toMatch(/fly apps restart anima-chat-llm/);
+      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE/);
+    }
   });
 
   it("does not tell the operator to set OPENROUTER_API_KEY when a 402 happens on the free model", async () => {
