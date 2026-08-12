@@ -1090,71 +1090,63 @@ async function generateImageDataUrl(prompt: string): Promise<{
   image: string;
   provider: "openai" | "gemini";
 }> {
-  const trimmed = prompt.trim().slice(0, 1000);
-  let openaiMapped: ReturnType<typeof mapImageEditError> | null = null;
+  // Keep headroom for skin-tone hard-requirement blocks from the customiser.
+  const trimmed = prompt.trim().slice(0, 2500);
+  let geminiMapped: ReturnType<typeof mapImageEditError> | null = null;
 
-  if (hasOpenAIKey()) {
+  // Prefer Gemini Flash Image when configured — it follows skin/hair attributes
+  // more reliably for Customise Anima than gpt-image-1.
+  if (hasGeminiImageKey() && isFreeImageFallbackEnabled()) {
     try {
-      const result = await getOpenAIClient().images.generate({
-        model: "gpt-image-1",
-        prompt: trimmed,
-        size: "1024x1024",
-      });
-      const b64 = result.data?.[0]?.b64_json;
-      if (!b64) {
-        throw Object.assign(new Error("No image was returned."), { status: 502 });
-      }
-      return {
-        image: `data:image/png;base64,${b64}`,
-        provider: "openai",
-      };
+      const gemini = await generateImageWithGemini(trimmed);
+      return { image: gemini.image, provider: gemini.provider };
     } catch (err) {
-      openaiMapped = mapImageEditError(err);
-      if (
-        openaiMapped.code === "content_policy" ||
-        !isFreeImageFallbackEnabled() ||
-        !shouldFallbackToFreeImage(openaiMapped.code)
-      ) {
-        throw Object.assign(new Error(openaiMapped.error), {
-          status: openaiMapped.status,
-          code: openaiMapped.code,
+      geminiMapped = mapImageEditError(err);
+      if (geminiMapped.code === "content_policy" || !hasOpenAIKey()) {
+        throw Object.assign(new Error(geminiMapped.error), {
+          status: geminiMapped.status,
+          code: geminiMapped.code,
         });
       }
       logger.warn(
-        { code: openaiMapped.code },
-        "OpenAI image generate failed; falling back to Gemini Flash Image",
+        { code: geminiMapped.code },
+        "Gemini image generate failed; falling back to OpenAI gpt-image-1",
       );
     }
-  } else if (!isFreeImageFallbackEnabled()) {
-    throw Object.assign(
-      new Error("Image generation is temporarily unavailable. Please try again later."),
-      { status: 503, code: "auth_error" },
-    );
   }
 
-  if (!hasGeminiImageKey()) {
+  if (!hasOpenAIKey()) {
     throw Object.assign(
       new Error(
-        openaiMapped?.error ||
+        geminiMapped?.error ||
           "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
       ),
       {
-        status: openaiMapped?.status ?? 503,
-        code: openaiMapped?.code ?? "auth_error",
+        status: geminiMapped?.status ?? 503,
+        code: geminiMapped?.code ?? "auth_error",
       },
     );
   }
 
   try {
-    const free = await generateImageWithGemini(trimmed);
-    return { image: free.image, provider: free.provider };
+    const result = await getOpenAIClient().images.generate({
+      model: "gpt-image-1",
+      prompt: trimmed.slice(0, 1000),
+      size: "1024x1024",
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    if (!b64) {
+      throw Object.assign(new Error("No image was returned."), { status: 502 });
+    }
+    return {
+      image: `data:image/png;base64,${b64}`,
+      provider: "openai",
+    };
   } catch (err) {
-    // Prefer the original OpenAI error when the free provider also fails —
-    // it is usually more actionable (quota / key) for operators.
-    if (openaiMapped) {
-      throw Object.assign(new Error(openaiMapped.error), {
-        status: openaiMapped.status,
-        code: openaiMapped.code,
+    if (geminiMapped) {
+      throw Object.assign(new Error(geminiMapped.error), {
+        status: geminiMapped.status,
+        code: geminiMapped.code,
       });
     }
     const mapped = mapImageEditError(err);
@@ -1204,49 +1196,29 @@ router.post("/image-edit", async (req, res) => {
       ? "webp"
       : "jpg";
 
-  const trimmed = prompt.trim().slice(0, 1000);
+  const trimmed = prompt.trim().slice(0, 2500);
   const dataUrl = `data:${mime};base64,${match[2]}`;
 
-  if (hasOpenAIKey()) {
+  // Prefer Gemini for edits too — better at applying complexion changes.
+  if (hasGeminiImageKey() && isFreeImageFallbackEnabled()) {
     try {
-      const file = await toFile(buffer, `source.${ext}`, { type: mime });
-      const result = await getOpenAIClient().images.edit({
-        model: "gpt-image-1",
-        image: file,
-        prompt: trimmed,
-        size: "1024x1024",
-      });
-      const b64 = result.data?.[0]?.b64_json;
-      if (!b64) {
-        res.status(502).json({ error: "No image was returned." });
-        return;
-      }
-      res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
+      const gemini = await editImageWithGemini(dataUrl, trimmed);
+      res.json({ image: gemini.image, provider: gemini.provider });
       return;
     } catch (err) {
       const mapped = mapImageEditError(err);
-      if (
-        mapped.code === "content_policy" ||
-        !isFreeImageFallbackEnabled() ||
-        !shouldFallbackToFreeImage(mapped.code)
-      ) {
+      if (mapped.code === "content_policy" || !hasOpenAIKey()) {
         res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
         return;
       }
       logger.warn(
         { code: mapped.code },
-        "OpenAI image edit failed; falling back to Gemini Flash Image",
+        "Gemini image edit failed; falling back to OpenAI gpt-image-1",
       );
     }
-  } else if (!isFreeImageFallbackEnabled()) {
-    res.status(503).json({
-      error: "Image generation is temporarily unavailable. Please try again later.",
-      code: "auth_error",
-    });
-    return;
   }
 
-  if (!hasGeminiImageKey()) {
+  if (!hasOpenAIKey()) {
     res.status(503).json({
       error: "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
       code: "auth_error",
@@ -1255,17 +1227,27 @@ router.post("/image-edit", async (req, res) => {
   }
 
   try {
-    const free = await editImageWithGemini(dataUrl, trimmed);
-    res.json({ image: free.image, provider: free.provider });
+    const file = await toFile(buffer, `source.${ext}`, { type: mime });
+    const result = await getOpenAIClient().images.edit({
+      model: "gpt-image-1",
+      image: file,
+      prompt: trimmed.slice(0, 1000),
+      size: "1024x1024",
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    if (!b64) {
+      res.status(502).json({ error: "No image was returned." });
+      return;
+    }
+    res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
   } catch (err) {
     const mapped = mapImageEditError(err);
     res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 
-// AI image generation from a text prompt. Prefers OpenAI gpt-image-1 when
-// OPENAI_API_KEY is set; otherwise (or on OpenAI auth/quota/upstream failure)
-// uses Gemini Flash Image so Customise Anima still populates.
+// AI image generation from a text prompt. Prefers Gemini Flash Image when
+// GEMINI_API_KEY is set; otherwise OpenAI gpt-image-1.
 // Auth is enforced by the router-level middleware above.
 router.post("/image-generate", async (req, res) => {
   const { prompt } = req.body as { prompt?: string };

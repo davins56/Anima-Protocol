@@ -232,7 +232,13 @@ export async function generateImageWithGemini(prompt: string): Promise<GeminiIma
   }
   return callGeminiImage([
     {
-      text: `Generate a single high-quality character portrait image. ${trimmed.slice(0, 2000)}`,
+      text: [
+        "Generate exactly one high-quality character portrait image.",
+        "Obey every HARD REQUIREMENT about skin tone / complexion literally.",
+        "Do not default to pale or light skin unless the prompt asks for it.",
+        "Match the requested skin colour on face, neck, and hands.",
+        trimmed.slice(0, 2500),
+      ].join("\n"),
     },
   ]);
 }
@@ -270,7 +276,12 @@ export async function editImageWithGemini(
 
   return callGeminiImage([
     {
-      text: `Edit this character portrait according to the instructions. Keep the same person/identity unless asked otherwise. Instructions: ${trimmed.slice(0, 2000)}`,
+      text: [
+        "Edit this character portrait according to the instructions.",
+        "If skin tone / complexion is specified, change it clearly and consistently on face, neck, and hands.",
+        "Keep identity/pose when possible, but never ignore a requested skin colour.",
+        `Instructions: ${trimmed.slice(0, 2500)}`,
+      ].join("\n"),
     },
     { inlineData: { mimeType, data } },
   ]);

@@ -87,6 +87,8 @@ describe("generateImageWithGemini", () => {
     const body = JSON.parse(String((init as RequestInit).body));
     expect(body.generationConfig.responseModalities).toEqual(["IMAGE"]);
     expect(body.generationConfig.imageConfig.aspectRatio).toBe("1:1");
+    expect(body.contents[0].parts[0].text).toMatch(/skin tone/i);
+    expect(body.contents[0].parts[0].text).toContain("cyberpunk anima");
   });
 
   it("maps 429 to rate_limit", async () => {

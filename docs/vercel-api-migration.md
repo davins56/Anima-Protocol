@@ -55,7 +55,7 @@ ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 
 Host Ollama with `pnpm llm:up` on a machine that Vercel can reach (HTTPS). See `docs/custom-llm.md` and `docs/llm-deploy.md` for a concrete no-infra-yet path.
 
-Image generation prefers a funded `OPENAI_API_KEY` (`gpt-image-1`). When that key is missing or OpenAI returns auth/quota/upstream errors, the API falls back to **Gemini Flash Image** (`gemini-2.5-flash-image`) via `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) so Customise Anima → Generate Look still populates. Disable with `IMAGE_FREE_FALLBACK=off`.
+Image generation prefers **Gemini Flash Image** (`gemini-2.5-flash-image`) via `GEMINI_API_KEY` (or `GOOGLE_API_KEY`). If Gemini is unset or fails, it falls back to OpenAI `gpt-image-1` when `OPENAI_API_KEY` is set. Disable the Gemini path with `IMAGE_FREE_FALLBACK=off`.
 
 **If chat says "Too many requests. Please slow down" after one message:** that is the API's own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
 
