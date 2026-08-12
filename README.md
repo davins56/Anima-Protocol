@@ -153,6 +153,7 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `ANIMA_LOCAL_LLM_BACKEND` | API | `ollama` (default) or `vllm` |
 | `ANIMA_OLLAMA_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | Ollama model tags per tier (default `anima-chat`). If the endpoint doesn't serve the tag, chat discovers a working model via `/v1/models` instead of failing — see [docs/custom-llm.md](docs/custom-llm.md) |
 | `ANIMA_VLLM_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | vLLM model ids per tier |
+| `ANIMA_OPENROUTER_MODEL_FAMILY` | API | Optional free OpenRouter family selector: `llama`, `qwen`, `mistral`, `gemma`, or `deepseek`. Exact `ANIMA_OPENROUTER_MODEL_*` overrides still win |
 | `ANIMA_LOCAL_LLM_MAX_RETRIES` | API | Transport retries against the LLM host (default `2`). Covers tunnel drops and cold-start 502s; `0` disables |
 | `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |

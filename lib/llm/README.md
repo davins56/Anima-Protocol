@@ -11,6 +11,7 @@ pnpm llm:up                                          # bootstrap anima-chat via 
 pnpm llm:chat -- "Who are you?"
 pnpm --filter @workspace/llm run test
 pnpm --filter @workspace/llm run cli -- list-models --provider ollama
+pnpm llm:list-open-models
 pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt --val-split 0.05
 pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
 pnpm --filter @workspace/llm run cli -- import-logs               # preview scripts/llm/data/raw/*
@@ -21,6 +22,14 @@ pnpm llm:verify-deploy -- https://your-deployment.example.com
 ```
 
 Root shortcuts: `pnpm llm:up`, `pnpm llm:chat`, `pnpm llm:prepare-finetune`, `pnpm llm:serve-hint`, `pnpm llm:test`, `pnpm llm:eval`, `pnpm llm:verify-deploy`.
+
+## Open-weight model families
+
+The registry includes first-class presets for `llama`, `qwen`, `mistral`,
+`gemma`, and `deepseek`. Run `pnpm llm:list-open-models` to print the
+recommended Ollama tags, vLLM/Hugging Face ids, and free OpenRouter slugs.
+For OpenRouter, set `ANIMA_OPENROUTER_MODEL_FAMILY=<family>` unless you need
+an exact `ANIMA_OPENROUTER_MODEL_STANDARD` override.
 
 ### Data quality pipeline (`src/dataset/clean.ts`)
 
