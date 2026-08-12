@@ -20534,27 +20534,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router11;
+    module.exports = Router12;
     module.exports.Route = Route;
-    function Router11(options) {
-      if (!(this instanceof Router11)) {
-        return new Router11(options);
+    function Router12(options) {
+      if (!(this instanceof Router12)) {
+        return new Router12(options);
       }
       const opts = options || {};
-      function router12(req, res, next) {
-        router12.handle(req, res, next);
+      function router13(req, res, next) {
+        router13.handle(req, res, next);
       }
-      Object.setPrototypeOf(router12, this);
-      router12.caseSensitive = opts.caseSensitive;
-      router12.mergeParams = opts.mergeParams;
-      router12.params = {};
-      router12.strict = opts.strict;
-      router12.stack = [];
-      return router12;
+      Object.setPrototypeOf(router13, this);
+      router13.caseSensitive = opts.caseSensitive;
+      router13.mergeParams = opts.mergeParams;
+      router13.params = {};
+      router13.strict = opts.strict;
+      router13.stack = [];
+      return router13;
     }
-    Router11.prototype = function() {
+    Router12.prototype = function() {
     };
-    Router11.prototype.param = function param(name, fn) {
+    Router12.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20574,7 +20574,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router11.prototype.handle = function handle(req, res, callback) {
+    Router12.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20701,7 +20701,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router11.prototype.use = function use(handler) {
+    Router12.prototype.use = function use(handler) {
       let offset = 0;
       let path2 = "/";
       if (typeof handler !== "function") {
@@ -20734,7 +20734,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router11.prototype.route = function route(path2) {
+    Router12.prototype.route = function route(path2) {
       const route2 = new Route(path2);
       const layer = new Layer(path2, {
         sensitive: this.caseSensitive,
@@ -20749,7 +20749,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router11.prototype[method] = function(path2) {
+      Router12.prototype[method] = function(path2) {
         const route = this.route(path2);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20932,13 +20932,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router11 = require_router();
+    var Router12 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init2() {
-      var router12 = null;
+      var router13 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20947,13 +20947,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router12 === null) {
-            router12 = new Router11({
+          if (router13 === null) {
+            router13 = new Router12({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router12;
+          return router13;
         }
       });
     };
@@ -21024,15 +21024,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router12 = this.router;
+      var router13 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router12.use(path2, fn2);
+          return router13.use(path2, fn2);
         }
         debug2(".use app under %s", path2);
         fn2.mountpath = path2;
         fn2.parent = this;
-        router12.use(path2, function mounted_app(req, res, next) {
+        router13.use(path2, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23605,7 +23605,7 @@ var require_express = __commonJS({
     var EventEmitter2 = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router11 = require_router();
+    var Router12 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23627,8 +23627,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router11.Route;
-    exports.Router = Router11;
+    exports.Route = Router12.Route;
+    exports.Router = Router12;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -65866,7 +65866,7 @@ var require_lib8 = __commonJS({
 });
 
 // src/app.ts
-var import_express21 = __toESM(require_express2(), 1);
+var import_express23 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/lib/logger.ts
@@ -106914,7 +106914,7 @@ router2.post("/healthz/schema", async (_req, res) => {
 var health_default = router2;
 
 // src/routes/index.ts
-var import_express20 = __toESM(require_express2(), 1);
+var import_express22 = __toESM(require_express2(), 1);
 
 // src/routes/openai/index.ts
 var import_express5 = __toESM(require_express2(), 1);
@@ -108222,23 +108222,23 @@ function mapImageEditError(err) {
   const e2 = err ?? {};
   const rawMessage = e2.message || e2.error?.message || (typeof err === "string" ? err : "") || "Image edit failed.";
   const rawCode = (e2.code || e2.error?.code || e2.type || e2.error?.type || "").toString();
-  const haystack = `${rawCode} ${rawMessage}`.toLowerCase();
+  const haystack2 = `${rawCode} ${rawMessage}`.toLowerCase();
   const upstreamStatus = typeof e2.status === "number" && e2.status >= 400 && e2.status < 600 ? e2.status : void 0;
-  if (rawCode === "moderation_blocked" || rawCode === "content_policy_violation" || haystack.includes("content policy") || haystack.includes("safety system") || haystack.includes("moderation")) {
+  if (rawCode === "moderation_blocked" || rawCode === "content_policy_violation" || haystack2.includes("content policy") || haystack2.includes("safety system") || haystack2.includes("moderation")) {
     return {
       status: 400,
       code: "content_policy",
       error: "That request was blocked by the content safety filter."
     };
   }
-  if (upstreamStatus === 429 || rawCode === "rate_limit_exceeded" || rawCode === "insufficient_quota" || haystack.includes("rate limit") || haystack.includes("quota")) {
+  if (upstreamStatus === 429 || rawCode === "rate_limit_exceeded" || rawCode === "insufficient_quota" || haystack2.includes("rate limit") || haystack2.includes("quota")) {
     return {
       status: 429,
       code: "rate_limit",
       error: "The image service is busy right now."
     };
   }
-  if (upstreamStatus === 401 || rawCode === "invalid_api_key" || haystack.includes("incorrect api key") || haystack.includes("invalid api key") || haystack.includes("api key provided")) {
+  if (upstreamStatus === 401 || rawCode === "invalid_api_key" || haystack2.includes("incorrect api key") || haystack2.includes("invalid api key") || haystack2.includes("api key provided")) {
     return {
       status: 503,
       code: "auth_error",
@@ -123568,33 +123568,321 @@ router10.post(
 );
 var admin_default = router10;
 
-// src/routes/index.ts
+// src/routes/codeRepair.ts
+var import_express20 = __toESM(require_express2(), 1);
+
+// src/lib/codeRepair.ts
+var MAX_TEXT = 8e3;
+function compactText(value, max = MAX_TEXT) {
+  const text2 = String(value ?? "").trim();
+  return text2.length > max ? `${text2.slice(0, max - 1)}...` : text2;
+}
+function haystack(input) {
+  return `${input.issue}
+${JSON.stringify(input.context ?? {})}`.toLowerCase();
+}
+function classify(input) {
+  const text2 = haystack(input);
+  if (text2.includes("openrouter") && (text2.includes("free-models-per-day") || text2.includes("rate limit") || text2.includes("429") || text2.includes("402") || text2.includes("credits") || text2.includes("venice"))) {
+    return "openrouter_quota";
+  }
+  if (text2.includes("openrouter") || text2.includes("sk-or-") || text2.includes("anima_openrouter")) {
+    return "openrouter_key";
+  }
+  if (text2.includes("clerk") || text2.includes("session not recognized") || text2.includes("unauthorized") || text2.includes("401")) {
+    return "clerk_auth";
+  }
+  if (text2.includes("database_url") || text2.includes("postgres") || text2.includes("drizzle") || text2.includes("db push")) {
+    return "database";
+  }
+  if (text2.includes(".env") || text2.includes("secret") || text2.includes("api_key") || text2.includes("sk_")) {
+    return "env_secret";
+  }
+  return "generic";
+}
+function openRouterQuotaRepair(input) {
+  const env = input.diagnostics?.openrouterEnv || "OPENROUTER_API_KEY";
+  const model = input.diagnostics?.openrouterModel || "openai/gpt-oss-20b:free";
+  return {
+    category: "openrouter_quota",
+    confidence: "high",
+    summary: "OpenRouter is rejecting chat because the configured account is out of credits or has hit the free daily request cap.",
+    likelyCause: "The app can see an OpenRouter key, but the provider is returning a quota/rate-limit response. Setting ANIMA_OPENROUTER_FREE=true switches to free models, but it cannot bypass OpenRouter's free-models-per-day limit.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Confirm the winning OpenRouter key",
+        detail: `The server is configured to use ${env}. If an older ${env} value points at an exhausted OpenRouter account, replace that value instead of adding more aliases.`,
+        files: ["Vercel Project Settings > Environment Variables", ".env"]
+      },
+      {
+        title: "Keep the free-model switch enabled",
+        detail: "Set ANIMA_OPENROUTER_FREE=true in the same Vercel environment as the OpenRouter key, then redeploy.",
+        command: "ANIMA_OPENROUTER_FREE=true"
+      },
+      {
+        title: "Remove model overrides that force Venice",
+        detail: "Delete ANIMA_OPENROUTER_MODEL_STANDARD, ANIMA_OPENROUTER_MODEL_LIGHT, ANIMA_OPENROUTER_MODEL_HEAVY, or ANIMA_OPENROUTER_MODEL_FAMILY if they still point at Venice. Those override the free switch."
+      },
+      {
+        title: "Resolve the provider quota",
+        detail: "Add credits at https://openrouter.ai/settings/credits or replace the OpenRouter key with one from an account that has remaining quota."
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check routing status",
+        detail: `Verify the deployed API reports OpenRouter free-tier routing and model ${model}.`,
+        command: "curl https://www.anima-protocol.com/api/healthz/llm"
+      },
+      {
+        title: "Probe the provider",
+        detail: "Run a live provider probe after redeploying to confirm OpenRouter accepts a tiny completion.",
+        command: "curl https://www.anima-protocol.com/api/healthz/llm?probe=1"
+      }
+    ],
+    guardrails: [
+      "Do not commit real API keys to the repository.",
+      "Do not set multiple OpenRouter key aliases unless you know which one wins.",
+      "This console provides repair instructions; it does not mutate production settings or repository files."
+    ]
+  };
+}
+function openRouterKeyRepair() {
+  return {
+    category: "openrouter_key",
+    confidence: "medium",
+    summary: "OpenRouter configuration needs cleanup.",
+    likelyCause: "The application reads the first non-empty key in this order: OPENROUTER_API_KEY, ANIMA_OPENROUTER_API_KEY, OPEN_ROUTER_API_KEY.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Use one canonical key",
+        detail: "Prefer OPENROUTER_API_KEY and remove stale alias values so the server cannot pick the wrong account.",
+        files: ["Vercel Project Settings > Environment Variables", ".env"]
+      },
+      {
+        title: "Enable free-tier routing when needed",
+        detail: "Set ANIMA_OPENROUTER_FREE=true alongside the key to skip Venice by default.",
+        command: "OPENROUTER_API_KEY=sk-or-...\nANIMA_OPENROUTER_FREE=true"
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Verify selected key source",
+        detail: "The LLM health endpoint reports the secret-free env name that supplied the key.",
+        command: "curl https://www.anima-protocol.com/api/healthz/llm"
+      }
+    ],
+    guardrails: [
+      "Never paste secret values into chat transcripts or tracked files.",
+      "Redeploy after changing Vercel environment variables."
+    ]
+  };
+}
+function clerkRepair() {
+  return {
+    category: "clerk_auth",
+    confidence: "medium",
+    summary: "Clerk authentication settings appear inconsistent.",
+    likelyCause: "A frontend publishable key and backend secret/publishable key mismatch can produce 401s and session recognition failures.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Use matching Clerk keys",
+        detail: "Set VITE_CLERK_PUBLISHABLE_KEY, CLERK_PUBLISHABLE_KEY, and CLERK_SECRET_KEY from the same Clerk instance.",
+        files: ["Vercel Project Settings > Environment Variables", ".env"]
+      },
+      {
+        title: "Check proxy mode",
+        detail: "Leave VITE_CLERK_PROXY_URL empty for the production custom Clerk domain unless intentionally testing proxy mode."
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check API health",
+        detail: "Confirm the API responds before signing in.",
+        command: "curl https://www.anima-protocol.com/api/healthz"
+      }
+    ],
+    guardrails: ["Never put CLERK_SECRET_KEY in any VITE_ variable.", "Redeploy after changing Clerk env vars."]
+  };
+}
+function databaseRepair() {
+  return {
+    category: "database",
+    confidence: "medium",
+    summary: "Database configuration or schema setup needs attention.",
+    likelyCause: "The API depends on DATABASE_URL and the shared Drizzle schema. A missing URL, blocked Postgres connection, or unapplied schema can break persistence.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Set DATABASE_URL",
+        detail: "Configure DATABASE_URL in the target runtime environment. Local dev can use the provided Postgres database.",
+        command: "DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev"
+      },
+      {
+        title: "Apply schema locally",
+        detail: "Push the shared database schema after DATABASE_URL is set.",
+        command: "pnpm --filter @workspace/db run push"
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check health endpoint",
+        detail: "Use the public API health check to confirm the server can start.",
+        command: "curl http://127.0.0.1:8080/api/healthz"
+      }
+    ],
+    guardrails: ["Do not point preview deployments at production data unless that is intentional."]
+  };
+}
+function envSecretRepair() {
+  return {
+    category: "env_secret",
+    confidence: "medium",
+    summary: "A secret or environment value should be kept out of tracked source.",
+    likelyCause: "Secrets belong in Vercel environment variables or gitignored local env files, not in committed code.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Move the value to runtime env",
+        detail: "Put local-only values in the root .env file and deployed values in Vercel Project Settings.",
+        files: [".env", "Vercel Project Settings > Environment Variables"]
+      },
+      {
+        title: "Remove tracked copies",
+        detail: "If a secret was committed, remove it from git and rotate the secret with the provider.",
+        command: "git rm --cached <file-with-secret>"
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Check git status",
+        detail: "Make sure .env is not staged or tracked.",
+        command: "git status --short"
+      }
+    ],
+    guardrails: ["Rotate any secret that was committed or shared in a screenshot.", "Keep .env.example as placeholders only."]
+  };
+}
+function genericRepair(issue2) {
+  return {
+    category: "generic",
+    confidence: "low",
+    summary: "Anima needs more structured debugging context to produce a precise fix.",
+    likelyCause: "The supplied issue does not match a known repair recipe yet. Capture the exact error, recent change, affected page, and expected behavior.",
+    canAutoApply: false,
+    repairSteps: [
+      {
+        title: "Capture the failing path",
+        detail: "Describe the page, action, current result, and expected result in one short reproduction."
+      },
+      {
+        title: "Collect the exact error",
+        detail: compactText(issue2, 500) || "Paste the browser console, server log, or API response that appears when the issue happens."
+      }
+    ],
+    verificationSteps: [
+      {
+        title: "Re-run the smallest reproduction",
+        detail: "After applying a fix, repeat the exact failing action and record whether behavior changed."
+      }
+    ],
+    guardrails: [
+      "This console does not run arbitrary code or write repository files.",
+      "Use Cursor or a reviewed PR to apply patches."
+    ]
+  };
+}
+function analyzeCodeRepairInput(input) {
+  const issue2 = compactText(input.issue);
+  const safeInput = { ...input, issue: issue2 };
+  switch (classify(safeInput)) {
+    case "openrouter_quota":
+      return openRouterQuotaRepair(safeInput);
+    case "openrouter_key":
+      return openRouterKeyRepair();
+    case "clerk_auth":
+      return clerkRepair();
+    case "database":
+      return databaseRepair();
+    case "env_secret":
+      return envSecretRepair();
+    default:
+      return genericRepair(issue2);
+  }
+}
+
+// src/routes/codeRepair.ts
 var router11 = (0, import_express20.Router)();
-router11.use("/admin", admin_default);
-router11.use("/openai", openai_default2);
-router11.use("/openai", functions_default);
-router11.use(elevenlabs_default);
-router11.use(characterImage_default);
-router11.use("/chat", chat_default);
-router11.use("/store", store_default);
-router11.use(storage_default);
-router11.get("/placeholder/:w/:h", (req, res) => {
+router11.use(createRateLimit({ name: "code-repair", max: 20, windowMs: 6e4 }));
+router11.post("/analyze", (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const body = req.body;
+  const issue2 = String(body.issue ?? "").trim();
+  if (!issue2) {
+    res.status(400).json({ error: "issue is required" });
+    return;
+  }
+  const routing = getLlmRoutingStatus("standard");
+  const analysis = analyzeCodeRepairInput({
+    issue: issue2,
+    context: body.context,
+    diagnostics: {
+      openrouterConfigured: routing.openrouter.configured,
+      openrouterEnv: routing.openrouter.env,
+      openrouterModel: routing.openrouter.model,
+      openrouterIsFreeTier: routing.openrouter.isFreeTier
+    }
+  });
+  res.json({
+    ...analysis,
+    diagnostics: {
+      openrouter: {
+        configured: routing.openrouter.configured,
+        env: routing.openrouter.env,
+        model: routing.openrouter.model,
+        isFreeTier: routing.openrouter.isFreeTier,
+        creditFallback: routing.openrouter.creditFallback
+      }
+    }
+  });
+});
+var codeRepair_default = router11;
+
+// src/routes/index.ts
+var router12 = (0, import_express22.Router)();
+router12.use("/admin", admin_default);
+router12.use("/openai", openai_default2);
+router12.use("/openai", functions_default);
+router12.use(elevenlabs_default);
+router12.use(characterImage_default);
+router12.use("/chat", chat_default);
+router12.use("/code-repair", codeRepair_default);
+router12.use("/store", store_default);
+router12.use(storage_default);
+router12.get("/placeholder/:w/:h", (req, res) => {
   const w2 = Math.min(Number(req.params.w) || 150, 1200);
   const h2 = Math.min(Number(req.params.h) || 150, 1200);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w2}" height="${h2}"><rect width="${w2}" height="${h2}" fill="#1a1a2e"/><text x="50%" y="50%" font-family="monospace" font-size="12" fill="#22d3ee" text-anchor="middle" dominant-baseline="middle">${w2}\xD7${h2}</text></svg>`;
   res.setHeader("Content-Type", "image/svg+xml");
   res.send(svg);
 });
-var routes_default = router11;
+var routes_default = router12;
 
 // src/app.ts
-var app = (0, import_express21.default)();
+var app = (0, import_express23.default)();
 app.set("trust proxy", 1);
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
-app.use(import_express21.default.json({ limit: "25mb" }));
-app.use(import_express21.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express23.default.json({ limit: "25mb" }));
+app.use(import_express23.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use("/api", health_default);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
