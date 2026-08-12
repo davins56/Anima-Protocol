@@ -15,7 +15,13 @@
 
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { isModelUnavailableError, type ModelTier, type ResolvedModel } from "./modelRouter";
+import {
+  errorCodeLower,
+  errorFieldLower,
+  isModelUnavailableError,
+  type ModelTier,
+  type ResolvedModel,
+} from "./modelRouter";
 import {
   getLocalLlmClient,
   getOpenRouterClient,
@@ -292,19 +298,19 @@ export function isProviderConnectionError(err: unknown): boolean {
     seen.add(current);
     if (typeof current !== "object") break;
     const e = current as {
-      name?: string;
+      name?: unknown;
       status?: number;
-      code?: string;
-      type?: string;
-      message?: string;
+      code?: unknown;
+      type?: unknown;
+      message?: unknown;
       cause?: unknown;
     };
     // A real HTTP status means we reached something — not a connect failure.
     if (typeof e.status === "number" && e.status > 0) return false;
 
-    const name = (e.name || "").toLowerCase();
-    const code = (e.code || e.type || "").toLowerCase();
-    const msg = (e.message || "").toLowerCase();
+    const name = errorFieldLower(e.name);
+    const code = errorCodeLower(e);
+    const msg = errorFieldLower(e.message);
     if (
       name.includes("apiconnectionerror") ||
       name.includes("connectionerror") ||
@@ -326,9 +332,9 @@ export function isProviderConnectionError(err: unknown): boolean {
 /** True when the local server rejected auth (wrong/missing bearer token). */
 export function isProviderAuthError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { status?: number; code?: string; type?: string; message?: string };
-  const code = (e.code || e.type || "").toLowerCase();
-  const msg = (e.message || "").toLowerCase();
+  const e = err as { status?: number; code?: unknown; type?: unknown; message?: unknown };
+  const code = errorCodeLower(e);
+  const msg = errorFieldLower(e.message);
   if (code.includes("invalid_api_key") || code.includes("authentication_error") || code.includes("invalid_auth")) {
     return true;
   }
@@ -350,10 +356,10 @@ export function isProviderAuthError(err: unknown): boolean {
 /** True when a provider reported quota / rate / billing exhaustion. */
 export function isProviderQuotaError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { status?: number; code?: string; type?: string; message?: string };
+  const e = err as { status?: number; code?: unknown; type?: unknown; message?: unknown };
   if (e.status === 429) return true;
-  const code = (e.code || e.type || "").toLowerCase();
-  const msg = (e.message || "").toLowerCase();
+  const code = errorCodeLower(e);
+  const msg = errorFieldLower(e.message);
   return (
     code.includes("rate_limit") ||
     code.includes("insufficient_quota") ||
