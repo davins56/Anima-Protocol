@@ -93829,7 +93829,6 @@ function getPool() {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-  poolInstance = new Pool3({ connectionString, ssl });
   poolInstance = new Pool3({
     connectionString,
     ssl,
