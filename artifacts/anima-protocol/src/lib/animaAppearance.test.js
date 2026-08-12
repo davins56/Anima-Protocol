@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_FEATURES,
   buildAppearanceImagePrompt,
+  expandSkinToneDescriptor,
   normalizeAppearancePrompts,
 } from "./animaAppearance";
 
@@ -31,8 +32,22 @@ describe("normalizeAppearancePrompts", () => {
   });
 });
 
+describe("expandSkinToneDescriptor", () => {
+  it("expands known labels into unambiguous descriptors", () => {
+    const deep = expandSkinToneDescriptor("deep ebony");
+    expect(deep).toMatch(/deep ebony/i);
+    expect(deep).toMatch(/not light/i);
+  });
+
+  it("reinforces custom free-text skin tones", () => {
+    const custom = expandSkinToneDescriptor("rich copper brown");
+    expect(custom).toMatch(/rich copper brown/i);
+    expect(custom).toMatch(/face, neck, and hands/i);
+  });
+});
+
 describe("buildAppearanceImagePrompt", () => {
-  it("includes name, archetype, and set features", () => {
+  it("includes name, archetype, and set features with a skin hard requirement", () => {
     const prompt = buildAppearanceImagePrompt(
       { name: "Serenity", archetype: "guardian", personality: "Calm and wise presence" },
       {
@@ -44,13 +59,14 @@ describe("buildAppearanceImagePrompt", () => {
     );
     expect(prompt).toContain("Serenity");
     expect(prompt).toContain("guardian");
-    expect(prompt).toMatch(/with deep ebony skin tone/i);
-    expect(prompt).toContain("Skin colour / complexion (required): deep ebony");
+    expect(prompt).toMatch(/^HARD REQUIREMENT — SKIN TONE:/);
+    expect(prompt).toMatch(/deep ebony/i);
+    expect(prompt).toMatch(/Do not lighten, darken, or ignore/i);
     expect(prompt).toContain("Hair: long silver wavy");
     expect(prompt).toContain("Eyes: glowing violet");
     expect(prompt).toContain("Art style: anime illustration");
-    expect(prompt).toContain("character-focused portrait");
-    expect(prompt).toMatch(/accurately depict deep ebony skin colour/i);
+    expect(prompt).toMatch(/character-focused/i);
+    expect(prompt.indexOf("HARD REQUIREMENT")).toBeLessThan(prompt.indexOf("Hair:"));
   });
 
   it("applies defaults when style/setting/mood are empty", () => {
