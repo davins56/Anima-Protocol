@@ -175,9 +175,9 @@ export function isOpenRouterFreeModel(model: string): boolean {
 }
 
 /**
- * Once OpenRouter returns 402 / insufficient credits on a paid model, later
- * turns in this isolate skip straight to the free-tier model so a valid free
- * key is not mistaken for "key not set".
+ * Once OpenRouter confirms an account-level credit/payment failure on a paid
+ * model, later turns in this isolate skip straight to the free-tier model so a
+ * valid free key is not mistaken for "key not set".
  */
 let openRouterCreditFallback = false;
 
@@ -329,6 +329,11 @@ const OPENROUTER_CREDITS_HINT =
   `Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true ` +
   `to use ${OPENROUTER_FREE_MODEL}.`;
 
+const OPENROUTER_FREE_DAILY_HINT =
+  "Today's free OpenRouter messages are used up. " +
+  "Add $10 at https://openrouter.ai/settings/credits to unlock 1000 requests/day and paid Venice Uncensored. " +
+  "The free daily limit resets at midnight UTC.";
+
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
 
@@ -416,6 +421,44 @@ export function isProviderQuotaError(err: unknown): boolean {
     msg.includes("quota") ||
     msg.includes("credits") ||
     msg.includes("payment required")
+  );
+}
+
+/** True when OpenRouter specifically says the account needs credits/payment. */
+function isOpenRouterCreditFallbackError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { status?: number; code?: unknown; type?: unknown; message?: unknown };
+  const code = errorCodeLower(e);
+  const msg = errorFieldLower(e.message);
+  return (
+    e.status === 402 ||
+    code.includes("payment_required") ||
+    msg.includes("insufficient credits") ||
+    msg.includes("never purchased credits") ||
+    msg.includes("add credits") ||
+    msg.includes("payment required")
+  );
+}
+
+/**
+ * OpenRouter's account-wide cap on `:free` models (50/day without a $10
+ * lifetime purchase, 1000/day after). Retrying another free model cannot
+ * bypass this — it is the same quota.
+ */
+export function isOpenRouterFreeDailyLimitError(err: unknown): boolean {
+  const hay = summarizeError(err).toLowerCase();
+  return (
+    hay.includes("free-models-per-day") ||
+    hay.includes("free model requests per day")
+  );
+}
+
+/** True when OpenRouter's free tier is throttling requests per minute. */
+export function isOpenRouterFreeMinuteLimitError(err: unknown): boolean {
+  const hay = summarizeError(err).toLowerCase();
+  return (
+    hay.includes("free-models-per-min") ||
+    hay.includes("free model requests per minute")
   );
 }
 
@@ -547,7 +590,20 @@ function configuredLocalModelLabel(): string {
   );
 }
 
-function enrichError(err: unknown, provider: LlmProviderId = "local"): Error {
+function localHostDownSuffix(include: boolean): string {
+  if (!include) return "";
+  const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
+  if (host === "anima-chat-llm.fly.dev") {
+    return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
+  }
+  return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from Vercel.`;
+}
+
+function enrichError(
+  err: unknown,
+  provider: LlmProviderId = "local",
+  opts: { localConnectionFailed?: boolean } = {},
+): Error {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
@@ -563,9 +619,16 @@ function enrichError(err: unknown, provider: LlmProviderId = "local"): Error {
   }
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
+      const hint = isOpenRouterFreeDailyLimitError(err)
+        ? OPENROUTER_FREE_DAILY_HINT
+        : isOpenRouterFreeMinuteLimitError(err)
+          ? "OpenRouter's free model per-minute limit is temporarily throttling chat. Wait a minute and retry, or add credits at https://openrouter.ai/settings/credits for higher limits."
+          : hasOpenRouterKey()
+            ? OPENROUTER_CREDITS_HINT
+            : OPENROUTER_SETUP_HINT;
       return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ` +
-          (hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT),
+        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` +
+          localHostDownSuffix(Boolean(opts.localConnectionFailed)),
       );
     }
   }
@@ -844,11 +907,20 @@ async function withOpenRouterCreditFallback<T>(
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model)) {
-        openRouterCreditFallback = true;
+      if (
+        isProviderQuotaError(err) &&
+        !isOpenRouterFreeModel(candidate.model) &&
+        !isOpenRouterFreeDailyLimitError(err) &&
+        !isOpenRouterFreeMinuteLimitError(err)
+      ) {
+        const creditFallback = isOpenRouterCreditFallbackError(err);
+        if (creditFallback) {
+          openRouterCreditFallback = true;
+        }
         console.warn(
-          `[llm] OpenRouter ${candidate.model} needs credits (${summarizeError(err)}); ` +
-            `retrying ${OPENROUTER_FREE_MODEL}. The OPENROUTER_API_KEY is set — this is a billing limit, not a missing key.`,
+          `[llm] OpenRouter ${candidate.model} ${
+            creditFallback ? "needs credits" : "is quota/rate limited"
+          } (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}.`,
         );
         continue;
       }
@@ -931,6 +1003,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
 
   let lastErr: unknown;
   let triedLocal = false;
+  let localConnectionFailed = false;
 
   for (const provider of chain) {
     try {
@@ -959,6 +1032,9 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       return await runOpenRouterStream(req, triedLocal);
     } catch (err) {
       lastErr = err;
+      if (provider === "local" && isProviderConnectionError(err)) {
+        localConnectionFailed = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (hasNext) {
         console.warn(
@@ -966,11 +1042,15 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         );
         continue;
       }
-      throw enrichError(err, provider);
+      throw enrichError(err, provider, {
+        localConnectionFailed: localConnectionFailed && provider === "openrouter",
+      });
     }
   }
 
-  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
+    localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
+  });
 }
 
 /**
@@ -989,6 +1069,7 @@ export async function createChatCompletionWithFailover(
 
   let lastErr: unknown;
   let triedLocal = false;
+  let localConnectionFailed = false;
 
   for (const provider of chain) {
     try {
@@ -1025,6 +1106,9 @@ export async function createChatCompletionWithFailover(
       return await runOpenRouterCompletion(req, triedLocal);
     } catch (err) {
       lastErr = err;
+      if (provider === "local" && isProviderConnectionError(err)) {
+        localConnectionFailed = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (hasNext) {
         console.warn(
@@ -1032,9 +1116,13 @@ export async function createChatCompletionWithFailover(
         );
         continue;
       }
-      throw enrichError(err, provider);
+      throw enrichError(err, provider, {
+        localConnectionFailed: localConnectionFailed && provider === "openrouter",
+      });
     }
   }
 
-  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
+    localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
+  });
 }

@@ -106217,6 +106217,7 @@ var LOCAL_LLM_AUTH_FIX_HINT = "ANIMA_LOCAL_LLM_API_KEY on Vercel must exactly ma
 var LOCAL_LLM_CONNECTION_FIX_HINT = "The self-hosted Anima LLM host did not accept a connection. Check `fly status -a anima-chat-llm` / `fly logs -a anima-chat-llm`, then `fly apps restart anima-chat-llm` or `fly deploy -a anima-chat-llm` (see deploy/ollama-fly/README.md). Or set OPENROUTER_API_KEY for Venice Uncensored via OpenRouter.";
 var OPENROUTER_SETUP_HINT = `Set OPENROUTER_API_KEY (free at https://openrouter.ai/keys). Default model is Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). A free key with no credits automatically falls back to ${OPENROUTER_FREE_MODEL}. To skip Venice entirely set ANIMA_OPENROUTER_FREE=true. Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used.`;
 var OPENROUTER_CREDITS_HINT = `Your OPENROUTER_API_KEY is configured, but this OpenRouter account has no credits for Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true to use ${OPENROUTER_FREE_MODEL}.`;
+var OPENROUTER_FREE_DAILY_HINT = "Today's free OpenRouter messages are used up. Add $10 at https://openrouter.ai/settings/credits to unlock 1000 requests/day and paid Venice Uncensored. The free daily limit resets at midnight UTC.";
 var CONNECTION_CODE_RE = /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
 function isProviderConnectionError(err) {
   if (!err || typeof err !== "object") return false;
@@ -106259,6 +106260,21 @@ function isProviderQuotaError(err) {
   const code = errorCodeLower(e2);
   const msg = errorFieldLower(e2.message);
   return code.includes("rate_limit") || code.includes("insufficient_quota") || code.includes("payment_required") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("credits") || msg.includes("payment required");
+}
+function isOpenRouterCreditFallbackError(err) {
+  if (!err || typeof err !== "object") return false;
+  const e2 = err;
+  const code = errorCodeLower(e2);
+  const msg = errorFieldLower(e2.message);
+  return e2.status === 402 || code.includes("payment_required") || msg.includes("insufficient credits") || msg.includes("never purchased credits") || msg.includes("add credits") || msg.includes("payment required");
+}
+function isOpenRouterFreeDailyLimitError(err) {
+  const hay = summarizeError(err).toLowerCase();
+  return hay.includes("free-models-per-day") || hay.includes("free model requests per day");
+}
+function isOpenRouterFreeMinuteLimitError(err) {
+  const hay = summarizeError(err).toLowerCase();
+  return hay.includes("free-models-per-min") || hay.includes("free model requests per minute");
 }
 function isLocalModelUnavailable(err) {
   return isModelUnavailableError(err);
@@ -106337,7 +106353,15 @@ function requireLocalClient() {
 function configuredLocalModelLabel() {
   return process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || process.env.ANIMA_VLLM_MODEL?.trim() || resolveLocalModel("standard").model;
 }
-function enrichError(err, provider = "local") {
+function localHostDownSuffix(include) {
+  if (!include) return "";
+  const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
+  if (host === "anima-chat-llm.fly.dev") {
+    return ` The primary LLM host (${host}) is also unreachable \u2014 run \`fly apps restart anima-chat-llm\`.`;
+  }
+  return ` The primary LLM host (${host}) is also unreachable \u2014 check that the host is running and reachable from Vercel.`;
+}
+function enrichError(err, provider = "local", opts = {}) {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
@@ -106353,8 +106377,9 @@ function enrichError(err, provider = "local") {
   }
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
+      const hint = isOpenRouterFreeDailyLimitError(err) ? OPENROUTER_FREE_DAILY_HINT : isOpenRouterFreeMinuteLimitError(err) ? "OpenRouter's free model per-minute limit is temporarily throttling chat. Wait a minute and retry, or add credits at https://openrouter.ai/settings/credits for higher limits." : hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT;
       return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ` + (hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT)
+        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` + localHostDownSuffix(Boolean(opts.localConnectionFailed))
       );
     }
   }
@@ -106589,10 +106614,13 @@ async function withOpenRouterCreditFallback(preferred, run) {
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model)) {
-        openRouterCreditFallback = true;
+      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model) && !isOpenRouterFreeDailyLimitError(err) && !isOpenRouterFreeMinuteLimitError(err)) {
+        const creditFallback = isOpenRouterCreditFallbackError(err);
+        if (creditFallback) {
+          openRouterCreditFallback = true;
+        }
         console.warn(
-          `[llm] OpenRouter ${candidate.model} needs credits (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}. The OPENROUTER_API_KEY is set \u2014 this is a billing limit, not a missing key.`
+          `[llm] OpenRouter ${candidate.model} ${creditFallback ? "needs credits" : "is quota/rate limited"} (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}.`
         );
         continue;
       }
@@ -106660,6 +106688,7 @@ async function createChatStreamWithFailover(req) {
   if (!chain.length) throw noProviderConfiguredError();
   let lastErr;
   let triedLocal = false;
+  let localConnectionFailed = false;
   for (const provider of chain) {
     try {
       if (provider === "local") {
@@ -106688,6 +106717,9 @@ async function createChatStreamWithFailover(req) {
       return await runOpenRouterStream(req, triedLocal);
     } catch (err) {
       lastErr = err;
+      if (provider === "local" && isProviderConnectionError(err)) {
+        localConnectionFailed = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (hasNext) {
         console.warn(
@@ -106695,10 +106727,14 @@ async function createChatStreamWithFailover(req) {
         );
         continue;
       }
-      throw enrichError(err, provider);
+      throw enrichError(err, provider, {
+        localConnectionFailed: localConnectionFailed && provider === "openrouter"
+      });
     }
   }
-  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
+    localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter"
+  });
 }
 async function createChatCompletionWithFailover(req) {
   beginChatProviderTurn();
@@ -106709,6 +106745,7 @@ async function createChatCompletionWithFailover(req) {
   if (!chain.length) throw noProviderConfiguredError();
   let lastErr;
   let triedLocal = false;
+  let localConnectionFailed = false;
   for (const provider of chain) {
     try {
       if (provider === "local") {
@@ -106743,6 +106780,9 @@ async function createChatCompletionWithFailover(req) {
       return await runOpenRouterCompletion(req, triedLocal);
     } catch (err) {
       lastErr = err;
+      if (provider === "local" && isProviderConnectionError(err)) {
+        localConnectionFailed = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (hasNext) {
         console.warn(
@@ -106750,10 +106790,14 @@ async function createChatCompletionWithFailover(req) {
         );
         continue;
       }
-      throw enrichError(err, provider);
+      throw enrichError(err, provider, {
+        localConnectionFailed: localConnectionFailed && provider === "openrouter"
+      });
     }
   }
-  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local");
+  throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
+    localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter"
+  });
 }
 
 // src/routes/health.ts
