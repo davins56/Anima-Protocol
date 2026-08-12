@@ -40,7 +40,7 @@ export default function AnimaCustomizer({
   const [themeColor, setThemeColor] = useState(anima?.theme_color || "#00e5e5");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [activeFeature, setActiveFeature] = useState("hair");
+  const [activeFeature, setActiveFeature] = useState("skin");
   const [error, setError] = useState("");
 
   const isPage = variant === "page";
@@ -59,11 +59,11 @@ export default function AnimaCustomizer({
     setSaved(false);
     try {
       const prompt = buildAppearanceImagePrompt(anima, prompts);
+      // Always generate from the feature prompts — do not image-edit the
+      // current avatar. Edit mode preserves the old complexion/hair/etc. and
+      // made Skin Colour (and other traits) appear broken.
       const result = await base44.integrations.Core.GenerateImage({
         prompt,
-        existing_image_urls: previewUrl || anima?.avatar_url
-          ? [previewUrl || anima.avatar_url]
-          : undefined,
       });
       if (!result?.url) {
         throw new Error("No image was returned. Try again in a moment.");
@@ -167,7 +167,7 @@ export default function AnimaCustomizer({
               // Customise Anima — {anima?.name || "Your Anima"}
             </h2>
             <p className="text-[9px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-              Shape hair, outfit, eyes & more · then generate a new look
+              Shape skin, hair, outfit, eyes & more · then generate a new look
             </p>
           </div>
           {onClose && (
