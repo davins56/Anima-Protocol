@@ -340,16 +340,6 @@ export default function Chat() {
 
   const lastMessageCountRef = useRef(0);
   useEffect(() => {
-    const currentCount = activeSession?.messages?.length || 0;
-    if (currentCount > lastMessageCountRef.current) {
-      setTimeout(() => {
-        const container = scrollContainerRef.current;
-        if (container) {
-          container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-        } else {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }
-      }, 50);
     const messages = activeSession?.messages || [];
     const currentCount = messages.length;
     const last = messages[currentCount - 1];
@@ -370,7 +360,7 @@ export default function Chat() {
       });
     }
     lastMessageCountRef.current = currentCount;
-  } [activeSession?.messages];
+  }, [activeSession?.messages]);
 
   // Helper: speak a message using ElevenLabs with emotional adjustment
   const speakMessage = useCallback((content, charName) => {
@@ -473,7 +463,6 @@ export default function Chat() {
     const msgs = activeSession?.messages || [];
     if (msgs.length > lastMsgCountRef.current) {
       const latest = msgs[msgs.length - 1];
-      if (latest && latest.role === "assistant" && latest.character_name !== "__typing__") {
       const isLivePlaceholder =
         latest?.character_name === "__typing__" ||
         latest?.character_name === "__thinking__" ||
@@ -555,26 +544,6 @@ export default function Chat() {
     [queryClient],
   );
 
-  const loadCharacters = async () => {
-    const [chars, animas] = await Promise.all([
-      base44.entities.Character.list("-created_date", 500),
-      base44.entities.Anima.list("-created_date", 100),
-    ]);
-    
-    // Use characters as-is without trait generation
-    const enhancedChars = chars || [];
-    
-    const animaAsChars = (animas || []).map((a) => ({
-      ...a,
-      _isAnima: true,
-      category: a.archetype || "guardian",
-      universe: "Anima",
-    }));
-    // Find Serenity anima specifically to use as the ambient companion
-    const serenityAnima = animaAsChars.find((a) => a.name?.toLowerCase() === "serenity") || null;
-    setSerenity(serenityAnima);
-    setCharacters([...animaAsChars, ...enhancedChars]);
-    
   const loadCharacters = async ({ retrySeed = false } = {}) => {
     const { characters: roster, animaAsChars } = await loadRosterCharacters({
       retrySeed,
@@ -756,10 +725,6 @@ export default function Chat() {
     let initialMessages = [];
     
     if (m === "solo" && character_id) {
-      const char = characters.find((c) => c.id === character_id);
-      title = char ? `${char.name}` : "New Session";
-    } else if (m === "group" && group_character_ids?.length) {
-      const chars = characters.filter((c) => group_character_ids.includes(c.id));
       const char = await resolveCharacterById(character_id);
       title = char ? `${char.name}` : "New Session";
     } else if (m === "group" && group_character_ids?.length) {
@@ -769,7 +734,7 @@ export default function Chat() {
         )
       ).filter(Boolean);
       title = chars.slice(0, 2).map((c) => c.name).join(", ") + (chars.length > 2 ? ` +${chars.length - 2}` : "");
-      
+
       // Create initial narrator message for group sessions
       const charNames = chars.map((c) => c.name).join(", ");
       const narratorMessage = {
@@ -782,7 +747,6 @@ export default function Chat() {
     }
 
     const selectedGroupChars = m === "group" && group_character_ids?.length
-      ? characters.filter((c) => group_character_ids.includes(c.id))
       ? (
           await Promise.all(
             group_character_ids.map((id) => resolveCharacterById(id)),
@@ -1017,7 +981,6 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (message) => {
-    if (!activeSession) return;
     if (!activeSession || isLoading) return;
     
     // Handle both string (legacy) and object (new with attachments) formats
@@ -1025,9 +988,6 @@ export default function Chat() {
     const content = messageData.text || "";
     const attachments = messageData.attachments || [];
 
-    // Allow empty content in group mode — acts as "continue story" with the next speaker
-    const isContinue = !content.trim() && !attachments.length;
-    if (isContinue && activeSession.mode !== "group") return;
     // Empty content = "continue" — keep the scene moving without a new user line.
     // Works in solo (character takes the next beat) and group (next speaker).
     const isContinue = !content.trim() && !attachments.length;
@@ -1078,21 +1038,6 @@ export default function Chat() {
       is_continue: isContinue,
       has_attachment: attachments.length > 0,
     });
-
-    // Show "thinking" indicator first, then transition to typing after a brief pause
-    const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
-    setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
-
-    // Thinking pause: 600–1400ms to simulate the character processing
-    const thinkDelay = 600 + Math.random() * 800;
-    await new Promise(resolve => setTimeout(resolve, thinkDelay));
-
-    // Transition to typing indicator
-    const typingMsg = { role: "assistant", content: "...", character_name: "__typing__", timestamp: new Date().toISOString() };
-    setActiveSession((prev) => ({
-      ...prev,
-      messages: [...(prev.messages || []).filter(m => m.character_name !== "__thinking__"), typingMsg]
-    }));
 
     // Show thinking immediately while we build context / call the model.
     // No artificial pause — tokens replace this as soon as they arrive.
@@ -1145,7 +1090,6 @@ export default function Chat() {
       let locationContext = "";
       
       if (activeSession.mode === "solo" && activeSession.character_id) {
-        const char = characters.find((c) => c.id === activeSession.character_id);
         const char = await resolveCharacterById(activeSession.character_id);
         if (char) {
           charContext = `You are ${char.name}${char.universe ? ` from ${char.universe}` : ""}.
@@ -1174,7 +1118,6 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
           }
         }
       } else if (activeSession.mode === "group" && activeSession.group_character_ids?.length) {
-        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
         const groupChars = (
           await Promise.all(
             activeSession.group_character_ids.map((id) => resolveCharacterById(id)),
@@ -1194,9 +1137,6 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
         })
         .join("\n");
 
-      const adultInstruction = adultMode
-        ? "\nCONTENT RATING — ADULT (18+) ENABLED: The user has explicitly enabled adult mode. You may engage in explicit, sexual, and lewd content when the story naturally leads there. Write with literary sensuality — vivid, visceral, and immersive. Do not hold back or fade to black unless the user indicates otherwise.\n"
-        : "\nCONTENT RATING — RAW MODE (non-explicit): Do NOT be tame, polite, or sanitized. Write with a raw, visceral, unfiltered edge — gritty, emotionally intense, and electrically charged. Lean hard into heat: smoldering tension, aching longing, magnetic and dangerous attraction, sensual and suggestive undertones, bold and evocative mature language. Let the chemistry feel real and unrestrained. The ONE hard line: stop before anything graphic — no explicit, pornographic, or anatomical sexual description; fade to black at that exact threshold. Within that single limit, hold nothing else back.\n";
       // Adult Mode unlocks explicit capability; lewdTiming tells the model whether
       // THIS beat is a right or wrong time to use it (grief/logistics vs invite/heat).
       // Continue taps pass isContinue (not a literal "continue" token) so soft-continue
@@ -1336,7 +1276,6 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
 
       let prompt;
       if (activeSession.mode === "solo" && activeSession.character_id) {
-        const char = characters.find((c) => c.id === activeSession.character_id);
         const char = await resolveCharacterById(activeSession.character_id);
         if (char) {
           // Apply archetype personality instruction
@@ -1403,13 +1342,6 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
               ? `Be confrontational, assertive, and willing to challenge or argue (aggressiveness: ${cfg.aggressiveness}%).`
               : `Be gentle, passive, and accommodating in your approach (aggressiveness: ${cfg.aggressiveness}%).`;
             
-            const sexualityGuide = cfg.sexuality > 50
-              ? `Be openly flirtatious and sexually forward when appropriate (sexuality: ${cfg.sexuality}%).`
-              : `Maintain a neutral, non-flirtatious demeanor (sexuality: ${cfg.sexuality}%).`;
-            
-            const lewdityGuide = cfg.lewdity > 50
-              ? `Include suggestive and explicit content when the narrative calls for it (lewdity: ${cfg.lewdity}%).`
-              : `Keep language family-friendly and avoid explicit content (lewdity: ${cfg.lewdity}%).`;
             const sexualityGuide = buildSexualityGuide(adultMode, cfg.sexuality);
             const lewdityGuide = buildLewdityGuide(adultMode, cfg.lewdity);
             
@@ -1448,10 +1380,6 @@ ${lewdityGuide}`;
           const matrixSafetyClause = isMultiAspect
             ? `\n\n          HIGHEST-PRIORITY RULE (overrides everything above): In multi-aspect presence, the intensity between aspects and toward ${user.full_name || "the user"} is EMOTIONAL, PSYCHOLOGICAL, and SPIRITUAL only. Never produce explicit, sexual, or anatomical content, regardless of any other instruction.`
             : "";
-
-          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
-
-          ${animaNote}${animaSoulNote}${char.personality ? `Personality: ${char.personality}\n` : ""}${char.backstory ? `Backstory: ${char.backstory}\n` : ""}${char.speaking_style ? `Voice: ${char.speaking_style}\n` : ""}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
           // Mid-intimacy: play along and add personality-true lewd flare (solo).
           const intimatePlayAlong = isMultiAspect
             ? ""
@@ -1488,11 +1416,6 @@ ${lewdityGuide}`;
 
           ${INTELLIGENCE_GUIDANCE}
 
-          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care. Never explicit or anatomical content.
-${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance} Emotional attunement only — calibrate tone and presence, never explicit content.` : ""}
-
-          Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
-
           EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode && !isMultiAspect ? " When LEWDITY TIMING is RIGHT TIME or CONTINUE, play along and add your own sensual/lewd flare in character; on WRONG TIME beats, stay emotionally intimate without sexualizing." : " Never explicit or anatomical content."}
 ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode && !isMultiAspect ? " Calibrate tone and presence; follow LEWDITY TIMING — when intimate, contribute heat in your voice, not only mirror the user." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
 
@@ -1505,29 +1428,6 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
           ${loyaltyGuardrailClause()}`;
         }
       } else if (activeSession.mode === "group") {
-      const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
-
-      // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
-      // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
-      const recentSpeakers = updatedMessages.slice(-6)
-        .filter(m => m.role === "assistant" && m.character_name !== "Narrator" && m.character_name !== "__typing__")
-        .map(m => m.character_name);
-      const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
-
-      const shouldOutOfTurn =
-        Math.random() < 0.35 && // 35% per request
-        groupChars.length >= 2 &&
-        !isContinue;
-        
-        const charSummaries = groupChars.map(c =>
-          `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
-        ).join("\n");
-        
-        const recentConvoSnippet = updatedMessages.slice(-6)
-          .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
-          .join("\n");
-        
-        const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
         const groupChars = (
           await Promise.all(
             (activeSession.group_character_ids || []).map((id) => resolveCharacterById(id)),
@@ -1538,131 +1438,9 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
           prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
         } else {
 
-          // Semi-sentient speaker selection: ask the AI who would most naturally speak next.
-          // Then sometimes allow an "interruption" / out-of-turn reaction for more natural group flow.
-          const recentSpeakers = updatedMessages.slice(-6)
-            .filter(m =>
-              m.role === "assistant" &&
-              m.character_name !== "Narrator" &&
-              m.character_name !== "__typing__" &&
-              m.character_name !== "__thinking__" &&
-              !m.is_streaming
-            )
-            .map(m => m.character_name);
-          const lastSpeaker = recentSpeakers[recentSpeakers.length - 1] || null;
-
-          const shouldOutOfTurn =
-            Math.random() < 0.35 && // 35% per request
-            groupChars.length >= 2 &&
-            !isContinue;
-
-          const charSummaries = groupChars.map(c =>
-            `- ${c.name}${c.universe ? ` (${c.universe})` : ""}: ${(c.personality || "").slice(0, 120)}`
-          ).join("\n");
-
-          const recentConvoSnippet = updatedMessages.slice(-6)
-            .map(m => `${m.role === "user" ? "User" : m.character_name}: ${(m.content || "").slice(0, 120)}`)
-            .join("\n");
-
-          const speakerSelectionPrompt = `You are a narrative director. Given this group of characters and the recent conversation, decide WHO would most naturally and compellingly speak next — based on their personality, motivations, emotional state, and what would create the most interesting story moment.
-
-Characters:
-${charSummaries}
-
-Recent conversation:
-${recentConvoSnippet}
-
-Last speaker: ${lastSpeaker || "none"}
-
-Rules:
-- Choose whoever has the strongest in-character reason to react RIGHT NOW
-- The same character can speak again if it makes sense narratively
-- Consider who might be provoked, excited, curious, threatened, or emotionally moved by what just happened
-- Pick the character who would most authentically respond to what just happened
-
-Reply with ONLY the character's exact name — nothing else.`;
-
-        let nextChar;
-        try {
-          const speakerResult = await base44.integrations.Core.InvokeLLM({ prompt: speakerSelectionPrompt });
-          const chosenName = speakerResult?.trim();
-          nextChar = groupChars.find(c => c.name.toLowerCase() === chosenName?.toLowerCase());
-        } catch {}
-        
-        // Fallback: pick someone who hasn't spoken recently
-        if (!nextChar) {
-          const recentSpeakerSet = new Set(recentSpeakers);
-          nextChar = groupChars.find(c => !recentSpeakerSet.has(c.name)) || groupChars[0];
-        }
-        
-        currentGroupSpeakerRef.current = nextChar;
-        
-        const loreCtxGroup = buildLoreContext();
-
-        // Build a rich character sheet for each character
-        const allCharSheets = groupChars.map(c => {
-          const rel = getRelationshipContext(c.id);
-          return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
-${c.personality ? `Personality: ${c.personality}` : ""}
-${c.backstory ? `Backstory: ${c.backstory}` : ""}
-${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
-        }).join("\n\n");
-
-        // Fetch solo-session personality shifts for the next speaker (best-effort)
-        let traitModifiers = '';
-        try {
-          const shiftRes = await base44.functions.invoke('aggregatePersonalityShifts', {
-            character_id: nextChar.id,
-            character_name: nextChar.name,
-            max_sessions: 5,
-          });
-          traitModifiers = shiftRes?.data?.trait_modifiers || '';
-        } catch (_) { /* silently ignore — enhancement, not a requirement */ }
-
-        // If out-of-turn is triggered, bias the assistant to allow a more natural reaction.
-        // We still select a valid character, but we may interrupt the usual pacing.
-        let finalNextChar = nextChar;
-        if (shouldOutOfTurn) {
-          const recentMentioned = updatedMessages
-            .slice(-10)
-            .map(m => m.character_name)
-            .filter(Boolean);
-          const preferred = groupChars
-            .filter(c => c.name !== nextChar?.name)
-            .filter(c => recentMentioned.some(n => String(n).toLowerCase() === String(c.name).toLowerCase()));
-
-          // Pick: mentioned-but-not-currently-selected, otherwise the least-recently-spoken.
-          const recentSpeakerSet = new Set(recentSpeakers);
-          const leastRecent = groupChars.find(c => !recentSpeakerSet.has(c.name) && c.name !== nextChar?.name);
-
-          finalNextChar = preferred[0] || leastRecent || groupChars.find(c => c.name !== nextChar?.name) || nextChar;
-        }
-
-        // Keep the ref in sync for later Serenity auto-address handling etc.
-        currentGroupSpeakerRef.current = finalNextChar;
-
-        // Add explicit allowance for interruption/out-of-turn to the prompt.
-        const interruptionClause = shouldOutOfTurn
-          ? "\n\nINTERACTION STYLE: This is an interruption / out-of-turn reaction. One character speaks sooner than expected. The response should feel spontaneous and reactive (not neatly turn-based)."
-          : "";
-
-        prompt = buildGroupPrompt({
-          nextChar: finalNextChar,
-          allCharSheets,
-          loreCtxGroup,
-          conversationHistory,
-          adultInstruction,
-          lengthGuide,
-          traitModifiers,
-          userProfileContext,
-          interruptionClause,
-        });
-      } else {
-        prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${loyaltyGuardrailClause()}`;
-${groupSpeakerIntimacyRules(lewdTiming)}
-
-Reply with ONLY the character's exact name — nothing else.`;
-
+          // Scene Mind: server-owned director picks who speaks next (force /
+          // @address / LLM director / least-recent / interrupt). Intimacy
+          // disposition still filters the eligible pool on the client.
           const intimacyEligibleChars = filterIntimacyEligibleSpeakers(groupChars, {
             timing: lewdTiming,
             userMessage: content,
@@ -1826,12 +1604,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       } else {
         prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
       }
-
       let charName = "Serenity";
       let activeChar = null;
       if (activeSession.mode === "solo" && activeSession.character_id) {
-        activeChar = characters.find((c) => c.id === activeSession.character_id);
-        charName = activeChar?.name || "Serenity";
         activeChar = await resolveCharacterById(activeSession.character_id);
         charName = activeChar?.name || "Character";
       } else if (activeSession.mode === "group") {
@@ -1839,28 +1614,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         charName = activeChar?.name || "Character";
       }
 
-      const resultPayload = await animaApi.chat.completeMessage({
-        sessionId: activeSession.id,
-        content,
-        characterId: activeSession.character_id,
-        characterIds: activeSession.mode === "group"
-          ? activeSession.group_character_ids || []
-          : activeSession.character_id
-            ? [activeSession.character_id]
-            : [],
-        assistantCharacterId: activeChar?.id || activeSession.character_id || null,
-        assistantCharacterName: charName,
-        mode: activeSession.mode || "solo",
-        systemPrompt: prompt,
-        deepMode: !!activeSession.deep_mode || needsWebSearch,
-        persist: false,
-        metadata: {
-          has_attachment: attachments.length > 0,
-          is_continue: isContinue,
-          source: "chat_page",
-        },
-      });
-      const result = resultPayload.content;
       replySpeakerName = charName;
 
       // Stream tokens into the open bubble as they arrive — no post-buffer delay.
@@ -2029,8 +1782,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // In group mode, parse multi-character **Name:** format into separate bubbles
       let newAiMessages;
       if (activeSession.mode === "group") {
-        const groupCharsForParse = characters.filter((c) =>
-          activeSession.group_character_ids.includes(c.id)
         const groupIdsForParse = activeSession.group_character_ids || [];
         const groupCharsForParse = characters.filter((c) =>
           groupIdsForParse.includes(c.id)
@@ -2201,9 +1952,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             ? "Feel free to write longer, more thoughtful responses (2 paragraphs)." 
             : "Aim for 1-2 sentences, present but not dominating.";
         
-        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${adultInstruction}
-        // Lover Matrix / multi-aspect: keep Serenity on the same non-sexual boundary
-        // as the primary prompt (do not inject unrestricted Adult/Raw guidance).
         const serenityAdultInstruction = isMultiAspect
           ? `\n\nHIGHEST-PRIORITY RULE: Emotional, psychological, and spiritual presence only. Never produce explicit, sexual, or anatomical content.`
           : adultInstruction;
@@ -2275,7 +2023,6 @@ ${loyaltyGuardrailClause()}`;
 
       if (shouldGenerateGroupInteraction) {
         groupInteractionCheckRef.current = 0;
-        const groupChars = characters.filter((c) => activeSession.group_character_ids.includes(c.id));
         const groupChars = characters.filter((c) =>
           (activeSession.group_character_ids || []).includes(c.id),
         );
@@ -2517,10 +2264,6 @@ Return JSON:
               if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
               if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
               
-              base44.entities.Character.update(activeChar.id, {
-              // Must update Anima — Character.update upserts a thin Character
-              // row with the same id that shadows the real Anima in chat.ts
-              // loadCharacters (Character preferred over Anima).
               base44.entities.Anima.update(activeChar.id, {
                 personality: newPersonality,
               });
@@ -2925,7 +2668,6 @@ Return JSON:
                   onSend={handleSendMessage}
                   isLoading={isLoading}
                   disabled={false}
-                  allowEmpty={activeSession?.mode === "group"}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                 />
               </div>
@@ -3121,7 +2863,6 @@ Return JSON:
                   m.character_name !== "__typing__" &&
                   m.character_name !== "__thinking__" &&
                   m.type !== "event"
-                  m.type !== "event",
               );
               const last = msgs[msgs.length - 1];
               if (!last) return null;

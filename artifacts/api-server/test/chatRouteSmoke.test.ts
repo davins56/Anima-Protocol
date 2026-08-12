@@ -20,6 +20,7 @@ import chatRouter from "../src/routes/chat";
 import storeRouter from "../src/routes/store";
 import { db, userEntities } from "@workspace/db";
 import { like } from "drizzle-orm";
+import { hasLocalLlm, localLlmBaseUrl } from "../src/lib/openaiClient";
 
 const PREFIX = `chat_smoke_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
 const userId = `${PREFIX}user`;
@@ -28,8 +29,25 @@ const characterId = `${PREFIX}char`;
 
 let server: Server;
 let baseUrl = "";
+let liveLlmAvailable = false;
+
+async function probeLiveLocalLlm(): Promise<boolean> {
+  if (!hasLocalLlm()) return false;
+  const base = localLlmBaseUrl();
+  if (!base) return false;
+  try {
+    const modelsUrl = base.replace(/\/+$/, "") + "/models";
+    const res = await fetch(modelsUrl, {
+      signal: AbortSignal.timeout(3_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 beforeAll(async () => {
+  liveLlmAvailable = await probeLiveLocalLlm();
   const app: Express = express();
   app.use(express.json({ limit: "4mb" }));
   app.use("/store", storeRouter);
@@ -60,7 +78,13 @@ async function call(method: string, path: string, body?: unknown) {
 describe("chat route AI response (live local LLM)", () => {
   it(
     "streams a non-empty assistant reply from anima-chat",
-    async () => {
+    async ({ skip }) => {
+      if (!liveLlmAvailable) {
+        skip(
+          "Skipped: no reachable ANIMA_LOCAL_LLM_BASE_URL (set a live OpenAI-compatible Anima LLM to run this smoke test).",
+        );
+      }
+
       // PUT upserts with a stable entityId (POST always mints a new entityId).
       const charRes = await call("PUT", `/store/Character/${characterId}`, {
         name: "Aria",

@@ -1,10 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { base44 } from "@/api/base44Client";
-import { useStoreSync } from "@/lib/useStoreSync";
-import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
-import { autoAssignCharacterPhoto, photoNeedsLookup } from "@/lib/seedCharacters";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -23,9 +19,6 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
-import { retryStarterSeed } from "@/lib/seedCharacters";
-import { notifyStoreChanged } from "@/api/base44Client";
-import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
@@ -88,9 +81,6 @@ export default function Characters() {
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [showSeriesModal, setShowSeriesModal] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
-  const [loadError, setLoadError] = useState(null);
   const [bioCharacter, setBioCharacter] = useState(null);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
@@ -122,8 +112,6 @@ export default function Characters() {
       }
       setCharacters(data || []);
     } catch (err) {
-      setLoadError(err?.message || "Could not load characters.");
-      setCharacters([]);
       const message = err?.message || "Could not load characters.";
       if (isStoreDatabaseError(err)) {
         // seedCharacters.js (package root) seeds Supabase and is NOT read by the
@@ -230,12 +218,6 @@ export default function Characters() {
         const generated = await base44.functions.invoke('generateCharacterTraits', {
           name: form.name,
           universe: form.universe
-        }) || {};
-        finalForm = {
-          ...form,
-          personality: form.personality || generated.personality || "",
-          backstory: form.backstory || generated.backstory || "",
-          speaking_style: form.speaking_style || generated.speaking_style || ""
         });
         const generatedTraits = generated?.data || generated || {};
         finalForm = {
@@ -300,9 +282,6 @@ export default function Characters() {
     const file = e.target.files[0];
     if (!file) return;
     setUploadingAvatar(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setForm((f) => ({ ...f, avatar_url: file_url }));
-    setUploadingAvatar(false);
     try {
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
       if (file_url) {
@@ -381,7 +360,6 @@ export default function Characters() {
               <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
                 {loading || seeding
                   ? "syncing roster..."
-                  : `${characters.length} entities indexed`}
                   : usingBundledSeed
                     ? `${characters.length} bundled starters (offline)`
                     : `${characters.length} entities indexed`}
@@ -433,7 +411,6 @@ export default function Characters() {
                 {seeding ? "Indexing starter characters..." : "Loading character library..."}
               </p>
             </div>
-          ) : loadError ? (
           ) : loadError && !usingBundledSeed ? (
             <div className="text-center py-24">
               <p className="font-mono text-destructive/80 text-sm tracking-wider mb-4 max-w-md mx-auto">
@@ -522,22 +499,6 @@ export default function Characters() {
                   </button>
                 </div>
 
-                {/* Avatar */}
-                <div className="relative">
-                  {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
-                    <img
-                      src={char.avatar_url}
-                      alt={char.name}
-                      className="w-full aspect-square object-cover"
-                      onError={() =>
-                        setBrokenPhotoIds((prev) =>
-                          prev.has(char.id) ? prev : new Set(prev).add(char.id)
-                        )
-                      }
-                    />
-                  ) : (
-                    <div className="w-full aspect-square bg-primary/5 flex flex-col items-center justify-center gap-3 p-3">
-                      <span className="font-mono text-primary/30 text-4xl">{char.name[0]}</span>
                 {/* Avatar — tap photo to open bio sheet */}
                 <div className="relative">
                   {char.avatar_url && !photoNeedsLookup(char.avatar_url) && !brokenPhotoIds.has(char.id) ? (
