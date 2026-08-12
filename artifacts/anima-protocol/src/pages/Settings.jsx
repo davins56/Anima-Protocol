@@ -504,7 +504,7 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat always runs on the self-hosted Anima LLM — there is no cloud flagship fallback. Set ANIMA_LOCAL_LLM_BASE_URL on the host and redeploy.
+                  Chat uses the self-hosted Anima LLM when configured, otherwise OpenRouter (Venice Uncensored, with a free-model fallback). A $0 OpenRouter key is limited to 50 free messages/day — add $10 at openrouter.ai/settings/credits to unlock 1000/day and Venice.
                 </p>
                 {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div
