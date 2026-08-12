@@ -14,7 +14,7 @@ loadEnv({ path: path.join(import.meta.dirname, ".env"), override: true });
 // often set without the VITE_ prefix — mirror it so production builds embed the
 // correct Clerk instance (avoids host-derived pk_live_ + missing GitHub SSO).
 const clerkPublishableKey =
-  process.VITE_CLERK_PUBLISHABLE_KEY?.trim() ||
+  process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ||
   process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
   "";
 
@@ -65,31 +65,33 @@ export default defineConfig({
     // intercepts /api calls or the prerendered route HTML. Disabled in dev to
     // avoid interfering with HMR. The existing public/manifest.json is reused
     // (manifest: false), and registration happens in src/main.jsx.
-     VitePWA({      
-      registerType: "autoUpdate",      
-      injectRegister: false,      
-      manifest: false,      
-      workbox: {        
-        globDirectory: path.resolve(import.meta.dirname, "dist/public"),        
-        globPatterns: [          "**/*.{js,css,svg,png,ico,webp,woff,woff2,jpg,jpeg,json}",        ],        
-        runtimeCaching: [          {            
-          urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,            
-          handler: "CacheFirst",            
-          options: {              
-            cacheName: "images-cache",              
-            expiration: {                
-              maxEntries: 60,                
-              maxAgeSeconds: 30 * 24 * 60 * 60,              
-            },            
-          },          
-        },        
-      ],        
-      navigateFallback: null,        
-      maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,        
-      cleanupOutdatedCaches: true,       
-      clientsClaim: true,        
-      skipWaiting: true,      
-    },    
+    VitePWA({
+      registerType: "autoUpdate",
+      injectRegister: false,
+      manifest: false,
+      workbox: {
+        globDirectory: path.resolve(import.meta.dirname, "dist/public"),
+        globPatterns: [
+          "**/*.{js,css,svg,png,ico,webp,woff,woff2,jpg,jpeg,json}",
+        ],
+        runtimeCaching: [
+          {
+            urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "images-cache",
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+              },
+            },
+          },
+        ],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
