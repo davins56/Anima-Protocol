@@ -30,15 +30,16 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
 | `OPENAI_API_KEY` | Recommended | Image edit/generate only (Customise Anima → Generate Look). Never used for chat. |
-| `ANIMA_LOCAL_LLM_BASE_URL` | Yes for chat | Public HTTPS OpenAI-compatible URL for Ollama/vLLM (e.g. `https://llm.example.com/v1`). This is the only chat backend — there is no cloud fallback. |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Yes for chat (or OpenRouter) | Public HTTPS OpenAI-compatible URL for Ollama/vLLM (e.g. `https://llm.example.com/v1`). Preferred chat backend. |
 | `ANIMA_LOCAL_LLM_BACKEND` | No | `ollama` (default) or `vllm`. |
-| `ANIMA_OLLAMA_MODEL_STANDARD` | Yes for chat (Ollama) | Model tag served by your Ollama host, e.g. `anima-chat`. |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | Yes for chat (Ollama) | Model tag served by your Ollama host, e.g. `anima-chat` or `anima-uncensored`. |
+| `OPENROUTER_API_KEY` | Yes for chat (or local) | Free key at https://openrouter.ai/keys. Defaults to Venice Uncensored (open-weight). Set `ANIMA_OPENROUTER_FREE=true` for zero-cost free models. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
-**If chat shows "Anima custom LLM is not configured":**
-`ANIMA_LOCAL_LLM_BASE_URL` is empty or unreachable, and there is no cloud fallback to fall through to. Live status looks like:
+**If chat shows "Anima custom LLM is not configured" / "No chat LLM configured":**
+Neither a self-hosted endpoint nor `OPENROUTER_API_KEY` is usable. Fastest unblock: set `OPENROUTER_API_KEY` (Venice Uncensored by default). Live status looks like:
 
 ```bash
 curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,localEndpoint,note}'

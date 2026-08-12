@@ -6,6 +6,26 @@ let openaiClientKey: string | null = null;
 let localLlmClient: OpenAI | null = null;
 let localLlmClientKey: string | null = null;
 
+let openRouterClient: OpenAI | null = null;
+let openRouterClientKey: string | null = null;
+
+/** OpenRouter OpenAI-compatible base (chat completions + models). */
+export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+/**
+ * Venice Uncensored — Cognitive Computations × Venice.ai (Dolphin Mistral 24B).
+ * Reputable open-weight uncensored instruct model via OpenRouter.
+ * @see https://openrouter.ai/cognitivecomputations/dolphin-mistral-24b-venice-edition
+ */
+export const OPENROUTER_VENICE_UNCENSORED =
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition";
+
+/**
+ * Zero-cost OpenRouter free-tier model (not uncensored-branded).
+ * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
+ */
+export const OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+
 /** Normalize env keys that were pasted with surrounding quotes or whitespace. */
 export function normalizeApiKey(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -233,11 +253,62 @@ export function getLocalLlmClient(): OpenAI | null {
   return localLlmClient;
 }
 
+/** OpenRouter API key — free signup at https://openrouter.ai/keys */
+export function hasOpenRouterKey(): boolean {
+  return Boolean(
+    normalizeApiKey(process.env.OPENROUTER_API_KEY) ||
+      normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY),
+  );
+}
+
+export function getOpenRouterApiKey(): string | null {
+  return (
+    normalizeApiKey(process.env.OPENROUTER_API_KEY) ||
+    normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY)
+  );
+}
+
+/**
+ * OpenAI-compatible OpenRouter client for free / uncensored open-weight chat.
+ * Returns null when no OpenRouter key is configured.
+ */
+export function getOpenRouterClient(): OpenAI | null {
+  const apiKey = getOpenRouterApiKey();
+  if (!apiKey) return null;
+  const baseURL = (
+    process.env.ANIMA_OPENROUTER_BASE_URL?.trim() || OPENROUTER_BASE_URL
+  ).replace(/\/$/, "");
+  const referer =
+    process.env.ANIMA_OPENROUTER_HTTP_REFERER?.trim() ||
+    "https://www.anima-protocol.com";
+  const title =
+    process.env.ANIMA_OPENROUTER_APP_TITLE?.trim() || "Anima Protocol";
+  const cacheKey = `${baseURL}::${apiKey}::${referer}::${title}`;
+  if (!openRouterClient || openRouterClientKey !== cacheKey) {
+    openRouterClient = new OpenAI({
+      apiKey,
+      baseURL,
+      maxRetries: 0,
+      defaultHeaders: {
+        "HTTP-Referer": referer,
+        "X-Title": title,
+      },
+    });
+    openRouterClientKey = cacheKey;
+    console.info(
+      `[llm] openrouter client: host=openrouter.ai uncensored=${OPENROUTER_VENICE_UNCENSORED}`,
+    );
+  }
+  return openRouterClient;
+}
+
 /** Test helper — clears cached SDK clients between cases. */
 export function resetLlmClientsForTests(): void {
   openaiClient = null;
   openaiClientKey = null;
   localLlmClient = null;
   localLlmClientKey = null;
+  openRouterClient = null;
+  openRouterClientKey = null;
   resetLocalLlmInitLogForTests();
 }
