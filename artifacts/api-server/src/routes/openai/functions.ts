@@ -10,9 +10,11 @@ import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { getOpenAIClient, hasOpenAIKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
 import {
-  generateImageWithPollinations,
+  editImageWithGemini,
+  generateImageWithGemini,
+  hasGeminiImageKey,
   isFreeImageFallbackEnabled,
-} from "../../lib/pollinationsImage";
+} from "../../lib/geminiImage";
 import { logger } from "../../lib/logger";
 
 const router = Router();
@@ -1086,7 +1088,7 @@ export function shouldFallbackToFreeImage(code: string): boolean {
 
 async function generateImageDataUrl(prompt: string): Promise<{
   image: string;
-  provider: "openai" | "pollinations";
+  provider: "openai" | "gemini";
 }> {
   const trimmed = prompt.trim().slice(0, 1000);
   let openaiMapped: ReturnType<typeof mapImageEditError> | null = null;
@@ -1120,7 +1122,7 @@ async function generateImageDataUrl(prompt: string): Promise<{
       }
       logger.warn(
         { code: openaiMapped.code },
-        "OpenAI image generate failed; falling back to Pollinations",
+        "OpenAI image generate failed; falling back to Gemini Flash Image",
       );
     }
   } else if (!isFreeImageFallbackEnabled()) {
@@ -1130,8 +1132,21 @@ async function generateImageDataUrl(prompt: string): Promise<{
     );
   }
 
+  if (!hasGeminiImageKey()) {
+    throw Object.assign(
+      new Error(
+        openaiMapped?.error ||
+          "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
+      ),
+      {
+        status: openaiMapped?.status ?? 503,
+        code: openaiMapped?.code ?? "auth_error",
+      },
+    );
+  }
+
   try {
-    const free = await generateImageWithPollinations(trimmed);
+    const free = await generateImageWithGemini(trimmed);
     return { image: free.image, provider: free.provider };
   } catch (err) {
     // Prefer the original OpenAI error when the free provider also fails —
@@ -1153,7 +1168,7 @@ async function generateImageDataUrl(prompt: string): Promise<{
 // AI photo edit: takes a base64 image data URL plus a text prompt and returns
 // an AI-transformed version (gpt-image-1 edit). Gated to signed-in users since
 // image generation is a paid call. The result is returned as a PNG data URL.
-// When OpenAI is unavailable, falls back to free text-to-image (generate-only).
+// When OpenAI is unavailable, falls back to Gemini Flash Image edit.
 router.post("/image-edit", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -1190,6 +1205,7 @@ router.post("/image-edit", async (req, res) => {
       : "jpg";
 
   const trimmed = prompt.trim().slice(0, 1000);
+  const dataUrl = `data:${mime};base64,${match[2]}`;
 
   if (hasOpenAIKey()) {
     try {
@@ -1219,7 +1235,7 @@ router.post("/image-edit", async (req, res) => {
       }
       logger.warn(
         { code: mapped.code },
-        "OpenAI image edit failed; falling back to Pollinations generate",
+        "OpenAI image edit failed; falling back to Gemini Flash Image",
       );
     }
   } else if (!isFreeImageFallbackEnabled()) {
@@ -1230,9 +1246,16 @@ router.post("/image-edit", async (req, res) => {
     return;
   }
 
-  // Free providers are generate-only — ignore the source bytes and forge from the prompt.
+  if (!hasGeminiImageKey()) {
+    res.status(503).json({
+      error: "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
+      code: "auth_error",
+    });
+    return;
+  }
+
   try {
-    const free = await generateImageWithPollinations(trimmed);
+    const free = await editImageWithGemini(dataUrl, trimmed);
     res.json({ image: free.image, provider: free.provider });
   } catch (err) {
     const mapped = mapImageEditError(err);
@@ -1242,7 +1265,7 @@ router.post("/image-edit", async (req, res) => {
 
 // AI image generation from a text prompt. Prefers OpenAI gpt-image-1 when
 // OPENAI_API_KEY is set; otherwise (or on OpenAI auth/quota/upstream failure)
-// uses the free Pollinations Sana fallback so Customise Anima still populates.
+// uses Gemini Flash Image so Customise Anima still populates.
 // Auth is enforced by the router-level middleware above.
 router.post("/image-generate", async (req, res) => {
   const { prompt } = req.body as { prompt?: string };

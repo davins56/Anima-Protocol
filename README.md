@@ -14,7 +14,8 @@ flowchart LR
   web --> clerk[Clerk frontend auth]
   api --> clerk_api[Clerk session verification]
   api --> animaLlm[Anima LLM<br/>Ollama/vLLM open weights — only chat backend]
-  api --> openaiImages[OpenAI<br/>image generate/edit only, not chat]
+  api --> openaiImages[OpenAI gpt-image-1<br/>preferred image generate/edit]
+  api --> geminiImages[Gemini Flash Image<br/>fallback when OpenAI unavailable]
   api --> eleven[ElevenLabs optional TTS]
   api --> db[(PostgreSQL<br/>Drizzle schema in lib/db)]
   mockup[Mockup sandbox<br/>artifacts/mockup-sandbox] --> web
@@ -146,8 +147,8 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
 | `OPENAI_API_KEY` | API | Preferred image generate/edit (`gpt-image-1`) for Customise Anima → Generate Look. Never used for chat. |
-| `IMAGE_FREE_FALLBACK` | API | Free Pollinations Sana fallback when OpenAI is missing/unfunded (default on; set `off` to disable) |
-| `POLLINATIONS_MODEL` | API | Free image model id (default `sana` — current Pollinations free catalog) |
+| `GEMINI_API_KEY` | API | Gemini Flash Image fallback (`gemini-2.5-flash-image`) when OpenAI is missing/unfunded. `GOOGLE_API_KEY` also accepted. |
+| `IMAGE_FREE_FALLBACK` | API | Enable Gemini image fallback (default on; set `off` to disable) |
 | `ANIMA_LOCAL_LLM_BASE_URL` | API | Public HTTPS OpenAI-compatible endpoint for the self-hosted Anima LLM (Ollama/vLLM). This is chat's only backend. Verify via `/api/healthz/llm` |
 | `ANIMA_LOCAL_LLM_BACKEND` | API | `ollama` (default) or `vllm` |
 | `ANIMA_OLLAMA_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | Ollama model tags per tier (default `anima-chat`). If the endpoint doesn't serve the tag, chat discovers a working model via `/v1/models` instead of failing — see [docs/custom-llm.md](docs/custom-llm.md) |
