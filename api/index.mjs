@@ -105303,6 +105303,9 @@ function normalizeApiKey(raw) {
   }
   return key || null;
 }
+function hasOpenAIKey() {
+  return Boolean(normalizeApiKey(process.env.OPENAI_API_KEY));
+}
 function localLlmBaseUrl() {
   const explicit = process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || process.env.VLLM_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
@@ -106741,6 +106744,202 @@ async function searchMemoriesSemantically(opts) {
   }));
 }
 
+// src/lib/geminiImage.ts
+var DEFAULT_MODEL = "gemini-2.5-flash-image";
+var DEFAULT_BASE = "https://generativelanguage.googleapis.com/v1beta";
+var MAX_BYTES = 12 * 1024 * 1024;
+function isFreeImageFallbackEnabled() {
+  const raw = (process.env.IMAGE_FREE_FALLBACK || "").trim().toLowerCase();
+  if (!raw) return true;
+  return !(raw === "0" || raw === "false" || raw === "off" || raw === "none");
+}
+function geminiImageApiKey() {
+  return normalizeApiKey(process.env.GEMINI_API_KEY) || normalizeApiKey(process.env.GOOGLE_API_KEY);
+}
+function hasGeminiImageKey() {
+  return Boolean(geminiImageApiKey());
+}
+function geminiImageModel() {
+  return process.env.GEMINI_IMAGE_MODEL?.trim() || DEFAULT_MODEL;
+}
+function geminiImageBaseUrl() {
+  const raw = process.env.GEMINI_API_BASE_URL?.trim();
+  if (!raw) return DEFAULT_BASE;
+  return raw.replace(/\/$/, "");
+}
+function extractInlineImage(parts) {
+  if (!Array.isArray(parts)) return null;
+  for (const part of parts) {
+    const camel = part?.inlineData;
+    if (camel?.data) {
+      return {
+        mimeType: camel.mimeType || "image/png",
+        data: camel.data
+      };
+    }
+    const snake = part?.inline_data;
+    if (snake?.data) {
+      return {
+        mimeType: snake.mime_type || "image/png",
+        data: snake.data
+      };
+    }
+  }
+  return null;
+}
+function mapGeminiHttpError(status, bodyText) {
+  let message = bodyText.slice(0, 300) || `Gemini image request failed (${status}).`;
+  let code = "server_error";
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (parsed?.error?.message) message = parsed.error.message;
+    const statusName = (parsed?.error?.status || "").toUpperCase();
+    if (status === 429 || statusName.includes("RESOURCE_EXHAUSTED") || /quota|rate.?limit/i.test(message)) {
+      code = "rate_limit";
+    } else if (status === 401 || status === 403 || statusName.includes("UNAUTHENTICATED") || statusName.includes("PERMISSION_DENIED") || /api key|permission|credential/i.test(message)) {
+      code = "auth_error";
+      message = "Image generation is temporarily unavailable. Please try again later.";
+    } else if (status === 400 && (/safety|blocked|prohibited|invalid.?argument.*image|policy/i.test(message) || statusName.includes("INVALID_ARGUMENT"))) {
+      if (/safety|blocked|prohibited|policy/i.test(message)) {
+        code = "content_policy";
+        message = "That request was blocked by the content safety filter.";
+      }
+    }
+  } catch {
+  }
+  const httpStatus = code === "auth_error" ? 503 : code === "rate_limit" ? 429 : code === "content_policy" ? 400 : status >= 400 && status < 600 ? status : 502;
+  return Object.assign(new Error(message), { status: httpStatus, code });
+}
+async function callGeminiImage(parts) {
+  const apiKey = geminiImageApiKey();
+  if (!apiKey) {
+    throw Object.assign(
+      new Error(
+        "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set for Gemini image generation."
+      ),
+      { status: 503, code: "auth_error" }
+    );
+  }
+  const model = geminiImageModel();
+  const url3 = `${geminiImageBaseUrl()}/models/${encodeURIComponent(model)}:generateContent`;
+  const res = await fetch(url3, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+      "User-Agent": "AnimaProtocol/1.0 (gemini image)"
+    },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseModalities: ["IMAGE"],
+        imageConfig: { aspectRatio: "1:1" }
+      }
+    })
+  });
+  const bodyText = await res.text();
+  if (!res.ok) {
+    throw mapGeminiHttpError(res.status, bodyText);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    throw Object.assign(new Error("Gemini returned a non-JSON response."), {
+      status: 502,
+      code: "server_error"
+    });
+  }
+  if (payload.promptFeedback?.blockReason) {
+    throw Object.assign(
+      new Error("That request was blocked by the content safety filter."),
+      { status: 400, code: "content_policy" }
+    );
+  }
+  const finish = payload.candidates?.[0]?.finishReason || "";
+  if (/SAFETY|BLOCK|PROHIBITED/i.test(finish)) {
+    throw Object.assign(
+      new Error("That request was blocked by the content safety filter."),
+      { status: 400, code: "content_policy" }
+    );
+  }
+  const inline = extractInlineImage(payload.candidates?.[0]?.content?.parts);
+  if (!inline?.data) {
+    throw Object.assign(new Error("Gemini returned no image data."), {
+      status: 502,
+      code: "server_error"
+    });
+  }
+  const approxBytes = Math.floor(inline.data.length * 3 / 4);
+  if (approxBytes > MAX_BYTES) {
+    throw Object.assign(new Error("Gemini returned an image that is too large."), {
+      status: 413,
+      code: "server_error"
+    });
+  }
+  const mime3 = inline.mimeType || "image/png";
+  return {
+    image: `data:${mime3};base64,${inline.data}`,
+    provider: "gemini",
+    model
+  };
+}
+async function generateImageWithGemini(prompt) {
+  const trimmed = typeof prompt === "string" ? prompt.trim() : "";
+  if (!trimmed) {
+    throw Object.assign(new Error("A generation prompt is required."), {
+      status: 400,
+      code: "invalid_request"
+    });
+  }
+  return callGeminiImage([
+    {
+      text: [
+        "Generate exactly one high-quality character portrait image.",
+        "Obey every HARD REQUIREMENT about skin tone / complexion literally.",
+        "Do not default to pale or light skin unless the prompt asks for it.",
+        "Match the requested skin colour on face, neck, and hands.",
+        trimmed.slice(0, 2500)
+      ].join("\n")
+    }
+  ]);
+}
+async function editImageWithGemini(imageDataUrl, prompt) {
+  const trimmed = typeof prompt === "string" ? prompt.trim() : "";
+  if (!trimmed) {
+    throw Object.assign(new Error("An edit prompt is required."), {
+      status: 400,
+      code: "invalid_request"
+    });
+  }
+  const match2 = String(imageDataUrl || "").match(/^data:(.+?);base64,(.*)$/);
+  if (!match2) {
+    throw Object.assign(new Error("A base64 image data URL is required."), {
+      status: 400,
+      code: "invalid_request"
+    });
+  }
+  const mimeType = match2[1] || "image/png";
+  const data = match2[2];
+  if (!data) {
+    throw Object.assign(new Error("Malformed image data."), {
+      status: 400,
+      code: "invalid_request"
+    });
+  }
+  return callGeminiImage([
+    {
+      text: [
+        "Edit this character portrait according to the instructions.",
+        "If skin tone / complexion is specified, change it clearly and consistently on face, neck, and hands.",
+        "Keep identity/pose when possible, but never ignore a requested skin colour.",
+        `Instructions: ${trimmed.slice(0, 2500)}`
+      ].join("\n")
+    },
+    { inlineData: { mimeType, data } }
+  ]);
+}
+
 // src/routes/openai/functions.ts
 var router4 = (0, import_express7.Router)();
 router4.use(createRateLimit({ name: "openai-functions", max: 180 }));
@@ -107536,6 +107735,66 @@ function mapImageEditError(err) {
     error: safeMessage
   };
 }
+async function generateImageDataUrl(prompt) {
+  const trimmed = prompt.trim().slice(0, 2500);
+  let geminiMapped = null;
+  if (hasGeminiImageKey() && isFreeImageFallbackEnabled()) {
+    try {
+      const gemini = await generateImageWithGemini(trimmed);
+      return { image: gemini.image, provider: gemini.provider };
+    } catch (err) {
+      geminiMapped = mapImageEditError(err);
+      if (geminiMapped.code === "content_policy" || !hasOpenAIKey()) {
+        throw Object.assign(new Error(geminiMapped.error), {
+          status: geminiMapped.status,
+          code: geminiMapped.code
+        });
+      }
+      logger.warn(
+        { code: geminiMapped.code },
+        "Gemini image generate failed; falling back to OpenAI gpt-image-1"
+      );
+    }
+  }
+  if (!hasOpenAIKey()) {
+    throw Object.assign(
+      new Error(
+        geminiMapped?.error || "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation."
+      ),
+      {
+        status: geminiMapped?.status ?? 503,
+        code: geminiMapped?.code ?? "auth_error"
+      }
+    );
+  }
+  try {
+    const result = await getOpenAIClient().images.generate({
+      model: "gpt-image-1",
+      prompt: trimmed.slice(0, 1e3),
+      size: "1024x1024"
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    if (!b64) {
+      throw Object.assign(new Error("No image was returned."), { status: 502 });
+    }
+    return {
+      image: `data:image/png;base64,${b64}`,
+      provider: "openai"
+    };
+  } catch (err) {
+    if (geminiMapped) {
+      throw Object.assign(new Error(geminiMapped.error), {
+        status: geminiMapped.status,
+        code: geminiMapped.code
+      });
+    }
+    const mapped = mapImageEditError(err);
+    throw Object.assign(new Error(mapped.error), {
+      status: mapped.status,
+      code: mapped.code
+    });
+  }
+}
 router4.post("/image-edit", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -107563,12 +107822,38 @@ router4.post("/image-edit", async (req, res) => {
     return;
   }
   const ext = mime3.includes("png") ? "png" : mime3.includes("webp") ? "webp" : "jpg";
+  const trimmed = prompt.trim().slice(0, 2500);
+  const dataUrl = `data:${mime3};base64,${match2[2]}`;
+  if (hasGeminiImageKey() && isFreeImageFallbackEnabled()) {
+    try {
+      const gemini = await editImageWithGemini(dataUrl, trimmed);
+      res.json({ image: gemini.image, provider: gemini.provider });
+      return;
+    } catch (err) {
+      const mapped = mapImageEditError(err);
+      if (mapped.code === "content_policy" || !hasOpenAIKey()) {
+        res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+        return;
+      }
+      logger.warn(
+        { code: mapped.code },
+        "Gemini image edit failed; falling back to OpenAI gpt-image-1"
+      );
+    }
+  }
+  if (!hasOpenAIKey()) {
+    res.status(503).json({
+      error: "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
+      code: "auth_error"
+    });
+    return;
+  }
   try {
     const file2 = await toFile(buffer, `source.${ext}`, { type: mime3 });
     const result = await getOpenAIClient().images.edit({
       model: "gpt-image-1",
       image: file2,
-      prompt: prompt.trim().slice(0, 1e3),
+      prompt: trimmed.slice(0, 1e3),
       size: "1024x1024"
     });
     const b64 = result.data?.[0]?.b64_json;
@@ -107576,7 +107861,7 @@ router4.post("/image-edit", async (req, res) => {
       res.status(502).json({ error: "No image was returned." });
       return;
     }
-    res.json({ image: `data:image/png;base64,${b64}` });
+    res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
   } catch (err) {
     const mapped = mapImageEditError(err);
     res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
@@ -107589,17 +107874,8 @@ router4.post("/image-generate", async (req, res) => {
     return;
   }
   try {
-    const result = await getOpenAIClient().images.generate({
-      model: "gpt-image-1",
-      prompt: prompt.trim().slice(0, 1e3),
-      size: "1024x1024"
-    });
-    const b64 = result.data?.[0]?.b64_json;
-    if (!b64) {
-      res.status(502).json({ error: "No image was returned." });
-      return;
-    }
-    res.json({ image: `data:image/png;base64,${b64}` });
+    const result = await generateImageDataUrl(prompt);
+    res.json({ image: result.image, provider: result.provider });
   } catch (err) {
     const mapped = mapImageEditError(err);
     res.status(mapped.status).json({ error: mapped.error, code: mapped.code });

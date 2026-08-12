@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import {
   APPEARANCE_FEATURES,
@@ -6,7 +6,7 @@ import {
   getAppearanceSuggestions,
   normalizeAppearancePrompts,
 } from "@/lib/animaAppearance";
-import { X, Wand2, Loader, Check, Palette } from "lucide-react";
+import { X, Wand2, Loader, Check, Palette, Upload } from "lucide-react";
 
 const THEME_PRESETS = [
   "#00e5e5",
@@ -21,18 +21,21 @@ const THEME_PRESETS = [
 
 /**
  * Customise the look of a personal Anima.
- * @param {{ anima: object, onClose?: () => void, onSave?: (patch: object) => void, variant?: "modal" | "page" }} props
+ * @param {{ anima: object, onClose?: () => void, onSave?: (patch: object) => void, variant?: "modal" | "page", showHeader?: boolean }} props
  */
 export default function AnimaCustomizer({
   anima,
   onClose,
   onSave,
   variant = "modal",
+  showHeader = true,
 }) {
+  const fileInputRef = useRef(null);
   const [prompts, setPrompts] = useState(() =>
     normalizeAppearancePrompts(anima?.appearance_prompts),
   );
   const [generating, setGenerating] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(anima?.avatar_url || "");
   const [themeColor, setThemeColor] = useState(anima?.theme_color || "#00e5e5");
   const [saving, setSaving] = useState(false);
@@ -41,6 +44,14 @@ export default function AnimaCustomizer({
   const [error, setError] = useState("");
 
   const isPage = variant === "page";
+
+  useEffect(() => {
+    setPrompts(normalizeAppearancePrompts(anima?.appearance_prompts));
+    setPreviewUrl(anima?.avatar_url || "");
+    setThemeColor(anima?.theme_color || "#00e5e5");
+    setSaved(false);
+    setError("");
+  }, [anima?.id]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -66,11 +77,38 @@ export default function AnimaCustomizer({
           : err?.code === "rate_limit"
             ? "The image service is busy right now. Please try again shortly."
             : err?.code === "auth_error"
-              ? "Image generation is temporarily unavailable. Please try again later."
-              : err?.message || "Failed to generate appearance.";
+              ? "Image generation is temporarily unavailable. You can still upload a photo below."
+              : err?.message || "Failed to generate appearance. You can still upload a photo.";
       setError(msg);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    setSaved(false);
+    try {
+      const result = await base44.integrations.Core.UploadFile({ file });
+      if (!result?.file_url) {
+        throw new Error("Upload failed — try another image.");
+      }
+      setPreviewUrl(result.file_url);
+    } catch (err) {
+      const msg = String(err?.message || "");
+      if (/unauthorized|sign in|not signed|401/i.test(msg)) {
+        setError("Sign in to upload an avatar, then try again.");
+      } else if (/too large/i.test(msg)) {
+        setError("That image is too large. Try a smaller photo.");
+      } else {
+        setError(msg || "Upload failed — try another image.");
+      }
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -122,27 +160,28 @@ export default function AnimaCustomizer({
 
   const body = (
     <div className={shellClass}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-primary/20">
-        <div className="min-w-0">
-          <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-sm sm:text-base truncate">
-            // Customise Anima — {anima?.name || "Your Anima"}
-          </h2>
-          <p className="text-[9px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-            Shape skin, hair, outfit, eyes & more · then generate a new look
-          </p>
+      {showHeader && (
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-primary/20">
+          <div className="min-w-0">
+            <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-sm sm:text-base truncate">
+              // Customise Anima — {anima?.name || "Your Anima"}
+            </h2>
+            <p className="text-[9px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
+              Shape skin, hair, outfit, eyes & more · then generate a new look
+            </p>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-primary/30 hover:text-primary transition-colors flex-shrink-0 ml-3"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-primary/30 hover:text-primary transition-colors flex-shrink-0 ml-3"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        )}
-      </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row min-h-0">
         {/* Left: Feature inputs */}
@@ -331,22 +370,47 @@ export default function AnimaCustomizer({
               </p>
             )}
 
-            <button
-              type="button"
-              onClick={handleGenerate}
-              disabled={generating || saving}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner"
-            >
-              {generating ? (
-                <>
-                  <Loader className="w-4 h-4 animate-spin" /> Generating...
-                </>
-              ) : (
-                <>
-                  <Wand2 className="w-4 h-4" /> Generate Look
-                </>
-              )}
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={generating || saving || uploading}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+              >
+                {generating ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" /> Generating...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-4 h-4" /> Generate Look
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={generating || saving || uploading}
+                className="w-full flex items-center justify-center gap-2 py-3 border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/45 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all"
+              >
+                {uploading ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" /> Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" /> Upload Photo
+                  </>
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleUpload}
+              />
+            </div>
 
             {hasChanges && (
               <button
@@ -376,7 +440,7 @@ export default function AnimaCustomizer({
             )}
 
             <p className="font-mono text-[8px] text-primary/20 tracking-widest text-center">
-              Describe features → Generate Look → Apply & Save
+              Describe features → Generate or Upload → Apply & Save
             </p>
           </div>
         </div>

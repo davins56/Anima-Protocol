@@ -33,7 +33,7 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
 
   const menuItems = [
     { icon: Settings, label: "Settings", path: "/settings", title: "Settings" },
-    { icon: Palette, label: "Customise Anima", path: "/customise-anima", title: "Customise Anima look" },
+    { icon: Palette, label: "Customise Anima", path: "/customise-anima?tab=look", title: "Customise Anima look, personality, soulprint & voice" },
     { icon: BookMarked, label: "Storyboard", path: "/storyboard", title: "Storyboard" },
     { icon: BookOpen, label: "Lore Book", path: "/lorebook", title: "Lore Book" },
     { icon: Newspaper, label: "Journals", path: "/journals", title: "Journals" },

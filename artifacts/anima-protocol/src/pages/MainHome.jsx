@@ -392,8 +392,8 @@ export default function MainHome() {
             onClick={() =>
               navigate(
                 anima?.id
-                  ? `/customise-anima?anima=${anima.id}`
-                  : "/customise-anima",
+                  ? `/customise-anima?anima=${anima.id}&tab=look`
+                  : "/customise-anima?tab=look",
               )
             }
             className="w-full text-left border border-primary/25 hover:border-primary/50 bg-primary/5 hover:bg-primary/10 p-4 sm:p-5 transition-colors group"
@@ -702,12 +702,12 @@ export default function MainHome() {
             <QuickAction
               icon={Wand2}
               label="Customise Anima"
-              desc="Shape their look"
+              desc="Look, personality & voice"
               onClick={() =>
                 navigate(
                   anima?.id
-                    ? `/customise-anima?anima=${anima.id}`
-                    : "/customise-anima",
+                    ? `/customise-anima?anima=${anima.id}&tab=look`
+                    : "/customise-anima?tab=look",
                 )
               }
             />
