@@ -21,17 +21,35 @@ vi.mock("../src/lib/openaiClient", () => {
     hasOpenRouterKey: () =>
       Boolean(
         process.env.OPENROUTER_API_KEY?.trim() ||
-          process.env.ANIMA_OPENROUTER_API_KEY?.trim(),
+          process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+          process.env.OPEN_ROUTER_API_KEY?.trim(),
       ),
     getOpenRouterApiKey: () =>
       process.env.OPENROUTER_API_KEY?.trim() ||
       process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+      process.env.OPEN_ROUTER_API_KEY?.trim() ||
       null,
+    getOpenRouterApiKeySource: () =>
+      process.env.OPENROUTER_API_KEY?.trim()
+        ? "OPENROUTER_API_KEY"
+        : process.env.ANIMA_OPENROUTER_API_KEY?.trim()
+          ? "ANIMA_OPENROUTER_API_KEY"
+          : process.env.OPEN_ROUTER_API_KEY?.trim()
+            ? "OPEN_ROUTER_API_KEY"
+            : null,
+    openRouterKeyFingerprint: () => {
+      const key =
+        process.env.OPENROUTER_API_KEY?.trim() ||
+        process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+        process.env.OPEN_ROUTER_API_KEY?.trim();
+      return key && key.length >= 8 ? key.slice(-4) : null;
+    },
     getOpenRouterClient: () => {
       if (
         !(
           process.env.OPENROUTER_API_KEY?.trim() ||
-          process.env.ANIMA_OPENROUTER_API_KEY?.trim()
+          process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+          process.env.OPEN_ROUTER_API_KEY?.trim()
         )
       ) {
         return null;
@@ -152,6 +170,7 @@ import {
   isProviderQuotaError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
   probeLlmProviders,
+  resetOpenRouterCreditFallbackForTests,
   resolveLocalModel,
   resolveOpenRouterModel,
 } from "../src/lib/llmFailover";
@@ -224,6 +243,16 @@ describe("isProviderQuotaError", () => {
     expect(isProviderQuotaError({ status: 500, message: "internal" })).toBe(false);
   });
 
+  it("detects OpenRouter HTTP 402 insufficient credits", () => {
+    expect(isProviderQuotaError({ status: 402 })).toBe(true);
+    expect(
+      isProviderQuotaError({
+        status: 402,
+        message: "402 Insufficient credits. This account never purchased credits.",
+      }),
+    ).toBe(true);
+  });
+
   it("does not throw when code is a number (OpenAI-compatible servers)", () => {
     expect(() => isProviderQuotaError({ code: 429, type: "rate_limit_error" })).not.toThrow();
     expect(isProviderQuotaError({ code: 429, type: "rate_limit_error" })).toBe(true);
@@ -240,6 +269,8 @@ describe("isAnimaCustomMode", () => {
   it("is true when the first provider is the self-hosted Anima LLM", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
     expect(isAnimaCustomMode()).toBe(true);
   });
 
@@ -257,6 +288,7 @@ describe("resolveOpenRouterModel", () => {
   const SAVED = { ...process.env };
   afterEach(() => {
     process.env = { ...SAVED };
+    resetOpenRouterCreditFallbackForTests();
   });
 
   it("defaults to Venice Uncensored", () => {
@@ -318,6 +350,7 @@ describe("getLlmRoutingStatus", () => {
 
   beforeEach(() => {
     process.env = { ...SAVED };
+    resetOpenRouterCreditFallbackForTests();
   });
 
   afterEach(() => {
@@ -327,6 +360,8 @@ describe("getLlmRoutingStatus", () => {
   it("reports ok with brand anima when a local endpoint is configured", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
     const status = getLlmRoutingStatus();
     expect(status.status).toBe("ok");
     expect(status.preferred).toBe("local");
@@ -340,6 +375,8 @@ describe("getLlmRoutingStatus", () => {
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
     process.env.VERCEL = "1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     const status = getLlmRoutingStatus();
@@ -363,6 +400,9 @@ describe("getLlmRoutingStatus", () => {
     expect(status.chain).toEqual(["openrouter"]);
     expect(status.openrouter.configured).toBe(true);
     expect(status.openrouter.model).toMatch(/venice|dolphin|gpt-oss/i);
+    expect(status.openrouter.env).toBe("OPENROUTER_API_KEY");
+    expect(status.openrouter.keyTail).toBe("test");
+    expect(status.openrouter.creditFallback).toBe(false);
   });
 
   it("reports error when ANIMA_LOCAL_LLM_BASE_URL points at api.openai.com", () => {
@@ -388,6 +428,7 @@ describe("createChatStreamWithFailover", () => {
     createMock.mockReset();
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
+    resetOpenRouterCreditFallbackForTests();
   });
 
   afterEach(() => {
@@ -413,6 +454,8 @@ describe("createChatStreamWithFailover", () => {
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
     process.env.VERCEL = "1";
 
     await expect(
@@ -449,6 +492,68 @@ describe("createChatStreamWithFailover", () => {
     );
     expect(result.failedOver).toBe(false);
     expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries the OpenRouter free model when Venice returns HTTP 402", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("402 Insufficient credits. This account never purchased credits."),
+          { status: 402 },
+        ),
+      )
+      .mockResolvedValueOnce(fakeStream("free"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe("openai/gpt-oss-20b:free");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[0][0].model).toBe(
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    );
+    expect(createMock.mock.calls[1][0].model).toBe("openai/gpt-oss-20b:free");
+  });
+
+  it("does not tell the operator to set OPENROUTER_API_KEY when a 402 happens on the free model", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock.mockRejectedValue(
+      Object.assign(
+        new Error("402 Insufficient credits. This account never purchased credits."),
+        { status: 402 },
+      ),
+    );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected OpenRouter 402 to reject");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/Your OPENROUTER_API_KEY is configured/);
+      expect(message).not.toMatch(/Set OPENROUTER_API_KEY/);
+    }
   });
 
   it("fails over to OpenRouter when local fails", async () => {
@@ -660,6 +765,7 @@ describe("createChatCompletionWithFailover", () => {
     createMock.mockReset();
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
+    resetOpenRouterCreditFallbackForTests();
   });
 
   afterEach(() => {
@@ -687,6 +793,7 @@ describe("probeLlmProviders", () => {
     createMock.mockReset();
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
+    resetOpenRouterCreditFallbackForTests();
   });
 
   afterEach(() => {
@@ -698,6 +805,8 @@ describe("probeLlmProviders", () => {
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
     process.env.VERCEL = "1";
     const probes = await probeLlmProviders();
     expect(probes).toHaveLength(2);
@@ -731,5 +840,31 @@ describe("probeLlmProviders", () => {
     });
     expect(probes[0]?.message).toMatch(/host=anima-chat-llm\.fly\.dev/i);
     expect(probes[0]?.message).toMatch(/model=anima-chat/i);
+  });
+
+  it("probes OpenRouter via the free model when Venice returns HTTP 402", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("402 Insufficient credits. This account never purchased credits."),
+          { status: 402 },
+        ),
+      )
+      .mockResolvedValueOnce(fakeCompletion("ok"));
+
+    const probes = await probeLlmProviders();
+    expect(probes).toHaveLength(1);
+    expect(probes[0]).toMatchObject({
+      provider: "openrouter",
+      configured: true,
+      ok: true,
+      model: "openai/gpt-oss-20b:free",
+    });
   });
 });

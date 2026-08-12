@@ -24,12 +24,14 @@ import {
 } from "./modelRouter";
 import {
   getLocalLlmClient,
+  getOpenRouterApiKeySource,
   getOpenRouterClient,
   hasLocalLlm,
   hasOpenRouterKey,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
   OPENROUTER_VENICE_UNCENSORED,
+  openRouterKeyFingerprint,
   summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
 import {
@@ -80,6 +82,12 @@ export interface LlmRoutingStatus {
     configured: boolean;
     model: string;
     isFreeTier: boolean;
+    /** Env var name that supplied the key (never the secret). */
+    env: string | null;
+    /** Last 4 chars of the key so operators can confirm which key is loaded. */
+    keyTail: string | null;
+    /** True when a paid model 402'd and later turns use the free-tier model. */
+    creditFallback: boolean;
   };
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
@@ -162,15 +170,38 @@ export function preferOpenRouterFreeTier(): boolean {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "free";
 }
 
+export function isOpenRouterFreeModel(model: string): boolean {
+  return model.trim().toLowerCase().endsWith(":free");
+}
+
+/**
+ * Once OpenRouter returns 402 / insufficient credits on a paid model, later
+ * turns in this isolate skip straight to the free-tier model so a valid free
+ * key is not mistaken for "key not set".
+ */
+let openRouterCreditFallback = false;
+
+export function isOpenRouterCreditFallback(): boolean {
+  return openRouterCreditFallback;
+}
+
+/** Test helper — clear the in-process free-tier fallback. */
+export function resetOpenRouterCreditFallbackForTests(): void {
+  openRouterCreditFallback = false;
+}
+
 /** Resolve OpenRouter model for a tier (Venice Uncensored by default). */
 export function resolveOpenRouterModel(tier: ModelTier): ResolvedModel {
   const tierKey = `ANIMA_OPENROUTER_MODEL_${tier.toUpperCase()}` as const;
   const fromTier = process.env[tierKey]?.trim();
   const fromStandard = process.env.ANIMA_OPENROUTER_MODEL_STANDARD?.trim();
-  const model =
+  let model =
     fromTier ||
     fromStandard ||
     (preferOpenRouterFreeTier() ? OPENROUTER_FREE_MODEL : OPENROUTER_VENICE_UNCENSORED);
+  if (openRouterCreditFallback && !isOpenRouterFreeModel(model)) {
+    model = OPENROUTER_FREE_MODEL;
+  }
   const maxTokens = tier === "light" ? 4096 : tier === "heavy" ? 16384 : 8192;
   return { tier, model, maxTokens };
 }
@@ -279,8 +310,15 @@ export const LOCAL_LLM_CONNECTION_FIX_HINT =
 const OPENROUTER_SETUP_HINT =
   "Set OPENROUTER_API_KEY (free at https://openrouter.ai/keys). " +
   `Default model is Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). ` +
-  `For zero-cost free-tier models set ANIMA_OPENROUTER_FREE=true (uses ${OPENROUTER_FREE_MODEL}). ` +
+  `A free key with no credits automatically falls back to ${OPENROUTER_FREE_MODEL}. ` +
+  `To skip Venice entirely set ANIMA_OPENROUTER_FREE=true. ` +
   "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used.";
+
+const OPENROUTER_CREDITS_HINT =
+  `Your OPENROUTER_API_KEY is configured, but this OpenRouter account has no credits ` +
+  `for Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). ` +
+  `Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true ` +
+  `to use ${OPENROUTER_FREE_MODEL}.`;
 
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
@@ -357,15 +395,18 @@ export function isProviderAuthError(err: unknown): boolean {
 export function isProviderQuotaError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { status?: number; code?: unknown; type?: unknown; message?: unknown };
-  if (e.status === 429) return true;
+  // 402 = OpenRouter "Insufficient credits" / payment required.
+  if (e.status === 402 || e.status === 429) return true;
   const code = errorCodeLower(e);
   const msg = errorFieldLower(e.message);
   return (
     code.includes("rate_limit") ||
     code.includes("insufficient_quota") ||
+    code.includes("payment_required") ||
     msg.includes("rate limit") ||
     msg.includes("quota") ||
-    msg.includes("credits")
+    msg.includes("credits") ||
+    msg.includes("payment required")
   );
 }
 
@@ -515,8 +556,7 @@ function enrichError(err: unknown, provider: LlmProviderId = "local"): Error {
     if (provider === "openrouter") {
       return new Error(
         `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ` +
-          `Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true ` +
-          `to use ${OPENROUTER_FREE_MODEL}, or host a local Anima LLM. ${OPENROUTER_SETUP_HINT}`,
+          (hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT),
       );
     }
   }
@@ -589,7 +629,8 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     if (chain.includes("openrouter")) {
       noteParts.push(
         `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` +
-          (chain[0] === "local" ? " (fallback after local)." : " (primary — no local endpoint)."),
+          (chain[0] === "local" ? " (fallback after local)." : " (primary — no local endpoint).") +
+          (openRouterCreditFallback ? " Paid model needed credits; using free-tier." : ""),
       );
     }
   }
@@ -613,6 +654,9 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       configured: hasOpenRouterKey(),
       model: openRouterModel.model,
       isFreeTier,
+      env: getOpenRouterApiKeySource(),
+      keyTail: openRouterKeyFingerprint(),
+      creditFallback: openRouterCreditFallback,
     },
     chain,
     note: noteParts.join(" "),
@@ -634,17 +678,19 @@ async function probeOneProvider(
       if (!client) {
         return { provider: "openrouter", configured: false, ok: false };
       }
-      await client.chat.completions.create({
-        model: resolved.model,
-        max_tokens: 16,
-        messages: [{ role: "user", content: "Reply with the single word: ok" }],
-        temperature: 0,
-      });
+      const { resolved: used } = await withOpenRouterCreditFallback(resolved, (m) =>
+        client.chat.completions.create({
+          model: m.model,
+          max_tokens: 16,
+          messages: [{ role: "user", content: "Reply with the single word: ok" }],
+          temperature: 0,
+        }),
+      );
       return {
         provider: "openrouter",
         configured: true,
         ok: true,
-        model: resolved.model,
+        model: used.model,
         configuredModel: resolved.model,
         latencyMs: Date.now() - started,
       };
@@ -766,6 +812,43 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
   return out;
 }
 
+function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
+  const out: ResolvedModel[] = [preferred];
+  if (!isOpenRouterFreeModel(preferred.model)) {
+    out.push({ ...preferred, model: OPENROUTER_FREE_MODEL });
+  }
+  return out;
+}
+
+/**
+ * Try the preferred OpenRouter model, then the free-tier model when the
+ * account has no credits (HTTP 402). A valid free key must still chat.
+ */
+async function withOpenRouterCreditFallback<T>(
+  preferred: ResolvedModel,
+  run: (resolved: ResolvedModel) => Promise<T>,
+): Promise<{ value: T; resolved: ResolvedModel }> {
+  let lastErr: unknown;
+  for (const candidate of openRouterModelCandidates(preferred)) {
+    try {
+      const value = await run(candidate);
+      return { value, resolved: candidate };
+    } catch (err) {
+      lastErr = err;
+      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model)) {
+        openRouterCreditFallback = true;
+        console.warn(
+          `[llm] OpenRouter ${candidate.model} needs credits (${summarizeError(err)}); ` +
+            `retrying ${OPENROUTER_FREE_MODEL}. The OPENROUTER_API_KEY is set — this is a billing limit, not a missing key.`,
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr ?? new Error(OPENROUTER_CREDITS_HINT);
+}
+
 async function runOpenRouterStream(
   req: ChatStreamRequest,
   failedOver: boolean,
@@ -773,18 +856,22 @@ async function runOpenRouterStream(
   const client = getOpenRouterClient();
   if (!client) throw new Error(OPENROUTER_SETUP_HINT);
   const preferred = resolveOpenRouterModel(req.tier);
-  const stream = await client.chat.completions.create({
-    model: preferred.model,
-    max_tokens: Math.min(req.maxTokens, preferred.maxTokens),
-    messages: req.messages,
-    stream: true,
-  });
+  const { value: stream, resolved } = await withOpenRouterCreditFallback(
+    preferred,
+    (m) =>
+      client.chat.completions.create({
+        model: m.model,
+        max_tokens: Math.min(req.maxTokens, m.maxTokens),
+        messages: req.messages,
+        stream: true,
+      }),
+  );
   return {
     stream,
     provider: "openrouter",
     brand: "openrouter",
-    model: preferred.model,
-    tier: preferred.tier,
+    model: resolved.model,
+    tier: resolved.tier,
     failedOver,
   };
 }
@@ -796,25 +883,29 @@ async function runOpenRouterCompletion(
   const client = getOpenRouterClient();
   if (!client) throw new Error(OPENROUTER_SETUP_HINT);
   const preferred = resolveOpenRouterModel(req.tier);
-  const completion = await client.chat.completions.create(
-    {
-      model: preferred.model,
-      max_tokens: Math.min(req.maxTokens, preferred.maxTokens),
-      messages: req.messages,
-      ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-      ...(req.tools && req.tools.length
-        ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
-        : {}),
-    },
-    req.signal ? { signal: req.signal } : undefined,
+  const { value: completion, resolved } = await withOpenRouterCreditFallback(
+    preferred,
+    (m) =>
+      client.chat.completions.create(
+        {
+          model: m.model,
+          max_tokens: Math.min(req.maxTokens, m.maxTokens),
+          messages: req.messages,
+          ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+          ...(req.tools && req.tools.length
+            ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
+            : {}),
+        },
+        req.signal ? { signal: req.signal } : undefined,
+      ),
   );
   const content = completion.choices?.[0]?.message?.content ?? "";
   return {
     content: typeof content === "string" ? content : "",
     provider: "openrouter",
     brand: "openrouter",
-    model: preferred.model,
-    tier: preferred.tier,
+    model: resolved.model,
+    tier: resolved.tier,
     failedOver,
     toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
   };

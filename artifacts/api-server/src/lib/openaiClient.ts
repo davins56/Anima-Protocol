@@ -26,16 +26,28 @@ export const OPENROUTER_VENICE_UNCENSORED =
  */
 export const OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
 
+/** Env names checked for an OpenRouter key (first non-empty wins). */
+export const OPENROUTER_KEY_ENV_NAMES = [
+  "OPENROUTER_API_KEY",
+  "ANIMA_OPENROUTER_API_KEY",
+  "OPEN_ROUTER_API_KEY",
+] as const;
+
 /** Normalize env keys that were pasted with surrounding quotes or whitespace. */
 export function normalizeApiKey(raw: string | undefined): string | null {
   if (!raw) return null;
-  let key = raw.trim();
+  let key = raw.replace(/^\uFEFF/, "").trim();
   if (
     (key.startsWith('"') && key.endsWith('"')) ||
     (key.startsWith("'") && key.endsWith("'"))
   ) {
     key = key.slice(1, -1).trim();
   }
+  // Dashboard / curl pastes often include the Bearer prefix.
+  if (/^bearer\s+/i.test(key)) {
+    key = key.replace(/^bearer\s+/i, "").trim();
+  }
+  key = key.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "").trim();
   return key || null;
 }
 
@@ -255,17 +267,30 @@ export function getLocalLlmClient(): OpenAI | null {
 
 /** OpenRouter API key — free signup at https://openrouter.ai/keys */
 export function hasOpenRouterKey(): boolean {
-  return Boolean(
-    normalizeApiKey(process.env.OPENROUTER_API_KEY) ||
-      normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY),
-  );
+  return Boolean(getOpenRouterApiKey());
 }
 
 export function getOpenRouterApiKey(): string | null {
-  return (
-    normalizeApiKey(process.env.OPENROUTER_API_KEY) ||
-    normalizeApiKey(process.env.ANIMA_OPENROUTER_API_KEY)
-  );
+  for (const name of OPENROUTER_KEY_ENV_NAMES) {
+    const key = normalizeApiKey(process.env[name]);
+    if (key) return key;
+  }
+  return null;
+}
+
+/** Which env var supplied the OpenRouter key (secret-free). */
+export function getOpenRouterApiKeySource(): string | null {
+  for (const name of OPENROUTER_KEY_ENV_NAMES) {
+    if (normalizeApiKey(process.env[name])) return name;
+  }
+  return null;
+}
+
+/** Last 4 characters of the configured OpenRouter key, or null. */
+export function openRouterKeyFingerprint(): string | null {
+  const key = getOpenRouterApiKey();
+  if (!key || key.length < 8) return null;
+  return key.slice(-4);
 }
 
 /**
