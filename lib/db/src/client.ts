@@ -56,7 +56,6 @@ export function getPool(): pg.Pool {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-  poolInstance = new Pool({ connectionString, ssl });
   // Vercel Fluid / serverless: keep the pool tiny and fail fast so a dead DB
   // surfaces as 503 quickly instead of hanging the Character list request.
   poolInstance = new Pool({
