@@ -145,7 +145,8 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | Variable | Used by | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
-| `OPENAI_API_KEY` | API | Image generate/edit only (Customise Anima → Generate Look). Never used for chat — there is no cloud chat path. |
+| `OPENAI_API_KEY` | API | Preferred image generate/edit (`gpt-image-1`) for Customise Anima → Generate Look. Never used for chat. |
+| `IMAGE_FREE_FALLBACK` | API | Free Pollinations FLUX fallback when OpenAI is missing/unfunded (default on; set `off` to disable) |
 | `ANIMA_LOCAL_LLM_BASE_URL` | API | Public HTTPS OpenAI-compatible endpoint for the self-hosted Anima LLM (Ollama/vLLM). This is chat's only backend. Verify via `/api/healthz/llm` |
 | `ANIMA_LOCAL_LLM_BACKEND` | API | `ollama` (default) or `vllm` |
 | `ANIMA_OLLAMA_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | Ollama model tags per tier (default `anima-chat`). If the endpoint doesn't serve the tag, chat discovers a working model via `/v1/models` instead of failing — see [docs/custom-llm.md](docs/custom-llm.md) |
