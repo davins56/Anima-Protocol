@@ -37,7 +37,7 @@ export default function AnimaCustomizer({
   const [themeColor, setThemeColor] = useState(anima?.theme_color || "#00e5e5");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [activeFeature, setActiveFeature] = useState("hair");
+  const [activeFeature, setActiveFeature] = useState("skin");
   const [error, setError] = useState("");
 
   const isPage = variant === "page";
@@ -127,7 +127,7 @@ export default function AnimaCustomizer({
             // Customise Anima — {anima?.name || "Your Anima"}
           </h2>
           <p className="text-[9px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-            Shape hair, outfit, eyes & more · then generate a new look
+            Shape skin, hair, outfit, eyes & more · then generate a new look
           </p>
         </div>
         {onClose && (

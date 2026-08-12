@@ -4,6 +4,12 @@
 
 export const APPEARANCE_FEATURES = [
   {
+    key: "skin",
+    label: "Skin Colour",
+    placeholder: "e.g. warm medium brown, porcelain fair, deep ebony",
+    icon: "◎",
+  },
+  {
     key: "hair",
     label: "Hair",
     placeholder: "e.g. long silver wavy hair with braids",
@@ -68,6 +74,7 @@ export function buildAppearanceImagePrompt(anima, prompts = {}) {
   )
     .map((f) => {
       const labels = {
+        skin: `Skin colour / complexion: ${prompts.skin}`,
         hair: `Hair: ${prompts.hair}`,
         outfit: `Outfit: ${prompts.outfit}`,
         eyes: `Eyes: ${prompts.eyes}`,
@@ -92,6 +99,14 @@ export function buildAppearanceImagePrompt(anima, prompts = {}) {
 
 export function getAppearanceSuggestions(feature) {
   const map = {
+    skin: [
+      "porcelain fair",
+      "light olive",
+      "warm peach",
+      "golden tan",
+      "warm medium brown",
+      "deep ebony",
+    ],
     hair: [
       "long silver wavy",
       "short dark pixie cut",
