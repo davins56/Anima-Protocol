@@ -32,7 +32,8 @@ export ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored
 
 # Or OpenRouter (free API key at https://openrouter.ai/keys) — Venice Uncensored:
 export OPENROUTER_API_KEY=sk-or-…
-# Zero-cost free-tier models instead: ANIMA_OPENROUTER_FREE=true
+# $0 accounts auto-fall back to openai/gpt-oss-20b:free on HTTP 402.
+# To skip Venice from the first turn: ANIMA_OPENROUTER_FREE=true
 ```
 
 ### No GPU / no network to Ollama or Hugging Face? Smoke-test the wiring

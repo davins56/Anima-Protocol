@@ -220,7 +220,8 @@ That error means neither a self-hosted endpoint nor OpenRouter is usable.
 
 ```bash
 OPENROUTER_API_KEY=sk-or-…
-# default model is Venice Uncensored; for zero-cost free-tier models instead:
+# default model is Venice Uncensored; a $0 OpenRouter account automatically
+# retries openai/gpt-oss-20b:free on HTTP 402. To skip Venice from the first turn:
 # ANIMA_OPENROUTER_FREE=true
 ```
 
@@ -229,7 +230,21 @@ Redeploy without build cache. Verify:
 ```bash
 curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{preferred,chain,openrouter,note}'
 # expect preferred/chain to include "openrouter"
+# openrouter.configured=true, openrouter.keyTail=last 4 of your key
 ```
+
+### Exact fix — "OpenRouter credits/rate limit exhausted" / HTTP 402
+
+That popup means the **key is set and OpenRouter accepted it**. Venice Uncensored is a paid model; a brand-new OpenRouter account with no credits gets HTTP 402 (`This account never purchased credits`).
+
+Chat now retries `openai/gpt-oss-20b:free` automatically. If you still see 402 after deploy, either the free-tier model is also blocked for that key, or a different key is loaded than the one you added credits to. Confirm with:
+
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '.openrouter'
+# configured=true, env=OPENROUTER_API_KEY, keyTail=last 4 chars
+```
+
+Then either add credits at https://openrouter.ai/settings/credits or set `ANIMA_OPENROUTER_FREE=true` and redeploy.
 
 **Self-hosted (preferred long-term):**
 
