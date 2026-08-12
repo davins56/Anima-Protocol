@@ -69,7 +69,6 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
-<<<<<<< HEAD
   const loadCharacters = useCallback(async () => {
     setLoading(true);
     try {
@@ -84,8 +83,6 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
         universe: "Anima",
       }));
       setCharacters([...animaAsChars, ...(chars || [])]);
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   const loadCharacters = useCallback(async ({ retrySeed = false } = {}) => {
     setLoading(true);
     try {
@@ -104,10 +101,7 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
   useEffect(() => {
     let cancelled = false;
     whenBootstrapReady().then(() => {
-<<<<<<< HEAD
       if (!cancelled) loadCharacters();
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
       if (!cancelled) loadCharacters({ retrySeed: true });
     });
     return () => {
@@ -115,10 +109,7 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
     };
   }, [loadCharacters]);
 
-<<<<<<< HEAD
   useStoreSync(loadCharacters);
-=======
->>>>>>> 0b3b5d864406894277048e73490f474d3e169079
   useStoreSync(() => loadCharacters({ retrySeed: false }));
 
   const filteredCharacters = useMemo(() => {
