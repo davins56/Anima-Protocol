@@ -233,18 +233,18 @@ curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{preferred,chain,op
 # openrouter.configured=true, openrouter.keyTail=last 4 of your key
 ```
 
-### Exact fix — "OpenRouter credits/rate limit exhausted" / HTTP 402
+### Exact fix — "OpenRouter credits/rate limit exhausted" / HTTP 402 / HTTP 429
 
-That popup means the **key is set and OpenRouter accepted it**. Venice Uncensored is a paid model; a brand-new OpenRouter account with no credits gets HTTP 402 (`This account never purchased credits`).
+**HTTP 402** means the **key is set and OpenRouter accepted it**. Venice Uncensored is a paid model; a brand-new OpenRouter account with no credits gets HTTP 402 (`This account never purchased credits`). Chat retries `openai/gpt-oss-20b:free` automatically.
 
-Chat now retries `openai/gpt-oss-20b:free` automatically. If you still see 402 after deploy, either the free-tier model is also blocked for that key, or a different key is loaded than the one you added credits to. Confirm with:
+**HTTP 429 `free-models-per-day`** means the free-model fallback worked for a while, then the account hit OpenRouter's **50 free messages/day** cap (the limit is account-wide, not per model). Setting `ANIMA_OPENROUTER_FREE=true` does not raise it. Chat then retries paid Venice; that only continues if the account has credits.
+
+Add **$10 once** at https://openrouter.ai/settings/credits — that permanently unlocks 1000 free messages/day and Venice Uncensored. Confirm which key is loaded:
 
 ```bash
 curl -s https://www.anima-protocol.com/api/healthz/llm | jq '.openrouter'
 # configured=true, env=OPENROUTER_API_KEY, keyTail=last 4 chars
 ```
-
-Then either add credits at https://openrouter.ai/settings/credits or set `ANIMA_OPENROUTER_FREE=true` and redeploy.
 
 **Self-hosted (preferred long-term):**
 

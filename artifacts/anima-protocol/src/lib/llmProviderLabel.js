@@ -81,6 +81,6 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "openrouter",
     label: "Venice Uncensored",
     env: "OPENROUTER_API_KEY",
-    note: "OpenRouter key (free signup). Venice Uncensored when the account has credits; otherwise auto-falls back to openai/gpt-oss-20b:free",
+    note: "OpenRouter key. Free models: 50 messages/day at $0, 1000/day after a $10 credit purchase. Venice Uncensored needs credits.",
   },
 ];

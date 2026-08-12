@@ -173,6 +173,7 @@ import {
   resetOpenRouterCreditFallbackForTests,
   resolveLocalModel,
   resolveOpenRouterModel,
+  isOpenRouterFreeDailyLimit,
 } from "../src/lib/llmFailover";
 
 function fakeStream(label = "ok") {
@@ -251,6 +252,16 @@ describe("isProviderQuotaError", () => {
         message: "402 Insufficient credits. This account never purchased credits.",
       }),
     ).toBe(true);
+  });
+
+  it("detects OpenRouter free-models-per-day", () => {
+    expect(
+      isOpenRouterFreeDailyLimit({
+        status: 429,
+        message: "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
+      }),
+    ).toBe(true);
+    expect(isOpenRouterFreeDailyLimit({ status: 402, message: "Insufficient credits" })).toBe(false);
   });
 
   it("does not throw when code is a number (OpenAI-compatible servers)", () => {
@@ -552,6 +563,81 @@ describe("createChatStreamWithFailover", () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       expect(message).toMatch(/Your OPENROUTER_API_KEY is configured/);
+      expect(message).not.toMatch(/Set OPENROUTER_API_KEY/);
+    }
+  });
+
+  it("retries Venice Uncensored when the free model hits free-models-per-day", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error(
+            "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
+          ),
+          { status: 429 },
+        ),
+      )
+      .mockResolvedValueOnce(fakeStream("venice"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe(
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    );
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[0][0].model).toBe("openai/gpt-oss-20b:free");
+    expect(createMock.mock.calls[1][0].model).toBe(
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    );
+  });
+
+  it("explains the $10 daily unlock when free-models-per-day and Venice both fail", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error(
+            "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
+          ),
+          { status: 429 },
+        ),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("402 Insufficient credits. This account never purchased credits."),
+          { status: 402 },
+        ),
+      );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected OpenRouter daily cap to reject");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/50\/day|free OpenRouter messages|1000 free/i);
+      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE=true/);
       expect(message).not.toMatch(/Set OPENROUTER_API_KEY/);
     }
   });

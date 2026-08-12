@@ -317,8 +317,12 @@ const OPENROUTER_SETUP_HINT =
 const OPENROUTER_CREDITS_HINT =
   `Your OPENROUTER_API_KEY is configured, but this OpenRouter account has no credits ` +
   `for Venice Uncensored (${OPENROUTER_VENICE_UNCENSORED}). ` +
-  `Add credits at https://openrouter.ai/settings/credits, or set ANIMA_OPENROUTER_FREE=true ` +
-  `to use ${OPENROUTER_FREE_MODEL}.`;
+  `Add $10 at https://openrouter.ai/settings/credits to unlock Venice and 1000 free messages/day.`;
+
+const OPENROUTER_FREE_DAILY_HINT =
+  `Your OPENROUTER_API_KEY is working. This account has used today's free OpenRouter messages ` +
+  `(50/day until you add credits). Add $10 at https://openrouter.ai/settings/credits to unlock ` +
+  `1000 free messages/day and Venice Uncensored. This is an OpenRouter account limit, not a missing key.`;
 
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
@@ -408,6 +412,17 @@ export function isProviderQuotaError(err: unknown): boolean {
     msg.includes("credits") ||
     msg.includes("payment required")
   );
+}
+
+function quotaErrorText(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const e = err as { message?: unknown; code?: unknown };
+  return `${errorFieldLower(e.message)} ${errorCodeLower(e)}`;
+}
+
+/** OpenRouter account-wide cap on `:free` models (50/day with $0 credits). */
+export function isOpenRouterFreeDailyLimit(err: unknown): boolean {
+  return quotaErrorText(err).includes("free-models-per-day");
 }
 
 /** True when the local server said the requested model isn't loaded / known. */
@@ -554,9 +569,13 @@ function enrichError(err: unknown, provider: LlmProviderId = "local"): Error {
   }
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
+      const hint = !hasOpenRouterKey()
+        ? OPENROUTER_SETUP_HINT
+        : isOpenRouterFreeDailyLimit(err)
+          ? OPENROUTER_FREE_DAILY_HINT
+          : OPENROUTER_CREDITS_HINT;
       return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ` +
-          (hasOpenRouterKey() ? OPENROUTER_CREDITS_HINT : OPENROUTER_SETUP_HINT),
+        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}`,
       );
     }
   }
@@ -816,37 +835,66 @@ function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
   const out: ResolvedModel[] = [preferred];
   if (!isOpenRouterFreeModel(preferred.model)) {
     out.push({ ...preferred, model: OPENROUTER_FREE_MODEL });
+  } else if (preferred.model !== OPENROUTER_VENICE_UNCENSORED) {
+    // Free-tier daily cap is account-wide. Paid Venice is the only way to
+    // keep chatting after free-models-per-day — if the account has credits.
+    out.push({ ...preferred, model: OPENROUTER_VENICE_UNCENSORED });
   }
   return out;
 }
 
+function shouldFallbackOpenRouterModel(
+  err: unknown,
+  current: ResolvedModel,
+  next: ResolvedModel,
+): boolean {
+  if (!isProviderQuotaError(err)) return false;
+  const currentFree = isOpenRouterFreeModel(current.model);
+  const nextFree = isOpenRouterFreeModel(next.model);
+  // Paid 402/429 → free. Free 429 (daily/minute cap) → paid Venice.
+  return currentFree !== nextFree;
+}
+
 /**
- * Try the preferred OpenRouter model, then the free-tier model when the
- * account has no credits (HTTP 402). A valid free key must still chat.
+ * Try the preferred OpenRouter model, then the other class (paid ↔ free)
+ * when the account has no credits (HTTP 402) or the free-tier daily cap
+ * (HTTP 429 free-models-per-day).
  */
 async function withOpenRouterCreditFallback<T>(
   preferred: ResolvedModel,
   run: (resolved: ResolvedModel) => Promise<T>,
 ): Promise<{ value: T; resolved: ResolvedModel }> {
+  const candidates = openRouterModelCandidates(preferred);
   let lastErr: unknown;
-  for (const candidate of openRouterModelCandidates(preferred)) {
+  let dailyLimitErr: unknown;
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i]!;
     try {
       const value = await run(candidate);
+      if (isOpenRouterFreeModel(candidate.model) && candidate.model !== preferred.model) {
+        openRouterCreditFallback = true;
+      } else if (!isOpenRouterFreeModel(candidate.model)) {
+        openRouterCreditFallback = false;
+      }
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      if (isProviderQuotaError(err) && !isOpenRouterFreeModel(candidate.model)) {
-        openRouterCreditFallback = true;
+      if (isOpenRouterFreeDailyLimit(err)) dailyLimitErr = err;
+      const next = candidates[i + 1];
+      if (next && shouldFallbackOpenRouterModel(err, candidate, next)) {
+        if (!isOpenRouterFreeModel(candidate.model)) {
+          openRouterCreditFallback = true;
+        }
         console.warn(
-          `[llm] OpenRouter ${candidate.model} needs credits (${summarizeError(err)}); ` +
-            `retrying ${OPENROUTER_FREE_MODEL}. The OPENROUTER_API_KEY is set — this is a billing limit, not a missing key.`,
+          `[llm] OpenRouter ${candidate.model} failed (${summarizeError(err)}); ` +
+            `retrying ${next.model}. The OPENROUTER_API_KEY is set.`,
         );
         continue;
       }
-      throw err;
+      throw dailyLimitErr ?? err;
     }
   }
-  throw lastErr ?? new Error(OPENROUTER_CREDITS_HINT);
+  throw dailyLimitErr ?? lastErr ?? new Error(OPENROUTER_CREDITS_HINT);
 }
 
 async function runOpenRouterStream(
