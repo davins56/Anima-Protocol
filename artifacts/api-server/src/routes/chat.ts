@@ -20,6 +20,7 @@ import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
 import {
@@ -869,7 +870,7 @@ router.post("/messages", async (req, res) => {
   let usedModel = routed.model;
   let usedTier = routed.tier;
   let usedProvider: LlmProviderId = "local";
-  let usedBrand: "anima" | undefined;
+  let usedBrand: LlmBrand | undefined;
   let failedOver = false;
   let ensembleMinds: string[] | undefined;
   let ensembleCombined = false;
