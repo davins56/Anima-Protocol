@@ -20,6 +20,7 @@
 // turns an unrecoverable 404 into a working turn on whatever model is there.
 
 import type OpenAI from "openai";
+import { isKnownOpenWeightChatModel } from "@workspace/llm";
 import { localLlmBaseUrl } from "./openaiClient";
 
 /** How long a successful `/v1/models` listing is trusted. */
@@ -43,9 +44,6 @@ const CATALOG_TIMEOUT_MS = 5_000;
  */
 const NON_CHAT_MODEL_RE =
   /(embed|embedding|nomic|bge-|gte-|e5-|rerank|whisper|tts|voice|dall-?e|clip|moderation|stable-?diffusion|sdxl|flux)/i;
-
-/** Open-weight families this project actually ships against (see lib/llm/src/registry.ts). */
-const KNOWN_CHAT_FAMILY_RE = /(qwen|ministral|mistral|llama|phi|gemma|deepseek|hermes|olmo)/i;
 
 interface CatalogEntry {
   models: string[];
@@ -173,7 +171,7 @@ function scoreCandidate(preferred: string, candidate: string): number {
   // Anything the operator branded as ours is a better guess than a base model.
   if (/^anima/.test(have)) return 800;
   // The open-weight families this project is actually built and tested on.
-  if (KNOWN_CHAT_FAMILY_RE.test(have)) return 600;
+  if (isKnownOpenWeightChatModel(have)) return 600;
   // Unknown but plausibly a chat model — better than failing the turn.
   return 100;
 }

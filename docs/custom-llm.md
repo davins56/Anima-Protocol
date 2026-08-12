@@ -119,6 +119,30 @@ concrete failure mode, not a vague "be better." Full walkthrough:
 
 ---
 
+## Other supported open-weight families
+
+Anima now keeps a source-of-truth catalog for Llama, Qwen, Mistral, Gemma,
+and DeepSeek. Print the exact current ids with:
+
+```bash
+pnpm llm:list-open-models
+```
+
+| Family | Ollama example | vLLM / Hugging Face example | OpenRouter free example |
+|--------|----------------|-----------------------------|-------------------------|
+| Llama | `llama3.1:8b` | `meta-llama/Llama-3.1-8B-Instruct` | `meta-llama/llama-3.3-70b-instruct:free` |
+| Qwen | `qwen2.5:3b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
+| Mistral | `mistral:7b` | `mistralai/Ministral-3-8B-Instruct-2512` | `mistralai/mistral-small-3.2-24b-instruct:free` |
+| Gemma | `gemma3:4b` | `google/gemma-3-4b-it` | `google/gemma-3-12b-it:free` |
+| DeepSeek | `deepseek-r1:7b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `deepseek/deepseek-r1:free` |
+
+For self-hosted chat, set the corresponding `ANIMA_OLLAMA_MODEL_*` or
+`ANIMA_VLLM_MODEL_*` env vars to a model your server actually serves. For
+OpenRouter, set `ANIMA_OPENROUTER_MODEL_FAMILY=llama|qwen|mistral|gemma|deepseek`.
+Exact `ANIMA_OPENROUTER_MODEL_STANDARD` / tier overrides still take precedence.
+
+---
+
 ## There is only one backend
 
 Chat has a single backend: the self-hosted Anima LLM, reached through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). There is no `ANIMA_LLM_PROVIDER` mode switch and no cloud BYOK chain — Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat, regardless of which API keys happen to be set in the environment.

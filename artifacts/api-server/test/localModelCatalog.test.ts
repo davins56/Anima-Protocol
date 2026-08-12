@@ -37,6 +37,14 @@ describe("chooseLocalModel", () => {
     expect(chooseLocalModel("anima-chat", ["some-unknown-thing", "qwen2.5:3b"])).toBe("qwen2.5:3b");
   });
 
+  it("recognizes the supported open-weight chat families", () => {
+    expect(chooseLocalModel("anima-chat", ["google/gemma-3-4b-it"])).toBe("google/gemma-3-4b-it");
+    expect(chooseLocalModel("anima-chat", ["deepseek-r1:7b"])).toBe("deepseek-r1:7b");
+    expect(chooseLocalModel("anima-chat", ["meta-llama/Llama-3.1-8B-Instruct"])).toBe(
+      "meta-llama/Llama-3.1-8B-Instruct",
+    );
+  });
+
   it("never picks an embedding / image / audio model", () => {
     expect(chooseLocalModel("anima-chat", ["nomic-embed-text:latest", "bge-large", "whisper"])).toBeNull();
   });
