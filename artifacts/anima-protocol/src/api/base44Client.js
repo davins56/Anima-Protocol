@@ -1062,6 +1062,7 @@ const PROFILE_DEFAULTS = {
 
 const ADMIN_EMAILS = new Set([
   'davins56@gmail.com',
+  'davins56@hotmail.com',
   ...(import.meta.env.VITE_ADMIN_EMAILS || '')
     .split(',')
     .map((email) => email.trim().toLowerCase())

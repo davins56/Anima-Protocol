@@ -11,7 +11,11 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+    const error = new Error(err.error || res.statusText);
+    error.status = res.status;
+    error.code = err.code;
+    error.payload = err;
+    throw error;
   }
   return res;
 }
@@ -156,5 +160,26 @@ export const animaApi = {
           context,
         }),
       }).then((r) => r.json()),
+  },
+
+  protocolUpgrade: {
+    capability: () => request("/protocol-upgrade/capability").then((r) => r.json()),
+    classify: ({ request: upgradeRequest } = {}) =>
+      request("/protocol-upgrade/classify", {
+        method: "POST",
+        body: JSON.stringify({ request: upgradeRequest }),
+      }).then((r) => r.json()),
+    launch: ({ request: upgradeRequest, scope, session_id, surface } = {}) =>
+      request("/protocol-upgrade", {
+        method: "POST",
+        body: JSON.stringify({
+          request: upgradeRequest,
+          scope,
+          session_id,
+          surface,
+        }),
+      }).then((r) => r.json()),
+    list: () => request("/protocol-upgrade").then((r) => r.json()),
+    get: (id) => request(`/protocol-upgrade/${id}`).then((r) => r.json()),
   },
 };

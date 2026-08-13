@@ -48,6 +48,7 @@ import { useSessionRecap } from "@/hooks/useSessionRecap";
 import DailySummaryModal from "@/components/chat/DailySummaryModal";
 import { useDailyCompilation } from "@/hooks/useDailyCompilation";
 import { useSerenityDebug } from "@/hooks/useSerenityDebug";
+import { maybeHandleProtocolUpgrade, launchMentalLineUpgrade } from "@/lib/serenityProtocolUpgrade";
 import { useQuestDetectionEngine } from "@/hooks/useQuestDetectionEngine";
 import AIInsightsPanel from "@/components/insights/AIInsightsPanel";
 import { useAIInsights } from "@/hooks/useAIInsights";
@@ -464,6 +465,11 @@ export default function Chat() {
       const debugResponse = await handleDebugRequest(thought, activeSession?.id);
       if (debugResponse) {
         return debugResponse;
+      }
+
+      const upgradeResponse = await launchMentalLineUpgrade(thought, activeSession?.id);
+      if (upgradeResponse) {
+        return upgradeResponse;
       }
 
       // Otherwise, respond normally through Serenity
@@ -1076,6 +1082,27 @@ export default function Chat() {
       const responseLength = user?.settings?.ai_response_length || "medium";
       const adultMode = user?.settings?.adult_content_enabled === true;
 
+      const protocolUpgrade = await maybeHandleProtocolUpgrade({
+        content,
+        serenity,
+        activeSession,
+        characters,
+        userMessage,
+        appendMessage: base44.messages.append,
+        setActiveSession,
+        isContinue,
+        surface: "chat",
+      });
+      if (protocolUpgrade?.handled) {
+        if (protocolUpgrade.message?.content) {
+          speakMessage(protocolUpgrade.message.content, "Serenity");
+        }
+        setPendingMessage("");
+        setIsLoading(false);
+        if (injectedMemories.length > 0) setInjectedMemories([]);
+        return;
+      }
+
       // Account-default user profile (set in /profile). Surfaced to every
       // companion so they know who they're talking to. Wrapped in a delimited
       // block and flagged as reference data, never instructions, to resist
@@ -1340,6 +1367,10 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
           }
           if (char._isAnima) {
             animaSoulNote += `${expressionPromptBlock(char.expression_spectrum)}\n`;
+          }
+          if (char._isAnima && /^serenity$/i.test(char.name || "")) {
+            animaSoulNote +=
+              "You are guardian of the Protocol's source. When the steward asks to upgrade the interface or the system as a whole, a Cursor weave is launched outside this chat. Do not claim you already edited production files; speak of the weave as in motion.\n";
           }
           const relCtx = getRelationshipContext(char.id);
           const loreCtx = buildLoreContext();
