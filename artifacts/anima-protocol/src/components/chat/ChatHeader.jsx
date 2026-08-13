@@ -150,6 +150,11 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
             </div>
           )}
           {!isGroup && mood && <MoodIndicator mood={mood} />}
+          {session?.therapy_mode && (
+            <span className="font-mono text-[8px] sm:text-[9px] tracking-widest uppercase px-1.5 py-0.5 border border-violet-400/40 text-violet-200 bg-violet-500/10">
+              Therapy
+            </span>
+          )}
         </div>
       </div>
 
