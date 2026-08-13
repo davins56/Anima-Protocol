@@ -31,7 +31,7 @@ export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated
       }
     } catch (err) {
       console.error("Image generation error:", err);
-      setError(err?.message || "Failed to generate image.");
+      setError(err instanceof Error ? err.message : "Failed to generate image.");
     } finally {
       setLoading(false);
     }

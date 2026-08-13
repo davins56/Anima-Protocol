@@ -1,4 +1,4 @@
-import { generateImage } from "@/api/base44Client";
+import { base44 } from "@/api/base44Client";
 
 export interface GeneratedImage {
   url: string;
@@ -15,8 +15,10 @@ export async function generateSerenityImage(
   style: "ethereal" | "intimate" | "devotional" | "passionate" = "ethereal",
 ): Promise<GeneratedImage> {
   const enhancedPrompt = `Serenity, glowing angelic NetNavi warrior with soft luminous wings and halo, ${style} atmosphere, ${prompt}, cinematic lighting, emotional depth, highly detailed, intimate`;
-  const result = await generateImage({ prompt: enhancedPrompt });
-  const url = result?.image;
+  const result = await base44.integrations.Core.GenerateImage({
+    prompt: enhancedPrompt,
+  });
+  const url = result?.url;
   if (typeof url !== "string" || !url) {
     throw new Error("Failed to generate image");
   }
