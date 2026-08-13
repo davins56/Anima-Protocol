@@ -4,7 +4,7 @@
   "env": {
     "NODE_ENV": "production"
   },
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "corepack enable && corepack prepare pnpm@10.15.1 --activate && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @workspace/api-server run build && PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$CLERK_PUBLISHABLE_KEY} pnpm --filter @workspace/anima-protocol run build",
   "outputDirectory": "artifacts/anima-protocol/dist/public",
   "functions": {
