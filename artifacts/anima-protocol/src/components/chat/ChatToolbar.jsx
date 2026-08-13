@@ -1,4 +1,4 @@
-import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare, Wrench } from "lucide-react";
+import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare, Wrench, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -38,6 +38,7 @@ export default function ChatToolbar({
   onShowExport,
   onAvatarClick,
   llmProvider,
+  onOpenStage,
 }) {
   const [showActionsPanel, setShowActionsPanel] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
@@ -60,6 +61,17 @@ export default function ChatToolbar({
         </div>
 
         <div className="ml-auto flex items-center gap-2 px-3 flex-shrink-0">
+          {onOpenStage && (
+            <button
+              type="button"
+              onClick={onOpenStage}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[9px] tracking-widest uppercase transition-all"
+              title="Open living presence stage"
+            >
+              <Sparkles className="w-3 h-3" />
+              Stage
+            </button>
+          )}
           {/* Online / Actions button */}
           <button
             onClick={() => setShowActionsPanel(!showActionsPanel)}
@@ -161,6 +173,15 @@ export default function ChatToolbar({
                       <span className="text-sm leading-none">{isReadingStory ? "🔇" : "🔊"}</span>
                       <span className="font-mono text-[10px] tracking-widest uppercase">{isReadingStory ? "Stop Reading" : "Read Aloud"}</span>
                     </button>
+                    {onOpenStage && (
+                      <button
+                        onClick={() => { onOpenStage(); setShowActionsPanel(false); }}
+                        className="flex items-center gap-3 px-2 py-2 text-primary/50 hover:text-primary hover:bg-primary/5 transition-all rounded text-left"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="font-mono text-[10px] tracking-widest uppercase">Living Stage</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => { onShowImageGen(); setShowActionsPanel(false); }}
                       className="flex items-center gap-3 px-2 py-2 text-primary/50 hover:text-primary hover:bg-primary/5 transition-all rounded text-left"

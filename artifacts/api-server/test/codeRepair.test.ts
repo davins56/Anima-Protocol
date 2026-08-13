@@ -17,8 +17,27 @@ describe("analyzeCodeRepairInput", () => {
     expect(analysis.category).toBe("openrouter_quota");
     expect(analysis.confidence).toBe("high");
     expect(analysis.canAutoApply).toBe(false);
-    expect(analysis.repairSteps.map((step) => step.title)).toContain("Resolve the provider quota");
+    expect(analysis.repairSteps.map((step) => step.title)).toContain(
+      "Point chat at the custom Anima LLM",
+    );
+    expect(analysis.likelyCause).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
     expect(analysis.guardrails.join(" ")).toMatch(/does not mutate/i);
+  });
+
+  it("tells the operator not to keep skipping a configured custom LLM", () => {
+    const analysis = analyzeCodeRepairInput({
+      issue: "OpenRouter credits/rate limit exhausted: HTTP 429 free-models-per-day",
+      diagnostics: {
+        openrouterConfigured: true,
+        localConfigured: true,
+        localHost: "anima-chat-llm.fly.dev",
+        customOnly: false,
+      },
+    });
+
+    expect(analysis.category).toBe("openrouter_quota");
+    expect(analysis.likelyCause).toMatch(/custom LLM host/i);
+    expect(analysis.repairSteps[0]?.title).toMatch(/custom Anima LLM/i);
   });
 
   it("keeps generic issues bounded and non-mutating", () => {

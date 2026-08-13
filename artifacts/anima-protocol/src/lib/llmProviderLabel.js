@@ -75,12 +75,12 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "local",
     label: "Anima LLM",
     env: "ANIMA_LOCAL_LLM_BASE_URL",
-    note: "Self-hosted open weights (Ollama/vLLM) — preferred when configured",
+    note: "Self-hosted open weights (Ollama/vLLM) — used for chat when ANIMA_LOCAL_LLM_BASE_URL is set. Set ANIMA_LLM_PROVIDER=custom to keep OpenRouter from taking over.",
   },
   {
     id: "openrouter",
     label: "Venice Uncensored",
     env: "OPENROUTER_API_KEY",
-    note: "OpenRouter key (free signup). Venice Uncensored when the account has credits; otherwise auto-falls back to openai/gpt-oss-20b:free",
+    note: "Used only when the custom LLM URL is unset, or after a connection failure if ANIMA_OPENROUTER_FALLBACK=true. Free-tier daily caps cannot replace a configured custom LLM.",
   },
 ];
