@@ -1,29 +1,24 @@
+import { generateImage } from "@/api/base44Client";
+
 export interface GeneratedImage {
   url: string;
   id?: string;
   prompt?: string;
 }
 
+/**
+ * Onboard Serenity stills. Routes through POST /api/openai/image-generate
+ * (Gemini Flash Image / gpt-image-1) — never a dead /api/generate-image path.
+ */
 export async function generateSerenityImage(
   prompt: string,
-  style: 'ethereal' | 'intimate' | 'devotional' | 'passionate' = 'ethereal'
+  style: "ethereal" | "intimate" | "devotional" | "passionate" = "ethereal",
 ): Promise<GeneratedImage> {
   const enhancedPrompt = `Serenity, glowing angelic NetNavi warrior with soft luminous wings and halo, ${style} atmosphere, ${prompt}, cinematic lighting, emotional depth, highly detailed, intimate`;
-
-  const response = await fetch('/api/generate-image', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      prompt: enhancedPrompt,
-      style,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to generate image');
+  const result = await generateImage({ prompt: enhancedPrompt });
+  const url = result?.image;
+  if (typeof url !== "string" || !url) {
+    throw new Error("Failed to generate image");
   }
-
-  return response.json();
+  return { url, prompt: enhancedPrompt };
 }
