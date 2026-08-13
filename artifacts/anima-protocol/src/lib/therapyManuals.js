@@ -13,6 +13,11 @@
 
 export const THERAPY_CRISIS_RESOURCES = {
   us: { name: "988 Suicide & Crisis Lifeline", contact: "call or text 988" },
+  ca: { name: "9-8-8 Suicide Crisis Helpline", contact: "call or text 9-8-8" },
+  gb: { name: "Samaritans", contact: "call 116 123" },
+  ie: { name: "Samaritans", contact: "call 116 123" },
+  au: { name: "Lifeline Australia", contact: "call 13 11 14" },
+  nz: { name: "1737, Need to talk?", contact: "call or text 1737" },
   intl: {
     name: "IASP local resources",
     url: "https://www.iasp.info/suicidalthoughts/",
@@ -27,8 +32,51 @@ export const THERAPY_DISCLAIMER =
 export const THERAPY_CRISIS_RE =
   /\b(suicid\w*|self[-\s]?harm|kill myself|end (my life|it all)|want to die|hurting myself|cutting myself|no reason to live|better off dead|overdose on purpose)\b/i;
 
-export function detectTherapyCrisis(text) {
-  return THERAPY_CRISIS_RE.test(String(text || ""));
+const THERAPY_PLAN_RE =
+  /\b(plan(?:ning)? to|going to|intend to|decided to|tonight|right now|about to)\b/i;
+const THERAPY_MEANS_RE =
+  /\b(pills?|gun|weapon|knife|blade|rope|bridge|roof|dose|medication(?:s)? next to me)\b/i;
+const THERAPY_FIGURATIVE_RE =
+  /\b(?:i could|i'm going to|i am going to|just) die\b.*(?:😂|🤣|lol|lmao|of embarrassment|laughing)\b/i;
+
+export function assessTherapyCrisis(text, recentUserMessages = []) {
+  const latest = String(text || "");
+  const history = (recentUserMessages || []).slice(-4).join("\n");
+  const combined = `${history}\n${latest}`;
+  if (
+    THERAPY_FIGURATIVE_RE.test(latest) &&
+    !THERAPY_PLAN_RE.test(combined) &&
+    !THERAPY_MEANS_RE.test(combined)
+  ) {
+    return { level: "none", crisis: false };
+  }
+  const selfHarm = THERAPY_CRISIS_RE.test(combined);
+  const plan = THERAPY_PLAN_RE.test(combined);
+  const means = THERAPY_MEANS_RE.test(combined);
+  if (selfHarm && plan && means) return { level: "imminent", crisis: true };
+  if (plan && means) return { level: "urgent", crisis: true };
+  if (selfHarm && (plan || means)) return { level: "urgent", crisis: true };
+  if (selfHarm) return { level: "passive", crisis: true };
+  return { level: "none", crisis: false };
+}
+
+export function detectTherapyCrisis(text, recentUserMessages = []) {
+  return assessTherapyCrisis(text, recentUserMessages).crisis;
+}
+
+export function localizedTherapyResource(country) {
+  const key = String(country || "").trim().toLowerCase();
+  const aliases = {
+    "united states": "us",
+    usa: "us",
+    canada: "ca",
+    "united kingdom": "gb",
+    uk: "gb",
+    ireland: "ie",
+    australia: "au",
+    "new zealand": "nz",
+  };
+  return THERAPY_CRISIS_RESOURCES[aliases[key] || key] || null;
 }
 
 /**

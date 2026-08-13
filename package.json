@@ -7,6 +7,7 @@
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm --filter @workspace/api-server run build && PORT=${PORT:-23660} BASE_PATH=${BASE_PATH:-/} VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_placeholder} pnpm --filter @workspace/anima-protocol run build && rm -rf dist && cp -R artifacts/anima-protocol/dist/public dist",
     "build:all": "pnpm run typecheck && pnpm -r --if-present run build",
+    "lint": "eslint .",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "dev:infra:up": "docker compose -f docker-compose.dev.yml up -d",
@@ -27,14 +28,21 @@
     "llm:test": "pnpm --filter @workspace/llm run test",
     "llm:stub": "node scripts/llm/dev-local-stub-server.mjs",
     "llm:eval": "node scripts/llm/eval/run-evals.mjs",
+    "llm:eval:validate": "node scripts/llm/eval/run-evals.mjs --validate",
     "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh"
   },
   "private": true,
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
     "prettier": "^3.8.3",
     "tsx": "catalog:",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.67.0"
   },
   "pnpm": {
     "overrides": {
