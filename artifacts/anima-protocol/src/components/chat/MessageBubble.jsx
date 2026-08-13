@@ -8,6 +8,7 @@ import EmotionalVoiceSynthesis from "./EmotionalVoiceSynthesis";
 import LoreKeywordHighlighter from "@/components/lore/LoreKeywordHighlighter";
 import MediaLightbox from "./MediaLightbox";
 import AudioPlayer from "./AudioPlayer";
+import DeviceScanCard from "./DeviceScanCard";
 import { renderItalicText } from "./renderItalicText";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
@@ -202,6 +203,12 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                 voiceId={character?.elevenlabs_voice_id}
               />
             </div>
+          )}
+          {message.device_scan && (
+            <DeviceScanCard
+              payload={message.device_scan}
+              animaName={character?.name || message.character_name}
+            />
           )}
         </div>
 

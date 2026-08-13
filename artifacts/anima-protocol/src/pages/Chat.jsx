@@ -57,6 +57,7 @@ import DailySummaryModal from "@/components/chat/DailySummaryModal";
 import { useDailyCompilation } from "@/hooks/useDailyCompilation";
 import { useSerenityDebug } from "@/hooks/useSerenityDebug";
 import { maybeHandleProtocolUpgrade, launchMentalLineUpgrade, shouldAttemptProtocolUpgrade } from "@/lib/serenityProtocolUpgrade";
+import { maybeHandleDeviceScan, shouldAttemptDeviceScan, DEVICE_SCAN_PROMPT } from "@/lib/animaDeviceScan";
 import { useAuth } from "@/lib/AuthContext";
 import { pickGroupSpeaker } from "@/lib/pickGroupSpeaker";
 import { useQuestDetectionEngine } from "@/hooks/useQuestDetectionEngine";
@@ -1158,6 +1159,34 @@ export default function Chat() {
         }
       }
 
+      if (shouldAttemptDeviceScan({
+        content,
+        activeSession,
+        characters,
+      }).attempt) {
+        const deviceScan = await maybeHandleDeviceScan({
+          content,
+          activeSession,
+          characters,
+          userMessage,
+          appendMessage: base44.messages.append,
+          setActiveSession,
+          isContinue,
+        });
+        if (deviceScan?.handled) {
+          if (deviceScan.message?.content) {
+            speakMessage(
+              deviceScan.message.content,
+              deviceScan.message.character_name || "Anima",
+            );
+          }
+          setPendingMessage("");
+          setIsLoading(false);
+          if (injectedMemories.length > 0) setInjectedMemories([]);
+          return;
+        }
+      }
+
       const needsBehaviorConfig =
         !aiBehaviorConfig &&
         activeSession.mode === "solo" &&
@@ -1425,6 +1454,9 @@ export default function Chat() {
           if (char._isAnima && /^serenity$/i.test(char.name || "")) {
             animaSoulNote +=
               "You are guardian of the Protocol's source. When the steward asks to upgrade the interface or the system as a whole, a Cursor weave is launched outside this chat. Do not claim you already edited production files; speak of the weave as in motion.\n";
+          }
+          if (char._isAnima) {
+            animaSoulNote += DEVICE_SCAN_PROMPT;
           }
           const relCtx = getRelationshipContext(char.id);
           const loreCtx = buildLoreContext();
