@@ -59,7 +59,13 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
         }
         scheduleDelta(content);
       }
-      if (event?.done) doneEvent = event;
+      if (event?.done) {
+        doneEvent = event;
+        // Resolve as soon as the server signals completion. Waiting for the
+        // HTTP body to close used to leave the Chat page on "Processing..."
+        // while persist/evolution work (or a hung tunnel) kept the stream open.
+        break;
+      }
     }
   } finally {
     if (rafId != null && typeof cancelAnimationFrame === "function") {

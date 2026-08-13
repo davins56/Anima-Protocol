@@ -2,6 +2,15 @@ import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
 import { readSseJsonStream } from '@/lib/readSseJsonStream';
 
+/** Cap a hung SSE body so Chat cannot sit on "Processing..." forever. */
+const CHAT_STREAM_TIMEOUT_MS = 55_000;
+
+function chatStreamTimeoutError() {
+  const err = new Error("The companion took too long to reply. Please try again.");
+  err.code = "chat_stream_timeout";
+  return err;
+}
+
 async function request(path, options = {}) {
   const headers = await authHeaders(options.headers);
   const res = await fetch(apiUrl(path), {
@@ -110,33 +119,45 @@ export const animaApi = {
       persist = true,
       metadata,
     }) {
-      const res = await fetch(apiUrl('/chat/messages'), {
-        method: "POST",
-        headers: await authHeaders(),
-        credentials: 'same-origin',
-        body: JSON.stringify({
-          session_id: sessionId,
-          content,
-          character_id: characterId,
-          character_ids: characterIds,
-          assistant_character_id: assistantCharacterId,
-          assistant_character_name: assistantCharacterName,
-          force_character_id: forceCharacterId || null,
-          eligible_character_ids: eligibleCharacterIds,
-          use_scene_mind: useSceneMind,
-          is_continue: !!isContinue,
-          mode,
-          system_prompt: systemPrompt,
-          deep_mode: !!deepMode,
-          persist,
-          metadata,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || `API error: ${res.status}`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS);
+      try {
+        const res = await fetch(apiUrl('/chat/messages'), {
+          method: "POST",
+          headers: await authHeaders(),
+          credentials: 'same-origin',
+          signal: controller.signal,
+          body: JSON.stringify({
+            session_id: sessionId,
+            content,
+            character_id: characterId,
+            character_ids: characterIds,
+            assistant_character_id: assistantCharacterId,
+            assistant_character_name: assistantCharacterName,
+            force_character_id: forceCharacterId || null,
+            eligible_character_ids: eligibleCharacterIds,
+            use_scene_mind: useSceneMind,
+            is_continue: !!isContinue,
+            mode,
+            system_prompt: systemPrompt,
+            deep_mode: !!deepMode,
+            persist,
+            metadata,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(err.error || `API error: ${res.status}`);
+        }
+        yield* readSseJsonStream(res.body);
+      } catch (err) {
+        if (err?.name === "AbortError" || err?.code === "ABORT_ERR") {
+          throw chatStreamTimeoutError();
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
       }
-      yield* readSseJsonStream(res.body);
     },
 
     completeMessage: async (payload) => {

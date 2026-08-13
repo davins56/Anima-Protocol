@@ -23,6 +23,7 @@ import {
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
+import { consumeLlmStream, LlmStreamTimeoutError } from "../lib/consumeLlmStream";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -105,6 +106,53 @@ function asStringArray(value: unknown): string[] {
 function truncate(value: unknown, max = 600): string {
   const text = String(value ?? "").trim().replace(/\s+/g, " ");
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+const LLM_OPEN_TIMEOUT_MS = 35_000;
+const SSE_HEARTBEAT_MS = 8_000;
+
+function flushSse(res: Response) {
+  const flushable = res as Response & { flush?: () => void };
+  if (typeof flushable.flush === "function") flushable.flush();
+}
+
+function writeSse(res: Response, payload: unknown) {
+  if (res.writableEnded) return;
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  flushSse(res);
+}
+
+function startSseHeartbeat(res: Response): () => void {
+  const timer = setInterval(() => {
+    if (res.writableEnded) return;
+    try {
+      res.write(`: keepalive ${Date.now()}\n\n`);
+      flushSse(res);
+    } catch {
+      // Client gone — the stream closer in `finally` will clean up.
+    }
+  }, SSE_HEARTBEAT_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+function openStreamAbort(): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LLM_OPEN_TIMEOUT_MS);
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
+function streamErrorMessage(err: unknown): string {
+  if (err instanceof LlmStreamTimeoutError) return err.message;
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/aborted|abort/i.test(raw)) {
+    return "The companion took too long to reply. Please try again.";
+  }
+  return raw;
 }
 
 async function loadStoreSession(userId: string, sessionId: string) {
@@ -871,8 +919,9 @@ router.post("/messages", async (req, res) => {
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+  const stopHeartbeat = startSseHeartbeat(res);
 
-  let persistedUser: MsgData | null = null;
   const preStreamPersist = (async () => {
     await syncTypedSession({
       userId,
@@ -890,7 +939,7 @@ router.post("/messages", async (req, res) => {
         timestamp: new Date().toISOString(),
         ...(body.metadata ? { metadata: body.metadata } : {}),
       };
-      persistedUser = await appendStoreMessage(userId, sessionId, userMessage);
+      await appendStoreMessage(userId, sessionId, userMessage);
       await persistTypedMessage({
         userId,
         sessionId,
@@ -910,14 +959,16 @@ router.post("/messages", async (req, res) => {
   let failedOver = false;
   let ensembleMinds: string[] | undefined;
   let ensembleCombined = false;
+  let streamSucceeded = false;
+
+  const emitDelta = (delta: string) => writeSse(res, { content: delta });
+  const emitReasoning = () => writeSse(res, { status: "thinking" });
 
   try {
     const messages = [{ role: "system" as const, content: prompt }];
 
     if (isLocalEnsembleEnabled()) {
-      res.write(
-        `data: ${JSON.stringify({ status: "ensemble", phase: "gathering", minds: [] })}\n\n`,
-      );
+      writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
       const drafts = await draftLocalMinds({
         tier: routed.tier,
         maxTokens: routed.maxTokens,
@@ -933,11 +984,14 @@ router.post("/messages", async (req, res) => {
         usedModel = drafts[0]!.model;
         usedBrand = "anima";
         fullResponse = drafts[0]!.content;
-        res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
+        writeSse(res, { content: fullResponse });
       } else {
-        res.write(
-          `data: ${JSON.stringify({ status: "ensemble", phase: "combining", minds: ensembleMinds, drafts: drafts.length })}\n\n`,
-        );
+        writeSse(res, {
+          status: "ensemble",
+          phase: "combining",
+          minds: ensembleMinds,
+          drafts: drafts.length,
+        });
         const completion = await combineLocalDrafts(drafts, messages, {
           tier: routed.tier,
           maxTokens: routed.maxTokens,
@@ -949,32 +1003,37 @@ router.post("/messages", async (req, res) => {
         failedOver = completion.failedOver;
         ensembleCombined = true;
 
-        for await (const chunk of completion.stream) {
-          const delta = chunk.choices[0]?.delta?.content;
-          if (!delta) continue;
-          fullResponse += delta;
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
-        }
+        const streamed = await consumeLlmStream(completion.stream, {
+          onDelta: emitDelta,
+          onReasoning: emitReasoning,
+        });
+        fullResponse = streamed.content;
       }
     } else {
-      const completion = await createChatStreamWithFailover({
-        tier: routed.tier,
-        model: routed.model,
-        maxTokens: routed.maxTokens,
-        messages,
-      });
+      const open = openStreamAbort();
+      let completion;
+      try {
+        completion = await createChatStreamWithFailover({
+          tier: routed.tier,
+          model: routed.model,
+          maxTokens: routed.maxTokens,
+          messages,
+          signal: open.signal,
+        });
+      } finally {
+        open.cancel();
+      }
       usedModel = completion.model;
       usedTier = completion.tier;
       usedProvider = completion.provider;
       usedBrand = completion.brand;
       failedOver = completion.failedOver;
 
-      for await (const chunk of completion.stream) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (!delta) continue;
-        fullResponse += delta;
-        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
-      }
+      const streamed = await consumeLlmStream(completion.stream, {
+        onDelta: emitDelta,
+        onReasoning: emitReasoning,
+      });
+      fullResponse = streamed.content;
     }
 
     // An empty completion used to look like a successful turn on the client
@@ -983,14 +1042,46 @@ router.post("/messages", async (req, res) => {
       throw new Error("The companion returned an empty reply. Please try again.");
     }
 
+    streamSucceeded = true;
+    // Close the SSE as soon as the model is done. Persistence / evolution LLM
+    // calls used to run before `done`, so the Chat page stayed on Processing...
+    // until those finished (or hung).
+    writeSse(res, {
+      done: true,
+      model: usedModel,
+      tier: usedTier,
+      provider: usedProvider,
+      brand: usedBrand,
+      failed_over: failedOver,
+      ensemble_minds: ensembleMinds,
+      ensemble_combined: ensembleCombined,
+      is_crossover: isCrossover,
+      assistant_character_id: activeCharacterId,
+      assistant_character_name: activeCharacterName,
+      scene_mind: sceneMindDecision
+        ? {
+            reason: sceneMindDecision.reason,
+            interrupted: sceneMindDecision.interrupted,
+            preferred_character_id: sceneMindDecision.preferredCharacterId,
+          }
+        : null,
+    });
+  } catch (err) {
+    writeSse(res, { error: streamErrorMessage(err) });
+  } finally {
+    stopHeartbeat();
+    if (!res.writableEnded) res.end();
+  }
+
+  void (async () => {
     try {
       await preStreamPersist;
     } catch {
       // Dual-write failed; the streamed reply is still valid.
     }
+    if (!streamSucceeded || !shouldPersist || !String(fullResponse).trim()) return;
 
-    let persistedAssistant: MsgData | null = null;
-    if (shouldPersist) {
+    try {
       const assistantMessage: MsgData = {
         role: "assistant",
         content: fullResponse,
@@ -998,11 +1089,7 @@ router.post("/messages", async (req, res) => {
         character_name: activeCharacterName,
         timestamp: new Date().toISOString(),
       };
-      persistedAssistant = await appendStoreMessage(
-        userId,
-        sessionId,
-        assistantMessage,
-      );
+      await appendStoreMessage(userId, sessionId, assistantMessage);
       await persistTypedMessage({
         userId,
         sessionId,
@@ -1042,13 +1129,6 @@ router.post("/messages", async (req, res) => {
         assistantContent: fullResponse,
       });
 
-      // Milestone-based personality evolution MVP:
-      // - increments per-anima conversation counter
-      // - on milestone thresholds, generates an evolutionDelta JSON
-      //   and stores it for prompt injection.
-      //
-      // Note: this MVP uses a lightweight history summary based on the
-      // current turn to avoid expensive extra summarization calls.
       if (characterIds.length > 0) {
         const isVoidTurn = mode === "void" || Boolean(body.deep_mode);
         const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(fullResponse, 520)}`;
@@ -1082,14 +1162,8 @@ router.post("/messages", async (req, res) => {
             conversationCount: nextCount,
             content: historySummary,
           });
-
-          // No need to reload evolutionDelta / relationship / arc state here;
-          // next turn will pick it up via loadEvolution/loadRelationshipState/
-          // loadArcState.
-
         }
       }
-      // Evolve synchro from companion response and persist
       if (synchroState && fullResponse) {
         const evolved = evolveSynchroFromCompanion(synchroState, fullResponse);
         const serialized = serializeSynchroState(evolved);
@@ -1108,38 +1182,10 @@ router.post("/messages", async (req, res) => {
             );
         }
       }
+    } catch (persistErr) {
+      console.warn("[chat] post-stream persist failed:", persistErr);
     }
-
-    res.write(
-      `data: ${JSON.stringify({
-        done: true,
-        model: usedModel,
-        tier: usedTier,
-        provider: usedProvider,
-        brand: usedBrand,
-        failed_over: failedOver,
-        ensemble_minds: ensembleMinds,
-        ensemble_combined: ensembleCombined,
-        is_crossover: isCrossover,
-        assistant_character_id: activeCharacterId,
-        assistant_character_name: activeCharacterName,
-        scene_mind: sceneMindDecision
-          ? {
-              reason: sceneMindDecision.reason,
-              interrupted: sceneMindDecision.interrupted,
-              preferred_character_id: sceneMindDecision.preferredCharacterId,
-            }
-          : null,
-        messages: [persistedUser, persistedAssistant].filter(Boolean),
-      })}\n\n`,
-    );
-  } catch (err) {
-    await preStreamPersist.catch(() => {});
-    const message = err instanceof Error ? err.message : String(err);
-    res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
-  } finally {
-    res.end();
-  }
+  })();
 });
 
 export default router;

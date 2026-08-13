@@ -1675,6 +1675,16 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // the server): several drafts from the same self-hosted model, combined
       // into one reply. Shows progress in the typing bubble while it's gathering.
       const showEnsembleStatus = (event) => {
+        if (event?.status === "thinking") {
+          setActiveSession((prev) => ({
+            ...prev,
+            messages: [
+              ...updatedMessages,
+              { role: "assistant", content: "...", character_name: "__thinking__", timestamp: streamTs },
+            ],
+          }));
+          return;
+        }
         if (event?.status !== "ensemble") return;
         const mindsList = Array.isArray(event.minds) ? event.minds.filter(Boolean).join(", ") : "";
         const label =
@@ -1864,24 +1874,34 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         ...eventMessages,
         ...newAiMessages,
       ];
+
+      // Drop is_streaming immediately so the reply resolves even if persist is slow.
+      setActiveSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
+      setIsLoading(false);
+
       const storedNew = [];
-      for (const m of newMessages) {
-        const stored = await base44.messages.append(activeSession.id, m);
-        if (m.role === "user") userMessagePersisted = true;
-        storedNew.push(stored);
-      }
+      let finalMessages = [...priorHistory, ...newMessages];
+      try {
+        for (const m of newMessages) {
+          const stored = await base44.messages.append(activeSession.id, m);
+          if (m.role === "user") userMessagePersisted = true;
+          storedNew.push(stored);
+        }
 
-      // Session metadata only — NEVER the messages array (those are rows now).
-      if (content) {
-        await base44.entities.ChatSession.update(activeSession.id, {
-          last_message: content.slice(0, 60),
-          title: activeSession.title || content.slice(0, 30),
-        });
-      }
+        // Session metadata only — NEVER the messages array (those are rows now).
+        if (content) {
+          await base44.entities.ChatSession.update(activeSession.id, {
+            last_message: content.slice(0, 60),
+            title: activeSession.title || content.slice(0, 30),
+          });
+        }
 
-      const finalMessages = [...priorHistory, ...storedNew];
-      setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
-      await loadSessions();
+        finalMessages = [...priorHistory, ...storedNew];
+        setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
+      } catch (persistErr) {
+        console.warn("[Anima] Failed to persist reply:", persistErr);
+      }
+      loadSessions().catch(() => {});
 
       // Update calendar based on elapsed real-world time (every 10 messages)
       if (finalMessages.length % 10 === 0) {
