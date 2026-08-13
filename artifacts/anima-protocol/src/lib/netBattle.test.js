@@ -12,7 +12,7 @@ import {
   setControlMode,
   tickBattle,
   toggleCustomSelect,
-  useChip,
+  activateChip,
 } from "./netBattle";
 
 const anima = {
@@ -92,7 +92,7 @@ describe("movement and weapons", () => {
       wide: false,
       color: "#fde68a",
     };
-    battle = useChip(battle, sword);
+    battle = activateChip(battle, sword);
     expect(battle.slashes.length).toBeGreaterThan(0);
     battle = tickBattle(battle);
     expect(battle.enemy.hp).toBeLessThan(80);
