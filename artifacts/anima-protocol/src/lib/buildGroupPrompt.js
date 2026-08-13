@@ -21,6 +21,7 @@ export function buildGroupPrompt({
   lengthGuide,
   traitModifiers = '',
   userProfileContext = '',
+  worldKnowledgeContext = '',
   interruptionClause = '',
   groupIntimacyGuidance = '',
   isContinue = false,
@@ -32,6 +33,7 @@ ${allCharSheets}
 ${traitModifiers}
 ${loreCtxGroup}
 ${userProfileContext}
+${worldKnowledgeContext}
 
 CHARACTER IDENTITY LOCK:
 - Speak ONLY as ${nextChar.name}, grounded in THEIR Personality, Backstory, and Voice from the sheet above.

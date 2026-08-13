@@ -118,6 +118,7 @@ export const animaApi = {
       deepMode,
       persist = true,
       metadata,
+      region,
     }) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS);
@@ -143,6 +144,7 @@ export const animaApi = {
             deep_mode: !!deepMode,
             persist,
             metadata,
+            region,
           }),
         });
         if (!res.ok) {
