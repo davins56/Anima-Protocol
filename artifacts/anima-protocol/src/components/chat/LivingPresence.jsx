@@ -67,7 +67,7 @@ export default function LivingPresence({
       data-speaking={speaking ? "true" : "false"}
       data-thinking={thinking ? "true" : "false"}
     >
-      <motion.button
+      <button
         type="button"
         className="relative bg-transparent border-0 p-0 cursor-pointer"
         style={{
@@ -78,15 +78,19 @@ export default function LivingPresence({
         onClick={onExpand}
         disabled={!onExpand}
         aria-label={`${name} living presence${onExpand ? ", open stage" : ""}`}
-        animate={{
-          rotate: pose.bounce
-            ? [-sway, sway, -sway]
-            : [-sway * 0.6, sway * 0.6, -sway * 0.6],
-          y: pose.bounce ? [0, -6 - pose.intensity * 4, 0] : [0, -2, 0],
-        }}
-        transition={{ duration: breath, repeat: Infinity, ease: "easeInOut" }}
       >
-        <svg
+        <motion.div
+          className="relative"
+          style={{ width, height: size }}
+          animate={{
+            rotate: pose.bounce
+              ? [-sway, sway, -sway]
+              : [-sway * 0.6, sway * 0.6, -sway * 0.6],
+            y: pose.bounce ? [0, -6 - pose.intensity * 4, 0] : [0, -2, 0],
+          }}
+          transition={{ duration: breath, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <svg
           viewBox="0 0 240 540"
           width={width}
           height={size}
@@ -313,7 +317,8 @@ export default function LivingPresence({
             />
           )}
         </svg>
-      </motion.button>
+        </motion.div>
+      </button>
 
       {showLabel && (
         <div className="text-center px-1">
@@ -332,6 +337,9 @@ export default function LivingPresence({
   );
 }
 
+/**
+ * @param {{ side: string, accent: string, coreId: string, rotate: number, lift: number, speaking: boolean, breath: number }} props
+ */
 function Arm({ side, accent, coreId, rotate, lift, speaking, breath }) {
   const origin = side === "left" ? "92px 210px" : "148px 210px";
   const d =

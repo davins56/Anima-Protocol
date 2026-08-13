@@ -52,7 +52,7 @@ export default function LivingPresenceStage({
 
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e) => {
+    const onKey = (/** @type {KeyboardEvent} */ e) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -181,6 +181,9 @@ export default function LivingPresenceStage({
   );
 }
 
+/**
+ * @param {{ hue: number, sat: number }} props
+ */
 function StageAura({ hue, sat }) {
   const canvasRef = useRef(/** @type {HTMLCanvasElement | null} */ (null));
 

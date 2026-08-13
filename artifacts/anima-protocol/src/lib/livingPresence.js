@@ -5,6 +5,26 @@
  * without embedding animation math in the SVG component.
  */
 
+/**
+ * @typedef {{ hue: number, sat: number, light: number }} EmotionPalette
+ * @typedef {{ rotate: number, lift: number }} ArmPose
+ * @typedef {{
+ *   lean: number,
+ *   headTilt: number,
+ *   headDrop: number,
+ *   shoulderLift: number,
+ *   armL: ArmPose,
+ *   armR: ArmPose,
+ *   stanceWidth: number,
+ *   bounce: boolean,
+ *   breath: number,
+ *   vulnerable: boolean,
+ *   intensity: number,
+ *   emotion: string,
+ * }} PresencePose
+ * @typedef {{ shoulder: number, torso: number, stance: number, height: number }} BuildMetrics
+ */
+
 export const EMOTION_PALETTE = {
   joyful: { hue: 45, sat: 92, light: 62 },
   calm: { hue: 190, sat: 88, light: 58 },
@@ -40,20 +60,21 @@ const BUILD_METRICS = {
 
 /**
  * @param {string | undefined} emotion
- * @returns {{ hue: number, sat: number, light: number }}
+ * @returns {EmotionPalette}
  */
 export function getEmotionPalette(emotion) {
-  if (!emotion) return EMOTION_PALETTE.neutral;
-  return EMOTION_PALETTE[emotion] || EMOTION_PALETTE.neutral;
+  if (!emotion || !(emotion in EMOTION_PALETTE)) return EMOTION_PALETTE.neutral;
+  return EMOTION_PALETTE[/** @type {keyof typeof EMOTION_PALETTE} */ (emotion)];
 }
 
 /**
  * @param {string | undefined} build
- * @returns {{ shoulder: number, torso: number, stance: number, height: number }}
+ * @returns {BuildMetrics}
  */
 export function getBuildMetrics(build) {
-  if (!build) return BUILD_METRICS.average;
-  return BUILD_METRICS[String(build).toLowerCase()] || BUILD_METRICS.average;
+  const key = String(build || "average").toLowerCase();
+  if (!(key in BUILD_METRICS)) return BUILD_METRICS.average;
+  return BUILD_METRICS[/** @type {keyof typeof BUILD_METRICS} */ (key)];
 }
 
 /**
@@ -71,12 +92,16 @@ function clampIntensity(intensity) {
  *
  * @param {string | undefined} emotion
  * @param {number} [intensity=5]
+ * @returns {PresencePose}
  */
 export function getPose(emotion, intensity = 5) {
   const t = clampIntensity(intensity);
-  const key = emotion && EMOTION_PALETTE[emotion] ? emotion : "neutral";
+  const key =
+    emotion && emotion in EMOTION_PALETTE
+      ? /** @type {keyof typeof EMOTION_PALETTE} */ (emotion)
+      : "neutral";
 
-  /** @type {Record<string, object>} */
+  /** @type {Record<string, Omit<PresencePose, "vulnerable" | "intensity" | "emotion">>} */
   const poses = {
     joyful: {
       lean: -2,
