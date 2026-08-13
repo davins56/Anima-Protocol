@@ -14,6 +14,7 @@ import {
   migrateSessionMessages,
   sessionIdEq,
   userEntities,
+  userProfiles,
   type MsgData,
 } from "@workspace/db";
 import { createRateLimit } from "../lib/rateLimit";
@@ -69,6 +70,14 @@ import {
   type SceneMindDecision,
 } from "../lib/sceneMind";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import {
+  fetchRegionalWorldKnowledge,
+  formatRegionalWorldKnowledge,
+  geoFromRequest,
+  regionHintsFromProfile,
+  resolveUserRegion,
+  type RegionHints,
+} from "../lib/regionalWorldKnowledge";
 
 const router = Router();
 
@@ -725,6 +734,7 @@ router.post("/messages", async (req, res) => {
     deep_mode?: boolean;
     persist?: boolean;
     metadata?: Record<string, unknown>;
+    region?: RegionHints | null;
   };
   const sessionId = body.session_id;
   if (!sessionId) {
@@ -754,6 +764,25 @@ router.post("/messages", async (req, res) => {
   const content = String(body.content ?? "");
 
   const memoriesPromise = loadMemories(userId, characterIds);
+  const worldKnowledgePromise = (async () => {
+    try {
+      const [profileRow] = await db
+        .select({ data: userProfiles.data })
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, userId))
+        .limit(1);
+      const region = resolveUserRegion({
+        hints: body.region || null,
+        profile: regionHintsFromProfile(profileRow?.data),
+        geo: geoFromRequest(req),
+      });
+      if (!region.enabled) return "";
+      const snapshot = await fetchRegionalWorldKnowledge(region);
+      return formatRegionalWorldKnowledge(snapshot);
+    } catch {
+      return "";
+    }
+  })();
   const hintedCharId =
     (body.force_character_id &&
     characterIds.includes(String(body.force_character_id))
@@ -771,7 +800,7 @@ router.post("/messages", async (req, res) => {
         loadArcState(hintedCharId, userId),
       ])
     : Promise.resolve([null, null, null] as const);
-  const [characters, memories, recentMessages, adaptedMemories, hintedState] =
+  const [characters, memories, recentMessages, adaptedMemories, hintedState, worldKnowledge] =
     await Promise.all([
       loadCharacters(userId, characterIds),
       memoriesPromise,
@@ -782,6 +811,7 @@ router.post("/messages", async (req, res) => {
         attachStoredEmbeddings(userId, adaptMemories(rows)),
       ),
       hintedStatePromise,
+      worldKnowledgePromise,
     ]);
 
   const requestedAssistantId = body.assistant_character_id
@@ -903,6 +933,7 @@ router.post("/messages", async (req, res) => {
     evolutionDelta: activeEvolutionRow?.evolutionDelta,
     relationshipState: activeRelationshipState,
     arcState: activeArcState,
+    worldKnowledge,
   });
 
   const routed = routeModel(content, {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animaApi } from "@/api/animaApi";
+import { collectRegionHints } from "@/lib/userRegion";
 
 function createChatMessage(role, content, { characterName = null, attachments = [], type = undefined } = {}) {
   return {
@@ -68,6 +69,7 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
           assistantCharacterName: activeCharacter?.name ?? null,
           mode,
           persist: true,
+          region: collectRegionHints(),
         });
 
         let assistantText = "";

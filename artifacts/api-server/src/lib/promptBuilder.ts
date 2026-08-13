@@ -42,6 +42,10 @@ import {
   formatVoiceAnchors,
   buildCrossoverAwareness,
 } from "./voiceAnchors";
+import {
+  promptHasRegionalWorldKnowledge,
+  upsertRegionalWorldKnowledge,
+} from "./regionalWorldKnowledge";
 
 // Re-export sub-module types for consumers
 export type { CompanionMemoryRecord, CharacterData, ResonanceState, SynchroState };
@@ -101,6 +105,13 @@ export interface PromptBuilderParams {
   uncensoredMode?: boolean;
   /** Pre-computed synchro state (if provided, overrides internal resonance init) */
   synchroState?: SynchroState | null;
+
+  /**
+   * Live regional world-knowledge block (local time, weather, holidays).
+   * Injected for Anima and character-list entities so they can speak from
+   * the user's real-world region instead of only their fiction.
+   */
+  worldKnowledge?: string | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -270,6 +281,7 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     synchroState,
     relationshipState,
     arcState,
+    worldKnowledge,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -300,8 +312,16 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
     characters.map((c) => [String(c.id || ""), String(c.name || "Companion")]),
   );
 
-  // 1. Core system prompt (client override or default behavior rules)
-  const corePrompt = systemPrompt || CORE_BEHAVIOR;
+  // 1. Core system prompt (client override or default behavior rules).
+  // If the client already shipped a USER_REGION block, replace it with the
+  // server snapshot (weather/holidays) so Anima and roster characters share
+  // one live regional grounding instead of duplicating stale clock-only text.
+  const worldKnowledgeBlock = String(worldKnowledge || "").trim();
+  let corePrompt = systemPrompt || CORE_BEHAVIOR;
+  if (worldKnowledgeBlock) {
+    corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
+  }
+  const worldKnowledgeAlreadyInCore = promptHasRegionalWorldKnowledge(corePrompt);
 
   // 2. Character definition
   // Group turns without a resolved speaker already carry identity in the client
@@ -435,6 +455,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   // Assemble all sections with intelligent ordering
   const sections: string[] = [
     corePrompt,
+    worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
     charDef ? `CHARACTER:\n${charDef}` : "",
     resonanceBlock,
     relationshipBlock,
