@@ -130,6 +130,15 @@ export const ROUTE_META: Record<string, PageMeta> = {
     ogDescription:
       "How Anima Protocol collects, uses, and protects your data. Effective May 2026. Operated by Echoes of Eden Inc.",
   },
+  "/net-battle": {
+    title: "NetBattle | Anima Protocol",
+    description:
+      "Jack in and fight on a Battle Network-style panel grid. Control your Anima or let it auto-pilot, then send sword chips and expression-typed energy blasts from the hand.",
+    canonical: `${BASE_URL}/net-battle`,
+    ogTitle: "Anima Protocol — NetBattle",
+    ogDescription:
+      "A Mega Man Battle Network-style arena for your Anima. Five expressions, sword chips, and energy blasts from the hand.",
+  },
   "/disclaimer": {
     title: "Disclaimer | Anima Protocol",
     description:

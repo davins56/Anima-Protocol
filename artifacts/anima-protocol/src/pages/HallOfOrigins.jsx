@@ -5,6 +5,7 @@ import { useStoreSync } from '@/lib/useStoreSync';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Sparkles, Gem, Loader, Stars, BookOpen } from 'lucide-react';
 import { formatResonance, resonanceMood, getPathMeta } from '@/lib/soulprint';
+import { expressionBlendLabel, dominantExpression, mixedAuraColor } from '@/lib/animaExpressions';
 
 function fmtDate(d) {
   if (!d) return '—';
@@ -148,6 +149,11 @@ export default function HallOfOrigins() {
             accent
           />
           <CertRow label="Evolution Path" value={path} />
+          <CertRow
+            label="Expression"
+            value={expressionBlendLabel(anima.expression_spectrum)}
+            accent
+          />
           <CertRow label="Awakening Date" value={fmtDate(anima.awakening_date || anima.created_date)} />
         </div>
 
@@ -164,6 +170,33 @@ export default function HallOfOrigins() {
           </div>
           <p className="font-mono text-xs text-primary/60 leading-relaxed">{pathMeta.blurb}</p>
         </div>
+
+        {(() => {
+          const expr = dominantExpression(anima.expression_spectrum);
+          const aura = mixedAuraColor(anima.expression_spectrum);
+          return (
+            <div className="border bg-black/40 p-4" style={{ borderColor: `${aura}55` }}>
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg" style={{ color: aura }}>{expr.symbol}</span>
+                  <span className="font-mono text-sm uppercase tracking-wider" style={{ color: aura }}>
+                    {expressionBlendLabel(anima.expression_spectrum)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/net-battle')}
+                  className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/45 hover:text-primary"
+                >
+                  NetBattle →
+                </button>
+              </div>
+              <p className="font-mono text-xs text-primary/60 leading-relaxed">
+                {expr.blurb} Animas may live between multiple expressions at once.
+              </p>
+            </div>
+          );
+        })()}
 
         {/* Firsts */}
         <div className="border border-primary/15 bg-black/40 p-5">

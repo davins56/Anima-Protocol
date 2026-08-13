@@ -3,6 +3,7 @@ export const CUSTOMISE_ANIMA_TABS = [
   "look",
   "personality",
   "soulprint",
+  "expression",
   "voice",
 ];
 

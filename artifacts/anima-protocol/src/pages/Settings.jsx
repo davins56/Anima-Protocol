@@ -405,7 +405,7 @@ export default function Settings() {
                 className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
               >
                 <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
-                  Look · personality · soulprint · voice
+                  Look · personality · soulprint · expression · voice
                 </div>
                 <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
                   <span className="flex items-center gap-2">
@@ -457,7 +457,7 @@ export default function Settings() {
                     </p>
                     <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
                       Shape look (skin, hair, outfit, eyes), personality, soulprint,
-                      and spoken voice in one hub — then return to chat with a companion
+                      expression spectrum, and spoken voice in one hub — then return to chat with a companion
                       that feels uniquely yours.
                     </p>
                   </div>
