@@ -9,6 +9,7 @@ import {
   formatTherapyManualsForPrompt,
   getTherapyModePrompt,
   buildTherapyInstruction,
+  localizedTherapyResource,
   therapyOpeningMessage,
 } from "./therapyManuals";
 
@@ -22,6 +23,20 @@ describe("detectTherapyCrisis", () => {
   it("does not flag ordinary distress", () => {
     expect(detectTherapyCrisis("I feel sad and anxious about work")).toBe(false);
     expect(detectTherapyCrisis("")).toBe(false);
+  });
+
+  it("distinguishes figurative language from a plan with available means", () => {
+    expect(detectTherapyCrisis("I could just die 😂 that was embarrassing")).toBe(false);
+    expect(
+      detectTherapyCrisis("I have the pills next to me and intend to take them tonight"),
+    ).toBe(true);
+  });
+
+  it("localizes known crisis resources", () => {
+    expect(localizedTherapyResource("United Kingdom")).toMatchObject({
+      name: "Samaritans",
+      contact: "call 116 123",
+    });
   });
 });
 

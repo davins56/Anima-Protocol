@@ -1,11 +1,16 @@
-import { THERAPY_CRISIS_RESOURCES, THERAPY_DISCLAIMER } from "@/lib/therapyManuals";
+import {
+  THERAPY_CRISIS_RESOURCES,
+  THERAPY_DISCLAIMER,
+  localizedTherapyResource,
+} from "@/lib/therapyManuals";
 import { Shield } from "lucide-react";
 
 /**
  * Persistent care banner for therapy-mode chat sessions.
- * @param {{ crisis?: boolean, characterName?: string }} props
+ * @param {{ crisis?: boolean, characterName?: string, country?: string }} props
  */
-export default function TherapySessionBanner({ crisis = false, characterName }) {
+export default function TherapySessionBanner({ crisis = false, characterName, country }) {
+  const localResource = localizedTherapyResource(country);
   return (
     <div
       className={`px-3 sm:px-4 py-2 border-b font-mono ${
@@ -22,7 +27,10 @@ export default function TherapySessionBanner({ crisis = false, characterName }) 
           </p>
           {crisis ? (
             <p className="text-[11px] leading-relaxed text-red-50/90">
-              If you are in danger, contact local emergency services now. US: call or text 988.
+              If you are in danger, contact local emergency services now.{" "}
+              {localResource
+                ? `${localResource.name}: ${localResource.contact}. `
+                : "Use a local crisis line. "}
               Worldwide:{" "}
               <a
                 href={THERAPY_CRISIS_RESOURCES.intl.url}
