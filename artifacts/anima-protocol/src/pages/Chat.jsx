@@ -17,7 +17,7 @@ import {
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
-import { track } from "@/lib/analytics";
+import { energyFragmentLoreBlock } from "@/lib/energyFragments";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import MessageBubble from "@/components/chat/MessageBubble";
@@ -1216,6 +1216,12 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
         return `\nWORLD STATE & LORE (remember these facts — they are established story canon):\n${lines}\n`;
       };
 
+      const cyberspaceBattleData = () => {
+        const blob = `${activeChar?.universe || ""} ${activeSession?.opening_scene || ""}`;
+        if (!/battle network|netnavi|\bpet\b|cyberspace|energy fragment|battle chip/i.test(blob)) return "";
+        return `\n${energyFragmentLoreBlock()}\n`;
+      };
+
       // Build persistent memory context for the character
       const buildPersistentMemory = (charId) => {
         if (!characterMemories.length) return "";
@@ -1333,6 +1339,7 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
           }
           const relCtx = getRelationshipContext(char.id);
           const loreCtx = buildLoreContext();
+          const fragmentCtx = cyberspaceBattleData();
           const memCtx = buildMemoryContext();
           const persistentMemCtx = buildPersistentMemory(char.id);
           const injectedMemCtx = buildInjectedMemoryContext();
@@ -1427,7 +1434,7 @@ ${lewdityGuide}`;
           - Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
           - If details conflict with a generic helpful tone, the character identity wins.
 
-          ${animaNote}${animaSoulNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${char.name}; invent no contradictory personality.\n`}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
+          ${animaNote}${animaSoulNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${char.name}; invent no contradictory personality.\n`}${relCtx}${memCtx}${persistentMemCtx}${injectedMemCtx}${loreCtx}${fragmentCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}
           CRITICAL AUTONOMY RULES:
           - You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
           - You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
@@ -1535,7 +1542,7 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
 
           currentGroupSpeakerRef.current = finalNextChar;
 
-          const loreCtxGroup = buildLoreContext();
+          const loreCtxGroup = `${buildLoreContext()}${cyberspaceBattleData()}`;
 
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {

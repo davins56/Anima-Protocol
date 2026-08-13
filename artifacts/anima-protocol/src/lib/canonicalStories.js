@@ -190,7 +190,7 @@ export const CANONICAL_STORIES = [
         id: "mmbn-virus-battle",
         title: "First Virus Battle",
         chapter: "Chapter 2: Virus Busting",
-        narrative: "A virus signature flares on your PET's screen. Your NetNavi stands ready in cyberspace. You'll command them in real-time, sending battle chips and codes to defeat the digital enemy. This is what it means to be a Net Battler.",
+        narrative: "A virus signature flares on your PET's screen. Your NetNavi stands ready in cyberspace. You'll command them in real-time, slotting Energy Fragments — newer battle data evolved from the old chip families. When a fragment downloads, the weapon arrives ethereal: glass-steel, afterimage, no mass. Same-name or same-code fragments link. This is what it means to be a Net Battler.",
         setting: "Cyberspace - Network Node",
       },
     ],

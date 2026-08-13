@@ -31,6 +31,7 @@ const ALL_MODULES = [
   { label: "Global Wiki", path: "/globalwiki", icon: "🌍" },
   { label: "Memory Map", path: "/memory-map", icon: "🧠" },
   { label: "Inventory", path: "/inventory", icon: "🎒" },
+  { label: "Energy Fragments", path: "/energy-fragments", icon: "⬡" },
   { label: "Characters", path: "/characters", icon: "👥" },
   { label: "Customise Anima", path: "/customise-anima?tab=look", icon: "✦" },
   { label: "Check-In", path: "/check-in", icon: "✚" },
