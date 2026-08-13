@@ -91,6 +91,17 @@ export interface LlmRoutingStatus {
   };
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
+  /**
+   * True when ANIMA_LLM_PROVIDER is custom/local/anima — OpenRouter must not
+   * take over chat even if a key is present.
+   */
+  customOnly: boolean;
+  /**
+   * True when OpenRouter may run after the custom LLM (explicit
+   * ANIMA_OPENROUTER_FALLBACK=true). Default is false so a configured custom
+   * LLM is never skipped for OpenRouter quota.
+   */
+  openRouterFallback: boolean;
   note: string;
 }
 
@@ -156,6 +167,34 @@ export interface ChatCompletionResult {
 /** Every user chat turn starts fresh — kept as a no-op for API compatibility. */
 export function beginChatProviderTurn(): void {
   // No sticky failover state exists anymore; nothing to reset.
+}
+
+/**
+ * True when the operator pinned chat to the self-hosted custom LLM.
+ * Docs (`docs/custom-llm.md`, `docs/llm-deploy.md`) tell operators to set
+ * ANIMA_LLM_PROVIDER=custom so OpenRouter / free-tier quota cannot take over.
+ */
+export function preferCustomLlmOnly(): boolean {
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  return (
+    raw === "custom" ||
+    raw === "local" ||
+    raw === "anima" ||
+    raw === "local-only" ||
+    raw === "local-first"
+  );
+}
+
+/**
+ * OpenRouter may follow a configured custom LLM only when explicitly enabled.
+ * Default is off: a working (or misconfigured) custom LLM must not be skipped
+ * so that OpenRouter's free-models-per-day quota is burned instead.
+ */
+export function allowOpenRouterFallback(): boolean {
+  if (preferCustomLlmOnly()) return false;
+  const raw = (process.env.ANIMA_OPENROUTER_FALLBACK || "").trim().toLowerCase();
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
 /** True when the first usable chat provider is the self-hosted Anima LLM. */
@@ -234,14 +273,35 @@ function localUsable(): boolean {
 }
 
 /**
- * Ordered chat providers: self-hosted Anima first when configured, then
- * OpenRouter (Venice Uncensored / free open weights) when a key is present.
+ * Ordered chat providers: self-hosted Anima first when configured.
+ * OpenRouter is used when no custom LLM is configured (and a key is present),
+ * or after local only when ANIMA_OPENROUTER_FALLBACK=true. Custom mode
+ * (`ANIMA_LLM_PROVIDER=custom`) never includes OpenRouter.
  */
 export function getProviderChain(): LlmProviderId[] {
   const chain: LlmProviderId[] = [];
   if (localUsable()) chain.push("local");
-  if (hasOpenRouterKey()) chain.push("openrouter");
+  const openRouterAllowed =
+    hasOpenRouterKey() &&
+    !preferCustomLlmOnly() &&
+    (chain.length === 0 || allowOpenRouterFallback());
+  if (openRouterAllowed) chain.push("openrouter");
   return chain;
+}
+
+/**
+ * OpenRouter may cover a down custom-LLM host, but auth / model / app errors
+ * from that host must surface. Silently skipping them burns OpenRouter quota
+ * and looks like the custom LLM was never tried.
+ */
+function shouldTryNextProvider(
+  provider: LlmProviderId,
+  err: unknown,
+  hasNext: boolean,
+): boolean {
+  if (!hasNext) return false;
+  if (provider === "local" && !isProviderConnectionError(err)) return false;
+  return true;
 }
 
 function brandFor(provider: LlmProviderId): LlmBrand {
@@ -559,6 +619,14 @@ function cloudFlagshipMisconfigured(): boolean {
 }
 
 function noProviderConfiguredError(): Error {
+  if (preferCustomLlmOnly()) {
+    return new Error(
+      "ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM. " +
+        "Set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and " +
+        "ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy. " +
+        "OpenRouter is intentionally not used in custom mode. See docs/custom-llm.md.",
+    );
+  }
   return new Error(
     "No chat LLM configured. Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL " +
       "(ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1, ANIMA_OLLAMA_MODEL_STANDARD=anima-chat), " +
@@ -599,6 +667,16 @@ function localHostDownSuffix(include: boolean): string {
   return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from Vercel.`;
 }
 
+/** Operator hint when OpenRouter ran because the custom LLM was never wired. */
+function customLlmSkippedSuffix(): string {
+  if (localUsable()) return "";
+  return (
+    " The self-hosted custom Anima LLM is not configured on this deployment " +
+    "(ANIMA_LOCAL_LLM_BASE_URL is unset), so chat used OpenRouter instead of your custom LLM. " +
+    "Set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and redeploy."
+  );
+}
+
 function enrichError(
   err: unknown,
   provider: LlmProviderId = "local",
@@ -628,7 +706,8 @@ function enrichError(
             : OPENROUTER_SETUP_HINT;
       return new Error(
         `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` +
-          localHostDownSuffix(Boolean(opts.localConnectionFailed)),
+          localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
+          customLlmSkippedSuffix(),
       );
     }
   }
@@ -672,10 +751,18 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   // Emit a one-time init line so Vercel logs show host/model without secrets.
   logLocalLlmClientInitOnce();
 
+  const customOnly = preferCustomLlmOnly();
+  const openRouterFallback = allowOpenRouterFallback();
   const noteParts: string[] = [];
   if (chain.length === 0) {
     if (localSummary.isCloudFlagship) {
       noteParts.push(CLOUD_FLAGSHIP_SETUP_HINT);
+    } else if (customOnly) {
+      noteParts.push(
+        "ANIMA_LLM_PROVIDER=custom but ANIMA_LOCAL_LLM_BASE_URL is unset. " +
+          "OpenRouter will not be used. Set a public HTTPS OpenAI-compatible URL and redeploy. " +
+          "See docs/custom-llm.md.",
+      );
     } else {
       noteParts.push(
         "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
@@ -697,11 +784,19 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       } else if (!localSummary.hasV1Path) {
         noteParts.push("WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions.");
       }
+      if (hasOpenRouterKey() && !chain.includes("openrouter")) {
+        noteParts.push(
+          "OpenRouter key is present but unused — custom LLM is primary. " +
+            "Set ANIMA_OPENROUTER_FALLBACK=true only if you want OpenRouter after a connection failure.",
+        );
+      }
     }
     if (chain.includes("openrouter")) {
       noteParts.push(
         `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` +
-          (chain[0] === "local" ? " (fallback after local)." : " (primary — no local endpoint).") +
+          (chain[0] === "local"
+            ? " (fallback after local connection failure)."
+            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset).") +
           (openRouterCreditFallback ? " Paid model needed credits; using free-tier." : ""),
       );
     }
@@ -731,6 +826,8 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       creditFallback: openRouterCreditFallback,
     },
     chain,
+    customOnly,
+    openRouterFallback,
     note: noteParts.join(" "),
   };
 }
@@ -995,7 +1092,7 @@ async function runOpenRouterCompletion(
 /** Open a streaming chat completion (local Anima LLM, then OpenRouter). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && !hasOpenRouterKey()) {
+  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() || preferCustomLlmOnly())) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1036,7 +1133,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         localConnectionFailed = true;
       }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
-      if (hasNext) {
+      if (shouldTryNextProvider(provider, err, hasNext)) {
         console.warn(
           `[llm] ${provider} failed (${summarizeError(err)}); trying next provider in chain=[${chain.join(",")}]`,
         );
@@ -1061,7 +1158,7 @@ export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && !hasOpenRouterKey()) {
+  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() || preferCustomLlmOnly())) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1110,7 +1207,7 @@ export async function createChatCompletionWithFailover(
         localConnectionFailed = true;
       }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
-      if (hasNext) {
+      if (shouldTryNextProvider(provider, err, hasNext)) {
         console.warn(
           `[llm] ${provider} failed (${summarizeError(err)}); trying next provider in chain=[${chain.join(",")}]`,
         );

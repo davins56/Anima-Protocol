@@ -11,7 +11,7 @@
 | DPO/ORPO preference pairs (Unsloth) | Sharpen character fidelity after SFT — corrects specific bad habits |
 | `ANIMA_LLM_PROVIDER=custom` | Api-server talks **only** to your model — no cloud chat BYOK |
 
-The React app still calls `POST /api/chat/messages`. The brain behind it is **yours** — preferred backend is the self-hosted Anima LLM. There is **no** Gemini/Groq/Kimi/Grok/ChatGPT flagship chain. Optional **OpenRouter** (Venice Uncensored / free open-weight models) can cover chat when local is unset or unreachable — still open weights, not a closed flagship.
+The React app still calls `POST /api/chat/messages`. The brain behind it is **yours** — preferred backend is the self-hosted Anima LLM. There is **no** Gemini/Groq/Kimi/Grok/ChatGPT flagship chain. Optional **OpenRouter** (Venice Uncensored / free open-weight models) covers chat **only when `ANIMA_LOCAL_LLM_BASE_URL` is unset**. A configured custom LLM is not skipped for OpenRouter quota. Set `ANIMA_LLM_PROVIDER=custom` to refuse OpenRouter even if a key is present. Set `ANIMA_OPENROUTER_FALLBACK=true` only if you want OpenRouter after the custom host is unreachable.
 
 ---
 
@@ -257,18 +257,31 @@ curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{preferred,chain,op
 # openrouter.configured=true, openrouter.keyTail=last 4 of your key
 ```
 
-### Exact fix — "OpenRouter credits/rate limit exhausted" / HTTP 402
+### Exact fix — "OpenRouter credits/rate limit exhausted" / HTTP 429 / HTTP 402
 
-That popup means the **key is set and OpenRouter accepted it**. Venice Uncensored is a paid model; a brand-new OpenRouter account with no credits gets HTTP 402 (`This account never purchased credits`).
+That popup usually means chat **never reached your custom LLM**. Confirm:
 
-Chat now retries `openai/gpt-oss-20b:free` automatically. If you still see 402 after deploy, either the free-tier model is also blocked for that key, or a different key is loaded than the one you added credits to. Confirm with:
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{preferred,chain,localEndpoint,openrouter,customOnly,note}'
+```
+
+If `localEndpoint.configured` is `false` and `preferred` is `openrouter`, Vercel does not have `ANIMA_LOCAL_LLM_BASE_URL`. Chat is burning OpenRouter's free-models-per-day quota instead of talking to your self-hosted model. **Fix the custom LLM first** — adding OpenRouter credits will not wire the custom brain:
+
+```bash
+ANIMA_LLM_PROVIDER=custom
+ANIMA_LOCAL_LLM_BACKEND=ollama
+ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+```
+
+Redeploy without build cache. Healthy routing: `preferred: "local"`, `chain: ["local"]`.
+
+If OpenRouter was the intended backend (no custom host yet): Venice Uncensored is a paid model; a brand-new account with no credits gets HTTP 402. Chat retries `openai/gpt-oss-20b:free` automatically. A 429 mentioning `free-models-per-day` means that free daily cap is exhausted — add $10 at https://openrouter.ai/settings/credits or wait until midnight UTC. Confirm which key is loaded:
 
 ```bash
 curl -s https://www.anima-protocol.com/api/healthz/llm | jq '.openrouter'
 # configured=true, env=OPENROUTER_API_KEY, keyTail=last 4 chars
 ```
-
-Then either add credits at https://openrouter.ai/settings/credits or set `ANIMA_OPENROUTER_FREE=true` and redeploy.
 
 **Self-hosted (preferred long-term):**
 
@@ -280,6 +293,7 @@ Then either add credits at https://openrouter.ai/settings/credits or set `ANIMA_
 2. **Set these on Vercel (Production)** and redeploy **without build cache**:
 
 ```bash
+ANIMA_LLM_PROVIDER=custom
 ANIMA_LOCAL_LLM_BACKEND=ollama
 ANIMA_LOCAL_LLM_BASE_URL=https://<your-host>/v1
 ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or anima-uncensored / your vLLM id
