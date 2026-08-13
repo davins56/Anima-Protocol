@@ -53,7 +53,7 @@ app.get("/api/health", (_req, res) => {
 app.use(safeClerkMiddleware());
 
 // Application API routes (store, chat, openai, storage, admin, character image,
-// elevenlabs, placeholder image).
+// battle models, elevenlabs, placeholder image).
 app.use("/api", router);
 
 // Global error handler — prevents an unhandled error from wedging the process.

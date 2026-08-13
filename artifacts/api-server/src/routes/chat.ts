@@ -161,8 +161,13 @@ async function readRecentStoreMessages(
   userId: string,
   sessionId: string,
   limit = 20,
+  opts?: { skipMigrate?: boolean },
 ): Promise<MsgData[]> {
-  await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
+  // Steady-state sessions are already flagged messages_migrated. Skip the
+  // advisory lock + session re-read so history load does not block first token.
+  if (!opts?.skipMigrate) {
+    await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
+  }
   const rows = await db
     .select()
     .from(userEntities)
@@ -457,7 +462,9 @@ router.get("/sessions/:sessionId/context", async (req, res) => {
   const [characters, memories, recentMessages] = await Promise.all([
     loadCharacters(userId, uniqueCharacterIds),
     loadMemories(userId, uniqueCharacterIds),
-    readRecentStoreMessages(userId, sessionId, 20),
+    readRecentStoreMessages(userId, sessionId, 20, {
+      skipMigrate: Boolean(data.messages_migrated),
+    }),
   ]);
   res.json({
     session: data,
@@ -574,7 +581,9 @@ router.post("/scene-mind", async (req, res) => {
 
   const [characters, recentMessages] = await Promise.all([
     loadCharacters(userId, characterIds),
-    readRecentStoreMessages(userId, sessionId, 24),
+    readRecentStoreMessages(userId, sessionId, 24, {
+      skipMigrate: Boolean(sessionData.messages_migrated),
+    }),
   ]);
 
   const sceneChars = toSceneMindCharacters(characters);
@@ -696,11 +705,36 @@ router.post("/messages", async (req, res) => {
   const mode = body.mode || String(sessionData.mode || "solo");
   const content = String(body.content ?? "");
 
-  const [characters, memories, recentMessages] = await Promise.all([
-    loadCharacters(userId, characterIds),
-    loadMemories(userId, characterIds),
-    readRecentStoreMessages(userId, sessionId, 24),
-  ]);
+  const memoriesPromise = loadMemories(userId, characterIds);
+  const hintedCharId =
+    (body.force_character_id &&
+    characterIds.includes(String(body.force_character_id))
+      ? String(body.force_character_id)
+      : null) ||
+    (body.assistant_character_id &&
+    characterIds.includes(String(body.assistant_character_id))
+      ? String(body.assistant_character_id)
+      : null) ||
+    (mode !== "group" && characterIds[0] ? characterIds[0] : null);
+  const hintedStatePromise = hintedCharId
+    ? Promise.all([
+        loadEvolution(hintedCharId, userId),
+        loadRelationshipState(hintedCharId, userId),
+        loadArcState(hintedCharId, userId),
+      ])
+    : Promise.resolve([null, null, null] as const);
+  const [characters, memories, recentMessages, adaptedMemories, hintedState] =
+    await Promise.all([
+      loadCharacters(userId, characterIds),
+      memoriesPromise,
+      readRecentStoreMessages(userId, sessionId, 24, {
+        skipMigrate: Boolean(sessionData.messages_migrated),
+      }),
+      memoriesPromise.then((rows) =>
+        attachStoredEmbeddings(userId, adaptMemories(rows)),
+      ),
+      hintedStatePromise,
+    ]);
 
   const requestedAssistantId = body.assistant_character_id
     ? String(body.assistant_character_id)
@@ -713,12 +747,7 @@ router.post("/messages", async (req, res) => {
     characters.map((c) => c.universe).filter(Boolean).map(String),
   ).size;
   const isCrossover = mode === "group" && distinctUniverses >= 2;
-  // Initialize and evolve synchro state for the active character.
-  // Attach stored embeddings so promptBuilder's retrieval can blend semantics.
-  const adaptedMemories = await attachStoredEmbeddings(
-    userId,
-    adaptMemories(memories),
-  );
+  // Embeddings were attached in parallel with session/character loads above.
   const adaptedChars = adaptCharacters(characters);
   // Prefer the client-selected speaker (id, then name). Do NOT fall back to
   // characterIds[0] for multi-character sessions — that rebinds identity to the
@@ -754,8 +783,8 @@ router.post("/messages", async (req, res) => {
       eligibleCharacterIds: body.eligible_character_ids?.length
         ? asStringArray(body.eligible_character_ids)
         : null,
-      useDirector: true,
-      askDirector: runSceneMindDirector,
+      useDirector: false,
+      askDirector: undefined,
       isContinue: Boolean(body.is_continue),
     });
   }
@@ -784,17 +813,20 @@ router.post("/messages", async (req, res) => {
       requestedAssistantName || sceneMindDecision?.characterName || "",
     loadedName: activeChar?.name ?? null,
   });
-  const [activeEvolutionRow, activeRelationshipState, activeArcState] = await Promise.all([
-    activeCharacterId
-      ? loadEvolution(activeCharacterId, userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadRelationshipState(activeCharacterId, userId)
-      : Promise.resolve(null),
-    activeCharacterId
-      ? loadArcState(activeCharacterId, userId)
-      : Promise.resolve(null),
-  ]);
+  const [activeEvolutionRow, activeRelationshipState, activeArcState] =
+    activeCharacterId && hintedCharId && activeCharacterId === hintedCharId
+      ? hintedState
+      : await Promise.all([
+          activeCharacterId
+            ? loadEvolution(activeCharacterId, userId)
+            : Promise.resolve(null),
+          activeCharacterId
+            ? loadRelationshipState(activeCharacterId, userId)
+            : Promise.resolve(null),
+          activeCharacterId
+            ? loadArcState(activeCharacterId, userId)
+            : Promise.resolve(null),
+        ]);
   let synchroState: SynchroState | null = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
@@ -831,41 +863,44 @@ router.post("/messages", async (req, res) => {
   });
   const shouldPersist = body.persist !== false;
 
-  await syncTypedSession({
-    userId,
-    sessionId,
-    title: String(sessionData.title || "New session"),
-    mode,
-    characterIds,
-    isCrossover,
-    metadata: { source: "chat_api" },
-  });
-
-  let persistedUser: MsgData | null = null;
-  if (shouldPersist && content.trim()) {
-    const userMessage: MsgData = {
-      role: "user",
-      content,
-      timestamp: new Date().toISOString(),
-      ...(body.metadata ? { metadata: body.metadata } : {}),
-    };
-    persistedUser = await appendStoreMessage(userId, sessionId, userMessage);
-    await persistTypedMessage({
-      userId,
-      sessionId,
-      role: "user",
-      content,
-      isCrossover,
-      metadata: body.metadata,
-    });
-  }
-
+  // Open the SSE stream before session dual-write / user persist so first
+  // token is not blocked on those DB round-trips.
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
+
+  let persistedUser: MsgData | null = null;
+  const preStreamPersist = (async () => {
+    await syncTypedSession({
+      userId,
+      sessionId,
+      title: String(sessionData.title || "New session"),
+      mode,
+      characterIds,
+      isCrossover,
+      metadata: { source: "chat_api" },
+    });
+    if (shouldPersist && content.trim()) {
+      const userMessage: MsgData = {
+        role: "user",
+        content,
+        timestamp: new Date().toISOString(),
+        ...(body.metadata ? { metadata: body.metadata } : {}),
+      };
+      persistedUser = await appendStoreMessage(userId, sessionId, userMessage);
+      await persistTypedMessage({
+        userId,
+        sessionId,
+        role: "user",
+        content,
+        isCrossover,
+        metadata: body.metadata,
+      });
+    }
+  })();
 
   let fullResponse = "";
   let usedModel = routed.model;
@@ -946,6 +981,12 @@ router.post("/messages", async (req, res) => {
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
     if (!String(fullResponse).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
+    }
+
+    try {
+      await preStreamPersist;
+    } catch {
+      // Dual-write failed; the streamed reply is still valid.
     }
 
     let persistedAssistant: MsgData | null = null;
@@ -1093,6 +1134,7 @@ router.post("/messages", async (req, res) => {
       })}\n\n`,
     );
   } catch (err) {
+    await preStreamPersist.catch(() => {});
     const message = err instanceof Error ? err.message : String(err);
     res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
   } finally {

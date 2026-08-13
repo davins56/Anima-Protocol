@@ -88,6 +88,13 @@ function enemyForSpectrum(spectrum, rng) {
   };
   const pick = viruses[dominant.id] || viruses.neutral;
   const hpJitter = 0.9 + rng() * 0.25;
+  const silhouettes = {
+    "Shade.Vrs": "shade",
+    "Static.Vrs": "static",
+    "Mettaur.Vrs": "mettaur",
+    "Halo.Vrs": "halo",
+    "Aegis.Vrs": "aegis",
+  };
   return {
     name: pick.name,
     color: pick.color,
@@ -98,6 +105,7 @@ function enemyForSpectrum(spectrum, rng) {
     cooldown: 0,
     flinch: 0,
     kind: "virus",
+    silhouette: silhouettes[pick.name] || "mettaur",
   };
 }
 
@@ -137,6 +145,7 @@ export function createBattle(opts = {}) {
       cooldown: 0,
       flinch: 0,
       spectrum,
+      silhouette: "serenity",
     },
     enemy: enemyForSpectrum(spectrum, rng),
     customGauge: 0,

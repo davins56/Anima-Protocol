@@ -53,6 +53,24 @@ describe('API auth bridge', () => {
     });
   });
 
+  it('posts Serenity protocol upgrades through the authenticated API helper', async () => {
+    await animaApi.protocolUpgrade.launch({
+      request: 'Upgrade the interface to be darker.',
+      scope: 'interface',
+      surface: 'test',
+    });
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(String(url)).toContain('/api/protocol-upgrade');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      request: 'Upgrade the interface to be darker.',
+      scope: 'interface',
+      session_id: undefined,
+      surface: 'test',
+    });
+  });
+
   it('unwraps a double-wrapped token getter instead of stringifying the function', async () => {
     // Classic mistake: treating setAuthTokenGetter like React setState.
     setAuthTokenGetter(() => async () => 'unwrapped-token');
