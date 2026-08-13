@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { animaRelationships } from "../db/schema";
+import { recordRelationshipMilestone } from "./relationshipTimeline";
 
 export type AttachmentStyle =
   | "secure"
@@ -175,6 +176,17 @@ export async function maybeTriggerRelationshipEvolution(params: {
     delta: next,
     voidBias,
   };
+
+  // Persist onto the Relationship Timeline so the UI and Memory Palace can surface it.
+  await recordRelationshipMilestone({
+    userId: params.userId,
+    animaId: params.animaId,
+    conversationCount: params.conversationCount,
+    summary: `Attachment shifted toward ${next.attachment_style}. Level ${current.relationship_level} → ${next.relationship_level}.`,
+    delta: next as unknown as Record<string, unknown>,
+  }).catch(() => {
+    // Never block the chat turn if timeline write fails.
+  });
 
   return delta;
 }

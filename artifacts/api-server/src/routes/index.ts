@@ -11,6 +11,7 @@ import adminRouter from "./admin";
 import codeRepairRouter from "./codeRepair";
 import protocolUpgradeRouter from "./protocolUpgrade";
 import notificationsRouter from "./notifications";
+import relationshipOsRouter from "./relationshipOs";
 
 const router: IRouter = Router();
 
@@ -24,6 +25,7 @@ router.use("/chat", chatRouter);
 router.use("/code-repair", codeRepairRouter);
 router.use("/protocol-upgrade", protocolUpgradeRouter);
 router.use("/notifications", notificationsRouter);
+router.use("/relationship-os", relationshipOsRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
 
