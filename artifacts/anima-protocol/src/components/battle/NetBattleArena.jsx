@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   COLS,
@@ -17,6 +17,11 @@ import {
   mixedAuraColor,
   dominantExpression,
 } from "@/lib/animaExpressions";
+import { hasWebGL } from "@/lib/webglSupport";
+import useResolvedBattleModels from "@/hooks/useResolvedBattleModels";
+import WebGLFallback from "@/components/battle/WebGLFallback";
+
+const NetBattleScene3D = lazy(() => import("./NetBattleScene3D"));
 
 const DIRS = {
   ArrowUp: [0, -1],
@@ -49,6 +54,112 @@ function HpBar({ label, hp, maxHp, color, align = "left" }) {
       <p className="font-mono text-[10px] mt-0.5" style={{ color }}>
         {Math.max(0, hp)} / {maxHp}
       </p>
+    </div>
+  );
+}
+
+function BattleField2D({ state, dispatch, aura, dominant, fxAt }) {
+  return (
+    <div
+      className="relative w-full max-w-3xl"
+      style={{ perspective: "900px" }}
+    >
+      <div
+        className="grid gap-1.5 sm:gap-2"
+        style={{
+          gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
+          transform: "rotateX(18deg)",
+          transformOrigin: "center bottom",
+        }}
+      >
+        {Array.from({ length: ROWS * COLS }, (_, i) => {
+          const row = Math.floor(i / COLS);
+          const col = i % COLS;
+          const playerHere =
+            state.player.col === col && state.player.row === row;
+          const enemyHere =
+            state.enemy.col === col && state.enemy.row === row;
+          const playerSide = col <= 2;
+          const fx = fxAt[`${col}-${row}`] || [];
+          return (
+            <button
+              key={`${col}-${row}`}
+              type="button"
+              disabled={state.controlMode !== "manual" || state.phase !== "fighting"}
+              onClick={() => {
+                if (state.controlMode !== "manual") return;
+                dispatch((s) =>
+                  moveUnit(
+                    s,
+                    "player",
+                    col - s.player.col,
+                    row - s.player.row,
+                  ),
+                );
+              }}
+              className="relative aspect-square border disabled:cursor-default"
+              style={{
+                background: playerSide ? "rgba(8, 40, 48, 0.85)" : "rgba(40, 10, 18, 0.85)",
+                borderColor: playerHere
+                  ? aura
+                  : enemyHere
+                    ? state.enemy.color
+                    : playerSide
+                      ? "rgba(34,211,238,0.25)"
+                      : "rgba(248,113,113,0.25)",
+                boxShadow: playerHere
+                  ? `0 0 18px ${aura}`
+                  : enemyHere
+                    ? `0 0 18px ${state.enemy.color}`
+                    : "none",
+              }}
+              aria-label={`Panel ${col + 1},${row + 1}`}
+            >
+              {playerHere && (
+                <div className="absolute inset-1 flex flex-col items-center justify-center">
+                  {state.player.avatar_url ? (
+                    <img
+                      src={state.player.avatar_url}
+                      alt=""
+                      className="w-8 h-8 sm:w-10 sm:h-10 object-cover border"
+                      style={{ borderColor: aura }}
+                    />
+                  ) : (
+                    <span className="font-mono text-lg" style={{ color: aura }}>
+                      {dominant.symbol}
+                    </span>
+                  )}
+                </div>
+              )}
+              {enemyHere && (
+                <div className="absolute inset-1 flex items-center justify-center">
+                  <span
+                    className="font-mono text-xs sm:text-sm tracking-widest"
+                    style={{ color: state.enemy.color }}
+                  >
+                    ▼
+                  </span>
+                </div>
+              )}
+              {fx.map((f, i) => (
+                <span
+                  key={i}
+                  className="absolute inset-2 pointer-events-none"
+                  style={{
+                    background:
+                      f.type === "slash"
+                        ? `linear-gradient(90deg, transparent, ${f.color}, transparent)`
+                        : f.color,
+                    borderRadius: f.type === "blast" ? "999px" : 0,
+                    opacity: 0.85,
+                    boxShadow: `0 0 12px ${f.color}`,
+                  }}
+                />
+              ))}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -91,6 +202,11 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
   const aura = mixedAuraColor(state.player.spectrum);
   const blend = expressionBlendLabel(state.player.spectrum);
   const dominant = dominantExpression(state.player.spectrum);
+  const webgl = useMemo(() => hasWebGL(), []);
+  const models = useResolvedBattleModels(
+    { ...state.player, color: aura },
+    state.enemy,
+  );
 
   const fxAt = useMemo(() => {
     const map = {};
@@ -155,6 +271,21 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
   const customPct = Math.min(100, (state.customGauge / CUSTOM_FULL) * 100);
   const customReady = state.customGauge >= CUSTOM_FULL && state.phase === "fighting";
 
+  const field2d = (
+    <BattleField2D
+      state={state}
+      dispatch={dispatch}
+      aura={aura}
+      dominant={dominant}
+      fxAt={fxAt}
+    />
+  );
+
+  const onPanelClick = (col, row) => {
+    if (state.controlMode !== "manual") return;
+    dispatch((s) => moveUnit(s, "player", col - s.player.col, row - s.player.row));
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-[#05050c]">
       <div className="flex items-center gap-3 px-3 sm:px-4 py-2 border-b border-primary/15 bg-black/70">
@@ -168,7 +299,7 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
         </div>
         <div className="flex-shrink-0 text-center px-2">
           <p className="font-mono text-[8px] tracking-[0.3em] uppercase text-primary/40">
-            NetBattle
+            NetBattle{webgl ? " · 3D" : ""}
           </p>
           <p className="font-mono text-[10px]" style={{ color: aura }}>
             {dominant.symbol} {blend}
@@ -223,107 +354,21 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
             background: `radial-gradient(ellipse at 30% 50%, ${aura}22, transparent 55%), radial-gradient(ellipse at 75% 50%, ${state.enemy.color}22, transparent 55%)`,
           }}
         />
-        <div
-          className="relative w-full max-w-3xl"
-          style={{ perspective: "900px" }}
-        >
-          <div
-            className="grid gap-1.5 sm:gap-2"
-            style={{
-              gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
-              transform: "rotateX(18deg)",
-              transformOrigin: "center bottom",
-            }}
-          >
-            {Array.from({ length: ROWS * COLS }, (_, i) => {
-                const row = Math.floor(i / COLS);
-                const col = i % COLS;
-                const playerHere =
-                  state.player.col === col && state.player.row === row;
-                const enemyHere =
-                  state.enemy.col === col && state.enemy.row === row;
-                const playerSide = col <= 2;
-                const fx = fxAt[`${col}-${row}`] || [];
-                return (
-                  <button
-                    key={`${col}-${row}`}
-                    type="button"
-                    disabled={state.controlMode !== "manual" || state.phase !== "fighting"}
-                    onClick={() => {
-                      if (state.controlMode !== "manual") return;
-                      dispatch((s) =>
-                        moveUnit(
-                          s,
-                          "player",
-                          col - s.player.col,
-                          row - s.player.row,
-                        ),
-                      );
-                    }}
-                    className="relative aspect-square border disabled:cursor-default"
-                    style={{
-                      background: playerSide ? "rgba(8, 40, 48, 0.85)" : "rgba(40, 10, 18, 0.85)",
-                      borderColor: playerHere
-                        ? aura
-                        : enemyHere
-                          ? state.enemy.color
-                          : playerSide
-                            ? "rgba(34,211,238,0.25)"
-                            : "rgba(248,113,113,0.25)",
-                      boxShadow: playerHere
-                        ? `0 0 18px ${aura}`
-                        : enemyHere
-                          ? `0 0 18px ${state.enemy.color}`
-                          : "none",
-                    }}
-                    aria-label={`Panel ${col + 1},${row + 1}`}
-                  >
-                    {playerHere && (
-                      <div className="absolute inset-1 flex flex-col items-center justify-center">
-                        {state.player.avatar_url ? (
-                          <img
-                            src={state.player.avatar_url}
-                            alt=""
-                            className="w-8 h-8 sm:w-10 sm:h-10 object-cover border"
-                            style={{ borderColor: aura }}
-                          />
-                        ) : (
-                          <span className="font-mono text-lg" style={{ color: aura }}>
-                            {dominant.symbol}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {enemyHere && (
-                      <div className="absolute inset-1 flex items-center justify-center">
-                        <span
-                          className="font-mono text-xs sm:text-sm tracking-widest"
-                          style={{ color: state.enemy.color }}
-                        >
-                          ▼
-                        </span>
-                      </div>
-                    )}
-                    {fx.map((f, i) => (
-                      <span
-                        key={i}
-                        className="absolute inset-2 pointer-events-none"
-                        style={{
-                          background:
-                            f.type === "slash"
-                              ? `linear-gradient(90deg, transparent, ${f.color}, transparent)`
-                              : f.color,
-                          borderRadius: f.type === "blast" ? "999px" : 0,
-                          opacity: 0.85,
-                          boxShadow: `0 0 12px ${f.color}`,
-                        }}
-                      />
-                    ))}
-                  </button>
-                );
-              })}
-          </div>
-        </div>
+        {webgl ? (
+          <WebGLFallback fallback={field2d}>
+            <Suspense fallback={field2d}>
+              <div className="absolute inset-0 z-0">
+                <NetBattleScene3D
+                  state={state}
+                  models={models}
+                  onPanelClick={onPanelClick}
+                />
+              </div>
+            </Suspense>
+          </WebGLFallback>
+        ) : (
+          field2d
+        )}
 
         <AnimatePresence>
           {state.phase === "custom" && (
