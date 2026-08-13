@@ -133,11 +133,11 @@ export const ROUTE_META: Record<string, PageMeta> = {
   "/net-battle": {
     title: "NetBattle | Anima Protocol",
     description:
-      "Jack in and fight on a 3D Battle Network-style panel grid. Serenity and net-viruses resolve as three-dimensional forms. Control your Anima or let it auto-pilot, then send sword chips and expression-typed energy blasts from the hand.",
+      "Jack in and fight on a 4D Battle Network-style panel grid. Inspect an HD Anima vessel you can turn and zoom, then send sword chips and expression-typed energy blasts from the hand.",
     canonical: `${BASE_URL}/net-battle`,
     ogTitle: "Anima Protocol — NetBattle",
     ogDescription:
-      "A Mega Man Battle Network-style 3D arena. Serenity and viruses resolve as luminous net-forms; five expressions, sword chips, and energy blasts from the hand.",
+      "A Mega Man Battle Network-style 4D arena. Rotate and zoom an HD Anima vessel; five expressions, sword chips, and energy blasts from the hand.",
   },
   "/therapy": {
     title: "Therapy Mode | Anima Protocol",

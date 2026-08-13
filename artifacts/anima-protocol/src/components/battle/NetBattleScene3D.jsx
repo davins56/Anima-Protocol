@@ -1,5 +1,8 @@
-import { useMemo } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { Sparkles, Stars } from "@react-three/drei";
+import { Bloom, ChromaticAberration, EffectComposer, Vignette } from "@react-three/postprocessing";
+import * as THREE from "three";
 import { COLS, ROWS } from "@/lib/netBattle";
 import { CELL, PANEL_SIZE, PANEL_THICKNESS, panelWorldPosition } from "@/lib/battleLayout";
 import {
@@ -7,6 +10,7 @@ import {
   SerenityFigure,
   VirusFigure,
 } from "./BattleFigures3D";
+import TesseractLattice from "./TesseractLattice";
 
 function Panel({ col, row, playerHere, enemyHere, playerColor, enemyColor, onClick, clickable }) {
   const [x, y, z] = panelWorldPosition(col, row);
@@ -17,35 +21,60 @@ function Panel({ col, row, playerHere, enemyHere, playerColor, enemyColor, onCli
     : enemyHere
       ? enemyColor
       : playerSide
-        ? "#083038"
-        : "#2a0c14";
+        ? "#061820"
+        : "#1a070c";
   const emissive = occupied ? (playerHere ? playerColor : enemyColor) : playerSide ? "#155e75" : "#7f1d1d";
+  const echo = useRef(null);
+
+  useFrame((state) => {
+    if (!echo.current) return;
+    const t = state.clock.elapsedTime;
+    const pulse = occupied ? 0.55 + Math.sin(t * 4.2) * 0.2 : 0.12 + Math.sin(t * 1.1 + col + row) * 0.04;
+    echo.current.material.opacity = pulse;
+    echo.current.position.y = PANEL_THICKNESS * 0.5 + (occupied ? 0.045 : 0.02);
+  });
 
   return (
-    <mesh
-      position={[x, y, z]}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (clickable) onClick?.(col, row);
-      }}
-      onPointerOver={(e) => {
-        if (!clickable) return;
-        e.stopPropagation();
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = "";
-      }}
-    >
-      <boxGeometry args={[PANEL_SIZE, PANEL_THICKNESS, PANEL_SIZE]} />
-      <meshStandardMaterial
-        color={color}
-        emissive={emissive}
-        emissiveIntensity={occupied ? 0.55 : 0.12}
-        roughness={0.45}
-        metalness={0.2}
-      />
-    </mesh>
+    <group position={[x, y, z]}>
+      <mesh
+        onClick={(e) => {
+          e.stopPropagation();
+          if (clickable) onClick?.(col, row);
+        }}
+        onPointerOver={(e) => {
+          if (!clickable) return;
+          e.stopPropagation();
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "";
+        }}
+      >
+        <boxGeometry args={[PANEL_SIZE, PANEL_THICKNESS, PANEL_SIZE]} />
+        <meshPhysicalMaterial
+          color={color}
+          emissive={emissive}
+          emissiveIntensity={occupied ? 0.75 : 0.16}
+          roughness={0.18}
+          metalness={0.35}
+          transmission={0.28}
+          thickness={0.35}
+          transparent
+          opacity={0.92}
+        />
+      </mesh>
+      <mesh ref={echo} position={[0, PANEL_THICKNESS * 0.5 + 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[PANEL_SIZE * 0.28, PANEL_SIZE * 0.48, 24]} />
+        <meshBasicMaterial
+          color={occupied ? (playerHere ? playerColor : enemyColor) : emissive}
+          transparent
+          opacity={0.15}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
   );
 }
 
@@ -74,28 +103,76 @@ function ArenaGrid({ state, playerColor, onPanelClick }) {
   );
 }
 
-function CyberspaceRig({ playerColor, enemyColor }) {
+function HyperspaceRig({ playerColor, enemyColor }) {
   return (
     <>
-      <color attach="background" args={["#05050c"]} />
-      <fog attach="fog" args={["#05050c", 10, 22]} />
-      <ambientLight intensity={0.22} />
-      <hemisphereLight args={["#67e8f9", "#1e1020", 0.35]} />
-      <directionalLight position={[4, 8, 5]} intensity={0.7} color="#e0f2fe" />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]} receiveShadow>
-        <planeGeometry args={[COLS * CELL + 2.5, ROWS * CELL + 3]} />
-        <meshStandardMaterial color="#020208" roughness={0.9} />
+      <color attach="background" args={["#02010a"]} />
+      <fog attach="fog" args={["#02010a", 9, 24]} />
+      <ambientLight intensity={0.16} />
+      <hemisphereLight args={["#67e8f9", "#1e1020", 0.42]} />
+      <directionalLight position={[4, 9, 5]} intensity={0.95} color="#e0f2fe" />
+      <directionalLight position={[-5, 3, -2]} intensity={0.35} color={playerColor} />
+      <pointLight position={[0, 3.2, 0]} intensity={0.55} color="#c4b5fd" distance={12} />
+      <Stars radius={42} depth={26} count={1400} factor={2.8} saturation={0.15} fade speed={0.7} />
+      <Sparkles
+        count={48}
+        scale={[COLS * CELL + 2, 3.2, ROWS * CELL + 2]}
+        size={2.2}
+        speed={0.28}
+        color={playerColor}
+        opacity={0.55}
+        position={[0, 1.4, 0]}
+      />
+      <Sparkles
+        count={36}
+        scale={[COLS * CELL + 1.5, 2.6, ROWS * CELL + 1.5]}
+        size={1.6}
+        speed={0.42}
+        color={enemyColor}
+        opacity={0.4}
+        position={[1.4, 1.1, 0]}
+      />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]} receiveShadow>
+        <planeGeometry args={[COLS * CELL + 3.2, ROWS * CELL + 3.6]} />
+        <meshStandardMaterial color="#010108" roughness={0.92} metalness={0.08} />
       </mesh>
-      <mesh position={[-4.6, 1.4, -1.2]}>
-        <boxGeometry args={[0.12, 3.2, 4.2]} />
-        <meshStandardMaterial color="#042f2e" emissive={playerColor} emissiveIntensity={0.18} />
+      <mesh position={[-4.8, 1.55, -1.1]}>
+        <boxGeometry args={[0.08, 3.6, 4.6]} />
+        <meshPhysicalMaterial
+          color="#042f2e"
+          emissive={playerColor}
+          emissiveIntensity={0.28}
+          transmission={0.35}
+          roughness={0.2}
+          thickness={0.4}
+        />
       </mesh>
-      <mesh position={[4.6, 1.4, -1.2]}>
-        <boxGeometry args={[0.12, 3.2, 4.2]} />
-        <meshStandardMaterial color="#3f0a12" emissive={enemyColor} emissiveIntensity={0.18} />
+      <mesh position={[4.8, 1.55, -1.1]}>
+        <boxGeometry args={[0.08, 3.6, 4.6]} />
+        <meshPhysicalMaterial
+          color="#3f0a12"
+          emissive={enemyColor}
+          emissiveIntensity={0.28}
+          transmission={0.35}
+          roughness={0.2}
+          thickness={0.4}
+        />
       </mesh>
+      <TesseractLattice color={playerColor} scale={3.4} speed={0.32} opacity={0.22} position={[0, 1.6, -0.4]} />
+      <TesseractLattice color={enemyColor} scale={2.1} speed={0.55} opacity={0.18} position={[0, 2.4, -0.8]} />
     </>
   );
+}
+
+function CinematicCamera() {
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    state.camera.position.x = Math.sin(t * 0.07) * 0.42;
+    state.camera.position.y = 5.85 + Math.sin(t * 0.11) * 0.18;
+    state.camera.position.z = 7.55 + Math.cos(t * 0.06) * 0.22;
+    state.camera.lookAt(0, 0.42, 0);
+  });
+  return null;
 }
 
 function BattleScene({ state, models, onPanelClick }) {
@@ -120,7 +197,8 @@ function BattleScene({ state, models, onPanelClick }) {
 
   return (
     <>
-      <CyberspaceRig playerColor={playerColor} enemyColor={state.enemy.color} />
+      <CinematicCamera />
+      <HyperspaceRig playerColor={playerColor} enemyColor={state.enemy.color} />
       <ArenaGrid state={state} playerColor={playerColor} onPanelClick={onPanelClick} />
       <SerenityFigure
         model={models.player}
@@ -140,6 +218,11 @@ function BattleScene({ state, models, onPanelClick }) {
       {fx.map((f) => (
         <BattleProjectile key={f.id} col={f.col} row={f.row} color={f.color} kind={f.kind} />
       ))}
+      <EffectComposer enableNormalPass={false} multisampling={0}>
+        <Bloom intensity={0.9} luminanceThreshold={0.2} luminanceSmoothing={0.28} mipmapBlur />
+        <ChromaticAberration offset={[0.0007, 0.0005]} radialModulation modulationOffset={0.35} />
+        <Vignette darkness={0.55} offset={0.28} />
+      </EffectComposer>
     </>
   );
 }
@@ -147,34 +230,17 @@ function BattleScene({ state, models, onPanelClick }) {
 export default function NetBattleScene3D({ state, models, onPanelClick }) {
   return (
     <Canvas
-      camera={{ position: [0, 5.6, 7.4], fov: 36, near: 0.1, far: 40 }}
+      camera={{ position: [0, 5.85, 7.55], fov: 34, near: 0.1, far: 50 }}
       gl={{ alpha: false, antialias: true, powerPreference: "high-performance" }}
-      dpr={[1, 1.5]}
-      style={{ width: "100%", height: "100%", display: "block", background: "#05050c" }}
-      onCreated={({ camera }) => {
-        camera.lookAt(0, 0.35, 0);
+      dpr={[1, 1.75]}
+      style={{ width: "100%", height: "100%", display: "block", background: "#02010a" }}
+      onCreated={({ camera, gl }) => {
+        camera.lookAt(0, 0.42, 0);
+        gl.toneMapping = THREE.ACESFilmicToneMapping;
+        gl.toneMappingExposure = 1.16;
       }}
     >
       <BattleScene state={state} models={models} onPanelClick={onPanelClick} />
-    </Canvas>
-  );
-}
-
-export function BattleNaviPreviewCanvas({ model }) {
-  return (
-    <Canvas
-      camera={{ position: [0.35, 1.35, 2.15], fov: 38 }}
-      gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
-      dpr={[1, 1.5]}
-      style={{ width: "100%", height: "100%", background: "transparent" }}
-      onCreated={({ camera }) => {
-        camera.lookAt(0, 0.7, 0);
-      }}
-    >
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[2, 3, 2]} intensity={0.8} />
-      <pointLight position={[-1, 2, 1]} intensity={0.6} color={model?.accent || "#fde68a"} />
-      <SerenityFigure model={model} anchored hpRatio={1} facing={1} />
     </Canvas>
   );
 }
