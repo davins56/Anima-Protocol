@@ -1046,7 +1046,7 @@ async function runOpenRouterStream(
           messages: req.messages,
           stream: true,
         },
-        req.signal ? { signal: req.signal } : undefined,
+        ...(req.signal ? [{ signal: req.signal }] : []),
       ),
   );
   return {
@@ -1121,7 +1121,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
               messages: req.messages,
               stream: true,
             },
-            req.signal ? { signal: req.signal } : undefined,
+            ...(req.signal ? [{ signal: req.signal }] : []),
           ),
         );
         return {
