@@ -25,6 +25,11 @@ import {
 } from '@/lib/analytics';
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
 import { retryStarterSeed } from '@/lib/seedCharacters';
+import {
+  disableProactivePush,
+  getProactiveMessagePreferences,
+  syncProactivePushIfEnabled,
+} from '@/lib/pushNotifications';
 
 const AuthContext = createContext();
 
@@ -98,6 +103,27 @@ export const AuthProvider = ({ children }) => {
       stopStoreSync();
     };
   }, [isLoaded, isSignedIn]);
+
+  // Restore this browser's Web Push subscription after a signed-in session
+  // returns. Permission was granted by a prior user gesture; this never opens a
+  // permission prompt during app startup.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !user) return;
+    let cancelled = false;
+    getProactiveMessagePreferences()
+      .then((preferences) => {
+        if (!cancelled) return syncProactivePushIfEnabled(preferences);
+        return null;
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.warn('[Anima] Proactive notification sync failed:', err);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, user?.id]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -202,6 +228,10 @@ const logout = useCallback(() => {
       if (typeof resetUser === 'function') {
         resetUser();
       }
+
+      await disableProactivePush().catch((err) =>
+        console.warn('Notification unsubscribe warning:', err)
+      );
 
       if (base44?.auth?.logout) {
         await base44.auth.logout().catch((err) =>
