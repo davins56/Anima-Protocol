@@ -72,6 +72,13 @@ async function installLocalOriginRelay(page: Page): Promise<void> {
   if (!browserOrigin || !localAppOrigin || browserOrigin === localAppOrigin) return;
   await page.route(`${browserOrigin}/**`, async (route) => {
     const requested = new URL(route.request().url());
+    // The store's sync feed is intentionally long-lived. route.fetch() waits
+    // for the full body and would keep a Playwright route callback alive after
+    // the test page closes; a 204 disables this irrelevant background channel.
+    if (requested.pathname === "/api/store/events") {
+      await route.fulfill({ status: 204, body: "" });
+      return;
+    }
     const localUrl = new URL(`${requested.pathname}${requested.search}`, localAppOrigin);
     const response = await route.fetch({ url: localUrl.toString() });
     await route.fulfill({ response });
@@ -362,6 +369,10 @@ async function mockState(page: Page): Promise<MockState> {
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
+});
+
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("send message paints the first token and completes the response", async ({
