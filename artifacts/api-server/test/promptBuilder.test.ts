@@ -174,6 +174,26 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toMatch(/Angelic/i);
     expect(prompt).toMatch(/Ascended/i);
   });
+
+  it("does not duplicate history when the client already sent Story so far", () => {
+    const prompt = buildCompanionPrompt({
+      systemPrompt: `You are Serenity.\n\nStory so far:\nYou: I miss the garden\nSerenity: I remember it with you.\n`,
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: "I miss the garden" },
+        { role: "assistant", content: "I remember it with you.", character_name: "Serenity" },
+        { role: "user", content: "Take me back there." },
+      ],
+      mode: "solo",
+      content: "Take me back there.",
+    });
+
+    expect(prompt).toContain("Story so far:");
+    expect(prompt).not.toContain("CONVERSATION CONTEXT:");
+    expect(prompt).not.toContain("LATEST USER MESSAGE:");
+  });
 });
 
 describe("buildGroupCompanionPrompt", () => {
