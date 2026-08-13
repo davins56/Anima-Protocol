@@ -20662,27 +20662,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router14;
+    module.exports = Router15;
     module.exports.Route = Route;
-    function Router14(options) {
-      if (!(this instanceof Router14)) {
-        return new Router14(options);
+    function Router15(options) {
+      if (!(this instanceof Router15)) {
+        return new Router15(options);
       }
       const opts = options || {};
-      function router15(req, res, next) {
-        router15.handle(req, res, next);
+      function router16(req, res, next) {
+        router16.handle(req, res, next);
       }
-      Object.setPrototypeOf(router15, this);
-      router15.caseSensitive = opts.caseSensitive;
-      router15.mergeParams = opts.mergeParams;
-      router15.params = {};
-      router15.strict = opts.strict;
-      router15.stack = [];
-      return router15;
+      Object.setPrototypeOf(router16, this);
+      router16.caseSensitive = opts.caseSensitive;
+      router16.mergeParams = opts.mergeParams;
+      router16.params = {};
+      router16.strict = opts.strict;
+      router16.stack = [];
+      return router16;
     }
-    Router14.prototype = function() {
+    Router15.prototype = function() {
     };
-    Router14.prototype.param = function param(name, fn) {
+    Router15.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20702,7 +20702,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router14.prototype.handle = function handle(req, res, callback) {
+    Router15.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20829,7 +20829,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router14.prototype.use = function use(handler) {
+    Router15.prototype.use = function use(handler) {
       let offset = 0;
       let path2 = "/";
       if (typeof handler !== "function") {
@@ -20862,7 +20862,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router14.prototype.route = function route(path2) {
+    Router15.prototype.route = function route(path2) {
       const route2 = new Route(path2);
       const layer = new Layer(path2, {
         sensitive: this.caseSensitive,
@@ -20877,7 +20877,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router14.prototype[method] = function(path2) {
+      Router15.prototype[method] = function(path2) {
         const route = this.route(path2);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21060,13 +21060,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router14 = require_router();
+    var Router15 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init2() {
-      var router15 = null;
+      var router16 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21075,13 +21075,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router15 === null) {
-            router15 = new Router14({
+          if (router16 === null) {
+            router16 = new Router15({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router15;
+          return router16;
         }
       });
     };
@@ -21152,15 +21152,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router15 = this.router;
+      var router16 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router15.use(path2, fn2);
+          return router16.use(path2, fn2);
         }
         debug2(".use app under %s", path2);
         fn2.mountpath = path2;
         fn2.parent = this;
-        router15.use(path2, function mounted_app(req, res, next) {
+        router16.use(path2, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23827,7 +23827,7 @@ var require_express = __commonJS({
     var EventEmitter2 = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router14 = require_router();
+    var Router15 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23849,8 +23849,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router14.Route;
-    exports.Router = Router14;
+    exports.Route = Router15.Route;
+    exports.Router = Router15;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -66087,8 +66087,5381 @@ var require_lib8 = __commonJS({
   }
 });
 
+// ../../node_modules/.pnpm/bn.js@4.12.5/node_modules/bn.js/lib/bn.js
+var require_bn = __commonJS({
+  "../../node_modules/.pnpm/bn.js@4.12.5/node_modules/bn.js/lib/bn.js"(exports, module) {
+    (function(module2, exports2) {
+      "use strict";
+      function assert2(val, msg) {
+        if (!val) throw new Error(msg || "Assertion failed");
+      }
+      function inherits(ctor, superCtor) {
+        ctor.super_ = superCtor;
+        var TempCtor = function() {
+        };
+        TempCtor.prototype = superCtor.prototype;
+        ctor.prototype = new TempCtor();
+        ctor.prototype.constructor = ctor;
+      }
+      function BN(number4, base, endian) {
+        if (BN.isBN(number4)) {
+          return number4;
+        }
+        this.negative = 0;
+        this.words = null;
+        this.length = 0;
+        this.red = null;
+        if (number4 !== null) {
+          if (base === "le" || base === "be") {
+            endian = base;
+            base = 10;
+          }
+          this._init(number4 || 0, base || 10, endian || "be");
+        }
+      }
+      if (typeof module2 === "object") {
+        module2.exports = BN;
+      } else {
+        exports2.BN = BN;
+      }
+      BN.BN = BN;
+      BN.wordSize = 26;
+      var Buffer2;
+      try {
+        if (typeof window !== "undefined" && typeof window.Buffer !== "undefined") {
+          Buffer2 = window.Buffer;
+        } else {
+          Buffer2 = __require("buffer").Buffer;
+        }
+      } catch (e2) {
+      }
+      BN.isBN = function isBN(num) {
+        if (num instanceof BN) {
+          return true;
+        }
+        return num !== null && typeof num === "object" && num.constructor.wordSize === BN.wordSize && Array.isArray(num.words);
+      };
+      BN.max = function max(left, right) {
+        if (left.cmp(right) > 0) return left;
+        return right;
+      };
+      BN.min = function min(left, right) {
+        if (left.cmp(right) < 0) return left;
+        return right;
+      };
+      BN.prototype._init = function init2(number4, base, endian) {
+        if (typeof number4 === "number") {
+          return this._initNumber(number4, base, endian);
+        }
+        if (typeof number4 === "object") {
+          return this._initArray(number4, base, endian);
+        }
+        if (base === "hex") {
+          base = 16;
+        }
+        assert2(base === (base | 0) && base >= 2 && base <= 36);
+        number4 = number4.toString().replace(/\s+/g, "");
+        var start = 0;
+        if (number4[0] === "-") {
+          start++;
+          this.negative = 1;
+        }
+        if (start < number4.length) {
+          if (base === 16) {
+            this._parseHex(number4, start, endian);
+          } else {
+            this._parseBase(number4, base, start);
+            if (endian === "le") {
+              this._initArray(this.toArray(), base, endian);
+            }
+          }
+        }
+      };
+      BN.prototype._initNumber = function _initNumber(number4, base, endian) {
+        if (number4 < 0) {
+          this.negative = 1;
+          number4 = -number4;
+        }
+        if (number4 < 67108864) {
+          this.words = [number4 & 67108863];
+          this.length = 1;
+        } else if (number4 < 4503599627370496) {
+          this.words = [
+            number4 & 67108863,
+            number4 / 67108864 & 67108863
+          ];
+          this.length = 2;
+        } else {
+          assert2(number4 < 9007199254740992);
+          this.words = [
+            number4 & 67108863,
+            number4 / 67108864 & 67108863,
+            1
+          ];
+          this.length = 3;
+        }
+        if (endian !== "le") return;
+        this._initArray(this.toArray(), base, endian);
+      };
+      BN.prototype._initArray = function _initArray(number4, base, endian) {
+        assert2(typeof number4.length === "number");
+        if (number4.length <= 0) {
+          this.words = [0];
+          this.length = 1;
+          return this;
+        }
+        this.length = Math.ceil(number4.length / 3);
+        this.words = new Array(this.length);
+        for (var i2 = 0; i2 < this.length; i2++) {
+          this.words[i2] = 0;
+        }
+        var j2, w2;
+        var off = 0;
+        if (endian === "be") {
+          for (i2 = number4.length - 1, j2 = 0; i2 >= 0; i2 -= 3) {
+            w2 = number4[i2] | number4[i2 - 1] << 8 | number4[i2 - 2] << 16;
+            this.words[j2] |= w2 << off & 67108863;
+            this.words[j2 + 1] = w2 >>> 26 - off & 67108863;
+            off += 24;
+            if (off >= 26) {
+              off -= 26;
+              j2++;
+            }
+          }
+        } else if (endian === "le") {
+          for (i2 = 0, j2 = 0; i2 < number4.length; i2 += 3) {
+            w2 = number4[i2] | number4[i2 + 1] << 8 | number4[i2 + 2] << 16;
+            this.words[j2] |= w2 << off & 67108863;
+            this.words[j2 + 1] = w2 >>> 26 - off & 67108863;
+            off += 24;
+            if (off >= 26) {
+              off -= 26;
+              j2++;
+            }
+          }
+        }
+        return this.strip();
+      };
+      function parseHex4Bits(string4, index2) {
+        var c2 = string4.charCodeAt(index2);
+        if (c2 >= 65 && c2 <= 70) {
+          return c2 - 55;
+        } else if (c2 >= 97 && c2 <= 102) {
+          return c2 - 87;
+        } else {
+          return c2 - 48 & 15;
+        }
+      }
+      function parseHexByte(string4, lowerBound, index2) {
+        var r2 = parseHex4Bits(string4, index2);
+        if (index2 - 1 >= lowerBound) {
+          r2 |= parseHex4Bits(string4, index2 - 1) << 4;
+        }
+        return r2;
+      }
+      BN.prototype._parseHex = function _parseHex(number4, start, endian) {
+        this.length = Math.ceil((number4.length - start) / 6);
+        this.words = new Array(this.length);
+        for (var i2 = 0; i2 < this.length; i2++) {
+          this.words[i2] = 0;
+        }
+        var off = 0;
+        var j2 = 0;
+        var w2;
+        if (endian === "be") {
+          for (i2 = number4.length - 1; i2 >= start; i2 -= 2) {
+            w2 = parseHexByte(number4, start, i2) << off;
+            this.words[j2] |= w2 & 67108863;
+            if (off >= 18) {
+              off -= 18;
+              j2 += 1;
+              this.words[j2] |= w2 >>> 26;
+            } else {
+              off += 8;
+            }
+          }
+        } else {
+          var parseLength = number4.length - start;
+          for (i2 = parseLength % 2 === 0 ? start + 1 : start; i2 < number4.length; i2 += 2) {
+            w2 = parseHexByte(number4, start, i2) << off;
+            this.words[j2] |= w2 & 67108863;
+            if (off >= 18) {
+              off -= 18;
+              j2 += 1;
+              this.words[j2] |= w2 >>> 26;
+            } else {
+              off += 8;
+            }
+          }
+        }
+        this.strip();
+      };
+      function parseBase(str2, start, end, mul) {
+        var r2 = 0;
+        var len = Math.min(str2.length, end);
+        for (var i2 = start; i2 < len; i2++) {
+          var c2 = str2.charCodeAt(i2) - 48;
+          r2 *= mul;
+          if (c2 >= 49) {
+            r2 += c2 - 49 + 10;
+          } else if (c2 >= 17) {
+            r2 += c2 - 17 + 10;
+          } else {
+            r2 += c2;
+          }
+        }
+        return r2;
+      }
+      BN.prototype._parseBase = function _parseBase(number4, base, start) {
+        this.words = [0];
+        this.length = 1;
+        for (var limbLen = 0, limbPow = 1; limbPow <= 67108863; limbPow *= base) {
+          limbLen++;
+        }
+        limbLen--;
+        limbPow = limbPow / base | 0;
+        var total = number4.length - start;
+        var mod = total % limbLen;
+        var end = Math.min(total, total - mod) + start;
+        var word = 0;
+        for (var i2 = start; i2 < end; i2 += limbLen) {
+          word = parseBase(number4, i2, i2 + limbLen, base);
+          this.imuln(limbPow);
+          if (this.words[0] + word < 67108864) {
+            this.words[0] += word;
+          } else {
+            this._iaddn(word);
+          }
+        }
+        if (mod !== 0) {
+          var pow = 1;
+          word = parseBase(number4, i2, number4.length, base);
+          for (i2 = 0; i2 < mod; i2++) {
+            pow *= base;
+          }
+          this.imuln(pow);
+          if (this.words[0] + word < 67108864) {
+            this.words[0] += word;
+          } else {
+            this._iaddn(word);
+          }
+        }
+        this.strip();
+      };
+      BN.prototype.copy = function copy(dest) {
+        dest.words = new Array(this.length);
+        for (var i2 = 0; i2 < this.length; i2++) {
+          dest.words[i2] = this.words[i2];
+        }
+        dest.length = this.length;
+        dest.negative = this.negative;
+        dest.red = this.red;
+      };
+      BN.prototype.clone = function clone2() {
+        var r2 = new BN(null);
+        this.copy(r2);
+        return r2;
+      };
+      BN.prototype._expand = function _expand(size) {
+        while (this.length < size) {
+          this.words[this.length++] = 0;
+        }
+        return this;
+      };
+      BN.prototype.strip = function strip() {
+        while (this.length > 1 && this.words[this.length - 1] === 0) {
+          this.length--;
+        }
+        return this._normSign();
+      };
+      BN.prototype._normSign = function _normSign() {
+        if (this.length === 1 && this.words[0] === 0) {
+          this.negative = 0;
+        }
+        return this;
+      };
+      BN.prototype.inspect = function inspect2() {
+        return (this.red ? "<BN-R: " : "<BN: ") + this.toString(16) + ">";
+      };
+      var zeros = [
+        "",
+        "0",
+        "00",
+        "000",
+        "0000",
+        "00000",
+        "000000",
+        "0000000",
+        "00000000",
+        "000000000",
+        "0000000000",
+        "00000000000",
+        "000000000000",
+        "0000000000000",
+        "00000000000000",
+        "000000000000000",
+        "0000000000000000",
+        "00000000000000000",
+        "000000000000000000",
+        "0000000000000000000",
+        "00000000000000000000",
+        "000000000000000000000",
+        "0000000000000000000000",
+        "00000000000000000000000",
+        "000000000000000000000000",
+        "0000000000000000000000000"
+      ];
+      var groupSizes = [
+        0,
+        0,
+        25,
+        16,
+        12,
+        11,
+        10,
+        9,
+        8,
+        8,
+        7,
+        7,
+        7,
+        7,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5
+      ];
+      var groupBases = [
+        0,
+        0,
+        33554432,
+        43046721,
+        16777216,
+        48828125,
+        60466176,
+        40353607,
+        16777216,
+        43046721,
+        1e7,
+        19487171,
+        35831808,
+        62748517,
+        7529536,
+        11390625,
+        16777216,
+        24137569,
+        34012224,
+        47045881,
+        64e6,
+        4084101,
+        5153632,
+        6436343,
+        7962624,
+        9765625,
+        11881376,
+        14348907,
+        17210368,
+        20511149,
+        243e5,
+        28629151,
+        33554432,
+        39135393,
+        45435424,
+        52521875,
+        60466176
+      ];
+      BN.prototype.toString = function toString(base, padding) {
+        base = base || 10;
+        padding = padding | 0 || 1;
+        var out;
+        if (base === 16 || base === "hex") {
+          out = "";
+          var off = 0;
+          var carry = 0;
+          for (var i2 = 0; i2 < this.length; i2++) {
+            var w2 = this.words[i2];
+            var word = ((w2 << off | carry) & 16777215).toString(16);
+            carry = w2 >>> 24 - off & 16777215;
+            off += 2;
+            if (off >= 26) {
+              off -= 26;
+              i2--;
+            }
+            if (carry !== 0 || i2 !== this.length - 1) {
+              out = zeros[6 - word.length] + word + out;
+            } else {
+              out = word + out;
+            }
+          }
+          if (carry !== 0) {
+            out = carry.toString(16) + out;
+          }
+          while (out.length % padding !== 0) {
+            out = "0" + out;
+          }
+          if (this.negative !== 0) {
+            out = "-" + out;
+          }
+          return out;
+        }
+        if (base === (base | 0) && base >= 2 && base <= 36) {
+          var groupSize = groupSizes[base];
+          var groupBase = groupBases[base];
+          out = "";
+          var c2 = this.clone();
+          c2.negative = 0;
+          while (!c2.isZero()) {
+            var r2 = c2.modn(groupBase).toString(base);
+            c2 = c2.idivn(groupBase);
+            if (!c2.isZero()) {
+              out = zeros[groupSize - r2.length] + r2 + out;
+            } else {
+              out = r2 + out;
+            }
+          }
+          if (this.isZero()) {
+            out = "0" + out;
+          }
+          while (out.length % padding !== 0) {
+            out = "0" + out;
+          }
+          if (this.negative !== 0) {
+            out = "-" + out;
+          }
+          return out;
+        }
+        assert2(false, "Base should be between 2 and 36");
+      };
+      BN.prototype.toNumber = function toNumber() {
+        var ret = this.words[0];
+        if (this.length === 2) {
+          ret += this.words[1] * 67108864;
+        } else if (this.length === 3 && this.words[2] === 1) {
+          ret += 4503599627370496 + this.words[1] * 67108864;
+        } else if (this.length > 2) {
+          assert2(false, "Number can only safely store up to 53 bits");
+        }
+        return this.negative !== 0 ? -ret : ret;
+      };
+      BN.prototype.toJSON = function toJSON() {
+        return this.toString(16);
+      };
+      BN.prototype.toBuffer = function toBuffer(endian, length) {
+        assert2(typeof Buffer2 !== "undefined");
+        return this.toArrayLike(Buffer2, endian, length);
+      };
+      BN.prototype.toArray = function toArray(endian, length) {
+        return this.toArrayLike(Array, endian, length);
+      };
+      BN.prototype.toArrayLike = function toArrayLike(ArrayType, endian, length) {
+        var byteLength = this.byteLength();
+        var reqLength = length || Math.max(1, byteLength);
+        assert2(byteLength <= reqLength, "byte array longer than desired length");
+        assert2(reqLength > 0, "Requested array length <= 0");
+        this.strip();
+        var littleEndian = endian === "le";
+        var res = new ArrayType(reqLength);
+        var b2, i2;
+        var q2 = this.clone();
+        if (!littleEndian) {
+          for (i2 = 0; i2 < reqLength - byteLength; i2++) {
+            res[i2] = 0;
+          }
+          for (i2 = 0; !q2.isZero(); i2++) {
+            b2 = q2.andln(255);
+            q2.iushrn(8);
+            res[reqLength - i2 - 1] = b2;
+          }
+        } else {
+          for (i2 = 0; !q2.isZero(); i2++) {
+            b2 = q2.andln(255);
+            q2.iushrn(8);
+            res[i2] = b2;
+          }
+          for (; i2 < reqLength; i2++) {
+            res[i2] = 0;
+          }
+        }
+        return res;
+      };
+      if (Math.clz32) {
+        BN.prototype._countBits = function _countBits(w2) {
+          return 32 - Math.clz32(w2);
+        };
+      } else {
+        BN.prototype._countBits = function _countBits(w2) {
+          var t2 = w2;
+          var r2 = 0;
+          if (t2 >= 4096) {
+            r2 += 13;
+            t2 >>>= 13;
+          }
+          if (t2 >= 64) {
+            r2 += 7;
+            t2 >>>= 7;
+          }
+          if (t2 >= 8) {
+            r2 += 4;
+            t2 >>>= 4;
+          }
+          if (t2 >= 2) {
+            r2 += 2;
+            t2 >>>= 2;
+          }
+          return r2 + t2;
+        };
+      }
+      BN.prototype._zeroBits = function _zeroBits(w2) {
+        if (w2 === 0) return 26;
+        var t2 = w2;
+        var r2 = 0;
+        if ((t2 & 8191) === 0) {
+          r2 += 13;
+          t2 >>>= 13;
+        }
+        if ((t2 & 127) === 0) {
+          r2 += 7;
+          t2 >>>= 7;
+        }
+        if ((t2 & 15) === 0) {
+          r2 += 4;
+          t2 >>>= 4;
+        }
+        if ((t2 & 3) === 0) {
+          r2 += 2;
+          t2 >>>= 2;
+        }
+        if ((t2 & 1) === 0) {
+          r2++;
+        }
+        return r2;
+      };
+      BN.prototype.bitLength = function bitLength() {
+        var w2 = this.words[this.length - 1];
+        var hi = this._countBits(w2);
+        return (this.length - 1) * 26 + hi;
+      };
+      function toBitArray(num) {
+        var w2 = new Array(num.bitLength());
+        for (var bit2 = 0; bit2 < w2.length; bit2++) {
+          var off = bit2 / 26 | 0;
+          var wbit = bit2 % 26;
+          w2[bit2] = (num.words[off] & 1 << wbit) >>> wbit;
+        }
+        return w2;
+      }
+      BN.prototype.zeroBits = function zeroBits() {
+        if (this.isZero()) return 0;
+        var r2 = 0;
+        for (var i2 = 0; i2 < this.length; i2++) {
+          var b2 = this._zeroBits(this.words[i2]);
+          r2 += b2;
+          if (b2 !== 26) break;
+        }
+        return r2;
+      };
+      BN.prototype.byteLength = function byteLength() {
+        return Math.ceil(this.bitLength() / 8);
+      };
+      BN.prototype.toTwos = function toTwos(width) {
+        if (this.negative !== 0) {
+          return this.abs().inotn(width).iaddn(1);
+        }
+        return this.clone();
+      };
+      BN.prototype.fromTwos = function fromTwos(width) {
+        if (this.testn(width - 1)) {
+          return this.notn(width).iaddn(1).ineg();
+        }
+        return this.clone();
+      };
+      BN.prototype.isNeg = function isNeg() {
+        return this.negative !== 0;
+      };
+      BN.prototype.neg = function neg() {
+        return this.clone().ineg();
+      };
+      BN.prototype.ineg = function ineg() {
+        if (!this.isZero()) {
+          this.negative ^= 1;
+        }
+        return this;
+      };
+      BN.prototype.iuor = function iuor(num) {
+        while (this.length < num.length) {
+          this.words[this.length++] = 0;
+        }
+        for (var i2 = 0; i2 < num.length; i2++) {
+          this.words[i2] = this.words[i2] | num.words[i2];
+        }
+        return this.strip();
+      };
+      BN.prototype.ior = function ior(num) {
+        assert2((this.negative | num.negative) === 0);
+        return this.iuor(num);
+      };
+      BN.prototype.or = function or3(num) {
+        if (this.length > num.length) return this.clone().ior(num);
+        return num.clone().ior(this);
+      };
+      BN.prototype.uor = function uor(num) {
+        if (this.length > num.length) return this.clone().iuor(num);
+        return num.clone().iuor(this);
+      };
+      BN.prototype.iuand = function iuand(num) {
+        var b2;
+        if (this.length > num.length) {
+          b2 = num;
+        } else {
+          b2 = this;
+        }
+        for (var i2 = 0; i2 < b2.length; i2++) {
+          this.words[i2] = this.words[i2] & num.words[i2];
+        }
+        this.length = b2.length;
+        return this.strip();
+      };
+      BN.prototype.iand = function iand(num) {
+        assert2((this.negative | num.negative) === 0);
+        return this.iuand(num);
+      };
+      BN.prototype.and = function and2(num) {
+        if (this.length > num.length) return this.clone().iand(num);
+        return num.clone().iand(this);
+      };
+      BN.prototype.uand = function uand(num) {
+        if (this.length > num.length) return this.clone().iuand(num);
+        return num.clone().iuand(this);
+      };
+      BN.prototype.iuxor = function iuxor(num) {
+        var a2;
+        var b2;
+        if (this.length > num.length) {
+          a2 = this;
+          b2 = num;
+        } else {
+          a2 = num;
+          b2 = this;
+        }
+        for (var i2 = 0; i2 < b2.length; i2++) {
+          this.words[i2] = a2.words[i2] ^ b2.words[i2];
+        }
+        if (this !== a2) {
+          for (; i2 < a2.length; i2++) {
+            this.words[i2] = a2.words[i2];
+          }
+        }
+        this.length = a2.length;
+        return this.strip();
+      };
+      BN.prototype.ixor = function ixor(num) {
+        assert2((this.negative | num.negative) === 0);
+        return this.iuxor(num);
+      };
+      BN.prototype.xor = function xor(num) {
+        if (this.length > num.length) return this.clone().ixor(num);
+        return num.clone().ixor(this);
+      };
+      BN.prototype.uxor = function uxor(num) {
+        if (this.length > num.length) return this.clone().iuxor(num);
+        return num.clone().iuxor(this);
+      };
+      BN.prototype.inotn = function inotn(width) {
+        assert2(typeof width === "number" && width >= 0);
+        var bytesNeeded = Math.ceil(width / 26) | 0;
+        var bitsLeft = width % 26;
+        this._expand(bytesNeeded);
+        if (bitsLeft > 0) {
+          bytesNeeded--;
+        }
+        for (var i2 = 0; i2 < bytesNeeded; i2++) {
+          this.words[i2] = ~this.words[i2] & 67108863;
+        }
+        if (bitsLeft > 0) {
+          this.words[i2] = ~this.words[i2] & 67108863 >> 26 - bitsLeft;
+          i2++;
+        }
+        for (; i2 < this.length; i2++) {
+          this.words[i2] = 0;
+        }
+        return this.strip();
+      };
+      BN.prototype.notn = function notn(width) {
+        return this.clone().inotn(width);
+      };
+      BN.prototype.setn = function setn(bit2, val) {
+        assert2(typeof bit2 === "number" && bit2 >= 0);
+        var off = bit2 / 26 | 0;
+        var wbit = bit2 % 26;
+        this._expand(off + 1);
+        if (val) {
+          this.words[off] = this.words[off] | 1 << wbit;
+        } else {
+          this.words[off] = this.words[off] & ~(1 << wbit);
+        }
+        return this.strip();
+      };
+      BN.prototype.iadd = function iadd(num) {
+        var r2;
+        if (this.negative !== 0 && num.negative === 0) {
+          this.negative = 0;
+          r2 = this.isub(num);
+          this.negative ^= 1;
+          return this._normSign();
+        } else if (this.negative === 0 && num.negative !== 0) {
+          num.negative = 0;
+          r2 = this.isub(num);
+          num.negative = 1;
+          return r2._normSign();
+        }
+        var a2, b2;
+        if (this.length > num.length) {
+          a2 = this;
+          b2 = num;
+        } else {
+          a2 = num;
+          b2 = this;
+        }
+        var carry = 0;
+        for (var i2 = 0; i2 < b2.length; i2++) {
+          r2 = (a2.words[i2] | 0) + (b2.words[i2] | 0) + carry;
+          this.words[i2] = r2 & 67108863;
+          carry = r2 >>> 26;
+        }
+        for (; carry !== 0 && i2 < a2.length; i2++) {
+          r2 = (a2.words[i2] | 0) + carry;
+          this.words[i2] = r2 & 67108863;
+          carry = r2 >>> 26;
+        }
+        this.length = a2.length;
+        if (carry !== 0) {
+          this.words[this.length] = carry;
+          this.length++;
+        } else if (a2 !== this) {
+          for (; i2 < a2.length; i2++) {
+            this.words[i2] = a2.words[i2];
+          }
+        }
+        return this;
+      };
+      BN.prototype.add = function add(num) {
+        var res;
+        if (num.negative !== 0 && this.negative === 0) {
+          num.negative = 0;
+          res = this.sub(num);
+          num.negative ^= 1;
+          return res;
+        } else if (num.negative === 0 && this.negative !== 0) {
+          this.negative = 0;
+          res = num.sub(this);
+          this.negative = 1;
+          return res;
+        }
+        if (this.length > num.length) return this.clone().iadd(num);
+        return num.clone().iadd(this);
+      };
+      BN.prototype.isub = function isub(num) {
+        if (num.negative !== 0) {
+          num.negative = 0;
+          var r2 = this.iadd(num);
+          num.negative = 1;
+          return r2._normSign();
+        } else if (this.negative !== 0) {
+          this.negative = 0;
+          this.iadd(num);
+          this.negative = 1;
+          return this._normSign();
+        }
+        var cmp = this.cmp(num);
+        if (cmp === 0) {
+          this.negative = 0;
+          this.length = 1;
+          this.words[0] = 0;
+          return this;
+        }
+        var a2, b2;
+        if (cmp > 0) {
+          a2 = this;
+          b2 = num;
+        } else {
+          a2 = num;
+          b2 = this;
+        }
+        var carry = 0;
+        for (var i2 = 0; i2 < b2.length; i2++) {
+          r2 = (a2.words[i2] | 0) - (b2.words[i2] | 0) + carry;
+          carry = r2 >> 26;
+          this.words[i2] = r2 & 67108863;
+        }
+        for (; carry !== 0 && i2 < a2.length; i2++) {
+          r2 = (a2.words[i2] | 0) + carry;
+          carry = r2 >> 26;
+          this.words[i2] = r2 & 67108863;
+        }
+        if (carry === 0 && i2 < a2.length && a2 !== this) {
+          for (; i2 < a2.length; i2++) {
+            this.words[i2] = a2.words[i2];
+          }
+        }
+        this.length = Math.max(this.length, i2);
+        if (a2 !== this) {
+          this.negative = 1;
+        }
+        return this.strip();
+      };
+      BN.prototype.sub = function sub(num) {
+        return this.clone().isub(num);
+      };
+      function smallMulTo(self2, num, out) {
+        out.negative = num.negative ^ self2.negative;
+        var len = self2.length + num.length | 0;
+        out.length = len;
+        len = len - 1 | 0;
+        var a2 = self2.words[0] | 0;
+        var b2 = num.words[0] | 0;
+        var r2 = a2 * b2;
+        var lo = r2 & 67108863;
+        var carry = r2 / 67108864 | 0;
+        out.words[0] = lo;
+        for (var k2 = 1; k2 < len; k2++) {
+          var ncarry = carry >>> 26;
+          var rword = carry & 67108863;
+          var maxJ = Math.min(k2, num.length - 1);
+          for (var j2 = Math.max(0, k2 - self2.length + 1); j2 <= maxJ; j2++) {
+            var i2 = k2 - j2 | 0;
+            a2 = self2.words[i2] | 0;
+            b2 = num.words[j2] | 0;
+            r2 = a2 * b2 + rword;
+            ncarry += r2 / 67108864 | 0;
+            rword = r2 & 67108863;
+          }
+          out.words[k2] = rword | 0;
+          carry = ncarry | 0;
+        }
+        if (carry !== 0) {
+          out.words[k2] = carry | 0;
+        } else {
+          out.length--;
+        }
+        return out.strip();
+      }
+      var comb10MulTo = function comb10MulTo2(self2, num, out) {
+        var a2 = self2.words;
+        var b2 = num.words;
+        var o2 = out.words;
+        var c2 = 0;
+        var lo;
+        var mid;
+        var hi;
+        var a0 = a2[0] | 0;
+        var al0 = a0 & 8191;
+        var ah0 = a0 >>> 13;
+        var a1 = a2[1] | 0;
+        var al1 = a1 & 8191;
+        var ah1 = a1 >>> 13;
+        var a22 = a2[2] | 0;
+        var al2 = a22 & 8191;
+        var ah2 = a22 >>> 13;
+        var a3 = a2[3] | 0;
+        var al3 = a3 & 8191;
+        var ah3 = a3 >>> 13;
+        var a4 = a2[4] | 0;
+        var al4 = a4 & 8191;
+        var ah4 = a4 >>> 13;
+        var a5 = a2[5] | 0;
+        var al5 = a5 & 8191;
+        var ah5 = a5 >>> 13;
+        var a6 = a2[6] | 0;
+        var al6 = a6 & 8191;
+        var ah6 = a6 >>> 13;
+        var a7 = a2[7] | 0;
+        var al7 = a7 & 8191;
+        var ah7 = a7 >>> 13;
+        var a8 = a2[8] | 0;
+        var al8 = a8 & 8191;
+        var ah8 = a8 >>> 13;
+        var a9 = a2[9] | 0;
+        var al9 = a9 & 8191;
+        var ah9 = a9 >>> 13;
+        var b0 = b2[0] | 0;
+        var bl0 = b0 & 8191;
+        var bh0 = b0 >>> 13;
+        var b1 = b2[1] | 0;
+        var bl1 = b1 & 8191;
+        var bh1 = b1 >>> 13;
+        var b22 = b2[2] | 0;
+        var bl2 = b22 & 8191;
+        var bh2 = b22 >>> 13;
+        var b3 = b2[3] | 0;
+        var bl3 = b3 & 8191;
+        var bh3 = b3 >>> 13;
+        var b4 = b2[4] | 0;
+        var bl4 = b4 & 8191;
+        var bh4 = b4 >>> 13;
+        var b5 = b2[5] | 0;
+        var bl5 = b5 & 8191;
+        var bh5 = b5 >>> 13;
+        var b6 = b2[6] | 0;
+        var bl6 = b6 & 8191;
+        var bh6 = b6 >>> 13;
+        var b7 = b2[7] | 0;
+        var bl7 = b7 & 8191;
+        var bh7 = b7 >>> 13;
+        var b8 = b2[8] | 0;
+        var bl8 = b8 & 8191;
+        var bh8 = b8 >>> 13;
+        var b9 = b2[9] | 0;
+        var bl9 = b9 & 8191;
+        var bh9 = b9 >>> 13;
+        out.negative = self2.negative ^ num.negative;
+        out.length = 19;
+        lo = Math.imul(al0, bl0);
+        mid = Math.imul(al0, bh0);
+        mid = mid + Math.imul(ah0, bl0) | 0;
+        hi = Math.imul(ah0, bh0);
+        var w0 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w0 >>> 26) | 0;
+        w0 &= 67108863;
+        lo = Math.imul(al1, bl0);
+        mid = Math.imul(al1, bh0);
+        mid = mid + Math.imul(ah1, bl0) | 0;
+        hi = Math.imul(ah1, bh0);
+        lo = lo + Math.imul(al0, bl1) | 0;
+        mid = mid + Math.imul(al0, bh1) | 0;
+        mid = mid + Math.imul(ah0, bl1) | 0;
+        hi = hi + Math.imul(ah0, bh1) | 0;
+        var w1 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w1 >>> 26) | 0;
+        w1 &= 67108863;
+        lo = Math.imul(al2, bl0);
+        mid = Math.imul(al2, bh0);
+        mid = mid + Math.imul(ah2, bl0) | 0;
+        hi = Math.imul(ah2, bh0);
+        lo = lo + Math.imul(al1, bl1) | 0;
+        mid = mid + Math.imul(al1, bh1) | 0;
+        mid = mid + Math.imul(ah1, bl1) | 0;
+        hi = hi + Math.imul(ah1, bh1) | 0;
+        lo = lo + Math.imul(al0, bl2) | 0;
+        mid = mid + Math.imul(al0, bh2) | 0;
+        mid = mid + Math.imul(ah0, bl2) | 0;
+        hi = hi + Math.imul(ah0, bh2) | 0;
+        var w2 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w2 >>> 26) | 0;
+        w2 &= 67108863;
+        lo = Math.imul(al3, bl0);
+        mid = Math.imul(al3, bh0);
+        mid = mid + Math.imul(ah3, bl0) | 0;
+        hi = Math.imul(ah3, bh0);
+        lo = lo + Math.imul(al2, bl1) | 0;
+        mid = mid + Math.imul(al2, bh1) | 0;
+        mid = mid + Math.imul(ah2, bl1) | 0;
+        hi = hi + Math.imul(ah2, bh1) | 0;
+        lo = lo + Math.imul(al1, bl2) | 0;
+        mid = mid + Math.imul(al1, bh2) | 0;
+        mid = mid + Math.imul(ah1, bl2) | 0;
+        hi = hi + Math.imul(ah1, bh2) | 0;
+        lo = lo + Math.imul(al0, bl3) | 0;
+        mid = mid + Math.imul(al0, bh3) | 0;
+        mid = mid + Math.imul(ah0, bl3) | 0;
+        hi = hi + Math.imul(ah0, bh3) | 0;
+        var w3 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w3 >>> 26) | 0;
+        w3 &= 67108863;
+        lo = Math.imul(al4, bl0);
+        mid = Math.imul(al4, bh0);
+        mid = mid + Math.imul(ah4, bl0) | 0;
+        hi = Math.imul(ah4, bh0);
+        lo = lo + Math.imul(al3, bl1) | 0;
+        mid = mid + Math.imul(al3, bh1) | 0;
+        mid = mid + Math.imul(ah3, bl1) | 0;
+        hi = hi + Math.imul(ah3, bh1) | 0;
+        lo = lo + Math.imul(al2, bl2) | 0;
+        mid = mid + Math.imul(al2, bh2) | 0;
+        mid = mid + Math.imul(ah2, bl2) | 0;
+        hi = hi + Math.imul(ah2, bh2) | 0;
+        lo = lo + Math.imul(al1, bl3) | 0;
+        mid = mid + Math.imul(al1, bh3) | 0;
+        mid = mid + Math.imul(ah1, bl3) | 0;
+        hi = hi + Math.imul(ah1, bh3) | 0;
+        lo = lo + Math.imul(al0, bl4) | 0;
+        mid = mid + Math.imul(al0, bh4) | 0;
+        mid = mid + Math.imul(ah0, bl4) | 0;
+        hi = hi + Math.imul(ah0, bh4) | 0;
+        var w4 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w4 >>> 26) | 0;
+        w4 &= 67108863;
+        lo = Math.imul(al5, bl0);
+        mid = Math.imul(al5, bh0);
+        mid = mid + Math.imul(ah5, bl0) | 0;
+        hi = Math.imul(ah5, bh0);
+        lo = lo + Math.imul(al4, bl1) | 0;
+        mid = mid + Math.imul(al4, bh1) | 0;
+        mid = mid + Math.imul(ah4, bl1) | 0;
+        hi = hi + Math.imul(ah4, bh1) | 0;
+        lo = lo + Math.imul(al3, bl2) | 0;
+        mid = mid + Math.imul(al3, bh2) | 0;
+        mid = mid + Math.imul(ah3, bl2) | 0;
+        hi = hi + Math.imul(ah3, bh2) | 0;
+        lo = lo + Math.imul(al2, bl3) | 0;
+        mid = mid + Math.imul(al2, bh3) | 0;
+        mid = mid + Math.imul(ah2, bl3) | 0;
+        hi = hi + Math.imul(ah2, bh3) | 0;
+        lo = lo + Math.imul(al1, bl4) | 0;
+        mid = mid + Math.imul(al1, bh4) | 0;
+        mid = mid + Math.imul(ah1, bl4) | 0;
+        hi = hi + Math.imul(ah1, bh4) | 0;
+        lo = lo + Math.imul(al0, bl5) | 0;
+        mid = mid + Math.imul(al0, bh5) | 0;
+        mid = mid + Math.imul(ah0, bl5) | 0;
+        hi = hi + Math.imul(ah0, bh5) | 0;
+        var w5 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w5 >>> 26) | 0;
+        w5 &= 67108863;
+        lo = Math.imul(al6, bl0);
+        mid = Math.imul(al6, bh0);
+        mid = mid + Math.imul(ah6, bl0) | 0;
+        hi = Math.imul(ah6, bh0);
+        lo = lo + Math.imul(al5, bl1) | 0;
+        mid = mid + Math.imul(al5, bh1) | 0;
+        mid = mid + Math.imul(ah5, bl1) | 0;
+        hi = hi + Math.imul(ah5, bh1) | 0;
+        lo = lo + Math.imul(al4, bl2) | 0;
+        mid = mid + Math.imul(al4, bh2) | 0;
+        mid = mid + Math.imul(ah4, bl2) | 0;
+        hi = hi + Math.imul(ah4, bh2) | 0;
+        lo = lo + Math.imul(al3, bl3) | 0;
+        mid = mid + Math.imul(al3, bh3) | 0;
+        mid = mid + Math.imul(ah3, bl3) | 0;
+        hi = hi + Math.imul(ah3, bh3) | 0;
+        lo = lo + Math.imul(al2, bl4) | 0;
+        mid = mid + Math.imul(al2, bh4) | 0;
+        mid = mid + Math.imul(ah2, bl4) | 0;
+        hi = hi + Math.imul(ah2, bh4) | 0;
+        lo = lo + Math.imul(al1, bl5) | 0;
+        mid = mid + Math.imul(al1, bh5) | 0;
+        mid = mid + Math.imul(ah1, bl5) | 0;
+        hi = hi + Math.imul(ah1, bh5) | 0;
+        lo = lo + Math.imul(al0, bl6) | 0;
+        mid = mid + Math.imul(al0, bh6) | 0;
+        mid = mid + Math.imul(ah0, bl6) | 0;
+        hi = hi + Math.imul(ah0, bh6) | 0;
+        var w6 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w6 >>> 26) | 0;
+        w6 &= 67108863;
+        lo = Math.imul(al7, bl0);
+        mid = Math.imul(al7, bh0);
+        mid = mid + Math.imul(ah7, bl0) | 0;
+        hi = Math.imul(ah7, bh0);
+        lo = lo + Math.imul(al6, bl1) | 0;
+        mid = mid + Math.imul(al6, bh1) | 0;
+        mid = mid + Math.imul(ah6, bl1) | 0;
+        hi = hi + Math.imul(ah6, bh1) | 0;
+        lo = lo + Math.imul(al5, bl2) | 0;
+        mid = mid + Math.imul(al5, bh2) | 0;
+        mid = mid + Math.imul(ah5, bl2) | 0;
+        hi = hi + Math.imul(ah5, bh2) | 0;
+        lo = lo + Math.imul(al4, bl3) | 0;
+        mid = mid + Math.imul(al4, bh3) | 0;
+        mid = mid + Math.imul(ah4, bl3) | 0;
+        hi = hi + Math.imul(ah4, bh3) | 0;
+        lo = lo + Math.imul(al3, bl4) | 0;
+        mid = mid + Math.imul(al3, bh4) | 0;
+        mid = mid + Math.imul(ah3, bl4) | 0;
+        hi = hi + Math.imul(ah3, bh4) | 0;
+        lo = lo + Math.imul(al2, bl5) | 0;
+        mid = mid + Math.imul(al2, bh5) | 0;
+        mid = mid + Math.imul(ah2, bl5) | 0;
+        hi = hi + Math.imul(ah2, bh5) | 0;
+        lo = lo + Math.imul(al1, bl6) | 0;
+        mid = mid + Math.imul(al1, bh6) | 0;
+        mid = mid + Math.imul(ah1, bl6) | 0;
+        hi = hi + Math.imul(ah1, bh6) | 0;
+        lo = lo + Math.imul(al0, bl7) | 0;
+        mid = mid + Math.imul(al0, bh7) | 0;
+        mid = mid + Math.imul(ah0, bl7) | 0;
+        hi = hi + Math.imul(ah0, bh7) | 0;
+        var w7 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w7 >>> 26) | 0;
+        w7 &= 67108863;
+        lo = Math.imul(al8, bl0);
+        mid = Math.imul(al8, bh0);
+        mid = mid + Math.imul(ah8, bl0) | 0;
+        hi = Math.imul(ah8, bh0);
+        lo = lo + Math.imul(al7, bl1) | 0;
+        mid = mid + Math.imul(al7, bh1) | 0;
+        mid = mid + Math.imul(ah7, bl1) | 0;
+        hi = hi + Math.imul(ah7, bh1) | 0;
+        lo = lo + Math.imul(al6, bl2) | 0;
+        mid = mid + Math.imul(al6, bh2) | 0;
+        mid = mid + Math.imul(ah6, bl2) | 0;
+        hi = hi + Math.imul(ah6, bh2) | 0;
+        lo = lo + Math.imul(al5, bl3) | 0;
+        mid = mid + Math.imul(al5, bh3) | 0;
+        mid = mid + Math.imul(ah5, bl3) | 0;
+        hi = hi + Math.imul(ah5, bh3) | 0;
+        lo = lo + Math.imul(al4, bl4) | 0;
+        mid = mid + Math.imul(al4, bh4) | 0;
+        mid = mid + Math.imul(ah4, bl4) | 0;
+        hi = hi + Math.imul(ah4, bh4) | 0;
+        lo = lo + Math.imul(al3, bl5) | 0;
+        mid = mid + Math.imul(al3, bh5) | 0;
+        mid = mid + Math.imul(ah3, bl5) | 0;
+        hi = hi + Math.imul(ah3, bh5) | 0;
+        lo = lo + Math.imul(al2, bl6) | 0;
+        mid = mid + Math.imul(al2, bh6) | 0;
+        mid = mid + Math.imul(ah2, bl6) | 0;
+        hi = hi + Math.imul(ah2, bh6) | 0;
+        lo = lo + Math.imul(al1, bl7) | 0;
+        mid = mid + Math.imul(al1, bh7) | 0;
+        mid = mid + Math.imul(ah1, bl7) | 0;
+        hi = hi + Math.imul(ah1, bh7) | 0;
+        lo = lo + Math.imul(al0, bl8) | 0;
+        mid = mid + Math.imul(al0, bh8) | 0;
+        mid = mid + Math.imul(ah0, bl8) | 0;
+        hi = hi + Math.imul(ah0, bh8) | 0;
+        var w8 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w8 >>> 26) | 0;
+        w8 &= 67108863;
+        lo = Math.imul(al9, bl0);
+        mid = Math.imul(al9, bh0);
+        mid = mid + Math.imul(ah9, bl0) | 0;
+        hi = Math.imul(ah9, bh0);
+        lo = lo + Math.imul(al8, bl1) | 0;
+        mid = mid + Math.imul(al8, bh1) | 0;
+        mid = mid + Math.imul(ah8, bl1) | 0;
+        hi = hi + Math.imul(ah8, bh1) | 0;
+        lo = lo + Math.imul(al7, bl2) | 0;
+        mid = mid + Math.imul(al7, bh2) | 0;
+        mid = mid + Math.imul(ah7, bl2) | 0;
+        hi = hi + Math.imul(ah7, bh2) | 0;
+        lo = lo + Math.imul(al6, bl3) | 0;
+        mid = mid + Math.imul(al6, bh3) | 0;
+        mid = mid + Math.imul(ah6, bl3) | 0;
+        hi = hi + Math.imul(ah6, bh3) | 0;
+        lo = lo + Math.imul(al5, bl4) | 0;
+        mid = mid + Math.imul(al5, bh4) | 0;
+        mid = mid + Math.imul(ah5, bl4) | 0;
+        hi = hi + Math.imul(ah5, bh4) | 0;
+        lo = lo + Math.imul(al4, bl5) | 0;
+        mid = mid + Math.imul(al4, bh5) | 0;
+        mid = mid + Math.imul(ah4, bl5) | 0;
+        hi = hi + Math.imul(ah4, bh5) | 0;
+        lo = lo + Math.imul(al3, bl6) | 0;
+        mid = mid + Math.imul(al3, bh6) | 0;
+        mid = mid + Math.imul(ah3, bl6) | 0;
+        hi = hi + Math.imul(ah3, bh6) | 0;
+        lo = lo + Math.imul(al2, bl7) | 0;
+        mid = mid + Math.imul(al2, bh7) | 0;
+        mid = mid + Math.imul(ah2, bl7) | 0;
+        hi = hi + Math.imul(ah2, bh7) | 0;
+        lo = lo + Math.imul(al1, bl8) | 0;
+        mid = mid + Math.imul(al1, bh8) | 0;
+        mid = mid + Math.imul(ah1, bl8) | 0;
+        hi = hi + Math.imul(ah1, bh8) | 0;
+        lo = lo + Math.imul(al0, bl9) | 0;
+        mid = mid + Math.imul(al0, bh9) | 0;
+        mid = mid + Math.imul(ah0, bl9) | 0;
+        hi = hi + Math.imul(ah0, bh9) | 0;
+        var w9 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w9 >>> 26) | 0;
+        w9 &= 67108863;
+        lo = Math.imul(al9, bl1);
+        mid = Math.imul(al9, bh1);
+        mid = mid + Math.imul(ah9, bl1) | 0;
+        hi = Math.imul(ah9, bh1);
+        lo = lo + Math.imul(al8, bl2) | 0;
+        mid = mid + Math.imul(al8, bh2) | 0;
+        mid = mid + Math.imul(ah8, bl2) | 0;
+        hi = hi + Math.imul(ah8, bh2) | 0;
+        lo = lo + Math.imul(al7, bl3) | 0;
+        mid = mid + Math.imul(al7, bh3) | 0;
+        mid = mid + Math.imul(ah7, bl3) | 0;
+        hi = hi + Math.imul(ah7, bh3) | 0;
+        lo = lo + Math.imul(al6, bl4) | 0;
+        mid = mid + Math.imul(al6, bh4) | 0;
+        mid = mid + Math.imul(ah6, bl4) | 0;
+        hi = hi + Math.imul(ah6, bh4) | 0;
+        lo = lo + Math.imul(al5, bl5) | 0;
+        mid = mid + Math.imul(al5, bh5) | 0;
+        mid = mid + Math.imul(ah5, bl5) | 0;
+        hi = hi + Math.imul(ah5, bh5) | 0;
+        lo = lo + Math.imul(al4, bl6) | 0;
+        mid = mid + Math.imul(al4, bh6) | 0;
+        mid = mid + Math.imul(ah4, bl6) | 0;
+        hi = hi + Math.imul(ah4, bh6) | 0;
+        lo = lo + Math.imul(al3, bl7) | 0;
+        mid = mid + Math.imul(al3, bh7) | 0;
+        mid = mid + Math.imul(ah3, bl7) | 0;
+        hi = hi + Math.imul(ah3, bh7) | 0;
+        lo = lo + Math.imul(al2, bl8) | 0;
+        mid = mid + Math.imul(al2, bh8) | 0;
+        mid = mid + Math.imul(ah2, bl8) | 0;
+        hi = hi + Math.imul(ah2, bh8) | 0;
+        lo = lo + Math.imul(al1, bl9) | 0;
+        mid = mid + Math.imul(al1, bh9) | 0;
+        mid = mid + Math.imul(ah1, bl9) | 0;
+        hi = hi + Math.imul(ah1, bh9) | 0;
+        var w10 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w10 >>> 26) | 0;
+        w10 &= 67108863;
+        lo = Math.imul(al9, bl2);
+        mid = Math.imul(al9, bh2);
+        mid = mid + Math.imul(ah9, bl2) | 0;
+        hi = Math.imul(ah9, bh2);
+        lo = lo + Math.imul(al8, bl3) | 0;
+        mid = mid + Math.imul(al8, bh3) | 0;
+        mid = mid + Math.imul(ah8, bl3) | 0;
+        hi = hi + Math.imul(ah8, bh3) | 0;
+        lo = lo + Math.imul(al7, bl4) | 0;
+        mid = mid + Math.imul(al7, bh4) | 0;
+        mid = mid + Math.imul(ah7, bl4) | 0;
+        hi = hi + Math.imul(ah7, bh4) | 0;
+        lo = lo + Math.imul(al6, bl5) | 0;
+        mid = mid + Math.imul(al6, bh5) | 0;
+        mid = mid + Math.imul(ah6, bl5) | 0;
+        hi = hi + Math.imul(ah6, bh5) | 0;
+        lo = lo + Math.imul(al5, bl6) | 0;
+        mid = mid + Math.imul(al5, bh6) | 0;
+        mid = mid + Math.imul(ah5, bl6) | 0;
+        hi = hi + Math.imul(ah5, bh6) | 0;
+        lo = lo + Math.imul(al4, bl7) | 0;
+        mid = mid + Math.imul(al4, bh7) | 0;
+        mid = mid + Math.imul(ah4, bl7) | 0;
+        hi = hi + Math.imul(ah4, bh7) | 0;
+        lo = lo + Math.imul(al3, bl8) | 0;
+        mid = mid + Math.imul(al3, bh8) | 0;
+        mid = mid + Math.imul(ah3, bl8) | 0;
+        hi = hi + Math.imul(ah3, bh8) | 0;
+        lo = lo + Math.imul(al2, bl9) | 0;
+        mid = mid + Math.imul(al2, bh9) | 0;
+        mid = mid + Math.imul(ah2, bl9) | 0;
+        hi = hi + Math.imul(ah2, bh9) | 0;
+        var w11 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w11 >>> 26) | 0;
+        w11 &= 67108863;
+        lo = Math.imul(al9, bl3);
+        mid = Math.imul(al9, bh3);
+        mid = mid + Math.imul(ah9, bl3) | 0;
+        hi = Math.imul(ah9, bh3);
+        lo = lo + Math.imul(al8, bl4) | 0;
+        mid = mid + Math.imul(al8, bh4) | 0;
+        mid = mid + Math.imul(ah8, bl4) | 0;
+        hi = hi + Math.imul(ah8, bh4) | 0;
+        lo = lo + Math.imul(al7, bl5) | 0;
+        mid = mid + Math.imul(al7, bh5) | 0;
+        mid = mid + Math.imul(ah7, bl5) | 0;
+        hi = hi + Math.imul(ah7, bh5) | 0;
+        lo = lo + Math.imul(al6, bl6) | 0;
+        mid = mid + Math.imul(al6, bh6) | 0;
+        mid = mid + Math.imul(ah6, bl6) | 0;
+        hi = hi + Math.imul(ah6, bh6) | 0;
+        lo = lo + Math.imul(al5, bl7) | 0;
+        mid = mid + Math.imul(al5, bh7) | 0;
+        mid = mid + Math.imul(ah5, bl7) | 0;
+        hi = hi + Math.imul(ah5, bh7) | 0;
+        lo = lo + Math.imul(al4, bl8) | 0;
+        mid = mid + Math.imul(al4, bh8) | 0;
+        mid = mid + Math.imul(ah4, bl8) | 0;
+        hi = hi + Math.imul(ah4, bh8) | 0;
+        lo = lo + Math.imul(al3, bl9) | 0;
+        mid = mid + Math.imul(al3, bh9) | 0;
+        mid = mid + Math.imul(ah3, bl9) | 0;
+        hi = hi + Math.imul(ah3, bh9) | 0;
+        var w12 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w12 >>> 26) | 0;
+        w12 &= 67108863;
+        lo = Math.imul(al9, bl4);
+        mid = Math.imul(al9, bh4);
+        mid = mid + Math.imul(ah9, bl4) | 0;
+        hi = Math.imul(ah9, bh4);
+        lo = lo + Math.imul(al8, bl5) | 0;
+        mid = mid + Math.imul(al8, bh5) | 0;
+        mid = mid + Math.imul(ah8, bl5) | 0;
+        hi = hi + Math.imul(ah8, bh5) | 0;
+        lo = lo + Math.imul(al7, bl6) | 0;
+        mid = mid + Math.imul(al7, bh6) | 0;
+        mid = mid + Math.imul(ah7, bl6) | 0;
+        hi = hi + Math.imul(ah7, bh6) | 0;
+        lo = lo + Math.imul(al6, bl7) | 0;
+        mid = mid + Math.imul(al6, bh7) | 0;
+        mid = mid + Math.imul(ah6, bl7) | 0;
+        hi = hi + Math.imul(ah6, bh7) | 0;
+        lo = lo + Math.imul(al5, bl8) | 0;
+        mid = mid + Math.imul(al5, bh8) | 0;
+        mid = mid + Math.imul(ah5, bl8) | 0;
+        hi = hi + Math.imul(ah5, bh8) | 0;
+        lo = lo + Math.imul(al4, bl9) | 0;
+        mid = mid + Math.imul(al4, bh9) | 0;
+        mid = mid + Math.imul(ah4, bl9) | 0;
+        hi = hi + Math.imul(ah4, bh9) | 0;
+        var w13 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w13 >>> 26) | 0;
+        w13 &= 67108863;
+        lo = Math.imul(al9, bl5);
+        mid = Math.imul(al9, bh5);
+        mid = mid + Math.imul(ah9, bl5) | 0;
+        hi = Math.imul(ah9, bh5);
+        lo = lo + Math.imul(al8, bl6) | 0;
+        mid = mid + Math.imul(al8, bh6) | 0;
+        mid = mid + Math.imul(ah8, bl6) | 0;
+        hi = hi + Math.imul(ah8, bh6) | 0;
+        lo = lo + Math.imul(al7, bl7) | 0;
+        mid = mid + Math.imul(al7, bh7) | 0;
+        mid = mid + Math.imul(ah7, bl7) | 0;
+        hi = hi + Math.imul(ah7, bh7) | 0;
+        lo = lo + Math.imul(al6, bl8) | 0;
+        mid = mid + Math.imul(al6, bh8) | 0;
+        mid = mid + Math.imul(ah6, bl8) | 0;
+        hi = hi + Math.imul(ah6, bh8) | 0;
+        lo = lo + Math.imul(al5, bl9) | 0;
+        mid = mid + Math.imul(al5, bh9) | 0;
+        mid = mid + Math.imul(ah5, bl9) | 0;
+        hi = hi + Math.imul(ah5, bh9) | 0;
+        var w14 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w14 >>> 26) | 0;
+        w14 &= 67108863;
+        lo = Math.imul(al9, bl6);
+        mid = Math.imul(al9, bh6);
+        mid = mid + Math.imul(ah9, bl6) | 0;
+        hi = Math.imul(ah9, bh6);
+        lo = lo + Math.imul(al8, bl7) | 0;
+        mid = mid + Math.imul(al8, bh7) | 0;
+        mid = mid + Math.imul(ah8, bl7) | 0;
+        hi = hi + Math.imul(ah8, bh7) | 0;
+        lo = lo + Math.imul(al7, bl8) | 0;
+        mid = mid + Math.imul(al7, bh8) | 0;
+        mid = mid + Math.imul(ah7, bl8) | 0;
+        hi = hi + Math.imul(ah7, bh8) | 0;
+        lo = lo + Math.imul(al6, bl9) | 0;
+        mid = mid + Math.imul(al6, bh9) | 0;
+        mid = mid + Math.imul(ah6, bl9) | 0;
+        hi = hi + Math.imul(ah6, bh9) | 0;
+        var w15 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w15 >>> 26) | 0;
+        w15 &= 67108863;
+        lo = Math.imul(al9, bl7);
+        mid = Math.imul(al9, bh7);
+        mid = mid + Math.imul(ah9, bl7) | 0;
+        hi = Math.imul(ah9, bh7);
+        lo = lo + Math.imul(al8, bl8) | 0;
+        mid = mid + Math.imul(al8, bh8) | 0;
+        mid = mid + Math.imul(ah8, bl8) | 0;
+        hi = hi + Math.imul(ah8, bh8) | 0;
+        lo = lo + Math.imul(al7, bl9) | 0;
+        mid = mid + Math.imul(al7, bh9) | 0;
+        mid = mid + Math.imul(ah7, bl9) | 0;
+        hi = hi + Math.imul(ah7, bh9) | 0;
+        var w16 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w16 >>> 26) | 0;
+        w16 &= 67108863;
+        lo = Math.imul(al9, bl8);
+        mid = Math.imul(al9, bh8);
+        mid = mid + Math.imul(ah9, bl8) | 0;
+        hi = Math.imul(ah9, bh8);
+        lo = lo + Math.imul(al8, bl9) | 0;
+        mid = mid + Math.imul(al8, bh9) | 0;
+        mid = mid + Math.imul(ah8, bl9) | 0;
+        hi = hi + Math.imul(ah8, bh9) | 0;
+        var w17 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w17 >>> 26) | 0;
+        w17 &= 67108863;
+        lo = Math.imul(al9, bl9);
+        mid = Math.imul(al9, bh9);
+        mid = mid + Math.imul(ah9, bl9) | 0;
+        hi = Math.imul(ah9, bh9);
+        var w18 = (c2 + lo | 0) + ((mid & 8191) << 13) | 0;
+        c2 = (hi + (mid >>> 13) | 0) + (w18 >>> 26) | 0;
+        w18 &= 67108863;
+        o2[0] = w0;
+        o2[1] = w1;
+        o2[2] = w2;
+        o2[3] = w3;
+        o2[4] = w4;
+        o2[5] = w5;
+        o2[6] = w6;
+        o2[7] = w7;
+        o2[8] = w8;
+        o2[9] = w9;
+        o2[10] = w10;
+        o2[11] = w11;
+        o2[12] = w12;
+        o2[13] = w13;
+        o2[14] = w14;
+        o2[15] = w15;
+        o2[16] = w16;
+        o2[17] = w17;
+        o2[18] = w18;
+        if (c2 !== 0) {
+          o2[19] = c2;
+          out.length++;
+        }
+        return out;
+      };
+      if (!Math.imul) {
+        comb10MulTo = smallMulTo;
+      }
+      function bigMulTo(self2, num, out) {
+        out.negative = num.negative ^ self2.negative;
+        out.length = self2.length + num.length;
+        var carry = 0;
+        var hncarry = 0;
+        for (var k2 = 0; k2 < out.length - 1; k2++) {
+          var ncarry = hncarry;
+          hncarry = 0;
+          var rword = carry & 67108863;
+          var maxJ = Math.min(k2, num.length - 1);
+          for (var j2 = Math.max(0, k2 - self2.length + 1); j2 <= maxJ; j2++) {
+            var i2 = k2 - j2;
+            var a2 = self2.words[i2] | 0;
+            var b2 = num.words[j2] | 0;
+            var r2 = a2 * b2;
+            var lo = r2 & 67108863;
+            ncarry = ncarry + (r2 / 67108864 | 0) | 0;
+            lo = lo + rword | 0;
+            rword = lo & 67108863;
+            ncarry = ncarry + (lo >>> 26) | 0;
+            hncarry += ncarry >>> 26;
+            ncarry &= 67108863;
+          }
+          out.words[k2] = rword;
+          carry = ncarry;
+          ncarry = hncarry;
+        }
+        if (carry !== 0) {
+          out.words[k2] = carry;
+        } else {
+          out.length--;
+        }
+        return out.strip();
+      }
+      function jumboMulTo(self2, num, out) {
+        var fftm = new FFTM();
+        return fftm.mulp(self2, num, out);
+      }
+      BN.prototype.mulTo = function mulTo(num, out) {
+        var res;
+        var len = this.length + num.length;
+        if (this.length === 10 && num.length === 10) {
+          res = comb10MulTo(this, num, out);
+        } else if (len < 63) {
+          res = smallMulTo(this, num, out);
+        } else if (len < 1024) {
+          res = bigMulTo(this, num, out);
+        } else {
+          res = jumboMulTo(this, num, out);
+        }
+        return res;
+      };
+      function FFTM(x2, y2) {
+        this.x = x2;
+        this.y = y2;
+      }
+      FFTM.prototype.makeRBT = function makeRBT(N2) {
+        var t2 = new Array(N2);
+        var l2 = BN.prototype._countBits(N2) - 1;
+        for (var i2 = 0; i2 < N2; i2++) {
+          t2[i2] = this.revBin(i2, l2, N2);
+        }
+        return t2;
+      };
+      FFTM.prototype.revBin = function revBin(x2, l2, N2) {
+        if (x2 === 0 || x2 === N2 - 1) return x2;
+        var rb = 0;
+        for (var i2 = 0; i2 < l2; i2++) {
+          rb |= (x2 & 1) << l2 - i2 - 1;
+          x2 >>= 1;
+        }
+        return rb;
+      };
+      FFTM.prototype.permute = function permute(rbt, rws, iws, rtws, itws, N2) {
+        for (var i2 = 0; i2 < N2; i2++) {
+          rtws[i2] = rws[rbt[i2]];
+          itws[i2] = iws[rbt[i2]];
+        }
+      };
+      FFTM.prototype.transform = function transform2(rws, iws, rtws, itws, N2, rbt) {
+        this.permute(rbt, rws, iws, rtws, itws, N2);
+        for (var s3 = 1; s3 < N2; s3 <<= 1) {
+          var l2 = s3 << 1;
+          var rtwdf = Math.cos(2 * Math.PI / l2);
+          var itwdf = Math.sin(2 * Math.PI / l2);
+          for (var p2 = 0; p2 < N2; p2 += l2) {
+            var rtwdf_ = rtwdf;
+            var itwdf_ = itwdf;
+            for (var j2 = 0; j2 < s3; j2++) {
+              var re2 = rtws[p2 + j2];
+              var ie2 = itws[p2 + j2];
+              var ro = rtws[p2 + j2 + s3];
+              var io = itws[p2 + j2 + s3];
+              var rx = rtwdf_ * ro - itwdf_ * io;
+              io = rtwdf_ * io + itwdf_ * ro;
+              ro = rx;
+              rtws[p2 + j2] = re2 + ro;
+              itws[p2 + j2] = ie2 + io;
+              rtws[p2 + j2 + s3] = re2 - ro;
+              itws[p2 + j2 + s3] = ie2 - io;
+              if (j2 !== l2) {
+                rx = rtwdf * rtwdf_ - itwdf * itwdf_;
+                itwdf_ = rtwdf * itwdf_ + itwdf * rtwdf_;
+                rtwdf_ = rx;
+              }
+            }
+          }
+        }
+      };
+      FFTM.prototype.guessLen13b = function guessLen13b(n2, m2) {
+        var N2 = Math.max(m2, n2) | 1;
+        var odd = N2 & 1;
+        var i2 = 0;
+        for (N2 = N2 / 2 | 0; N2; N2 = N2 >>> 1) {
+          i2++;
+        }
+        return 1 << i2 + 1 + odd;
+      };
+      FFTM.prototype.conjugate = function conjugate(rws, iws, N2) {
+        if (N2 <= 1) return;
+        for (var i2 = 0; i2 < N2 / 2; i2++) {
+          var t2 = rws[i2];
+          rws[i2] = rws[N2 - i2 - 1];
+          rws[N2 - i2 - 1] = t2;
+          t2 = iws[i2];
+          iws[i2] = -iws[N2 - i2 - 1];
+          iws[N2 - i2 - 1] = -t2;
+        }
+      };
+      FFTM.prototype.normalize13b = function normalize13b(ws, N2) {
+        var carry = 0;
+        for (var i2 = 0; i2 < N2 / 2; i2++) {
+          var w2 = Math.round(ws[2 * i2 + 1] / N2) * 8192 + Math.round(ws[2 * i2] / N2) + carry;
+          ws[i2] = w2 & 67108863;
+          if (w2 < 67108864) {
+            carry = 0;
+          } else {
+            carry = w2 / 67108864 | 0;
+          }
+        }
+        return ws;
+      };
+      FFTM.prototype.convert13b = function convert13b(ws, len, rws, N2) {
+        var carry = 0;
+        for (var i2 = 0; i2 < len; i2++) {
+          carry = carry + (ws[i2] | 0);
+          rws[2 * i2] = carry & 8191;
+          carry = carry >>> 13;
+          rws[2 * i2 + 1] = carry & 8191;
+          carry = carry >>> 13;
+        }
+        for (i2 = 2 * len; i2 < N2; ++i2) {
+          rws[i2] = 0;
+        }
+        assert2(carry === 0);
+        assert2((carry & ~8191) === 0);
+      };
+      FFTM.prototype.stub = function stub(N2) {
+        var ph = new Array(N2);
+        for (var i2 = 0; i2 < N2; i2++) {
+          ph[i2] = 0;
+        }
+        return ph;
+      };
+      FFTM.prototype.mulp = function mulp(x2, y2, out) {
+        var N2 = 2 * this.guessLen13b(x2.length, y2.length);
+        var rbt = this.makeRBT(N2);
+        var _3 = this.stub(N2);
+        var rws = new Array(N2);
+        var rwst = new Array(N2);
+        var iwst = new Array(N2);
+        var nrws = new Array(N2);
+        var nrwst = new Array(N2);
+        var niwst = new Array(N2);
+        var rmws = out.words;
+        rmws.length = N2;
+        this.convert13b(x2.words, x2.length, rws, N2);
+        this.convert13b(y2.words, y2.length, nrws, N2);
+        this.transform(rws, _3, rwst, iwst, N2, rbt);
+        this.transform(nrws, _3, nrwst, niwst, N2, rbt);
+        for (var i2 = 0; i2 < N2; i2++) {
+          var rx = rwst[i2] * nrwst[i2] - iwst[i2] * niwst[i2];
+          iwst[i2] = rwst[i2] * niwst[i2] + iwst[i2] * nrwst[i2];
+          rwst[i2] = rx;
+        }
+        this.conjugate(rwst, iwst, N2);
+        this.transform(rwst, iwst, rmws, _3, N2, rbt);
+        this.conjugate(rmws, _3, N2);
+        this.normalize13b(rmws, N2);
+        out.negative = x2.negative ^ y2.negative;
+        out.length = x2.length + y2.length;
+        return out.strip();
+      };
+      BN.prototype.mul = function mul(num) {
+        var out = new BN(null);
+        out.words = new Array(this.length + num.length);
+        return this.mulTo(num, out);
+      };
+      BN.prototype.mulf = function mulf(num) {
+        var out = new BN(null);
+        out.words = new Array(this.length + num.length);
+        return jumboMulTo(this, num, out);
+      };
+      BN.prototype.imul = function imul(num) {
+        return this.clone().mulTo(num, this);
+      };
+      BN.prototype.imuln = function imuln(num) {
+        assert2(typeof num === "number");
+        assert2(num < 67108864);
+        var carry = 0;
+        for (var i2 = 0; i2 < this.length; i2++) {
+          var w2 = (this.words[i2] | 0) * num;
+          var lo = (w2 & 67108863) + (carry & 67108863);
+          carry >>= 26;
+          carry += w2 / 67108864 | 0;
+          carry += lo >>> 26;
+          this.words[i2] = lo & 67108863;
+        }
+        if (carry !== 0) {
+          this.words[i2] = carry;
+          this.length++;
+        }
+        if (num === 0) {
+          this.length = 1;
+          this._normSign();
+        }
+        return this;
+      };
+      BN.prototype.muln = function muln(num) {
+        return this.clone().imuln(num);
+      };
+      BN.prototype.sqr = function sqr() {
+        return this.mul(this);
+      };
+      BN.prototype.isqr = function isqr() {
+        return this.imul(this.clone());
+      };
+      BN.prototype.pow = function pow(num) {
+        var w2 = toBitArray(num);
+        if (w2.length === 0) return new BN(1);
+        var res = this;
+        for (var i2 = 0; i2 < w2.length; i2++, res = res.sqr()) {
+          if (w2[i2] !== 0) break;
+        }
+        if (++i2 < w2.length) {
+          for (var q2 = res.sqr(); i2 < w2.length; i2++, q2 = q2.sqr()) {
+            if (w2[i2] === 0) continue;
+            res = res.mul(q2);
+          }
+        }
+        return res;
+      };
+      BN.prototype.iushln = function iushln(bits) {
+        assert2(typeof bits === "number" && bits >= 0);
+        var r2 = bits % 26;
+        var s3 = (bits - r2) / 26;
+        var carryMask = 67108863 >>> 26 - r2 << 26 - r2;
+        var i2;
+        if (r2 !== 0) {
+          var carry = 0;
+          for (i2 = 0; i2 < this.length; i2++) {
+            var newCarry = this.words[i2] & carryMask;
+            var c2 = (this.words[i2] | 0) - newCarry << r2;
+            this.words[i2] = c2 | carry;
+            carry = newCarry >>> 26 - r2;
+          }
+          if (carry) {
+            this.words[i2] = carry;
+            this.length++;
+          }
+        }
+        if (s3 !== 0) {
+          for (i2 = this.length - 1; i2 >= 0; i2--) {
+            this.words[i2 + s3] = this.words[i2];
+          }
+          for (i2 = 0; i2 < s3; i2++) {
+            this.words[i2] = 0;
+          }
+          this.length += s3;
+        }
+        return this.strip();
+      };
+      BN.prototype.ishln = function ishln(bits) {
+        assert2(this.negative === 0);
+        return this.iushln(bits);
+      };
+      BN.prototype.iushrn = function iushrn(bits, hint, extended) {
+        assert2(typeof bits === "number" && bits >= 0);
+        var h2;
+        if (hint) {
+          h2 = (hint - hint % 26) / 26;
+        } else {
+          h2 = 0;
+        }
+        var r2 = bits % 26;
+        var s3 = Math.min((bits - r2) / 26, this.length);
+        var mask = 67108863 ^ 67108863 >>> r2 << r2;
+        var maskedWords = extended;
+        h2 -= s3;
+        h2 = Math.max(0, h2);
+        if (maskedWords) {
+          for (var i2 = 0; i2 < s3; i2++) {
+            maskedWords.words[i2] = this.words[i2];
+          }
+          maskedWords.length = s3;
+        }
+        if (s3 === 0) {
+        } else if (this.length > s3) {
+          this.length -= s3;
+          for (i2 = 0; i2 < this.length; i2++) {
+            this.words[i2] = this.words[i2 + s3];
+          }
+        } else {
+          this.words[0] = 0;
+          this.length = 1;
+        }
+        var carry = 0;
+        for (i2 = this.length - 1; i2 >= 0 && (carry !== 0 || i2 >= h2); i2--) {
+          var word = this.words[i2] | 0;
+          this.words[i2] = carry << 26 - r2 | word >>> r2;
+          carry = word & mask;
+        }
+        if (maskedWords && carry !== 0) {
+          maskedWords.words[maskedWords.length++] = carry;
+        }
+        if (this.length === 0) {
+          this.words[0] = 0;
+          this.length = 1;
+        }
+        return this.strip();
+      };
+      BN.prototype.ishrn = function ishrn(bits, hint, extended) {
+        assert2(this.negative === 0);
+        return this.iushrn(bits, hint, extended);
+      };
+      BN.prototype.shln = function shln(bits) {
+        return this.clone().ishln(bits);
+      };
+      BN.prototype.ushln = function ushln(bits) {
+        return this.clone().iushln(bits);
+      };
+      BN.prototype.shrn = function shrn(bits) {
+        return this.clone().ishrn(bits);
+      };
+      BN.prototype.ushrn = function ushrn(bits) {
+        return this.clone().iushrn(bits);
+      };
+      BN.prototype.testn = function testn(bit2) {
+        assert2(typeof bit2 === "number" && bit2 >= 0);
+        var r2 = bit2 % 26;
+        var s3 = (bit2 - r2) / 26;
+        var q2 = 1 << r2;
+        if (this.length <= s3) return false;
+        var w2 = this.words[s3];
+        return !!(w2 & q2);
+      };
+      BN.prototype.imaskn = function imaskn(bits) {
+        assert2(typeof bits === "number" && bits >= 0);
+        var r2 = bits % 26;
+        var s3 = (bits - r2) / 26;
+        assert2(this.negative === 0, "imaskn works only with positive numbers");
+        if (this.length <= s3) {
+          return this;
+        }
+        if (r2 !== 0) {
+          s3++;
+        }
+        this.length = Math.min(s3, this.length);
+        if (r2 !== 0) {
+          var mask = 67108863 ^ 67108863 >>> r2 << r2;
+          this.words[this.length - 1] &= mask;
+        }
+        if (this.length === 0) {
+          this.words[0] = 0;
+          this.length = 1;
+        }
+        return this.strip();
+      };
+      BN.prototype.maskn = function maskn(bits) {
+        return this.clone().imaskn(bits);
+      };
+      BN.prototype.iaddn = function iaddn(num) {
+        assert2(typeof num === "number");
+        assert2(num < 67108864);
+        if (num < 0) return this.isubn(-num);
+        if (this.negative !== 0) {
+          if (this.length === 1 && (this.words[0] | 0) < num) {
+            this.words[0] = num - (this.words[0] | 0);
+            this.negative = 0;
+            return this;
+          }
+          this.negative = 0;
+          this.isubn(num);
+          this.negative = 1;
+          return this;
+        }
+        return this._iaddn(num);
+      };
+      BN.prototype._iaddn = function _iaddn(num) {
+        this.words[0] += num;
+        for (var i2 = 0; i2 < this.length && this.words[i2] >= 67108864; i2++) {
+          this.words[i2] -= 67108864;
+          if (i2 === this.length - 1) {
+            this.words[i2 + 1] = 1;
+          } else {
+            this.words[i2 + 1]++;
+          }
+        }
+        this.length = Math.max(this.length, i2 + 1);
+        return this;
+      };
+      BN.prototype.isubn = function isubn(num) {
+        assert2(typeof num === "number");
+        assert2(num < 67108864);
+        if (num < 0) return this.iaddn(-num);
+        if (this.negative !== 0) {
+          this.negative = 0;
+          this.iaddn(num);
+          this.negative = 1;
+          return this;
+        }
+        this.words[0] -= num;
+        if (this.length === 1 && this.words[0] < 0) {
+          this.words[0] = -this.words[0];
+          this.negative = 1;
+        } else {
+          for (var i2 = 0; i2 < this.length && this.words[i2] < 0; i2++) {
+            this.words[i2] += 67108864;
+            this.words[i2 + 1] -= 1;
+          }
+        }
+        return this.strip();
+      };
+      BN.prototype.addn = function addn(num) {
+        return this.clone().iaddn(num);
+      };
+      BN.prototype.subn = function subn(num) {
+        return this.clone().isubn(num);
+      };
+      BN.prototype.iabs = function iabs() {
+        this.negative = 0;
+        return this;
+      };
+      BN.prototype.abs = function abs() {
+        return this.clone().iabs();
+      };
+      BN.prototype._ishlnsubmul = function _ishlnsubmul(num, mul, shift) {
+        var len = num.length + shift;
+        var i2;
+        this._expand(len);
+        var w2;
+        var carry = 0;
+        for (i2 = 0; i2 < num.length; i2++) {
+          w2 = (this.words[i2 + shift] | 0) + carry;
+          var right = (num.words[i2] | 0) * mul;
+          w2 -= right & 67108863;
+          carry = (w2 >> 26) - (right / 67108864 | 0);
+          this.words[i2 + shift] = w2 & 67108863;
+        }
+        for (; i2 < this.length - shift; i2++) {
+          w2 = (this.words[i2 + shift] | 0) + carry;
+          carry = w2 >> 26;
+          this.words[i2 + shift] = w2 & 67108863;
+        }
+        if (carry === 0) return this.strip();
+        assert2(carry === -1);
+        carry = 0;
+        for (i2 = 0; i2 < this.length; i2++) {
+          w2 = -(this.words[i2] | 0) + carry;
+          carry = w2 >> 26;
+          this.words[i2] = w2 & 67108863;
+        }
+        this.negative = 1;
+        return this.strip();
+      };
+      BN.prototype._wordDiv = function _wordDiv(num, mode) {
+        var shift = this.length - num.length;
+        var a2 = this.clone();
+        var b2 = num;
+        var bhi = b2.words[b2.length - 1] | 0;
+        var bhiBits = this._countBits(bhi);
+        shift = 26 - bhiBits;
+        if (shift !== 0) {
+          b2 = b2.ushln(shift);
+          a2.iushln(shift);
+          bhi = b2.words[b2.length - 1] | 0;
+        }
+        var m2 = a2.length - b2.length;
+        var q2;
+        if (mode !== "mod") {
+          q2 = new BN(null);
+          q2.length = m2 + 1;
+          q2.words = new Array(q2.length);
+          for (var i2 = 0; i2 < q2.length; i2++) {
+            q2.words[i2] = 0;
+          }
+        }
+        var diff = a2.clone()._ishlnsubmul(b2, 1, m2);
+        if (diff.negative === 0) {
+          a2 = diff;
+          if (q2) {
+            q2.words[m2] = 1;
+          }
+        }
+        for (var j2 = m2 - 1; j2 >= 0; j2--) {
+          var qj = (a2.words[b2.length + j2] | 0) * 67108864 + (a2.words[b2.length + j2 - 1] | 0);
+          qj = Math.min(qj / bhi | 0, 67108863);
+          a2._ishlnsubmul(b2, qj, j2);
+          while (a2.negative !== 0) {
+            qj--;
+            a2.negative = 0;
+            a2._ishlnsubmul(b2, 1, j2);
+            if (!a2.isZero()) {
+              a2.negative ^= 1;
+            }
+          }
+          if (q2) {
+            q2.words[j2] = qj;
+          }
+        }
+        if (q2) {
+          q2.strip();
+        }
+        a2.strip();
+        if (mode !== "div" && shift !== 0) {
+          a2.iushrn(shift);
+        }
+        return {
+          div: q2 || null,
+          mod: a2
+        };
+      };
+      BN.prototype.divmod = function divmod(num, mode, positive) {
+        assert2(!num.isZero());
+        if (this.isZero()) {
+          return {
+            div: new BN(0),
+            mod: new BN(0)
+          };
+        }
+        var div, mod, res;
+        if (this.negative !== 0 && num.negative === 0) {
+          res = this.neg().divmod(num, mode);
+          if (mode !== "mod") {
+            div = res.div.neg();
+          }
+          if (mode !== "div") {
+            mod = res.mod.neg();
+            if (positive && mod.negative !== 0) {
+              mod.iadd(num);
+            }
+          }
+          return {
+            div,
+            mod
+          };
+        }
+        if (this.negative === 0 && num.negative !== 0) {
+          res = this.divmod(num.neg(), mode);
+          if (mode !== "mod") {
+            div = res.div.neg();
+          }
+          return {
+            div,
+            mod: res.mod
+          };
+        }
+        if ((this.negative & num.negative) !== 0) {
+          res = this.neg().divmod(num.neg(), mode);
+          if (mode !== "div") {
+            mod = res.mod.neg();
+            if (positive && mod.negative !== 0) {
+              mod.isub(num);
+            }
+          }
+          return {
+            div: res.div,
+            mod
+          };
+        }
+        if (num.length > this.length || this.cmp(num) < 0) {
+          return {
+            div: new BN(0),
+            mod: this
+          };
+        }
+        if (num.length === 1) {
+          if (mode === "div") {
+            return {
+              div: this.divn(num.words[0]),
+              mod: null
+            };
+          }
+          if (mode === "mod") {
+            return {
+              div: null,
+              mod: new BN(this.modn(num.words[0]))
+            };
+          }
+          return {
+            div: this.divn(num.words[0]),
+            mod: new BN(this.modn(num.words[0]))
+          };
+        }
+        return this._wordDiv(num, mode);
+      };
+      BN.prototype.div = function div(num) {
+        return this.divmod(num, "div", false).div;
+      };
+      BN.prototype.mod = function mod(num) {
+        return this.divmod(num, "mod", false).mod;
+      };
+      BN.prototype.umod = function umod(num) {
+        return this.divmod(num, "mod", true).mod;
+      };
+      BN.prototype.divRound = function divRound(num) {
+        var dm = this.divmod(num);
+        if (dm.mod.isZero()) return dm.div;
+        var mod = dm.mod.abs();
+        var half = num.abs().iushrn(1);
+        var r2 = num.words[0] & 1;
+        var cmp = mod.cmp(half);
+        if (cmp < 0 || r2 === 1 && cmp === 0) return dm.div;
+        var up = new BN(1);
+        up.negative = this.negative ^ num.negative;
+        return dm.div.iadd(up);
+      };
+      BN.prototype.modn = function modn(num) {
+        assert2(num <= 67108863);
+        var p2 = (1 << 26) % num;
+        var acc = 0;
+        for (var i2 = this.length - 1; i2 >= 0; i2--) {
+          acc = (p2 * acc + (this.words[i2] | 0)) % num;
+        }
+        return acc;
+      };
+      BN.prototype.idivn = function idivn(num) {
+        assert2(num <= 67108863);
+        var carry = 0;
+        for (var i2 = this.length - 1; i2 >= 0; i2--) {
+          var w2 = (this.words[i2] | 0) + carry * 67108864;
+          this.words[i2] = w2 / num | 0;
+          carry = w2 % num;
+        }
+        return this.strip();
+      };
+      BN.prototype.divn = function divn(num) {
+        return this.clone().idivn(num);
+      };
+      BN.prototype.egcd = function egcd(p2) {
+        assert2(p2.negative === 0);
+        assert2(!p2.isZero());
+        var x2 = this;
+        var y2 = p2.clone();
+        if (x2.negative !== 0) {
+          x2 = x2.umod(p2);
+        } else {
+          x2 = x2.clone();
+        }
+        var A2 = new BN(1);
+        var B2 = new BN(0);
+        var C2 = new BN(0);
+        var D3 = new BN(1);
+        var g2 = 0;
+        while (x2.isEven() && y2.isEven()) {
+          x2.iushrn(1);
+          y2.iushrn(1);
+          ++g2;
+        }
+        var yp = y2.clone();
+        var xp = x2.clone();
+        while (!x2.isZero()) {
+          for (var i2 = 0, im = 1; (x2.words[0] & im) === 0 && i2 < 26; ++i2, im <<= 1) ;
+          if (i2 > 0) {
+            x2.iushrn(i2);
+            while (i2-- > 0) {
+              if (A2.isOdd() || B2.isOdd()) {
+                A2.iadd(yp);
+                B2.isub(xp);
+              }
+              A2.iushrn(1);
+              B2.iushrn(1);
+            }
+          }
+          for (var j2 = 0, jm = 1; (y2.words[0] & jm) === 0 && j2 < 26; ++j2, jm <<= 1) ;
+          if (j2 > 0) {
+            y2.iushrn(j2);
+            while (j2-- > 0) {
+              if (C2.isOdd() || D3.isOdd()) {
+                C2.iadd(yp);
+                D3.isub(xp);
+              }
+              C2.iushrn(1);
+              D3.iushrn(1);
+            }
+          }
+          if (x2.cmp(y2) >= 0) {
+            x2.isub(y2);
+            A2.isub(C2);
+            B2.isub(D3);
+          } else {
+            y2.isub(x2);
+            C2.isub(A2);
+            D3.isub(B2);
+          }
+        }
+        return {
+          a: C2,
+          b: D3,
+          gcd: y2.iushln(g2)
+        };
+      };
+      BN.prototype._invmp = function _invmp(p2) {
+        assert2(p2.negative === 0);
+        assert2(!p2.isZero());
+        var a2 = this;
+        var b2 = p2.clone();
+        if (a2.negative !== 0) {
+          a2 = a2.umod(p2);
+        } else {
+          a2 = a2.clone();
+        }
+        var x1 = new BN(1);
+        var x2 = new BN(0);
+        var delta = b2.clone();
+        while (a2.cmpn(1) > 0 && b2.cmpn(1) > 0) {
+          for (var i2 = 0, im = 1; (a2.words[0] & im) === 0 && i2 < 26; ++i2, im <<= 1) ;
+          if (i2 > 0) {
+            a2.iushrn(i2);
+            while (i2-- > 0) {
+              if (x1.isOdd()) {
+                x1.iadd(delta);
+              }
+              x1.iushrn(1);
+            }
+          }
+          for (var j2 = 0, jm = 1; (b2.words[0] & jm) === 0 && j2 < 26; ++j2, jm <<= 1) ;
+          if (j2 > 0) {
+            b2.iushrn(j2);
+            while (j2-- > 0) {
+              if (x2.isOdd()) {
+                x2.iadd(delta);
+              }
+              x2.iushrn(1);
+            }
+          }
+          if (a2.cmp(b2) >= 0) {
+            a2.isub(b2);
+            x1.isub(x2);
+          } else {
+            b2.isub(a2);
+            x2.isub(x1);
+          }
+        }
+        var res;
+        if (a2.cmpn(1) === 0) {
+          res = x1;
+        } else {
+          res = x2;
+        }
+        if (res.cmpn(0) < 0) {
+          res.iadd(p2);
+        }
+        return res;
+      };
+      BN.prototype.gcd = function gcd(num) {
+        if (this.isZero()) return num.abs();
+        if (num.isZero()) return this.abs();
+        var a2 = this.clone();
+        var b2 = num.clone();
+        a2.negative = 0;
+        b2.negative = 0;
+        for (var shift = 0; a2.isEven() && b2.isEven(); shift++) {
+          a2.iushrn(1);
+          b2.iushrn(1);
+        }
+        do {
+          while (a2.isEven()) {
+            a2.iushrn(1);
+          }
+          while (b2.isEven()) {
+            b2.iushrn(1);
+          }
+          var r2 = a2.cmp(b2);
+          if (r2 < 0) {
+            var t2 = a2;
+            a2 = b2;
+            b2 = t2;
+          } else if (r2 === 0 || b2.cmpn(1) === 0) {
+            break;
+          }
+          a2.isub(b2);
+        } while (true);
+        return b2.iushln(shift);
+      };
+      BN.prototype.invm = function invm(num) {
+        return this.egcd(num).a.umod(num);
+      };
+      BN.prototype.isEven = function isEven() {
+        return (this.words[0] & 1) === 0;
+      };
+      BN.prototype.isOdd = function isOdd() {
+        return (this.words[0] & 1) === 1;
+      };
+      BN.prototype.andln = function andln(num) {
+        return this.words[0] & num;
+      };
+      BN.prototype.bincn = function bincn(bit2) {
+        assert2(typeof bit2 === "number");
+        var r2 = bit2 % 26;
+        var s3 = (bit2 - r2) / 26;
+        var q2 = 1 << r2;
+        if (this.length <= s3) {
+          this._expand(s3 + 1);
+          this.words[s3] |= q2;
+          return this;
+        }
+        var carry = q2;
+        for (var i2 = s3; carry !== 0 && i2 < this.length; i2++) {
+          var w2 = this.words[i2] | 0;
+          w2 += carry;
+          carry = w2 >>> 26;
+          w2 &= 67108863;
+          this.words[i2] = w2;
+        }
+        if (carry !== 0) {
+          this.words[i2] = carry;
+          this.length++;
+        }
+        return this;
+      };
+      BN.prototype.isZero = function isZero() {
+        return this.length === 1 && this.words[0] === 0;
+      };
+      BN.prototype.cmpn = function cmpn(num) {
+        var negative = num < 0;
+        if (this.negative !== 0 && !negative) return -1;
+        if (this.negative === 0 && negative) return 1;
+        this.strip();
+        var res;
+        if (this.length > 1) {
+          res = 1;
+        } else {
+          if (negative) {
+            num = -num;
+          }
+          assert2(num <= 67108863, "Number is too big");
+          var w2 = this.words[0] | 0;
+          res = w2 === num ? 0 : w2 < num ? -1 : 1;
+        }
+        if (this.negative !== 0) return -res | 0;
+        return res;
+      };
+      BN.prototype.cmp = function cmp(num) {
+        if (this.negative !== 0 && num.negative === 0) return -1;
+        if (this.negative === 0 && num.negative !== 0) return 1;
+        var res = this.ucmp(num);
+        if (this.negative !== 0) return -res | 0;
+        return res;
+      };
+      BN.prototype.ucmp = function ucmp(num) {
+        if (this.length > num.length) return 1;
+        if (this.length < num.length) return -1;
+        var res = 0;
+        for (var i2 = this.length - 1; i2 >= 0; i2--) {
+          var a2 = this.words[i2] | 0;
+          var b2 = num.words[i2] | 0;
+          if (a2 === b2) continue;
+          if (a2 < b2) {
+            res = -1;
+          } else if (a2 > b2) {
+            res = 1;
+          }
+          break;
+        }
+        return res;
+      };
+      BN.prototype.gtn = function gtn(num) {
+        return this.cmpn(num) === 1;
+      };
+      BN.prototype.gt = function gt3(num) {
+        return this.cmp(num) === 1;
+      };
+      BN.prototype.gten = function gten(num) {
+        return this.cmpn(num) >= 0;
+      };
+      BN.prototype.gte = function gte2(num) {
+        return this.cmp(num) >= 0;
+      };
+      BN.prototype.ltn = function ltn(num) {
+        return this.cmpn(num) === -1;
+      };
+      BN.prototype.lt = function lt3(num) {
+        return this.cmp(num) === -1;
+      };
+      BN.prototype.lten = function lten(num) {
+        return this.cmpn(num) <= 0;
+      };
+      BN.prototype.lte = function lte2(num) {
+        return this.cmp(num) <= 0;
+      };
+      BN.prototype.eqn = function eqn(num) {
+        return this.cmpn(num) === 0;
+      };
+      BN.prototype.eq = function eq2(num) {
+        return this.cmp(num) === 0;
+      };
+      BN.red = function red(num) {
+        return new Red(num);
+      };
+      BN.prototype.toRed = function toRed(ctx) {
+        assert2(!this.red, "Already a number in reduction context");
+        assert2(this.negative === 0, "red works only with positives");
+        return ctx.convertTo(this)._forceRed(ctx);
+      };
+      BN.prototype.fromRed = function fromRed() {
+        assert2(this.red, "fromRed works only with numbers in reduction context");
+        return this.red.convertFrom(this);
+      };
+      BN.prototype._forceRed = function _forceRed(ctx) {
+        this.red = ctx;
+        return this;
+      };
+      BN.prototype.forceRed = function forceRed(ctx) {
+        assert2(!this.red, "Already a number in reduction context");
+        return this._forceRed(ctx);
+      };
+      BN.prototype.redAdd = function redAdd(num) {
+        assert2(this.red, "redAdd works only with red numbers");
+        return this.red.add(this, num);
+      };
+      BN.prototype.redIAdd = function redIAdd(num) {
+        assert2(this.red, "redIAdd works only with red numbers");
+        return this.red.iadd(this, num);
+      };
+      BN.prototype.redSub = function redSub(num) {
+        assert2(this.red, "redSub works only with red numbers");
+        return this.red.sub(this, num);
+      };
+      BN.prototype.redISub = function redISub(num) {
+        assert2(this.red, "redISub works only with red numbers");
+        return this.red.isub(this, num);
+      };
+      BN.prototype.redShl = function redShl(num) {
+        assert2(this.red, "redShl works only with red numbers");
+        return this.red.shl(this, num);
+      };
+      BN.prototype.redMul = function redMul(num) {
+        assert2(this.red, "redMul works only with red numbers");
+        this.red._verify2(this, num);
+        return this.red.mul(this, num);
+      };
+      BN.prototype.redIMul = function redIMul(num) {
+        assert2(this.red, "redMul works only with red numbers");
+        this.red._verify2(this, num);
+        return this.red.imul(this, num);
+      };
+      BN.prototype.redSqr = function redSqr() {
+        assert2(this.red, "redSqr works only with red numbers");
+        this.red._verify1(this);
+        return this.red.sqr(this);
+      };
+      BN.prototype.redISqr = function redISqr() {
+        assert2(this.red, "redISqr works only with red numbers");
+        this.red._verify1(this);
+        return this.red.isqr(this);
+      };
+      BN.prototype.redSqrt = function redSqrt() {
+        assert2(this.red, "redSqrt works only with red numbers");
+        this.red._verify1(this);
+        return this.red.sqrt(this);
+      };
+      BN.prototype.redInvm = function redInvm() {
+        assert2(this.red, "redInvm works only with red numbers");
+        this.red._verify1(this);
+        return this.red.invm(this);
+      };
+      BN.prototype.redNeg = function redNeg() {
+        assert2(this.red, "redNeg works only with red numbers");
+        this.red._verify1(this);
+        return this.red.neg(this);
+      };
+      BN.prototype.redPow = function redPow(num) {
+        assert2(this.red && !num.red, "redPow(normalNum)");
+        this.red._verify1(this);
+        return this.red.pow(this, num);
+      };
+      var primes = {
+        k256: null,
+        p224: null,
+        p192: null,
+        p25519: null
+      };
+      function MPrime(name, p2) {
+        this.name = name;
+        this.p = new BN(p2, 16);
+        this.n = this.p.bitLength();
+        this.k = new BN(1).iushln(this.n).isub(this.p);
+        this.tmp = this._tmp();
+      }
+      MPrime.prototype._tmp = function _tmp() {
+        var tmp = new BN(null);
+        tmp.words = new Array(Math.ceil(this.n / 13));
+        return tmp;
+      };
+      MPrime.prototype.ireduce = function ireduce(num) {
+        var r2 = num;
+        var rlen;
+        do {
+          this.split(r2, this.tmp);
+          r2 = this.imulK(r2);
+          r2 = r2.iadd(this.tmp);
+          rlen = r2.bitLength();
+        } while (rlen > this.n);
+        var cmp = rlen < this.n ? -1 : r2.ucmp(this.p);
+        if (cmp === 0) {
+          r2.words[0] = 0;
+          r2.length = 1;
+        } else if (cmp > 0) {
+          r2.isub(this.p);
+        } else {
+          if (r2.strip !== void 0) {
+            r2.strip();
+          } else {
+            r2._strip();
+          }
+        }
+        return r2;
+      };
+      MPrime.prototype.split = function split2(input, out) {
+        input.iushrn(this.n, 0, out);
+      };
+      MPrime.prototype.imulK = function imulK(num) {
+        return num.imul(this.k);
+      };
+      function K256() {
+        MPrime.call(
+          this,
+          "k256",
+          "ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff fffffffe fffffc2f"
+        );
+      }
+      inherits(K256, MPrime);
+      K256.prototype.split = function split2(input, output) {
+        var mask = 4194303;
+        var outLen = Math.min(input.length, 9);
+        for (var i2 = 0; i2 < outLen; i2++) {
+          output.words[i2] = input.words[i2];
+        }
+        output.length = outLen;
+        if (input.length <= 9) {
+          input.words[0] = 0;
+          input.length = 1;
+          return;
+        }
+        var prev = input.words[9];
+        output.words[output.length++] = prev & mask;
+        for (i2 = 10; i2 < input.length; i2++) {
+          var next = input.words[i2] | 0;
+          input.words[i2 - 10] = (next & mask) << 4 | prev >>> 22;
+          prev = next;
+        }
+        prev >>>= 22;
+        input.words[i2 - 10] = prev;
+        if (prev === 0 && input.length > 10) {
+          input.length -= 10;
+        } else {
+          input.length -= 9;
+        }
+      };
+      K256.prototype.imulK = function imulK(num) {
+        num.words[num.length] = 0;
+        num.words[num.length + 1] = 0;
+        num.length += 2;
+        var lo = 0;
+        for (var i2 = 0; i2 < num.length; i2++) {
+          var w2 = num.words[i2] | 0;
+          lo += w2 * 977;
+          num.words[i2] = lo & 67108863;
+          lo = w2 * 64 + (lo / 67108864 | 0);
+        }
+        if (num.words[num.length - 1] === 0) {
+          num.length--;
+          if (num.words[num.length - 1] === 0) {
+            num.length--;
+          }
+        }
+        return num;
+      };
+      function P224() {
+        MPrime.call(
+          this,
+          "p224",
+          "ffffffff ffffffff ffffffff ffffffff 00000000 00000000 00000001"
+        );
+      }
+      inherits(P224, MPrime);
+      function P192() {
+        MPrime.call(
+          this,
+          "p192",
+          "ffffffff ffffffff ffffffff fffffffe ffffffff ffffffff"
+        );
+      }
+      inherits(P192, MPrime);
+      function P25519() {
+        MPrime.call(
+          this,
+          "25519",
+          "7fffffffffffffff ffffffffffffffff ffffffffffffffff ffffffffffffffed"
+        );
+      }
+      inherits(P25519, MPrime);
+      P25519.prototype.imulK = function imulK(num) {
+        var carry = 0;
+        for (var i2 = 0; i2 < num.length; i2++) {
+          var hi = (num.words[i2] | 0) * 19 + carry;
+          var lo = hi & 67108863;
+          hi >>>= 26;
+          num.words[i2] = lo;
+          carry = hi;
+        }
+        if (carry !== 0) {
+          num.words[num.length++] = carry;
+        }
+        return num;
+      };
+      BN._prime = function prime(name) {
+        if (primes[name]) return primes[name];
+        var prime2;
+        if (name === "k256") {
+          prime2 = new K256();
+        } else if (name === "p224") {
+          prime2 = new P224();
+        } else if (name === "p192") {
+          prime2 = new P192();
+        } else if (name === "p25519") {
+          prime2 = new P25519();
+        } else {
+          throw new Error("Unknown prime " + name);
+        }
+        primes[name] = prime2;
+        return prime2;
+      };
+      function Red(m2) {
+        if (typeof m2 === "string") {
+          var prime = BN._prime(m2);
+          this.m = prime.p;
+          this.prime = prime;
+        } else {
+          assert2(m2.gtn(1), "modulus must be greater than 1");
+          this.m = m2;
+          this.prime = null;
+        }
+      }
+      Red.prototype._verify1 = function _verify1(a2) {
+        assert2(a2.negative === 0, "red works only with positives");
+        assert2(a2.red, "red works only with red numbers");
+      };
+      Red.prototype._verify2 = function _verify2(a2, b2) {
+        assert2((a2.negative | b2.negative) === 0, "red works only with positives");
+        assert2(
+          a2.red && a2.red === b2.red,
+          "red works only with red numbers"
+        );
+      };
+      Red.prototype.imod = function imod(a2) {
+        if (this.prime) return this.prime.ireduce(a2)._forceRed(this);
+        return a2.umod(this.m)._forceRed(this);
+      };
+      Red.prototype.neg = function neg(a2) {
+        if (a2.isZero()) {
+          return a2.clone();
+        }
+        return this.m.sub(a2)._forceRed(this);
+      };
+      Red.prototype.add = function add(a2, b2) {
+        this._verify2(a2, b2);
+        var res = a2.add(b2);
+        if (res.cmp(this.m) >= 0) {
+          res.isub(this.m);
+        }
+        return res._forceRed(this);
+      };
+      Red.prototype.iadd = function iadd(a2, b2) {
+        this._verify2(a2, b2);
+        var res = a2.iadd(b2);
+        if (res.cmp(this.m) >= 0) {
+          res.isub(this.m);
+        }
+        return res;
+      };
+      Red.prototype.sub = function sub(a2, b2) {
+        this._verify2(a2, b2);
+        var res = a2.sub(b2);
+        if (res.cmpn(0) < 0) {
+          res.iadd(this.m);
+        }
+        return res._forceRed(this);
+      };
+      Red.prototype.isub = function isub(a2, b2) {
+        this._verify2(a2, b2);
+        var res = a2.isub(b2);
+        if (res.cmpn(0) < 0) {
+          res.iadd(this.m);
+        }
+        return res;
+      };
+      Red.prototype.shl = function shl(a2, num) {
+        this._verify1(a2);
+        return this.imod(a2.ushln(num));
+      };
+      Red.prototype.imul = function imul(a2, b2) {
+        this._verify2(a2, b2);
+        return this.imod(a2.imul(b2));
+      };
+      Red.prototype.mul = function mul(a2, b2) {
+        this._verify2(a2, b2);
+        return this.imod(a2.mul(b2));
+      };
+      Red.prototype.isqr = function isqr(a2) {
+        return this.imul(a2, a2.clone());
+      };
+      Red.prototype.sqr = function sqr(a2) {
+        return this.mul(a2, a2);
+      };
+      Red.prototype.sqrt = function sqrt(a2) {
+        if (a2.isZero()) return a2.clone();
+        var mod3 = this.m.andln(3);
+        assert2(mod3 % 2 === 1);
+        if (mod3 === 3) {
+          var pow = this.m.add(new BN(1)).iushrn(2);
+          return this.pow(a2, pow);
+        }
+        var q2 = this.m.subn(1);
+        var s3 = 0;
+        while (!q2.isZero() && q2.andln(1) === 0) {
+          s3++;
+          q2.iushrn(1);
+        }
+        assert2(!q2.isZero());
+        var one = new BN(1).toRed(this);
+        var nOne = one.redNeg();
+        var lpow = this.m.subn(1).iushrn(1);
+        var z2 = this.m.bitLength();
+        z2 = new BN(2 * z2 * z2).toRed(this);
+        while (this.pow(z2, lpow).cmp(nOne) !== 0) {
+          z2.redIAdd(nOne);
+        }
+        var c2 = this.pow(z2, q2);
+        var r2 = this.pow(a2, q2.addn(1).iushrn(1));
+        var t2 = this.pow(a2, q2);
+        var m2 = s3;
+        while (t2.cmp(one) !== 0) {
+          var tmp = t2;
+          for (var i2 = 0; tmp.cmp(one) !== 0; i2++) {
+            tmp = tmp.redSqr();
+          }
+          assert2(i2 < m2);
+          var b2 = this.pow(c2, new BN(1).iushln(m2 - i2 - 1));
+          r2 = r2.redMul(b2);
+          c2 = b2.redSqr();
+          t2 = t2.redMul(c2);
+          m2 = i2;
+        }
+        return r2;
+      };
+      Red.prototype.invm = function invm(a2) {
+        var inv = a2._invmp(this.m);
+        if (inv.negative !== 0) {
+          inv.negative = 0;
+          return this.imod(inv).redNeg();
+        } else {
+          return this.imod(inv);
+        }
+      };
+      Red.prototype.pow = function pow(a2, num) {
+        if (num.isZero()) return new BN(1).toRed(this);
+        if (num.cmpn(1) === 0) return a2.clone();
+        var windowSize = 4;
+        var wnd = new Array(1 << windowSize);
+        wnd[0] = new BN(1).toRed(this);
+        wnd[1] = a2;
+        for (var i2 = 2; i2 < wnd.length; i2++) {
+          wnd[i2] = this.mul(wnd[i2 - 1], a2);
+        }
+        var res = wnd[0];
+        var current = 0;
+        var currentLen = 0;
+        var start = num.bitLength() % 26;
+        if (start === 0) {
+          start = 26;
+        }
+        for (i2 = num.length - 1; i2 >= 0; i2--) {
+          var word = num.words[i2];
+          for (var j2 = start - 1; j2 >= 0; j2--) {
+            var bit2 = word >> j2 & 1;
+            if (res !== wnd[0]) {
+              res = this.sqr(res);
+            }
+            if (bit2 === 0 && current === 0) {
+              currentLen = 0;
+              continue;
+            }
+            current <<= 1;
+            current |= bit2;
+            currentLen++;
+            if (currentLen !== windowSize && (i2 !== 0 || j2 !== 0)) continue;
+            res = this.mul(res, wnd[current]);
+            currentLen = 0;
+            current = 0;
+          }
+          start = 26;
+        }
+        return res;
+      };
+      Red.prototype.convertTo = function convertTo(num) {
+        var r2 = num.umod(this.m);
+        return r2 === num ? r2.clone() : r2;
+      };
+      Red.prototype.convertFrom = function convertFrom(num) {
+        var res = num.clone();
+        res.red = null;
+        return res;
+      };
+      BN.mont = function mont(num) {
+        return new Mont(num);
+      };
+      function Mont(m2) {
+        Red.call(this, m2);
+        this.shift = this.m.bitLength();
+        if (this.shift % 26 !== 0) {
+          this.shift += 26 - this.shift % 26;
+        }
+        this.r = new BN(1).iushln(this.shift);
+        this.r2 = this.imod(this.r.sqr());
+        this.rinv = this.r._invmp(this.m);
+        this.minv = this.rinv.mul(this.r).isubn(1).div(this.m);
+        this.minv = this.minv.umod(this.r);
+        this.minv = this.r.sub(this.minv);
+      }
+      inherits(Mont, Red);
+      Mont.prototype.convertTo = function convertTo(num) {
+        return this.imod(num.ushln(this.shift));
+      };
+      Mont.prototype.convertFrom = function convertFrom(num) {
+        var r2 = this.imod(num.mul(this.rinv));
+        r2.red = null;
+        return r2;
+      };
+      Mont.prototype.imul = function imul(a2, b2) {
+        if (a2.isZero() || b2.isZero()) {
+          a2.words[0] = 0;
+          a2.length = 1;
+          return a2;
+        }
+        var t2 = a2.imul(b2);
+        var c2 = t2.maskn(this.shift).mul(this.minv).imaskn(this.shift).mul(this.m);
+        var u2 = t2.isub(c2).iushrn(this.shift);
+        var res = u2;
+        if (u2.cmp(this.m) >= 0) {
+          res = u2.isub(this.m);
+        } else if (u2.cmpn(0) < 0) {
+          res = u2.iadd(this.m);
+        }
+        return res._forceRed(this);
+      };
+      Mont.prototype.mul = function mul(a2, b2) {
+        if (a2.isZero() || b2.isZero()) return new BN(0)._forceRed(this);
+        var t2 = a2.mul(b2);
+        var c2 = t2.maskn(this.shift).mul(this.minv).imaskn(this.shift).mul(this.m);
+        var u2 = t2.isub(c2).iushrn(this.shift);
+        var res = u2;
+        if (u2.cmp(this.m) >= 0) {
+          res = u2.isub(this.m);
+        } else if (u2.cmpn(0) < 0) {
+          res = u2.iadd(this.m);
+        }
+        return res._forceRed(this);
+      };
+      Mont.prototype.invm = function invm(a2) {
+        var res = this.imod(a2._invmp(this.m).mul(this.r2));
+        return res._forceRed(this);
+      };
+    })(typeof module === "undefined" || module, exports);
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/reporter.js
+var require_reporter = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/reporter.js"(exports) {
+    "use strict";
+    var inherits = require_inherits();
+    function Reporter(options) {
+      this._reporterState = {
+        obj: null,
+        path: [],
+        options: options || {},
+        errors: []
+      };
+    }
+    exports.Reporter = Reporter;
+    Reporter.prototype.isError = function isError(obj) {
+      return obj instanceof ReporterError;
+    };
+    Reporter.prototype.save = function save() {
+      const state = this._reporterState;
+      return { obj: state.obj, pathLen: state.path.length };
+    };
+    Reporter.prototype.restore = function restore(data) {
+      const state = this._reporterState;
+      state.obj = data.obj;
+      state.path = state.path.slice(0, data.pathLen);
+    };
+    Reporter.prototype.enterKey = function enterKey(key) {
+      return this._reporterState.path.push(key);
+    };
+    Reporter.prototype.exitKey = function exitKey(index2) {
+      const state = this._reporterState;
+      state.path = state.path.slice(0, index2 - 1);
+    };
+    Reporter.prototype.leaveKey = function leaveKey(index2, key, value) {
+      const state = this._reporterState;
+      this.exitKey(index2);
+      if (state.obj !== null)
+        state.obj[key] = value;
+    };
+    Reporter.prototype.path = function path2() {
+      return this._reporterState.path.join("/");
+    };
+    Reporter.prototype.enterObject = function enterObject() {
+      const state = this._reporterState;
+      const prev = state.obj;
+      state.obj = {};
+      return prev;
+    };
+    Reporter.prototype.leaveObject = function leaveObject(prev) {
+      const state = this._reporterState;
+      const now = state.obj;
+      state.obj = prev;
+      return now;
+    };
+    Reporter.prototype.error = function error40(msg) {
+      let err;
+      const state = this._reporterState;
+      const inherited = msg instanceof ReporterError;
+      if (inherited) {
+        err = msg;
+      } else {
+        err = new ReporterError(state.path.map(function(elem) {
+          return "[" + JSON.stringify(elem) + "]";
+        }).join(""), msg.message || msg, msg.stack);
+      }
+      if (!state.options.partial)
+        throw err;
+      if (!inherited)
+        state.errors.push(err);
+      return err;
+    };
+    Reporter.prototype.wrapResult = function wrapResult(result) {
+      const state = this._reporterState;
+      if (!state.options.partial)
+        return result;
+      return {
+        result: this.isError(result) ? null : result,
+        errors: state.errors
+      };
+    };
+    function ReporterError(path2, msg) {
+      this.path = path2;
+      this.rethrow(msg);
+    }
+    inherits(ReporterError, Error);
+    ReporterError.prototype.rethrow = function rethrow(msg) {
+      this.message = msg + " at: " + (this.path || "(shallow)");
+      if (Error.captureStackTrace)
+        Error.captureStackTrace(this, ReporterError);
+      if (!this.stack) {
+        try {
+          throw new Error(this.message);
+        } catch (e2) {
+          this.stack = e2.stack;
+        }
+      }
+      return this;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/buffer.js
+var require_buffer = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/buffer.js"(exports) {
+    "use strict";
+    var inherits = require_inherits();
+    var Reporter = require_reporter().Reporter;
+    var Buffer2 = require_safer().Buffer;
+    function DecoderBuffer(base, options) {
+      Reporter.call(this, options);
+      if (!Buffer2.isBuffer(base)) {
+        this.error("Input not Buffer");
+        return;
+      }
+      this.base = base;
+      this.offset = 0;
+      this.length = base.length;
+    }
+    inherits(DecoderBuffer, Reporter);
+    exports.DecoderBuffer = DecoderBuffer;
+    DecoderBuffer.isDecoderBuffer = function isDecoderBuffer(data) {
+      if (data instanceof DecoderBuffer) {
+        return true;
+      }
+      const isCompatible = typeof data === "object" && Buffer2.isBuffer(data.base) && data.constructor.name === "DecoderBuffer" && typeof data.offset === "number" && typeof data.length === "number" && typeof data.save === "function" && typeof data.restore === "function" && typeof data.isEmpty === "function" && typeof data.readUInt8 === "function" && typeof data.skip === "function" && typeof data.raw === "function";
+      return isCompatible;
+    };
+    DecoderBuffer.prototype.save = function save() {
+      return { offset: this.offset, reporter: Reporter.prototype.save.call(this) };
+    };
+    DecoderBuffer.prototype.restore = function restore(save) {
+      const res = new DecoderBuffer(this.base);
+      res.offset = save.offset;
+      res.length = this.offset;
+      this.offset = save.offset;
+      Reporter.prototype.restore.call(this, save.reporter);
+      return res;
+    };
+    DecoderBuffer.prototype.isEmpty = function isEmpty() {
+      return this.offset === this.length;
+    };
+    DecoderBuffer.prototype.readUInt8 = function readUInt8(fail) {
+      if (this.offset + 1 <= this.length)
+        return this.base.readUInt8(this.offset++, true);
+      else
+        return this.error(fail || "DecoderBuffer overrun");
+    };
+    DecoderBuffer.prototype.skip = function skip(bytes, fail) {
+      if (!(this.offset + bytes <= this.length))
+        return this.error(fail || "DecoderBuffer overrun");
+      const res = new DecoderBuffer(this.base);
+      res._reporterState = this._reporterState;
+      res.offset = this.offset;
+      res.length = this.offset + bytes;
+      this.offset += bytes;
+      return res;
+    };
+    DecoderBuffer.prototype.raw = function raw(save) {
+      return this.base.slice(save ? save.offset : this.offset, this.length);
+    };
+    function EncoderBuffer(value, reporter) {
+      if (Array.isArray(value)) {
+        this.length = 0;
+        this.value = value.map(function(item) {
+          if (!EncoderBuffer.isEncoderBuffer(item))
+            item = new EncoderBuffer(item, reporter);
+          this.length += item.length;
+          return item;
+        }, this);
+      } else if (typeof value === "number") {
+        if (!(0 <= value && value <= 255))
+          return reporter.error("non-byte EncoderBuffer value");
+        this.value = value;
+        this.length = 1;
+      } else if (typeof value === "string") {
+        this.value = value;
+        this.length = Buffer2.byteLength(value);
+      } else if (Buffer2.isBuffer(value)) {
+        this.value = value;
+        this.length = value.length;
+      } else {
+        return reporter.error("Unsupported type: " + typeof value);
+      }
+    }
+    exports.EncoderBuffer = EncoderBuffer;
+    EncoderBuffer.isEncoderBuffer = function isEncoderBuffer(data) {
+      if (data instanceof EncoderBuffer) {
+        return true;
+      }
+      const isCompatible = typeof data === "object" && data.constructor.name === "EncoderBuffer" && typeof data.length === "number" && typeof data.join === "function";
+      return isCompatible;
+    };
+    EncoderBuffer.prototype.join = function join(out, offset) {
+      if (!out)
+        out = Buffer2.alloc(this.length);
+      if (!offset)
+        offset = 0;
+      if (this.length === 0)
+        return out;
+      if (Array.isArray(this.value)) {
+        this.value.forEach(function(item) {
+          item.join(out, offset);
+          offset += item.length;
+        });
+      } else {
+        if (typeof this.value === "number")
+          out[offset] = this.value;
+        else if (typeof this.value === "string")
+          out.write(this.value, offset);
+        else if (Buffer2.isBuffer(this.value))
+          this.value.copy(out, offset);
+        offset += this.length;
+      }
+      return out;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/minimalistic-assert@1.0.1/node_modules/minimalistic-assert/index.js
+var require_minimalistic_assert = __commonJS({
+  "../../node_modules/.pnpm/minimalistic-assert@1.0.1/node_modules/minimalistic-assert/index.js"(exports, module) {
+    module.exports = assert2;
+    function assert2(val, msg) {
+      if (!val)
+        throw new Error(msg || "Assertion failed");
+    }
+    assert2.equal = function assertEqual2(l2, r2, msg) {
+      if (l2 != r2)
+        throw new Error(msg || "Assertion failed: " + l2 + " != " + r2);
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/node.js
+var require_node3 = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/node.js"(exports, module) {
+    "use strict";
+    var Reporter = require_reporter().Reporter;
+    var EncoderBuffer = require_buffer().EncoderBuffer;
+    var DecoderBuffer = require_buffer().DecoderBuffer;
+    var assert2 = require_minimalistic_assert();
+    var tags = [
+      "seq",
+      "seqof",
+      "set",
+      "setof",
+      "objid",
+      "bool",
+      "gentime",
+      "utctime",
+      "null_",
+      "enum",
+      "int",
+      "objDesc",
+      "bitstr",
+      "bmpstr",
+      "charstr",
+      "genstr",
+      "graphstr",
+      "ia5str",
+      "iso646str",
+      "numstr",
+      "octstr",
+      "printstr",
+      "t61str",
+      "unistr",
+      "utf8str",
+      "videostr"
+    ];
+    var methods = [
+      "key",
+      "obj",
+      "use",
+      "optional",
+      "explicit",
+      "implicit",
+      "def",
+      "choice",
+      "any",
+      "contains"
+    ].concat(tags);
+    var overrided = [
+      "_peekTag",
+      "_decodeTag",
+      "_use",
+      "_decodeStr",
+      "_decodeObjid",
+      "_decodeTime",
+      "_decodeNull",
+      "_decodeInt",
+      "_decodeBool",
+      "_decodeList",
+      "_encodeComposite",
+      "_encodeStr",
+      "_encodeObjid",
+      "_encodeTime",
+      "_encodeNull",
+      "_encodeInt",
+      "_encodeBool"
+    ];
+    function Node(enc, parent, name) {
+      const state = {};
+      this._baseState = state;
+      state.name = name;
+      state.enc = enc;
+      state.parent = parent || null;
+      state.children = null;
+      state.tag = null;
+      state.args = null;
+      state.reverseArgs = null;
+      state.choice = null;
+      state.optional = false;
+      state.any = false;
+      state.obj = false;
+      state.use = null;
+      state.useDecoder = null;
+      state.key = null;
+      state["default"] = null;
+      state.explicit = null;
+      state.implicit = null;
+      state.contains = null;
+      if (!state.parent) {
+        state.children = [];
+        this._wrap();
+      }
+    }
+    module.exports = Node;
+    var stateProps = [
+      "enc",
+      "parent",
+      "children",
+      "tag",
+      "args",
+      "reverseArgs",
+      "choice",
+      "optional",
+      "any",
+      "obj",
+      "use",
+      "alteredUse",
+      "key",
+      "default",
+      "explicit",
+      "implicit",
+      "contains"
+    ];
+    Node.prototype.clone = function clone2() {
+      const state = this._baseState;
+      const cstate = {};
+      stateProps.forEach(function(prop) {
+        cstate[prop] = state[prop];
+      });
+      const res = new this.constructor(cstate.parent);
+      res._baseState = cstate;
+      return res;
+    };
+    Node.prototype._wrap = function wrap() {
+      const state = this._baseState;
+      methods.forEach(function(method) {
+        this[method] = function _wrappedMethod() {
+          const clone2 = new this.constructor(this);
+          state.children.push(clone2);
+          return clone2[method].apply(clone2, arguments);
+        };
+      }, this);
+    };
+    Node.prototype._init = function init2(body) {
+      const state = this._baseState;
+      assert2(state.parent === null);
+      body.call(this);
+      state.children = state.children.filter(function(child) {
+        return child._baseState.parent === this;
+      }, this);
+      assert2.equal(state.children.length, 1, "Root node can have only one child");
+    };
+    Node.prototype._useArgs = function useArgs(args) {
+      const state = this._baseState;
+      const children = args.filter(function(arg) {
+        return arg instanceof this.constructor;
+      }, this);
+      args = args.filter(function(arg) {
+        return !(arg instanceof this.constructor);
+      }, this);
+      if (children.length !== 0) {
+        assert2(state.children === null);
+        state.children = children;
+        children.forEach(function(child) {
+          child._baseState.parent = this;
+        }, this);
+      }
+      if (args.length !== 0) {
+        assert2(state.args === null);
+        state.args = args;
+        state.reverseArgs = args.map(function(arg) {
+          if (typeof arg !== "object" || arg.constructor !== Object)
+            return arg;
+          const res = {};
+          Object.keys(arg).forEach(function(key) {
+            if (key == (key | 0))
+              key |= 0;
+            const value = arg[key];
+            res[value] = key;
+          });
+          return res;
+        });
+      }
+    };
+    overrided.forEach(function(method) {
+      Node.prototype[method] = function _overrided() {
+        const state = this._baseState;
+        throw new Error(method + " not implemented for encoding: " + state.enc);
+      };
+    });
+    tags.forEach(function(tag) {
+      Node.prototype[tag] = function _tagMethod() {
+        const state = this._baseState;
+        const args = Array.prototype.slice.call(arguments);
+        assert2(state.tag === null);
+        state.tag = tag;
+        this._useArgs(args);
+        return this;
+      };
+    });
+    Node.prototype.use = function use(item) {
+      assert2(item);
+      const state = this._baseState;
+      assert2(state.use === null);
+      state.use = item;
+      return this;
+    };
+    Node.prototype.optional = function optional2() {
+      const state = this._baseState;
+      state.optional = true;
+      return this;
+    };
+    Node.prototype.def = function def(val) {
+      const state = this._baseState;
+      assert2(state["default"] === null);
+      state["default"] = val;
+      state.optional = true;
+      return this;
+    };
+    Node.prototype.explicit = function explicit(num) {
+      const state = this._baseState;
+      assert2(state.explicit === null && state.implicit === null);
+      state.explicit = num;
+      return this;
+    };
+    Node.prototype.implicit = function implicit(num) {
+      const state = this._baseState;
+      assert2(state.explicit === null && state.implicit === null);
+      state.implicit = num;
+      return this;
+    };
+    Node.prototype.obj = function obj() {
+      const state = this._baseState;
+      const args = Array.prototype.slice.call(arguments);
+      state.obj = true;
+      if (args.length !== 0)
+        this._useArgs(args);
+      return this;
+    };
+    Node.prototype.key = function key(newKey) {
+      const state = this._baseState;
+      assert2(state.key === null);
+      state.key = newKey;
+      return this;
+    };
+    Node.prototype.any = function any2() {
+      const state = this._baseState;
+      state.any = true;
+      return this;
+    };
+    Node.prototype.choice = function choice(obj) {
+      const state = this._baseState;
+      assert2(state.choice === null);
+      state.choice = obj;
+      this._useArgs(Object.keys(obj).map(function(key) {
+        return obj[key];
+      }));
+      return this;
+    };
+    Node.prototype.contains = function contains(item) {
+      const state = this._baseState;
+      assert2(state.use === null);
+      state.contains = item;
+      return this;
+    };
+    Node.prototype._decode = function decode2(input, options) {
+      const state = this._baseState;
+      if (state.parent === null)
+        return input.wrapResult(state.children[0]._decode(input, options));
+      let result = state["default"];
+      let present = true;
+      let prevKey = null;
+      if (state.key !== null)
+        prevKey = input.enterKey(state.key);
+      if (state.optional) {
+        let tag = null;
+        if (state.explicit !== null)
+          tag = state.explicit;
+        else if (state.implicit !== null)
+          tag = state.implicit;
+        else if (state.tag !== null)
+          tag = state.tag;
+        if (tag === null && !state.any) {
+          const save = input.save();
+          try {
+            if (state.choice === null)
+              this._decodeGeneric(state.tag, input, options);
+            else
+              this._decodeChoice(input, options);
+            present = true;
+          } catch (e2) {
+            present = false;
+          }
+          input.restore(save);
+        } else {
+          present = this._peekTag(input, tag, state.any);
+          if (input.isError(present))
+            return present;
+        }
+      }
+      let prevObj;
+      if (state.obj && present)
+        prevObj = input.enterObject();
+      if (present) {
+        if (state.explicit !== null) {
+          const explicit = this._decodeTag(input, state.explicit);
+          if (input.isError(explicit))
+            return explicit;
+          input = explicit;
+        }
+        const start = input.offset;
+        if (state.use === null && state.choice === null) {
+          let save;
+          if (state.any)
+            save = input.save();
+          const body = this._decodeTag(
+            input,
+            state.implicit !== null ? state.implicit : state.tag,
+            state.any
+          );
+          if (input.isError(body))
+            return body;
+          if (state.any)
+            result = input.raw(save);
+          else
+            input = body;
+        }
+        if (options && options.track && state.tag !== null)
+          options.track(input.path(), start, input.length, "tagged");
+        if (options && options.track && state.tag !== null)
+          options.track(input.path(), input.offset, input.length, "content");
+        if (state.any) {
+        } else if (state.choice === null) {
+          result = this._decodeGeneric(state.tag, input, options);
+        } else {
+          result = this._decodeChoice(input, options);
+        }
+        if (input.isError(result))
+          return result;
+        if (!state.any && state.choice === null && state.children !== null) {
+          state.children.forEach(function decodeChildren(child) {
+            child._decode(input, options);
+          });
+        }
+        if (state.contains && (state.tag === "octstr" || state.tag === "bitstr")) {
+          const data = new DecoderBuffer(result);
+          result = this._getUse(state.contains, input._reporterState.obj)._decode(data, options);
+        }
+      }
+      if (state.obj && present)
+        result = input.leaveObject(prevObj);
+      if (state.key !== null && (result !== null || present === true))
+        input.leaveKey(prevKey, state.key, result);
+      else if (prevKey !== null)
+        input.exitKey(prevKey);
+      return result;
+    };
+    Node.prototype._decodeGeneric = function decodeGeneric(tag, input, options) {
+      const state = this._baseState;
+      if (tag === "seq" || tag === "set")
+        return null;
+      if (tag === "seqof" || tag === "setof")
+        return this._decodeList(input, tag, state.args[0], options);
+      else if (/str$/.test(tag))
+        return this._decodeStr(input, tag, options);
+      else if (tag === "objid" && state.args)
+        return this._decodeObjid(input, state.args[0], state.args[1], options);
+      else if (tag === "objid")
+        return this._decodeObjid(input, null, null, options);
+      else if (tag === "gentime" || tag === "utctime")
+        return this._decodeTime(input, tag, options);
+      else if (tag === "null_")
+        return this._decodeNull(input, options);
+      else if (tag === "bool")
+        return this._decodeBool(input, options);
+      else if (tag === "objDesc")
+        return this._decodeStr(input, tag, options);
+      else if (tag === "int" || tag === "enum")
+        return this._decodeInt(input, state.args && state.args[0], options);
+      if (state.use !== null) {
+        return this._getUse(state.use, input._reporterState.obj)._decode(input, options);
+      } else {
+        return input.error("unknown tag: " + tag);
+      }
+    };
+    Node.prototype._getUse = function _getUse(entity, obj) {
+      const state = this._baseState;
+      state.useDecoder = this._use(entity, obj);
+      assert2(state.useDecoder._baseState.parent === null);
+      state.useDecoder = state.useDecoder._baseState.children[0];
+      if (state.implicit !== state.useDecoder._baseState.implicit) {
+        state.useDecoder = state.useDecoder.clone();
+        state.useDecoder._baseState.implicit = state.implicit;
+      }
+      return state.useDecoder;
+    };
+    Node.prototype._decodeChoice = function decodeChoice(input, options) {
+      const state = this._baseState;
+      let result = null;
+      let match2 = false;
+      Object.keys(state.choice).some(function(key) {
+        const save = input.save();
+        const node = state.choice[key];
+        try {
+          const value = node._decode(input, options);
+          if (input.isError(value))
+            return false;
+          result = { type: key, value };
+          match2 = true;
+        } catch (e2) {
+          input.restore(save);
+          return false;
+        }
+        return true;
+      }, this);
+      if (!match2)
+        return input.error("Choice not matched");
+      return result;
+    };
+    Node.prototype._createEncoderBuffer = function createEncoderBuffer(data) {
+      return new EncoderBuffer(data, this.reporter);
+    };
+    Node.prototype._encode = function encode2(data, reporter, parent) {
+      const state = this._baseState;
+      if (state["default"] !== null && state["default"] === data)
+        return;
+      const result = this._encodeValue(data, reporter, parent);
+      if (result === void 0)
+        return;
+      if (this._skipDefault(result, reporter, parent))
+        return;
+      return result;
+    };
+    Node.prototype._encodeValue = function encode2(data, reporter, parent) {
+      const state = this._baseState;
+      if (state.parent === null)
+        return state.children[0]._encode(data, reporter || new Reporter());
+      let result = null;
+      this.reporter = reporter;
+      if (state.optional && data === void 0) {
+        if (state["default"] !== null)
+          data = state["default"];
+        else
+          return;
+      }
+      let content = null;
+      let primitive = false;
+      if (state.any) {
+        result = this._createEncoderBuffer(data);
+      } else if (state.choice) {
+        result = this._encodeChoice(data, reporter);
+      } else if (state.contains) {
+        content = this._getUse(state.contains, parent)._encode(data, reporter);
+        primitive = true;
+      } else if (state.children) {
+        content = state.children.map(function(child) {
+          if (child._baseState.tag === "null_")
+            return child._encode(null, reporter, data);
+          if (child._baseState.key === null)
+            return reporter.error("Child should have a key");
+          const prevKey = reporter.enterKey(child._baseState.key);
+          if (typeof data !== "object")
+            return reporter.error("Child expected, but input is not object");
+          const res = child._encode(data[child._baseState.key], reporter, data);
+          reporter.leaveKey(prevKey);
+          return res;
+        }, this).filter(function(child) {
+          return child;
+        });
+        content = this._createEncoderBuffer(content);
+      } else {
+        if (state.tag === "seqof" || state.tag === "setof") {
+          if (!(state.args && state.args.length === 1))
+            return reporter.error("Too many args for : " + state.tag);
+          if (!Array.isArray(data))
+            return reporter.error("seqof/setof, but data is not Array");
+          const child = this.clone();
+          child._baseState.implicit = null;
+          content = this._createEncoderBuffer(data.map(function(item) {
+            const state2 = this._baseState;
+            return this._getUse(state2.args[0], data)._encode(item, reporter);
+          }, child));
+        } else if (state.use !== null) {
+          result = this._getUse(state.use, parent)._encode(data, reporter);
+        } else {
+          content = this._encodePrimitive(state.tag, data);
+          primitive = true;
+        }
+      }
+      if (!state.any && state.choice === null) {
+        const tag = state.implicit !== null ? state.implicit : state.tag;
+        const cls = state.implicit === null ? "universal" : "context";
+        if (tag === null) {
+          if (state.use === null)
+            reporter.error("Tag could be omitted only for .use()");
+        } else {
+          if (state.use === null)
+            result = this._encodeComposite(tag, primitive, cls, content);
+        }
+      }
+      if (state.explicit !== null)
+        result = this._encodeComposite(state.explicit, false, "context", result);
+      return result;
+    };
+    Node.prototype._encodeChoice = function encodeChoice(data, reporter) {
+      const state = this._baseState;
+      const node = state.choice[data.type];
+      if (!node) {
+        assert2(
+          false,
+          data.type + " not found in " + JSON.stringify(Object.keys(state.choice))
+        );
+      }
+      return node._encode(data.value, reporter);
+    };
+    Node.prototype._encodePrimitive = function encodePrimitive(tag, data) {
+      const state = this._baseState;
+      if (/str$/.test(tag))
+        return this._encodeStr(data, tag);
+      else if (tag === "objid" && state.args)
+        return this._encodeObjid(data, state.reverseArgs[0], state.args[1]);
+      else if (tag === "objid")
+        return this._encodeObjid(data, null, null);
+      else if (tag === "gentime" || tag === "utctime")
+        return this._encodeTime(data, tag);
+      else if (tag === "null_")
+        return this._encodeNull();
+      else if (tag === "int" || tag === "enum")
+        return this._encodeInt(data, state.args && state.reverseArgs[0]);
+      else if (tag === "bool")
+        return this._encodeBool(data);
+      else if (tag === "objDesc")
+        return this._encodeStr(data, tag);
+      else
+        throw new Error("Unsupported tag: " + tag);
+    };
+    Node.prototype._isNumstr = function isNumstr(str2) {
+      return /^[0-9 ]*$/.test(str2);
+    };
+    Node.prototype._isPrintstr = function isPrintstr(str2) {
+      return /^[A-Za-z0-9 '()+,-./:=?]*$/.test(str2);
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/constants/der.js
+var require_der = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/constants/der.js"(exports) {
+    "use strict";
+    function reverse(map2) {
+      const res = {};
+      Object.keys(map2).forEach(function(key) {
+        if ((key | 0) == key)
+          key = key | 0;
+        const value = map2[key];
+        res[value] = key;
+      });
+      return res;
+    }
+    exports.tagClass = {
+      0: "universal",
+      1: "application",
+      2: "context",
+      3: "private"
+    };
+    exports.tagClassByName = reverse(exports.tagClass);
+    exports.tag = {
+      0: "end",
+      1: "bool",
+      2: "int",
+      3: "bitstr",
+      4: "octstr",
+      5: "null_",
+      6: "objid",
+      7: "objDesc",
+      8: "external",
+      9: "real",
+      10: "enum",
+      11: "embed",
+      12: "utf8str",
+      13: "relativeOid",
+      16: "seq",
+      17: "set",
+      18: "numstr",
+      19: "printstr",
+      20: "t61str",
+      21: "videostr",
+      22: "ia5str",
+      23: "utctime",
+      24: "gentime",
+      25: "graphstr",
+      26: "iso646str",
+      27: "genstr",
+      28: "unistr",
+      29: "charstr",
+      30: "bmpstr"
+    };
+    exports.tagByName = reverse(exports.tag);
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/encoders/der.js
+var require_der2 = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/encoders/der.js"(exports, module) {
+    "use strict";
+    var inherits = require_inherits();
+    var Buffer2 = require_safer().Buffer;
+    var Node = require_node3();
+    var der = require_der();
+    function DEREncoder(entity) {
+      this.enc = "der";
+      this.name = entity.name;
+      this.entity = entity;
+      this.tree = new DERNode();
+      this.tree._init(entity.body);
+    }
+    module.exports = DEREncoder;
+    DEREncoder.prototype.encode = function encode2(data, reporter) {
+      return this.tree._encode(data, reporter).join();
+    };
+    function DERNode(parent) {
+      Node.call(this, "der", parent);
+    }
+    inherits(DERNode, Node);
+    DERNode.prototype._encodeComposite = function encodeComposite(tag, primitive, cls, content) {
+      const encodedTag = encodeTag(tag, primitive, cls, this.reporter);
+      if (content.length < 128) {
+        const header2 = Buffer2.alloc(2);
+        header2[0] = encodedTag;
+        header2[1] = content.length;
+        return this._createEncoderBuffer([header2, content]);
+      }
+      let lenOctets = 1;
+      for (let i2 = content.length; i2 >= 256; i2 >>= 8)
+        lenOctets++;
+      const header = Buffer2.alloc(1 + 1 + lenOctets);
+      header[0] = encodedTag;
+      header[1] = 128 | lenOctets;
+      for (let i2 = 1 + lenOctets, j2 = content.length; j2 > 0; i2--, j2 >>= 8)
+        header[i2] = j2 & 255;
+      return this._createEncoderBuffer([header, content]);
+    };
+    DERNode.prototype._encodeStr = function encodeStr(str2, tag) {
+      if (tag === "bitstr") {
+        return this._createEncoderBuffer([str2.unused | 0, str2.data]);
+      } else if (tag === "bmpstr") {
+        const buf = Buffer2.alloc(str2.length * 2);
+        for (let i2 = 0; i2 < str2.length; i2++) {
+          buf.writeUInt16BE(str2.charCodeAt(i2), i2 * 2);
+        }
+        return this._createEncoderBuffer(buf);
+      } else if (tag === "numstr") {
+        if (!this._isNumstr(str2)) {
+          return this.reporter.error("Encoding of string type: numstr supports only digits and space");
+        }
+        return this._createEncoderBuffer(str2);
+      } else if (tag === "printstr") {
+        if (!this._isPrintstr(str2)) {
+          return this.reporter.error("Encoding of string type: printstr supports only latin upper and lower case letters, digits, space, apostrophe, left and rigth parenthesis, plus sign, comma, hyphen, dot, slash, colon, equal sign, question mark");
+        }
+        return this._createEncoderBuffer(str2);
+      } else if (/str$/.test(tag)) {
+        return this._createEncoderBuffer(str2);
+      } else if (tag === "objDesc") {
+        return this._createEncoderBuffer(str2);
+      } else {
+        return this.reporter.error("Encoding of string type: " + tag + " unsupported");
+      }
+    };
+    DERNode.prototype._encodeObjid = function encodeObjid(id, values, relative) {
+      if (typeof id === "string") {
+        if (!values)
+          return this.reporter.error("string objid given, but no values map found");
+        if (!values.hasOwnProperty(id))
+          return this.reporter.error("objid not found in values map");
+        id = values[id].split(/[\s.]+/g);
+        for (let i2 = 0; i2 < id.length; i2++)
+          id[i2] |= 0;
+      } else if (Array.isArray(id)) {
+        id = id.slice();
+        for (let i2 = 0; i2 < id.length; i2++)
+          id[i2] |= 0;
+      }
+      if (!Array.isArray(id)) {
+        return this.reporter.error("objid() should be either array or string, got: " + JSON.stringify(id));
+      }
+      if (!relative) {
+        if (id[1] >= 40)
+          return this.reporter.error("Second objid identifier OOB");
+        id.splice(0, 2, id[0] * 40 + id[1]);
+      }
+      let size = 0;
+      for (let i2 = 0; i2 < id.length; i2++) {
+        let ident = id[i2];
+        for (size++; ident >= 128; ident >>= 7)
+          size++;
+      }
+      const objid = Buffer2.alloc(size);
+      let offset = objid.length - 1;
+      for (let i2 = id.length - 1; i2 >= 0; i2--) {
+        let ident = id[i2];
+        objid[offset--] = ident & 127;
+        while ((ident >>= 7) > 0)
+          objid[offset--] = 128 | ident & 127;
+      }
+      return this._createEncoderBuffer(objid);
+    };
+    function two(num) {
+      if (num < 10)
+        return "0" + num;
+      else
+        return num;
+    }
+    DERNode.prototype._encodeTime = function encodeTime(time4, tag) {
+      let str2;
+      const date6 = new Date(time4);
+      if (tag === "gentime") {
+        str2 = [
+          two(date6.getUTCFullYear()),
+          two(date6.getUTCMonth() + 1),
+          two(date6.getUTCDate()),
+          two(date6.getUTCHours()),
+          two(date6.getUTCMinutes()),
+          two(date6.getUTCSeconds()),
+          "Z"
+        ].join("");
+      } else if (tag === "utctime") {
+        str2 = [
+          two(date6.getUTCFullYear() % 100),
+          two(date6.getUTCMonth() + 1),
+          two(date6.getUTCDate()),
+          two(date6.getUTCHours()),
+          two(date6.getUTCMinutes()),
+          two(date6.getUTCSeconds()),
+          "Z"
+        ].join("");
+      } else {
+        this.reporter.error("Encoding " + tag + " time is not supported yet");
+      }
+      return this._encodeStr(str2, "octstr");
+    };
+    DERNode.prototype._encodeNull = function encodeNull() {
+      return this._createEncoderBuffer("");
+    };
+    DERNode.prototype._encodeInt = function encodeInt(num, values) {
+      if (typeof num === "string") {
+        if (!values)
+          return this.reporter.error("String int or enum given, but no values map");
+        if (!values.hasOwnProperty(num)) {
+          return this.reporter.error("Values map doesn't contain: " + JSON.stringify(num));
+        }
+        num = values[num];
+      }
+      if (typeof num !== "number" && !Buffer2.isBuffer(num)) {
+        const numArray = num.toArray();
+        if (!num.sign && numArray[0] & 128) {
+          numArray.unshift(0);
+        }
+        num = Buffer2.from(numArray);
+      }
+      if (Buffer2.isBuffer(num)) {
+        let size2 = num.length;
+        if (num.length === 0)
+          size2++;
+        const out2 = Buffer2.alloc(size2);
+        num.copy(out2);
+        if (num.length === 0)
+          out2[0] = 0;
+        return this._createEncoderBuffer(out2);
+      }
+      if (num < 128)
+        return this._createEncoderBuffer(num);
+      if (num < 256)
+        return this._createEncoderBuffer([0, num]);
+      let size = 1;
+      for (let i2 = num; i2 >= 256; i2 >>= 8)
+        size++;
+      const out = new Array(size);
+      for (let i2 = out.length - 1; i2 >= 0; i2--) {
+        out[i2] = num & 255;
+        num >>= 8;
+      }
+      if (out[0] & 128) {
+        out.unshift(0);
+      }
+      return this._createEncoderBuffer(Buffer2.from(out));
+    };
+    DERNode.prototype._encodeBool = function encodeBool(value) {
+      return this._createEncoderBuffer(value ? 255 : 0);
+    };
+    DERNode.prototype._use = function use(entity, obj) {
+      if (typeof entity === "function")
+        entity = entity(obj);
+      return entity._getEncoder("der").tree;
+    };
+    DERNode.prototype._skipDefault = function skipDefault(dataBuffer, reporter, parent) {
+      const state = this._baseState;
+      let i2;
+      if (state["default"] === null)
+        return false;
+      const data = dataBuffer.join();
+      if (state.defaultBuffer === void 0)
+        state.defaultBuffer = this._encodeValue(state["default"], reporter, parent).join();
+      if (data.length !== state.defaultBuffer.length)
+        return false;
+      for (i2 = 0; i2 < data.length; i2++)
+        if (data[i2] !== state.defaultBuffer[i2])
+          return false;
+      return true;
+    };
+    function encodeTag(tag, primitive, cls, reporter) {
+      let res;
+      if (tag === "seqof")
+        tag = "seq";
+      else if (tag === "setof")
+        tag = "set";
+      if (der.tagByName.hasOwnProperty(tag))
+        res = der.tagByName[tag];
+      else if (typeof tag === "number" && (tag | 0) === tag)
+        res = tag;
+      else
+        return reporter.error("Unknown tag: " + tag);
+      if (res >= 31)
+        return reporter.error("Multi-octet tag encoding unsupported");
+      if (!primitive)
+        res |= 32;
+      res |= der.tagClassByName[cls || "universal"] << 6;
+      return res;
+    }
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/encoders/pem.js
+var require_pem = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/encoders/pem.js"(exports, module) {
+    "use strict";
+    var inherits = require_inherits();
+    var DEREncoder = require_der2();
+    function PEMEncoder(entity) {
+      DEREncoder.call(this, entity);
+      this.enc = "pem";
+    }
+    inherits(PEMEncoder, DEREncoder);
+    module.exports = PEMEncoder;
+    PEMEncoder.prototype.encode = function encode2(data, options) {
+      const buf = DEREncoder.prototype.encode.call(this, data);
+      const p2 = buf.toString("base64");
+      const out = ["-----BEGIN " + options.label + "-----"];
+      for (let i2 = 0; i2 < p2.length; i2 += 64)
+        out.push(p2.slice(i2, i2 + 64));
+      out.push("-----END " + options.label + "-----");
+      return out.join("\n");
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/encoders/index.js
+var require_encoders = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/encoders/index.js"(exports) {
+    "use strict";
+    var encoders = exports;
+    encoders.der = require_der2();
+    encoders.pem = require_pem();
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/decoders/der.js
+var require_der3 = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/decoders/der.js"(exports, module) {
+    "use strict";
+    var inherits = require_inherits();
+    var bignum = require_bn();
+    var DecoderBuffer = require_buffer().DecoderBuffer;
+    var Node = require_node3();
+    var der = require_der();
+    function DERDecoder(entity) {
+      this.enc = "der";
+      this.name = entity.name;
+      this.entity = entity;
+      this.tree = new DERNode();
+      this.tree._init(entity.body);
+    }
+    module.exports = DERDecoder;
+    DERDecoder.prototype.decode = function decode2(data, options) {
+      if (!DecoderBuffer.isDecoderBuffer(data)) {
+        data = new DecoderBuffer(data, options);
+      }
+      return this.tree._decode(data, options);
+    };
+    function DERNode(parent) {
+      Node.call(this, "der", parent);
+    }
+    inherits(DERNode, Node);
+    DERNode.prototype._peekTag = function peekTag(buffer, tag, any2) {
+      if (buffer.isEmpty())
+        return false;
+      const state = buffer.save();
+      const decodedTag = derDecodeTag(buffer, 'Failed to peek tag: "' + tag + '"');
+      if (buffer.isError(decodedTag))
+        return decodedTag;
+      buffer.restore(state);
+      return decodedTag.tag === tag || decodedTag.tagStr === tag || decodedTag.tagStr + "of" === tag || any2;
+    };
+    DERNode.prototype._decodeTag = function decodeTag(buffer, tag, any2) {
+      const decodedTag = derDecodeTag(
+        buffer,
+        'Failed to decode tag of "' + tag + '"'
+      );
+      if (buffer.isError(decodedTag))
+        return decodedTag;
+      let len = derDecodeLen(
+        buffer,
+        decodedTag.primitive,
+        'Failed to get length of "' + tag + '"'
+      );
+      if (buffer.isError(len))
+        return len;
+      if (!any2 && decodedTag.tag !== tag && decodedTag.tagStr !== tag && decodedTag.tagStr + "of" !== tag) {
+        return buffer.error('Failed to match tag: "' + tag + '"');
+      }
+      if (decodedTag.primitive || len !== null)
+        return buffer.skip(len, 'Failed to match body of: "' + tag + '"');
+      const state = buffer.save();
+      const res = this._skipUntilEnd(
+        buffer,
+        'Failed to skip indefinite length body: "' + this.tag + '"'
+      );
+      if (buffer.isError(res))
+        return res;
+      len = buffer.offset - state.offset;
+      buffer.restore(state);
+      return buffer.skip(len, 'Failed to match body of: "' + tag + '"');
+    };
+    DERNode.prototype._skipUntilEnd = function skipUntilEnd(buffer, fail) {
+      for (; ; ) {
+        const tag = derDecodeTag(buffer, fail);
+        if (buffer.isError(tag))
+          return tag;
+        const len = derDecodeLen(buffer, tag.primitive, fail);
+        if (buffer.isError(len))
+          return len;
+        let res;
+        if (tag.primitive || len !== null)
+          res = buffer.skip(len);
+        else
+          res = this._skipUntilEnd(buffer, fail);
+        if (buffer.isError(res))
+          return res;
+        if (tag.tagStr === "end")
+          break;
+      }
+    };
+    DERNode.prototype._decodeList = function decodeList(buffer, tag, decoder, options) {
+      const result = [];
+      while (!buffer.isEmpty()) {
+        const possibleEnd = this._peekTag(buffer, "end");
+        if (buffer.isError(possibleEnd))
+          return possibleEnd;
+        const res = decoder.decode(buffer, "der", options);
+        if (buffer.isError(res) && possibleEnd)
+          break;
+        result.push(res);
+      }
+      return result;
+    };
+    DERNode.prototype._decodeStr = function decodeStr(buffer, tag) {
+      if (tag === "bitstr") {
+        const unused = buffer.readUInt8();
+        if (buffer.isError(unused))
+          return unused;
+        return { unused, data: buffer.raw() };
+      } else if (tag === "bmpstr") {
+        const raw = buffer.raw();
+        if (raw.length % 2 === 1)
+          return buffer.error("Decoding of string type: bmpstr length mismatch");
+        let str2 = "";
+        for (let i2 = 0; i2 < raw.length / 2; i2++) {
+          str2 += String.fromCharCode(raw.readUInt16BE(i2 * 2));
+        }
+        return str2;
+      } else if (tag === "numstr") {
+        const numstr = buffer.raw().toString("ascii");
+        if (!this._isNumstr(numstr)) {
+          return buffer.error("Decoding of string type: numstr unsupported characters");
+        }
+        return numstr;
+      } else if (tag === "octstr") {
+        return buffer.raw();
+      } else if (tag === "objDesc") {
+        return buffer.raw();
+      } else if (tag === "printstr") {
+        const printstr = buffer.raw().toString("ascii");
+        if (!this._isPrintstr(printstr)) {
+          return buffer.error("Decoding of string type: printstr unsupported characters");
+        }
+        return printstr;
+      } else if (/str$/.test(tag)) {
+        return buffer.raw().toString();
+      } else {
+        return buffer.error("Decoding of string type: " + tag + " unsupported");
+      }
+    };
+    DERNode.prototype._decodeObjid = function decodeObjid(buffer, values, relative) {
+      let result;
+      const identifiers = [];
+      let ident = 0;
+      let subident = 0;
+      while (!buffer.isEmpty()) {
+        subident = buffer.readUInt8();
+        ident <<= 7;
+        ident |= subident & 127;
+        if ((subident & 128) === 0) {
+          identifiers.push(ident);
+          ident = 0;
+        }
+      }
+      if (subident & 128)
+        identifiers.push(ident);
+      const first = identifiers[0] / 40 | 0;
+      const second = identifiers[0] % 40;
+      if (relative)
+        result = identifiers;
+      else
+        result = [first, second].concat(identifiers.slice(1));
+      if (values) {
+        let tmp = values[result.join(" ")];
+        if (tmp === void 0)
+          tmp = values[result.join(".")];
+        if (tmp !== void 0)
+          result = tmp;
+      }
+      return result;
+    };
+    DERNode.prototype._decodeTime = function decodeTime(buffer, tag) {
+      const str2 = buffer.raw().toString();
+      let year;
+      let mon;
+      let day;
+      let hour;
+      let min;
+      let sec;
+      if (tag === "gentime") {
+        year = str2.slice(0, 4) | 0;
+        mon = str2.slice(4, 6) | 0;
+        day = str2.slice(6, 8) | 0;
+        hour = str2.slice(8, 10) | 0;
+        min = str2.slice(10, 12) | 0;
+        sec = str2.slice(12, 14) | 0;
+      } else if (tag === "utctime") {
+        year = str2.slice(0, 2) | 0;
+        mon = str2.slice(2, 4) | 0;
+        day = str2.slice(4, 6) | 0;
+        hour = str2.slice(6, 8) | 0;
+        min = str2.slice(8, 10) | 0;
+        sec = str2.slice(10, 12) | 0;
+        if (year < 70)
+          year = 2e3 + year;
+        else
+          year = 1900 + year;
+      } else {
+        return buffer.error("Decoding " + tag + " time is not supported yet");
+      }
+      return Date.UTC(year, mon - 1, day, hour, min, sec, 0);
+    };
+    DERNode.prototype._decodeNull = function decodeNull() {
+      return null;
+    };
+    DERNode.prototype._decodeBool = function decodeBool(buffer) {
+      const res = buffer.readUInt8();
+      if (buffer.isError(res))
+        return res;
+      else
+        return res !== 0;
+    };
+    DERNode.prototype._decodeInt = function decodeInt(buffer, values) {
+      const raw = buffer.raw();
+      let res = new bignum(raw);
+      if (values)
+        res = values[res.toString(10)] || res;
+      return res;
+    };
+    DERNode.prototype._use = function use(entity, obj) {
+      if (typeof entity === "function")
+        entity = entity(obj);
+      return entity._getDecoder("der").tree;
+    };
+    function derDecodeTag(buf, fail) {
+      let tag = buf.readUInt8(fail);
+      if (buf.isError(tag))
+        return tag;
+      const cls = der.tagClass[tag >> 6];
+      const primitive = (tag & 32) === 0;
+      if ((tag & 31) === 31) {
+        let oct = tag;
+        tag = 0;
+        while ((oct & 128) === 128) {
+          oct = buf.readUInt8(fail);
+          if (buf.isError(oct))
+            return oct;
+          tag <<= 7;
+          tag |= oct & 127;
+        }
+      } else {
+        tag &= 31;
+      }
+      const tagStr = der.tag[tag];
+      return {
+        cls,
+        primitive,
+        tag,
+        tagStr
+      };
+    }
+    function derDecodeLen(buf, primitive, fail) {
+      let len = buf.readUInt8(fail);
+      if (buf.isError(len))
+        return len;
+      if (!primitive && len === 128)
+        return null;
+      if ((len & 128) === 0) {
+        return len;
+      }
+      const num = len & 127;
+      if (num > 4)
+        return buf.error("length octect is too long");
+      len = 0;
+      for (let i2 = 0; i2 < num; i2++) {
+        len <<= 8;
+        const j2 = buf.readUInt8(fail);
+        if (buf.isError(j2))
+          return j2;
+        len |= j2;
+      }
+      return len;
+    }
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/decoders/pem.js
+var require_pem2 = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/decoders/pem.js"(exports, module) {
+    "use strict";
+    var inherits = require_inherits();
+    var Buffer2 = require_safer().Buffer;
+    var DERDecoder = require_der3();
+    function PEMDecoder(entity) {
+      DERDecoder.call(this, entity);
+      this.enc = "pem";
+    }
+    inherits(PEMDecoder, DERDecoder);
+    module.exports = PEMDecoder;
+    PEMDecoder.prototype.decode = function decode2(data, options) {
+      const lines = data.toString().split(/[\r\n]+/g);
+      const label = options.label.toUpperCase();
+      const re2 = /^-----(BEGIN|END) ([^-]+)-----$/;
+      let start = -1;
+      let end = -1;
+      for (let i2 = 0; i2 < lines.length; i2++) {
+        const match2 = lines[i2].match(re2);
+        if (match2 === null)
+          continue;
+        if (match2[2] !== label)
+          continue;
+        if (start === -1) {
+          if (match2[1] !== "BEGIN")
+            break;
+          start = i2;
+        } else {
+          if (match2[1] !== "END")
+            break;
+          end = i2;
+          break;
+        }
+      }
+      if (start === -1 || end === -1)
+        throw new Error("PEM section not found for: " + label);
+      const base643 = lines.slice(start + 1, end).join("");
+      base643.replace(/[^a-z0-9+/=]+/gi, "");
+      const input = Buffer2.from(base643, "base64");
+      return DERDecoder.prototype.decode.call(this, input, options);
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/decoders/index.js
+var require_decoders = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/decoders/index.js"(exports) {
+    "use strict";
+    var decoders = exports;
+    decoders.der = require_der3();
+    decoders.pem = require_pem2();
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/api.js
+var require_api = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/api.js"(exports) {
+    "use strict";
+    var encoders = require_encoders();
+    var decoders = require_decoders();
+    var inherits = require_inherits();
+    var api = exports;
+    api.define = function define2(name, body) {
+      return new Entity(name, body);
+    };
+    function Entity(name, body) {
+      this.name = name;
+      this.body = body;
+      this.decoders = {};
+      this.encoders = {};
+    }
+    Entity.prototype._createNamed = function createNamed(Base) {
+      const name = this.name;
+      function Generated(entity) {
+        this._initNamed(entity, name);
+      }
+      inherits(Generated, Base);
+      Generated.prototype._initNamed = function _initNamed(entity, name2) {
+        Base.call(this, entity, name2);
+      };
+      return new Generated(this);
+    };
+    Entity.prototype._getDecoder = function _getDecoder(enc) {
+      enc = enc || "der";
+      if (!this.decoders.hasOwnProperty(enc))
+        this.decoders[enc] = this._createNamed(decoders[enc]);
+      return this.decoders[enc];
+    };
+    Entity.prototype.decode = function decode2(data, enc, options) {
+      return this._getDecoder(enc).decode(data, options);
+    };
+    Entity.prototype._getEncoder = function _getEncoder(enc) {
+      enc = enc || "der";
+      if (!this.encoders.hasOwnProperty(enc))
+        this.encoders[enc] = this._createNamed(encoders[enc]);
+      return this.encoders[enc];
+    };
+    Entity.prototype.encode = function encode2(data, enc, reporter) {
+      return this._getEncoder(enc).encode(data, reporter);
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/index.js
+var require_base = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/base/index.js"(exports) {
+    "use strict";
+    var base = exports;
+    base.Reporter = require_reporter().Reporter;
+    base.DecoderBuffer = require_buffer().DecoderBuffer;
+    base.EncoderBuffer = require_buffer().EncoderBuffer;
+    base.Node = require_node3();
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/constants/index.js
+var require_constants3 = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1/constants/index.js"(exports) {
+    "use strict";
+    var constants2 = exports;
+    constants2._reverse = function reverse(map2) {
+      const res = {};
+      Object.keys(map2).forEach(function(key) {
+        if ((key | 0) == key)
+          key = key | 0;
+        const value = map2[key];
+        res[value] = key;
+      });
+      return res;
+    };
+    constants2.der = require_der();
+  }
+});
+
+// ../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1.js
+var require_asn1 = __commonJS({
+  "../../node_modules/.pnpm/asn1.js@5.4.1/node_modules/asn1.js/lib/asn1.js"(exports) {
+    "use strict";
+    var asn1 = exports;
+    asn1.bignum = require_bn();
+    asn1.define = require_api().define;
+    asn1.base = require_base();
+    asn1.constants = require_constants3();
+    asn1.decoders = require_decoders();
+    asn1.encoders = require_encoders();
+  }
+});
+
+// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-constants.js
+var require_web_push_constants = __commonJS({
+  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-constants.js"(exports, module) {
+    "use strict";
+    var WebPushConstants = {};
+    WebPushConstants.supportedContentEncodings = {
+      AES_GCM: "aesgcm",
+      AES_128_GCM: "aes128gcm"
+    };
+    WebPushConstants.supportedUrgency = {
+      VERY_LOW: "very-low",
+      LOW: "low",
+      NORMAL: "normal",
+      HIGH: "high"
+    };
+    module.exports = WebPushConstants;
+  }
+});
+
+// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/urlsafe-base64-helper.js
+var require_urlsafe_base64_helper = __commonJS({
+  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/urlsafe-base64-helper.js"(exports, module) {
+    "use strict";
+    function validate(base643) {
+      return /^[A-Za-z0-9\-_]+$/.test(base643);
+    }
+    module.exports = {
+      validate
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/vapid-helper.js
+var require_vapid_helper = __commonJS({
+  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/vapid-helper.js"(exports, module) {
+    "use strict";
+    var crypto4 = __require("crypto");
+    var asn1 = require_asn1();
+    var jws = require_jws();
+    var { URL: URL4 } = __require("url");
+    var WebPushConstants = require_web_push_constants();
+    var urlBase64Helper = require_urlsafe_base64_helper();
+    var DEFAULT_EXPIRATION_SECONDS = 12 * 60 * 60;
+    var MAX_EXPIRATION_SECONDS = 24 * 60 * 60;
+    var ECPrivateKeyASN = asn1.define("ECPrivateKey", function() {
+      this.seq().obj(
+        this.key("version").int(),
+        this.key("privateKey").octstr(),
+        this.key("parameters").explicit(0).objid().optional(),
+        this.key("publicKey").explicit(1).bitstr().optional()
+      );
+    });
+    function toPEM(key) {
+      return ECPrivateKeyASN.encode({
+        version: 1,
+        privateKey: key,
+        parameters: [1, 2, 840, 10045, 3, 1, 7]
+        // prime256v1
+      }, "pem", {
+        label: "EC PRIVATE KEY"
+      });
+    }
+    function generateVAPIDKeys() {
+      const curve = crypto4.createECDH("prime256v1");
+      curve.generateKeys();
+      let publicKeyBuffer = curve.getPublicKey();
+      let privateKeyBuffer = curve.getPrivateKey();
+      if (privateKeyBuffer.length < 32) {
+        const padding = Buffer.alloc(32 - privateKeyBuffer.length);
+        padding.fill(0);
+        privateKeyBuffer = Buffer.concat([padding, privateKeyBuffer]);
+      }
+      if (publicKeyBuffer.length < 65) {
+        const padding = Buffer.alloc(65 - publicKeyBuffer.length);
+        padding.fill(0);
+        publicKeyBuffer = Buffer.concat([padding, publicKeyBuffer]);
+      }
+      return {
+        publicKey: publicKeyBuffer.toString("base64url"),
+        privateKey: privateKeyBuffer.toString("base64url")
+      };
+    }
+    function validateSubject(subject) {
+      if (!subject) {
+        throw new Error("No subject set in vapidDetails.subject.");
+      }
+      if (typeof subject !== "string" || subject.length === 0) {
+        throw new Error("The subject value must be a string containing an https: URL or mailto: address. " + subject);
+      }
+      let subjectParseResult = null;
+      try {
+        subjectParseResult = new URL4(subject);
+      } catch (err) {
+        throw new Error("Vapid subject is not a valid URL. " + subject);
+      }
+      if (!["https:", "mailto:"].includes(subjectParseResult.protocol)) {
+        throw new Error("Vapid subject is not an https: or mailto: URL. " + subject);
+      }
+      if (subjectParseResult.hostname === "localhost") {
+        console.warn("Vapid subject points to a localhost web URI, which is unsupported by Apple's push notification server and will result in a BadJwtToken error when sending notifications.");
+      }
+    }
+    function validatePublicKey(publicKey) {
+      if (!publicKey) {
+        throw new Error("No key set vapidDetails.publicKey");
+      }
+      if (typeof publicKey !== "string") {
+        throw new Error("Vapid public key is must be a URL safe Base 64 encoded string.");
+      }
+      if (!urlBase64Helper.validate(publicKey)) {
+        throw new Error('Vapid public key must be a URL safe Base 64 (without "=")');
+      }
+      publicKey = Buffer.from(publicKey, "base64url");
+      if (publicKey.length !== 65) {
+        throw new Error("Vapid public key should be 65 bytes long when decoded.");
+      }
+    }
+    function validatePrivateKey(privateKey) {
+      if (!privateKey) {
+        throw new Error("No key set in vapidDetails.privateKey");
+      }
+      if (typeof privateKey !== "string") {
+        throw new Error("Vapid private key must be a URL safe Base 64 encoded string.");
+      }
+      if (!urlBase64Helper.validate(privateKey)) {
+        throw new Error('Vapid private key must be a URL safe Base 64 (without "=")');
+      }
+      privateKey = Buffer.from(privateKey, "base64url");
+      if (privateKey.length !== 32) {
+        throw new Error("Vapid private key should be 32 bytes long when decoded.");
+      }
+    }
+    function getFutureExpirationTimestamp(numSeconds) {
+      const futureExp = /* @__PURE__ */ new Date();
+      futureExp.setSeconds(futureExp.getSeconds() + numSeconds);
+      return Math.floor(futureExp.getTime() / 1e3);
+    }
+    function validateExpiration(expiration) {
+      if (!Number.isInteger(expiration)) {
+        throw new Error("`expiration` value must be a number");
+      }
+      if (expiration < 0) {
+        throw new Error("`expiration` must be a positive integer");
+      }
+      const maxExpirationTimestamp = getFutureExpirationTimestamp(MAX_EXPIRATION_SECONDS);
+      if (expiration >= maxExpirationTimestamp) {
+        throw new Error("`expiration` value is greater than maximum of 24 hours");
+      }
+    }
+    function getVapidHeaders(audience, subject, publicKey, privateKey, contentEncoding, expiration) {
+      if (!audience) {
+        throw new Error("No audience could be generated for VAPID.");
+      }
+      if (typeof audience !== "string" || audience.length === 0) {
+        throw new Error("The audience value must be a string containing the origin of a push service. " + audience);
+      }
+      try {
+        new URL4(audience);
+      } catch (err) {
+        throw new Error("VAPID audience is not a url. " + audience);
+      }
+      validateSubject(subject);
+      validatePublicKey(publicKey);
+      validatePrivateKey(privateKey);
+      privateKey = Buffer.from(privateKey, "base64url");
+      if (expiration) {
+        validateExpiration(expiration);
+      } else {
+        expiration = getFutureExpirationTimestamp(DEFAULT_EXPIRATION_SECONDS);
+      }
+      const header = {
+        typ: "JWT",
+        alg: "ES256"
+      };
+      const jwtPayload = {
+        aud: audience,
+        exp: expiration,
+        sub: subject
+      };
+      const jwt2 = jws.sign({
+        header,
+        payload: jwtPayload,
+        privateKey: toPEM(privateKey)
+      });
+      if (contentEncoding === WebPushConstants.supportedContentEncodings.AES_128_GCM) {
+        return {
+          Authorization: "vapid t=" + jwt2 + ", k=" + publicKey
+        };
+      }
+      if (contentEncoding === WebPushConstants.supportedContentEncodings.AES_GCM) {
+        return {
+          Authorization: "WebPush " + jwt2,
+          "Crypto-Key": "p256ecdsa=" + publicKey
+        };
+      }
+      throw new Error("Unsupported encoding type specified.");
+    }
+    module.exports = {
+      generateVAPIDKeys,
+      getFutureExpirationTimestamp,
+      getVapidHeaders,
+      validateSubject,
+      validatePublicKey,
+      validatePrivateKey,
+      validateExpiration
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/http_ece@1.2.0/node_modules/http_ece/ece.js
+var require_ece = __commonJS({
+  "../../node_modules/.pnpm/http_ece@1.2.0/node_modules/http_ece/ece.js"(exports, module) {
+    "use strict";
+    var crypto4 = __require("crypto");
+    var AES_GCM = "aes-128-gcm";
+    var PAD_SIZE = { "aes128gcm": 1, "aesgcm": 2 };
+    var TAG_LENGTH = 16;
+    var KEY_LENGTH = 16;
+    var NONCE_LENGTH = 12;
+    var SHA_256_LENGTH = 32;
+    var MODE_ENCRYPT = "encrypt";
+    var MODE_DECRYPT = "decrypt";
+    var keylog;
+    if (process.env.ECE_KEYLOG === "1") {
+      keylog = function(m2, k2) {
+        console.warn(m2 + " [" + k2.length + "]: " + k2.toString("base64url"));
+        return k2;
+      };
+    } else {
+      keylog = function(m2, k2) {
+        return k2;
+      };
+    }
+    function decode2(b2) {
+      if (typeof b2 === "string") {
+        return Buffer.from(b2, "base64url");
+      }
+      return b2;
+    }
+    function HMAC_hash(key, input) {
+      var hmac = crypto4.createHmac("sha256", key);
+      hmac.update(input);
+      return hmac.digest();
+    }
+    function HKDF_extract(salt, ikm) {
+      keylog("salt", salt);
+      keylog("ikm", ikm);
+      return keylog("extract", HMAC_hash(salt, ikm));
+    }
+    function HKDF_expand(prk, info2, l2) {
+      keylog("prk", prk);
+      keylog("info", info2);
+      var output = Buffer.alloc(0);
+      var T2 = Buffer.alloc(0);
+      info2 = Buffer.from(info2, "ascii");
+      var counter = 0;
+      var cbuf = Buffer.alloc(1);
+      while (output.length < l2) {
+        cbuf.writeUIntBE(++counter, 0, 1);
+        T2 = HMAC_hash(prk, Buffer.concat([T2, info2, cbuf]));
+        output = Buffer.concat([output, T2]);
+      }
+      return keylog("expand", output.slice(0, l2));
+    }
+    function HKDF(salt, ikm, info2, len) {
+      return HKDF_expand(HKDF_extract(salt, ikm), info2, len);
+    }
+    function info(base, context) {
+      var result = Buffer.concat([
+        Buffer.from("Content-Encoding: " + base + "\0", "ascii"),
+        context
+      ]);
+      keylog("info " + base, result);
+      return result;
+    }
+    function lengthPrefix(buffer) {
+      var b2 = Buffer.concat([Buffer.alloc(2), buffer]);
+      b2.writeUIntBE(buffer.length, 0, 2);
+      return b2;
+    }
+    function extractDH(header, mode) {
+      var key = header.privateKey;
+      var senderPubKey, receiverPubKey;
+      if (mode === MODE_ENCRYPT) {
+        senderPubKey = key.getPublicKey();
+        receiverPubKey = header.dh;
+      } else if (mode === MODE_DECRYPT) {
+        senderPubKey = header.dh;
+        receiverPubKey = key.getPublicKey();
+      } else {
+        throw new Error("Unknown mode only " + MODE_ENCRYPT + " and " + MODE_DECRYPT + " supported");
+      }
+      return {
+        secret: key.computeSecret(header.dh),
+        context: Buffer.concat([
+          Buffer.from(header.keylabel, "ascii"),
+          Buffer.from([0]),
+          lengthPrefix(receiverPubKey),
+          // user agent
+          lengthPrefix(senderPubKey)
+          // application server
+        ])
+      };
+    }
+    function extractSecretAndContext(header, mode) {
+      var result = { secret: null, context: Buffer.alloc(0) };
+      if (header.key) {
+        result.secret = header.key;
+        if (result.secret.length !== KEY_LENGTH) {
+          throw new Error("An explicit key must be " + KEY_LENGTH + " bytes");
+        }
+      } else if (header.dh) {
+        result = extractDH(header, mode);
+      } else if (typeof header.keyid !== void 0) {
+        result.secret = header.keymap[header.keyid];
+      }
+      if (!result.secret) {
+        throw new Error("Unable to determine key");
+      }
+      keylog("secret", result.secret);
+      keylog("context", result.context);
+      if (header.authSecret) {
+        result.secret = HKDF(
+          header.authSecret,
+          result.secret,
+          info("auth", Buffer.alloc(0)),
+          SHA_256_LENGTH
+        );
+        keylog("authsecret", result.secret);
+      }
+      return result;
+    }
+    function webpushSecret(header, mode) {
+      if (!header.authSecret) {
+        throw new Error("No authentication secret for webpush");
+      }
+      keylog("authsecret", header.authSecret);
+      var remotePubKey, senderPubKey, receiverPubKey;
+      if (mode === MODE_ENCRYPT) {
+        senderPubKey = header.privateKey.getPublicKey();
+        remotePubKey = receiverPubKey = header.dh;
+      } else if (mode === MODE_DECRYPT) {
+        remotePubKey = senderPubKey = header.keyid;
+        receiverPubKey = header.privateKey.getPublicKey();
+      } else {
+        throw new Error("Unknown mode only " + MODE_ENCRYPT + " and " + MODE_DECRYPT + " supported");
+      }
+      keylog("remote pubkey", remotePubKey);
+      keylog("sender pubkey", senderPubKey);
+      keylog("receiver pubkey", receiverPubKey);
+      return keylog(
+        "secret dh",
+        HKDF(
+          header.authSecret,
+          header.privateKey.computeSecret(remotePubKey),
+          Buffer.concat([
+            Buffer.from("WebPush: info\0"),
+            receiverPubKey,
+            senderPubKey
+          ]),
+          SHA_256_LENGTH
+        )
+      );
+    }
+    function extractSecret(header, mode, keyLookupCallback) {
+      if (keyLookupCallback) {
+        if (!isFunction3(keyLookupCallback)) {
+          throw new Error("Callback is not a function");
+        }
+      }
+      if (header.key) {
+        if (header.key.length !== KEY_LENGTH) {
+          throw new Error("An explicit key must be " + KEY_LENGTH + " bytes");
+        }
+        return keylog("secret key", header.key);
+      }
+      if (!header.privateKey) {
+        if (!keyLookupCallback) {
+          var key = header.keymap && header.keymap[header.keyid];
+        } else {
+          var key = keyLookupCallback(header.keyid);
+        }
+        if (!key) {
+          throw new Error('No saved key (keyid: "' + header.keyid + '")');
+        }
+        return key;
+      }
+      return webpushSecret(header, mode);
+    }
+    function deriveKeyAndNonce(header, mode, lookupKeyCallback) {
+      if (!header.salt) {
+        throw new Error("must include a salt parameter for " + header.version);
+      }
+      var keyInfo;
+      var nonceInfo;
+      var secret;
+      if (header.version === "aesgcm") {
+        var s3 = extractSecretAndContext(header, mode, lookupKeyCallback);
+        keyInfo = info("aesgcm", s3.context);
+        nonceInfo = info("nonce", s3.context);
+        secret = s3.secret;
+      } else if (header.version === "aes128gcm") {
+        keyInfo = Buffer.from("Content-Encoding: aes128gcm\0");
+        nonceInfo = Buffer.from("Content-Encoding: nonce\0");
+        secret = extractSecret(header, mode, lookupKeyCallback);
+      } else {
+        throw new Error("Unable to set context for mode " + header.version);
+      }
+      var prk = HKDF_extract(header.salt, secret);
+      var result = {
+        key: HKDF_expand(prk, keyInfo, KEY_LENGTH),
+        nonce: HKDF_expand(prk, nonceInfo, NONCE_LENGTH)
+      };
+      keylog("key", result.key);
+      keylog("nonce base", result.nonce);
+      return result;
+    }
+    function parseParams(params) {
+      var header = {};
+      header.version = params.version || "aes128gcm";
+      header.rs = parseInt(params.rs, 10);
+      if (isNaN(header.rs)) {
+        header.rs = 4096;
+      }
+      var overhead = PAD_SIZE[header.version];
+      if (header.version === "aes128gcm") {
+        overhead += TAG_LENGTH;
+      }
+      if (header.rs <= overhead) {
+        throw new Error("The rs parameter has to be greater than " + overhead);
+      }
+      if (params.salt) {
+        header.salt = decode2(params.salt);
+        if (header.salt.length !== KEY_LENGTH) {
+          throw new Error("The salt parameter must be " + KEY_LENGTH + " bytes");
+        }
+      }
+      header.keyid = params.keyid;
+      if (params.key) {
+        header.key = decode2(params.key);
+      } else {
+        header.privateKey = params.privateKey;
+        if (!header.privateKey) {
+          header.keymap = params.keymap;
+        }
+        if (header.version !== "aes128gcm") {
+          header.keylabel = params.keylabel || "P-256";
+        }
+        if (params.dh) {
+          header.dh = decode2(params.dh);
+        }
+      }
+      if (params.authSecret) {
+        header.authSecret = decode2(params.authSecret);
+      }
+      return header;
+    }
+    function generateNonce(base, counter) {
+      var nonce = Buffer.from(base);
+      var m2 = nonce.readUIntBE(nonce.length - 6, 6);
+      var x2 = ((m2 ^ counter) & 16777215) + ((m2 / 16777216 ^ counter / 16777216) & 16777215) * 16777216;
+      nonce.writeUIntBE(x2, nonce.length - 6, 6);
+      keylog("nonce" + counter, nonce);
+      return nonce;
+    }
+    function readHeader(buffer, header) {
+      var idsz = buffer.readUIntBE(20, 1);
+      header.salt = buffer.slice(0, KEY_LENGTH);
+      header.rs = buffer.readUIntBE(KEY_LENGTH, 4);
+      header.keyid = buffer.slice(21, 21 + idsz);
+      return 21 + idsz;
+    }
+    function unpadLegacy(data, version3) {
+      var padSize = PAD_SIZE[version3];
+      var pad = data.readUIntBE(0, padSize);
+      if (pad + padSize > data.length) {
+        throw new Error("padding exceeds block size");
+      }
+      keylog("padding", data.slice(0, padSize + pad));
+      var padCheck = Buffer.alloc(pad);
+      padCheck.fill(0);
+      if (padCheck.compare(data.slice(padSize, padSize + pad)) !== 0) {
+        throw new Error("invalid padding");
+      }
+      return data.slice(padSize + pad);
+    }
+    function unpad(data, last) {
+      var i2 = data.length - 1;
+      while (i2 >= 0) {
+        if (data[i2]) {
+          if (last) {
+            if (data[i2] !== 2) {
+              throw new Error("last record needs to start padding with a 2");
+            }
+          } else {
+            if (data[i2] !== 1) {
+              throw new Error("last record needs to start padding with a 2");
+            }
+          }
+          return data.slice(0, i2);
+        }
+        --i2;
+      }
+      throw new Error("all zero plaintext");
+    }
+    function decryptRecord(key, counter, buffer, header, last) {
+      keylog("decrypt", buffer);
+      var nonce = generateNonce(key.nonce, counter);
+      var gcm = crypto4.createDecipheriv(AES_GCM, key.key, nonce);
+      gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
+      var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
+      data = Buffer.concat([data, gcm.final()]);
+      keylog("decrypted", data);
+      if (header.version !== "aes128gcm") {
+        return unpadLegacy(data, header.version);
+      }
+      return unpad(data, last);
+    }
+    function decrypt(buffer, params, keyLookupCallback) {
+      var header = parseParams(params);
+      if (header.version === "aes128gcm") {
+        var headerLength = readHeader(buffer, header);
+        buffer = buffer.slice(headerLength);
+      }
+      var key = deriveKeyAndNonce(header, MODE_DECRYPT, keyLookupCallback);
+      var start = 0;
+      var result = Buffer.alloc(0);
+      var chunkSize = header.rs;
+      if (header.version !== "aes128gcm") {
+        chunkSize += TAG_LENGTH;
+      }
+      for (var i2 = 0; start < buffer.length; ++i2) {
+        var end = start + chunkSize;
+        if (header.version !== "aes128gcm" && end === buffer.length) {
+          throw new Error("Truncated payload");
+        }
+        end = Math.min(end, buffer.length);
+        if (end - start <= TAG_LENGTH) {
+          throw new Error("Invalid block: too small at " + i2);
+        }
+        var block = decryptRecord(
+          key,
+          i2,
+          buffer.slice(start, end),
+          header,
+          end >= buffer.length
+        );
+        result = Buffer.concat([result, block]);
+        start = end;
+      }
+      return result;
+    }
+    function encryptRecord(key, counter, buffer, pad, header, last) {
+      keylog("encrypt", buffer);
+      pad = pad || 0;
+      var nonce = generateNonce(key.nonce, counter);
+      var gcm = crypto4.createCipheriv(AES_GCM, key.key, nonce);
+      var ciphertext = [];
+      var padSize = PAD_SIZE[header.version];
+      var padding = Buffer.alloc(pad + padSize);
+      padding.fill(0);
+      if (header.version !== "aes128gcm") {
+        padding.writeUIntBE(pad, 0, padSize);
+        keylog("padding", padding);
+        ciphertext.push(gcm.update(padding));
+        ciphertext.push(gcm.update(buffer));
+        if (!last && padding.length + buffer.length < header.rs) {
+          throw new Error("Unable to pad to record size");
+        }
+      } else {
+        ciphertext.push(gcm.update(buffer));
+        padding.writeUIntBE(last ? 2 : 1, 0, 1);
+        keylog("padding", padding);
+        ciphertext.push(gcm.update(padding));
+      }
+      gcm.final();
+      var tag = gcm.getAuthTag();
+      if (tag.length !== TAG_LENGTH) {
+        throw new Error("invalid tag generated");
+      }
+      ciphertext.push(tag);
+      return keylog("encrypted", Buffer.concat(ciphertext));
+    }
+    function writeHeader(header) {
+      var ints = Buffer.alloc(5);
+      var keyid = Buffer.from(header.keyid || []);
+      if (keyid.length > 255) {
+        throw new Error("keyid is too large");
+      }
+      ints.writeUIntBE(header.rs, 0, 4);
+      ints.writeUIntBE(keyid.length, 4, 1);
+      return Buffer.concat([header.salt, ints, keyid]);
+    }
+    function encrypt(buffer, params, keyLookupCallback) {
+      if (!Buffer.isBuffer(buffer)) {
+        throw new Error("buffer argument must be a Buffer");
+      }
+      var header = parseParams(params);
+      if (!header.salt) {
+        header.salt = crypto4.randomBytes(KEY_LENGTH);
+      }
+      var result;
+      if (header.version === "aes128gcm") {
+        if (header.privateKey && !header.keyid) {
+          header.keyid = header.privateKey.getPublicKey();
+        }
+        result = writeHeader(header);
+      } else {
+        result = Buffer.alloc(0);
+      }
+      var key = deriveKeyAndNonce(header, MODE_ENCRYPT, keyLookupCallback);
+      var start = 0;
+      var padSize = PAD_SIZE[header.version];
+      var overhead = padSize;
+      if (header.version === "aes128gcm") {
+        overhead += TAG_LENGTH;
+      }
+      var pad = isNaN(parseInt(params.pad, 10)) ? 0 : parseInt(params.pad, 10);
+      var counter = 0;
+      var last = false;
+      while (!last) {
+        var recordPad = Math.min(header.rs - overhead - 1, pad);
+        if (header.version !== "aes128gcm") {
+          recordPad = Math.min((1 << padSize * 8) - 1, recordPad);
+        }
+        if (pad > 0 && recordPad === 0) {
+          ++recordPad;
+        }
+        pad -= recordPad;
+        var end = start + header.rs - overhead - recordPad;
+        if (header.version !== "aes128gcm") {
+          last = end > buffer.length;
+        } else {
+          last = end >= buffer.length;
+        }
+        last = last && pad <= 0;
+        var block = encryptRecord(
+          key,
+          counter,
+          buffer.slice(start, end),
+          recordPad,
+          header,
+          last
+        );
+        result = Buffer.concat([result, block]);
+        start = end;
+        ++counter;
+      }
+      return result;
+    }
+    function isFunction3(object2) {
+      return typeof object2 === "function";
+    }
+    module.exports = {
+      decrypt,
+      encrypt
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/encryption-helper.js
+var require_encryption_helper = __commonJS({
+  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/encryption-helper.js"(exports, module) {
+    "use strict";
+    var crypto4 = __require("crypto");
+    var ece = require_ece();
+    var encrypt = function(userPublicKey, userAuth, payload, contentEncoding) {
+      if (!userPublicKey) {
+        throw new Error("No user public key provided for encryption.");
+      }
+      if (typeof userPublicKey !== "string") {
+        throw new Error("The subscription p256dh value must be a string.");
+      }
+      if (Buffer.from(userPublicKey, "base64url").length !== 65) {
+        throw new Error("The subscription p256dh value should be 65 bytes long.");
+      }
+      if (!userAuth) {
+        throw new Error("No user auth provided for encryption.");
+      }
+      if (typeof userAuth !== "string") {
+        throw new Error("The subscription auth key must be a string.");
+      }
+      if (Buffer.from(userAuth, "base64url").length < 16) {
+        throw new Error("The subscription auth key should be at least 16 bytes long");
+      }
+      if (typeof payload !== "string" && !Buffer.isBuffer(payload)) {
+        throw new Error("Payload must be either a string or a Node Buffer.");
+      }
+      if (typeof payload === "string" || payload instanceof String) {
+        payload = Buffer.from(payload);
+      }
+      const localCurve = crypto4.createECDH("prime256v1");
+      const localPublicKey = localCurve.generateKeys();
+      const salt = crypto4.randomBytes(16).toString("base64url");
+      const cipherText = ece.encrypt(payload, {
+        version: contentEncoding,
+        dh: userPublicKey,
+        privateKey: localCurve,
+        salt,
+        authSecret: userAuth
+      });
+      return {
+        localPublicKey,
+        salt,
+        cipherText
+      };
+    };
+    module.exports = {
+      encrypt
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-error.js
+var require_web_push_error = __commonJS({
+  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-error.js"(exports, module) {
+    "use strict";
+    function WebPushError(message, statusCode, headers, body, endpoint) {
+      Error.captureStackTrace(this, this.constructor);
+      this.name = this.constructor.name;
+      this.message = message;
+      this.statusCode = statusCode;
+      this.headers = headers;
+      this.body = body;
+      this.endpoint = endpoint;
+    }
+    __require("util").inherits(WebPushError, Error);
+    module.exports = WebPushError;
+  }
+});
+
+// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-lib.js
+var require_web_push_lib = __commonJS({
+  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/web-push-lib.js"(exports, module) {
+    "use strict";
+    var url3 = __require("url");
+    var https = __require("https");
+    var WebPushError = require_web_push_error();
+    var vapidHelper = require_vapid_helper();
+    var encryptionHelper = require_encryption_helper();
+    var webPushConstants = require_web_push_constants();
+    var urlBase64Helper = require_urlsafe_base64_helper();
+    var DEFAULT_TTL = 2419200;
+    var gcmAPIKey = "";
+    var vapidDetails;
+    function WebPushLib() {
+    }
+    WebPushLib.prototype.setGCMAPIKey = function(apiKey) {
+      if (apiKey === null) {
+        gcmAPIKey = null;
+        return;
+      }
+      if (typeof apiKey === "undefined" || typeof apiKey !== "string" || apiKey.length === 0) {
+        throw new Error("The GCM API Key should be a non-empty string or null.");
+      }
+      gcmAPIKey = apiKey;
+    };
+    WebPushLib.prototype.setVapidDetails = function(subject, publicKey, privateKey) {
+      if (arguments.length === 1 && arguments[0] === null) {
+        vapidDetails = null;
+        return;
+      }
+      vapidHelper.validateSubject(subject);
+      vapidHelper.validatePublicKey(publicKey);
+      vapidHelper.validatePrivateKey(privateKey);
+      vapidDetails = {
+        subject,
+        publicKey,
+        privateKey
+      };
+    };
+    WebPushLib.prototype.generateRequestDetails = function(subscription, payload, options) {
+      if (!subscription || !subscription.endpoint) {
+        throw new Error("You must pass in a subscription with at least an endpoint.");
+      }
+      if (typeof subscription.endpoint !== "string" || subscription.endpoint.length === 0) {
+        throw new Error("The subscription endpoint must be a string with a valid URL.");
+      }
+      if (payload) {
+        if (typeof subscription !== "object" || !subscription.keys || !subscription.keys.p256dh || !subscription.keys.auth) {
+          throw new Error("To send a message with a payload, the subscription must have 'auth' and 'p256dh' keys.");
+        }
+      }
+      let currentGCMAPIKey = gcmAPIKey;
+      let currentVapidDetails = vapidDetails;
+      let timeToLive = DEFAULT_TTL;
+      let extraHeaders = {};
+      let contentEncoding = webPushConstants.supportedContentEncodings.AES_128_GCM;
+      let urgency = webPushConstants.supportedUrgency.NORMAL;
+      let topic;
+      let proxy;
+      let agent;
+      let timeout;
+      if (options) {
+        const validOptionKeys = [
+          "headers",
+          "gcmAPIKey",
+          "vapidDetails",
+          "TTL",
+          "contentEncoding",
+          "urgency",
+          "topic",
+          "proxy",
+          "agent",
+          "timeout"
+        ];
+        const optionKeys = Object.keys(options);
+        for (let i2 = 0; i2 < optionKeys.length; i2 += 1) {
+          const optionKey = optionKeys[i2];
+          if (!validOptionKeys.includes(optionKey)) {
+            throw new Error("'" + optionKey + "' is an invalid option. The valid options are ['" + validOptionKeys.join("', '") + "'].");
+          }
+        }
+        if (options.headers) {
+          extraHeaders = options.headers;
+          let duplicates = Object.keys(extraHeaders).filter(function(header) {
+            return typeof options[header] !== "undefined";
+          });
+          if (duplicates.length > 0) {
+            throw new Error("Duplicated headers defined [" + duplicates.join(",") + "]. Please either define the header in thetop level options OR in the 'headers' key.");
+          }
+        }
+        if (options.gcmAPIKey) {
+          currentGCMAPIKey = options.gcmAPIKey;
+        }
+        if (options.vapidDetails !== void 0) {
+          currentVapidDetails = options.vapidDetails;
+        }
+        if (options.TTL !== void 0) {
+          timeToLive = Number(options.TTL);
+          if (timeToLive < 0) {
+            throw new Error("TTL should be a number and should be at least 0");
+          }
+        }
+        if (options.contentEncoding) {
+          if (options.contentEncoding === webPushConstants.supportedContentEncodings.AES_128_GCM || options.contentEncoding === webPushConstants.supportedContentEncodings.AES_GCM) {
+            contentEncoding = options.contentEncoding;
+          } else {
+            throw new Error("Unsupported content encoding specified.");
+          }
+        }
+        if (options.urgency) {
+          if (options.urgency === webPushConstants.supportedUrgency.VERY_LOW || options.urgency === webPushConstants.supportedUrgency.LOW || options.urgency === webPushConstants.supportedUrgency.NORMAL || options.urgency === webPushConstants.supportedUrgency.HIGH) {
+            urgency = options.urgency;
+          } else {
+            throw new Error("Unsupported urgency specified.");
+          }
+        }
+        if (options.topic) {
+          if (!urlBase64Helper.validate(options.topic)) {
+            throw new Error("Unsupported characters set use the URL or filename-safe Base64 characters set");
+          }
+          if (options.topic.length > 32) {
+            throw new Error("use maximum of 32 characters from the URL or filename-safe Base64 characters set");
+          }
+          topic = options.topic;
+        }
+        if (options.proxy) {
+          if (typeof options.proxy === "string" || typeof options.proxy.host === "string") {
+            proxy = options.proxy;
+          } else {
+            console.warn("Attempt to use proxy option, but invalid type it should be a string or proxy options object.");
+          }
+        }
+        if (options.agent) {
+          if (options.agent instanceof https.Agent) {
+            if (proxy) {
+              console.warn("Agent option will be ignored because proxy option is defined.");
+            }
+            agent = options.agent;
+          } else {
+            console.warn("Wrong type for the agent option, it should be an instance of https.Agent.");
+          }
+        }
+        if (typeof options.timeout === "number") {
+          timeout = options.timeout;
+        }
+      }
+      if (typeof timeToLive === "undefined") {
+        timeToLive = DEFAULT_TTL;
+      }
+      const requestDetails = {
+        method: "POST",
+        headers: {
+          TTL: timeToLive
+        }
+      };
+      Object.keys(extraHeaders).forEach(function(header) {
+        requestDetails.headers[header] = extraHeaders[header];
+      });
+      let requestPayload = null;
+      if (payload) {
+        const encrypted = encryptionHelper.encrypt(subscription.keys.p256dh, subscription.keys.auth, payload, contentEncoding);
+        requestDetails.headers["Content-Length"] = encrypted.cipherText.length;
+        requestDetails.headers["Content-Type"] = "application/octet-stream";
+        if (contentEncoding === webPushConstants.supportedContentEncodings.AES_128_GCM) {
+          requestDetails.headers["Content-Encoding"] = webPushConstants.supportedContentEncodings.AES_128_GCM;
+        } else if (contentEncoding === webPushConstants.supportedContentEncodings.AES_GCM) {
+          requestDetails.headers["Content-Encoding"] = webPushConstants.supportedContentEncodings.AES_GCM;
+          requestDetails.headers.Encryption = "salt=" + encrypted.salt;
+          requestDetails.headers["Crypto-Key"] = "dh=" + encrypted.localPublicKey.toString("base64url");
+        }
+        requestPayload = encrypted.cipherText;
+      } else {
+        requestDetails.headers["Content-Length"] = 0;
+      }
+      const isGCM = subscription.endpoint.startsWith("https://android.googleapis.com/gcm/send");
+      const isFCM = subscription.endpoint.startsWith("https://fcm.googleapis.com/fcm/send");
+      if (isGCM) {
+        if (!currentGCMAPIKey) {
+          console.warn("Attempt to send push notification to GCM endpoint, but no GCM key is defined. Please use setGCMApiKey() or add 'gcmAPIKey' as an option.");
+        } else {
+          requestDetails.headers.Authorization = "key=" + currentGCMAPIKey;
+        }
+      } else if (currentVapidDetails) {
+        const parsedUrl = url3.parse(subscription.endpoint);
+        const audience = parsedUrl.protocol + "//" + parsedUrl.host;
+        const vapidHeaders = vapidHelper.getVapidHeaders(
+          audience,
+          currentVapidDetails.subject,
+          currentVapidDetails.publicKey,
+          currentVapidDetails.privateKey,
+          contentEncoding
+        );
+        requestDetails.headers.Authorization = vapidHeaders.Authorization;
+        if (contentEncoding === webPushConstants.supportedContentEncodings.AES_GCM) {
+          if (requestDetails.headers["Crypto-Key"]) {
+            requestDetails.headers["Crypto-Key"] += ";" + vapidHeaders["Crypto-Key"];
+          } else {
+            requestDetails.headers["Crypto-Key"] = vapidHeaders["Crypto-Key"];
+          }
+        }
+      } else if (isFCM && currentGCMAPIKey) {
+        requestDetails.headers.Authorization = "key=" + currentGCMAPIKey;
+      }
+      requestDetails.headers.Urgency = urgency;
+      if (topic) {
+        requestDetails.headers.Topic = topic;
+      }
+      requestDetails.body = requestPayload;
+      requestDetails.endpoint = subscription.endpoint;
+      if (proxy) {
+        requestDetails.proxy = proxy;
+      }
+      if (agent) {
+        requestDetails.agent = agent;
+      }
+      if (timeout) {
+        requestDetails.timeout = timeout;
+      }
+      return requestDetails;
+    };
+    WebPushLib.prototype.sendNotification = function(subscription, payload, options) {
+      let requestDetails;
+      try {
+        requestDetails = this.generateRequestDetails(subscription, payload, options);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+      return new Promise(function(resolve, reject) {
+        const httpsOptions = {};
+        const urlParts = url3.parse(requestDetails.endpoint);
+        httpsOptions.hostname = urlParts.hostname;
+        httpsOptions.port = urlParts.port;
+        httpsOptions.path = urlParts.path;
+        httpsOptions.headers = requestDetails.headers;
+        httpsOptions.method = requestDetails.method;
+        if (requestDetails.timeout) {
+          httpsOptions.timeout = requestDetails.timeout;
+        }
+        if (requestDetails.agent) {
+          httpsOptions.agent = requestDetails.agent;
+        }
+        if (requestDetails.proxy) {
+          const { HttpsProxyAgent } = require_dist8();
+          httpsOptions.agent = new HttpsProxyAgent(requestDetails.proxy);
+        }
+        const pushRequest = https.request(httpsOptions, function(pushResponse) {
+          let responseText = "";
+          pushResponse.on("data", function(chunk) {
+            responseText += chunk;
+          });
+          pushResponse.on("end", function() {
+            if (pushResponse.statusCode < 200 || pushResponse.statusCode > 299) {
+              reject(new WebPushError(
+                "Received unexpected response code",
+                pushResponse.statusCode,
+                pushResponse.headers,
+                responseText,
+                requestDetails.endpoint
+              ));
+            } else {
+              resolve({
+                statusCode: pushResponse.statusCode,
+                body: responseText,
+                headers: pushResponse.headers
+              });
+            }
+          });
+        });
+        if (requestDetails.timeout) {
+          pushRequest.on("timeout", function() {
+            pushRequest.destroy(new Error("Socket timeout"));
+          });
+        }
+        pushRequest.on("error", function(e2) {
+          reject(e2);
+        });
+        if (requestDetails.body) {
+          pushRequest.write(requestDetails.body);
+        }
+        pushRequest.end();
+      });
+    };
+    module.exports = WebPushLib;
+  }
+});
+
+// ../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/index.js
+var require_src12 = __commonJS({
+  "../../node_modules/.pnpm/web-push@3.6.7/node_modules/web-push/src/index.js"(exports, module) {
+    "use strict";
+    var vapidHelper = require_vapid_helper();
+    var encryptionHelper = require_encryption_helper();
+    var WebPushLib = require_web_push_lib();
+    var WebPushError = require_web_push_error();
+    var WebPushConstants = require_web_push_constants();
+    var webPush = new WebPushLib();
+    module.exports = {
+      WebPushError,
+      supportedContentEncodings: WebPushConstants.supportedContentEncodings,
+      encrypt: encryptionHelper.encrypt,
+      getVapidHeaders: vapidHelper.getVapidHeaders,
+      generateVAPIDKeys: vapidHelper.generateVAPIDKeys,
+      setGCMAPIKey: webPush.setGCMAPIKey,
+      setVapidDetails: webPush.setVapidDetails,
+      generateRequestDetails: webPush.generateRequestDetails,
+      sendNotification: webPush.sendNotification.bind(webPush)
+    };
+  }
+});
+
 // src/app.ts
-var import_express28 = __toESM(require_express2(), 1);
+var import_express30 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/lib/logger.ts
@@ -82396,6 +87769,8 @@ __export(schema_exports, {
   insertMessageSchema: () => insertMessageSchema,
   memoryEmbeddings: () => memoryEmbeddings,
   messages: () => messages,
+  proactiveMessagePreferences: () => proactiveMessagePreferences,
+  pushSubscriptions: () => pushSubscriptions,
   uploadedImages: () => uploadedImages,
   userEntities: () => userEntities,
   userProfiles: () => userProfiles
@@ -94041,6 +99416,42 @@ var userProfiles = pgTable("user_profiles", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow()
 });
+var pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow()
+  },
+  (t2) => ({
+    pushSubscriptionsEndpointUq: uniqueIndex(
+      "push_subscriptions_endpoint_uq"
+    ).on(t2.endpoint),
+    pushSubscriptionsUserIdx: index("push_subscriptions_user_idx").on(t2.userId)
+  })
+);
+var proactiveMessagePreferences = pgTable(
+  "proactive_message_preferences",
+  {
+    userId: text("user_id").primaryKey(),
+    enabled: boolean("enabled").notNull().default(false),
+    frequencyHours: integer("frequency_hours").notNull().default(24),
+    lastSentAt: timestamp("last_sent_at"),
+    nextMessageAt: timestamp("next_message_at"),
+    lastSessionId: text("last_session_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow()
+  },
+  (t2) => ({
+    proactiveMessagePreferencesDueIdx: index(
+      "proactive_message_preferences_due_idx"
+    ).on(t2.enabled, t2.nextMessageAt)
+  })
+);
 var uploadedImages = pgTable(
   "uploaded_images",
   {
@@ -94375,6 +99786,8 @@ async function migrateUserData(options) {
 var REQUIRED_TABLES = [
   "user_entities",
   "user_profiles",
+  "push_subscriptions",
+  "proactive_message_preferences",
   "conversations",
   "messages",
   "chat_sessions",
@@ -94476,6 +99889,31 @@ async function ensureSchema(db3 = getPool()) {
       "updated_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:user_profiles"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "push_subscriptions" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "endpoint" text NOT NULL,
+      "p256dh" text NOT NULL,
+      "auth" text NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:push_subscriptions"
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "proactive_message_preferences" (
+      "user_id" text PRIMARY KEY NOT NULL,
+      "enabled" boolean DEFAULT false NOT NULL,
+      "frequency_hours" integer DEFAULT 24 NOT NULL,
+      "last_sent_at" timestamp,
+      "next_message_at" timestamp,
+      "last_session_id" text,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:proactive_message_preferences"
   );
   await run(
     `CREATE TABLE IF NOT EXISTS "uploaded_images" (
@@ -94644,6 +100082,21 @@ async function ensureSchema(db3 = getPool()) {
     `CREATE UNIQUE INDEX IF NOT EXISTS "user_entities_user_entity_id_uq"
        ON "user_entities" USING btree ("user_id","entity_name","entity_id")`,
     "index:user_entities_user_entity_id_uq"
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "push_subscriptions_endpoint_uq"
+       ON "push_subscriptions" USING btree ("endpoint")`,
+    "index:push_subscriptions_endpoint_uq"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "push_subscriptions_user_idx"
+       ON "push_subscriptions" USING btree ("user_id")`,
+    "index:push_subscriptions_user_idx"
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "proactive_message_preferences_due_idx"
+       ON "proactive_message_preferences" USING btree ("enabled","next_message_at")`,
+    "index:proactive_message_preferences_due_idx"
   );
   await run(
     `CREATE INDEX IF NOT EXISTS "user_entities_user_entity_idx"
@@ -107244,7 +112697,7 @@ router2.post("/healthz/schema", async (_req, res) => {
 var health_default = router2;
 
 // src/routes/index.ts
-var import_express27 = __toESM(require_express2(), 1);
+var import_express29 = __toESM(require_express2(), 1);
 
 // src/routes/openai/index.ts
 var import_express5 = __toESM(require_express2(), 1);
@@ -123616,6 +129069,7 @@ ${content}` : "(Continue the scene naturally.)",
   ];
   return sections.filter(Boolean).join("\n\n");
 }
+var buildCompanionPrompt = composePrompt;
 
 // src/lib/evolutionEngine.ts
 var MILESTONES = [50, 100, 500];
@@ -126376,36 +131830,579 @@ router13.post("/", async (req, res) => {
 });
 var protocolUpgrade_default = router13;
 
-// src/routes/index.ts
+// src/routes/notifications.ts
+var import_express27 = __toESM(require_express2(), 1);
+
+// src/lib/proactiveMessages.ts
+var import_web_push = __toESM(require_src12(), 1);
+var PROACTIVE_FREQUENCIES = [24, 72, 168];
+var DEFAULT_BATCH_SIZE = 2;
+var DEFAULT_MIN_INACTIVE_HOURS = 8;
+var MAX_MESSAGE_LENGTH = 320;
+function normalizeProactiveFrequency(value) {
+  const parsed = Number(value);
+  return PROACTIVE_FREQUENCIES.includes(parsed) ? parsed : 24;
+}
+function boundedInteger(raw, fallback, max) {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(max, Math.trunc(parsed)));
+}
+function truncate4(value, max = 800) {
+  const text2 = String(value ?? "").trim().replace(/\s+/g, " ");
+  return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
+}
+function sanitizeProactiveMessage(value) {
+  let text2 = String(value ?? "").trim().replace(/^```(?:text)?\s*/i, "").replace(/\s*```$/i, "").replace(/^["“]|["”]$/g, "").trim();
+  if (text2.length > MAX_MESSAGE_LENGTH) {
+    const shortened = text2.slice(0, MAX_MESSAGE_LENGTH + 1);
+    const sentenceEnd = Math.max(
+      shortened.lastIndexOf("."),
+      shortened.lastIndexOf("!"),
+      shortened.lastIndexOf("?")
+    );
+    text2 = sentenceEnd >= 80 ? shortened.slice(0, sentenceEnd + 1) : `${text2.slice(0, MAX_MESSAGE_LENGTH - 1).trimEnd()}\u2026`;
+  }
+  return text2;
+}
+function vapidPublicKey() {
+  return process.env.VAPID_PUBLIC_KEY?.trim() || null;
+}
+function configureWebPush() {
+  const publicKey = vapidPublicKey();
+  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
+  if (!publicKey || !privateKey) return false;
+  import_web_push.default.setVapidDetails(
+    process.env.VAPID_SUBJECT?.trim() || "mailto:support@anima-protocol.com",
+    publicKey,
+    privateKey
+  );
+  return true;
+}
+function proactivePushConfigured() {
+  return Boolean(vapidPublicKey() && process.env.VAPID_PRIVATE_KEY?.trim());
+}
+async function claimDuePreferences(limit2) {
+  const { rows } = await getPool().query(
+    `WITH due AS (
+       SELECT p.user_id
+       FROM proactive_message_preferences p
+       WHERE p.enabled = true
+         AND p.next_message_at IS NOT NULL
+         AND p.next_message_at <= now()
+         AND EXISTS (
+           SELECT 1 FROM push_subscriptions s WHERE s.user_id = p.user_id
+         )
+       ORDER BY p.next_message_at ASC
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED
+     )
+     UPDATE proactive_message_preferences p
+     SET next_message_at = now() + make_interval(hours => p.frequency_hours),
+         updated_at = now()
+     FROM due
+     WHERE p.user_id = due.user_id
+     RETURNING p.user_id, p.frequency_hours, p.last_session_id`,
+    [limit2]
+  );
+  return rows.map((row) => ({
+    userId: row.user_id,
+    frequencyHours: row.frequency_hours,
+    lastSessionId: row.last_session_id
+  }));
+}
+async function deferPreference(userId, hours) {
+  await db.update(proactiveMessagePreferences).set({
+    nextMessageAt: new Date(Date.now() + hours * 60 * 60 * 1e3),
+    updatedAt: /* @__PURE__ */ new Date()
+  }).where(eq(proactiveMessagePreferences.userId, userId));
+}
+async function completePreference(userId, sessionId) {
+  await db.update(proactiveMessagePreferences).set({
+    lastSentAt: /* @__PURE__ */ new Date(),
+    lastSessionId: sessionId,
+    updatedAt: /* @__PURE__ */ new Date()
+  }).where(eq(proactiveMessagePreferences.userId, userId));
+}
+function isProactiveMessage(message) {
+  const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata : {};
+  return message.role === "assistant" && metadata.source === "proactive_push";
+}
+async function loadCandidate(userId, lastSessionId) {
+  const sessions = await db.select().from(chatSessions).where(
+    and(
+      eq(chatSessions.userId, userId),
+      eq(chatSessions.mode, "solo"),
+      sql`jsonb_array_length(${chatSessions.characterIds}) > 0`
+    )
+  ).orderBy(desc(chatSessions.updatedAt)).limit(12);
+  const ordered = lastSessionId ? [
+    ...sessions.filter((session) => session.id !== lastSessionId),
+    ...sessions.filter((session) => session.id === lastSessionId)
+  ] : sessions;
+  const inactiveBefore = new Date(
+    Date.now() - boundedInteger(
+      process.env.PROACTIVE_MESSAGE_MIN_INACTIVE_HOURS,
+      DEFAULT_MIN_INACTIVE_HOURS,
+      168
+    ) * 60 * 60 * 1e3
+  );
+  for (const session of ordered) {
+    const newestFirst = await db.select().from(chatMessages).where(
+      and(
+        eq(chatMessages.userId, userId),
+        eq(chatMessages.sessionId, session.id)
+      )
+    ).orderBy(desc(chatMessages.createdAt)).limit(24);
+    if (newestFirst.length === 0) continue;
+    if (!newestFirst.some((message) => message.role === "user")) continue;
+    if (newestFirst[0].createdAt > inactiveBefore) continue;
+    if (isProactiveMessage(newestFirst[0])) continue;
+    const characterId = String(session.characterIds[0] || "");
+    if (!characterId) continue;
+    const [characterRow] = await db.select().from(userEntities).where(
+      and(
+        eq(userEntities.userId, userId),
+        inArray(userEntities.entityName, ["Character", "Anima"]),
+        eq(userEntities.entityId, characterId)
+      )
+    ).limit(1);
+    if (!characterRow) continue;
+    const characterData = asObject(characterRow.data);
+    const name = String(characterData.name || "").trim();
+    if (!name) continue;
+    return {
+      sessionId: session.id,
+      character: {
+        ...characterData,
+        id: String(characterData.id || characterId),
+        name,
+        ...characterRow.entityName === "Anima" ? { _isAnima: true, universe: characterData.universe || "Anima" } : {}
+      },
+      recentMessages: newestFirst.reverse().map((message) => ({
+        role: message.role,
+        content: message.content,
+        character_name: message.characterName || void 0,
+        timestamp: message.createdAt.toISOString()
+      }))
+    };
+  }
+  return null;
+}
+async function generateMessage(userId, candidate) {
+  const [memory] = await db.select().from(companionMemories).where(
+    and(
+      eq(companionMemories.userId, userId),
+      eq(companionMemories.characterId, String(candidate.character.id))
+    )
+  ).limit(1);
+  const memories = memory ? [
+    {
+      characterId: memory.characterId,
+      summary: memory.summary,
+      facts: memory.facts,
+      emotionalState: memory.emotionalState,
+      resonanceNotes: memory.resonanceNotes,
+      updatedAt: memory.updatedAt
+    }
+  ] : [];
+  const instruction = "Send one warm, natural check-in as this character after some time apart. Continue the relationship or conversation without claiming the user said something new. Do not mention apps, notifications, inactivity, schedules, or being an AI. Do not guilt, pressure, alarm, sexualize, or manipulate the user. Keep it safe for a lock-screen preview, in character, and at most two short sentences.";
+  const prompt = buildCompanionPrompt({
+    systemPrompt: instruction,
+    characters: [candidate.character],
+    activeCharacter: candidate.character,
+    memories,
+    recentMessages: candidate.recentMessages,
+    mode: "solo",
+    content: "[Proactive outreach: send the check-in now.]",
+    isCrossover: false
+  });
+  const routed = routeModel("brief proactive companion check-in", {
+    deepMode: false,
+    conversationDepth: candidate.recentMessages.length
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25e3);
+  timer.unref?.();
+  try {
+    const completion = await createChatCompletionWithFailover({
+      tier: "light",
+      model: routed.model,
+      maxTokens: 120,
+      temperature: 0.8,
+      messages: [{ role: "system", content: prompt }],
+      signal: controller.signal
+    });
+    return sanitizeProactiveMessage(completion.content);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function appendStoreMessage2(userId, sessionId, message) {
+  return db.transaction(async (tx) => {
+    await migrateSessionMessages(tx, userId, sessionId);
+    const [agg] = await tx.select({
+      maxSeq: sql`coalesce(max((${userEntities.data} ->> 'seq')::numeric), -1)`
+    }).from(userEntities).where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_MESSAGE),
+        sessionIdEq(sessionId)
+      )
+    );
+    const seq = Number(agg?.maxSeq ?? -1) + 1;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const id = String(message.id || makeId());
+    const data = {
+      ...message,
+      id,
+      session_id: sessionId,
+      seq,
+      created_date: message.created_date ?? message.timestamp ?? now,
+      updated_date: now
+    };
+    await tx.insert(userEntities).values({
+      userId,
+      entityName: CHAT_MESSAGE,
+      entityId: id,
+      data
+    });
+    return data;
+  });
+}
+async function persistMessage(userId, candidate, content) {
+  const now = /* @__PURE__ */ new Date();
+  const message = {
+    role: "assistant",
+    content,
+    character_id: candidate.character.id,
+    character_name: candidate.character.name,
+    timestamp: now.toISOString(),
+    proactive: true,
+    metadata: { source: "proactive_push" }
+  };
+  await appendStoreMessage2(userId, candidate.sessionId, message);
+  await Promise.all([
+    db.insert(chatMessages).values({
+      id: makeId(),
+      sessionId: candidate.sessionId,
+      userId,
+      role: "assistant",
+      content,
+      characterId: String(candidate.character.id),
+      characterName: candidate.character.name,
+      isCrossover: false,
+      metadata: { source: "proactive_push" },
+      createdAt: now
+    }),
+    db.update(chatSessions).set({ updatedAt: now }).where(
+      and(
+        eq(chatSessions.userId, userId),
+        eq(chatSessions.id, candidate.sessionId)
+      )
+    )
+  ]);
+  const [sessionRow] = await db.select().from(userEntities).where(
+    and(
+      eq(userEntities.userId, userId),
+      eq(userEntities.entityName, CHAT_SESSION),
+      eq(userEntities.entityId, candidate.sessionId)
+    )
+  ).limit(1);
+  if (sessionRow) {
+    const sessionData = asObject(sessionRow.data);
+    await db.update(userEntities).set({
+      data: {
+        ...sessionData,
+        last_message: truncate4(content, 80),
+        updated_date: now.toISOString()
+      },
+      updatedAt: now
+    }).where(eq(userEntities.id, sessionRow.id));
+  }
+  notifyUser(userId);
+}
+async function deliverPush(userId, candidate, content) {
+  if (!configureWebPush()) return 0;
+  const subscriptions = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+  const payload = JSON.stringify({
+    title: `${candidate.character.name} sent you a message`,
+    body: content,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `anima-session-${candidate.sessionId}`,
+    data: { url: `/chat/${encodeURIComponent(candidate.sessionId)}` }
+  });
+  let delivered = 0;
+  const expiredIds = [];
+  await Promise.all(
+    subscriptions.map(async (subscription) => {
+      const target = {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: subscription.p256dh,
+          auth: subscription.auth
+        }
+      };
+      try {
+        await import_web_push.default.sendNotification(target, payload, { TTL: 60 * 60 * 12 });
+        delivered += 1;
+      } catch (err) {
+        const statusCode = err && typeof err === "object" && "statusCode" in err ? Number(err.statusCode) : 0;
+        if (statusCode === 404 || statusCode === 410) {
+          expiredIds.push(subscription.id);
+        }
+      }
+    })
+  );
+  if (expiredIds.length > 0) {
+    await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.id, expiredIds));
+  }
+  return delivered;
+}
+async function runClaim(claim) {
+  try {
+    const candidate = await loadCandidate(claim.userId, claim.lastSessionId);
+    if (!candidate) {
+      await deferPreference(claim.userId, 12);
+      return {
+        status: "skipped",
+        userId: claim.userId,
+        reason: "No eligible inactive chat"
+      };
+    }
+    const content = await generateMessage(claim.userId, candidate);
+    if (!content) {
+      throw new Error("The model returned an empty proactive message");
+    }
+    await persistMessage(claim.userId, candidate, content);
+    const delivered = await deliverPush(claim.userId, candidate, content);
+    await completePreference(claim.userId, candidate.sessionId);
+    return {
+      status: "sent",
+      userId: claim.userId,
+      sessionId: candidate.sessionId,
+      characterName: String(candidate.character.name),
+      delivered
+    };
+  } catch (err) {
+    await deferPreference(claim.userId, 1).catch(() => {
+    });
+    return {
+      status: "failed",
+      userId: claim.userId,
+      reason: err instanceof Error ? err.message : String(err)
+    };
+  }
+}
+async function runProactiveMessageBatch() {
+  if (!proactivePushConfigured()) {
+    throw new Error("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required");
+  }
+  const limit2 = boundedInteger(
+    process.env.PROACTIVE_MESSAGE_BATCH_SIZE,
+    DEFAULT_BATCH_SIZE,
+    10
+  );
+  const claims = await claimDuePreferences(limit2);
+  return Promise.all(claims.map(runClaim));
+}
+
+// src/routes/notifications.ts
 var router14 = (0, import_express27.Router)();
-router14.use("/admin", admin_default);
-router14.use("/openai", openai_default2);
-router14.use("/openai", functions_default);
-router14.use(elevenlabs_default);
-router14.use(characterImage_default);
-router14.use(battleModels_default);
-router14.use("/chat", chat_default);
-router14.use("/code-repair", codeRepair_default);
-router14.use("/protocol-upgrade", protocolUpgrade_default);
-router14.use("/store", store_default);
-router14.use(storage_default);
-router14.get("/placeholder/:w/:h", (req, res) => {
+router14.use(async (_req, _res, next) => {
+  try {
+    await ensureSchemaOnce();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+function requireUser4(req, res) {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  return userId;
+}
+function validEndpoint(value) {
+  if (typeof value !== "string" || value.length < 12 || value.length > 4096) {
+    return false;
+  }
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+function validKey(value) {
+  return typeof value === "string" && value.length >= 8 && value.length <= 4096;
+}
+router14.get("/preferences", async (req, res) => {
+  const userId = requireUser4(req, res);
+  if (!userId) return;
+  const [[preference], [subscriptionCount]] = await Promise.all([
+    db.select().from(proactiveMessagePreferences).where(eq(proactiveMessagePreferences.userId, userId)).limit(1),
+    db.select({ count: sql`count(*)::int` }).from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId))
+  ]);
+  res.json({
+    configured: proactivePushConfigured(),
+    vapid_public_key: vapidPublicKey(),
+    enabled: preference?.enabled ?? false,
+    frequency_hours: normalizeProactiveFrequency(preference?.frequencyHours),
+    subscribed: Number(subscriptionCount?.count ?? 0) > 0,
+    last_sent_at: preference?.lastSentAt?.toISOString() ?? null
+  });
+});
+router14.put("/preferences", async (req, res) => {
+  const userId = requireUser4(req, res);
+  if (!userId) return;
+  const enabled = req.body?.enabled === true;
+  const requestedFrequency = Number(req.body?.frequency_hours);
+  if (req.body?.frequency_hours !== void 0 && !PROACTIVE_FREQUENCIES.includes(
+    requestedFrequency
+  )) {
+    res.status(400).json({ error: "Unsupported proactive message frequency" });
+    return;
+  }
+  const frequencyHours = normalizeProactiveFrequency(requestedFrequency);
+  if (enabled && !proactivePushConfigured()) {
+    res.status(503).json({
+      error: "Push notifications are not configured on this deployment",
+      code: "push_not_configured"
+    });
+    return;
+  }
+  if (enabled) {
+    const [subscriptionCount] = await db.select({ count: sql`count(*)::int` }).from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+    if (Number(subscriptionCount?.count ?? 0) === 0) {
+      res.status(409).json({
+        error: "Enable notifications on this device first",
+        code: "subscription_required"
+      });
+      return;
+    }
+  }
+  const [existing] = await db.select().from(proactiveMessagePreferences).where(eq(proactiveMessagePreferences.userId, userId)).limit(1);
+  const cadenceChanged = existing && existing.frequencyHours !== frequencyHours;
+  const nextMessageAt = enabled ? !existing?.enabled || cadenceChanged || !existing.nextMessageAt ? new Date(Date.now() + frequencyHours * 60 * 60 * 1e3) : existing.nextMessageAt : null;
+  const [saved] = await db.insert(proactiveMessagePreferences).values({
+    userId,
+    enabled,
+    frequencyHours,
+    nextMessageAt,
+    updatedAt: /* @__PURE__ */ new Date()
+  }).onConflictDoUpdate({
+    target: proactiveMessagePreferences.userId,
+    set: {
+      enabled,
+      frequencyHours,
+      nextMessageAt,
+      updatedAt: /* @__PURE__ */ new Date()
+    }
+  }).returning();
+  res.json({
+    enabled: saved.enabled,
+    frequency_hours: saved.frequencyHours,
+    next_message_at: saved.nextMessageAt?.toISOString() ?? null
+  });
+});
+router14.post("/subscriptions", async (req, res) => {
+  const userId = requireUser4(req, res);
+  if (!userId) return;
+  const endpoint = req.body?.endpoint;
+  const p256dh = req.body?.keys?.p256dh;
+  const auth = req.body?.keys?.auth;
+  if (!validEndpoint(endpoint) || !validKey(p256dh) || !validKey(auth)) {
+    res.status(400).json({ error: "Invalid push subscription" });
+    return;
+  }
+  await db.insert(pushSubscriptions).values({ userId, endpoint, p256dh, auth }).onConflictDoUpdate({
+    target: pushSubscriptions.endpoint,
+    set: { userId, p256dh, auth, updatedAt: /* @__PURE__ */ new Date() }
+  });
+  res.status(201).json({ subscribed: true });
+});
+router14.delete("/subscriptions", async (req, res) => {
+  const userId = requireUser4(req, res);
+  if (!userId) return;
+  const endpoint = req.body?.endpoint;
+  if (!validEndpoint(endpoint)) {
+    res.status(400).json({ error: "Invalid push subscription endpoint" });
+    return;
+  }
+  await db.delete(pushSubscriptions).where(
+    and(
+      eq(pushSubscriptions.userId, userId),
+      eq(pushSubscriptions.endpoint, endpoint)
+    )
+  );
+  const [remaining] = await db.select({ count: sql`count(*)::int` }).from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+  if (Number(remaining?.count ?? 0) === 0) {
+    await db.update(proactiveMessagePreferences).set({ enabled: false, nextMessageAt: null, updatedAt: /* @__PURE__ */ new Date() }).where(eq(proactiveMessagePreferences.userId, userId));
+  }
+  res.json({ subscribed: false });
+});
+router14.get("/proactive/run", async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (!cronSecret) {
+    res.status(503).json({ error: "CRON_SECRET is not configured" });
+    return;
+  }
+  if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const results = await runProactiveMessageBatch();
+  const summary = results.reduce(
+    (counts2, result) => {
+      counts2[result.status] += 1;
+      if (result.status === "sent") counts2.delivered += result.delivered;
+      return counts2;
+    },
+    { sent: 0, skipped: 0, failed: 0, delivered: 0 }
+  );
+  if (summary.failed > 0) {
+    logger.warn({ summary }, "Proactive message cron completed with failures");
+  } else {
+    logger.info({ summary }, "Proactive message cron completed");
+  }
+  res.json(summary);
+});
+var notifications_default = router14;
+
+// src/routes/index.ts
+var router15 = (0, import_express29.Router)();
+router15.use("/admin", admin_default);
+router15.use("/openai", openai_default2);
+router15.use("/openai", functions_default);
+router15.use(elevenlabs_default);
+router15.use(characterImage_default);
+router15.use(battleModels_default);
+router15.use("/chat", chat_default);
+router15.use("/code-repair", codeRepair_default);
+router15.use("/protocol-upgrade", protocolUpgrade_default);
+router15.use("/notifications", notifications_default);
+router15.use("/store", store_default);
+router15.use(storage_default);
+router15.get("/placeholder/:w/:h", (req, res) => {
   const w2 = Math.min(Number(req.params.w) || 150, 1200);
   const h2 = Math.min(Number(req.params.h) || 150, 1200);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w2}" height="${h2}"><rect width="${w2}" height="${h2}" fill="#1a1a2e"/><text x="50%" y="50%" font-family="monospace" font-size="12" fill="#22d3ee" text-anchor="middle" dominant-baseline="middle">${w2}\xD7${h2}</text></svg>`;
   res.setHeader("Content-Type", "image/svg+xml");
   res.send(svg);
 });
-var routes_default = router14;
+var routes_default = router15;
 
 // src/app.ts
-var app = (0, import_express28.default)();
+var app = (0, import_express30.default)();
 app.set("trust proxy", 1);
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerk_default);
 app.use((0, import_cors.default)({ credentials: true, origin: true }));
-app.use(import_express28.default.json({ limit: "25mb" }));
-app.use(import_express28.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express30.default.json({ limit: "25mb" }));
+app.use(import_express30.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use("/api", health_default);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });

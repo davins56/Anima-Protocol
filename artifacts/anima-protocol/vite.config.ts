@@ -70,6 +70,7 @@ export default defineConfig({
       injectRegister: false,
       manifest: false,
       workbox: {
+        importScripts: ["/push-notifications-sw.js"],
         globDirectory: path.resolve(import.meta.dirname, "dist/public"),
         globPatterns: [
           "**/*.{js,css,svg,png,ico,webp,woff,woff2,jpg,jpeg,json}",

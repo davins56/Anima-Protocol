@@ -5,6 +5,8 @@ import { getPool } from "./client";
 export const REQUIRED_TABLES = [
   "user_entities",
   "user_profiles",
+  "push_subscriptions",
+  "proactive_message_preferences",
   "conversations",
   "messages",
   "chat_sessions",
@@ -154,6 +156,33 @@ export async function ensureSchema(
       "updated_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:user_profiles",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "push_subscriptions" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "endpoint" text NOT NULL,
+      "p256dh" text NOT NULL,
+      "auth" text NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:push_subscriptions",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "proactive_message_preferences" (
+      "user_id" text PRIMARY KEY NOT NULL,
+      "enabled" boolean DEFAULT false NOT NULL,
+      "frequency_hours" integer DEFAULT 24 NOT NULL,
+      "last_sent_at" timestamp,
+      "next_message_at" timestamp,
+      "last_session_id" text,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:proactive_message_preferences",
   );
 
   await run(
@@ -335,6 +364,21 @@ export async function ensureSchema(
     `CREATE UNIQUE INDEX IF NOT EXISTS "user_entities_user_entity_id_uq"
        ON "user_entities" USING btree ("user_id","entity_name","entity_id")`,
     "index:user_entities_user_entity_id_uq",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "push_subscriptions_endpoint_uq"
+       ON "push_subscriptions" USING btree ("endpoint")`,
+    "index:push_subscriptions_endpoint_uq",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "push_subscriptions_user_idx"
+       ON "push_subscriptions" USING btree ("user_id")`,
+    "index:push_subscriptions_user_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "proactive_message_preferences_due_idx"
+       ON "proactive_message_preferences" USING btree ("enabled","next_message_at")`,
+    "index:proactive_message_preferences_due_idx",
   );
   await run(
     `CREATE INDEX IF NOT EXISTS "user_entities_user_entity_idx"

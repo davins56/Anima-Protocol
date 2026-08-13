@@ -7,12 +7,14 @@ import AnimaPersonalityPanel from "@/components/anima/AnimaPersonalityPanel";
 import AnimaSoulprintPanel from "@/components/anima/AnimaSoulprintPanel";
 import AnimaVoicePanel from "@/components/anima/AnimaVoicePanel";
 import AnimaExpressionPanel from "@/components/anima/AnimaExpressionPanel";
+import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
 import {
   ChevronLeft,
   Fingerprint,
   Loader,
   Mic,
   Palette,
+  ScanSearch,
   Sparkles,
   Swords,
   UserCircle,
@@ -25,11 +27,12 @@ const TABS = [
   { id: "soulprint", label: "Soulprint", icon: Fingerprint, blurb: "Born identity & bond" },
   { id: "expression", label: "Expression", icon: Swords, blurb: "Angelic to Demonic spectrum" },
   { id: "voice", label: "Voice", icon: Mic, blurb: "Spoken presence" },
+  { id: "permissions", label: "Permissions", icon: ScanSearch, blurb: "Device scan & data access" },
 ];
 
 /**
  * Complete Customise Anima hub: Look · Personality · Soulprint · Voice.
- * Deep links: `?anima=<id>&tab=look|personality|soulprint|expression|voice`
+ * Deep links: `?anima=<id>&tab=look|personality|soulprint|expression|voice|permissions`
  */
 export default function CustomiseAnima() {
   const navigate = useNavigate();
@@ -130,7 +133,7 @@ export default function CustomiseAnima() {
               // Customise Anima
             </h1>
             <p className="text-[10px] font-mono text-primary/40 tracking-widest">
-              Look · personality · soulprint · expression · voice — one place to shape your companion
+              Look · personality · soulprint · expression · voice · permissions — one place to shape your companion
             </p>
           </div>
         </div>
@@ -249,6 +252,18 @@ export default function CustomiseAnima() {
                 onSave={mergeAnima}
               />
             )}
+            {activeTab === "permissions" && (
+              <DeviceScanPanel
+                key={`${anima.id}-permissions`}
+                anima={anima}
+                onPermissionChange={(granted) =>
+                  mergeAnima({
+                    device_scan_granted: granted,
+                    device_scan_granted_at: granted ? new Date().toISOString() : null,
+                  })
+                }
+              />
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-16 gap-4 border border-primary/15 bg-primary/5 px-6 text-center">
@@ -258,7 +273,7 @@ export default function CustomiseAnima() {
             </p>
             <p className="font-mono text-[10px] text-primary/40 tracking-widest max-w-md leading-relaxed">
               Forge your companion first, then return here to shape their look
-              (skin, hair, outfit, eyes), personality, soulprint, expression, and voice.
+              (skin, hair, outfit, eyes), personality, soulprint, expression, voice, and permissions.
             </p>
             <button
               type="button"

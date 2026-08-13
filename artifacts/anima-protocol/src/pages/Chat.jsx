@@ -57,6 +57,7 @@ import DailySummaryModal from "@/components/chat/DailySummaryModal";
 import { useDailyCompilation } from "@/hooks/useDailyCompilation";
 import { useSerenityDebug } from "@/hooks/useSerenityDebug";
 import { maybeHandleProtocolUpgrade, launchMentalLineUpgrade, shouldAttemptProtocolUpgrade } from "@/lib/serenityProtocolUpgrade";
+import { maybeHandleDeviceScan, shouldAttemptDeviceScan, DEVICE_SCAN_PROMPT } from "@/lib/animaDeviceScan";
 import { useAuth } from "@/lib/AuthContext";
 import { pickGroupSpeaker } from "@/lib/pickGroupSpeaker";
 import { useQuestDetectionEngine } from "@/hooks/useQuestDetectionEngine";
@@ -1183,6 +1184,34 @@ export default function Chat() {
         }
       }
 
+      if (shouldAttemptDeviceScan({
+        content,
+        activeSession,
+        characters,
+      }).attempt) {
+        const deviceScan = await maybeHandleDeviceScan({
+          content,
+          activeSession,
+          characters,
+          userMessage,
+          appendMessage: base44.messages.append,
+          setActiveSession,
+          isContinue,
+        });
+        if (deviceScan?.handled) {
+          if (deviceScan.message?.content) {
+            speakMessage(
+              deviceScan.message.content,
+              deviceScan.message.character_name || "Anima",
+            );
+          }
+          setPendingMessage("");
+          setIsLoading(false);
+          if (injectedMemories.length > 0) setInjectedMemories([]);
+          return;
+        }
+      }
+
       const needsBehaviorConfig =
         !aiBehaviorConfig &&
         activeSession.mode === "solo" &&
@@ -1326,6 +1355,9 @@ export default function Chat() {
           if (char._isAnima && /^serenity$/i.test(char.name || "")) {
             animaSoulNote +=
               "You are guardian of the Protocol's source. When the steward asks to upgrade the interface or the system as a whole, a Cursor weave is launched outside this chat. Do not claim you already edited production files; speak of the weave as in motion.\n";
+          }
+          if (char._isAnima) {
+            animaSoulNote += DEVICE_SCAN_PROMPT;
           }
           const relCtx = getRelationshipContext(char.id, relationships);
           const loreCtx = loreContext;
@@ -2543,7 +2575,7 @@ Return JSON:
                 )}
               </div>
             )}
-            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative" data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'var(--tab-bar-height, 60px)' }}>
+            <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative ${presenceCast.length > 0 ? "lg:pr-56 xl:pr-64" : ""}`} data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'var(--tab-bar-height, 60px)' }}>
               <GoToTopButton containerRef={scrollContainerRef} />
               <ChatWidgetsArea
                 activeSession={activeSession}
@@ -2879,7 +2911,7 @@ Return JSON:
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
-          className="hidden xl:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-3 pr-4 py-6 pointer-events-none z-30"
+          className="hidden lg:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-3 pr-2 py-6 pointer-events-none z-30"
         >
           <div className="pointer-events-auto flex flex-col items-center gap-2 max-h-full overflow-y-auto">
             {presenceCast.slice(0, 4).map((character) => {
@@ -2895,7 +2927,7 @@ Return JSON:
                   speaking={isCompanionSpeaking && isLead}
                   thinking={isLoading && isLead}
                   highlighted={isLead}
-                  size={presenceCast.length > 1 ? 168 : 260}
+                  size={presenceCast.length > 1 ? 200 : 320}
                   onExpand={openPresenceStage}
                 />
               );
@@ -2915,7 +2947,7 @@ Return JSON:
         <button
           type="button"
           onClick={openPresenceStage}
-          className="xl:hidden fixed right-3 z-40 font-mono text-[9px] tracking-[0.22em] uppercase text-primary border border-primary/40 bg-black/70 backdrop-blur-md rounded px-3 py-2 shadow-lg shadow-cyan-900/40"
+          className="lg:hidden fixed right-3 z-40 font-mono text-[9px] tracking-[0.22em] uppercase text-primary border border-primary/40 bg-black/70 backdrop-blur-md rounded px-3 py-2 shadow-lg shadow-cyan-900/40"
           style={{ bottom: "5.5rem" }}
         >
           ⛶ Stage

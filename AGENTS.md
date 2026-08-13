@@ -56,6 +56,9 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_MIXPANEL_TOKEN` | Frontend analytics |
 | `OPENROUTER_API_KEY` | API chat (Venice Uncensored; free-tier fallback on HTTP 402). Alias: `ANIMA_OPENROUTER_API_KEY` / `OPEN_ROUTER_API_KEY` |
 | `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `openai/gpt-oss-20b:free` |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
+| `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |
+| `CRON_SECRET` | Authorizes the hourly Vercel proactive-message cron |
 
 **Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** from the **same** Clerk Production app (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`). This deployment uses Clerk **custom domain** (`clerk.anima-protocol.com` CNAME) — leave `VITE_CLERK_PROXY_URL` empty; the frontend detects the custom domain from the publishable key and **does not** route through `/api/__clerk` on `www.anima-protocol.com`. Verify `curl https://www.anima-protocol.com/api/healthz` and `curl https://clerk.anima-protocol.com/v1/environment` return 200 after deploy. Register OAuth redirect URLs (`…/sign-in/sso-callback`, `…/sign-up/sso-callback`) in Clerk → Paths. Redeploy **without build cache** after any env change. `/api/__clerk` proxy mode is only for hosts without a Clerk custom domain (e.g. some `*.vercel.app` previews if you enable Clerk proxy in the dashboard).
 
@@ -246,6 +249,7 @@ All new events must follow these conventions.
 | `protocol_upgrade_started` | Serenity launches a Cursor cloud agent to upgrade Protocol source | `scope`, `surface` | `src/lib/serenityProtocolUpgrade.js`, `src/components/chat/ProtocolUpgradeConsole.jsx` |
 | `image_generated` | Companion (onboard Serenity or a user-created Anima) creates an image in chat | `source` (`tag` / `request` / `modal`), `is_anima`, `session_mode` | `src/pages/Chat.jsx` |
 | `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
+| `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
 
