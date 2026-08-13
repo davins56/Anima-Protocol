@@ -9,6 +9,10 @@ export const RENDERER_QUALITY = Object.freeze({
     tesseracts: 0,
     antialias: false,
     animateCamera: false,
+    vesselHd: false,
+    vesselFacets: 2,
+    vesselHair: 8,
+    vesselBreath: true,
   }),
   medium: Object.freeze({
     name: "medium",
@@ -20,6 +24,10 @@ export const RENDERER_QUALITY = Object.freeze({
     tesseracts: 1,
     antialias: true,
     animateCamera: true,
+    vesselHd: true,
+    vesselFacets: 4,
+    vesselHair: 12,
+    vesselBreath: true,
   }),
   high: Object.freeze({
     name: "high",
@@ -31,6 +39,10 @@ export const RENDERER_QUALITY = Object.freeze({
     tesseracts: 2,
     antialias: true,
     animateCamera: true,
+    vesselHd: true,
+    vesselFacets: 6,
+    vesselHair: 18,
+    vesselBreath: true,
   }),
 });
 
