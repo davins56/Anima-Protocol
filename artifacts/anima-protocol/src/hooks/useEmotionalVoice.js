@@ -1,14 +1,25 @@
 import { useState, useCallback, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import { speakToAnima } from '@/components/voice/speakToAnima';
 
 /**
  * Hook to manage emotional voice synthesis with ElevenLabs.
- * Automatically adjusts voice parameters based on character's emotional state.
+ * Plays through POST /api/tts so replay always settles (success or error).
  */
 export function useEmotionalVoice() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
   const audioRef = useRef(null);
+
+  const stop = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
+    setIsPlaying(false);
+    setIsLoading(false);
+  }, []);
 
   const speakWithEmotion = useCallback(async (
     text,
@@ -17,79 +28,55 @@ export function useEmotionalVoice() {
     emotion = 'neutral',
     intensity = 5
   ) => {
-    if (!voiceId || !text) return;
+    if (!text) return;
 
+    stop();
+    setError(null);
     setIsLoading(true);
     try {
-      // Get emotionally adjusted voice parameters
-      const adjustmentResult = await base44.functions.invoke(
-        'adjustVoiceEmotionalParameters',
-        { character_id: characterId, emotion, intensity }
-      );
+      const { audioUrl } = await speakToAnima({
+        text,
+        voiceId,
+        characterId,
+        emotion,
+        intensity,
+      });
 
-      if (!adjustmentResult?.data?.voice_settings) {
-        throw new Error('Failed to adjust voice parameters');
+      if (!audioUrl) {
+        setIsLoading(false);
+        return;
       }
 
-      const voiceSettings = adjustmentResult.data.voice_settings;
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        setIsPlaying(false);
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        setIsPlaying(false);
+        audioRef.current = null;
+        setError('Playback failed');
+      };
 
-      // Construct ElevenLabs TTS request with emotional parameters
-      const ttsResponse = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'xi-api-key': '', // Will be handled server-side in production
-          },
-          body: JSON.stringify({
-            text,
-            model_id: 'eleven_monolingual_v1',
-            voice_settings: {
-              stability: voiceSettings.stability,
-              similarity_boost: 0.85,
-              style: voiceSettings.style,
-              use_speaker_boost: voiceSettings.speaker_boost,
-            },
-          }),
-        }
-      );
-
-      if (!ttsResponse.ok) {
-        throw new Error(`TTS API error: ${ttsResponse.statusText}`);
-      }
-
-      const audioData = await ttsResponse.arrayBuffer();
-      const audioBlob = new Blob([audioData], { type: 'audio/mpeg' });
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      // Play audio
-      if (audioRef.current) {
-        audioRef.current.src = audioUrl;
-        audioRef.current.play().catch(err => console.error('Playback error:', err));
-        setIsPlaying(true);
-
-        audioRef.current.onended = () => setIsPlaying(false);
-      }
-    } catch (error) {
-      console.error('Emotional voice synthesis error:', error);
+      await audio.play();
+      setIsPlaying(true);
+    } catch (err) {
+      console.error('Emotional voice synthesis error:', err);
+      setError(err?.message || 'Voice replay failed');
+      setIsPlaying(false);
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  const stop = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setIsPlaying(false);
-    }
-  }, []);
+  }, [stop]);
 
   return {
     speakWithEmotion,
     isPlaying,
     isLoading,
+    error,
     stop,
     audioRef,
   };
