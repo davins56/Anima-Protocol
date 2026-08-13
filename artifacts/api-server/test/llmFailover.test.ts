@@ -160,6 +160,7 @@ vi.mock("../src/lib/openaiClient", () => {
 
 import { resetLocalModelCatalogForTests } from "../src/lib/localModelCatalog";
 import {
+  allowOpenRouterFallback,
   createChatCompletionWithFailover,
   createChatStreamWithFailover,
   getLlmRoutingStatus,
@@ -172,6 +173,7 @@ import {
   isOpenRouterFreeDailyLimitError,
   isOpenRouterFreeMinuteLimitError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
+  preferCustomLlmOnly,
   probeLlmProviders,
   resetOpenRouterCreditFallbackForTests,
   resolveLocalModel,
@@ -364,19 +366,51 @@ describe("getProviderChain", () => {
     process.env = { ...SAVED };
   });
 
-  it("puts local first then OpenRouter when both are configured", () => {
+  it("uses the custom LLM alone when both local and OpenRouter are configured", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
+    delete process.env.ANIMA_LLM_PROVIDER;
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(allowOpenRouterFallback()).toBe(false);
+  });
+
+  it("adds OpenRouter after local only when ANIMA_OPENROUTER_FALLBACK=true", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    delete process.env.ANIMA_LLM_PROVIDER;
     expect(getProviderChain()).toEqual(["local", "openrouter"]);
+    expect(allowOpenRouterFallback()).toBe(true);
+  });
+
+  it("keeps OpenRouter out of the chain when ANIMA_LLM_PROVIDER=custom", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    expect(preferCustomLlmOnly()).toBe(true);
+    expect(getProviderChain()).toEqual(["local"]);
   });
 
   it("uses OpenRouter alone on Vercel when local is unset", () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_LLM_PROVIDER;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     expect(getProviderChain()).toEqual(["openrouter"]);
+  });
+
+  it("does not use OpenRouter in custom mode even when local is unset", () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    expect(getProviderChain()).toEqual([]);
   });
 });
 
@@ -419,6 +453,8 @@ describe("getLlmRoutingStatus", () => {
     expect(status.preferred).toBe("local");
     expect(status.brand).toBe("anima");
     expect(status.chain).toEqual(["local"]);
+    expect(status.customOnly).toBe(false);
+    expect(status.openRouterFallback).toBe(false);
     expect(status.note).toMatch(/Self-hosted Anima LLM/i);
   });
 
@@ -450,11 +486,14 @@ describe("getLlmRoutingStatus", () => {
     expect(status.preferred).toBe("openrouter");
     expect(status.brand).toBe("openrouter");
     expect(status.chain).toEqual(["openrouter"]);
+    expect(status.customOnly).toBe(false);
+    expect(status.openRouterFallback).toBe(false);
     expect(status.openrouter.configured).toBe(true);
     expect(status.openrouter.model).toMatch(/venice|dolphin|gpt-oss/i);
     expect(status.openrouter.env).toBe("OPENROUTER_API_KEY");
     expect(status.openrouter.keyTail).toBe("test");
     expect(status.openrouter.creditFallback).toBe(false);
+    expect(status.note).toMatch(/custom LLM not configured/i);
   });
 
   it("reports error when ANIMA_LOCAL_LLM_BASE_URL points at api.openai.com", () => {
@@ -468,6 +507,22 @@ describe("getLlmRoutingStatus", () => {
     expect(status.localEndpoint.host).toBe("api.openai.com");
     expect(status.note).toMatch(/cloud chat API/i);
     expect(status.note).toMatch(/self-hosted/i);
+  });
+
+  it("reports custom-only error instead of OpenRouter when ANIMA_LLM_PROVIDER=custom and local is unset", () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("error");
+    expect(status.preferred).toBeNull();
+    expect(status.customOnly).toBe(true);
+    expect(status.chain).toEqual([]);
+    expect(status.note).toMatch(/ANIMA_LLM_PROVIDER=custom/i);
+    expect(status.note).toMatch(/OpenRouter will not be used/i);
   });
 });
 
@@ -636,6 +691,7 @@ describe("createChatStreamWithFailover", () => {
       const message = err instanceof Error ? err.message : String(err);
       expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
       expect(message).toMatch(/openrouter\.ai\/settings\/credits/);
+      expect(message).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
       expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE/);
     }
     expect(createMock).toHaveBeenCalledTimes(1);
@@ -677,7 +733,9 @@ describe("createChatStreamWithFailover", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     delete process.env.ANIMA_OPENROUTER_FREE;
+    delete process.env.ANIMA_LLM_PROVIDER;
     createMock
       .mockRejectedValueOnce(
         Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
@@ -706,18 +764,14 @@ describe("createChatStreamWithFailover", () => {
     }
   });
 
-  it("does not say the local host is unreachable after a local auth failure", async () => {
+  it("does not skip the custom LLM after a local auth failure", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("401 status code (no body)"), { status: 401 }))
-      .mockRejectedValueOnce(
-        Object.assign(
-          new Error("Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day."),
-          { status: 429 },
-        ),
-      );
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    createMock.mockRejectedValueOnce(
+      Object.assign(new Error("401 status code (no body)"), { status: 401 }),
+    );
 
     try {
       await createChatStreamWithFailover({
@@ -726,19 +780,22 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       });
-      throw new Error("expected both providers to fail");
+      throw new Error("expected local auth to reject without OpenRouter");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
+      expect(message).toMatch(/Anima LLM authentication failed/i);
+      expect(message).not.toMatch(/OpenRouter credits/i);
       expect(message).not.toMatch(/also unreachable/i);
-      expect(message).not.toMatch(/fly apps restart anima-chat-llm/);
     }
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses host-neutral recovery guidance for custom local connection failures", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://custom-llm.example.com/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    delete process.env.ANIMA_LLM_PROVIDER;
     createMock
       .mockRejectedValueOnce(
         Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
@@ -791,13 +848,16 @@ describe("createChatStreamWithFailover", () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       expect(message).toMatch(/Your OPENROUTER_API_KEY is configured/);
+      expect(message).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
       expect(message).not.toMatch(/Set OPENROUTER_API_KEY/);
     }
   });
 
-  it("fails over to OpenRouter when local fails", async () => {
+  it("fails over to OpenRouter when local is unreachable and fallback is enabled", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    delete process.env.ANIMA_LLM_PROVIDER;
     createMock
       .mockRejectedValueOnce(Object.assign(new Error("Connection error."), { name: "APIConnectionError" }))
       .mockResolvedValueOnce(fakeStream("venice"));
@@ -812,6 +872,47 @@ describe("createChatStreamWithFailover", () => {
     expect(result.provider).toBe("openrouter");
     expect(result.failedOver).toBe(true);
     expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not skip the custom LLM for OpenRouter when fallback is off", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
+    delete process.env.ANIMA_LLM_PROVIDER;
+    createMock.mockRejectedValueOnce(
+      Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
+    );
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/Anima LLM connection failed/i);
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses OpenRouter in custom mode even when the local URL is missing", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM/i);
+
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it("throws a clear setup error when base URL is api.openai.com (not a self-hosted LLM)", async () => {

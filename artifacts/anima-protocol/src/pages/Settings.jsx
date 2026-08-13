@@ -504,7 +504,7 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat always runs on the self-hosted Anima LLM — there is no cloud flagship fallback. Set ANIMA_LOCAL_LLM_BASE_URL on the host and redeploy.
+                  Chat prefers the self-hosted Anima LLM. OpenRouter is used only when ANIMA_LOCAL_LLM_BASE_URL is unset. Set that public HTTPS URL (and ANIMA_LLM_PROVIDER=custom) on the host and redeploy so OpenRouter free-tier 429s cannot skip your custom LLM.
                 </p>
                 {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div

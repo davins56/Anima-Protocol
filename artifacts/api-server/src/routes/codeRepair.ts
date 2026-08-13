@@ -34,6 +34,9 @@ router.post("/analyze", (req, res) => {
       openrouterEnv: routing.openrouter.env,
       openrouterModel: routing.openrouter.model,
       openrouterIsFreeTier: routing.openrouter.isFreeTier,
+      localConfigured: routing.localEndpoint.configured,
+      localHost: routing.localEndpoint.host,
+      customOnly: routing.customOnly,
     },
   });
 
@@ -47,6 +50,11 @@ router.post("/analyze", (req, res) => {
         isFreeTier: routing.openrouter.isFreeTier,
         creditFallback: routing.openrouter.creditFallback,
       },
+      localEndpoint: {
+        configured: routing.localEndpoint.configured,
+        host: routing.localEndpoint.host,
+      },
+      customOnly: routing.customOnly,
     },
   });
 });

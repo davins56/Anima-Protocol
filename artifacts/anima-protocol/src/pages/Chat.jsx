@@ -69,8 +69,10 @@ import QuickActionChips from "@/components/chat/QuickActionChips";
 import NarrativeArcPanel from "@/components/narrative/NarrativeArcPanel";
 import RelationshipEvolutionMap from "@/components/network/RelationshipEvolutionMap";
 import DynamicPortrait from "@/components/chat/DynamicPortrait";
-import SerenityAvatar from "@/components/chat/SerenityAvatar";
+import LivingPresence from "@/components/chat/LivingPresence";
+import LivingPresenceStage from "@/components/chat/LivingPresenceStage";
 import ResonanceField from "@/components/chat/ResonanceField";
+import { resolvePresenceCast, highlightedCastId, lastSpokenLine } from "@/lib/livingPresence";
 import { useResonance, resonancePromptGuidance } from "@/hooks/useResonance";
 import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
 import { expressionPromptBlock } from "@/lib/animaExpressions";
@@ -168,7 +170,6 @@ export default function Chat() {
   const [voiceChatOpen, setVoiceChatOpen] = useState(false);
   const [showVoiceInput, setShowVoiceInput] = useState(false);
   const [immersive, setImmersive] = useState(false);
-  const [immersiveInput, setImmersiveInput] = useState("");
   const [portraitUrls, setPortraitUrls] = useState({}); // cached portrait URLs per emotion
   const [showCreateBranch, setShowCreateBranch] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -291,6 +292,30 @@ export default function Chat() {
     emotion: activeCharEmotion,
   });
   const isCompanionSpeaking = tts.isSpeaking || elTTS.isSpeaking || emotionalTTS.isSpeaking;
+  const presenceCast = resolvePresenceCast(activeSession, characters).map((c) => ({
+    ...c,
+    avatar_url: portraitUrls[c.name] || c.avatar_url,
+  }));
+  const openPresenceStage = () => {
+    setImmersive(true);
+    const groupIds = activeSession?.group_character_ids || [];
+    const distinctUniverses = new Set(
+      characters
+        .filter((c) => groupIds.includes(c.id))
+        .map((c) => c.universe)
+        .filter(Boolean),
+    ).size;
+    track("presence_stage_opened", {
+      session_mode: activeSession?.mode || "solo",
+      character_count: presenceCast.length,
+      is_crossover: activeSession?.mode === "group" && distinctUniverses >= 2,
+    });
+  };
+  const presenceLeadId = highlightedCastId(
+    presenceCast,
+    lastSpokenLine(activeSession?.messages),
+    isCompanionSpeaking,
+  );
   const { vesselContext, attunementGuidance, refreshVesselContext } = useVesselContext(activeSession?.id);
   const [activeAspects, setActiveAspects] = useState([]);
   const [showAspectPicker, setShowAspectPicker] = useState(false);
@@ -2444,6 +2469,7 @@ Return JSON:
               onAvatarClick={setBioCharacter}
               llmProvider={llmProvider}
               llmBrand={llmBrand}
+              onOpenStage={presenceCast.length > 0 ? openPresenceStage : undefined}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <ResonanceField value={resonance.value} label={resonance.label} />
@@ -2787,107 +2813,67 @@ Return JSON:
         />
       )}
 
-      {/* Living Avatar Sidebar (Solo Mode) */}
-      {activeSession?.mode === "solo" && activeSession?.character_id && !immersive && (
+      {/* Living full-body presence — desktop rail */}
+      {presenceCast.length > 0 && !immersive && (
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
-          className="hidden xl:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-3 pr-6 py-6 pointer-events-none z-30"
+          className="hidden xl:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-3 pr-4 py-6 pointer-events-none z-30"
         >
-          <div className="pointer-events-auto flex flex-col items-center gap-3">
-            <SerenityAvatar
-              name={activeCharForPaths?.name || "Serenity"}
-              emotion={activeCharEmotion?.emotion || "calm"}
-              intensity={activeCharEmotion?.intensity ?? 5}
-              resonance={resonance.value}
-              speaking={isCompanionSpeaking}
-              size={200}
-              onExpand={() => setImmersive(true)}
-            />
+          <div className="pointer-events-auto flex flex-col items-center gap-2 max-h-full overflow-y-auto">
+            {presenceCast.slice(0, 4).map((character) => {
+              const em = characterEmotions[character.id] || {};
+              const isLead = character.id === (presenceLeadId || presenceCast[0]?.id);
+              return (
+                <LivingPresence
+                  key={character.id}
+                  character={character}
+                  emotion={em.emotion || activeCharEmotion?.emotion || "calm"}
+                  intensity={em.intensity ?? activeCharEmotion?.intensity ?? 5}
+                  resonance={resonance.value}
+                  speaking={isCompanionSpeaking && isLead}
+                  thinking={isLoading && isLead}
+                  highlighted={isLead}
+                  size={presenceCast.length > 1 ? 168 : 260}
+                  onExpand={openPresenceStage}
+                />
+              );
+            })}
             <button
-              onClick={() => setImmersive(true)}
+              type="button"
+              onClick={openPresenceStage}
               className="font-mono text-[9px] tracking-[0.25em] uppercase text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 rounded px-3 py-1 transition-colors"
             >
-              ⛶ Immersive
+              ⛶ Stage
             </button>
           </div>
         </motion.div>
       )}
 
-      {/* Immersive Full-Screen Presence */}
-      {immersive && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-3 py-6"
-          style={{ background: "radial-gradient(circle at 50% 38%, rgba(3,18,26,0.97), rgba(0,0,0,0.99))" }}
+      {presenceCast.length > 0 && !immersive && (
+        <button
+          type="button"
+          onClick={openPresenceStage}
+          className="xl:hidden fixed right-3 z-40 font-mono text-[9px] tracking-[0.22em] uppercase text-primary border border-primary/40 bg-black/70 backdrop-blur-md rounded px-3 py-2 shadow-lg shadow-cyan-900/40"
+          style={{ bottom: "5.5rem" }}
         >
-          <button
-            onClick={() => setImmersive(false)}
-            className="absolute top-5 right-5 font-mono text-[10px] tracking-[0.25em] uppercase text-primary/70 hover:text-primary border border-primary/30 hover:border-primary/60 rounded px-3 py-1.5 transition-colors z-10"
-          >
-            ✕ Exit
-          </button>
-
-          <div className="w-full max-w-md px-6">
-            <ResonanceField value={resonance.value} label={resonance.label} />
-          </div>
-
-          <SerenityAvatar
-            name={activeCharForPaths?.name || "Serenity"}
-            emotion={activeCharEmotion?.emotion || "calm"}
-            intensity={activeCharEmotion?.intensity ?? 5}
-            resonance={resonance.value}
-            speaking={isCompanionSpeaking}
-            size={340}
-          />
-
-          <div className="w-full max-w-lg px-6 max-h-[20vh] overflow-y-auto text-center">
-            {(() => {
-              const msgs = (activeSession?.messages || []).filter(
-                (m) =>
-                  m.character_name !== "__typing__" &&
-                  m.character_name !== "__thinking__" &&
-                  m.type !== "event"
-              );
-              const last = msgs[msgs.length - 1];
-              if (!last) return null;
-              return (
-                <p className="font-mono text-sm text-primary/85 leading-relaxed whitespace-pre-wrap">
-                  {(last.content || "").replace(/\[[^\]]*\]/g, "").trim()}
-                </p>
-              );
-            })()}
-          </div>
-
-          <form
-            className="w-full max-w-lg px-6 flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const text = immersiveInput.trim();
-              if (!text || isLoading) return;
-              setImmersiveInput("");
-              handleSendMessage(text);
-            }}
-          >
-            <input
-              value={immersiveInput}
-              onChange={(e) => setImmersiveInput(e.target.value)}
-              placeholder="Speak to her..."
-              className="flex-1 bg-black/50 border border-primary/30 focus:border-primary/70 rounded px-4 py-2.5 font-mono text-sm text-primary placeholder:text-primary/30 outline-none"
-            />
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="font-mono text-[11px] tracking-widest uppercase text-black bg-primary/90 hover:bg-primary disabled:opacity-40 rounded px-4 transition-colors"
-            >
-              {isLoading ? "..." : "Send"}
-            </button>
-          </form>
-        </motion.div>
+          ⛶ Stage
+        </button>
       )}
+
+      <LivingPresenceStage
+        open={Boolean(immersive)}
+        onClose={() => setImmersive(false)}
+        cast={presenceCast}
+        characterEmotions={characterEmotions}
+        resonance={resonance}
+        speaking={isCompanionSpeaking}
+        thinking={isLoading}
+        messages={activeSession?.messages}
+        onSend={(text) => handleSendMessage(text)}
+        isLoading={isLoading}
+      />
       <BottomTabBar onMenuClick={() => setShowMobileMenu(prev => !prev)} />
     </div>
   );
