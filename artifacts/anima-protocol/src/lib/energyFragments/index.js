@@ -53,6 +53,9 @@ const CYBERSPACE_CUE =
  * Battle-data lore for a turn. Takes the speaker/session as arguments so Chat
  * never closes over a `let activeChar` that is declared later in the same
  * try block (that TDZ crash surfaces as "Cannot access 'H' before initialization").
+ *
+ * @param {{ universe?: string } | null | undefined} character
+ * @param {{ opening_scene?: string } | null | undefined} session
  */
 export function cyberspaceBattlePromptBlock(character, session) {
   const blob = `${character?.universe || ""} ${session?.opening_scene || ""}`;
