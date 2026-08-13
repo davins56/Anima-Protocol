@@ -14,57 +14,57 @@ import AnimaVesselMesh from "@/components/anima/AnimaVesselMesh";
 
 function VesselStage({ model, autoRotate }) {
   const color = model?.color || "#67e8f9";
-  const accent = model?.accent || "#fde68a";
+  const accent = model?.accent || "#c4b5fd";
 
   return (
     <>
       <color attach="background" args={["#03040c"]} />
-      <fog attach="fog" args={["#03040c", 6, 16]} />
-      <ambientLight intensity={0.18} />
-      <hemisphereLight args={[color, "#12081c", 0.45]} />
-      <directionalLight position={[3.2, 5.2, 3.6]} intensity={1.15} color="#f8fafc" />
-      <directionalLight position={[-3, 2, -2]} intensity={0.45} color={accent} />
-      <Stars radius={28} depth={18} count={900} factor={2.4} saturation={0.2} fade speed={0.55} />
+      <fog attach="fog" args={["#03040c", 6.5, 18]} />
+      <ambientLight intensity={0.16} />
+      <hemisphereLight args={[color, "#12081c", 0.42]} />
+      <directionalLight position={[3.2, 5.4, 3.8]} intensity={1.2} color="#f8fafc" />
+      <directionalLight position={[-3.2, 2.2, -2.2]} intensity={0.5} color={accent} />
+      <Stars radius={30} depth={20} count={1100} factor={2.5} saturation={0.25} fade speed={0.5} />
       <Sparkles
-        count={70}
-        scale={[3.4, 4.2, 3.4]}
-        size={1.8}
-        speed={0.35}
+        count={90}
+        scale={[3.8, 5.2, 3.8]}
+        size={1.9}
+        speed={0.32}
         color={color}
-        opacity={0.7}
+        opacity={0.72}
       />
-      <TesseractLattice color={color} scale={1.85} speed={0.55} opacity={0.28} position={[0, 0.7, 0]} />
-      <Float speed={1.25} rotationIntensity={0.18} floatIntensity={0.28}>
-        <group position={[0, -0.15, 0]} scale={1.15}>
-          <AnimaVesselMesh model={model} hd hpRatio={1} facing={1} />
+      <TesseractLattice color={color} scale={2.05} speed={0.5} opacity={0.26} position={[0, 0.85, 0]} />
+      <Float speed={1.15} rotationIntensity={0.14} floatIntensity={0.24}>
+        <group position={[0, -0.35, 0]} scale={1.05}>
+          <AnimaVesselMesh model={model} hd hpRatio={1} facing={1} showLattice />
         </group>
       </Float>
       <ContactShadows
-        position={[0, -0.05, 0]}
-        opacity={0.45}
-        scale={6}
-        blur={2.4}
-        far={2.8}
+        position={[0, -0.55, 0]}
+        opacity={0.5}
+        scale={7}
+        blur={2.6}
+        far={3.2}
         color="#02010a"
       />
       <OrbitControls
         makeDefault
         enablePan={false}
-        minDistance={1.35}
-        maxDistance={5.8}
-        minPolarAngle={0.35}
-        maxPolarAngle={Math.PI / 1.65}
-        target={[0, 0.72, 0]}
+        minDistance={1.5}
+        maxDistance={6.5}
+        minPolarAngle={0.3}
+        maxPolarAngle={Math.PI / 1.55}
+        target={[0, 0.75, 0]}
         autoRotate={autoRotate}
-        autoRotateSpeed={0.55}
+        autoRotateSpeed={0.48}
         enableDamping
         dampingFactor={0.08}
       />
       <EffectComposer enableNormalPass={false} multisampling={0}>
         <Bloom
-          intensity={0.95}
-          luminanceThreshold={0.18}
-          luminanceSmoothing={0.28}
+          intensity={1.05}
+          luminanceThreshold={0.16}
+          luminanceSmoothing={0.3}
           mipmapBlur
         />
       </EffectComposer>
@@ -73,8 +73,8 @@ function VesselStage({ model, autoRotate }) {
 }
 
 /**
- * Interactive HD 4D Anima vessel — drag to turn, scroll/pinch to zoom.
- * Motion comes from @react-three/drei (`Float`, `Sparkles`, `OrbitControls`).
+ * Interactive HD 4D Anima vessel — full-body coherent form.
+ * Drag to turn, scroll/pinch to zoom.
  */
 export default function AnimaVessel4D({
   model,
@@ -90,14 +90,14 @@ export default function AnimaVessel4D({
   return (
     <div className={`touch-none ${className || ""}`} style={{ width: "100%", height: "100%", position: "relative" }}>
       <Canvas
-        camera={{ position: [0.55, 1.45, 2.55], fov: 34, near: 0.08, far: 40 }}
+        camera={{ position: [0.65, 1.55, 2.85], fov: 32, near: 0.08, far: 45 }}
         gl={{ alpha: false, antialias: true, powerPreference: "high-performance" }}
         dpr={[1, dprMax]}
         style={style}
         onCreated={({ camera, gl }) => {
-          camera.lookAt(0, 0.72, 0);
+          camera.lookAt(0, 0.75, 0);
           gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.18;
+          gl.toneMappingExposure = 1.22;
         }}
       >
         <VesselStage model={model} autoRotate={autoRotate} />
