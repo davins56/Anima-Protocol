@@ -98,6 +98,46 @@ export const chatMessages = pgTable(
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 
+/**
+ * Durable chat-turn ledger. A generated reply is checkpointed here before the
+ * SSE `done` event, then idempotent message persistence advances it to
+ * `committed`. Failed/client-interrupted writes remain retryable.
+ */
+export const chatTurns = pgTable(
+  "chat_turns",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    userId: text("user_id").notNull(),
+    userMessageId: text("user_message_id").notNull(),
+    assistantMessageId: text("assistant_message_id").notNull(),
+    persistenceOwner: text("persistence_owner").notNull().default("server"),
+    status: text("status").notNull().default("pending"),
+    retryCount: integer("retry_count").notNull().default(0),
+    userContent: text("user_content").notNull().default(""),
+    assistantContent: text("assistant_content").notNull().default(""),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    committedAt: timestamp("committed_at"),
+  },
+  (t) => ({
+    chatTurnsSessionIdx: index("chat_turns_session_idx").on(
+      t.userId,
+      t.sessionId,
+      t.createdAt,
+    ),
+    chatTurnsRetryIdx: index("chat_turns_retry_idx").on(
+      t.userId,
+      t.status,
+      t.updatedAt,
+    ),
+  }),
+);
+
+export type ChatTurn = typeof chatTurns.$inferSelect;
+
 export const companionMemories = pgTable(
   "companion_memories",
   {

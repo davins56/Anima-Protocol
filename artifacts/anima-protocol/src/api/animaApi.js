@@ -117,6 +117,8 @@ export const animaApi = {
       systemPrompt,
       deepMode,
       persist = true,
+      turnId,
+      persistenceOwner,
       metadata,
       region,
     }) {
@@ -143,6 +145,8 @@ export const animaApi = {
             system_prompt: systemPrompt,
             deep_mode: !!deepMode,
             persist,
+            turn_id: turnId,
+            persistence_owner: persistenceOwner,
             metadata,
             region,
           }),
@@ -172,6 +176,21 @@ export const animaApi = {
       }
       return { content, ...done };
     },
+
+    turnStatus: (turnId) =>
+      request(`/chat/turns/${encodeURIComponent(turnId)}`).then((r) => r.json()),
+
+    commitTurn: (turnId) =>
+      request(`/chat/turns/${encodeURIComponent(turnId)}/commit`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }).then((r) => r.json()),
+
+    retryTurn: (turnId) =>
+      request(`/chat/turns/${encodeURIComponent(turnId)}/retry`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }).then((r) => r.json()),
   },
 
   codeRepair: {
