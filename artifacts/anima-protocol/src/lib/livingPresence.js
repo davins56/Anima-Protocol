@@ -411,3 +411,14 @@ export function resolvePresenceSprite(character, opts = {}) {
   if (character?._isAnima) return canonical;
   return "";
 }
+
+/**
+ * Avatar URL for chat bubbles and the composer floater.
+ * Serenity / uncustomized Animas use the canonical likeness.
+ *
+ * @param {{ name?: string, avatar_url?: string, body_url?: string, full_body_url?: string, _isAnima?: boolean, category?: string } | null | undefined} character
+ * @returns {string}
+ */
+export function resolveChatAvatarUrl(character) {
+  return resolvePresenceSprite(character);
+}
