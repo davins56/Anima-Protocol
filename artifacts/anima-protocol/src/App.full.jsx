@@ -171,6 +171,7 @@ const LoreArchivesDashboard = lazy(
   () => import("./pages/LoreArchivesDashboard"),
 );
 const Meditation = lazy(() => import("./pages/Meditation"));
+const Therapy = lazy(() => import("./pages/Therapy"));
 const Subscription = lazy(() => import("./pages/Subscription"));
 const LifetimeAccess = lazy(() => import("./pages/LifetimeAccess"));
 const ProgressDashboard = lazy(() => import("./pages/ProgressDashboard"));
@@ -1616,6 +1617,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <Meditation />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/therapy"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Therapy />
                   </Suspense>
                 }
               />
