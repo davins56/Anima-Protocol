@@ -1,5 +1,7 @@
+import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ShieldAlert, Zap, ShieldCheck, X } from "lucide-react";
+import CustomWindow from "@/components/energyFragments/CustomWindow";
 
 const SEVERITY_STYLE = {
   high: { label: "CRITICAL", color: "text-red-400", glow: "shadow-[0_0_30px_rgba(239,68,68,0.35)]", border: "border-red-500/50" },
@@ -16,6 +18,11 @@ export default function VirusBattleModal({ open, scan, companionName, onNeutrali
   const sev = scan?.maxSeverity || "low";
   const style = SEVERITY_STYLE[sev] || SEVERITY_STYLE.low;
   const blocking = sev === "high";
+  const [skipCustom, setSkipCustom] = useState(false);
+
+  useEffect(() => {
+    if (open) setSkipCustom(false);
+  }, [open]);
 
   return (
     <AnimatePresence>
@@ -89,6 +96,14 @@ export default function VirusBattleModal({ open, scan, companionName, onNeutrali
                 );
               })}
             </div>
+
+            {!skipCustom && (
+              <CustomWindow
+                findings={scan.findings}
+                onCommit={() => onNeutralize()}
+                onSkip={() => setSkipCustom(true)}
+              />
+            )}
 
             {/* Actions */}
             <div className="flex border-t border-primary/15">
