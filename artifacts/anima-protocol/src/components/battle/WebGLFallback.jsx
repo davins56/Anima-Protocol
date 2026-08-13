@@ -15,7 +15,7 @@ export default class WebGLFallback extends Component {
   }
 
   componentDidCatch(error) {
-    console.warn("[NetBattle] 3D arena unavailable, using 2D field.", error);
+    console.warn("[NetBattle] 4D arena unavailable, using 2D field.", error);
   }
 
   render() {

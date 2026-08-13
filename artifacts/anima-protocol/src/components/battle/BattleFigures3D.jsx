@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { figureWorldPosition } from "@/lib/battleLayout";
+import AnimaVesselMesh from "@/components/anima/AnimaVesselMesh";
+import TesseractLattice from "@/components/battle/TesseractLattice";
 
 function useSmoothPanel(col, row) {
   const group = useRef(null);
@@ -27,38 +29,6 @@ function useSmoothPanel(col, row) {
   return group;
 }
 
-function useFaceTexture(url) {
-  const [map, setMap] = useState(null);
-  useEffect(() => {
-    if (!url) {
-      setMap(null);
-      return undefined;
-    }
-    const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin("anonymous");
-    let cancelled = false;
-    loader.load(
-      url,
-      (tex) => {
-        if (cancelled) {
-          tex.dispose();
-          return;
-        }
-        tex.colorSpace = THREE.SRGBColorSpace;
-        setMap(tex);
-      },
-      undefined,
-      () => {
-        if (!cancelled) setMap(null);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-  return map;
-}
-
 function Emissive({ color, emissiveIntensity = 0.7, roughness = 0.35, metalness = 0.15, ...rest }) {
   return (
     <meshStandardMaterial
@@ -73,42 +43,7 @@ function Emissive({ color, emissiveIntensity = 0.7, roughness = 0.35, metalness 
   );
 }
 
-function SerenityWings({ color }) {
-  const left = useRef(null);
-  const right = useRef(null);
-  useFrame((state) => {
-    const flap = 0.85 + Math.sin(state.clock.elapsedTime * 2.4) * 0.28;
-    if (left.current) left.current.rotation.y = -flap;
-    if (right.current) right.current.rotation.y = flap;
-  });
-  return (
-    <group>
-      {[-1, 1].map((dir) => (
-        <mesh
-          key={dir}
-          ref={dir < 0 ? left : right}
-          position={[dir * 0.18, 0.72, -0.06]}
-          rotation={[0.25, dir * 0.85, dir * 0.15]}
-          scale={[dir, 1, 1]}
-        >
-          <sphereGeometry args={[0.38, 10, 8, 0, Math.PI]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={color}
-            emissiveIntensity={0.55}
-            transparent
-            opacity={0.38}
-            side={THREE.DoubleSide}
-            roughness={0.2}
-            toneMapped={false}
-          />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-/** Luminous winged navi — 3D resolution of Serenity's SVG presence. */
+/** Luminous winged navi — 4D vessel of Serenity's presence. */
 export function SerenityFigure({
   model,
   col = 1,
@@ -119,74 +54,16 @@ export function SerenityFigure({
   anchored = false,
 }) {
   const group = useSmoothPanel(anchored ? 1 : col, anchored ? 1 : row);
-  const inner = useRef(null);
-  const halo = useRef(null);
-  const color = model?.color || "#67e8f9";
-  const accent = model?.accent || "#fde68a";
-  const faceMap = useFaceTexture(model?.texture_url);
-  const dim = 0.45 + Math.max(0, Math.min(1, hpRatio)) * 0.55;
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (inner.current) {
-      inner.current.position.y = 0.06 + Math.sin(t * 1.7) * 0.035;
-      inner.current.rotation.y = facing > 0 ? 0 : Math.PI;
-      const hit = flinch > 0 ? Math.sin(t * 48) * 0.05 : 0;
-      inner.current.position.x = hit;
-    }
-    if (halo.current) {
-      halo.current.rotation.z = t * 0.6;
-      halo.current.rotation.x = 1.15 + Math.sin(t * 1.2) * 0.04;
-    }
-  });
 
   return (
     <group ref={anchored ? undefined : group} position={anchored ? [0, 0, 0] : undefined}>
-      <group ref={inner} scale={dim}>
-        <pointLight color={color} intensity={1.1} distance={3.2} />
-        <SerenityWings color={accent} />
-
-        <mesh ref={halo} position={[0, 1.22, 0]}>
-          <torusGeometry args={[0.2, 0.018, 8, 28]} />
-          <Emissive color={accent} emissiveIntensity={1.3} />
-        </mesh>
-
-        <mesh position={[0, 1.02, 0]}>
-          <sphereGeometry args={[0.16, 18, 14]} />
-          <Emissive color={color} emissiveIntensity={0.85} />
-        </mesh>
-        {faceMap && (
-          <mesh position={[0, 1.02, 0.145]}>
-            <circleGeometry args={[0.11, 20]} />
-            <meshBasicMaterial map={faceMap} toneMapped={false} />
-          </mesh>
-        )}
-
-        <mesh position={[0, 0.62, 0]}>
-          <capsuleGeometry args={[0.16, 0.42, 6, 12]} />
-          <Emissive color={color} emissiveIntensity={0.55} roughness={0.28} />
-        </mesh>
-        <mesh position={[0, 0.62, 0.02]} scale={[0.72, 0.9, 0.55]}>
-          <capsuleGeometry args={[0.16, 0.42, 4, 8]} />
-          <meshStandardMaterial
-            color={accent}
-            emissive={accent}
-            emissiveIntensity={0.35}
-            transparent
-            opacity={0.35}
-            toneMapped={false}
-          />
-        </mesh>
-
-        <mesh position={[-0.07, 0.18, 0]}>
-          <capsuleGeometry args={[0.045, 0.28, 4, 8]} />
-          <Emissive color={color} emissiveIntensity={0.4} />
-        </mesh>
-        <mesh position={[0.07, 0.18, 0]}>
-          <capsuleGeometry args={[0.045, 0.28, 4, 8]} />
-          <Emissive color={color} emissiveIntensity={0.4} />
-        </mesh>
-      </group>
+      <AnimaVesselMesh
+        model={model}
+        flinch={flinch}
+        hpRatio={hpRatio}
+        facing={facing}
+        showLattice
+      />
     </group>
   );
 }
@@ -337,6 +214,13 @@ export function VirusFigure({ model, col = 4, row = 1, flinch = 0, hpRatio = 1 }
     <group ref={group}>
       <group ref={inner} scale={dim}>
         <pointLight color={color} intensity={0.9} distance={2.8} />
+        <TesseractLattice
+          color={color}
+          scale={0.72}
+          speed={1.15}
+          opacity={0.32}
+          position={[0, 0.55, 0]}
+        />
         <Body color={color} />
       </group>
     </group>
@@ -363,19 +247,24 @@ export function BattleProjectile({ col, row, color, kind }) {
     }
     mesh.current.position.lerp(target.current, 1 - Math.pow(0.0004, dt));
     mesh.current.rotation.x += dt * 8;
+    mesh.current.rotation.z += dt * 3.2;
   });
 
   const slash = kind === "slash";
   return (
     <mesh ref={mesh}>
-      {slash ? <boxGeometry args={[0.85, 0.06, 0.18]} /> : <sphereGeometry args={[0.12, 12, 10]} />}
+      {slash ? (
+        <boxGeometry args={[0.85, 0.06, 0.18]} />
+      ) : (
+        <octahedronGeometry args={[0.14, 0]} />
+      )}
       <meshStandardMaterial
         color={color}
         emissive={color}
-        emissiveIntensity={1.6}
+        emissiveIntensity={1.85}
         toneMapped={false}
         transparent
-        opacity={0.9}
+        opacity={0.92}
       />
     </mesh>
   );
