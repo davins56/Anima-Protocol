@@ -105,6 +105,7 @@ const WorldCalendar = lazy(() => import("./pages/WorldCalendar"));
 const WorldCodex = lazy(() => import("./pages/WorldCodex"));
 const RelationshipGraph = lazy(() => import("./pages/RelationshipGraph"));
 const InventoryPanel = lazy(() => import("./pages/InventoryPanel"));
+const EnergyFragments = lazy(() => import("./pages/EnergyFragments"));
 const CalendarView = lazy(() => import("./pages/CalendarView"));
 const StoryBranching = lazy(() => import("./pages/StoryBranching"));
 const CharacterMemoryMap = lazy(() => import("./pages/CharacterMemoryMap"));
@@ -1278,6 +1279,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <InventoryPanel />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/energy-fragments"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <EnergyFragments />
                   </Suspense>
                 }
               />

@@ -21,6 +21,7 @@ import {
   Zap,
   Scroll,
   Palette,
+  Hexagon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -67,6 +68,7 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
     },
     { icon: Map, label: "Locations", path: "/locationsmap", title: "Locations Map" },
     { icon: Package, label: "Inventory", path: "/inventory", title: "Inventory" },
+    { icon: Hexagon, label: "Energy Fragments", path: "/energy-fragments", title: "Energy Fragments — battle data" },
     { icon: Scroll, label: "Quest Journal", path: "/quest-journal", title: "Quest Journal" },
     {
       icon: GitBranch,

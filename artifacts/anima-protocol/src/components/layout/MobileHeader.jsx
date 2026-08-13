@@ -20,6 +20,7 @@ const ROUTE_TITLES = {
   "/wiki": "Wiki",
   "/archive": "Lore Archive",
   "/inventory": "Inventory",
+  "/energy-fragments": "Energy Fragments",
   "/worldmap": "World Map",
   "/storyboard": "Storyboard",
   "/reflections": "Reflections",
