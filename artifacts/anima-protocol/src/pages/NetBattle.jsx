@@ -23,11 +23,7 @@ import { resolveBattleModels } from "@/lib/battleModels";
 import { hasWebGL } from "@/lib/webglSupport";
 import WebGLFallback from "@/components/battle/WebGLFallback";
 
-const BattleNaviPreviewCanvas = lazy(() =>
-  import("@/components/battle/NetBattleScene3D").then((m) => ({
-    default: m.BattleNaviPreviewCanvas,
-  })),
-);
+const AnimaVessel4D = lazy(() => import("@/components/anima/AnimaVessel4D"));
 
 export default function NetBattle() {
   usePageMeta(ROUTE_META["/net-battle"]);
@@ -179,7 +175,7 @@ export default function NetBattle() {
     );
     return (
       <div className="flex-1 min-h-0 overflow-y-auto bg-[#05050c] pb-[calc(var(--tab-bar-height,64px)+1.5rem)]">
-        <div className="max-w-lg mx-auto px-4 py-8 space-y-6">
+        <div className="max-w-xl mx-auto px-4 py-8 space-y-6">
           <div>
             <p className="font-mono text-[9px] tracking-[0.3em] uppercase text-primary/40">
               // NetBattle
@@ -188,39 +184,46 @@ export default function NetBattle() {
               Jack In
             </h1>
             <p className="font-mono text-[12px] text-primary/50 leading-relaxed mt-3">
-              A Battle Network-style panel arena in 3D. Move Serenity — or let
-              your Anima fight — and send weapons data: sword battle chips and
-              expression-typed energy blasts from the hand. Viruses resolve as
-              distinct 3D net-forms.
+              A Battle Network panel arena folded through 4-space. Turn and zoom
+              your Anima vessel, then jack in — move Serenity or let it fight,
+              and send weapons data: sword chips and expression-typed blasts.
+              Viruses resolve as distinct net-forms inside a tesseract lattice.
             </p>
           </div>
 
-          <div className="border border-primary/20 bg-black/40 p-4 flex items-center gap-3">
-            <div className="w-20 h-24 border border-primary/30 overflow-hidden bg-black/40 flex-shrink-0">
+          <div className="border border-primary/20 bg-black/40 overflow-hidden">
+            <div className="relative h-[min(52vh,420px)] min-h-[280px] bg-[#03040c]">
               {show3d ? (
                 <WebGLFallback fallback={portraitFallback}>
                   <Suspense fallback={portraitFallback}>
-                    <BattleNaviPreviewCanvas model={previewModel} />
+                    <AnimaVessel4D model={previewModel} autoRotate />
                   </Suspense>
                 </WebGLFallback>
               ) : (
                 portraitFallback
               )}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2">
+                <p className="font-mono text-[8px] tracking-[0.28em] uppercase text-primary/50">
+                  Drag to turn · Scroll to zoom
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="font-mono text-sm text-primary tracking-wider uppercase truncate">
-                {anima.name}
-              </p>
-              <p className="font-mono text-[11px]" style={{ color: dominant.color }}>
-                {dominant.symbol} {label}
-              </p>
-              <button
-                type="button"
-                onClick={() => navigate(`/customise-anima?anima=${anima.id}&tab=expression`)}
-                className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/40 hover:text-primary mt-1"
-              >
-                Tune expression →
-              </button>
+            <div className="p-4 flex items-center gap-3 border-t border-primary/15">
+              <div className="min-w-0 flex-1">
+                <p className="font-mono text-sm text-primary tracking-wider uppercase truncate">
+                  {anima.name}
+                </p>
+                <p className="font-mono text-[11px]" style={{ color: dominant.color }}>
+                  {dominant.symbol} {label}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/customise-anima?anima=${anima.id}&tab=expression`)}
+                  className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/40 hover:text-primary mt-1"
+                >
+                  Tune expression →
+                </button>
+              </div>
             </div>
           </div>
 

@@ -1,8 +1,11 @@
 // Resolves NetBattle units into 3D figure descriptors.
 //
 // The arena never loads external GLBs. Serenity and each virus family are
-// procedural R3F silhouettes, tinted by expression / virus color. An optional
-// `texture_url` (the Anima portrait) is mapped onto Serenity's face.
+// procedural R3F silhouettes inside a 4D tesseract lattice, tinted by
+// expression / virus color. An optional `texture_url` (the Anima portrait)
+// is mapped onto the vessel face. The HD inspect viewer uses @react-three/drei
+// (OrbitControls, Float, MeshTransmissionMaterial) so the vessel can be turned
+// and zoomed.
 //
 // `/api/battle-models/resolve` returns the same shape so a future image-to-3D
 // pipeline can attach a `glb_url` without changing the renderer contract.

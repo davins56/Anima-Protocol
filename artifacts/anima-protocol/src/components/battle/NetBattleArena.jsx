@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   COLS,
@@ -62,13 +62,13 @@ function BattleField2D({ state, dispatch, aura, dominant, fxAt }) {
   return (
     <div
       className="relative w-full max-w-3xl"
-      style={{ perspective: "900px" }}
+      style={{ perspective: "1100px" }}
     >
       <div
         className="grid gap-1.5 sm:gap-2"
         style={{
           gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
-          transform: "rotateX(18deg)",
+          transform: "rotateX(26deg) rotateZ(-3deg)",
           transformOrigin: "center bottom",
         }}
       >
@@ -198,6 +198,8 @@ function ChipCard({ chip, selected, dimmed, onClick }) {
   );
 }
 
+const AnimaVessel4D = lazy(() => import("@/components/anima/AnimaVessel4D"));
+
 export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }) {
   const aura = mixedAuraColor(state.player.spectrum);
   const blend = expressionBlendLabel(state.player.spectrum);
@@ -207,6 +209,7 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
     { ...state.player, color: aura },
     state.enemy,
   );
+  const [inspectVessel, setInspectVessel] = useState(false);
 
   const fxAt = useMemo(() => {
     const map = {};
@@ -287,7 +290,7 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-[#05050c]">
+    <div className="relative flex flex-col h-full min-h-0 bg-[#05050c]">
       <div className="flex items-center gap-3 px-3 sm:px-4 py-2 border-b border-primary/15 bg-black/70">
         <div className="flex-1 min-w-0">
           <HpBar
@@ -299,7 +302,7 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
         </div>
         <div className="flex-shrink-0 text-center px-2">
           <p className="font-mono text-[8px] tracking-[0.3em] uppercase text-primary/40">
-            NetBattle{webgl ? " · 3D" : ""}
+            NetBattle{webgl ? " · 4D" : ""}
           </p>
           <p className="font-mono text-[10px]" style={{ color: aura }}>
             {dominant.symbol} {blend}
@@ -338,13 +341,24 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
             ? "Anima is fighting on its own"
             : "WASD move · Z/Space blast · X chip · C custom"}
         </p>
-        <button
-          type="button"
-          onClick={onJackOut}
-          className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/40 hover:text-primary"
-        >
-          Jack Out
-        </button>
+        <div className="flex items-center gap-3">
+          {webgl && (
+            <button
+              type="button"
+              onClick={() => setInspectVessel(true)}
+              className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/40 hover:text-primary"
+            >
+              Vessel
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onJackOut}
+            className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/40 hover:text-primary"
+          >
+            Jack Out
+          </button>
+        </div>
       </div>
 
       <div className="relative flex-1 min-h-0 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
@@ -503,6 +517,40 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
           {state.log[state.log.length - 1] || "Jack in."}
         </p>
       </div>
+
+      <AnimatePresence>
+        {inspectVessel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-40 flex flex-col bg-[#03040c]"
+          >
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-primary/15 bg-black/70">
+              <p className="font-mono text-[9px] tracking-[0.28em] uppercase text-primary/60">
+                {state.player.name} · 4D vessel
+              </p>
+              <button
+                type="button"
+                onClick={() => setInspectVessel(false)}
+                className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/50 hover:text-primary"
+              >
+                Close
+              </button>
+            </div>
+            <div className="relative flex-1 min-h-0">
+              <WebGLFallback fallback={field2d}>
+                <Suspense fallback={null}>
+                  <AnimaVessel4D model={models.player} autoRotate />
+                </Suspense>
+              </WebGLFallback>
+              <p className="pointer-events-none absolute bottom-3 inset-x-0 text-center font-mono text-[8px] tracking-[0.28em] uppercase text-primary/45">
+                Drag to turn · Scroll to zoom
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
