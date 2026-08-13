@@ -13,10 +13,10 @@ This feature branch implements the data backbone that makes Anima Protocol *unfo
 
 ## Engines
 
-- `relationshipTimeline.ts` — append / load / recordRelationshipMilestone / openChapter
-- `resonanceMemories.ts` — crystallize / load / shouldCrystallize heuristic
-- `animaJournal.ts` — write / load / generateAutonomousReflection (LLM)
-- `homeWorld.ts` — ensure / patch / placeObject / registerRitual / addArtifact
+- `relationshipTimeline.ts` — `appendTimelineEvent` / `loadTimelineEvents` / `recordRelationshipMilestone` / `openRelationshipChapter`
+- `resonanceMemories.ts` — `crystallizeResonanceMemory` / `loadResonanceMemories` / `shouldCrystallize`
+- `animaJournal.ts` — `writeJournalEntry` / `loadJournalEntries` / `generateAutonomousReflection`
+- `homeWorld.ts` — `ensureHomeWorld` / `updateHomeWorldState` / `placeObjectInHome` / `registerHomeRitual` / `addSharedArtifact`
 
 ## API surface (`/api/relationship-os`)
 
@@ -33,7 +33,7 @@ This feature branch implements the data backbone that makes Anima Protocol *unfo
 - `POST /home/rituals`
 - `POST /home/artifacts`
 
-Auth: expects Clerk user id on the request (same pattern as other routes).
+Auth: uses the authenticated Clerk user ID from `getAuth(req)`.
 
 ## Integration points
 
@@ -44,7 +44,7 @@ Auth: expects Clerk user id on the request (same pattern as other routes).
 
 ## Product loop this enables
 
-```
+```text
 User returns → sees new journal entry / timeline chapter
              → opens Home and finds an object the Anima placed
              → resumes chat; Anima recalls a Resonance Memory
