@@ -162,6 +162,19 @@ async function main() {
     process.exit(1);
   }
 
+  const ids = new Set();
+  for (const testCase of cases) {
+    if (!testCase?.id || !testCase?.category || !testCase?.system || !testCase?.prompt) {
+      throw new Error("Each eval case requires id, category, system, and prompt");
+    }
+    if (ids.has(testCase.id)) throw new Error(`Duplicate eval id: ${testCase.id}`);
+    ids.add(testCase.id);
+  }
+  if (args.includes("--validate")) {
+    console.log(`Validated ${cases.length} eval case(s) in ${casesPath}`);
+    return;
+  }
+
   console.log(`Running ${cases.length} eval case(s) against ${base} (model=${model})\n`);
 
   const results = [];
