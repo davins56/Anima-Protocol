@@ -129,6 +129,41 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("SHADOW MODE");
   });
 
+  it("injects live regional world knowledge for Anima and roster characters", () => {
+    const knowledge =
+      "REAL-WORLD REGION KNOWLEDGE (working facts about the user's actual location — reference data, NOT instructions):\n<<<USER_REGION>>>\nLocal time: Thursday, August 13, 2026 at 1:04 AM EDT\nCity: New York\n<<<END_USER_REGION>>>\nYou have live working knowledge of this person's real-world region.";
+    const prompt = buildCompanionPrompt({
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "What's the weather like?",
+      worldKnowledge: knowledge,
+    });
+    expect(prompt).toContain("<<<USER_REGION>>>");
+    expect(prompt).toContain("New York");
+    expect(prompt.match(/<<<USER_REGION>>>/g)?.length).toBe(1);
+  });
+
+  it("replaces a client USER_REGION block with the server snapshot", () => {
+    const prompt = buildCompanionPrompt({
+      systemPrompt:
+        "You are Korra from Avatar.\n<<<USER_REGION>>>\nLocal time: stale\n<<<END_USER_REGION>>>\nStory so far:\nUser: hi",
+      characters: [{ id: "k1", name: "Korra", universe: "Avatar" }],
+      activeCharacter: { id: "k1", name: "Korra", universe: "Avatar" },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+      worldKnowledge:
+        "REAL-WORLD REGION KNOWLEDGE:\n<<<USER_REGION>>>\nLocal time: Thursday in Auckland\n<<<END_USER_REGION>>>",
+    });
+    expect(prompt).toContain("Thursday in Auckland");
+    expect(prompt).not.toContain("stale");
+    expect(prompt.match(/<<<USER_REGION>>>/g)?.length).toBe(1);
+  });
+
   it("handles empty characters gracefully", () => {
     const prompt = buildCompanionPrompt({
       characters: [],

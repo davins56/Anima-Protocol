@@ -30,3 +30,14 @@ In `handleSendMessage` it's formatted ONCE into `userProfileContext` (a delimite
 and must be interpolated into ALL prompt variants — solo, `buildGroupPrompt` (param),
 and the Serenity ambient prompt. NOTE this is distinct from the document-upload
 `UserContext`/`context_prompt` system, which is still NOT wired into live Chat.
+
+**Regional world knowledge:** Anima and character-list entities receive live
+working knowledge of the user's real-world region (local clock, timezone, optional
+city/country from the profile, weather via Open-Meteo, upcoming holidays).
+Client `src/lib/userRegion.js` collects timezone/locale + profile hints and
+injects a `<<<USER_REGION>>>` block into every Chat.jsx prompt variant.
+`POST /api/chat/messages` resolves the same hints against edge geo headers,
+fetches a cached weather/holiday snapshot
+(`api-server/src/lib/regionalWorldKnowledge.ts`), and `promptBuilder` upserts
+it so roster characters get the same grounding even when the client sends no
+system prompt (e.g. `useChatNucleus`). Opt out with `user_profile.share_region: false`.
