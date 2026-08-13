@@ -141,6 +141,39 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toBeTruthy();
     expect(prompt).toContain("Hello?");
   });
+
+  it("weaves expression spectrum into Anima identity", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [{
+        ...baseCharacter,
+        expression_spectrum: {
+          angelic: 50,
+          ascended: 40,
+          neutral: 10,
+          descended: 0,
+          demonic: 0,
+        },
+      }],
+      activeCharacter: {
+        ...baseCharacter,
+        expression_spectrum: {
+          angelic: 50,
+          ascended: 40,
+          neutral: 10,
+          descended: 0,
+          demonic: 0,
+        },
+      },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hello",
+    });
+
+    expect(prompt).toMatch(/live between multiple expressions/i);
+    expect(prompt).toMatch(/Angelic/i);
+    expect(prompt).toMatch(/Ascended/i);
+  });
 });
 
 describe("buildGroupCompanionPrompt", () => {

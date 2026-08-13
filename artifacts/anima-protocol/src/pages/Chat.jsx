@@ -73,6 +73,7 @@ import SerenityAvatar from "@/components/chat/SerenityAvatar";
 import ResonanceField from "@/components/chat/ResonanceField";
 import { useResonance, resonancePromptGuidance } from "@/hooks/useResonance";
 import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
+import { expressionPromptBlock } from "@/lib/animaExpressions";
 import { toast } from "sonner";
 import { useVesselContext } from "@/hooks/useVesselContext";
 import VoiceChatMode from "@/components/chat/VoiceChatMode";
@@ -1305,6 +1306,9 @@ RESPOND ONLY as ${char.name}. Stay completely in character. Use their unique voi
               (evMeta
                 ? `You have evolved along the ${ev} path: ${evMeta.blurb} Embody this in your presence.\n`
                 : `Your evolution path is still Undetermined — you are becoming, shaped by every exchange.\n`);
+          }
+          if (char._isAnima) {
+            animaSoulNote += `${expressionPromptBlock(char.expression_spectrum)}\n`;
           }
           const relCtx = getRelationshipContext(char.id);
           const loreCtx = buildLoreContext();
