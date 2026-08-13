@@ -71,7 +71,7 @@ export const animaApi = {
       characterIds,
       forceCharacterId,
       eligibleCharacterIds,
-      useDirector = true,
+      useDirector = false,
       isContinue = false,
       interruptChance,
     }) => {
@@ -83,7 +83,7 @@ export const animaApi = {
           character_ids: characterIds,
           force_character_id: forceCharacterId || null,
           eligible_character_ids: eligibleCharacterIds,
-          use_director: useDirector !== false,
+          use_director: Boolean(useDirector),
           is_continue: !!isContinue,
           ...(typeof interruptChance === "number"
             ? { interrupt_chance: interruptChance }
