@@ -1,6 +1,7 @@
 import { animaApi } from '@/api/animaApi';
 import { buildCharacterPrompt } from './buildCharacterPrompt';
 import { parseGroupResponse } from './parseGroupResponse';
+import { stripImageTags } from './chatImageGeneration';
 
 export async function sendChatMessage({
   content,
@@ -101,7 +102,7 @@ export async function sendChatMessage({
       }
     }
 
-    const strippedResult = fullResponse.replace(/\[(EMOTION|LOCATION):([^\]]+)\]/gi, "").trim();
+    const strippedResult = stripImageTags(fullResponse.replace(/\[(EMOTION|LOCATION):([^\]]+)\]/gi, "")).trim();
 
     let newAiMessages;
     if (activeSession.mode === "group") {
