@@ -46,6 +46,8 @@ describe("createBattle", () => {
     expect(battle.hand.length).toBeGreaterThan(0);
     expect(battle.buster.kind).toBe("blast");
     expect(battle.controlMode).toBe("manual");
+    expect(battle.player.silhouette).toBe("serenity");
+    expect(battle.enemy.silhouette).toBeTruthy();
   });
 });
 

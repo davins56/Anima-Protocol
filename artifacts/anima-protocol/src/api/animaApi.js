@@ -162,6 +162,14 @@ export const animaApi = {
       }).then((r) => r.json()),
   },
 
+  battleModels: {
+    resolve: ({ player, enemy } = {}) =>
+      request("/battle-models/resolve", {
+        method: "POST",
+        body: JSON.stringify({ player, enemy }),
+      }).then((r) => r.json()),
+  },
+
   protocolUpgrade: {
     capability: () => request("/protocol-upgrade/capability").then((r) => r.json()),
     classify: ({ request: upgradeRequest } = {}) =>

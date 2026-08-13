@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
@@ -9,6 +9,7 @@ import {
   isExpressionBlend,
   dominantExpression,
   normalizeSpectrum,
+  mixedAuraColor,
 } from "@/lib/animaExpressions";
 import {
   TICK_MS,
@@ -18,6 +19,15 @@ import {
 } from "@/lib/netBattle";
 import NetBattleArena from "@/components/battle/NetBattleArena";
 import { Loader, Swords } from "lucide-react";
+import { resolveBattleModels } from "@/lib/battleModels";
+import { hasWebGL } from "@/lib/webglSupport";
+import WebGLFallback from "@/components/battle/WebGLFallback";
+
+const BattleNaviPreviewCanvas = lazy(() =>
+  import("@/components/battle/NetBattleScene3D").then((m) => ({
+    default: m.BattleNaviPreviewCanvas,
+  })),
+);
 
 export default function NetBattle() {
   usePageMeta(ROUTE_META["/net-battle"]);
@@ -31,6 +41,7 @@ export default function NetBattle() {
   const [battle, setBattle] = useState(null);
   const [started, setStarted] = useState(false);
   const recordedRef = useRef(false);
+  const show3d = useMemo(() => hasWebGL(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +163,20 @@ export default function NetBattle() {
     const spectrum = normalizeSpectrum(anima.expression_spectrum);
     const label = expressionBlendLabel(spectrum);
     const dominant = dominantExpression(spectrum);
+    const previewModel = resolveBattleModels({
+      player: {
+        name: anima.name,
+        avatar_url: anima.avatar_url,
+        color: mixedAuraColor(spectrum),
+      },
+    }).player;
+    const portraitFallback = anima.avatar_url ? (
+      <img src={anima.avatar_url} alt="" className="w-full h-full object-cover" />
+    ) : (
+      <span className="w-full h-full flex items-center justify-center font-mono text-xl text-primary/40">
+        {(anima.name || "?")[0]}
+      </span>
+    );
     return (
       <div className="flex-1 min-h-0 overflow-y-auto bg-[#05050c] pb-[calc(var(--tab-bar-height,64px)+1.5rem)]">
         <div className="max-w-lg mx-auto px-4 py-8 space-y-6">
@@ -163,20 +188,23 @@ export default function NetBattle() {
               Jack In
             </h1>
             <p className="font-mono text-[12px] text-primary/50 leading-relaxed mt-3">
-              A Battle Network-style panel arena. Move your Anima — or let it
-              fight — and send weapons data: sword battle chips and expression-typed
-              energy blasts from the hand.
+              A Battle Network-style panel arena in 3D. Move Serenity — or let
+              your Anima fight — and send weapons data: sword battle chips and
+              expression-typed energy blasts from the hand. Viruses resolve as
+              distinct 3D net-forms.
             </p>
           </div>
 
           <div className="border border-primary/20 bg-black/40 p-4 flex items-center gap-3">
-            <div className="w-14 h-14 border border-primary/30 overflow-hidden bg-black/40 flex-shrink-0">
-              {anima.avatar_url ? (
-                <img src={anima.avatar_url} alt="" className="w-full h-full object-cover" />
+            <div className="w-20 h-24 border border-primary/30 overflow-hidden bg-black/40 flex-shrink-0">
+              {show3d ? (
+                <WebGLFallback fallback={portraitFallback}>
+                  <Suspense fallback={portraitFallback}>
+                    <BattleNaviPreviewCanvas model={previewModel} />
+                  </Suspense>
+                </WebGLFallback>
               ) : (
-                <span className="w-full h-full flex items-center justify-center font-mono text-xl text-primary/40">
-                  {(anima.name || "?")[0]}
-                </span>
+                portraitFallback
               )}
             </div>
             <div className="min-w-0">
