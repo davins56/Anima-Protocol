@@ -9,6 +9,7 @@ import storageRouter from "./storage";
 import chatRouter from "./chat";
 import adminRouter from "./admin";
 import codeRepairRouter from "./codeRepair";
+import protocolUpgradeRouter from "./protocolUpgrade";
 
 const router: IRouter = Router();
 
@@ -20,6 +21,7 @@ router.use(characterImageRouter);
 router.use(battleModelsRouter);
 router.use("/chat", chatRouter);
 router.use("/code-repair", codeRepairRouter);
+router.use("/protocol-upgrade", protocolUpgradeRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
 
