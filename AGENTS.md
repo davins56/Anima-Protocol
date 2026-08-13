@@ -75,6 +75,8 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
 
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
 
+Optional: `CURSOR_API_KEY` (alias `CURSOR_CLOUD_API_KEY`) lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks for an interface or system weave. Default repo is `https://github.com/davins56/Anima-Protocol`. Restrict stewards with `PROTOCOL_UPGRADE_ADMIN_EMAILS` (defaults to `davins56@gmail.com,davins56@hotmail.com`).
+
 ### Account data migration (ops)
 
 Characters and all progress are scoped by **Clerk `user_id`** in Postgres (`user_entities`), not email. To copy data between two accounts (e.g. `davins56@hotmail.com` → `davins56@gmail.com`):
@@ -241,6 +243,7 @@ All new events must follow these conventions.
 | `net_battle_started` | User jacks into a NetBattle match | `control_mode`, `primary_expression`, `is_blend` | `src/pages/NetBattle.jsx` |
 | `net_battle_completed` | A NetBattle match ends (win or loss) | `result`, `control_mode`, `primary_expression`, `is_blend`, `chips_used` | `src/pages/NetBattle.jsx` |
 | `presence_stage_opened` | User opens the full-body living presence stage in chat | `session_mode`, `character_count`, `is_crossover` | `src/pages/Chat.jsx` |
+| `protocol_upgrade_started` | Serenity launches a Cursor cloud agent to upgrade Protocol source | `scope`, `surface` | `src/lib/serenityProtocolUpgrade.js`, `src/components/chat/ProtocolUpgradeConsole.jsx` |
 | `image_generated` | Companion (onboard Serenity or a user-created Anima) creates an image in chat | `source` (`tag` / `request` / `modal`), `is_anima`, `session_mode` | `src/pages/Chat.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.

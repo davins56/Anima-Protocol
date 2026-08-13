@@ -31,7 +31,7 @@
     "react-hot-toast": "^2.6.0",
     "react-leaflet": "^5.0.0",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^7.15.1",
+    "react-router-dom": "^7.18.2",
     "tailwindcss-animate": "^1.0.7",
     "three":"^0.184.0",
     "@react-three/drei":"^10.7.7",
