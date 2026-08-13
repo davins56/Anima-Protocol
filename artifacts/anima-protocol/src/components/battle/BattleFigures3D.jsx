@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { figureWorldPosition } from "@/lib/battleLayout";
 import AnimaVesselMesh from "@/components/anima/AnimaVesselMesh";
 import TesseractLattice from "@/components/battle/TesseractLattice";
+import { RENDERER_QUALITY } from "@/lib/rendererQuality";
 
 function useSmoothPanel(col, row) {
   const group = useRef(null);
@@ -43,7 +44,7 @@ function Emissive({ color, emissiveIntensity = 0.7, roughness = 0.35, metalness 
   );
 }
 
-/** Luminous winged navi — 4D vessel of Serenity's presence. */
+/** Luminous full-body navi — Sovereign Presence vessel of Serenity. */
 export function SerenityFigure({
   model,
   col = 1,
@@ -52,6 +53,8 @@ export function SerenityFigure({
   hpRatio = 1,
   facing = 1,
   anchored = false,
+  quality = RENDERER_QUALITY.medium,
+  expression = 0,
 }) {
   const group = useSmoothPanel(anchored ? 1 : col, anchored ? 1 : row);
 
@@ -59,10 +62,13 @@ export function SerenityFigure({
     <group ref={anchored ? undefined : group} position={anchored ? [0, 0, 0] : undefined}>
       <AnimaVesselMesh
         model={model}
+        quality={quality}
         flinch={flinch}
         hpRatio={hpRatio}
         facing={facing}
-        showLattice
+        showLattice={quality.tesseracts >= 1 || quality.vesselHd}
+        expression={expression}
+        breathing
       />
     </group>
   );
