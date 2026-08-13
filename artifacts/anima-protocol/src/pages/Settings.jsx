@@ -18,6 +18,7 @@ import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
+import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 
@@ -737,6 +738,9 @@ export default function Settings() {
                    onChange={(v) => setPref("auto_read_responses", v)}
                  />
                 </div>
+
+                <SectionTitle>Notifications</SectionTitle>
+                <ProactiveMessageSettings />
 
                 <SectionTitle>Theme</SectionTitle>
                 <div className="border border-primary/15 bg-black/40 p-5">
