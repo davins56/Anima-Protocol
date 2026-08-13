@@ -126,6 +126,7 @@ export default function LivingPresenceStage({
                 thinking={thinking && isLead}
                 highlighted={isLead}
                 size={isLead ? figureSize : Math.round(figureSize * 0.78)}
+                detail={isLead}
                 showLabel
               />
             );
