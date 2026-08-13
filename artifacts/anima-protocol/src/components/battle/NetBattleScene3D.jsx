@@ -218,6 +218,7 @@ function BattleScene({ state, models, onPanelClick, quality }) {
         flinch={state.player.flinch}
         hpRatio={state.player.maxHp > 0 ? state.player.hp / state.player.maxHp : 1}
         facing={1}
+        quality={quality}
       />
       <VirusFigure
         model={models.enemy}
