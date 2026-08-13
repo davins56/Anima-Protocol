@@ -28,6 +28,12 @@ type MockState = {
 
 let user: TestUser;
 const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const browserOrigin = process.env.E2E_BASE_URL
+  ? new URL(process.env.E2E_BASE_URL).origin
+  : null;
+const localAppOrigin = process.env.E2E_LOCAL_APP_ORIGIN
+  ? new URL(process.env.E2E_LOCAL_APP_ORIGIN).origin
+  : null;
 
 test.describe.configure({ mode: "serial" });
 
@@ -53,6 +59,22 @@ function installBaseInit(page: Page): Promise<void> {
         "#replit-dev-banner{display:none!important;pointer-events:none!important;}";
       document.head.appendChild(style);
     });
+  });
+}
+
+/**
+ * Clerk production keys reject localhost origins. For local verification with
+ * those keys, keep the allowed production origin in Chromium while fulfilling
+ * every app/API request from the local Vite proxy. Nothing reaches the deployed
+ * application; Clerk alone remains remote.
+ */
+async function installLocalOriginRelay(page: Page): Promise<void> {
+  if (!browserOrigin || !localAppOrigin || browserOrigin === localAppOrigin) return;
+  await page.route(`${browserOrigin}/**`, async (route) => {
+    const requested = new URL(route.request().url());
+    const localUrl = new URL(`${requested.pathname}${requested.search}`, localAppOrigin);
+    const response = await route.fetch({ url: localUrl.toString() });
+    await route.fulfill({ response });
   });
 }
 
@@ -243,6 +265,7 @@ async function browserApi<T>(
 }
 
 async function signIn(page: Page): Promise<void> {
+  await installLocalOriginRelay(page);
   await installBaseInit(page);
   await installChatTransport(page);
   await setupClerkTestingToken({ page });
