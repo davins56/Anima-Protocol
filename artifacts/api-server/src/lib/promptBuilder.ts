@@ -115,6 +115,11 @@ const BUDGET = {
   userMessage: 600,
 } as const;
 
+function clientOwnsTranscript(systemPrompt?: string): boolean {
+  if (!systemPrompt) return false;
+  return /Story so far:|CONVERSATION CONTEXT:/i.test(systemPrompt);
+}
+
 function truncate(value: unknown, max = 600): string {
   const text = String(value ?? "").trim().replace(/\s+/g, " ");
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
@@ -364,8 +369,13 @@ export function buildCompanionPrompt(params: PromptBuilderParams): string {
   // 7. Shared memory (crossover sessions)
   const sharedBlock = isCrossover ? buildSharedMemoryBlock(sharedMemory) : "";
 
-  // 8. Conversation history (smart truncation)
-  const historyBlock = buildConversationContext(recentMessages, BUDGET.history);
+  // 8. Conversation history (smart truncation).
+  // When the client already sent a full transcript ("Story so far:"), repeating
+  // it here inflates prefill and delays first token.
+  const clientTranscript = clientOwnsTranscript(systemPrompt);
+  const historyBlock = clientTranscript
+    ? ""
+    : buildConversationContext(recentMessages, BUDGET.history);
 
   // 9. Group mode instruction
   let groupInstruction = "";
@@ -438,7 +448,11 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
     groupInstruction,
     TURN_TAKING,
-    content ? `LATEST USER MESSAGE:\n${content}` : "(Continue the scene naturally.)",
+    clientTranscript
+      ? ""
+      : content
+        ? `LATEST USER MESSAGE:\n${content}`
+        : "(Continue the scene naturally.)",
     `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
     LOYALTY_GUARDRAIL,
   ];
