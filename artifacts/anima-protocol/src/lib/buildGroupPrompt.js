@@ -10,6 +10,7 @@ import {
   loyaltyGuardrailClause,
   turnTakingClause,
 } from "./companionGuardrail";
+import { imageGenerationTagInstruction } from "./chatImageGeneration";
 
 export function buildGroupPrompt({
   nextChar,
@@ -59,6 +60,8 @@ ${INTELLIGENCE_GUIDANCE}
 ${lengthGuide}
 
 ${turnTakingClause({ isContinue })}
+
+${imageGenerationTagInstruction()}
 
 ${loyaltyGuardrailClause()}`;
 }

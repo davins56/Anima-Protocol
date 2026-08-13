@@ -3,6 +3,7 @@ import {
   loyaltyGuardrailClause,
   turnTakingClause,
 } from "./companionGuardrail";
+import { imageGenerationTagInstruction } from "./chatImageGeneration";
 
 export function buildCharacterPrompt({
   character,
@@ -53,6 +54,8 @@ ${lengthGuide}
 ${turnTakingClause({ isContinue })}
 
 If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.
+
+${imageGenerationTagInstruction()}
 
 ${loyaltyGuardrailClause()}`;
 }
