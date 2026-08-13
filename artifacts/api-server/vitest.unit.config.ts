@@ -6,6 +6,7 @@ export default defineConfig({
       "test/imageUploads.test.ts",
       // Was "test/llmEnsemble.test.ts" — no such file, so vitest silently ran
       // nothing for the ensemble path.
+      "test/consumeLlmStream.test.ts",
       "test/localEnsemble.test.ts",
       "test/llmFailover.test.ts",
       "test/localLlmLive.test.ts",
