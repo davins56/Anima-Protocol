@@ -517,7 +517,7 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
       status: "sent",
       userId: claim.userId,
       sessionId: candidate.sessionId,
-      characterName: candidate.character.name,
+      characterName: String(candidate.character.name),
       delivered,
     };
   } catch (err) {
