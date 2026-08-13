@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmotionalVoice } from '@/hooks/useEmotionalVoice';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useEmotionalVoice } from '@/hooks/useEmotionalVoice';
 
 /**
- * Component that manages emotional voice synthesis for a character message.
- * Automatically adjusts voice based on character's emotional state.
+ * Per-message replay for a companion / Anima line.
+ * Uses POST /api/tts (server default voice when no clone is assigned).
  */
 export default function EmotionalVoiceSynthesis({
   content,
@@ -14,34 +12,13 @@ export default function EmotionalVoiceSynthesis({
   characterName,
   characterEmotion = 'neutral',
   characterEmotionIntensity = 5,
+  voiceId = null,
   onPlay,
   onStop,
 }) {
-  const { speakWithEmotion, isPlaying, isLoading, stop } = useEmotionalVoice();
-  const [voiceId, setVoiceId] = useState(null);
-  const [hasVoice, setHasVoice] = useState(false);
-
-  // Load character's voice ID on mount
-  useEffect(() => {
-    if (!characterId) return;
-
-    base44.entities.Character.list()
-      .then(chars => {
-        const char = chars.find(c => c.id === characterId);
-        if (char?.elevenlabs_voice_id) {
-          setVoiceId(char.elevenlabs_voice_id);
-          setHasVoice(true);
-        }
-      })
-      .catch(() => setHasVoice(false));
-  }, [characterId]);
+  const { speakWithEmotion, isPlaying, isLoading, error, stop } = useEmotionalVoice();
 
   const handleSpeak = () => {
-    if (!voiceId) {
-      console.warn('No voice ID available for character');
-      return;
-    }
-
     speakWithEmotion(
       content,
       voiceId,
@@ -49,7 +26,6 @@ export default function EmotionalVoiceSynthesis({
       characterEmotion,
       characterEmotionIntensity
     );
-
     onPlay?.();
   };
 
@@ -58,10 +34,9 @@ export default function EmotionalVoiceSynthesis({
     onStop?.();
   };
 
-  if (!hasVoice) return null;
-
   return (
     <motion.button
+      type="button"
       whileHover={{ scale: 1.1 }}
       onClick={isPlaying ? handleStop : handleSpeak}
       disabled={isLoading}
@@ -69,12 +44,25 @@ export default function EmotionalVoiceSynthesis({
         isPlaying
           ? 'bg-green-500/30 text-green-400'
           : isLoading
-          ? 'bg-yellow-500/20 text-yellow-400 animate-pulse'
+          ? 'bg-yellow-500/20 text-yellow-400'
+          : error
+          ? 'bg-red-500/20 text-red-400'
           : 'bg-primary/20 text-primary/60 hover:text-primary'
       }`}
-      title={isPlaying ? 'Stop playing' : `Hear ${characterName}'s voice (${characterEmotion})`}
+      title={
+        isLoading
+          ? 'Loading voice…'
+          : isPlaying
+          ? 'Stop playing'
+          : error
+          ? `Replay failed: ${error}`
+          : `Hear ${characterName || 'Anima'}'s voice (${characterEmotion})`
+      }
+      aria-label={isPlaying ? 'Stop voice replay' : 'Replay voice'}
     >
-      {isPlaying ? (
+      {isLoading ? (
+        <Loader className="w-3 h-3 animate-spin" />
+      ) : isPlaying ? (
         <VolumeX className="w-3 h-3" />
       ) : (
         <Volume2 className="w-3 h-3" />
