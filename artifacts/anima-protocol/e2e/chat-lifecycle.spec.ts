@@ -494,6 +494,7 @@ test("refresh restores the completed turn from durable message rows", async ({
 
   await page.reload();
   await dismissConsent(page);
-  await expect(page.getByText("e2e-refresh")).toBeVisible();
-  await expect(page.getByText("Persisted after refresh.")).toBeVisible();
+  const chat = page.getByRole("main");
+  await expect(chat.getByText("e2e-refresh", { exact: true })).toBeVisible();
+  await expect(chat.getByText("Persisted after refresh.")).toBeVisible();
 });
