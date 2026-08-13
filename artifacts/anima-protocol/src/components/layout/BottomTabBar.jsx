@@ -36,6 +36,7 @@ const ALL_MODULES = [
   { label: "Characters", path: "/characters", icon: "👥" },
   { label: "Customise Anima", path: "/customise-anima?tab=look", icon: "✦" },
   { label: "Check-In", path: "/check-in", icon: "✚" },
+  { label: "Therapy Mode", path: "/therapy", icon: "♡" },
   { label: "Reflect Log", path: "/reflection-log", icon: "📝" },
 ];
 
