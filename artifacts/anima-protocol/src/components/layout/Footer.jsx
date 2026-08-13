@@ -1,5 +1,5 @@
 // @ts-check
-import { Heart, Github, Mail } from 'lucide-react';
+import { Heart, Code2, Mail } from 'lucide-react';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -42,8 +42,8 @@ export default function Footer() {
               <a href="/" className="text-primary/40 hover:text-primary transition-colors" title="Home">
                 <Mail className="w-4 h-4" />
               </a>
-              <a href="/" className="text-primary/40 hover:text-primary transition-colors" title="GitHub">
-                <Github className="w-4 h-4" />
+              <a href="/" className="text-primary/40 hover:text-primary transition-colors" title="Source">
+                <Code2 className="w-4 h-4" />
               </a>
               <a href="/" className="text-primary/40 hover:text-primary transition-colors" title="Values">
                 <Heart className="w-4 h-4" />
