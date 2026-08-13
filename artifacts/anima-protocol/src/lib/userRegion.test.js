@@ -37,8 +37,15 @@ describe("userRegion", () => {
   });
 
   it("honors share_region false", () => {
-    const hints = collectRegionHints({ share_region: false, city: "Paris" });
-    expect(hints.share_region).toBe(false);
+    vi.stubGlobal("navigator", { language: "fr-FR" });
+    const hints = collectRegionHints({
+      share_region: false,
+      city: "Paris",
+      country: "France",
+      timezone: "Europe/Paris",
+      locale: "fr-FR",
+    });
+    expect(hints).toEqual({ share_region: false });
     expect(formatUserRegionPromptBlock(hints)).toBe("");
   });
 
