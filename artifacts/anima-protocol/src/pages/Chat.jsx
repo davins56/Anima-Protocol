@@ -17,7 +17,7 @@ import {
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
-import { energyFragmentLoreBlock } from "@/lib/energyFragments";
+import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
 import {
   imageGenerationTagInstruction,
   stripImageTags,
@@ -124,6 +124,7 @@ import {
   isIntimacyEligibleSpeaker,
 } from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
+import { chatTurnErrorMessage } from "@/lib/chatTurnError";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import {
   collectRegionHints,
@@ -1308,12 +1309,6 @@ export default function Chat() {
         return `\nWORLD STATE & LORE (remember these facts — they are established story canon):\n${lines}\n`;
       };
 
-      const cyberspaceBattleData = () => {
-        const blob = `${activeChar?.universe || ""} ${activeSession?.opening_scene || ""}`;
-        if (!/battle network|netnavi|\bpet\b|cyberspace|energy fragment|battle chip/i.test(blob)) return "";
-        return `\n${energyFragmentLoreBlock()}\n`;
-      };
-
       // Build persistent memory context for the character
       const buildPersistentMemory = (charId) => {
         if (!characterMemories.length) return "";
@@ -1433,7 +1428,7 @@ export default function Chat() {
           }
           const relCtx = getRelationshipContext(char.id);
           const loreCtx = buildLoreContext();
-          const fragmentCtx = cyberspaceBattleData();
+          const fragmentCtx = cyberspaceBattlePromptBlock(char, activeSession);
           const memCtx = buildMemoryContext();
           const persistentMemCtx = buildPersistentMemory(char.id);
           const injectedMemCtx = buildInjectedMemoryContext();
@@ -1604,7 +1599,7 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
 
           currentGroupSpeakerRef.current = finalNextChar;
 
-          const loreCtxGroup = `${buildLoreContext()}${cyberspaceBattleData()}`;
+          const loreCtxGroup = `${buildLoreContext()}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}`;
 
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {
@@ -2513,11 +2508,7 @@ Return JSON:
       } else {
         // Pre-token failures used to remove thinking/typing with no UI feedback,
         // which looked like the companion started thinking then vanished.
-        const detail =
-          err instanceof Error && err.message
-            ? err.message
-            : "The companion could not reply. Please try again.";
-        toast.error(detail);
+        toast.error(chatTurnErrorMessage(err));
         // Don't let a deferred sync (armed while isLoading) immediately replace
         // local optimistic state with a server list that lacks this turn.
         pendingRemoteSyncRef.current = false;

@@ -22,6 +22,7 @@ import {
   makeCopy,
   coveredSourceFamilies,
   energyFragmentLoreBlock,
+  cyberspaceBattlePromptBlock,
 } from "./index.js";
 
 describe("battle chip research account", () => {
@@ -166,5 +167,27 @@ describe("draw and lore", () => {
   it("exposes a prompt block for cyberspace sessions", () => {
     expect(energyFragmentLoreBlock()).toMatch(/ethereal/i);
     expect(energyFragmentLoreBlock()).toMatch(/Energy Fragment/i);
+  });
+
+  it("injects battle-data lore from the resolved character, not a later binding", () => {
+    expect(
+      cyberspaceBattlePromptBlock({ universe: "Mega Man Battle Network" }, {}),
+    ).toMatch(/Energy Fragment/i);
+    expect(
+      cyberspaceBattlePromptBlock({}, { opening_scene: "jack into cyberspace" }),
+    ).toMatch(/Energy Fragment/i);
+    expect(
+      cyberspaceBattlePromptBlock({ universe: "Naruto" }, { opening_scene: "a quiet village" }),
+    ).toBe("");
+  });
+
+  it("throws if a helper closes over a later let (the Chat.jsx TDZ bug)", () => {
+    const boom = () => {
+      const cyberspaceBattleData = () => activeChar?.universe;
+      cyberspaceBattleData();
+      let activeChar = { universe: "Battle Network" };
+      return activeChar;
+    };
+    expect(boom).toThrow(/before initialization/);
   });
 });
