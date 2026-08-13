@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { base44, uploadDataUrl } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
 import { animaApi } from "@/api/animaApi";
@@ -18,6 +18,14 @@ import {
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 import { energyFragmentLoreBlock } from "@/lib/energyFragments";
+import {
+  imageGenerationTagInstruction,
+  stripImageTags,
+  parseImagePrompts,
+  userRequestedImage,
+  resolveChatImageAttachments,
+} from "@/lib/chatImageGeneration";
+import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import MessageBubble from "@/components/chat/MessageBubble";
@@ -1485,7 +1493,8 @@ ${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode
 ${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat, then stop at a clear pause point so they can react.\n` : ""}
 
           ${turnTakingClause({ isContinue })}
-          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.${matrixSafetyClause}
+          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.
+          ${imageGenerationTagInstruction()}${matrixSafetyClause}
 
           ${loyaltyGuardrailClause()}`;
         }
@@ -1751,9 +1760,50 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       }
 
       // Parse event tags from the AI response: [EMOTION: ...] [LOCATION: ...]
+      // Companions (onboard Serenity and user-created Animas) may also emit
+      // [IMAGE: ...] so this turn can attach a generated still.
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
-      const strippedResult = result.replace(eventTagRegex, "").trim();
+      const wantsImage =
+        parseImagePrompts(result).length > 0 || userRequestedImage(content);
+      let imageAttachments = [];
+      if (wantsImage) {
+        setActiveSession((prev) => ({
+          ...prev,
+          messages: [
+            ...updatedMessages,
+            {
+              role: "assistant",
+              content: "creating image...",
+              character_name: "__thinking__",
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }));
+        try {
+          const resolved = await resolveChatImageAttachments({
+            replyText: result,
+            userText: content,
+            character: activeChar,
+            generateImage: (args) => base44.integrations.Core.GenerateImage(args),
+            persistUrl: (dataUrl) => uploadDataUrl(dataUrl),
+          });
+          imageAttachments = resolved.attachments;
+          if (resolved.source && imageAttachments.length) {
+            track("image_generated", {
+              source: resolved.source,
+              is_anima: Boolean(activeChar?._isAnima),
+              session_mode: activeSession.mode || "solo",
+            });
+          } else {
+            toast.error("Couldn't create the image this turn.");
+          }
+        } catch (imgErr) {
+          console.warn("Chat image generation failed:", imgErr?.message);
+          toast.error("Couldn't create the image this turn.");
+        }
+      }
 
+      const strippedResult = stripImageTags(result.replace(eventTagRegex, "")).trim();
       const eventMessages = [];
       let match;
       const tagScanner = new RegExp(eventTagRegex.source, "gi");
@@ -1786,6 +1836,16 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         newAiMessages = parseGroupResponse(strippedResult, multiAspectChars, charName);
       } else {
         newAiMessages = [{ role: "assistant", content: strippedResult || result, character_name: charName, timestamp: new Date().toISOString() }];
+      }
+
+      if (imageAttachments.length && newAiMessages[0]) {
+        newAiMessages[0] = {
+          ...newAiMessages[0],
+          attachments: [
+            ...(newAiMessages[0].attachments || []),
+            ...imageAttachments,
+          ],
+        };
       }
 
       // cleanContent used downstream for background tasks (use first message content as proxy)
@@ -1959,19 +2019,39 @@ Someone has just addressed you, Serenity. Respond briefly and in character — p
 
 ${INTELLIGENCE_GUIDANCE}
 
+${imageGenerationTagInstruction()}
+
 ${loyaltyGuardrailClause()}`;
 
         base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt, deepMode: !!activeSession.deep_mode }).then(async (serenityResult) => {
+          const raw = String(serenityResult || "");
+          let attachments = [];
+          try {
+            const resolved = await resolveChatImageAttachments({
+              replyText: raw,
+              userText: content,
+              character: serenity,
+              generateImage: (args) => base44.integrations.Core.GenerateImage(args),
+              persistUrl: (dataUrl) => uploadDataUrl(dataUrl),
+            });
+            attachments = resolved.attachments;
+            if (resolved.source && attachments.length) {
+              track("image_generated", {
+                source: resolved.source,
+                is_anima: true,
+                session_mode: activeSession.mode || "solo",
+              });
+            }
+          } catch {
+            /* Serenity still speaks even if the still fails */
+          }
           const serenityMsg = {
             role: "assistant",
-            content: serenityResult.replace(/\[(EMOTION|LOCATION):[^\]]+\]/gi, "").trim(),
+            content: stripImageTags(raw.replace(/\[(EMOTION|LOCATION):[^\]]+\]/gi, "")).trim(),
             character_name: "Serenity",
             timestamp: new Date().toISOString(),
+            ...(attachments.length ? { attachments } : {}),
           };
-          const withSerenity = [...finalMessages, serenityMsg];
-          await base44.entities.ChatSession.update(activeSession.id, { messages: withSerenity });
-          setActiveSession((prev) => ({ ...prev, messages: withSerenity }));
-          speakMessage(serenityMsg.content, "Serenity");
           // Append only — never ChatSession.update({ messages }) with a stale
           // finalMessages snapshot (replaceMessages would delete newer turns).
           const stored = await appendAmbientMessage({
@@ -2761,6 +2841,45 @@ Return JSON:
       <ImageGenerationModal
         isOpen={showImageGen}
         onClose={() => setShowImageGen(false)}
+        characterName={
+          activeSession?.mode === "solo"
+            ? characters.find((c) => c.id === activeSession.character_id)?.name
+            : "Serenity"
+        }
+        onImageGenerated={async (url, promptText) => {
+          if (!activeSession?.id || !url) return;
+          const speaker =
+            (activeSession.mode === "solo" &&
+              characters.find((c) => c.id === activeSession.character_id)) ||
+            serenity;
+          let persisted = url;
+          if (typeof url === "string" && url.startsWith("data:")) {
+            try {
+              persisted = await uploadDataUrl(url);
+            } catch {
+              persisted = url;
+            }
+          }
+          await appendAmbientMessage({
+            appendMessage: base44.messages.append,
+            sessionId: activeSession.id,
+            message: {
+              role: "assistant",
+              content: promptText
+                ? `*shares a vision: ${String(promptText).slice(0, 180)}*`
+                : "*shares an image*",
+              character_name: speaker?.name || "Serenity",
+              attachments: [{ type: "image", url: persisted, name: "Generated scene" }],
+              timestamp: new Date().toISOString(),
+            },
+            setActiveSession,
+          });
+          track("image_generated", {
+            source: "modal",
+            is_anima: Boolean(speaker?._isAnima),
+            session_mode: activeSession.mode || "solo",
+          });
+        }}
       />
 
       <ExportArchiveModal
