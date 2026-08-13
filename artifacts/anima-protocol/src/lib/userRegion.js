@@ -39,9 +39,14 @@ export function readBrowserRegion() {
 }
 
 export function collectRegionHints(userProfile) {
-  const browser = readBrowserRegion();
   const profile = userProfile && typeof userProfile === "object" ? userProfile : {};
   const shareRegion = profile.share_region !== false;
+  // Opt-out is a transmission boundary, not only a prompt-rendering preference.
+  // Do not send browser timezone/locale or stored location fields to the API
+  // when regional context is disabled.
+  if (!shareRegion) return { share_region: false };
+
+  const browser = readBrowserRegion();
   return {
     timezone: sanitizeRegionField(profile.timezone, 64) || browser.timezone || null,
     locale: sanitizeRegionField(profile.locale, 32) || browser.locale || null,

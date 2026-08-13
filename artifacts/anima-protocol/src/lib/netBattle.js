@@ -278,7 +278,7 @@ export function fireBuster(state, owner = "player") {
   };
 }
 
-export function useChip(state, chip) {
+export function activateChip(state, chip) {
   if (state.phase !== "fighting" || !chip) return state;
   if (state.player.cooldown > 0 || state.player.flinch > 0) return state;
 
@@ -305,7 +305,7 @@ export function useChip(state, chip) {
 export function fireLoadedChip(state) {
   if (state.loaded.length === 0) return state;
   const [chip, ...rest] = state.loaded;
-  return { ...useChip(state, chip), loaded: rest };
+  return { ...activateChip(state, chip), loaded: rest };
 }
 
 /** Open the Custom screen when the gauge is full — pause to pick chips. */

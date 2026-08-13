@@ -11,6 +11,7 @@ export const REQUIRED_TABLES = [
   "messages",
   "chat_sessions",
   "chat_messages",
+  "chat_turns",
   "companion_memories",
   "memory_embeddings",
   "uploaded_images",
@@ -233,6 +234,27 @@ export async function ensureSchema(
   );
 
   await run(
+    `CREATE TABLE IF NOT EXISTS "chat_turns" (
+      "id" text PRIMARY KEY NOT NULL,
+      "session_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "user_message_id" text NOT NULL,
+      "assistant_message_id" text NOT NULL,
+      "persistence_owner" text DEFAULT 'server' NOT NULL,
+      "status" text DEFAULT 'pending' NOT NULL,
+      "retry_count" integer DEFAULT 0 NOT NULL,
+      "user_content" text DEFAULT '' NOT NULL,
+      "assistant_content" text DEFAULT '' NOT NULL,
+      "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "last_error" text,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL,
+      "committed_at" timestamp
+    )`,
+    "table:chat_turns",
+  );
+
+  await run(
     `CREATE TABLE IF NOT EXISTS "companion_memories" (
       "id" serial PRIMARY KEY NOT NULL,
       "user_id" text NOT NULL,
@@ -410,6 +432,16 @@ export async function ensureSchema(
     `CREATE INDEX IF NOT EXISTS "chat_messages_character_idx"
        ON "chat_messages" USING btree ("user_id","character_id")`,
     "index:chat_messages_character_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "chat_turns_session_idx"
+       ON "chat_turns" USING btree ("user_id","session_id","created_at")`,
+    "index:chat_turns_session_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "chat_turns_retry_idx"
+       ON "chat_turns" USING btree ("user_id","status","updated_at")`,
+    "index:chat_turns_retry_idx",
   );
   await run(
     `CREATE INDEX IF NOT EXISTS "chat_sessions_user_idx"
