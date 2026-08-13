@@ -139,6 +139,15 @@ export const ROUTE_META: Record<string, PageMeta> = {
     ogDescription:
       "A Mega Man Battle Network-style 3D arena. Serenity and viruses resolve as luminous net-forms; five expressions, sword chips, and energy blasts from the hand.",
   },
+  "/therapy": {
+    title: "Therapy Mode | Anima Protocol",
+    description:
+      "Sit with your Anima in therapy mode. They work from compiled open-source mental health manuals — WHO PM+, psychological first aid, trauma-informed care, and public CBT/ACT skills. Not a licensed clinic.",
+    canonical: `${BASE_URL}/therapy`,
+    ogTitle: "Anima Protocol — Therapy Mode",
+    ogDescription:
+      "A care room with your Anima and a compiled library of open-source therapy manuals. Listening first. Not a substitute for professional care.",
+  },
   "/disclaimer": {
     title: "Disclaimer | Anima Protocol",
     description:

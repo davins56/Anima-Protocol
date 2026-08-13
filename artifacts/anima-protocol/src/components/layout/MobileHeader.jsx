@@ -13,6 +13,7 @@ const ROUTE_TITLES = {
   "/customise-anima": "Customise Anima",
   "/customize": "Customization",
   "/meditation": "Sacred Space",
+  "/therapy": "Therapy Mode",
   "/settings": "Settings",
   "/lorebook": "Lore Book",
   "/quest-journal": "Quest Journal",

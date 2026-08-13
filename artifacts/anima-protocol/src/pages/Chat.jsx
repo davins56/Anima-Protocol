@@ -102,6 +102,13 @@ import CharacterPresencePanel from "@/components/chat/CharacterPresencePanel";
 import CharacterQuickChat from "@/components/chat/CharacterQuickChat";
 import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
+import {
+  isTherapySession,
+  buildTherapyInstruction,
+  detectTherapyCrisis,
+  therapyOpeningMessage,
+} from "@/lib/therapyManuals";
+import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
@@ -801,6 +808,27 @@ export default function Chat() {
     );
     const isCrossoverSession = m === "group" && crossoverUniverses.length >= 2;
 
+    const createdChar =
+      m === "solo" && character_id ? await resolveCharacterById(character_id) : null;
+    const therapySession =
+      m === "solo" &&
+      isTherapySession(
+        { mode: m, therapy_mode: false },
+        authUser,
+        createdChar || { _isAnima: false },
+      );
+
+    if (therapySession && createdChar && initialMessages.length === 0) {
+      initialMessages = [
+        {
+          role: "assistant",
+          character_name: createdChar.name,
+          content: therapyOpeningMessage(createdChar.name),
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    }
+
     const newSession = await base44.entities.ChatSession.create({
       mode: m,
       character_id: character_id || null,
@@ -809,14 +837,21 @@ export default function Chat() {
       crossover_universes: crossoverUniverses,
       is_crossover: isCrossoverSession,
       shared_memory: [],
-      title,
+      title: therapySession && createdChar?.name ? `Therapy · ${createdChar.name}` : title,
       messages: initialMessages,
+      ...(therapySession ? { therapy_mode: true, companion_mode: "therapy" } : {}),
     });
 
     if (isCrossoverSession) {
       track("crossover_session_started", {
         character_count: selectedGroupChars.length,
         universe_count: crossoverUniverses.length,
+      });
+    }
+    if (therapySession) {
+      track("therapy_session_started", {
+        source: "chat_new_session",
+        is_anima: true,
       });
     }
 
@@ -1080,6 +1115,7 @@ export default function Chat() {
       is_crossover: activeSession.mode === "group" && distinctUniverses >= 2,
       is_continue: isContinue,
       has_attachment: attachments.length > 0,
+      is_therapy: isTherapySession(activeSession, authUser, characters.find((c) => c.id === activeSession.character_id)),
     });
 
     // Show thinking immediately while we build context / call the model.
@@ -1140,7 +1176,10 @@ export default function Chat() {
               ).then((chars) => chars.filter(Boolean))
             : Promise.resolve([]),
         ]);
-      const adultMode = user?.settings?.adult_content_enabled === true;
+      const therapyActive = isTherapySession(activeSession, user, resolvedSoloChar);
+      const adultMode = therapyActive
+        ? false
+        : user?.settings?.adult_content_enabled === true;
       let behaviorConfig = aiBehaviorConfig;
       if (behaviorConfigs?.length > 0) {
         behaviorConfig = behaviorConfigs[0];
@@ -1430,10 +1469,18 @@ ${lewdityGuide}`;
           
           // Check if using companion mode (selected_mode on user). When the user
           // has invited multiple aspects (Lover Matrix), they co-exist in-thread.
-          const baseMode = user?.selected_mode || "serenity";
+          // Therapy mode is a dedicated care space: no Lover Matrix, no adult
+          // overlay — the Anima works from the compiled open-source manuals.
+          const baseMode = therapyActive ? "therapy" : (user?.selected_mode || "serenity");
           const aspects = (activeAspects && activeAspects.length) ? activeAspects : [baseMode];
-          isMultiAspect = char._isAnima && aspects.length > 1;
-          const companionModeInstruction = isMultiAspect
+          isMultiAspect = !therapyActive && char._isAnima && aspects.length > 1;
+          const companionModeInstruction = therapyActive
+            ? buildTherapyInstruction({
+                characterName: char.name,
+                userName: user.full_name,
+                userMessage: isContinue ? "" : content,
+              })
+            : isMultiAspect
             ? getMultiAspectPrompt(aspects, user.full_name)
             : (user?.selected_mode ? getCompanionModePrompt(aspects[0], user.full_name) : "");
           if (isMultiAspect) {
@@ -2554,7 +2601,27 @@ Return JSON:
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <ResonanceField value={resonance.value} label={resonance.label} />
             )}
-            {activeSession?.mode === "solo" && characters.find(c => c.id === activeSession?.character_id)?._isAnima && (
+            {isTherapySession(
+              activeSession,
+              authUser,
+              characters.find((c) => c.id === activeSession?.character_id),
+            ) && (
+              <TherapySessionBanner
+                characterName={characters.find((c) => c.id === activeSession?.character_id)?.name}
+                crisis={detectTherapyCrisis(
+                  [...(activeSession.messages || [])]
+                    .reverse()
+                    .find((m) => m.role === "user")?.content,
+                )}
+              />
+            )}
+            {activeSession?.mode === "solo" &&
+              characters.find(c => c.id === activeSession?.character_id)?._isAnima &&
+              !isTherapySession(
+                activeSession,
+                authUser,
+                characters.find((c) => c.id === activeSession?.character_id),
+              ) && (
               <div className="px-3 py-2 border-b border-primary/10 bg-black/40 backdrop-blur-sm">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary/40">Present</span>

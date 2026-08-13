@@ -186,12 +186,22 @@ export default function NewChat() {
           </button>
           <button
             onClick={() => setShowCharStory(true)}
-            className="flex items-center gap-5 p-5 bg-[#090912] hover:bg-primary/5 transition-all text-left"
+            className="flex items-center gap-5 p-5 bg-[#090912] hover:bg-primary/5 transition-all text-left border-b border-primary/10"
           >
             <span className="w-10 h-10 flex items-center justify-center border border-primary/20 text-primary/60 font-mono text-lg">⎆</span>
             <div>
               <div className="font-mono text-sm tracking-[0.2em] uppercase text-primary">Enter Their Story</div>
               <div className="text-primary/40 text-[11px] mt-0.5 font-mono">Insert yourself into a character's world</div>
+            </div>
+          </button>
+          <button
+            onClick={() => navigate("/therapy")}
+            className="flex items-center gap-5 p-5 bg-[#090912] hover:bg-primary/5 transition-all text-left"
+          >
+            <span className="w-10 h-10 flex items-center justify-center border border-violet-400/30 text-violet-300/80 font-mono text-lg">♡</span>
+            <div>
+              <div className="font-mono text-sm tracking-[0.2em] uppercase text-violet-200">Therapy</div>
+              <div className="text-primary/40 text-[11px] mt-0.5 font-mono">Sit with your Anima and compiled care manuals</div>
             </div>
           </button>
         </div>

@@ -188,6 +188,14 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
                         <span>Deep</span>
                       </span>
                     )}
+                    {session.therapy_mode && (
+                      <span
+                        title="Therapy mode — compiled care manuals"
+                        className="flex-shrink-0 px-1 py-0.5 border border-violet-400/40 text-violet-200 bg-violet-500/10 font-mono text-[7px] sm:text-[8px] tracking-widest uppercase"
+                      >
+                        Therapy
+                      </span>
+                    )}
                   </div>
                   {session.last_message && (
                     <p className="text-[8px] sm:text-[9px] text-primary/30 truncate mt-0.5">{session.last_message}</p>

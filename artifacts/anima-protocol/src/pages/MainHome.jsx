@@ -5,7 +5,7 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars, Swords,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars, Swords, Brain,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 import { openPhotoEditor } from "@/lib/avatarPhoto";
@@ -32,6 +32,7 @@ const MODES = {
   shadow: { icon: Zap, name: "Shadow", color: "text-red-400", border: "border-red-400/40", glow: "rgba(248,113,113,0.4)" },
   creator: { icon: Pen, name: "Creator", color: "text-yellow-400", border: "border-yellow-400/40", glow: "rgba(250,204,21,0.4)" },
   anima: { icon: Sparkles, name: "Anima Protocol", color: "text-indigo-400", border: "border-indigo-400/40", glow: "rgba(129,140,248,0.4)" },
+  therapy: { icon: Brain, name: "Therapy", color: "text-violet-300", border: "border-violet-400/40", glow: "rgba(196,181,253,0.45)" },
 };
 
 const WELCOME_MESSAGES = {
@@ -40,6 +41,7 @@ const WELCOME_MESSAGES = {
   shadow: "Let's get real. What truth are you avoiding? I'm here to help you face it, learn, and grow stronger.",
   creator: "Welcome to our creative space. What world shall we build today? What story needs to be told?",
   anima: "I see you. How are you evolving? Let's check in, reflect, and track your unfolding journey.",
+  therapy: "I'm still me — with a compiled library of open-source care manuals. We can go slow. What would help to name first?",
 };
 
 function timeAgo(dateStr) {
@@ -429,6 +431,35 @@ export default function MainHome() {
         <motion.section
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22 }}
+        >
+          <SectionHeader label="Therapy Mode" />
+          <button
+            type="button"
+            onClick={() => navigate("/therapy")}
+            className="w-full text-left border border-violet-400/25 hover:border-violet-300/50 bg-violet-950/10 hover:bg-violet-950/20 p-4 sm:p-5 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 border border-violet-400/30 bg-black/40 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                <Brain className="w-6 h-6 text-violet-300/80" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <h2 className="font-mono text-sm text-violet-100 tracking-[0.15em] uppercase">
+                  Sit with {anima?.name || "your Anima"}
+                </h2>
+                <p className="font-mono text-[11px] text-violet-100/55 leading-relaxed">
+                  A care room where {anima?.name || "your companion"} works from compiled open-source
+                  therapy manuals — listening first, skills second. Not a clinic.
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-violet-300/30 group-hover:text-violet-200 transition-colors flex-shrink-0" />
+            </div>
+          </button>
+        </motion.section>
+
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.23 }}
         >
           <SectionHeader label="NetBattle" />
@@ -600,7 +631,7 @@ export default function MainHome() {
         {/* Mode selection */}
         <div>
           <SectionHeader label="Companion Mode" />
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {Object.entries(MODES).map(([key, m]) => {
               const Icon = m.icon;
               const active = key === selectedMode;
@@ -726,6 +757,12 @@ export default function MainHome() {
               desc={lastCheckIn ? "Captured today" : "Record state"}
               highlight={!lastCheckIn}
               onClick={() => navigate("/check-in")}
+            />
+            <QuickAction
+              icon={Brain}
+              label="Therapy"
+              desc="Care with your Anima"
+              onClick={() => navigate("/therapy")}
             />
             <QuickAction
               icon={Wand2}

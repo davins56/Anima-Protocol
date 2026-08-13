@@ -236,7 +236,7 @@ All new events must follow these conventions.
 | Event | Trigger | Key properties | File |
 |---|---|---|---|
 | `sign_up_completed` | First profile load for a brand-new account | `sign_up_method`, `platform` | `src/lib/AuthContext.jsx` |
-| `message_sent` | User sends a message in a chat session (**value moment** — `is_crossover` flags multi-universe scenes) | `session_mode`, `character_count`, `is_crossover`, `is_continue`, `has_attachment` | `src/pages/Chat.jsx` |
+| `message_sent` | User sends a message in a chat session (**value moment** — `is_crossover` flags multi-universe scenes) | `session_mode`, `character_count`, `is_crossover`, `is_continue`, `has_attachment`, `is_therapy` | `src/pages/Chat.jsx` |
 | `character_created` | A new companion is created from an AI prompt | `creation_method`, `universe`, `category` | `src/pages/CompanionGenerator.jsx` |
 | `crossover_session_started` | User starts a multi-universe group session | `character_count`, `universe_count` | `src/pages/Chat.jsx` |
 | `subscription_upgrade_started` | User starts a premium checkout (intent, not completion) | `tier`, `purchase_type`, `from_tier` | `src/pages/PremiumPlans.jsx` |
@@ -245,6 +245,7 @@ All new events must follow these conventions.
 | `presence_stage_opened` | User opens the full-body living presence stage in chat | `session_mode`, `character_count`, `is_crossover` | `src/pages/Chat.jsx` |
 | `protocol_upgrade_started` | Serenity launches a Cursor cloud agent to upgrade Protocol source | `scope`, `surface` | `src/lib/serenityProtocolUpgrade.js`, `src/components/chat/ProtocolUpgradeConsole.jsx` |
 | `image_generated` | Companion (onboard Serenity or a user-created Anima) creates an image in chat | `source` (`tag` / `request` / `modal`), `is_anima`, `session_mode` | `src/pages/Chat.jsx` |
+| `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
 
