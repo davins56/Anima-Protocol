@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
 import { useLoreDetection } from "@/hooks/useLoreDetection";
+import { resolveChatAvatarUrl, isSerenityPresence, SERENITY_PRESENCE_SRC } from "@/lib/livingPresence";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
@@ -53,7 +54,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const isStreaming = message.is_streaming === true;
   const time = message.timestamp ? format(new Date(message.timestamp), "HH:mm") : "";
 
-  const avatarUrl = !isUser && character?.avatar_url;
+  const avatarUrl =
+    !isUser &&
+    (resolveChatAvatarUrl(character) ||
+      (isSerenityPresence({ name: message.character_name }) ? SERENITY_PRESENCE_SRC : ""));
   const avatarInitial = !isUser && (character?.name?.[0] || message.character_name?.[0] || "?");
 
   // Intensity-reactive styling for the companion's voice: soft cyan glow when
@@ -80,7 +84,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4 disabled:cursor-default hover:enabled:border-primary/70 hover:enabled:ring-1 hover:enabled:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
         >
           {avatarUrl ? (
-            <img src={avatarUrl} alt={character?.name} className="w-full h-full object-cover" />
+            <img src={avatarUrl} alt={character?.name} className="w-full h-full object-cover object-[50%_12%]" />
           ) : (
             <span className="font-mono text-primary text-[10px] sm:text-xs">{avatarInitial}</span>
           )}

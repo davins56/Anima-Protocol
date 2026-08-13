@@ -12,6 +12,7 @@ import {
   emotionCss,
   isSerenityPresence,
   resolvePresenceSprite,
+  resolveChatAvatarUrl,
   SERENITY_PRESENCE_SRC,
   SERENITY_PRESENCE_DETAIL_SRC,
   EMOTION_PALETTE,
@@ -180,5 +181,12 @@ describe("resolvePresenceSprite", () => {
         avatar_url: "/custom-vesper.png",
       }),
     ).toBe("/custom-vesper.png");
+  });
+
+  it("resolveChatAvatarUrl matches the presence sprite", () => {
+    expect(resolveChatAvatarUrl({ name: "Serenity" })).toBe(SERENITY_PRESENCE_SRC);
+    expect(resolveChatAvatarUrl({ ...korra, avatar_url: "/seed-avatars/korra.jpg" })).toBe(
+      "/seed-avatars/korra.jpg",
+    );
   });
 });

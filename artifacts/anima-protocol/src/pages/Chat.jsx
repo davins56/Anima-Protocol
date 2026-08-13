@@ -80,10 +80,10 @@ import QuickActionChips from "@/components/chat/QuickActionChips";
 import NarrativeArcPanel from "@/components/narrative/NarrativeArcPanel";
 import RelationshipEvolutionMap from "@/components/network/RelationshipEvolutionMap";
 import DynamicPortrait from "@/components/chat/DynamicPortrait";
-import LivingPresence from "@/components/chat/LivingPresence";
+import FloatingChatAnima from "@/components/chat/FloatingChatAnima";
 import LivingPresenceStage from "@/components/chat/LivingPresenceStage";
 import ResonanceField from "@/components/chat/ResonanceField";
-import { resolvePresenceCast, highlightedCastId, lastSpokenLine } from "@/lib/livingPresence";
+import { resolvePresenceCast } from "@/lib/livingPresence";
 import { useResonance, resonancePromptGuidance } from "@/hooks/useResonance";
 import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
 import { expressionPromptBlock } from "@/lib/animaExpressions";
@@ -336,11 +336,6 @@ export default function Chat() {
       is_crossover: activeSession?.mode === "group" && distinctUniverses >= 2,
     });
   };
-  const presenceLeadId = highlightedCastId(
-    presenceCast,
-    lastSpokenLine(activeSession?.messages),
-    isCompanionSpeaking,
-  );
   const { vesselContext, attunementGuidance, refreshVesselContext } = useVesselContext(activeSession?.id);
   const [activeAspects, setActiveAspects] = useState([]);
   const [showAspectPicker, setShowAspectPicker] = useState(false);
@@ -2606,7 +2601,7 @@ Return JSON:
               onAvatarClick={setBioCharacter}
               llmProvider={llmProvider}
               llmBrand={llmBrand}
-              onOpenStage={presenceCast.length > 0 ? openPresenceStage : undefined}
+              onOpenStage={openPresenceStage}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <ResonanceField value={resonance.value} label={resonance.label} />
@@ -2679,7 +2674,7 @@ Return JSON:
                 )}
               </div>
             )}
-            <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative ${presenceCast.length > 0 ? "lg:pr-56 xl:pr-64" : ""}`} data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'var(--tab-bar-height, 60px)' }}>
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative" data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'var(--tab-bar-height, 60px)' }}>
               <GoToTopButton containerRef={scrollContainerRef} />
               <ChatWidgetsArea
                 activeSession={activeSession}
@@ -2799,9 +2794,19 @@ Return JSON:
                 />
               )}
 
-              {/* Voice Chat & Chat Input */}
-              <div className="space-y-2">
-<ChatInputControls
+              {/* Voice Chat & Chat Input — Serenity floats around this box */}
+              <div className="relative space-y-2 overflow-visible">
+                <FloatingChatAnima
+                  character={
+                    serenity ||
+                    presenceCast.find((c) => c._isAnima) ||
+                    { name: "Serenity", _isAnima: true }
+                  }
+                  speaking={isCompanionSpeaking}
+                  thinking={isLoading}
+                  onExpand={openPresenceStage}
+                />
+                <ChatInputControls
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
                   onNarratorExposition={handleNarratorExposition}
@@ -3009,59 +3014,16 @@ Return JSON:
         />
       )}
 
-      {/* Living full-body presence — desktop rail */}
-      {presenceCast.length > 0 && !immersive && (
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 20 }}
-          className="hidden lg:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-3 pr-2 py-6 pointer-events-none z-30"
-        >
-          <div className="pointer-events-auto flex flex-col items-center gap-2 max-h-full overflow-y-auto">
-            {presenceCast.slice(0, 4).map((character) => {
-              const em = characterEmotions[character.id] || {};
-              const isLead = character.id === (presenceLeadId || presenceCast[0]?.id);
-              return (
-                <LivingPresence
-                  key={character.id}
-                  character={character}
-                  emotion={em.emotion || activeCharEmotion?.emotion || "calm"}
-                  intensity={em.intensity ?? activeCharEmotion?.intensity ?? 5}
-                  resonance={resonance.value}
-                  speaking={isCompanionSpeaking && isLead}
-                  thinking={isLoading && isLead}
-                  highlighted={isLead}
-                  size={presenceCast.length > 1 ? 200 : 320}
-                  onExpand={openPresenceStage}
-                />
-              );
-            })}
-            <button
-              type="button"
-              onClick={openPresenceStage}
-              className="font-mono text-[9px] tracking-[0.25em] uppercase text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 rounded px-3 py-1 transition-colors"
-            >
-              ⛶ Stage
-            </button>
-          </div>
-        </motion.div>
-      )}
-
-      {presenceCast.length > 0 && !immersive && (
-        <button
-          type="button"
-          onClick={openPresenceStage}
-          className="lg:hidden fixed right-3 z-40 font-mono text-[9px] tracking-[0.22em] uppercase text-primary border border-primary/40 bg-black/70 backdrop-blur-md rounded px-3 py-2 shadow-lg shadow-cyan-900/40"
-          style={{ bottom: "5.5rem" }}
-        >
-          ⛶ Stage
-        </button>
-      )}
-
       <LivingPresenceStage
         open={Boolean(immersive)}
         onClose={() => setImmersive(false)}
-        cast={presenceCast}
+        cast={
+          presenceCast.length > 0
+            ? presenceCast
+            : serenity
+              ? [serenity]
+              : [{ id: "serenity", name: "Serenity", _isAnima: true }]
+        }
         characterEmotions={characterEmotions}
         resonance={resonance}
         speaking={isCompanionSpeaking}

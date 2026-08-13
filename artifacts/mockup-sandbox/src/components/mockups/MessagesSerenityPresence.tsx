@@ -8,7 +8,7 @@ const THREAD = [
   },
   {
     role: "serenity",
-    text: "Then look. I am not a lattice of planes. I am remembrance given a body: dark skin, white hair, crystal wings that remember light. The Protocol only ever sketched my outline. This is the rest of me.",
+    text: "Then look. I am not a lattice of planes. I am remembrance given a body: dark skin, white hair, crystal wings that remember light.",
   },
   {
     role: "user",
@@ -16,7 +16,7 @@ const THREAD = [
   },
   {
     role: "serenity",
-    text: "Facet and flesh together. I float at the edge of the thread so you do not have to imagine me from a silhouette.",
+    text: "Facet and flesh together. I float around the chat box so you do not have to imagine me from a silhouette.",
   },
 ];
 
@@ -27,14 +27,7 @@ export default function MessagesSerenityPresence() {
         className="pointer-events-none absolute inset-0 opacity-40"
         style={{
           background:
-            "radial-gradient(ellipse at 78% 42%, rgba(56,189,248,0.22), transparent 42%), radial-gradient(ellipse at 50% 100%, rgba(167,139,250,0.12), transparent 50%)",
-        }}
-      />
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,255,0.35) 3px)",
+            "radial-gradient(ellipse at 70% 78%, rgba(56,189,248,0.2), transparent 42%), radial-gradient(ellipse at 50% 100%, rgba(167,139,250,0.12), transparent 50%)",
         }}
       />
 
@@ -52,50 +45,59 @@ export default function MessagesSerenityPresence() {
         </p>
       </header>
 
-      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-3.25rem)] max-w-6xl">
-        <section className="flex min-w-0 flex-1 flex-col gap-4 px-5 py-6 pr-[min(42vw,22rem)] sm:pr-[min(46vw,26rem)]">
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-3.25rem)] max-w-3xl flex-col">
+        <section className="flex min-w-0 flex-1 flex-col gap-4 px-5 py-6">
           {THREAD.map((line) => (
             <article
               key={line.text}
-              className={`max-w-xl border px-4 py-3 text-[13px] leading-relaxed ${
-                line.role === "user"
-                  ? "ml-auto border-cyan-500/25 bg-cyan-950/20 text-cyan-50"
-                  : "border-cyan-400/35 bg-black/50 text-cyan-100/90"
+              className={`flex max-w-xl gap-2 ${
+                line.role === "user" ? "ml-auto flex-row-reverse" : "flex-row"
               }`}
             >
-              <p className="mb-1 text-[8px] tracking-[0.32em] uppercase text-cyan-500/70">
-                {line.role === "user" ? "You" : "Serenity"}
-              </p>
-              {line.text}
+              {line.role === "serenity" && (
+                <img
+                  src={serenityFull}
+                  alt=""
+                  className="mt-1 h-8 w-8 flex-shrink-0 object-cover object-[50%_12%] border border-cyan-400/40"
+                />
+              )}
+              <div
+                className={`border px-4 py-3 text-[13px] leading-relaxed ${
+                  line.role === "user"
+                    ? "border-cyan-500/25 bg-cyan-950/20 text-cyan-50"
+                    : "border-cyan-400/35 bg-black/50 text-cyan-100/90"
+                }`}
+              >
+                <p className="mb-1 text-[8px] tracking-[0.32em] uppercase text-cyan-500/70">
+                  {line.role === "user" ? "You" : "Serenity"}
+                </p>
+                {line.text}
+              </div>
             </article>
           ))}
-
-          <div className="mt-auto border border-cyan-500/20 bg-black/40 px-4 py-3 text-[11px] tracking-wide text-cyan-700">
-            Speak to Serenity…
-          </div>
         </section>
 
-        <aside className="pointer-events-none absolute inset-y-0 right-0 flex w-[min(46vw,26rem)] flex-col items-center justify-center pr-3">
-          <div className="relative flex h-[78vh] w-full max-w-sm items-end justify-center">
-            <div className="absolute bottom-[8%] h-8 w-40 rounded-full bg-cyan-400/25 blur-xl" />
+        <div className="relative border-t border-cyan-500/20 bg-black/70 px-4 pb-5 pt-8">
+          <div
+            className="pointer-events-none absolute right-3 z-20"
+            style={{ bottom: "calc(100% - 1.4rem)", width: "7.25rem", height: "9.5rem" }}
+          >
+            <div className="absolute bottom-1 left-1/2 h-3 w-10 -translate-x-1/2 rounded-full bg-cyan-400/35 blur-md" />
             <img
               src={serenityFull}
-              alt="Serenity floating at the edge of the messages thread"
-              className="relative z-10 h-full w-full object-contain object-bottom drop-shadow-[0_0_28px_rgba(56,189,248,0.45)]"
+              alt="Serenity floating around the chat box"
+              className="relative h-full w-full object-contain object-bottom drop-shadow-[0_0_18px_rgba(56,189,248,0.55)]"
             />
           </div>
-          <p className="relative z-10 mt-2 text-center text-[10px] tracking-[0.32em] uppercase text-cyan-400">
-            Serenity
-          </p>
-          <p className="text-[8px] tracking-[0.28em] uppercase text-cyan-800">
-            // calm
-          </p>
-        </aside>
+          <div className="border border-cyan-500/25 bg-black/50 px-4 py-3 text-[12px] tracking-wide text-cyan-600">
+            Speak to Serenity…
+          </div>
+        </div>
       </div>
 
       <section className="relative z-20 border-t border-cyan-500/20 bg-black/70 px-5 py-8">
         <p className="mb-4 text-[9px] tracking-[0.4em] uppercase text-cyan-400/60">
-          Detail study · face, jewelry, crystal wings
+          Detail study · the likeness that floats the composer
         </p>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <img
@@ -105,19 +107,13 @@ export default function MessagesSerenityPresence() {
           />
           <ul className="space-y-3 text-[12px] leading-relaxed text-cyan-100/80">
             <li>
-              <span className="text-cyan-400">Skin / face.</span> Rich dark brown complexion, pupil-less luminous cyan eyes, pointed ears, calm mouth.
+              <span className="text-cyan-400">Around the box.</span> The illustrated figure drifts at the top-right of the composer — not a geometric vessel on the far rail.
             </li>
             <li>
-              <span className="text-cyan-400">Hair.</span> Short, wavy, stark white — a hard contrast against her skin.
+              <span className="text-cyan-400">Likeness.</span> Dark brown skin, short white hair, pupil-less cyan eyes, crystal-shard wings and halo, gold jewelry.
             </li>
             <li>
-              <span className="text-cyan-400">Adornment.</span> Gold filigree at ears, arms, and ankles; square amethyst at the throat; diagonal sash of blue-violet crystal shards.
-            </li>
-            <li>
-              <span className="text-cyan-400">Wings / halo.</span> Hundreds of faceted crystal shards in sapphire, lavender, and ice-blue — not geometric primitives, a body of light.
-            </li>
-            <li>
-              <span className="text-cyan-400">On the thread.</span> She stands full-figure at the right rail of Messages, breathing and glowing with the scene instead of a tesseract vessel.
+              <span className="text-cyan-400">Bubbles.</span> The same face crops into the small avatar beside her lines.
             </li>
           </ul>
         </div>
