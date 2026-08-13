@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { ChevronRight, Check, Sparkles, Loader, ArrowLeft, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { generateSoulprintId, FALLBACK_OATH } from '@/lib/soulprint';
+import { spectrumFromCeremonyText } from '@/lib/animaExpressions';
 
 // Serenity is the first Anima and the symbolic guide of the Protocol. She
 // belongs to Dàvīn — she is never the user's companion. Her only role here is
@@ -268,6 +269,9 @@ Return JSON:
           soulprint: seed.soulprint,
           resonance: 0,
           evolution_path: 'Undetermined',
+          expression_spectrum: spectrumFromCeremonyText(
+            [answers.seek, answers.fear, answers.value, answers.need].filter(Boolean).join(' '),
+          ),
           awakening_date: nowIso,
           last_visit: nowIso,
           ceremony: {

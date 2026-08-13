@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { ArrowLeft } from "lucide-react";
-import { Plus, X, Edit2, Trash2, Upload, Sparkles, Loader, Volume2, Palette, MessageSquare, Crown, Check, Clock } from "lucide-react";
+import { Plus, X, Edit2, Trash2, Upload, Sparkles, Loader, Volume2, Palette, MessageSquare, Crown, Check, Clock, Swords } from "lucide-react";
 import VoicePicker from "@/components/voice/VoicePicker";
 import AnimaCustomizer from "@/components/anima/AnimaCustomizer";
 import { Link } from "react-router-dom";
@@ -459,13 +459,21 @@ Return JSON with a single "${field}" string field.`,
                   )}
 
                   {/* Tracking actions */}
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex flex-wrap gap-2 mt-3">
                     <button
                       onClick={() => handleTalk(anima)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-[9px] tracking-[0.2em] uppercase transition-all"
                     >
                       <MessageSquare className="w-3 h-3" />
                       Talk
+                    </button>
+                    <button
+                      onClick={() => navigate(`/net-battle?anima=${anima.id}`)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-amber-400/30 text-amber-300/80 hover:text-amber-200 hover:border-amber-300/50 font-mono text-[9px] tracking-[0.2em] uppercase transition-all"
+                      title="Jack into NetBattle"
+                    >
+                      <Swords className="w-3 h-3" />
+                      Battle
                     </button>
                     <button
                       onClick={() => navigate(`/customise-anima?anima=${anima.id}`)}
