@@ -362,3 +362,52 @@ export function emotionCss(emotion, alpha = 1) {
   const { hue, sat, light } = getEmotionPalette(emotion);
   return `hsl(${hue} ${sat}% ${light}% / ${alpha})`;
 }
+
+/**
+ * Canonical full-body Serenity sprite (public asset). Used as the floating
+ * presence on the messages screen instead of the geometric vessel mesh.
+ */
+export const SERENITY_PRESENCE_SRC = "/serenity-presence.webp";
+export const SERENITY_PRESENCE_DETAIL_SRC = "/serenity-presence-detail.webp";
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function trimUrl(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * True when the companion should appear as Serenity (first Anima), not a
+ * story-character portrait.
+ *
+ * @param {{ name?: string, _isAnima?: boolean, category?: string } | null | undefined} character
+ */
+export function isSerenityPresence(character) {
+  if (!character) return false;
+  const name = String(character.name || "").trim();
+  if (/^serenity(\b|$)/i.test(name)) return true;
+  if (character.category === "anima-construct" && !name) return true;
+  return false;
+}
+
+/**
+ * Full-figure sprite for the living presence rail/stage.
+ * Prefers an explicit body image, then Serenity's canonical illustration,
+ * then a character portrait used as a standing figure (no geometric vessel).
+ *
+ * @param {{ name?: string, avatar_url?: string, body_url?: string, full_body_url?: string, _isAnima?: boolean, category?: string } | null | undefined} character
+ * @param {{ detail?: boolean }} [opts]
+ * @returns {string}
+ */
+export function resolvePresenceSprite(character, opts = {}) {
+  const body = trimUrl(character?.body_url) || trimUrl(character?.full_body_url);
+  if (body) return body;
+  const canonical = opts.detail ? SERENITY_PRESENCE_DETAIL_SRC : SERENITY_PRESENCE_SRC;
+  if (isSerenityPresence(character)) return canonical;
+  const avatar = trimUrl(character?.avatar_url);
+  if (avatar) return avatar;
+  if (character?._isAnima) return canonical;
+  return "";
+}

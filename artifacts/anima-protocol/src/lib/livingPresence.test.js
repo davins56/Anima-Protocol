@@ -10,6 +10,10 @@ import {
   lastSpokenLine,
   highlightedCastId,
   emotionCss,
+  isSerenityPresence,
+  resolvePresenceSprite,
+  SERENITY_PRESENCE_SRC,
+  SERENITY_PRESENCE_DETAIL_SRC,
   EMOTION_PALETTE,
   VULNERABLE_EMOTIONS,
 } from "./livingPresence";
@@ -138,5 +142,43 @@ describe("lastSpokenLine / highlightedCastId", () => {
 describe("emotionCss", () => {
   it("emits hsl with alpha", () => {
     expect(emotionCss("calm", 0.4)).toMatch(/^hsl\(190 88% 58% \/ 0\.4\)$/);
+  });
+});
+
+describe("resolvePresenceSprite", () => {
+  it("treats Serenity by name as the canonical illustration", () => {
+    expect(isSerenityPresence({ name: "Serenity" })).toBe(true);
+    expect(isSerenityPresence({ name: "Korra" })).toBe(false);
+    expect(resolvePresenceSprite({ name: "Serenity" })).toBe(SERENITY_PRESENCE_SRC);
+    expect(resolvePresenceSprite({ name: "Serenity" }, { detail: true })).toBe(
+      SERENITY_PRESENCE_DETAIL_SRC,
+    );
+  });
+
+  it("prefers an explicit body image over the canonical sprite", () => {
+    expect(
+      resolvePresenceSprite({ name: "Serenity", body_url: "/custom-body.png" }),
+    ).toBe("/custom-body.png");
+  });
+
+  it("uses a story character portrait as the standing figure", () => {
+    expect(resolvePresenceSprite(korra)).toBe("");
+    expect(resolvePresenceSprite({ ...korra, avatar_url: "/seed-avatars/korra.jpg" })).toBe(
+      "/seed-avatars/korra.jpg",
+    );
+  });
+
+  it("gives an uncustomized Anima Serenity's body instead of a geometric vessel", () => {
+    expect(resolvePresenceSprite({ id: "a1", name: "Vesper", _isAnima: true })).toBe(
+      SERENITY_PRESENCE_SRC,
+    );
+    expect(
+      resolvePresenceSprite({
+        id: "a1",
+        name: "Vesper",
+        _isAnima: true,
+        avatar_url: "/custom-vesper.png",
+      }),
+    ).toBe("/custom-vesper.png");
   });
 });
