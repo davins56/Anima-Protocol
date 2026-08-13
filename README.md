@@ -164,6 +164,9 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `VITE_MIXPANEL_TOKEN` | Frontend | Mixpanel project token |
 | `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
 | `ELEVENLABS_API_KEY` | API | Optional TTS routes |
+| `CURSOR_API_KEY` | API | Optional. Lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks. Alias: `CURSOR_CLOUD_API_KEY` |
+| `CURSOR_CLOUD_REPO_URL` | API | Optional. Defaults to `https://github.com/davins56/Anima-Protocol` |
+| `PROTOCOL_UPGRADE_ADMIN_EMAILS` | API | Optional comma-separated steward emails. Defaults to `davins56@gmail.com,davins56@hotmail.com` |
 
 Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback`; Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`.
 
@@ -189,6 +192,7 @@ Current tracked events include:
 - `character_created`
 - `crossover_session_started`
 - `subscription_upgrade_started`
+- `protocol_upgrade_started`
 
 The core value moment is `message_sent` with `is_crossover: true`, which represents a multi-character or cross-universe interaction. New analytics events should be added only after checking the tracking plan in `AGENTS.md`; consent gating and no-PII rules are mandatory.
 
