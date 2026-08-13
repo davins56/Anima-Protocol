@@ -6,6 +6,10 @@
  * deliver the whole body in one chunk; dropping the trailer makes the client
  * see an empty "successful" reply — thinking/typing paints, then vanishes.
  *
+ * Also stop after `done` / `error`. A server that writes the terminal event
+ * then keeps the socket open (persist, evolution, a hung proxy) must not leave
+ * the Chat page spinning on "Processing...".
+ *
  * @param {ReadableStream<Uint8Array> | null | undefined} body
  * @returns {AsyncGenerator<object>}
  */
@@ -18,19 +22,22 @@ export async function* readSseJsonStream(body) {
   const decoder = new TextDecoder();
   let buffer = "";
 
-  const yieldFromBuffer = function* ({ flush = false } = {}) {
+  const parseLine = (line) => {
+    const trimmed = line.trimEnd();
+    if (!trimmed.startsWith("data: ")) return null;
+    try {
+      return JSON.parse(trimmed.slice(6));
+    } catch {
+      return null;
+    }
+  };
+
+  const drainBuffer = function* ({ flush = false } = {}) {
     const lines = buffer.split("\n");
-    // Keep the last fragment unless we're flushing the end of the stream —
-    // it may be an incomplete line waiting for the next chunk.
     buffer = flush ? "" : lines.pop() ?? "";
     for (const line of lines) {
-      const trimmed = line.trimEnd();
-      if (!trimmed.startsWith("data: ")) continue;
-      try {
-        yield JSON.parse(trimmed.slice(6));
-      } catch {
-        // ignore malformed events
-      }
+      const parsed = parseLine(line);
+      if (parsed != null) yield parsed;
     }
   };
 
@@ -39,12 +46,18 @@ export async function* readSseJsonStream(body) {
       const { done, value } = await reader.read();
       if (value) {
         buffer += decoder.decode(value, { stream: !done });
-        yield* yieldFromBuffer({ flush: false });
+        for (const event of drainBuffer({ flush: false })) {
+          yield event;
+          if (event?.done || event?.error) return;
+        }
       }
       if (done) {
         // Flush decoder state and any line that never saw a trailing newline.
         buffer += decoder.decode();
-        yield* yieldFromBuffer({ flush: true });
+        for (const event of drainBuffer({ flush: true })) {
+          yield event;
+          if (event?.done || event?.error) return;
+        }
         break;
       }
     }

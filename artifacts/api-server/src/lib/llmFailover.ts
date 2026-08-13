@@ -129,6 +129,8 @@ export interface ChatStreamRequest {
   model: string;
   maxTokens: number;
   messages: ChatCompletionMessageParam[];
+  /** Cancel the in-flight stream open (e.g. a caller-side timeout). */
+  signal?: AbortSignal;
 }
 
 export interface ChatStreamResult {
@@ -1037,12 +1039,15 @@ async function runOpenRouterStream(
   const { value: stream, resolved } = await withOpenRouterCreditFallback(
     preferred,
     (m) =>
-      client.chat.completions.create({
-        model: m.model,
-        max_tokens: Math.min(req.maxTokens, m.maxTokens),
-        messages: req.messages,
-        stream: true,
-      }),
+      client.chat.completions.create(
+        {
+          model: m.model,
+          max_tokens: Math.min(req.maxTokens, m.maxTokens),
+          messages: req.messages,
+          stream: true,
+        },
+        ...(req.signal ? [{ signal: req.signal }] : []),
+      ),
   );
   return {
     stream,
@@ -1109,12 +1114,15 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         const client = requireLocalClient();
         const preferred = resolveLocalModel(req.tier);
         const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
-          client.chat.completions.create({
-            model: m.model,
-            max_tokens: m.maxTokens,
-            messages: req.messages,
-            stream: true,
-          }),
+          client.chat.completions.create(
+            {
+              model: m.model,
+              max_tokens: m.maxTokens,
+              messages: req.messages,
+              stream: true,
+            },
+            ...(req.signal ? [{ signal: req.signal }] : []),
+          ),
         );
         return {
           stream,

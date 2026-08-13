@@ -56,4 +56,36 @@ describe("readSseJsonStream", () => {
   it("throws when the body is not readable", async () => {
     await expect(collect(null)).rejects.toThrow(/not readable/i);
   });
+
+  it("stops after a done event even when the body stays open", async () => {
+    const encoder = new TextEncoder();
+    const stream = {
+      getReader() {
+        let step = 0;
+        return {
+          async read() {
+            if (step === 0) {
+              step = 1;
+              return {
+                done: false,
+                value: encoder.encode('data: {"content":"Hi"}\n\ndata: {"done":true}\n\n'),
+              };
+            }
+            // Simulate a connection that never closes after `done`.
+            await new Promise(() => {});
+            return { done: true, value: undefined };
+          },
+          releaseLock() {},
+        };
+      },
+    };
+
+    const events = await Promise.race([
+      collect(stream),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("readSseJsonStream did not stop on done")), 200),
+      ),
+    ]);
+    expect(events).toEqual([{ content: "Hi" }, { done: true }]);
+  });
 });
