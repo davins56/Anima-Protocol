@@ -477,7 +477,7 @@ export default function MainHome() {
                   Jack In
                 </h2>
                 <p className="font-mono text-[11px] text-amber-100/55 leading-relaxed">
-                  Panel arena. Control {anima?.name || "your Anima"} or let them fight — send sword chips and energy blasts from the hand.
+                  Panel arena in 4-space. Inspect {anima?.name || "your Anima"}&apos;s vessel, then jack in — send sword chips and energy blasts from the hand.
                 </p>
               </div>
               <ChevronRight className="w-5 h-5 text-amber-300/30 group-hover:text-amber-200 transition-colors flex-shrink-0" />
