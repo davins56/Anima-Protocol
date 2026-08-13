@@ -14,6 +14,9 @@ export type CodeRepairInput = {
     openrouterEnv?: string | null;
     openrouterModel?: string | null;
     openrouterIsFreeTier?: boolean;
+    localConfigured?: boolean;
+    localHost?: string | null;
+    customOnly?: boolean;
   };
 };
 
@@ -77,50 +80,57 @@ function classify(input: CodeRepairInput): CodeRepairCategory {
 function openRouterQuotaRepair(input: CodeRepairInput): CodeRepairAnalysis {
   const env = input.diagnostics?.openrouterEnv || "OPENROUTER_API_KEY";
   const model = input.diagnostics?.openrouterModel || "openai/gpt-oss-20b:free";
+  const localConfigured = Boolean(input.diagnostics?.localConfigured);
+  const localHost = input.diagnostics?.localHost || null;
+  const customOnly = Boolean(input.diagnostics?.customOnly);
   return {
     category: "openrouter_quota",
     confidence: "high",
-    summary: "OpenRouter is rejecting chat because the configured account is out of credits or has hit the free daily request cap.",
-    likelyCause:
-      "The app can see an OpenRouter key, but the provider is returning a quota/rate-limit response. Setting ANIMA_OPENROUTER_FREE=true switches to free models, but it cannot bypass OpenRouter's free-models-per-day limit.",
+    summary: localConfigured
+      ? "OpenRouter is rejecting chat, but a custom Anima LLM is also configured — do not keep burning the free OpenRouter quota."
+      : "Chat used OpenRouter because the self-hosted custom Anima LLM is not configured, and that OpenRouter account has hit its free daily cap.",
+    likelyCause: localConfigured
+      ? `A custom LLM host (${localHost ?? "configured"}) is set, but this turn still reached OpenRouter and hit a quota/rate-limit response. Prefer the custom LLM: leave ANIMA_OPENROUTER_FALLBACK unset unless you explicitly want OpenRouter after a connection failure.`
+      : "ANIMA_LOCAL_LLM_BASE_URL is unset on this deployment, so chat skipped the custom LLM and used OpenRouter. Setting ANIMA_OPENROUTER_FREE=true cannot bypass OpenRouter's free-models-per-day limit.",
     canAutoApply: false,
     repairSteps: [
       {
-        title: "Confirm the winning OpenRouter key",
-        detail: `The server is configured to use ${env}. If an older ${env} value points at an exhausted OpenRouter account, replace that value instead of adding more aliases.`,
+        title: customOnly
+          ? "Finish custom LLM wiring"
+          : "Point chat at the custom Anima LLM",
+        detail:
+          "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (Ollama/vLLM) and ANIMA_OLLAMA_MODEL_STANDARD to the model that host serves. Set ANIMA_LLM_PROVIDER=custom so OpenRouter cannot take over. Redeploy without build cache.",
+        command:
+          "ANIMA_LLM_PROVIDER=custom\nANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1\nANIMA_OLLAMA_MODEL_STANDARD=anima-chat",
+        files: ["Vercel Project Settings > Environment Variables", "docs/custom-llm.md"],
+      },
+      {
+        title: "Confirm the winning OpenRouter key (only if you still want it as backup)",
+        detail: `The server is configured to use ${env} / ${model}. If an older ${env} value points at an exhausted OpenRouter account, replace that value instead of adding more aliases.`,
         files: ["Vercel Project Settings > Environment Variables", ".env"],
       },
       {
-        title: "Keep the free-model switch enabled",
-        detail: "Set ANIMA_OPENROUTER_FREE=true in the same Vercel environment as the OpenRouter key, then redeploy.",
-        command: "ANIMA_OPENROUTER_FREE=true",
-      },
-      {
-        title: "Remove model overrides that force Venice",
+        title: "Resolve the OpenRouter quota only as a last resort",
         detail:
-          "Delete ANIMA_OPENROUTER_MODEL_STANDARD, ANIMA_OPENROUTER_MODEL_LIGHT, ANIMA_OPENROUTER_MODEL_HEAVY, or ANIMA_OPENROUTER_MODEL_FAMILY if they still point at Venice. Those override the free switch.",
-      },
-      {
-        title: "Resolve the provider quota",
-        detail:
-          "Add credits at https://openrouter.ai/settings/credits or replace the OpenRouter key with one from an account that has remaining quota.",
+          "Add credits at https://openrouter.ai/settings/credits or wait until midnight UTC. This does not fix a missing custom LLM.",
       },
     ],
     verificationSteps: [
       {
         title: "Check routing status",
-        detail: `Verify the deployed API reports OpenRouter free-tier routing and model ${model}.`,
+        detail:
+          "Verify the deployed API prefers the local/custom LLM (`preferred: \"local\"`, `chain` includes `local`). OpenRouter should not be primary when a custom LLM is configured.",
         command: "curl https://www.anima-protocol.com/api/healthz/llm",
       },
       {
-        title: "Probe the provider",
-        detail: "Run a live provider probe after redeploying to confirm OpenRouter accepts a tiny completion.",
+        title: "Probe the custom LLM",
+        detail: "Run a live provider probe after redeploying to confirm the self-hosted endpoint answers.",
         command: "curl https://www.anima-protocol.com/api/healthz/llm?probe=1",
       },
     ],
     guardrails: [
       "Do not commit real API keys to the repository.",
-      "Do not set multiple OpenRouter key aliases unless you know which one wins.",
+      "Do not set ANIMA_OPENROUTER_FALLBACK=true just to silence this error — that skips the custom LLM again.",
       "This console provides repair instructions; it does not mutate production settings or repository files.",
     ],
   };
