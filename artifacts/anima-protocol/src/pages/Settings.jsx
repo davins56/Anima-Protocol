@@ -13,6 +13,7 @@ import {
 import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen } from "lucide-react";
 import UserContextSettings from "@/components/anima/UserContextSettings";
+import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
@@ -81,6 +82,7 @@ export default function Settings() {
   const [restoringStarters, setRestoringStarters] = useState(false);
   const [startersRestored, setStartersRestored] = useState(false);
   const [startersRestoreError, setStartersRestoreError] = useState(null);
+  const [anima, setAnima] = useState(null);
 
   useEffect(() => {
     loadUser();
@@ -92,6 +94,15 @@ export default function Settings() {
     setUser(me);
     if (me?.settings) setPrefs({ ...defaultPrefs, ...me.settings });
     else if (me?.display_name) setPrefs((p) => ({ ...p, display_name: me.display_name || "" }));
+    try {
+      const animas = await base44.entities.Anima.list("-created_date", 20);
+      const selected = me?.email
+        ? animas.find((a) => a.assigned_user === me.email) || animas[0]
+        : animas[0];
+      setAnima(selected || null);
+    } catch {
+      setAnima(null);
+    }
   };
 
   const loadStats = async () => {
@@ -852,6 +863,9 @@ export default function Settings() {
                 <StatBox label="Chat Sessions" value={sessionCount} />
                 <StatBox label="Characters" value={charCount} />
               </div>
+
+              <SectionTitle>Anima device scan</SectionTitle>
+              <DeviceScanPanel anima={anima} />
 
               <div className="border border-primary/15 bg-black/40 p-5">
                 <div className="flex items-start justify-between gap-4">
