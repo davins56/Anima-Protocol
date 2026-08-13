@@ -60,7 +60,7 @@ describe("LivingPresence", () => {
     );
     expect(container.textContent).toContain("Korra");
     expect(container.querySelector("[data-living-presence]")?.getAttribute("data-emotion")).toBe("joyful");
-    expect(container.querySelector("image")?.getAttribute("href")).toBe(korra.avatar_url);
+    expect(container.querySelector("[data-presence-sprite]")?.getAttribute("src")).toBe(korra.avatar_url);
   });
 
   it("marks speaking state and calls onExpand", () => {
@@ -76,12 +76,23 @@ describe("LivingPresence", () => {
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to an initial when there is no portrait", () => {
+  it("uses the canonical Serenity illustration when she has no custom body", () => {
     const { container } = render(
       <LivingPresence character={{ id: "x", name: "Serenity" }} />,
     );
-    expect(container.textContent).toContain("S");
     expect(container.textContent).toContain("Serenity");
+    expect(container.querySelector("[data-living-presence]")?.getAttribute("data-presence-kind")).toBe("serenity");
+    expect(container.querySelector("[data-presence-sprite]")?.getAttribute("src")).toBe(
+      "/serenity-presence.webp",
+    );
+  });
+
+  it("falls back to an initial when a story character has no portrait", () => {
+    const { container } = render(
+      <LivingPresence character={{ id: "x", name: "Korra" }} />,
+    );
+    expect(container.textContent).toContain("K");
+    expect(container.querySelector("[data-presence-sprite]")).toBeNull();
   });
 });
 
