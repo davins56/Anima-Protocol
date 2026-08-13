@@ -34,6 +34,7 @@ import {
 import type { RelationshipState } from "./relationshipEngine";
 import type { ArcState } from "./narrativeArcEngine";
 import { relationshipStateToPrompt, arcStateToPrompt } from "./arcAndBondPrompt";
+import { formatExpressionPrompt } from "./animaExpressions";
 
 import {
   type CharacterData,
@@ -177,6 +178,11 @@ function buildCharacterDefinition(
 
   if (character._isAnima && character.archetype) {
     parts.push(`Archetype: ${character.archetype}${character.tagline ? ` — ${character.tagline}` : ""}`);
+  }
+
+  if (character._isAnima) {
+    const expressionBlock = formatExpressionPrompt(character.expression_spectrum);
+    if (expressionBlock) parts.push(expressionBlock);
   }
 
   if (character.personality) {

@@ -360,6 +360,7 @@ function adaptCharacters(characters: MsgData[]): CharacterData[] {
     universe: c.universe ? String(c.universe) : undefined,
     archetype: c.archetype ? String(c.archetype) : undefined,
     tagline: c.tagline ? String(c.tagline) : undefined,
+    expression_spectrum: c.expression_spectrum,
     _isAnima: Boolean(c._isAnima),
   }));
 }

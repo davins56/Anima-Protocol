@@ -6,6 +6,7 @@ import AnimaCustomizer from "@/components/anima/AnimaCustomizer";
 import AnimaPersonalityPanel from "@/components/anima/AnimaPersonalityPanel";
 import AnimaSoulprintPanel from "@/components/anima/AnimaSoulprintPanel";
 import AnimaVoicePanel from "@/components/anima/AnimaVoicePanel";
+import AnimaExpressionPanel from "@/components/anima/AnimaExpressionPanel";
 import {
   ChevronLeft,
   Fingerprint,
@@ -13,6 +14,7 @@ import {
   Mic,
   Palette,
   Sparkles,
+  Swords,
   UserCircle,
 } from "lucide-react";
 import { normalizeCustomiseAnimaTab } from "@/lib/customiseAnimaTabs";
@@ -21,12 +23,13 @@ const TABS = [
   { id: "look", label: "Look", icon: Palette, blurb: "Portrait, theme & appearance" },
   { id: "personality", label: "Personality", icon: UserCircle, blurb: "Name, traits & voice of mind" },
   { id: "soulprint", label: "Soulprint", icon: Fingerprint, blurb: "Born identity & bond" },
+  { id: "expression", label: "Expression", icon: Swords, blurb: "Angelic to Demonic spectrum" },
   { id: "voice", label: "Voice", icon: Mic, blurb: "Spoken presence" },
 ];
 
 /**
  * Complete Customise Anima hub: Look · Personality · Soulprint · Voice.
- * Deep links: `?anima=<id>&tab=look|personality|soulprint|voice`
+ * Deep links: `?anima=<id>&tab=look|personality|soulprint|expression|voice`
  */
 export default function CustomiseAnima() {
   const navigate = useNavigate();
@@ -127,7 +130,7 @@ export default function CustomiseAnima() {
               // Customise Anima
             </h1>
             <p className="text-[10px] font-mono text-primary/40 tracking-widest">
-              Look · personality · soulprint · voice — one place to shape your companion
+              Look · personality · soulprint · expression · voice — one place to shape your companion
             </p>
           </div>
         </div>
@@ -232,6 +235,13 @@ export default function CustomiseAnima() {
             {activeTab === "soulprint" && (
               <AnimaSoulprintPanel key={`${anima.id}-soulprint`} anima={anima} />
             )}
+            {activeTab === "expression" && (
+              <AnimaExpressionPanel
+                key={`${anima.id}-expression`}
+                anima={anima}
+                onSave={mergeAnima}
+              />
+            )}
             {activeTab === "voice" && (
               <AnimaVoicePanel
                 key={`${anima.id}-voice`}
@@ -248,7 +258,7 @@ export default function CustomiseAnima() {
             </p>
             <p className="font-mono text-[10px] text-primary/40 tracking-widest max-w-md leading-relaxed">
               Forge your companion first, then return here to shape their look
-              (skin, hair, outfit, eyes), personality, soulprint, and voice.
+              (skin, hair, outfit, eyes), personality, soulprint, expression, and voice.
             </p>
             <button
               type="button"

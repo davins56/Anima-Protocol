@@ -5,7 +5,7 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars, Swords,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 import { openPhotoEditor } from "@/lib/avatarPhoto";
@@ -422,6 +422,34 @@ export default function MainHome() {
                 </p>
               </div>
               <ChevronRight className="w-5 h-5 text-primary/30 group-hover:text-primary transition-colors flex-shrink-0" />
+            </div>
+          </button>
+        </motion.section>
+
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.23 }}
+        >
+          <SectionHeader label="NetBattle" />
+          <button
+            type="button"
+            onClick={() => navigate("/net-battle")}
+            className="w-full text-left border border-amber-400/25 hover:border-amber-300/50 bg-amber-950/10 hover:bg-amber-950/20 p-4 sm:p-5 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 border border-amber-400/30 bg-black/40 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                <Swords className="w-6 h-6 text-amber-300/80" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <h2 className="font-mono text-sm text-amber-100 tracking-[0.15em] uppercase">
+                  Jack In
+                </h2>
+                <p className="font-mono text-[11px] text-amber-100/55 leading-relaxed">
+                  Panel arena. Control {anima?.name || "your Anima"} or let them fight — send sword chips and energy blasts from the hand.
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-amber-300/30 group-hover:text-amber-200 transition-colors flex-shrink-0" />
             </div>
           </button>
         </motion.section>
