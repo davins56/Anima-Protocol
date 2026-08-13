@@ -1,4 +1,4 @@
-import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare, Wrench, Sparkles, Waves } from "lucide-react";
+import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare, Wrench, Sparkles, Waves, ScanSearch } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -11,6 +11,7 @@ import VoiceInteractionPanel from "@/components/voice/VoiceInteractionPanel";
 import StoryDocumentUpload from "./StoryDocumentUpload";
 import CodeRepairConsole from "./CodeRepairConsole";
 import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
+import DeviceScanConsole from "./DeviceScanConsole";
 import { useAuth } from "@/lib/AuthContext";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -48,6 +49,9 @@ export default function ChatToolbar({
   const [showDocUpload, setShowDocUpload] = useState(false);
   const [showCodeRepair, setShowCodeRepair] = useState(false);
   const [showProtocolUpgrade, setShowProtocolUpgrade] = useState(false);
+  const [showDeviceScan, setShowDeviceScan] = useState(false);
+  const activeChar = (characters || []).find((c) => c.id === activeSession?.character_id);
+  const chattingWithAnima = Boolean(activeChar?._isAnima) && activeSession?.mode === "solo";
 
   return (
     <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
@@ -210,6 +214,17 @@ export default function ChatToolbar({
                       <Wrench className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="font-mono text-[10px] tracking-widest uppercase">Repair Console</span>
                     </button>
+                    {chattingWithAnima && (
+                      <button
+                        onClick={() => { setShowDeviceScan(!showDeviceScan); setShowActionsPanel(false); }}
+                        className={`flex items-center gap-3 px-2 py-2 transition-all rounded text-left ${
+                          showDeviceScan ? "text-primary bg-primary/10" : "text-primary/50 hover:text-primary hover:bg-primary/5"
+                        }`}
+                      >
+                        <ScanSearch className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="font-mono text-[10px] tracking-widest uppercase">Device Scan</span>
+                      </button>
+                    )}
                     {isAdmin && (
                       <button
                         onClick={() => { setShowProtocolUpgrade(!showProtocolUpgrade); setShowActionsPanel(false); }}
@@ -327,6 +342,12 @@ export default function ChatToolbar({
         <ProtocolUpgradeConsole
           sessionId={activeSession?.id}
           onClose={() => setShowProtocolUpgrade(false)}
+        />
+      )}
+      {showDeviceScan && chattingWithAnima && (
+        <DeviceScanConsole
+          anima={activeChar}
+          onClose={() => setShowDeviceScan(false)}
         />
       )}
     </div>

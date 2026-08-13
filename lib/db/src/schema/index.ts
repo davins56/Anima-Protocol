@@ -315,6 +315,55 @@ export const userProfiles = pgTable("user_profiles", {
 
 export type UserProfile = typeof userProfiles.$inferSelect;
 
+// Browser Web Push destinations. An endpoint is unique to a browser profile;
+// re-subscribing after an account switch intentionally transfers it to the
+// currently authenticated Clerk user so signed-out accounts cannot keep
+// notifying that device.
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pushSubscriptionsEndpointUq: uniqueIndex(
+      "push_subscriptions_endpoint_uq",
+    ).on(t.endpoint),
+    pushSubscriptionsUserIdx: index("push_subscriptions_user_idx").on(t.userId),
+  }),
+);
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+
+// Opt-in and delivery cadence are server-owned so a cron invocation can claim
+// due users atomically and never send duplicate proactive messages.
+export const proactiveMessagePreferences = pgTable(
+  "proactive_message_preferences",
+  {
+    userId: text("user_id").primaryKey(),
+    enabled: boolean("enabled").notNull().default(false),
+    frequencyHours: integer("frequency_hours").notNull().default(24),
+    lastSentAt: timestamp("last_sent_at"),
+    nextMessageAt: timestamp("next_message_at"),
+    lastSessionId: text("last_session_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    proactiveMessagePreferencesDueIdx: index(
+      "proactive_message_preferences_due_idx",
+    ).on(t.enabled, t.nextMessageAt),
+  }),
+);
+
+export type ProactiveMessagePreference =
+  typeof proactiveMessagePreferences.$inferSelect;
+
 /**
  * Portable avatar / image uploads for Vercel (no Replit object-storage sidecar).
  * Served at GET /api/storage/objects/uploads/:id
