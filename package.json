@@ -39,7 +39,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
-    "prettier": "^3.8.3",
+    "prettier": "^3.9.6",
     "tsx": "catalog:",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.67.0"
@@ -68,7 +68,7 @@
     }
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.108.1",
+    "@supabase/supabase-js": "^2.112.2",
     "@types/node": "catalog:",
     "dotenv": "^17.4.2",
     "drizzle-orm": "catalog:",
