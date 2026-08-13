@@ -763,6 +763,22 @@ router.post("/invoke/:fnName", async (req, res) => {
         break;
       }
 
+      // Voice replay must not hit the LLM default handler — that call never
+      // settles in a useful way. Emotion mapping lives on POST /api/tts.
+      case "adjustVoiceEmotionalParameters": {
+        result = {
+          data: {
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.85,
+              style: 0.2,
+              speaker_boost: true,
+            },
+          },
+        };
+        break;
+      }
+
       case "createCheckoutSession": {
         result = { url: null, error: "Payments not configured in Replit environment." };
         break;
