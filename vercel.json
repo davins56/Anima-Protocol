@@ -12,6 +12,12 @@
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/notifications/proactive/run",
+      "schedule": "15 * * * *"
+    }
+  ],
   "redirects": [
     {
       "source": "/:path*",
