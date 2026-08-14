@@ -18,6 +18,13 @@ const clerkPublishableKey =
   process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
   "";
 
+// Algolia Netlify indexes are per-git-branch. Netlify injects HEAD at build
+// time; expose it to the client so the widget queries the matching index.
+const algoliaBranch =
+  process.env.VITE_ALGOLIA_BRANCH?.trim() ||
+  process.env.HEAD?.trim() ||
+  "main";
+
 const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT ?? "5173";
 
 const port = parseInt(rawPort);
@@ -43,14 +50,15 @@ const normalizedBasePath = (basePath || "/").trim().replace(/\/$/, "") + "/";
 export default defineConfig({
   base: normalizedBasePath,
 
-  ...(clerkPublishableKey
-    ? {
-        define: {
+  define: {
+    ...(clerkPublishableKey
+      ? {
           "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY":
             JSON.stringify(clerkPublishableKey),
-        },
-      }
-    : {}),
+        }
+      : {}),
+    "import.meta.env.VITE_ALGOLIA_BRANCH": JSON.stringify(algoliaBranch),
+  },
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
