@@ -162,6 +162,8 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend | Vite-exposed Clerk publishable key |
 | `VITE_CLERK_PROXY_URL` | Frontend | Empty string in local development unless proxying Clerk |
 | `VITE_MIXPANEL_TOKEN` | Frontend | Mixpanel project token |
+| `VITE_ALGOLIA_SEARCH_API_KEY` | Frontend | Algolia search-only key for the Netlify site-search widget. Leave unset to hide the widget. Never ship the Admin/crawler key. |
+| `VITE_ALGOLIA_BRANCH` | Frontend | Optional Algolia index branch. Defaults to Netlify `HEAD` or `main`. |
 | `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
 | `ELEVENLABS_API_KEY` | API | Optional TTS routes |
 | `CURSOR_API_KEY` | API | Optional. Lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks. Alias: `CURSOR_CLOUD_API_KEY` |

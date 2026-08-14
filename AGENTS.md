@@ -54,6 +54,8 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `CLERK_SECRET_KEY` | API session verification |
 | `VITE_CLERK_PROXY_URL` | Explicit proxy URL, or `none` / `false` / `off` to disable all proxying. When unset, `pk_live_` auto-proxies through `/api/__clerk` on `anima-protocol.com` **unless** the publishable key decodes to a Clerk **custom domain** (e.g. `clerk.anima-protocol.com`) — then the browser talks to that host directly |
 | `VITE_MIXPANEL_TOKEN` | Frontend analytics |
+| `VITE_ALGOLIA_SEARCH_API_KEY` | Frontend — Algolia **search-only** key for the Netlify crawler widget (`div#search`). Never use the Admin or crawler `ALGOLIA_API_KEY` here. Widget stays hidden when unset. |
+| `VITE_ALGOLIA_BRANCH` | Frontend — optional override for which Algolia Netlify index to query. Defaults to Netlify `HEAD` or `main`. |
 | `OPENROUTER_API_KEY` | API chat (Venice Uncensored; free-tier fallback on HTTP 402). Alias: `ANIMA_OPENROUTER_API_KEY` / `OPEN_ROUTER_API_KEY` |
 | `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `openai/gpt-oss-20b:free` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
