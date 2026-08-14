@@ -20,17 +20,16 @@ function makeId(): string {
 }
 
 function isMissingRelationError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err ?? "");
-  return (
-    /relation .* does not exist/i.test(msg) ||
-    /Failed query:[\s\S]*resonance_memories/i.test(msg)
-  );
+  let current: unknown = err;
+  const seen = new Set<unknown>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (typeof current === "object" && "code" in current && (current as { code?: unknown }).code === "42P01") return true;
+    current = typeof current === "object" && "cause" in current ? (current as { cause?: unknown }).cause : undefined;
+  }
+  return false;
 }
 
-/**
- * Crystallize a high-resonance moment so it can be recalled later
- * with its full emotional/physical state vector.
- */
 export async function crystallizeResonanceMemory(input: ResonanceMemoryInput) {
   try {
     const id = makeId();
@@ -48,7 +47,6 @@ export async function crystallizeResonanceMemory(input: ResonanceMemoryInput) {
       createdAt: new Date(),
       lastRecalledAt: null as Date | null,
     };
-
     await db.insert(resonanceMemories).values(row);
     return row;
   } catch (err) {
@@ -57,39 +55,21 @@ export async function crystallizeResonanceMemory(input: ResonanceMemoryInput) {
   }
 }
 
-/**
- * Load strongest / most recent resonance memories for prompt injection
- * or Memory Palace visualization.
- */
-export async function loadResonanceMemories(params: {
-  userId: string;
-  animaId: string;
-  limit?: number;
-}) {
+export async function loadResonanceMemories(params: { userId: string; animaId: string; limit?: number }) {
   try {
     const limit = Math.min(Math.max(params.limit ?? 12, 1), 50);
-    const rows = await db
+    return await db
       .select()
       .from(resonanceMemories)
-      .where(
-        and(
-          eq(resonanceMemories.userId, params.userId),
-          eq(resonanceMemories.animaId, params.animaId),
-        ),
-      )
+      .where(and(eq(resonanceMemories.userId, params.userId), eq(resonanceMemories.animaId, params.animaId)))
       .orderBy(desc(resonanceMemories.intensity), desc(resonanceMemories.createdAt))
       .limit(limit);
-
-    return rows;
   } catch (err) {
     if (isMissingRelationError(err)) return [];
     throw err;
   }
 }
 
-/**
- * Mark a memory as recalled (updates lastRecalledAt for ranking).
- */
 export async function markResonanceMemoryRecalled(id: string, userId: string) {
   try {
     await db
@@ -102,15 +82,7 @@ export async function markResonanceMemoryRecalled(id: string, userId: string) {
   }
 }
 
-/**
- * Heuristic: should we crystallize this turn?
- * High intimacy + significant shift or strong emotional language.
- */
-export function shouldCrystallize(
-  intimacy: number,
-  lastShift?: string,
-  userMessage?: string,
-): boolean {
+export function shouldCrystallize(intimacy: number, lastShift?: string, userMessage?: string): boolean {
   if (intimacy < 55) return false;
   if (lastShift && /intimacy|primal|spiritual/.test(lastShift)) return true;
   if (userMessage) {
