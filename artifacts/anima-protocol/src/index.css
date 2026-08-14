@@ -456,3 +456,28 @@
   background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
   animation: strobe 2s ease-in-out infinite;
 }
+
+/* Algolia Netlify search — persistent host outside #root */
+#algolia-search-host {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  right: 0.75rem;
+  z-index: 45;
+  width: min(16rem, calc(100vw - 1.5rem));
+}
+
+@media (max-width: 1023px) {
+  #algolia-search-host {
+    top: max(3rem, calc(env(safe-area-inset-top, 0px) + 2.75rem));
+  }
+}
+
+#algolia-search-host[hidden] {
+  display: none !important;
+}
+
+#algolia-search-host .aa-DetachedSearchButton,
+#algolia-search-host .aa-Form,
+#algolia-search-host input {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
