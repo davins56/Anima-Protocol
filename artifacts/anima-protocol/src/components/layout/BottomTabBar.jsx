@@ -14,6 +14,7 @@ const ALL_MODULES = [
   { label: "Constellation", path: "/constellation", icon: "🌌" },
   { label: "Book of Echoes", path: "/book-of-echoes", icon: "📖" },
   { label: "Codespace", path: "/codespace", icon: "⌨" },
+  { label: "Repo Workspace", path: "/repo-codespace", icon: "🖥" },
   { label: "NetBattle", path: "/net-battle", icon: "⚔" },
   { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Storyboard", path: "/storyboard", icon: "📋" },
