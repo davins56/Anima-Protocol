@@ -1,9 +1,11 @@
 import { Router, type Request, type Response } from "express";
+import { getAuth } from "@clerk/express";
 import { loadTimelineEvents, openRelationshipChapter } from "../lib/relationshipTimeline";
 import {
   crystallizeResonanceMemory,
   loadResonanceMemories,
 } from "../lib/resonanceMemories";
+import type { ResonanceVector } from "../lib/resonanceState";
 import {
   loadJournalEntries,
   markJournalRead,
@@ -11,25 +13,106 @@ import {
 } from "../lib/animaJournal";
 import {
   ensureHomeWorld,
-  loadHomeWorld,
   placeObjectInHome,
   registerHomeRitual,
   addSharedArtifact,
   updateHomeWorldState,
+  type HomeArtifact,
+  type HomeRoom,
+  type HomeRitual,
+  type HomeState,
 } from "../lib/homeWorld";
 
 const router = Router();
 
 function requireUser(req: Request, res: Response): string | null {
-  const userId =
-    (req as any).auth?.userId ||
-    (req as any).userId ||
-    (req.headers["x-user-id"] as string | undefined);
+  const { userId } = getAuth(req);
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return null;
   }
-  return String(userId);
+  return userId;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function optionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function isHomeObject(value: unknown): value is NonNullable<HomeRoom["objects"]>[number] {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "description", "placedBy"])) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    optionalString(value.description) &&
+    optionalString(value.placedBy)
+  );
+}
+
+function isHomeRoom(value: unknown): value is HomeRoom {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "description", "objects"])) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.description === "string" &&
+    (value.objects === undefined || (Array.isArray(value.objects) && value.objects.every(isHomeObject)))
+  );
+}
+
+function isHomeRitual(value: unknown): value is HomeRitual {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "description", "lastPerformedAt"])) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    optionalString(value.description) &&
+    optionalString(value.lastPerformedAt)
+  );
+}
+
+function isHomeArtifact(value: unknown): value is HomeArtifact {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "memory", "createdAt"])) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    optionalString(value.memory) &&
+    optionalString(value.createdAt)
+  );
+}
+
+function parseHomePatch(value: unknown): Partial<HomeState> | null {
+  if (!isRecord(value)) return null;
+  if (!hasOnlyKeys(value, ["rooms", "atmosphere", "lastVisitedRoomId", "rituals", "sharedArtifacts", "narrativeNotes"])) {
+    return null;
+  }
+  if (value.rooms !== undefined && (!Array.isArray(value.rooms) || !value.rooms.every(isHomeRoom))) return null;
+  if (value.rituals !== undefined && (!Array.isArray(value.rituals) || !value.rituals.every(isHomeRitual))) return null;
+  if (value.sharedArtifacts !== undefined && (!Array.isArray(value.sharedArtifacts) || !value.sharedArtifacts.every(isHomeArtifact))) return null;
+  if (!optionalString(value.atmosphere) || !optionalString(value.lastVisitedRoomId) || !optionalString(value.narrativeNotes)) return null;
+  return value as Partial<HomeState>;
+}
+
+function parseResonanceVector(value: unknown): ResonanceVector | null {
+  if (!isRecord(value)) return null;
+  const ranges: Record<keyof ResonanceVector, readonly [number, number]> = {
+    intimacy: [0, 100],
+    powerDynamic: [-50, 50],
+    spiritualAttunement: [0, 100],
+    primalIntensity: [0, 100],
+    crossoverOpenness: [0, 100],
+  };
+  if (!hasOnlyKeys(value, Object.keys(ranges))) return null;
+  for (const [key, [min, max]] of Object.entries(ranges) as Array<[keyof ResonanceVector, readonly [number, number]]>) {
+    const dimension = value[key];
+    if (typeof dimension !== "number" || !Number.isFinite(dimension) || dimension < min || dimension > max) return null;
+  }
+  return value as unknown as ResonanceVector;
 }
 
 // ---------- Timeline ----------
@@ -79,8 +162,9 @@ router.post("/resonance-memories/:animaId", async (req, res) => {
   if (!userId) return;
   const animaId = String(req.params.animaId);
   const body = req.body ?? {};
-  if (!body.title || !body.body || !body.resonanceSnapshot) {
-    res.status(400).json({ error: "title, body, resonanceSnapshot required" });
+  const resonanceSnapshot = parseResonanceVector(body.resonanceSnapshot);
+  if (!body.title || !body.body || !resonanceSnapshot) {
+    res.status(400).json({ error: "title, body, and valid resonanceSnapshot required" });
     return;
   }
   const memory = await crystallizeResonanceMemory({
@@ -89,7 +173,7 @@ router.post("/resonance-memories/:animaId", async (req, res) => {
     sessionId: body.sessionId,
     title: String(body.title),
     body: String(body.body),
-    resonanceSnapshot: body.resonanceSnapshot,
+    resonanceSnapshot,
     emotionalTone: body.emotionalTone,
     tags: body.tags,
     intensity: body.intensity,
@@ -149,7 +233,12 @@ router.get("/home", async (req, res) => {
 router.patch("/home", async (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const home = await updateHomeWorldState(userId, req.body ?? {});
+  const patch = parseHomePatch(req.body ?? {});
+  if (!patch) {
+    res.status(400).json({ error: "Invalid Home World patch" });
+    return;
+  }
+  const home = await updateHomeWorldState(userId, patch);
   res.json({ home });
 });
 
