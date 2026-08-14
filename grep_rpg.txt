@@ -1,0 +1,4 @@
+artifacts/anima-protocol/src/components/ui/resizable.tsx:8:const ResizablePanelGroup = ({
+artifacts/anima-protocol/src/components/ui/resizable.tsx:45:export { ResizablePanelGroup, ResizablePanel, ResizableHandle }
+artifacts/anima-protocol/src/components/ui/resizable.jsx:9:const ResizablePanelGroup = ({
+artifacts/anima-protocol/src/components/ui/resizable.jsx:43:export { ResizablePanelGroup, ResizablePanel, ResizableHandle }

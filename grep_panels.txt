@@ -1,0 +1,2 @@
+artifacts/anima-protocol/src/components/ui/resizable.tsx:4:import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels"
+artifacts/anima-protocol/src/components/ui/resizable.jsx:5:import * as ResizablePrimitive from "react-resizable-panels"
