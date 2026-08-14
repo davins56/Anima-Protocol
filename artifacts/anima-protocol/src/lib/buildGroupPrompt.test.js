@@ -41,4 +41,14 @@ describe("buildGroupPrompt", () => {
     expect(prompt).toContain("GROUP INTIMACY JUDGMENT");
     expect(prompt).toContain("Intimate talk or gestures only when timing");
   });
+
+  it("embeds regional world knowledge when provided", () => {
+    const prompt = buildGroupPrompt({
+      ...base,
+      worldKnowledgeContext:
+        "<<<USER_REGION>>>\nCity: Auckland\n<<<END_USER_REGION>>>",
+    });
+    expect(prompt).toContain("<<<USER_REGION>>>");
+    expect(prompt).toContain("Auckland");
+  });
 });

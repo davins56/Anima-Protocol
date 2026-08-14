@@ -130,6 +130,24 @@ export const ROUTE_META: Record<string, PageMeta> = {
     ogDescription:
       "How Anima Protocol collects, uses, and protects your data. Effective May 2026. Operated by Echoes of Eden Inc.",
   },
+  "/net-battle": {
+    title: "NetBattle | Anima Protocol",
+    description:
+      "Jack in and fight on a 4D Battle Network-style panel grid. Inspect an HD Anima vessel you can turn and zoom, then send sword chips and expression-typed energy blasts from the hand.",
+    canonical: `${BASE_URL}/net-battle`,
+    ogTitle: "Anima Protocol — NetBattle",
+    ogDescription:
+      "A Mega Man Battle Network-style 4D arena. Rotate and zoom an HD Anima vessel; five expressions, sword chips, and energy blasts from the hand.",
+  },
+  "/therapy": {
+    title: "Therapy Mode | Anima Protocol",
+    description:
+      "Sit with your Anima in therapy mode. They work from compiled open-source mental health manuals — WHO PM+, psychological first aid, trauma-informed care, and public CBT/ACT skills. Not a licensed clinic.",
+    canonical: `${BASE_URL}/therapy`,
+    ogTitle: "Anima Protocol — Therapy Mode",
+    ogDescription:
+      "A care room with your Anima and a compiled library of open-source therapy manuals. Listening first. Not a substitute for professional care.",
+  },
   "/disclaimer": {
     title: "Disclaimer | Anima Protocol",
     description:

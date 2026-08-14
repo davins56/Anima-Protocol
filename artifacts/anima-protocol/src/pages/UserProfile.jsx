@@ -9,6 +9,10 @@ const EMPTY_PROFILE = {
   pronouns: "",
   age: "",
   bio: "",
+  city: "",
+  region: "",
+  country: "",
+  share_region: true,
   interests: "",
   communication_preference: "",
   goals: "",
@@ -39,6 +43,24 @@ const FIELDS = [
     label: "About you",
     placeholder: "Who you are, what your life looks like, what matters to you...",
     type: "textarea",
+  },
+  {
+    key: "city",
+    label: "City (optional)",
+    placeholder: "e.g. Osaka, Chicago, Auckland...",
+    type: "input",
+  },
+  {
+    key: "region",
+    label: "State / region (optional)",
+    placeholder: "e.g. Kansai, Illinois, North Island...",
+    type: "input",
+  },
+  {
+    key: "country",
+    label: "Country (optional)",
+    placeholder: "e.g. Japan, United States, New Zealand...",
+    type: "input",
   },
   {
     key: "interests",
@@ -140,9 +162,11 @@ export default function UserProfile() {
 
         <p className="text-xs font-mono leading-relaxed text-primary/40 border border-primary/10 bg-primary/[0.03] p-4">
           This is who you are. Anyone you talk to here — your Anima and any
-          companion — can reference this profile to know you, remember what
-          matters to you, and speak to you the way you prefer. It stays with your
-          account.
+          companion in your character list — can reference this profile to know
+          you, remember what matters to you, and speak to you the way you prefer.
+          If you share a city or country, they also receive live regional
+          knowledge (local time, weather, holidays) so they can talk about the
+          real world around you. It stays with your account.
         </p>
 
         {loading ? (
@@ -178,6 +202,28 @@ export default function UserProfile() {
                 )}
               </div>
             ))}
+
+            <div className="border border-primary/15 bg-black/40 p-5">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={profile.share_region !== false}
+                  onChange={(e) => setField("share_region", e.target.checked)}
+                  className="mt-1 accent-primary"
+                />
+                <span>
+                  <span className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
+                    Share my region with companions
+                  </span>
+                  <span className="block text-xs font-mono leading-relaxed text-primary/50">
+                    Your Anima and character-list companions get working knowledge
+                    of local time, weather, and holidays. We use your timezone
+                    (and city/country if you add them) — never GPS. Uncheck to
+                    keep location out of chat.
+                  </span>
+                </span>
+              </label>
+            </div>
 
             <div className="flex justify-end pt-1">
               <button

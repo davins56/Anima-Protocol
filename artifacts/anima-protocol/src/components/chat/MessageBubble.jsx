@@ -8,6 +8,7 @@ import EmotionalVoiceSynthesis from "./EmotionalVoiceSynthesis";
 import LoreKeywordHighlighter from "@/components/lore/LoreKeywordHighlighter";
 import MediaLightbox from "./MediaLightbox";
 import AudioPlayer from "./AudioPlayer";
+import DeviceScanCard from "./DeviceScanCard";
 import { renderItalicText } from "./renderItalicText";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
@@ -191,16 +192,23 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
               <RotateCcw className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
             </button>
           )}
-          {!isUser && !isTyping && !isStreaming && character?.id && !isEditing && (
-            <div className="absolute -bottom-1.5 -right-1.5 sm:-bottom-2 sm:-right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {!isUser && !isTyping && !isStreaming && !isThinking && !isEditing && (
+            <div className="absolute -bottom-1.5 -right-1.5 sm:-bottom-2 sm:-right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
               <EmotionalVoiceSynthesis
                 content={message.content}
-                characterId={character.id}
-                characterName={character.name}
+                characterId={character?.id}
+                characterName={character?.name || message.character_name}
                 characterEmotion={characterEmotion}
                 characterEmotionIntensity={characterEmotionIntensity}
+                voiceId={character?.elevenlabs_voice_id}
               />
             </div>
+          )}
+          {message.device_scan && (
+            <DeviceScanCard
+              payload={message.device_scan}
+              animaName={character?.name || message.character_name}
+            />
           )}
         </div>
 

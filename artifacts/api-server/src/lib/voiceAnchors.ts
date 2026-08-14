@@ -15,6 +15,7 @@ export interface CharacterData {
   universe?: string;
   archetype?: string;
   tagline?: string;
+  expression_spectrum?: unknown;
   _isAnima?: boolean;
   [key: string]: unknown;
 }

@@ -5,17 +5,19 @@ import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 
 /**
- * @param {{ isOpen?: boolean, onClose: () => void, onImageGenerated?: (url: string, prompt?: string) => void }} props
+ * @param {{ isOpen?: boolean, onClose: () => void, onImageGenerated?: (url: string, prompt?: string) => void, characterName?: string }} props
  */
-export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated }) {
+export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated, characterName }) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
+  const [error, setError] = useState("");
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
 
     setLoading(true);
+    setError("");
     try {
       const result = await base44.integrations.Core.GenerateImage({
         prompt: prompt.trim(),
@@ -23,10 +25,13 @@ export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated
 
       if (result?.url) {
         setGeneratedImage(result.url);
-        onImageGenerated?.(result.url, prompt);
+        onImageGenerated?.(result.url, prompt.trim());
+      } else {
+        setError("No image was returned. Try a different description.");
       }
     } catch (err) {
       console.error("Image generation error:", err);
+      setError(err instanceof Error ? err.message : "Failed to generate image.");
     } finally {
       setLoading(false);
     }
@@ -35,6 +40,7 @@ export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated
   const handleClose = () => {
     setPrompt("");
     setGeneratedImage(null);
+    setError("");
     onClose();
   };
 
@@ -56,11 +62,18 @@ export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated
         >
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-primary/20 bg-black/60">
-            <div className="flex items-center gap-2">
-              <Wand2 className="w-5 h-5 text-primary" />
-              <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase">
-                Generate Image
-              </h2>
+            <div className="flex items-start gap-2">
+              <Wand2 className="w-5 h-5 text-primary mt-0.5" />
+              <div>
+                <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase">
+                  Generate Image
+                </h2>
+                {characterName && (
+                  <p className="font-mono text-[9px] text-primary/35 tracking-widest uppercase mt-1">
+                    Shared as {characterName}
+                  </p>
+                )}
+              </div>
             </div>
             <button
               onClick={handleClose}
@@ -87,6 +100,10 @@ export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated
                 className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-sm px-3 py-2.5 focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50 resize-none"
               />
             </div>
+
+            {error && (
+              <p className="font-mono text-[11px] text-red-400/80">{error}</p>
+            )}
 
             {/* Generated Image */}
             {generatedImage && (

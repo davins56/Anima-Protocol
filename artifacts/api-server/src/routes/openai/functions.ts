@@ -5,9 +5,17 @@ import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
-import { resolveModel, isModelUnavailableError } from "../../lib/modelRouter";
+import { resolveModel } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
-import { getOpenAIClient } from "../../lib/openaiClient";
+import { getOpenAIClient, hasOpenAIKey } from "../../lib/openaiClient";
+import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
+import {
+  editImageWithGemini,
+  generateImageWithGemini,
+  hasGeminiImageKey,
+  isFreeImageFallbackEnabled,
+} from "../../lib/geminiImage";
+import { logger } from "../../lib/logger";
 
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
@@ -34,23 +42,11 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
   return result.content;
 }
 
-// Web-grounded LLM call: uses the OpenAI Responses API with the web_search
-// tool so the model can scour the live web (cast to any to stay compatible
-// across SDK minor versions). Falls back to the plain model if unavailable.
+// Web search grounding is an OpenAI Responses API feature and chat never
+// calls OpenAI (the self-hosted Anima LLM has no equivalent tool), so this
+// always resolves to the plain model call.
 async function webSearchLLM(systemPrompt: string, userPrompt: string): Promise<string> {
-  try {
-    const resp = await (getOpenAIClient() as any).responses.create({
-      model: "gpt-4o",
-      tools: [{ type: "web_search_preview" }],
-      instructions: systemPrompt,
-      input: userPrompt,
-    });
-    const text = (resp as any).output_text;
-    if (typeof text === "string" && text.trim()) return text;
-    return await llm(systemPrompt, userPrompt);
-  } catch {
-    return llm(systemPrompt, userPrompt);
-  }
+  return llm(systemPrompt, userPrompt);
 }
 
 function parseTraits(raw: string): { personality: string; backstory: string; speaking_style: string } {
@@ -725,7 +721,30 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "searchMemoriesSemantically": {
-        result = { memories: [] };
+        const { userId } = getAuth(req) as { userId: string };
+        const query =
+          typeof data.query === "string"
+            ? data.query
+            : typeof data.text === "string"
+              ? data.text
+              : "";
+        const characterId =
+          typeof data.character_id === "string" ? data.character_id : undefined;
+        const topK =
+          typeof data.top_k === "number" && data.top_k > 0
+            ? Math.min(48, data.top_k)
+            : 12;
+        if (!query.trim()) {
+          result = { memories: [] };
+          break;
+        }
+        const memories = await searchMemoriesSemantically({
+          userId,
+          characterId,
+          query,
+          topK,
+        });
+        result = { memories };
         break;
       }
 
@@ -741,6 +760,22 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "elevenLabsTTS":
       case "elevenLabsVoices": {
         result = { audio: null, voices: [] };
+        break;
+      }
+
+      // Voice replay must not hit the LLM default handler — that call never
+      // settles in a useful way. Emotion mapping lives on POST /api/tts.
+      case "adjustVoiceEmotionalParameters": {
+        result = {
+          data: {
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.85,
+              style: 0.2,
+              speaker_boost: true,
+            },
+          },
+        };
         break;
       }
 
@@ -886,36 +921,22 @@ Rules:
           ...rawMessages,
         ];
 
-        const runCompletion = (model: string, maxTokens: number) =>
-          getOpenAIClient().chat.completions.create({
-            model,
-            max_tokens: maxTokens,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            messages: baseMessages as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tools: tools as any,
-            tool_choice: "auto",
-          });
-
         const heavy = resolveModel("heavy");
-        let completion;
-        try {
-          completion = await runCompletion(heavy.model, heavy.maxTokens);
-        } catch (err) {
-          if (isModelUnavailableError(err)) {
-            const std = resolveModel("standard");
-            completion = await runCompletion(std.model, std.maxTokens);
-          } else {
-            throw err;
-          }
-        }
+        const completion = await createChatCompletionWithFailover({
+          tier: "heavy",
+          model: heavy.model,
+          maxTokens: heavy.maxTokens,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          messages: baseMessages as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tools: tools as any,
+        });
 
-        const choice = completion.choices[0]?.message;
         result = {
           message: {
             role: "assistant",
-            content: choice?.content ?? "",
-            tool_calls: choice?.tool_calls ?? null,
+            content: completion.content ?? "",
+            tool_calls: completion.toolCalls ?? null,
           },
         };
         break;
@@ -1072,9 +1093,90 @@ export function mapImageEditError(err: unknown): {
   };
 }
 
+/** True when an OpenAI image failure should retry via the free provider. */
+export function shouldFallbackToFreeImage(code: string): boolean {
+  return (
+    code === "auth_error" ||
+    code === "rate_limit" ||
+    code === "server_error"
+  );
+}
+
+async function generateImageDataUrl(prompt: string): Promise<{
+  image: string;
+  provider: "openai" | "gemini";
+}> {
+  // Keep headroom for skin-tone hard-requirement blocks from the customiser.
+  const trimmed = prompt.trim().slice(0, 2500);
+  let geminiMapped: ReturnType<typeof mapImageEditError> | null = null;
+
+  // Prefer Gemini Flash Image when configured — it follows skin/hair attributes
+  // more reliably for Customise Anima than gpt-image-1.
+  if (hasGeminiImageKey() && isFreeImageFallbackEnabled()) {
+    try {
+      const gemini = await generateImageWithGemini(trimmed);
+      return { image: gemini.image, provider: gemini.provider };
+    } catch (err) {
+      geminiMapped = mapImageEditError(err);
+      if (geminiMapped.code === "content_policy" || !hasOpenAIKey()) {
+        throw Object.assign(new Error(geminiMapped.error), {
+          status: geminiMapped.status,
+          code: geminiMapped.code,
+        });
+      }
+      logger.warn(
+        { code: geminiMapped.code },
+        "Gemini image generate failed; falling back to OpenAI gpt-image-1",
+      );
+    }
+  }
+
+  if (!hasOpenAIKey()) {
+    throw Object.assign(
+      new Error(
+        geminiMapped?.error ||
+          "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
+      ),
+      {
+        status: geminiMapped?.status ?? 503,
+        code: geminiMapped?.code ?? "auth_error",
+      },
+    );
+  }
+
+  try {
+    const result = await getOpenAIClient().images.generate({
+      model: "gpt-image-1",
+      prompt: trimmed.slice(0, 1000),
+      size: "1024x1024",
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    if (!b64) {
+      throw Object.assign(new Error("No image was returned."), { status: 502 });
+    }
+    return {
+      image: `data:image/png;base64,${b64}`,
+      provider: "openai",
+    };
+  } catch (err) {
+    if (geminiMapped) {
+      throw Object.assign(new Error(geminiMapped.error), {
+        status: geminiMapped.status,
+        code: geminiMapped.code,
+      });
+    }
+    const mapped = mapImageEditError(err);
+    throw Object.assign(new Error(mapped.error), {
+      status: mapped.status,
+      code: mapped.code,
+    });
+  }
+}
+
 // AI photo edit: takes a base64 image data URL plus a text prompt and returns
 // an AI-transformed version (gpt-image-1 edit). Gated to signed-in users since
 // image generation is a paid call. The result is returned as a PNG data URL.
+// When OpenAI is unavailable, falls back to Gemini Flash Image edit.
 router.post("/image-edit", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -1110,12 +1212,42 @@ router.post("/image-edit", async (req, res) => {
       ? "webp"
       : "jpg";
 
+  const trimmed = prompt.trim().slice(0, 2500);
+  const dataUrl = `data:${mime};base64,${match[2]}`;
+
+  // Prefer Gemini for edits too — better at applying complexion changes.
+  if (hasGeminiImageKey() && isFreeImageFallbackEnabled()) {
+    try {
+      const gemini = await editImageWithGemini(dataUrl, trimmed);
+      res.json({ image: gemini.image, provider: gemini.provider });
+      return;
+    } catch (err) {
+      const mapped = mapImageEditError(err);
+      if (mapped.code === "content_policy" || !hasOpenAIKey()) {
+        res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+        return;
+      }
+      logger.warn(
+        { code: mapped.code },
+        "Gemini image edit failed; falling back to OpenAI gpt-image-1",
+      );
+    }
+  }
+
+  if (!hasOpenAIKey()) {
+    res.status(503).json({
+      error: "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
+      code: "auth_error",
+    });
+    return;
+  }
+
   try {
     const file = await toFile(buffer, `source.${ext}`, { type: mime });
     const result = await getOpenAIClient().images.edit({
       model: "gpt-image-1",
       image: file,
-      prompt: prompt.trim().slice(0, 1000),
+      prompt: trimmed.slice(0, 1000),
       size: "1024x1024",
     });
     const b64 = result.data?.[0]?.b64_json;
@@ -1123,15 +1255,15 @@ router.post("/image-edit", async (req, res) => {
       res.status(502).json({ error: "No image was returned." });
       return;
     }
-    res.json({ image: `data:image/png;base64,${b64}` });
+    res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
   } catch (err) {
     const mapped = mapImageEditError(err);
     res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
 });
 
-// AI image generation from a text prompt (gpt-image-1). Used by Customise Anima
-// / Appearance Forge when creating a look from scratch (no source portrait).
+// AI image generation from a text prompt. Prefers Gemini Flash Image when
+// GEMINI_API_KEY is set; otherwise OpenAI gpt-image-1.
 // Auth is enforced by the router-level middleware above.
 router.post("/image-generate", async (req, res) => {
   const { prompt } = req.body as { prompt?: string };
@@ -1142,17 +1274,8 @@ router.post("/image-generate", async (req, res) => {
   }
 
   try {
-    const result = await getOpenAIClient().images.generate({
-      model: "gpt-image-1",
-      prompt: prompt.trim().slice(0, 1000),
-      size: "1024x1024",
-    });
-    const b64 = result.data?.[0]?.b64_json;
-    if (!b64) {
-      res.status(502).json({ error: "No image was returned." });
-      return;
-    }
-    res.json({ image: `data:image/png;base64,${b64}` });
+    const result = await generateImageDataUrl(prompt);
+    res.json({ image: result.image, provider: result.provider });
   } catch (err) {
     const mapped = mapImageEditError(err);
     res.status(mapped.status).json({ error: mapped.error, code: mapped.code });

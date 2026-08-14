@@ -157,22 +157,62 @@ export function routeModel(content: string, ctx: RouteContext = {}): ResolvedMod
   return resolveModel(classifyComplexity(content, ctx));
 }
 
+/**
+ * Coerce an error field (code / type / name / message) to a lowercase string.
+ * OpenAI-compatible servers (vLLM, Ollama, OpenRouter) sometimes return a
+ * numeric `code` (e.g. 429) or a non-string `type`. Calling `.toLowerCase()`
+ * on that value threw TypeError and replaced the real LLM failure in chat.
+ */
+export function errorFieldLower(value: unknown): string {
+  if (typeof value === "string") return value.toLowerCase();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+
+/**
+ * Prefer a string identifier (`code`, then `type`). Numeric-only codes
+ * (e.g. HTTP 429 from OpenAI-compatible servers) are skipped so a string
+ * `type` like `rate_limit_error` can still match. Never throws.
+ */
+export function errorCodeLower(err: { code?: unknown; type?: unknown }): string {
+  const fromCode = errorFieldLower(err.code);
+  const fromType = errorFieldLower(err.type);
+  if (fromCode && !/^\d+$/.test(fromCode)) return fromCode;
+  return fromType || fromCode;
+}
+
 // True only when an error means the requested model itself is unavailable to
 // this account (unknown model, no access). Such errors are worth retrying on the
 // standard model within the same provider.
 //
 // Quota / rate-limit / billing errors are intentionally NOT matched here —
-// those are handled by cross-provider failover in llmFailover.ts instead of a
-// second doomed call on the same depleted OpenAI account.
+// there is no other provider to fail over to (llmFailover.ts only talks to
+// the self-hosted Anima LLM), so a doomed retry would just repeat the failure.
 export function isModelUnavailableError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { status?: number; code?: string; type?: string; message?: string };
-  const code = (e.code || e.type || "").toLowerCase();
-  if (code.includes("model_not_found") || code.includes("model_not_available")) return true;
-  const msg = (e.message || "").toLowerCase();
-  if (msg.includes("does not exist") || msg.includes("do not have access")) return true;
-  // 404 = unknown model. 403 only counts when the message points at the model,
-  // not at billing/region/permission unrelated to model access.
+  const e = err as { status?: number; code?: unknown; type?: unknown; message?: unknown };
+  const code = errorCodeLower(e);
+  if (
+    code.includes("model_not_found") ||
+    code.includes("model_not_available") ||
+    code.includes("not_found")
+  ) {
+    return true;
+  }
+  const msg = errorFieldLower(e.message);
+  if (
+    msg.includes("does not exist") ||
+    msg.includes("do not have access") ||
+    msg.includes("no longer available") ||
+    msg.includes("not available to new users") ||
+    msg.includes("please update your code to use a newer model") ||
+    msg.includes("is not found") ||
+    msg.includes("model not found")
+  ) {
+    return true;
+  }
+  // 404 = unknown / retired model. 403 only counts when the message points at
+  // the model, not at billing/region/permission unrelated to model access.
   if (e.status === 404) return true;
   return false;
 }

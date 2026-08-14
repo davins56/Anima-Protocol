@@ -1062,6 +1062,7 @@ const PROFILE_DEFAULTS = {
 
 const ADMIN_EMAILS = new Set([
   'davins56@gmail.com',
+  'davins56@hotmail.com',
   ...(import.meta.env.VITE_ADMIN_EMAILS || '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
@@ -1072,6 +1073,32 @@ let currentIdentity = null; // { id, email, full_name } from Clerk
 let profileCache = null; // server profile data
 let profileExpiry = 0;
 const PROFILE_TTL = 2000;
+
+// Best-effort parse of an LLM's structured-output reply into an object.
+// Models are asked (via the system prompt) to return raw JSON, but often wrap
+// it in a ```json fence anyway, or add stray leading/trailing prose — so try
+// progressively looser extraction rather than let one deviation blow up every
+// caller that expects a plain object back.
+function parseLLMJsonResponse(text) {
+  const trimmed = (text || '').trim();
+  const attempts = [
+    trimmed,
+    trimmed.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim(),
+  ];
+  const braceMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (braceMatch) attempts.push(braceMatch[0]);
+
+  for (const candidate of attempts) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try the next, looser candidate
+    }
+  }
+  console.warn('[InvokeLLM] Could not parse structured response as JSON:', trimmed.slice(0, 200));
+  return {};
+}
 
 function mergedUser(profileData) {
   const email = currentIdentity?.email?.toLowerCase?.() || '';
@@ -1201,7 +1228,14 @@ export const base44 = {
 
   integrations: {
     Core: {
-      InvokeLLM: async ({ prompt, systemPrompt, deepMode }) => {
+      InvokeLLM: async ({
+        prompt,
+        systemPrompt,
+        system_prompt,
+        deepMode,
+        response_json_schema,
+        max_tokens,
+      }) => {
         // Create/reuse a conversation for LLM calls — routes through the
         // api-server (api/index.mjs on Vercel) with auth + provider failover.
         let convId = sessionStorage.getItem('anima_llm_conv_id');
@@ -1215,14 +1249,18 @@ export const base44 = {
         for await (const chunk of animaApi.sendMessage(
           Number(convId),
           prompt,
-          systemPrompt || '',
+          systemPrompt || system_prompt || '',
           !!deepMode,
+          response_json_schema,
+          typeof max_tokens === 'number' ? max_tokens : undefined,
         )) {
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);
           if (chunk.content) result += chunk.content;
         }
-        return result;
+
+        if (!response_json_schema) return result;
+        return parseLLMJsonResponse(result);
       },
 
       // Generate (or re-style) an image. When existing_image_urls is provided,

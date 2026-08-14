@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import { AnimatePresence, motion, useMotionValue, useTransform } from "framer-motion";
-import { X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import ChoiceGenerator from "./ChoiceGenerator";
 import LocationDialogueHints from "./LocationDialogueHints";
 import InventoryStatDisplay from "@/components/inventory/InventoryStatDisplay";
@@ -61,8 +60,6 @@ export default function ChatWidgetsArea({
 }) {
   const [collapsed, setCollapsed] = useState(true);
   const [dismissed, setDismissed] = useState(false);
-  const x = useMotionValue(0);
-  const opacity = useTransform(x, [0, 200], [1, 0]);
 
   if (dismissed) return null;
 
@@ -73,34 +70,46 @@ export default function ChatWidgetsArea({
   const activeChar = characters.find(c => c.id === characterId);
 
   return (
-    <motion.div
-      style={{ x, opacity }}
-      drag="x"
-      dragConstraints={{ left: 0, right: 300 }}
-      dragElastic={0.1}
-      onDragEnd={(_, info) => {
-        if (info.offset.x > 120) setDismissed(true);
-      }}
-      className="touch-pan-y"
-    >
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center justify-between px-3 py-1.5 border-b border-primary/10 bg-black/30 hover:bg-black/50 transition-colors"
-      >
-        <span className="font-mono text-[8px] text-primary/20 tracking-widest uppercase">Story Feed</span>
-        <span className="flex items-center gap-1 text-primary/30 hover:text-primary/60 font-mono text-[8px] tracking-widest uppercase">
-          {collapsed ? (
-            <><ChevronDown className="w-3 h-3" /> Show</>
-          ) : (
-            <><ChevronUp className="w-3 h-3" /> Hide</>
-          )}
-        </span>
-      </button>
+    <div data-story-feed>
+      {/* Collapse toggle — not draggable. Horizontal drag on this header
+          stole taps on mobile and made the bar slide/fade instead of opening. */}
+      <div className="flex items-center border-b border-primary/10 bg-black/30">
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          className="flex-1 flex items-center justify-between px-3 py-1.5 hover:bg-black/50 transition-colors touch-manipulation"
+        >
+          <span className="font-mono text-[8px] text-primary/20 tracking-widest uppercase">Story Feed</span>
+          <span className="flex items-center gap-1 text-primary/30 hover:text-primary/60 font-mono text-[8px] tracking-widest uppercase">
+            {collapsed ? (
+              <><ChevronDown className="w-3 h-3" /> Show</>
+            ) : (
+              <><ChevronUp className="w-3 h-3" /> Hide</>
+            )}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          aria-label="Hide Story Feed"
+          className="px-2 py-1.5 text-primary/25 hover:text-primary/60 transition-colors touch-manipulation"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
 
-      {/* Widgets content */}
-      {!collapsed && (
-        <div className="space-y-2 sm:space-y-4">
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="story-feed-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-2 sm:space-y-4">
           {/* Narrative Impact Dashboard */}
           <NarrativeImpactDashboard
             sessionId={sessionId}
@@ -289,8 +298,10 @@ export default function ChatWidgetsArea({
           )}
 
           {worldEvent && <SystemAlert event={worldEvent} onDismiss={() => setWorldEvent(null)} />}
-        </div>
-      )}
-    </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

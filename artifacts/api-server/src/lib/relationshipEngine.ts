@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { animaRelationships } from "../db/schema";
+import { recordRelationshipMilestone } from "./relationshipTimeline";
 
 export type AttachmentStyle =
   | "secure"
@@ -64,16 +65,29 @@ function chooseAttachmentStyle(state: RelationshipState): AttachmentStyle {
   return "avoidant";
 }
 
-export async function loadRelationshipState(animaId: string, userId: string): Promise<RelationshipState | null> {
-  const [row] = await db
-    .select()
-    .from(animaRelationships)
-    .where(and(eq(animaRelationships.userId, userId), eq(animaRelationships.animaId, animaId)))
-    .limit(1);
+function isMissingRelationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return (
+    /relation .* does not exist/i.test(msg) ||
+    /Failed query:[\s\S]*anima_relationships/i.test(msg)
+  );
+}
 
-  if (!row) return null;
-  const data = row.state as RelationshipState;
-  return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
+export async function loadRelationshipState(animaId: string, userId: string): Promise<RelationshipState | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(animaRelationships)
+      .where(and(eq(animaRelationships.userId, userId), eq(animaRelationships.animaId, animaId)))
+      .limit(1);
+
+    if (!row) return null;
+    const data = row.state as RelationshipState;
+    return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
+  } catch (err) {
+    if (isMissingRelationError(err)) return null;
+    throw err;
+  }
 }
 
 export async function ensureRelationshipRow(params: { animaId: string; userId: string }) {
@@ -162,6 +176,17 @@ export async function maybeTriggerRelationshipEvolution(params: {
     delta: next,
     voidBias,
   };
+
+  // Persist onto the Relationship Timeline so the UI and Memory Palace can surface it.
+  await recordRelationshipMilestone({
+    userId: params.userId,
+    animaId: params.animaId,
+    conversationCount: params.conversationCount,
+    summary: `Attachment shifted toward ${next.attachment_style}. Level ${current.relationship_level} → ${next.relationship_level}.`,
+    delta: next as unknown as Record<string, unknown>,
+  }).catch(() => {
+    // Never block the chat turn if timeline write fails.
+  });
 
   return delta;
 }

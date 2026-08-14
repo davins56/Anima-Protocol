@@ -37,6 +37,40 @@ describe('API auth bridge', () => {
     expect(options.credentials).toBe('same-origin');
   });
 
+  it('posts code repair analysis requests through the authenticated API helper', async () => {
+    await animaApi.codeRepair.analyze({
+      issue: 'OpenRouter 429 free-models-per-day',
+      context: { surface: 'test' },
+    });
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(String(url)).toContain('/api/code-repair/analyze');
+    expect(options.method).toBe('POST');
+    expect(options.headers.Authorization).toBe('Bearer test-token');
+    expect(JSON.parse(options.body)).toEqual({
+      issue: 'OpenRouter 429 free-models-per-day',
+      context: { surface: 'test' },
+    });
+  });
+
+  it('posts Serenity protocol upgrades through the authenticated API helper', async () => {
+    await animaApi.protocolUpgrade.launch({
+      request: 'Upgrade the interface to be darker.',
+      scope: 'interface',
+      surface: 'test',
+    });
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(String(url)).toContain('/api/protocol-upgrade');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      request: 'Upgrade the interface to be darker.',
+      scope: 'interface',
+      session_id: undefined,
+      surface: 'test',
+    });
+  });
+
   it('unwraps a double-wrapped token getter instead of stringifying the function', async () => {
     // Classic mistake: treating setAuthTokenGetter like React setState.
     setAuthTokenGetter(() => async () => 'unwrapped-token');

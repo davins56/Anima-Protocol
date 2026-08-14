@@ -5,12 +5,21 @@ import { getPool } from "./client";
 export const REQUIRED_TABLES = [
   "user_entities",
   "user_profiles",
+  "push_subscriptions",
+  "proactive_message_preferences",
   "conversations",
   "messages",
   "chat_sessions",
   "chat_messages",
+  "chat_turns",
   "companion_memories",
+  "memory_embeddings",
   "uploaded_images",
+  // Companion state used on every /api/chat/messages turn. Missing these
+  // previously 500'd the whole reply before the LLM was even called.
+  "anima_evolution",
+  "anima_relationships",
+  "anima_narrative_arcs",
 ] as const;
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
@@ -150,6 +159,33 @@ export async function ensureSchema(
   );
 
   await run(
+    `CREATE TABLE IF NOT EXISTS "push_subscriptions" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "endpoint" text NOT NULL,
+      "p256dh" text NOT NULL,
+      "auth" text NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:push_subscriptions",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "proactive_message_preferences" (
+      "user_id" text PRIMARY KEY NOT NULL,
+      "enabled" boolean DEFAULT false NOT NULL,
+      "frequency_hours" integer DEFAULT 24 NOT NULL,
+      "last_sent_at" timestamp,
+      "next_message_at" timestamp,
+      "last_session_id" text,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:proactive_message_preferences",
+  );
+
+  await run(
     `CREATE TABLE IF NOT EXISTS "uploaded_images" (
       "id" text PRIMARY KEY NOT NULL,
       "user_id" text NOT NULL,
@@ -198,6 +234,27 @@ export async function ensureSchema(
   );
 
   await run(
+    `CREATE TABLE IF NOT EXISTS "chat_turns" (
+      "id" text PRIMARY KEY NOT NULL,
+      "session_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "user_message_id" text NOT NULL,
+      "assistant_message_id" text NOT NULL,
+      "persistence_owner" text DEFAULT 'server' NOT NULL,
+      "status" text DEFAULT 'pending' NOT NULL,
+      "retry_count" integer DEFAULT 0 NOT NULL,
+      "user_content" text DEFAULT '' NOT NULL,
+      "assistant_content" text DEFAULT '' NOT NULL,
+      "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "last_error" text,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL,
+      "committed_at" timestamp
+    )`,
+    "table:chat_turns",
+  );
+
+  await run(
     `CREATE TABLE IF NOT EXISTS "companion_memories" (
       "id" serial PRIMARY KEY NOT NULL,
       "user_id" text NOT NULL,
@@ -210,6 +267,77 @@ export async function ensureSchema(
       "updated_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:companion_memories",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "memory_embeddings" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "character_id" text NOT NULL,
+      "fact_id" text NOT NULL,
+      "text" text NOT NULL,
+      "memory_type" text DEFAULT 'unknown' NOT NULL,
+      "embedding" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "model" text DEFAULT 'hash-bow-v1' NOT NULL,
+      "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:memory_embeddings",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_evolution" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "conversation_count" integer DEFAULT 0 NOT NULL,
+      "void_sessions" integer DEFAULT 0 NOT NULL,
+      "evolution_delta" jsonb DEFAULT '{"version":1,"appliedAt":"1970-01-01T00:00:00.000Z","milestone":0,"traitsDelta":{},"quirkAdditions":[],"voidBias":0}'::jsonb NOT NULL,
+      "evolution_rationale" text DEFAULT '' NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_evolution",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_evolution_user_anima_uq"
+       ON "anima_evolution" USING btree ("user_id","anima_id")`,
+    "index:anima_evolution_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_relationships" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_relationships",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_relationships_user_anima_uq"
+       ON "anima_relationships" USING btree ("user_id","anima_id")`,
+    "index:anima_relationships_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "anima_narrative_arcs" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "created_at" timestamp DEFAULT now(),
+      "updated_at" timestamp DEFAULT now()
+    )`,
+    "table:anima_narrative_arcs",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "anima_narrative_arcs_user_anima_uq"
+       ON "anima_narrative_arcs" USING btree ("user_id","anima_id")`,
+    "index:anima_narrative_arcs_user_anima_uq",
   );
 
   // Column default added after initial conversations table existed in prod.
@@ -236,6 +364,21 @@ export async function ensureSchema(
     `CREATE UNIQUE INDEX IF NOT EXISTS "user_entities_user_entity_id_uq"
        ON "user_entities" USING btree ("user_id","entity_name","entity_id")`,
     "index:user_entities_user_entity_id_uq",
+  );
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "push_subscriptions_endpoint_uq"
+       ON "push_subscriptions" USING btree ("endpoint")`,
+    "index:push_subscriptions_endpoint_uq",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "push_subscriptions_user_idx"
+       ON "push_subscriptions" USING btree ("user_id")`,
+    "index:push_subscriptions_user_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "proactive_message_preferences_due_idx"
+       ON "proactive_message_preferences" USING btree ("enabled","next_message_at")`,
+    "index:proactive_message_preferences_due_idx",
   );
   await run(
     `CREATE INDEX IF NOT EXISTS "user_entities_user_entity_idx"
@@ -291,6 +434,16 @@ export async function ensureSchema(
     "index:chat_messages_character_idx",
   );
   await run(
+    `CREATE INDEX IF NOT EXISTS "chat_turns_session_idx"
+       ON "chat_turns" USING btree ("user_id","session_id","created_at")`,
+    "index:chat_turns_session_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "chat_turns_retry_idx"
+       ON "chat_turns" USING btree ("user_id","status","updated_at")`,
+    "index:chat_turns_retry_idx",
+  );
+  await run(
     `CREATE INDEX IF NOT EXISTS "chat_sessions_user_idx"
        ON "chat_sessions" USING btree ("user_id")`,
     "index:chat_sessions_user_idx",
@@ -309,6 +462,17 @@ export async function ensureSchema(
     `CREATE INDEX IF NOT EXISTS "companion_memories_user_idx"
        ON "companion_memories" USING btree ("user_id")`,
     "index:companion_memories_user_idx",
+  );
+
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "memory_embeddings_user_char_fact_uq"
+       ON "memory_embeddings" USING btree ("user_id","character_id","fact_id")`,
+    "index:memory_embeddings_user_char_fact_uq",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "memory_embeddings_user_char_idx"
+       ON "memory_embeddings" USING btree ("user_id","character_id")`,
+    "index:memory_embeddings_user_char_idx",
   );
 
   const after = await inspectSchema(db);

@@ -3,10 +3,15 @@ import openaiRouter from "./openai/index";
 import openaiFunctionsRouter from "./openai/functions";
 import elevenLabsRouter from "./elevenlabs";
 import characterImageRouter from "./characterImage";
+import battleModelsRouter from "./battleModels";
 import storeRouter from "./store";
 import storageRouter from "./storage";
 import chatRouter from "./chat";
 import adminRouter from "./admin";
+import codeRepairRouter from "./codeRepair";
+import protocolUpgradeRouter from "./protocolUpgrade";
+import notificationsRouter from "./notifications";
+import relationshipOsRouter from "./relationshipOs";
 
 const router: IRouter = Router();
 
@@ -15,7 +20,12 @@ router.use("/openai", openaiRouter);
 router.use("/openai", openaiFunctionsRouter);
 router.use(elevenLabsRouter);
 router.use(characterImageRouter);
+router.use(battleModelsRouter);
 router.use("/chat", chatRouter);
+router.use("/code-repair", codeRepairRouter);
+router.use("/protocol-upgrade", protocolUpgradeRouter);
+router.use("/notifications", notificationsRouter);
+router.use("/relationship-os", relationshipOsRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
 

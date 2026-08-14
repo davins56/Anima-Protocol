@@ -1,6 +1,8 @@
 import { animaApi } from '@/api/animaApi';
 import { buildCharacterPrompt } from './buildCharacterPrompt';
 import { parseGroupResponse } from './parseGroupResponse';
+import { stripImageTags } from './chatImageGeneration';
+import { isTherapySession, buildTherapyInstruction } from './therapyManuals';
 
 export async function sendChatMessage({
   content,
@@ -45,9 +47,21 @@ export async function sendChatMessage({
       const persistentMemCtx = emotionalMemory.buildMemoryContext();
       const behaviorInstructions = buildBehaviorInstructions(aiBehaviorConfig);
       const lengthGuide = buildLengthGuide(responseLength);
-      const adultInstruction = adultMode
+      const therapyActive = isTherapySession(activeSession, user, activeChar);
+      const adultInstruction = therapyActive
+        ? ""
+        : adultMode
         ? "\nCONTENT RATING: Adult mode is enabled by the user (18+). You may engage in explicit, sexual, and lewd content when the story naturally leads there.\n"
         : "";
+      const companionModeInstruction = therapyActive
+        ? buildTherapyInstruction({
+            characterName: activeChar.name,
+            userName: user?.full_name,
+            userMessage: isContinue ? "" : content,
+          })
+        : user?.selected_mode
+          ? `\nMode: ${user.selected_mode}\n`
+          : "";
 
       systemPrompt = buildCharacterPrompt({
         character: activeChar,
@@ -56,7 +70,7 @@ export async function sendChatMessage({
         relationshipContext: relCtx,
         locationContext: "",
         loreContext: buildLoreContext(loreEntries),
-        companionModeInstruction: user?.selected_mode ? `\nMode: ${user.selected_mode}\n` : "",
+        companionModeInstruction,
         behaviorInstructions,
         adultInstruction,
         lengthGuide,
@@ -101,7 +115,7 @@ export async function sendChatMessage({
       }
     }
 
-    const strippedResult = fullResponse.replace(/\[(EMOTION|LOCATION):([^\]]+)\]/gi, "").trim();
+    const strippedResult = stripImageTags(fullResponse.replace(/\[(EMOTION|LOCATION):([^\]]+)\]/gi, "")).trim();
 
     let newAiMessages;
     if (activeSession.mode === "group") {

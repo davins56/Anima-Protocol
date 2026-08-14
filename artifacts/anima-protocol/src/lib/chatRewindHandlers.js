@@ -32,7 +32,12 @@ export async function rewindToMessageFlow(messageIndex, { confirm, activeSession
     confirmLabel: "Rewind",
   });
   if (!ok) return;
-  const rewoundMessages = (activeSession.messages || []).slice(0, messageIndex + 1);
+  // Re-read fresh rather than trusting the activeSession snapshot captured
+  // before the (user-paced) confirm dialog — ChatSession.update({messages})
+  // reconciles the whole array against server rows, so a stale snapshot would
+  // silently delete any message that arrived while the dialog was open.
+  const fresh = await base44.entities.ChatSession.get(activeSession.id);
+  const rewoundMessages = (fresh?.messages || activeSession.messages || []).slice(0, messageIndex + 1);
   const last_message = lastMessagePreview(rewoundMessages);
   await base44.entities.ChatSession.update(activeSession.id, { messages: rewoundMessages, last_message });
   setActiveSession((prev) => ({ ...prev, messages: rewoundMessages, last_message }));
@@ -56,7 +61,11 @@ export async function regenerateMessageFlow(idx, { confirm, activeSession, isLoa
     confirmLabel: "Regenerate",
   });
   if (!ok) return;
-  const before = (activeSession.messages || []).slice(0, idx);
+  // Re-read fresh — see the comment in rewindToMessageFlow: a stale
+  // activeSession snapshot here would delete any message that arrived while
+  // the confirm dialog was open.
+  const fresh = await base44.entities.ChatSession.get(activeSession.id);
+  const before = (fresh?.messages || activeSession.messages || []).slice(0, idx);
   const lastUser = [...before].reverse().find((m) => m.role === "user");
   await base44.entities.ChatSession.update(activeSession.id, { messages: before });
   setActiveSession((prev) => ({ ...prev, messages: before }));

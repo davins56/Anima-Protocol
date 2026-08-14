@@ -1,4 +1,4 @@
-import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare } from "lucide-react";
+import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare, Wrench, Sparkles, Waves, ScanSearch } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -9,6 +9,10 @@ import EmotionalSoundscapeControl from "@/components/audio/EmotionalSoundscapeCo
 import ChatHeader from "./ChatHeader";
 import VoiceInteractionPanel from "@/components/voice/VoiceInteractionPanel";
 import StoryDocumentUpload from "./StoryDocumentUpload";
+import CodeRepairConsole from "./CodeRepairConsole";
+import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
+import DeviceScanConsole from "./DeviceScanConsole";
+import { useAuth } from "@/lib/AuthContext";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function ChatToolbar({
@@ -37,9 +41,17 @@ export default function ChatToolbar({
   onShowExport,
   onAvatarClick,
   llmProvider,
+  onOpenStage,
 }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [showActionsPanel, setShowActionsPanel] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
+  const [showCodeRepair, setShowCodeRepair] = useState(false);
+  const [showProtocolUpgrade, setShowProtocolUpgrade] = useState(false);
+  const [showDeviceScan, setShowDeviceScan] = useState(false);
+  const activeChar = (characters || []).find((c) => c.id === activeSession?.character_id);
+  const chattingWithAnima = Boolean(activeChar?._isAnima) && activeSession?.mode === "solo";
 
   return (
     <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
@@ -58,6 +70,17 @@ export default function ChatToolbar({
         </div>
 
         <div className="ml-auto flex items-center gap-2 px-3 flex-shrink-0">
+          {onOpenStage && (
+            <button
+              type="button"
+              onClick={onOpenStage}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[9px] tracking-widest uppercase transition-all"
+              title="Open living presence stage"
+            >
+              <Sparkles className="w-3 h-3" />
+              Stage
+            </button>
+          )}
           {/* Online / Actions button */}
           <button
             onClick={() => setShowActionsPanel(!showActionsPanel)}
@@ -159,6 +182,15 @@ export default function ChatToolbar({
                       <span className="text-sm leading-none">{isReadingStory ? "🔇" : "🔊"}</span>
                       <span className="font-mono text-[10px] tracking-widest uppercase">{isReadingStory ? "Stop Reading" : "Read Aloud"}</span>
                     </button>
+                    {onOpenStage && (
+                      <button
+                        onClick={() => { onOpenStage(); setShowActionsPanel(false); }}
+                        className="flex items-center gap-3 px-2 py-2 text-primary/50 hover:text-primary hover:bg-primary/5 transition-all rounded text-left"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="font-mono text-[10px] tracking-widest uppercase">Living Stage</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => { onShowImageGen(); setShowActionsPanel(false); }}
                       className="flex items-center gap-3 px-2 py-2 text-primary/50 hover:text-primary hover:bg-primary/5 transition-all rounded text-left"
@@ -173,6 +205,37 @@ export default function ChatToolbar({
                       <Upload className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="font-mono text-[10px] tracking-widest uppercase">Upload Docs</span>
                     </button>
+                    <button
+                      onClick={() => { setShowCodeRepair(!showCodeRepair); setShowActionsPanel(false); }}
+                      className={`flex items-center gap-3 px-2 py-2 transition-all rounded text-left ${
+                        showCodeRepair ? "text-primary bg-primary/10" : "text-primary/50 hover:text-primary hover:bg-primary/5"
+                      }`}
+                    >
+                      <Wrench className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="font-mono text-[10px] tracking-widest uppercase">Repair Console</span>
+                    </button>
+                    {chattingWithAnima && (
+                      <button
+                        onClick={() => { setShowDeviceScan(!showDeviceScan); setShowActionsPanel(false); }}
+                        className={`flex items-center gap-3 px-2 py-2 transition-all rounded text-left ${
+                          showDeviceScan ? "text-primary bg-primary/10" : "text-primary/50 hover:text-primary hover:bg-primary/5"
+                        }`}
+                      >
+                        <ScanSearch className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="font-mono text-[10px] tracking-widest uppercase">Device Scan</span>
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => { setShowProtocolUpgrade(!showProtocolUpgrade); setShowActionsPanel(false); }}
+                        className={`flex items-center gap-3 px-2 py-2 transition-all rounded text-left ${
+                          showProtocolUpgrade ? "text-cyan-300 bg-cyan-500/10" : "text-primary/50 hover:text-primary hover:bg-primary/5"
+                        }`}
+                      >
+                        <Waves className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="font-mono text-[10px] tracking-widest uppercase">Protocol Weave</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -268,6 +331,24 @@ export default function ChatToolbar({
             onDocumentProcessed={() => setShowDocUpload(false)}
           />
         </div>
+      )}
+      {showCodeRepair && (
+        <CodeRepairConsole
+          sessionId={activeSession?.id}
+          onClose={() => setShowCodeRepair(false)}
+        />
+      )}
+      {showProtocolUpgrade && (
+        <ProtocolUpgradeConsole
+          sessionId={activeSession?.id}
+          onClose={() => setShowProtocolUpgrade(false)}
+        />
+      )}
+      {showDeviceScan && chattingWithAnima && (
+        <DeviceScanConsole
+          anima={activeChar}
+          onClose={() => setShowDeviceScan(false)}
+        />
       )}
     </div>
   );
