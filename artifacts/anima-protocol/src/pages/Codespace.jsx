@@ -500,6 +500,7 @@ export default function Codespace() {
           onClick={() => setExplorerOpen(true)}
           className="lg:hidden text-primary/50 hover:text-primary"
           title="Files"
+          aria-label="Open file explorer"
         >
           <PanelLeft className="w-4 h-4" />
         </button>
@@ -511,6 +512,7 @@ export default function Codespace() {
           onChange={(e) => { setCompanionId(e.target.value); scheduleSave(); }}
           className="bg-black/50 border border-primary/20 text-primary/80 font-mono text-[10px] px-2 py-1 focus:outline-none focus:border-primary/50 max-w-[140px]"
           title="Companion (build agent)"
+          aria-label="Select companion build agent"
         >
           {characters.length === 0 && <option value="">No companions</option>}
           {characters.map((c) => (
@@ -527,6 +529,7 @@ export default function Codespace() {
               className={`flex items-center gap-1 px-2 py-1 font-mono text-[9px] tracking-widest uppercase border-b-2 transition-colors ${
                 mobileView === id ? "border-primary text-primary" : "border-transparent text-primary/40"
               }`}
+              aria-label={`Switch to ${label} view`}
             >
               <Icon className="w-3 h-3" /> <span className="hidden sm:inline">{label}</span>
             </button>
@@ -539,6 +542,7 @@ export default function Codespace() {
             disabled={busy}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
             title="Run the active file / project"
+            aria-label="Run active file"
           >
             {busy ? <Cpu className="w-3.5 h-3.5 animate-pulse" /> : <Play className="w-3.5 h-3.5" />}
             Run
@@ -549,6 +553,7 @@ export default function Codespace() {
               disabled={running || busy}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-amber-400/50 text-amber-300 hover:bg-amber-400/10 disabled:opacity-40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
               title="Have the companion debug and repair the last failed run"
+              aria-label="Repair code defects"
             >
               <Wrench className="w-3.5 h-3.5" /> Repair
             </button>
@@ -557,6 +562,7 @@ export default function Codespace() {
             onClick={handleSaveSession}
             className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
             title="Save a session snapshot into .sessions/"
+            aria-label="Save current session snapshot"
           >
             <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Session</span>
           </button>
@@ -568,6 +574,7 @@ export default function Codespace() {
                 : "border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40"
             }`}
             title="Toggle the companion build agent"
+            aria-label="Toggle companion build agent panel"
           >
             <Bot className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Agent</span>
           </button>
