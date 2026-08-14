@@ -29,6 +29,7 @@ import {
   getCloudAgent,
   getCloudRun,
 } from "../lib/cursorCloudAgent";
+import { runLocalUpgrade } from "../lib/localUpgradeAgent";
 
 const router: IRouter = Router();
 router.use(createRateLimit({ name: "protocol-upgrade", max: 20, windowMs: 60_000 }));
@@ -258,15 +259,6 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  if (!cursorApiKey()) {
-    res.status(503).json({
-      error: "CURSOR_API_KEY is not configured on the server.",
-      code: "cursor_unconfigured",
-      serenity_message: serenityUnconfiguredMessage(),
-    });
-    return;
-  }
-
   const now = new Date().toISOString();
   const id = makeId();
   const surface = compactUpgradeRequest(body.surface, 40) || "chat";
@@ -274,6 +266,37 @@ router.post("/", async (req, res) => {
     typeof body.session_id === "string" && body.session_id.trim()
       ? body.session_id.trim()
       : null;
+
+  const runLocally = !cursorApiKey() || process.env.ANIMA_LOCAL_UPGRADE === "true";
+
+  if (runLocally) {
+    const record: ProtocolUpgradeRecord = {
+      id,
+      request,
+      scope,
+      status: "running",
+      agent_id: "local-agent",
+      run_id: "local-run",
+      agent_url: null,
+      pr_url: null,
+      branch: null,
+      result_summary: "Weaving and troubleshooting alterations locally on our server...",
+      surface,
+      session_id: sessionId,
+      serenity_message: "I heard you. I am weaving these alterations directly into the local source of the Protocol now. I will let you know once the build passes.",
+      created_at: now,
+      updated_at: now,
+    };
+    await persistUpgrade(userId, record).catch((err) => {
+      logger.warn({ err }, "Failed to persist local protocol upgrade");
+    });
+
+    // Spawn the local upgrade agent in the background
+    void runLocalUpgrade(userId, record);
+
+    res.status(201).json(record);
+    return;
+  }
 
   try {
     const created = await createCloudAgent({
