@@ -17,6 +17,14 @@ vi.mock("../src/lib/llmFailover", () => ({
   createChatCompletionWithFailover: mocks.complete,
 }));
 
+vi.mock("../src/lib/animaJournal", () => ({
+  generateAutonomousReflection: vi.fn(async () => null),
+}));
+
+vi.mock("../src/lib/homeWorld", () => ({
+  addSharedArtifact: vi.fn(async () => null),
+}));
+
 vi.mock("web-push", () => ({
   default: {
     sendNotification: mocks.sendNotification,
