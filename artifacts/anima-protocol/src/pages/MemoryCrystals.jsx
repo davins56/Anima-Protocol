@@ -1,10 +1,28 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
+import { animaApi } from '@/api/animaApi';
 import { useStoreSync } from '@/lib/useStoreSync';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader } from 'lucide-react';
 import MemoryCrystalVault from '@/components/lore/MemoryCrystalVault';
+
+/** Map Relationship OS resonance memories into the MemoryCrystal shape. */
+function mapResonanceToCrystal(mem, animaName) {
+  return {
+    id: mem.id,
+    title: mem.title || 'Resonance Crystal',
+    excerpt: mem.body || '',
+    milestone_type: 'deep_resonance',
+    emotional_tone: mem.emotionalTone || mem.emotional_tone || 'resonant',
+    resonance_xp_awarded: Math.round(Number(mem.intensity || 60)),
+    crystal_color: '#A78BFA',
+    character_name: animaName || 'Anima',
+    session_id: mem.sessionId || mem.session_id || null,
+    created_date: mem.createdAt || mem.created_at || new Date().toISOString(),
+    _source: 'relationship_os',
+  };
+}
 
 export default function MemoryCrystals() {
   const navigate = useNavigate();
@@ -14,11 +32,39 @@ export default function MemoryCrystals() {
 
   const load = useCallback(async () => {
     try {
-      const [crys, sess] = await Promise.all([
+      const [crys, sess, animas] = await Promise.all([
         base44.entities.MemoryCrystal.list('-created_date').catch(() => []),
         base44.entities.ChatSession.list().catch(() => []),
+        base44.entities.Anima.list().catch(() => []),
       ]);
-      setCrystals(crys || []);
+
+      let osCrystals = [];
+      // Pull high-resonance crystals from Relationship OS for each Anima.
+      const animaList = animas || [];
+      if (animaList.length > 0) {
+        const results = await Promise.all(
+          animaList.slice(0, 8).map(async (a) => {
+            try {
+              const res = await animaApi.relationshipOs.resonanceMemories(a.id, { limit: 12 });
+              return (res.memories || []).map((m) => mapResonanceToCrystal(m, a.name));
+            } catch {
+              return [];
+            }
+          }),
+        );
+        osCrystals = results.flat();
+      }
+
+      // Prefer OS crystals when ids overlap; otherwise union both sources.
+      const byId = new Map();
+      for (const c of [...(crys || []), ...osCrystals]) {
+        if (c?.id) byId.set(c.id, c);
+      }
+      const merged = [...byId.values()].sort(
+        (a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0),
+      );
+
+      setCrystals(merged);
       setSessions(sess || []);
     } catch {
       // restricted context
