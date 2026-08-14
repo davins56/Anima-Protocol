@@ -53,3 +53,12 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Algolia Crawler for Netlify. JS rendering is required because the frontend
+# is a Vite SPA; without it the crawler only sees the empty #root shell.
+# Set VITE_ALGOLIA_SEARCH_API_KEY (search-only key) in Netlify env for the widget.
+[[plugins]]
+  package = "@algolia/netlify-plugin-crawler"
+  [plugins.inputs]
+    branches = ["main"]
+    renderJavaScript = true
