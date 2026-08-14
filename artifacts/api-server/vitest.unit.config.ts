@@ -14,6 +14,8 @@ export default defineConfig({
       "test/modelRouter.test.ts",
       "test/openaiClientKey.test.ts",
       "test/openaiClientCloudHost.test.ts",
+      "test/protocolUpgradeRoute.test.ts",
+      "test/protocolUpgrade.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
