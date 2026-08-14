@@ -13,10 +13,13 @@ import {
 import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen } from "lucide-react";
 import UserContextSettings from "@/components/anima/UserContextSettings";
+import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
+import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
+
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 
 const SECTION = {
@@ -80,6 +83,7 @@ export default function Settings() {
   const [restoringStarters, setRestoringStarters] = useState(false);
   const [startersRestored, setStartersRestored] = useState(false);
   const [startersRestoreError, setStartersRestoreError] = useState(null);
+  const [anima, setAnima] = useState(null);
 
   useEffect(() => {
     loadUser();
@@ -91,6 +95,15 @@ export default function Settings() {
     setUser(me);
     if (me?.settings) setPrefs({ ...defaultPrefs, ...me.settings });
     else if (me?.display_name) setPrefs((p) => ({ ...p, display_name: me.display_name || "" }));
+    try {
+      const animas = await base44.entities.Anima.list("-created_date", 20);
+      const selected = me?.email
+        ? animas.find((a) => a.assigned_user === me.email) || animas[0]
+        : animas[0];
+      setAnima(selected || null);
+    } catch {
+      setAnima(null);
+    }
   };
 
   const loadStats = async () => {
@@ -400,11 +413,11 @@ export default function Settings() {
 
               <SectionTitle>Customise Anima</SectionTitle>
               <button
-                onClick={() => navigate("/customise-anima")}
+                onClick={() => navigate("/customise-anima?tab=look")}
                 className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
               >
                 <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
-                  Shape their look • hair, outfit, eyes & style
+                  Look · personality · soulprint · expression · voice
                 </div>
                 <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
                   <span className="flex items-center gap-2">
@@ -452,43 +465,39 @@ export default function Settings() {
                   </div>
                   <div className="space-y-2 min-w-0">
                     <p className="font-mono text-sm text-primary tracking-wider">
-                      Personalise the look of your companion
+                      Complete companion customiser
                     </p>
                     <p className="font-mono text-[11px] text-primary/50 leading-relaxed">
-                      Choose hair, outfit, eyes, setting, mood, and art style, then generate a new
-                      portrait for your personal Anima. Theme accent colour is saved with the look.
+                      Shape look (skin, hair, outfit, eyes), personality, soulprint,
+                      expression spectrum, and spoken voice in one hub — then return to chat with a companion
+                      that feels uniquely yours.
                     </p>
                   </div>
                 </div>
                 <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
-                  <li>• Hair, outfit, eyes, background, expression, art style</li>
-                  <li>• AI-generated portrait from your descriptions</li>
-                  <li>• Theme accent colour for your companion</li>
+                  <li>• Look — skin, hair, outfit, eyes; generate or upload a portrait</li>
+                  <li>• Personality — name, archetype, traits, speaking style</li>
+                  <li>• Soulprint — born-once identity & bond resonance</li>
+                  <li>• Voice — ElevenLabs catalog voice or custom clones</li>
                 </ul>
-                <button
-                  type="button"
-                  onClick={() => navigate("/customise-anima")}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
-                >
-                  <Wand2 className="w-4 h-4" />
-                  Open Customise Anima
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/customise-anima?tab=look")}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    Open Customiser
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/customise-anima?tab=personality")}
+                    className="w-full flex items-center justify-center gap-2 py-3 border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/45 font-mono text-xs tracking-widest uppercase transition-all"
+                  >
+                    Personality
+                  </button>
+                </div>
               </div>
-
-              <SectionTitle>Personality</SectionTitle>
-              <button
-                type="button"
-                onClick={() => navigate("/customize?tab=animas")}
-                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
-              >
-                <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
-                  Name, tagline, voice & behaviour
-                </div>
-                <div className="text-sm font-mono text-primary/80 flex items-center justify-between">
-                  <span>Edit Anima personality</span>
-                  <span className="text-primary/40 group-hover:translate-x-0.5 transition-transform">→</span>
-                </div>
-              </button>
             </div>
           )}
 
@@ -507,19 +516,16 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat uses these models in order. Set the matching API key on the host (Vercel) to enable each one.
+                  Chat prefers the self-hosted Anima LLM. OpenRouter is used only when ANIMA_LOCAL_LLM_BASE_URL is unset. Set that public HTTPS URL (and ANIMA_LLM_PROVIDER=custom) on the host and redeploy so OpenRouter free-tier 429s cannot skip your custom LLM.
                 </p>
-                {CONFIGURED_LLM_PROVIDERS.map((provider, index) => (
+                {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div
                     key={provider.id}
                     className="flex items-start justify-between gap-3 border border-primary/10 bg-black/30 px-3 py-2.5"
                   >
                     <div className="min-w-0">
                       <p className="font-mono text-xs text-primary/80 tracking-wider uppercase">
-                        {index + 1}. {provider.label}
-                        {index === 0 ? (
-                          <span className="ml-2 text-[8px] text-sky-300/80 tracking-widest">Primary</span>
-                        ) : null}
+                        {provider.label}
                       </p>
                       <p className="text-[9px] font-mono text-primary/35 mt-0.5">{provider.note}</p>
                     </div>
@@ -733,6 +739,9 @@ export default function Settings() {
                  />
                 </div>
 
+                <SectionTitle>Notifications</SectionTitle>
+                <ProactiveMessageSettings />
+
                 <SectionTitle>Theme</SectionTitle>
                 <div className="border border-primary/15 bg-black/40 p-5">
                  <div className="flex items-center justify-between gap-4">
@@ -858,6 +867,9 @@ export default function Settings() {
                 <StatBox label="Chat Sessions" value={sessionCount} />
                 <StatBox label="Characters" value={charCount} />
               </div>
+
+              <SectionTitle>Anima device scan</SectionTitle>
+              <DeviceScanPanel anima={anima} />
 
               <div className="border border-primary/15 bg-black/40 p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -1060,7 +1072,7 @@ export default function Settings() {
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
                 <InfoRow
                   label="AI Engine"
-                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(" → ")}
+                  value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(", ")}
                 />
                 <InfoRow label="Platform" value="Base44" />
               </div>

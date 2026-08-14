@@ -1,45 +1,34 @@
 /**
- * Display labels for chat LLM backends returned by the API as
- * provider: "openai" | "xai" | "gemini" | "kimi"
- * and optional brand: "anima" (custom multi-model stack).
+ * Display labels for the chat LLM backend returned by the API.
+ * Primary: self-hosted Anima LLM. Optional: OpenRouter (Venice Uncensored /
+ * free open-weight models). Flagship BYOK (Gemini/Groq/ChatGPT/…) is not used.
  */
 
 /** @param {string | null | undefined} provider */
 export function llmProviderShortLabel(provider) {
-  if (provider === "anima") return "Anima";
-  if (provider === "gemini") return "Gemini";
-  if (provider === "kimi") return "Kimi";
-  if (provider === "xai") return "Grok";
-  if (provider === "openai") return "OpenAI";
+  if (provider === "anima" || provider === "local") return "Anima";
+  if (provider === "openrouter") return "Venice";
   return null;
 }
 
 /**
- * Chip label — when brand is anima, show Anima; otherwise the backend provider.
+ * Chip label once a reply has been served.
  * @param {string | null | undefined} provider
  * @param {string | null | undefined} brand
  */
 export function llmDisplayLabel(provider, brand) {
   if (brand === "anima") return "Anima";
+  if (brand === "openrouter" || provider === "openrouter") return "Venice";
   return llmProviderShortLabel(provider);
 }
 
 /** @param {string | null | undefined} provider */
 export function llmProviderTitle(provider) {
-  if (provider === "anima") {
-    return "Anima custom LLM (Kimi · Gemini · Grok · ChatGPT)";
+  if (provider === "anima" || provider === "local") {
+    return "Last reply from Anima LLM (self-hosted)";
   }
-  if (provider === "gemini") {
-    return "Last reply from Gemini (Google AI)";
-  }
-  if (provider === "kimi") {
-    return "Last reply from Kimi (Moonshot)";
-  }
-  if (provider === "xai") {
-    return "Last reply from Grok (xAI)";
-  }
-  if (provider === "openai") {
-    return "Last reply from OpenAI";
+  if (provider === "openrouter") {
+    return "Last reply from Venice Uncensored via OpenRouter";
   }
   return "Last reply LLM";
 }
@@ -51,27 +40,21 @@ export function llmProviderTitle(provider) {
  */
 export function llmDisplayTitle(provider, brand) {
   if (brand === "anima") {
-    const backend = llmProviderShortLabel(provider);
-    return backend
-      ? `Anima custom LLM · served by ${backend}`
-      : "Anima custom LLM (Kimi · Gemini · Grok · ChatGPT)";
+    return "Anima LLM — open weights, self-hosted (never switches to a flagship provider)";
+  }
+  if (brand === "openrouter" || provider === "openrouter") {
+    return "Venice Uncensored (Dolphin Mistral 24B) via OpenRouter — open-weight uncensored chat";
   }
   return llmProviderTitle(provider);
 }
 
 /** Badge styles for the chat header provider chip. */
 export function llmProviderBadgeClass(provider) {
-  if (provider === "anima") {
+  if (provider === "anima" || provider === "local") {
     return "border-rose-400/50 text-rose-200/90 bg-rose-400/10";
   }
-  if (provider === "gemini") {
-    return "border-sky-400/50 text-sky-300/90 bg-sky-400/10";
-  }
-  if (provider === "kimi") {
-    return "border-emerald-400/50 text-emerald-300/90 bg-emerald-400/10";
-  }
-  if (provider === "xai") {
-    return "border-amber-400/50 text-amber-300/90 bg-amber-400/10";
+  if (provider === "openrouter") {
+    return "border-amber-400/50 text-amber-200/90 bg-amber-400/10";
   }
   return "border-primary/30 text-primary/50";
 }
@@ -82,39 +65,22 @@ export function llmProviderBadgeClass(provider) {
  */
 export function llmDisplayBadgeClass(provider, brand) {
   if (brand === "anima") return llmProviderBadgeClass("anima");
+  if (brand === "openrouter") return llmProviderBadgeClass("openrouter");
   return llmProviderBadgeClass(provider);
 }
 
-/** Providers the custom Anima LLM can draw from (order = product narrative). */
+/** Chat backends shown in Settings. */
 export const CONFIGURED_LLM_PROVIDERS = [
   {
-    id: "anima",
-    label: "Anima",
-    env: "ANIMA_LLM_PROVIDER=anima",
-    note: "Custom multi-model LLM — minds draft in parallel, then Anima streams one combined reply",
+    id: "local",
+    label: "Anima LLM",
+    env: "ANIMA_LOCAL_LLM_BASE_URL",
+    note: "Self-hosted open weights (Ollama/vLLM) — used for chat when ANIMA_LOCAL_LLM_BASE_URL is set. Set ANIMA_LLM_PROVIDER=custom to keep OpenRouter from taking over.",
   },
   {
-    id: "kimi",
-    label: "Kimi",
-    env: "KIMI_API_KEY",
-    note: "Moonshot — lead backend under Anima mode (and default when set alone)",
-  },
-  {
-    id: "gemini",
-    label: "Gemini",
-    env: "GEMINI_API_KEY",
-    note: "Google AI Studio — first failover after Kimi under Anima mode",
-  },
-  {
-    id: "xai",
-    label: "Grok",
-    env: "XAI_API_KEY",
-    note: "xAI — heavy-tier lead under Anima mode",
-  },
-  {
-    id: "openai",
-    label: "ChatGPT",
-    env: "OPENAI_API_KEY",
-    note: "OpenAI — heavy-tier backup + image generate/edit",
+    id: "openrouter",
+    label: "Venice Uncensored",
+    env: "OPENROUTER_API_KEY",
+    note: "Used only when the custom LLM URL is unset, or after a connection failure if ANIMA_OPENROUTER_FALLBACK=true. Free-tier daily caps cannot replace a configured custom LLM.",
   },
 ];

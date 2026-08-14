@@ -80,6 +80,7 @@ describe("guardrail assembly across prompt surfaces", () => {
     expect(prompt).toContain(loyaltyGuardrailClause());
     // Guardrail is positioned last so it overrides everything above it.
     expect(prompt.trimEnd().endsWith(loyaltyGuardrailClause())).toBe(true);
+    expect(prompt).toContain("[IMAGE:");
   });
 
   it("group builder locks identity, turn-taking, and the loyalty guardrail", () => {
@@ -97,5 +98,6 @@ describe("guardrail assembly across prompt surfaces", () => {
     expect(prompt).toContain(turnTakingClause());
     expect(prompt).toContain(loyaltyGuardrailClause());
     expect(prompt.trimEnd().endsWith(loyaltyGuardrailClause())).toBe(true);
+    expect(prompt).toContain("[IMAGE:");
   });
 });

@@ -115,6 +115,30 @@ describe("rewindToMessageFlow (confirm-and-trim to a chosen message)", () => {
     ]);
     expect(next.last_message).toBe("tell me a story");
   });
+
+  it("does not resurrect a message deleted elsewhere while the confirm dialog is open", async () => {
+    const session = await makeSession();
+    const setActiveSession = vi.fn();
+    // Simulate a concurrent edit (another device, or an in-app delete) that
+    // removes "hi there" (index 1) while this confirm dialog is open — after
+    // the caller already captured its (now-stale) `activeSession` snapshot,
+    // which still contains that message.
+    const confirm = vi.fn().mockImplementation(async () => {
+      const current = await base44.entities.ChatSession.get(session.id);
+      await base44.entities.ChatSession.update(session.id, {
+        messages: current.messages.filter((m) => m.content !== "hi there"),
+      });
+      return true;
+    });
+
+    // Rewind to (stale) index 2 — "tell me a story". A write built from the
+    // stale snapshot's prefix would resurrect the concurrently-deleted "hi
+    // there"; reading fresh right before the write must not.
+    await rewindToMessageFlow(2, { confirm, activeSession: session, setActiveSession });
+
+    const stored = await base44.entities.ChatSession.get(session.id);
+    expect(stored.messages.map((m) => m.content)).not.toContain("hi there");
+  });
 });
 
 describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {

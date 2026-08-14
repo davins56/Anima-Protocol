@@ -26,42 +26,40 @@ into **Vercel → Project → Settings → Environment Variables** (Production):
 
 | Variable | Required | Notes |
 |----------|----------|--------|
-| `DATABASE_URL` | Yes | Postgres connection string (Replit DB still works remotely) |
+| `DATABASE_URL` | Yes | Postgres connection string (Replit DB still works remotely); also stores avatar uploads in `uploaded_images` (Vercel has no Replit object-storage sidecar) |
 | `CLERK_SECRET_KEY` | Yes | Same value as Replit |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Same as `VITE_CLERK_PUBLISHABLE_KEY` on Vercel |
-| `OPENAI_API_KEY` | Recommended | ChatGPT backend + image edit/generate (Customise Anima → Generate Look). Valid key from https://platform.openai.com/account/api-keys. Optional for chat if you force Grok/Gemini/Kimi or use `anima` with other keys. |
-| `GEMINI_API_KEY` | Optional | Gemini (Google AI Studio). Also accepts `GOOGLE_API_KEY`. Default when set (Gemini-only). Supports `AQ.*` auth keys via the native Generative Language API. |
-| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Recommended when unpaid | Kimi / Kiwi (Moonshot). Default when Gemini is unset. Force with `ANIMA_LLM_PROVIDER=kimi`. Base URL `https://api.moonshot.ai/v1`. |
-| `XAI_API_KEY` | Optional | Grok (xAI). Used under `ANIMA_LLM_PROVIDER=auto` / `anima` or as primary via `xai`. Not used when mode is `gemini` / `kimi`. |
-| `ANIMA_LLM_PROVIDER` | No | Unset: Kimi-only if `KIMI_API_KEY` (even when Gemini is also set), else Gemini-only if `GEMINI_API_KEY`, else `auto`. Prefer **`anima`** (aliases `custom` / `ensemble`) for the custom multi-model LLM: light/standard→**Kimi first**, heavy→Grok, then failover (Gemini / ChatGPT). Requires `KIMI_API_KEY` or Anima skips straight to Gemini. Or `kimi` / `moonshot` / `gemini` / `auto` / `xai` / `grok` / `openai`. |
-| `ANIMA_DISABLE_OPENAI` | No | Set `true` under `auto` / `anima` to skip OpenAI entirely. |
-| `ANIMA_DISABLE_XAI` | No | Set `true` under `auto` / `openai` / `anima` to skip Grok when the xAI team has no credits. |
+| `OPENAI_API_KEY` | Recommended | Image edit/generate only (Customise Anima → Generate Look). Never used for chat. |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Yes for chat (or OpenRouter) | Public HTTPS OpenAI-compatible URL for Ollama/vLLM (e.g. `https://llm.example.com/v1`). Preferred chat backend. |
+| `ANIMA_LOCAL_LLM_BACKEND` | No | `ollama` (default) or `vllm`. |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | Yes for chat (Ollama) | Model tag served by your Ollama host, e.g. `anima-chat` or `anima-uncensored`. |
+| `OPENROUTER_API_KEY` | Yes for chat (or local) | Free key at https://openrouter.ai/keys. Defaults to Venice Uncensored (open-weight). A $0 account auto-falls back to `openai/gpt-oss-20b:free` on HTTP 402. Set `ANIMA_OPENROUTER_FREE=true` to skip Venice. |
 | `NODE_ENV` | Yes | Set to `production` on Vercel |
-| `DATABASE_URL` | Yes | Also stores avatar uploads in `uploaded_images` (Vercel has no Replit object-storage sidecar) |
+| `CURSOR_API_KEY` | No | Lets Serenity launch Cursor Cloud Agents that upgrade Protocol source. Copy from Cursor Dashboard → API Keys |
 
 **Avatar upload on Vercel:** the app posts images to `POST /api/storage/uploads`, which saves them in Postgres and serves them at `/api/storage/objects/uploads/:id`. The old Replit GCS sidecar (`PRIVATE_OBJECT_DIR` + local signer) is optional and not required for avatars.
 
-**If chat fails for every companion with “no credits” or `401 status code (no body)`:** OpenAI/xAI credits are empty or the key is revoked. Prefer a **`KIMI_API_KEY`** (Moonshot) with `ANIMA_LLM_PROVIDER=kimi`, or a working **`GEMINI_API_KEY`**, then redeploy. Image generation still needs a funded `OPENAI_API_KEY`.
+**If chat shows "Anima custom LLM is not configured" / "No chat LLM configured":**
+Neither a self-hosted endpoint nor `OPENROUTER_API_KEY` is usable. Fastest unblock: set `OPENROUTER_API_KEY` (Venice Uncensored by default). Live status looks like:
 
-**Kimi setup (lowest-cost option):** Create a key at https://platform.kimi.ai, set `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) on Vercel Production, redeploy. When a Kimi key is present it is preferred automatically over Gemini. Optional: set `ANIMA_LLM_PROVIDER=kimi` to force Kimi-only, or remove `GEMINI_API_KEY` if you no longer want it. Moonshot may require a small platform balance before the key can call models — check the console if auth/quota errors persist.
+```bash
+curl -s https://www.anima-protocol.com/api/healthz/llm | jq '{status,preferred,localEndpoint,note}'
+# "status":"error", "preferred":null, "localEndpoint.configured":false
+```
 
-**Custom Anima LLM (parallel minds + combined reply):** Set `ANIMA_LLM_PROVIDER=anima` (aliases `custom` / `ensemble`) — or just set `KIMI_API_KEY` plus any other provider key. Chat no longer fails over sequentially. Instead:
+Fix on **Vercel → Settings → Environment Variables → Production**, then **redeploy without build cache**:
 
-1. Available minds (**Kimi**, **Gemini**, **Grok**, **ChatGPT**) draft replies **in parallel** in the background
-2. The app **synthesizes** those drafts into one in-character companion reply
-3. That combined reply is streamed to the UI
+```bash
+ANIMA_LOCAL_LLM_BACKEND=ollama
+ANIMA_LOCAL_LLM_BASE_URL=https://<your-public-ollama-or-vllm>/v1
+ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+```
 
-The typing indicator shows “Minds drafting…” / “Combining mind drafts…”. A toast lists which minds contributed. Optional knobs: `ANIMA_ENSEMBLE_MIND_TIMEOUT_MS` (default `14000`), `ANIMA_ENSEMBLE_MAX_MINDS` (default `4`), `ANIMA_LLM_ENSEMBLE=true` to force ensemble under other modes.
+Host Ollama with `pnpm llm:up` on a machine that Vercel can reach (HTTPS). See `docs/custom-llm.md` and `docs/llm-deploy.md` for a concrete no-infra-yet path.
 
-**If chat still shows Gemini and never Kimi:** open `https://www.anima-protocol.com/api/healthz/llm` — it reports which keys Production sees and the live provider chain (no secrets). Common causes:
-1. `keys.kimi: false` → add `KIMI_API_KEY` on Vercel **Production** and redeploy
-2. `envProvider: "gemini"` from earlier unpaid setups → this deploy overrides that to Anima ensemble when the Kimi key is present. To keep Gemini-only on purpose, set `ANIMA_FORCE_GEMINI=true`.
+Image generation prefers **Gemini Flash Image** (`gemini-2.5-flash-image`) via `GEMINI_API_KEY` (or `GOOGLE_API_KEY`). If Gemini is unset or fails, it falls back to OpenAI `gpt-image-1` when `OPENAI_API_KEY` is set. Disable the Gemini path with `IMAGE_FREE_FALLBACK=off`.
 
-**If chat fails with a Grok “no team credits” error after trying Gemini:** you are on `ANIMA_LLM_PROVIDER=auto` (or an older deploy). Fix Gemini first (check `GEMINI_API_KEY` / Google AI Studio quota), set `ANIMA_DISABLE_XAI=true`, or buy xAI credits. With the current default (`gemini` mode when `GEMINI_API_KEY` is set), Grok is not used as a backup — failures surface as Gemini quota/key errors instead.
-
-**If the key is valid but companions return an empty reply / no visible text:** Gemini 2.5 thinking tokens can consume `maxOutputTokens` and leave no room for the answer. Current deploys disable thinking on Flash by default (`thinkingBudget: 0`). Override with `ANIMA_GEMINI_THINKING_BUDGET` if needed, then redeploy.
-
-**If chat says “Too many requests. Please slow down” after one message:** that is the API’s own rate limiter, not Gemini. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
+**If chat says "Too many requests. Please slow down" after one message:** that is the API's own rate limiter, not the LLM. Older deploys keyed the limiter by proxy IP (shared on Vercel), so background sync could exhaust the bucket. Current deploys trust the Vercel proxy, key by Clerk user id, and only throttle `POST /chat/messages`. Wait for the `Retry-After` window, then retry after redeploy.
 
 **`401 status code (no body)`** means the active LLM API key was rejected (empty auth error body). Paste keys without quotes, confirm they are active, redeploy.
 
@@ -84,9 +82,9 @@ frontend talks to that host directly — leave `VITE_CLERK_PROXY_URL` empty.
 In the **Clerk Dashboard** for the **same instance as your publishable key**:
 
 1. **Social connections** — enable Google, Apple, and GitHub with **custom**
-   OAuth credentials (required for Production). Copy Clerk’s **Authorized
+   OAuth credentials (required for Production). Copy Clerk's **Authorized
    Redirect URI** (`https://clerk.anima-protocol.com/v1/oauth_callback`) into
-   each provider’s OAuth app (Google Cloud / GitHub / Apple). Do **not** put
+   each provider's OAuth app (Google Cloud / GitHub / Apple). Do **not** put
    `/sign-in/sso-callback` in those provider apps — that is Clerk → Anima only.
 2. **Redirect URLs** (Clerk → Paths) — allow:
    - `https://www.anima-protocol.com/sign-in/sso-callback`

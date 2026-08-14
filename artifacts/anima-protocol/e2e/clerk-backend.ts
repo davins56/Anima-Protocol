@@ -23,6 +23,11 @@ export async function createTestUser(label: string): Promise<TestUser> {
     emailAddress: [email],
     password: `E2e-${suffix}-${Math.random().toString(36).slice(2, 10)}!`,
     skipPasswordChecks: true,
+    // Production Clerk instances can require legal consent at account creation.
+    // These are ephemeral automated-test identities, created and deleted by the
+    // suite, so record consent explicitly instead of failing every E2E before
+    // the browser launches.
+    legalAcceptedAt: new Date(),
     firstName: label.toUpperCase(),
     lastName: "E2E",
   });

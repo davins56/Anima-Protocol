@@ -65,7 +65,19 @@ router.post("/conversations/:id/messages", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
-  const { content, systemPrompt, deepMode } = req.body as { content: string; systemPrompt?: string; deepMode?: boolean };
+  const {
+    content,
+    systemPrompt,
+    deepMode,
+    responseJsonSchema,
+    maxTokens: requestedMaxTokens,
+  } = req.body as {
+    content: string;
+    systemPrompt?: string;
+    deepMode?: boolean;
+    responseJsonSchema?: Record<string, unknown>;
+    maxTokens?: number;
+  };
 
   const [conv] = await db.select().from(conversations)
     .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
@@ -79,8 +91,16 @@ router.post("/conversations/:id/messages", async (req, res) => {
     .where(eq(messages.conversationId, id))
     .orderBy(messages.createdAt);
 
+  // When the caller wants structured output, append a strict JSON-only
+  // instruction (with the schema inlined) to the system prompt rather than
+  // adding a second system message — providers vary in how many system turns
+  // they honor, but all of them respect one combined instruction block.
+  const effectiveSystemPrompt = responseJsonSchema
+    ? `${systemPrompt ? `${systemPrompt}\n\n` : ""}Respond with ONLY a single valid JSON object — no markdown code fences, no commentary before or after — matching this JSON schema:\n${JSON.stringify(responseJsonSchema)}`
+    : systemPrompt;
+
   const chatMessages: { role: "system" | "user" | "assistant"; content: string }[] = [];
-  if (systemPrompt) chatMessages.push({ role: "system", content: systemPrompt });
+  if (effectiveSystemPrompt) chatMessages.push({ role: "system", content: effectiveSystemPrompt });
   chatMessages.push(
     ...history.slice(-14).map((m) => ({
       role: m.role as "user" | "assistant",
@@ -99,10 +119,18 @@ router.post("/conversations/:id/messages", async (req, res) => {
     // context: an explicit deep-mode toggle, and how deep this thread already is
     // (history includes the user message we just inserted).
     const routed = routeModel(content, { deepMode, conversationDepth: history.length });
+    // Callers (e.g. structured-output helpers) may ask for a smaller budget
+    // than the tier default; never let it exceed the tier's ceiling.
+    const maxTokens =
+      typeof requestedMaxTokens === "number" &&
+      Number.isFinite(requestedMaxTokens) &&
+      requestedMaxTokens > 0
+        ? Math.min(requestedMaxTokens, routed.maxTokens)
+        : routed.maxTokens;
     const completion = await createChatStreamWithFailover({
       tier: routed.tier,
       model: routed.model,
-      maxTokens: routed.maxTokens,
+      maxTokens,
       messages: chatMessages,
     });
 

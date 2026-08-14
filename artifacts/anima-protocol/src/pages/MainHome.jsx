@@ -5,7 +5,7 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import {
   Heart, Moon, Zap, Pen, Sparkles, MessageSquare, Plus,
-  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars,
+  Calendar, BookOpen, Settings, ChevronRight, Users, Wand2, ImagePlus, UserCircle, Stars, Swords, Brain,
 } from "lucide-react";
 import AvatarAIEditModal from "@/components/anima/AvatarAIEditModal";
 import { openPhotoEditor } from "@/lib/avatarPhoto";
@@ -32,6 +32,7 @@ const MODES = {
   shadow: { icon: Zap, name: "Shadow", color: "text-red-400", border: "border-red-400/40", glow: "rgba(248,113,113,0.4)" },
   creator: { icon: Pen, name: "Creator", color: "text-yellow-400", border: "border-yellow-400/40", glow: "rgba(250,204,21,0.4)" },
   anima: { icon: Sparkles, name: "Anima Protocol", color: "text-indigo-400", border: "border-indigo-400/40", glow: "rgba(129,140,248,0.4)" },
+  therapy: { icon: Brain, name: "Therapy", color: "text-violet-300", border: "border-violet-400/40", glow: "rgba(196,181,253,0.45)" },
 };
 
 const WELCOME_MESSAGES = {
@@ -40,6 +41,7 @@ const WELCOME_MESSAGES = {
   shadow: "Let's get real. What truth are you avoiding? I'm here to help you face it, learn, and grow stronger.",
   creator: "Welcome to our creative space. What world shall we build today? What story needs to be told?",
   anima: "I see you. How are you evolving? Let's check in, reflect, and track your unfolding journey.",
+  therapy: "I'm still me — with a compiled library of open-source care manuals. We can go slow. What would help to name first?",
 };
 
 function timeAgo(dateStr) {
@@ -342,16 +344,27 @@ export default function MainHome() {
           <p className="text-[9px] tracking-[0.3em] text-cyan-800 mt-2 uppercase">// AI COMPANION SYSTEM</p>
         </motion.div>
 
-        {/* Greeting box */}
-        <motion.div
+        {/* Greeting box — tap to customise the active Anima */}
+        <motion.button
+          type="button"
+          onClick={() =>
+            navigate(
+              anima?.id
+                ? `/customize?tab=animas&character=${anima.id}`
+                : "/customize?tab=animas",
+            )
+          }
+          aria-label={`Customise ${anima?.name || "your Anima"}`}
+          title={`Customise ${anima?.name || "your Anima"}`}
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
-          className="relative w-full text-left border border-cyan-500/20 bg-cyan-950/5 p-5"
+          className="relative w-full text-left border border-cyan-500/20 hover:border-cyan-400/50 bg-cyan-950/5 hover:bg-cyan-950/10 p-5 group cursor-pointer transition-colors"
         >
           <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
           <div className="space-y-3 text-[11px] tracking-wider leading-relaxed font-mono">
+            <p className="text-cyan-400/60 italic pr-24">{greeting}</p>
             <p className="text-cyan-400/60 italic">{greeting}</p>
             <p className="text-cyan-400">
               I am {anima?.name || "your Anima"}{anima?.tagline ? ` . ${anima.tagline}` : ""}
@@ -360,7 +373,13 @@ export default function MainHome() {
               Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
             </p>
           </div>
-        </motion.div>
+          <div className="absolute top-4 right-4 flex items-center gap-1.5">
+            <span className="font-mono text-[7px] tracking-widest uppercase text-cyan-900 group-hover:text-cyan-400/70 transition-colors">
+              Customise
+            </span>
+            <Settings className="w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
+          </div>
+        </motion.button>
 
         {/* Customise Anima — dedicated look section */}
         <motion.section
@@ -375,8 +394,8 @@ export default function MainHome() {
             onClick={() =>
               navigate(
                 anima?.id
-                  ? `/customise-anima?anima=${anima.id}`
-                  : "/customise-anima",
+                  ? `/customise-anima?anima=${anima.id}&tab=look`
+                  : "/customise-anima?tab=look",
               )
             }
             className="w-full text-left border border-primary/25 hover:border-primary/50 bg-primary/5 hover:bg-primary/10 p-4 sm:p-5 transition-colors group"
@@ -401,10 +420,67 @@ export default function MainHome() {
                   Customise Anima
                 </h2>
                 <p className="font-mono text-[11px] text-primary/55 leading-relaxed">
-                  Reshape {anima?.name || "your companion"}&apos;s look — hair, outfit, eyes, art style, and theme.
+                  Reshape {anima?.name || "your companion"}&apos;s look — skin colour, hair, outfit, eyes, art style, and theme.
                 </p>
               </div>
               <ChevronRight className="w-5 h-5 text-primary/30 group-hover:text-primary transition-colors flex-shrink-0" />
+            </div>
+          </button>
+        </motion.section>
+
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22 }}
+        >
+          <SectionHeader label="Therapy Mode" />
+          <button
+            type="button"
+            onClick={() => navigate("/therapy")}
+            className="w-full text-left border border-violet-400/25 hover:border-violet-300/50 bg-violet-950/10 hover:bg-violet-950/20 p-4 sm:p-5 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 border border-violet-400/30 bg-black/40 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                <Brain className="w-6 h-6 text-violet-300/80" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <h2 className="font-mono text-sm text-violet-100 tracking-[0.15em] uppercase">
+                  Sit with {anima?.name || "your Anima"}
+                </h2>
+                <p className="font-mono text-[11px] text-violet-100/55 leading-relaxed">
+                  A care room where {anima?.name || "your companion"} works from compiled open-source
+                  therapy manuals — listening first, skills second. Not a clinic.
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-violet-300/30 group-hover:text-violet-200 transition-colors flex-shrink-0" />
+            </div>
+          </button>
+        </motion.section>
+
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.23 }}
+        >
+          <SectionHeader label="NetBattle" />
+          <button
+            type="button"
+            onClick={() => navigate("/net-battle")}
+            className="w-full text-left border border-amber-400/25 hover:border-amber-300/50 bg-amber-950/10 hover:bg-amber-950/20 p-4 sm:p-5 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 border border-amber-400/30 bg-black/40 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                <Swords className="w-6 h-6 text-amber-300/80" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <h2 className="font-mono text-sm text-amber-100 tracking-[0.15em] uppercase">
+                  Jack In
+                </h2>
+                <p className="font-mono text-[11px] text-amber-100/55 leading-relaxed">
+                  Panel arena in 4-space. Inspect {anima?.name || "your Anima"}&apos;s vessel, then jack in — send sword chips and energy blasts from the hand.
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-amber-300/30 group-hover:text-amber-200 transition-colors flex-shrink-0" />
             </div>
           </button>
         </motion.section>
@@ -555,7 +631,7 @@ export default function MainHome() {
         {/* Mode selection */}
         <div>
           <SectionHeader label="Companion Mode" />
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {Object.entries(MODES).map(([key, m]) => {
               const Icon = m.icon;
               const active = key === selectedMode;
@@ -683,14 +759,20 @@ export default function MainHome() {
               onClick={() => navigate("/check-in")}
             />
             <QuickAction
+              icon={Brain}
+              label="Therapy"
+              desc="Care with your Anima"
+              onClick={() => navigate("/therapy")}
+            />
+            <QuickAction
               icon={Wand2}
               label="Customise Anima"
-              desc="Shape their look"
+              desc="Look, personality & voice"
               onClick={() =>
                 navigate(
                   anima?.id
-                    ? `/customise-anima?anima=${anima.id}`
-                    : "/customise-anima",
+                    ? `/customise-anima?anima=${anima.id}&tab=look`
+                    : "/customise-anima?tab=look",
                 )
               }
             />

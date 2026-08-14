@@ -21,6 +21,8 @@ import {
   Zap,
   Scroll,
   Palette,
+  Hexagon,
+  Brain,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -33,7 +35,8 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
 
   const menuItems = [
     { icon: Settings, label: "Settings", path: "/settings", title: "Settings" },
-    { icon: Palette, label: "Customise Anima", path: "/customise-anima", title: "Customise Anima look" },
+    { icon: Brain, label: "Therapy Mode", path: "/therapy", title: "Therapy mode with your Anima" },
+    { icon: Palette, label: "Customise Anima", path: "/customise-anima?tab=look", title: "Customise Anima look, personality, soulprint & voice" },
     { icon: BookMarked, label: "Storyboard", path: "/storyboard", title: "Storyboard" },
     { icon: BookOpen, label: "Lore Book", path: "/lorebook", title: "Lore Book" },
     { icon: Newspaper, label: "Journals", path: "/journals", title: "Journals" },
@@ -67,6 +70,7 @@ export default function SidebarFooterMenu({ activeSessionId, onMobileMenuClick }
     },
     { icon: Map, label: "Locations", path: "/locationsmap", title: "Locations Map" },
     { icon: Package, label: "Inventory", path: "/inventory", title: "Inventory" },
+    { icon: Hexagon, label: "Energy Fragments", path: "/energy-fragments", title: "Energy Fragments — battle data" },
     { icon: Scroll, label: "Quest Journal", path: "/quest-journal", title: "Quest Journal" },
     {
       icon: GitBranch,

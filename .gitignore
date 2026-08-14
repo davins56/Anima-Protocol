@@ -26,7 +26,9 @@ lerna-debug.log*
 *.pid
 *.seed
 *.pid.lock
-
+*.swp
+*.swo
+*~p
 # Build outputs
 dist/
 dist-ssr/
@@ -57,6 +59,17 @@ blob-report/
 .vercel/
 .netlify/
 
+# Local LLM fine-tune artifacts (checkpoints, GGUF, exported JSONL)
+scripts/llm/checkpoints/
+scripts/llm/gguf/
+scripts/llm/output/*.jsonl
+!scripts/llm/output/dataset_info.json
+scripts/llm/output/eval-report.*
+
+# Raw chat logs dropped in for fine-tune import — personal, never committed
+scripts/llm/data/raw/*
+!scripts/llm/data/raw/README.md
+
 # OS and editor state
 .DS_Store
 Thumbs.db
@@ -74,3 +87,4 @@ Desktop.ini
 
 
 
+.venv/

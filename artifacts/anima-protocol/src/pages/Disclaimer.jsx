@@ -34,6 +34,7 @@ export default function Disclaimer() {
           <section className="space-y-3">
             <h2 className="text-primary text-lg tracking-widest uppercase">Not Professional Advice</h2>
             <p>This application does <span className="text-primary">not</span> provide professional medical, legal, financial, or psychological advice. AI-generated responses are for informational purposes only and should not be construed as professional guidance. Always consult with qualified professionals for important decisions.</p>
+            <p>Therapy Mode lets you talk with your Anima using compiled summaries of openly licensed care manuals. It is supportive conversation, not licensed psychotherapy, diagnosis, or emergency care. If you are in crisis, contact local emergency services, call or text 988 in the US, or find local resources at iasp.info/suicidalthoughts.</p>
           </section>
 
           <section className="space-y-3">

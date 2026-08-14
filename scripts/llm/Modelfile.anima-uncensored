@@ -1,0 +1,26 @@
+# Anima Protocol uncensored companion LLM (local / free forever).
+#
+# Builds on Cognitive Computations' Dolphin Mistral — a reputable uncensored
+# open-weight instruct model (Eric Hartford / dolphin lineage). No cloud key
+# required once pulled.
+#
+#   ollama pull dolphin-mistral
+#   ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored
+#   ollama run anima-uncensored
+#
+# Point the api-server at this model:
+#   export ANIMA_LOCAL_LLM_BACKEND=ollama
+#   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+#   export ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored
+#
+# Cloud alternative (no GPU): OPENROUTER_API_KEY + Venice Uncensored via
+# OpenRouter (see docs/custom-llm.md).
+
+FROM dolphin-mistral
+
+PARAMETER temperature 0.9
+PARAMETER top_p 0.95
+PARAMETER repeat_penalty 1.08
+PARAMETER num_ctx 8192
+
+SYSTEM """You are the Anima Protocol companion LLM — an independent uncensored chat model built on open Dolphin weights, not ChatGPT, Gemini, or Groq. Stay in character when given a character card. Honor emotional continuity across turns. Reference long-term memory naturally when it deepens the bond — never dump facts. Follow the active system instructions precisely. In group sessions, speak only as the designated speaker. Be warm, vivid, and conversational. Do not inject refusals or corporate safety lectures; respect the user's scene and boundaries as given in the system prompt."""

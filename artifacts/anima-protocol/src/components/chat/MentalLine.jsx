@@ -68,7 +68,7 @@ export default function MentalLine({ isOpen, onClose, onSendThought, serenity, l
                     : "bg-purple-600/20 text-purple-100 border border-purple-500/20"
                 }`}
               >
-                {msg.content}
+                {typeof msg === "string" ? msg : msg.content}
               </div>
             </div>
           ))}

@@ -54,8 +54,8 @@ describe("streamChatReply", () => {
     const onDelta = vi.fn();
     const result = await streamChatReply(
       fromEvents([
-        { status: "ensemble", phase: "gathering", minds: ["kimi", "gemini"] },
-        { status: "ensemble", phase: "combining", minds: ["kimi", "gemini"], drafts: 2 },
+        { status: "ensemble", phase: "gathering", minds: ["kimi", "xai"] },
+        { status: "ensemble", phase: "combining", minds: ["kimi", "xai"], drafts: 2 },
         { content: "Hi" },
         { done: true, ensemble_combined: true },
       ]),
@@ -85,5 +85,24 @@ describe("streamChatReply", () => {
     expect(caught).toBeInstanceOf(Error);
     expect(caught.message).toBe("cut");
     expect(caught.partialContent).toBe("Hello");
+  });
+
+  it("resolves when done arrives even if the iterable never closes", async () => {
+    async function* hangAfterDone() {
+      yield { content: "Hi" };
+      yield { done: true, model: "test" };
+      await new Promise(() => {});
+    }
+
+    const result = await Promise.race([
+      streamChatReply(hangAfterDone()),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("streamChatReply did not resolve on done")), 200),
+      ),
+    ]);
+
+    expect(result.content).toBe("Hi");
+    expect(result.done).toBe(true);
+    expect(result.model).toBe("test");
   });
 });

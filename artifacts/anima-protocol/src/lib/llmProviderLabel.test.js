@@ -10,39 +10,36 @@ import {
 } from "./llmProviderLabel";
 
 describe("llmProviderLabel", () => {
-  it("labels Anima, Gemini, Kimi, Grok, and OpenAI", () => {
+  it("labels Anima/local and Venice/OpenRouter", () => {
     expect(llmProviderShortLabel("anima")).toBe("Anima");
-    expect(llmProviderShortLabel("gemini")).toBe("Gemini");
-    expect(llmProviderShortLabel("kimi")).toBe("Kimi");
-    expect(llmProviderShortLabel("xai")).toBe("Grok");
-    expect(llmProviderShortLabel("openai")).toBe("OpenAI");
+    expect(llmProviderShortLabel("local")).toBe("Anima");
+    expect(llmProviderShortLabel("openrouter")).toBe("Venice");
+    expect(llmProviderShortLabel("kimi")).toBeNull();
     expect(llmProviderShortLabel(null)).toBeNull();
   });
 
-  it("shows Anima when brand is set, even if a concrete backend provider is present", () => {
-    expect(llmDisplayLabel("gemini", "anima")).toBe("Anima");
-    expect(llmDisplayLabel("kimi", null)).toBe("Kimi");
-    expect(llmDisplayTitle("xai", "anima")).toMatch(/Anima custom LLM/);
-    expect(llmDisplayTitle("xai", "anima")).toMatch(/Grok/);
-    expect(llmDisplayBadgeClass("openai", "anima")).toMatch(/rose/);
+  it("shows Anima or Venice when brand is set", () => {
+    expect(llmDisplayLabel("local", "anima")).toBe("Anima");
+    expect(llmDisplayLabel("local", null)).toBe("Anima");
+    expect(llmDisplayLabel("openrouter", "openrouter")).toBe("Venice");
+    expect(llmDisplayTitle("local", "anima")).toMatch(/Anima LLM/);
+    expect(llmDisplayTitle("openrouter", "openrouter")).toMatch(/Venice Uncensored/);
+    expect(llmDisplayBadgeClass("local", "anima")).toMatch(/rose/);
+    expect(llmDisplayBadgeClass("openrouter", "openrouter")).toMatch(/amber/);
   });
 
-  it("lists Anima plus the four backend families", () => {
+  it("lists self-hosted Anima and OpenRouter Venice backends", () => {
     expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
-      "anima",
-      "kimi",
-      "gemini",
-      "xai",
-      "openai",
+      "local",
+      "openrouter",
     ]);
   });
 
-  it("returns distinct badge classes", () => {
+  it("returns the Anima / OpenRouter badge class and title", () => {
     expect(llmProviderBadgeClass("anima")).toMatch(/rose/);
-    expect(llmProviderBadgeClass("gemini")).toMatch(/sky/);
-    expect(llmProviderBadgeClass("kimi")).toMatch(/emerald/);
-    expect(llmProviderBadgeClass("xai")).toMatch(/amber/);
-    expect(llmProviderTitle("kimi")).toMatch(/Kimi/i);
-    expect(llmProviderTitle("gemini")).toMatch(/Gemini/i);
+    expect(llmProviderBadgeClass("local")).toMatch(/rose/);
+    expect(llmProviderBadgeClass("openrouter")).toMatch(/amber/);
+    expect(llmProviderTitle("local")).toMatch(/Anima LLM/i);
+    expect(llmProviderTitle("openrouter")).toMatch(/Venice Uncensored/i);
   });
 });

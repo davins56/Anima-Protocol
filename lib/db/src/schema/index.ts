@@ -98,6 +98,46 @@ export const chatMessages = pgTable(
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 
+/**
+ * Durable chat-turn ledger. A generated reply is checkpointed here before the
+ * SSE `done` event, then idempotent message persistence advances it to
+ * `committed`. Failed/client-interrupted writes remain retryable.
+ */
+export const chatTurns = pgTable(
+  "chat_turns",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    userId: text("user_id").notNull(),
+    userMessageId: text("user_message_id").notNull(),
+    assistantMessageId: text("assistant_message_id").notNull(),
+    persistenceOwner: text("persistence_owner").notNull().default("server"),
+    status: text("status").notNull().default("pending"),
+    retryCount: integer("retry_count").notNull().default(0),
+    userContent: text("user_content").notNull().default(""),
+    assistantContent: text("assistant_content").notNull().default(""),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    committedAt: timestamp("committed_at"),
+  },
+  (t) => ({
+    chatTurnsSessionIdx: index("chat_turns_session_idx").on(
+      t.userId,
+      t.sessionId,
+      t.createdAt,
+    ),
+    chatTurnsRetryIdx: index("chat_turns_retry_idx").on(
+      t.userId,
+      t.status,
+      t.updatedAt,
+    ),
+  }),
+);
+
+export type ChatTurn = typeof chatTurns.$inferSelect;
+
 export const companionMemories = pgTable(
   "companion_memories",
   {
@@ -122,6 +162,42 @@ export const companionMemories = pgTable(
 );
 
 export type CompanionMemory = typeof companionMemories.$inferSelect;
+
+/**
+ * Per-fact embedding rows for semantic memory retrieval.
+ * Vectors are stored as JSON number[] so the stack works without pgvector.
+ * Optional later upgrade: migrate `embedding` to a pgvector column.
+ */
+export const memoryEmbeddings = pgTable(
+  "memory_embeddings",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    characterId: text("character_id").notNull(),
+    /** Stable id for the fact within companion_memories.facts (or a hash of text). */
+    factId: text("fact_id").notNull(),
+    text: text("text").notNull(),
+    memoryType: text("memory_type").notNull().default("unknown"),
+    embedding: jsonb("embedding").$type<number[]>().notNull().default([]),
+    model: text("model").notNull().default("hash-bow-v1"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    memoryEmbeddingsFactUq: uniqueIndex("memory_embeddings_user_char_fact_uq").on(
+      t.userId,
+      t.characterId,
+      t.factId,
+    ),
+    memoryEmbeddingsUserCharIdx: index("memory_embeddings_user_char_idx").on(
+      t.userId,
+      t.characterId,
+    ),
+  }),
+);
+
+export type MemoryEmbedding = typeof memoryEmbeddings.$inferSelect;
 
 // Generic per-user entity store. One row per (user, entity name, entity id),
 // holding the whole record as JSON. Backs the client's base44 entity CRUD so
@@ -238,6 +314,55 @@ export const userProfiles = pgTable("user_profiles", {
 });
 
 export type UserProfile = typeof userProfiles.$inferSelect;
+
+// Browser Web Push destinations. An endpoint is unique to a browser profile;
+// re-subscribing after an account switch intentionally transfers it to the
+// currently authenticated Clerk user so signed-out accounts cannot keep
+// notifying that device.
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pushSubscriptionsEndpointUq: uniqueIndex(
+      "push_subscriptions_endpoint_uq",
+    ).on(t.endpoint),
+    pushSubscriptionsUserIdx: index("push_subscriptions_user_idx").on(t.userId),
+  }),
+);
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+
+// Opt-in and delivery cadence are server-owned so a cron invocation can claim
+// due users atomically and never send duplicate proactive messages.
+export const proactiveMessagePreferences = pgTable(
+  "proactive_message_preferences",
+  {
+    userId: text("user_id").primaryKey(),
+    enabled: boolean("enabled").notNull().default(false),
+    frequencyHours: integer("frequency_hours").notNull().default(24),
+    lastSentAt: timestamp("last_sent_at"),
+    nextMessageAt: timestamp("next_message_at"),
+    lastSessionId: text("last_session_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    proactiveMessagePreferencesDueIdx: index(
+      "proactive_message_preferences_due_idx",
+    ).on(t.enabled, t.nextMessageAt),
+  }),
+);
+
+export type ProactiveMessagePreference =
+  typeof proactiveMessagePreferences.$inferSelect;
 
 /**
  * Portable avatar / image uploads for Vercel (no Replit object-storage sidecar).

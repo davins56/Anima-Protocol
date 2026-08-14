@@ -61,6 +61,7 @@ import Landing from "./pages/Landing";
 // Lazy-loaded pages for code splitting
 const Chat = lazy(() => import("./pages/Chat"));
 const Codespace = lazy(() => import("./pages/Codespace"));
+const NetBattle = lazy(() => import("./pages/NetBattle"));
 const MainHome = lazy(() => import("./pages/MainHome"));
 const NewChat = lazy(() => import("./pages/NewChat"));
 
@@ -105,6 +106,7 @@ const WorldCalendar = lazy(() => import("./pages/WorldCalendar"));
 const WorldCodex = lazy(() => import("./pages/WorldCodex"));
 const RelationshipGraph = lazy(() => import("./pages/RelationshipGraph"));
 const InventoryPanel = lazy(() => import("./pages/InventoryPanel"));
+const EnergyFragments = lazy(() => import("./pages/EnergyFragments"));
 const CalendarView = lazy(() => import("./pages/CalendarView"));
 const StoryBranching = lazy(() => import("./pages/StoryBranching"));
 const CharacterMemoryMap = lazy(() => import("./pages/CharacterMemoryMap"));
@@ -169,6 +171,7 @@ const LoreArchivesDashboard = lazy(
   () => import("./pages/LoreArchivesDashboard"),
 );
 const Meditation = lazy(() => import("./pages/Meditation"));
+const Therapy = lazy(() => import("./pages/Therapy"));
 const Subscription = lazy(() => import("./pages/Subscription"));
 const LifetimeAccess = lazy(() => import("./pages/LifetimeAccess"));
 const ProgressDashboard = lazy(() => import("./pages/ProgressDashboard"));
@@ -990,6 +993,14 @@ const AuthenticatedApp = () => {
                   </Suspense>
                 }
               />
+              <Route
+                path="/net-battle"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <NetBattle />
+                  </Suspense>
+                }
+              />
 
               {/* Everything else remains as-is */}
               <Route
@@ -1278,6 +1289,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <InventoryPanel />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/energy-fragments"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <EnergyFragments />
                   </Suspense>
                 }
               />
@@ -1598,6 +1617,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <Meditation />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/therapy"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <Therapy />
                   </Suspense>
                 }
               />
