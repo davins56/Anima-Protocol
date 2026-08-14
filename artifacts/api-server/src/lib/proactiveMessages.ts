@@ -21,6 +21,8 @@ import { createChatCompletionWithFailover } from "./llmFailover";
 import { routeModel } from "./modelRouter";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
 import { notifyUser } from "./storeEvents";
+import { generateAutonomousReflection } from "./animaJournal";
+import { addSharedArtifact } from "./homeWorld";
 
 export const PROACTIVE_FREQUENCIES = [24, 72, 168] as const;
 export type ProactiveFrequency = (typeof PROACTIVE_FREQUENCIES)[number];
@@ -495,6 +497,45 @@ async function deliverPush(
   return delivered;
 }
 
+/**
+ * Relationship OS side-effect after a successful proactive check-in:
+ * the Anima writes a private journal reflection and may leave a
+ * small artifact in the shared Home world.
+ */
+async function maybeWriteAutonomousReflection(
+  userId: string,
+  candidate: Candidate,
+  proactiveContent: string,
+): Promise<void> {
+  try {
+    const historySummary = candidate.recentMessages
+      .slice(-8)
+      .map((m) => `${m.role}: ${truncate(m.content, 160)}`)
+      .concat([`assistant (proactive): ${truncate(proactiveContent, 200)}`])
+      .join("\n");
+
+    const reflection = await generateAutonomousReflection({
+      userId,
+      animaId: String(candidate.character.id),
+      animaName: String(candidate.character.name),
+      historySummary,
+      relationshipLevel: 55,
+      sourceSessionId: candidate.sessionId,
+    });
+
+    if (reflection) {
+      // Leave a lasting artifact in Home so the Memory Palace grows.
+      await addSharedArtifact({
+        userId,
+        name: reflection.title.slice(0, 64),
+        memory: reflection.content.slice(0, 280),
+      }).catch(() => null);
+    }
+  } catch {
+    // Never block proactive delivery on journal / Home failures.
+  }
+}
+
 async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
   try {
     const candidate = await loadCandidate(claim.userId, claim.lastSessionId);
@@ -513,6 +554,10 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
     await persistMessage(claim.userId, candidate, content);
     const delivered = await deliverPush(claim.userId, candidate, content);
     await completePreference(claim.userId, candidate.sessionId);
+
+    // Fire-and-forget Relationship OS journal + Home artifact.
+    void maybeWriteAutonomousReflection(claim.userId, candidate, content);
+
     return {
       status: "sent",
       userId: claim.userId,

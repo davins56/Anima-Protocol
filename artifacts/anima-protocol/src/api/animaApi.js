@@ -193,6 +193,69 @@ export const animaApi = {
       }).then((r) => r.json()),
   },
 
+  /**
+   * Relationship OS — timeline, resonance crystals, Anima journals, shared Home.
+   * Backed by /api/relationship-os routes.
+   */
+  relationshipOs: {
+    timeline: (animaId, { limit = 40, eventType } = {}) => {
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (eventType) qs.set("eventType", eventType);
+      return request(`/relationship-os/timeline/${encodeURIComponent(animaId)}?${qs}`).then((r) => r.json());
+    },
+    openChapter: (animaId, { title, summary, chapterIndex } = {}) =>
+      request(`/relationship-os/timeline/${encodeURIComponent(animaId)}/chapter`, {
+        method: "POST",
+        body: JSON.stringify({ title, summary, chapterIndex }),
+      }).then((r) => r.json()),
+
+    resonanceMemories: (animaId, { limit = 12 } = {}) =>
+      request(`/relationship-os/resonance-memories/${encodeURIComponent(animaId)}?limit=${limit}`).then((r) => r.json()),
+    crystallize: (animaId, payload) =>
+      request(`/relationship-os/resonance-memories/${encodeURIComponent(animaId)}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()),
+
+    journal: (animaId, { limit = 20, unreadOnly = false } = {}) => {
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (unreadOnly) qs.set("unread", "1");
+      return request(`/relationship-os/journal/${encodeURIComponent(animaId)}?${qs}`).then((r) => r.json());
+    },
+    writeJournal: (animaId, payload) =>
+      request(`/relationship-os/journal/${encodeURIComponent(animaId)}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()),
+    markJournalRead: (animaId, entryId) =>
+      request(`/relationship-os/journal/${encodeURIComponent(animaId)}/${encodeURIComponent(entryId)}/read`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }).then((r) => r.json()),
+
+    home: () => request("/relationship-os/home").then((r) => r.json()),
+    updateHome: (patch) =>
+      request("/relationship-os/home", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }).then((r) => r.json()),
+    placeObject: (payload) =>
+      request("/relationship-os/home/objects", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()),
+    registerRitual: (payload) =>
+      request("/relationship-os/home/rituals", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()),
+    addArtifact: (payload) =>
+      request("/relationship-os/home/artifacts", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()),
+  },
+
   codeRepair: {
     analyze: ({ issue, context } = {}) =>
       request("/code-repair/analyze", {
