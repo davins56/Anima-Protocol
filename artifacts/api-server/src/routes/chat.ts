@@ -96,6 +96,10 @@ import {
   type PersistenceOwner,
 } from "../lib/chatTurnLedger";
 import { logger } from "../lib/logger";
+import {
+  shouldCrystallize,
+  crystallizeResonanceMemory,
+} from "../lib/resonanceMemories";
 
 const router = Router();
 
@@ -1569,6 +1573,64 @@ router.post("/messages", async (req, res) => {
                 eq(companionMemories.characterId, cid),
               ),
             );
+        }
+
+        // Relationship OS: crystallize high-resonance moments into lasting crystals.
+        // Non-blocking — failures never interrupt the chat pipeline.
+        try {
+          const intimacy = Number(evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0);
+          if (
+            shouldCrystallize(
+              intimacy,
+              evolved.lastShift,
+              content,
+            )
+          ) {
+            const title =
+              content.length > 56
+                ? `${content.slice(0, 53).trim()}…`
+                : content.slice(0, 56) || "A moment that settled";
+            const bodyText = [
+              `User: ${truncate(content, 280)}`,
+              `Companion: ${truncate(fullResponse, 360)}`,
+              evolved.lastShift ? `Shift: ${evolved.lastShift}` : null,
+            ]
+              .filter(Boolean)
+              .join("\n");
+            const targetIds =
+              activeCharacterId && characterIds.includes(activeCharacterId)
+                ? [activeCharacterId]
+                : characterIds.slice(0, 1);
+            for (const animaId of targetIds) {
+              await crystallizeResonanceMemory({
+                userId,
+                animaId,
+                sessionId,
+                title,
+                body: bodyText,
+                resonanceSnapshot: {
+                  intimacy: evolved.vector.intimacy,
+                  powerDynamic: evolved.vector.powerDynamic,
+                  spiritualAttunement: evolved.vector.spiritualAttunement,
+                  primalIntensity: evolved.vector.primalIntensity,
+                  crossoverOpenness: evolved.vector.crossoverOpenness,
+                },
+                emotionalTone: evolved.emotionalTone,
+                tags: ["crystallized", evolved.level, mode].filter(Boolean) as string[],
+                intensity: Math.round(
+                  Math.max(
+                    intimacy,
+                    Number(evolved.vector.synchroStrength ?? 0),
+                  ),
+                ),
+              });
+            }
+          }
+        } catch (crystalErr) {
+          logger.warn(
+            { crystalErr, turnId, sessionId },
+            "Resonance memory crystallization failed (non-blocking)",
+          );
         }
       }
     } catch (postProcessError) {
