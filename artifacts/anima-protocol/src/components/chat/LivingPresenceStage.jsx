@@ -223,13 +223,13 @@ function StageAura({ hue, sat }) {
         ctx.arc(p.x * width, p.y * height, p.r, 0, Math.PI * 2);
         ctx.fill();
       }
-      raf = requestAnimationFrame(tick);
+      raf = window.requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
+    raf = window.requestAnimationFrame(tick);
 
     return () => {
       running = false;
-      cancelAnimationFrame(raf);
+      window.cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
     };
   }, [hue, sat]);
