@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { publishableKeyFromHost } from "@clerk/shared/keys";
 import {
   canonicalClerkProxyHeaderHost,
   getClerkAuthHostCandidates,
@@ -122,18 +121,8 @@ describe("resolveClerkPublishableKey", () => {
     );
   });
 
-  it("keeps the custom-domain pk_live_ key on www (not clerk.www.*)", () => {
-    const prodKey = publishableKeyFromHost("anima-protocol.com");
-    expect(resolveClerkPublishableKey("www.anima-protocol.com", prodKey)).toBe(
-      prodKey,
-    );
-    expect(resolveClerkPublishableKey("anima-protocol.com", undefined)).toBe(
-      prodKey,
-    );
-  });
-
   it("uses the live fallback on localhost for local dev proxy", () => {
-    const prodKey = publishableKeyFromHost("anima-protocol.com");
+    const prodKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
     expect(resolveClerkPublishableKey("127.0.0.1:23660", prodKey)).toBe(
       prodKey,
     );
@@ -141,7 +130,7 @@ describe("resolveClerkPublishableKey", () => {
 });
 
 describe("resolveRuntimePublishableKey", () => {
-  const apexKey = publishableKeyFromHost("anima-protocol.com");
+  const apexKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
 
   it("uses a valid CLERK_PUBLISHABLE_KEY from the environment", () => {
     const prev = process.env.CLERK_PUBLISHABLE_KEY;
@@ -158,7 +147,7 @@ describe("resolveRuntimePublishableKey", () => {
     }
   });
 
-  it("derives the custom-domain key when env publishable key is invalid", () => {
+  it("returns undefined when env publishable key is invalid", () => {
     const prev = process.env.CLERK_PUBLISHABLE_KEY;
     process.env.CLERK_PUBLISHABLE_KEY = "not-a-valid-clerk-key";
     try {
@@ -166,7 +155,7 @@ describe("resolveRuntimePublishableKey", () => {
         resolveRuntimePublishableKey({
           headers: { host: "www.anima-protocol.com" },
         }),
-      ).toBe(apexKey);
+      ).toBeUndefined();
     } finally {
       if (prev === undefined) delete process.env.CLERK_PUBLISHABLE_KEY;
       else process.env.CLERK_PUBLISHABLE_KEY = prev;

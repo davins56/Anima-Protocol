@@ -50,7 +50,6 @@ import {
 } from "@/lib/clerkConnectDiagnostics";
 import {
   isVercelPreviewHost,
-  publishableKeyFromFrontendHost,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
@@ -222,15 +221,10 @@ const viteClerkPublishableKey =
     : "";
 
 /**
- * Use the build-time publishable key when set (pk_test_ or pk_live_). Only fall
- * back to host-derived keys when no env key is configured.
+ * Use the build-time publishable key when set (pk_test_ or pk_live_).
  */
 function resolveFrontendClerkPublishableKey(hostname, envKey) {
-  if (envKey.startsWith("pk_test_") || envKey.startsWith("pk_live_")) {
-    return envKey;
-  }
-
-  return publishableKeyFromFrontendHost(hostname, envKey);
+  return envKey;
 }
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
