@@ -37,7 +37,7 @@ describe('probeClerkConnectivity', () => {
     vi.restoreAllMocks();
   });
 
-  it('surfaces invalid Vercel CLERK_SECRET_KEY configuration', async () => {
+  it('surfaces invalid Cloudflare CLERK_SECRET_KEY configuration', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {
@@ -62,7 +62,7 @@ describe('probeClerkConnectivity', () => {
     const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
 
     expect(hints).toContain(
-      'Clerk proxy is misconfigured: Vercel Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
+      'Clerk proxy is misconfigured: Cloudflare Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
     );
     expect(hints).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalledWith(
@@ -100,7 +100,7 @@ describe('probeClerkConnectivity', () => {
     const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
 
     expect(hints).toContain(
-      'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+      'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Cloudflare Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
     );
     expect(hints).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalledWith(
