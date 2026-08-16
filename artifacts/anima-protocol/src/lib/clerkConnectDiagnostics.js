@@ -75,7 +75,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
     });
     if (!healthRes.ok) {
       hints.push(
-        `API health check failed (${healthRes.status}). Set DATABASE_URL and CLERK_SECRET_KEY on Vercel.`,
+        `API health check failed (${healthRes.status}). Set DATABASE_URL and CLERK_SECRET_KEY in your Cloudflare environment.`,
       );
     }
   } catch {
@@ -92,26 +92,26 @@ export async function probeClerkConnectivity(clerkPubKey) {
       const codes = clerkErrorCodes(proxyError);
       if (proxyError?.error === 'clerk_proxy_invalid_secret') {
         hints.push(
-          'Clerk proxy is misconfigured: Vercel Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
+          'Clerk proxy is misconfigured: Cloudflare Production CLERK_SECRET_KEY is set to a publishable pk_* key. Replace it with the matching Clerk Production sk_live_* secret key, then redeploy without cache.',
         );
         return hints;
       } else if (codes.includes('host_invalid')) {
         hints.push(
-          'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+          'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Cloudflare Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
         );
         return hints;
       } else if (clerkRes.status === 503) {
         hints.push(
-          'Login service is unavailable (503). Confirm Vercel Production has the matching CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, and VITE_CLERK_PUBLISHABLE_KEY values, then redeploy without cache.',
+          'Login service is unavailable (503). Confirm Cloudflare Production has the matching CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, and VITE_CLERK_PUBLISHABLE_KEY values, then redeploy without cache.',
         );
       } else if (clerkRes.status === 504 || clerkRes.status === 502) {
         hints.push(
-          `Clerk proxy upstream failed (${clerkRes.status}). Redeploy the latest API build — the server now proxies Clerk via fetch on Vercel. Also confirm CLERK_SECRET_KEY is your Production sk_live_ key.`,
+          `Clerk proxy upstream failed (${clerkRes.status}). Redeploy the latest API build — the server now proxies Clerk via fetch on Cloudflare. Also confirm CLERK_SECRET_KEY is your Production sk_live_ key.`,
         );
       } else {
         const detail = clerkErrorDetail(proxyError).replace(/[.]+$/, '');
         hints.push(
-          `Clerk proxy failed (${clerkRes.status})${detail ? `: ${detail}` : ''}. Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
+          `Clerk proxy failed (${clerkRes.status})${detail ? `: ${detail}` : ''}. Confirm CLERK_SECRET_KEY on Cloudflare and remove VITE_CLERK_PROXY_URL=none if set.`,
         );
       }
     }
@@ -144,7 +144,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
 
   if (import.meta.env.PROD && !import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
     hints.push(
-      'VITE_CLERK_PUBLISHABLE_KEY was missing at build time — set it on Vercel and redeploy without cache.',
+      'VITE_CLERK_PUBLISHABLE_KEY was missing at build time — set it on Cloudflare and redeploy without cache.',
     );
   }
 
