@@ -1,0 +1,16 @@
+--- LivingPresence.test.jsx
++++ LivingPresence.test.jsx
+@@ -8,6 +8,13 @@
+     vi.stubGlobal('requestAnimationFrame', vi.fn((cb) => setTimeout(cb, 16)));
+     vi.stubGlobal('cancelAnimationFrame', vi.fn(clearTimeout));
++    vi.stubGlobal('window', {
++      ...globalThis.window,
++      requestAnimationFrame: vi.fn((cb) => setTimeout(cb, 16)),
++      cancelAnimationFrame: vi.fn(clearTimeout),
++      addEventListener: vi.fn(),
++      removeEventListener: vi.fn()
++    });
+   });
+
+   afterEach(() => {
+     vi.unstubAllGlobals();

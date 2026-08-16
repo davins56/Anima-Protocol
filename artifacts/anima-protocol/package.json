@@ -16,6 +16,9 @@
   "dependencies": {
     "@clerk/react": "^6.13.1",
     "@clerk/themes": "^2.4.57",
+    "@react-three/drei": "^10.7.8",
+    "@react-three/fiber": "^9.7.0",
+    "@react-three/postprocessing": "^3.0.5",
     "@vercel/analytics": "^2.0.1",
     "canvas-confetti": "^1.9.4",
     "cytoscape": "^3.34.0",
@@ -33,10 +36,7 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.2",
     "tailwindcss-animate": "^1.0.7",
-    "three":"^0.185.1",
-    "@react-three/drei":"^10.7.8",
-    "@react-three/fiber":"^9.7.0",
-    "@react-three/postprocessing":"^3.0.5"
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@clerk/backend": "^3.16.1",
@@ -100,7 +100,7 @@
     "react-dom": "catalog:",
     "react-hook-form": "^7.85.0",
     "react-icons": "^5.7.0",
-    "react-resizable-panels": "^4.12.2",
+    "react-resizable-panels": "^2.1.9",
     "recharts": "^3.10.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "catalog:",

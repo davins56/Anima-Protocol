@@ -14,6 +14,15 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
 globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(0), 16);
 globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 
+globalThis.window = {
+  ...globalThis.window,
+  requestAnimationFrame: globalThis.requestAnimationFrame,
+  cancelAnimationFrame: globalThis.cancelAnimationFrame,
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn()
+};
+
+
 vi.mock("framer-motion", async () => {
   const ReactActual = await import("react");
   const passthrough = ({ children, ...props }) =>
