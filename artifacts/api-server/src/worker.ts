@@ -7,8 +7,7 @@ interface Env {
 }
 
 // Expose the Express app through the Node.js HTTP server adapter so all API
-// routes (auth, chat, store, etc.) work on Cloudflare Workers with full
-// nodejs_compat (compatibility_date >= 2025-12-01).
+// routes (auth, chat, store, etc.) work on Cloudflare Workers with nodejs_compat.
 const expressHandler = httpServerHandler({ app });
 
 export default {
@@ -21,10 +20,11 @@ export default {
 
     // Route /api/* requests through the Express app.
     if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
-      // Expose env vars to Express via process.env for Clerk, DB, etc.
-      // Workers env bindings are per-request; mirror them once.
+      // Mirror Cloudflare env bindings (secrets/vars) into process.env so the
+      // Express app's existing process.env reads (DATABASE_URL, CLERK_SECRET_KEY,
+      // etc.) work without code changes. Bindings are stable per deployment.
       for (const [key, value] of Object.entries(env)) {
-        if (typeof value === "string" && !process.env[key]) {
+        if (typeof value === "string") {
           process.env[key] = value;
         }
       }
