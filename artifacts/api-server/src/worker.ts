@@ -1,7 +1,15 @@
+import { httpServerHandler } from "cloudflare:node";
+import app from "./app";
+
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
   [key: string]: unknown;
 }
+
+// Expose the Express app through the Node.js HTTP server adapter so all API
+// routes (auth, chat, store, etc.) work on Cloudflare Workers with full
+// nodejs_compat (compatibility_date >= 2025-12-01).
+const expressHandler = httpServerHandler({ app });
 
 export default {
   async fetch(
@@ -11,22 +19,16 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // Serve API routes through the Express app (adapted for Workers)
+    // Route /api/* requests through the Express app.
     if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
-      // For now, return a minimal healthcheck; full Express adapter is TODO.
-      if (
-        url.pathname === "/api/healthz" ||
-        url.pathname === "/api/healthz/"
-      ) {
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+      // Expose env vars to Express via process.env for Clerk, DB, etc.
+      // Workers env bindings are per-request; mirror them once.
+      for (const [key, value] of Object.entries(env)) {
+        if (typeof value === "string" && !process.env[key]) {
+          process.env[key] = value;
+        }
       }
-      return new Response(
-        JSON.stringify({ error: "Not found" }),
-        { status: 404, headers: { "content-type": "application/json" } },
-      );
+      return expressHandler.fetch(request, env, ctx);
     }
 
     // Everything else: serve static assets (SPA fallback handled by

@@ -3,6 +3,7 @@
   "name": "anima-protocol",
   "main": "artifacts/api-server/src/worker.ts",
   "compatibility_date": "2026-08-17",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "artifacts/anima-protocol/dist/public",
     "not_found_handling": "single-page-application"
