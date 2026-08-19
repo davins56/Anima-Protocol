@@ -11,8 +11,20 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   fill: vi.fn(),
   fillStyle: "",
 }));
-globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(0), 16);
-globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+const activeRafs = new Set();
+globalThis.requestAnimationFrame = (cb) => {
+  const id = setTimeout(() => {
+    activeRafs.delete(id);
+    cb(0);
+  }, 16);
+  activeRafs.add(id);
+  return id;
+};
+globalThis.cancelAnimationFrame = (id) => {
+  clearTimeout(id);
+  activeRafs.delete(id);
+};
 
 vi.mock("framer-motion", async () => {
   const ReactActual = await import("react");
@@ -51,6 +63,8 @@ function render(node) {
 
 describe("LivingPresence", () => {
   afterEach(() => {
+    activeRafs.forEach((id) => clearTimeout(id));
+    activeRafs.clear();
     document.body.innerHTML = "";
   });
 
@@ -98,6 +112,8 @@ describe("LivingPresence", () => {
 
 describe("LivingPresenceStage", () => {
   afterEach(() => {
+    activeRafs.forEach((id) => clearTimeout(id));
+    activeRafs.clear();
     document.body.innerHTML = "";
   });
 
