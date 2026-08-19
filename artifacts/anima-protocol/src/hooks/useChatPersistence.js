@@ -38,9 +38,13 @@ export function useChatPersistence() {
       const identifiedMessages = assignTurnMessageIds(messages, turnId);
       const storedMessages = [];
       try {
-        for (const message of identifiedMessages) {
-          storedMessages.push(await base44.messages.append(sessionId, message));
-        }
+        const results = await Promise.all(
+          identifiedMessages.map(async (message) => {
+            const stored = await base44.messages.append(sessionId, message);
+            storedMessages.push(stored);
+            return stored;
+          }),
+        );
         if (content) {
           await base44.entities.ChatSession.update(sessionId, {
             last_message: content.slice(0, 60),
@@ -48,7 +52,7 @@ export function useChatPersistence() {
           });
         }
         await animaApi.chat.commitTurn(turnId);
-        return storedMessages;
+        return results;
       } catch (error) {
         // The server checkpoint contains the generated reply and stable message
         // ids. Ask it to reconcile any partial client write idempotently.

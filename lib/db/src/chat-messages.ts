@@ -1,4 +1,4 @@
-import { and, eq, gt, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "./client";
 import { userEntities } from "./schema";
 
@@ -36,70 +36,90 @@ export function sessionIdEq(sessionId: string): SQL {
   return sql`(${userEntities.data} ->> 'session_id') = ${sessionId}`;
 }
 
-// Lazily split a legacy ChatSession.messages blob into ChatMessage rows the
-// first time a session's messages are touched, then clear the blob and flag the
-// session migrated. Runs inside the caller's transaction so it is atomic, and is
-// idempotent: the `messages_migrated` flag short-circuits subsequent calls, and
-// the existing-rows guard avoids double-inserting if a flag was ever lost.
-export async function migrateSessionMessages(
+// Lazily split multiple legacy ChatSession.messages blobs into ChatMessage rows
+// in batch, then clear the blobs and flag the sessions migrated.
+// Runs inside the caller's transaction so it is atomic, and is idempotent.
+export async function migrateSessionsMessages(
   tx: DbTransaction,
   userId: string,
-  sessionId: string,
+  sessionIds: string[],
 ): Promise<void> {
-  // Serialize everything that touches one session's message stream within its
-  // transaction: migration, and (because append/replace call this first) seq
-  // assignment. This makes concurrent appends to the same session strictly
-  // ordered (no duplicate seq) and concurrent first-reads migrate exactly once,
-  // without a unique constraint that would surface as a client-visible failure.
-  // The lock is keyed per (user, session) and auto-releases at transaction end,
-  // and since each transaction locks exactly one pair there is no deadlock risk.
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
-  );
+  const uniqueIds = Array.from(new Set(sessionIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return;
 
-  const [session] = await tx
+  // Serialize everything that touches these sessions' message streams within
+  // the transaction. Acquire locks in strict lexicographical order to prevent deadlocks.
+  const sortedIds = [...uniqueIds].sort();
+  for (const sid of sortedIds) {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sid}))`,
+    );
+  }
+
+  const sessions = await tx
     .select()
     .from(userEntities)
     .where(
       and(
         eq(userEntities.userId, userId),
         eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
+        inArray(userEntities.entityId, uniqueIds),
       ),
-    )
-    .limit(1);
-  if (!session) return;
-  const data = session.data as MsgData;
-  if (data.messages_migrated) return;
+    );
 
-  const blob = Array.isArray(data.messages) ? (data.messages as unknown[]) : [];
+  const unmigratedSessions = sessions.filter((s) => {
+    const data = s.data as MsgData;
+    return !data.messages_migrated;
+  });
+
+  if (unmigratedSessions.length === 0) return;
+
+  const unmigratedSids = unmigratedSessions.map((s) => s.entityId);
+
+  const existingRows = await tx
+    .select({
+      sid: sql<string>`(${userEntities.data} ->> 'session_id')`,
+    })
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_MESSAGE),
+        inArray(sql`(${userEntities.data} ->> 'session_id')`, unmigratedSids),
+      ),
+    );
+
+  const sessionsWithExistingMessages = new Set(
+    existingRows.map((r) => String(r.sid)),
+  );
+
   const now = new Date().toISOString();
+  const toInsert: Array<{
+    userId: string;
+    entityName: string;
+    entityId: string;
+    data: MsgData;
+  }> = [];
 
-  if (blob.length > 0) {
-    const existing = await tx
-      .select({ id: userEntities.id })
-      .from(userEntities)
-      .where(
-        and(
-          eq(userEntities.userId, userId),
-          eq(userEntities.entityName, CHAT_MESSAGE),
-          sessionIdEq(sessionId),
-        ),
-      )
-      .limit(1);
-    if (existing.length === 0) {
+  for (const session of unmigratedSessions) {
+    const sid = session.entityId;
+    if (sessionsWithExistingMessages.has(sid)) continue;
+
+    const data = session.data as MsgData;
+    const blob = Array.isArray(data.messages) ? (data.messages as unknown[]) : [];
+    if (blob.length > 0) {
       let i = 0;
       for (const raw of blob) {
         const msg = asObject(raw);
         const id = String(msg.id ?? makeId());
-        await tx.insert(userEntities).values({
+        toInsert.push({
           userId,
           entityName: CHAT_MESSAGE,
           entityId: id,
           data: {
             ...msg,
             id,
-            session_id: sessionId,
+            session_id: sid,
             seq: i,
             created_date: msg.created_date ?? msg.timestamp ?? now,
             updated_date: now,
@@ -110,20 +130,42 @@ export async function migrateSessionMessages(
     }
   }
 
-  const { messages: _omit, ...rest } = data;
-  await tx
-    .update(userEntities)
-    .set({
-      data: { ...rest, messages: [], messages_migrated: true },
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
-      ),
-    );
+  if (toInsert.length > 0) {
+    const CHUNK_SIZE = 500;
+    for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+      const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+      await tx.insert(userEntities).values(chunk);
+    }
+  }
+
+  for (const session of unmigratedSessions) {
+    const data = session.data as MsgData;
+    const { messages: _omit, ...rest } = data;
+    await tx
+      .update(userEntities)
+      .set({
+        data: { ...rest, messages: [], messages_migrated: true },
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_SESSION),
+          eq(userEntities.entityId, session.entityId),
+        ),
+      );
+  }
+}
+
+// Lazily split a legacy ChatSession.messages blob into ChatMessage rows the
+// first time a session's messages are touched, then clear the blob and flag the
+// session migrated. Delegates to migrateSessionsMessages.
+export async function migrateSessionMessages(
+  tx: DbTransaction,
+  userId: string,
+  sessionId: string,
+): Promise<void> {
+  return migrateSessionsMessages(tx, userId, [sessionId]);
 }
 
 export interface BackfillResult {
