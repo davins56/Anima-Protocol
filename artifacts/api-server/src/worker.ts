@@ -1,7 +1,9 @@
 import app from "./app";
 
+type ExecutionContext = any;
+
 export default {
-  async fetch(request: Request, env: any, ctx: any): Promise<Response> {
+  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     return new Response("Worker entry point is alive", {
       status: 200,
       headers: { "content-type": "text/plain" },
