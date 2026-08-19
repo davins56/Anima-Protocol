@@ -41,7 +41,7 @@
     "globals": "^17.11.0",
     "prettier": "^3.9.6",
     "tsx": "catalog:",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.67.0"
   },
   "pnpm": {
@@ -68,7 +68,7 @@
     }
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.2",
+    "@supabase/supabase-js": "^2.112.3",
     "@types/node": "catalog:",
     "dotenv": "^17.4.2",
     "drizzle-orm": "catalog:",
