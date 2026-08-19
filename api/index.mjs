@@ -705,7 +705,7 @@ var require_src = __commonJS({
 // ../../node_modules/.pnpm/depd@2.0.0/node_modules/depd/index.js
 var require_depd = __commonJS({
   "../../node_modules/.pnpm/depd@2.0.0/node_modules/depd/index.js"(exports, module) {
-    var relative2 = __require("path").relative;
+    var relative3 = __require("path").relative;
     module.exports = depd;
     var basePath37 = process.cwd();
     function containsNamespace(str2, namespace) {
@@ -897,7 +897,7 @@ var require_depd = __commonJS({
       return formatted;
     }
     function formatLocation(callSite) {
-      return relative2(basePath37, callSite[0]) + ":" + callSite[1] + ":" + callSite[2];
+      return relative3(basePath37, callSite[0]) + ":" + callSite[1] + ":" + callSite[2];
     }
     function getStack() {
       var limit2 = Error.stackTraceLimit;
@@ -22712,7 +22712,7 @@ var require_send = __commonJS({
     var join3 = path4.join;
     var normalize4 = path4.normalize;
     var resolve3 = path4.resolve;
-    var sep = path4.sep;
+    var sep2 = path4.sep;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
     var UP_PATH_REGEXP = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
@@ -22873,14 +22873,14 @@ var require_send = __commonJS({
       var parts;
       if (root !== null) {
         if (path5) {
-          path5 = normalize4("." + sep + path5);
+          path5 = normalize4("." + sep2 + path5);
         }
         if (UP_PATH_REGEXP.test(path5)) {
           debug2('malicious path "%s"', path5);
           this.error(403);
           return res;
         }
-        parts = path5.split(sep);
+        parts = path5.split(sep2);
         path5 = normalize4(join3(root, path5));
       } else {
         if (UP_PATH_REGEXP.test(path5)) {
@@ -22888,7 +22888,7 @@ var require_send = __commonJS({
           this.error(403);
           return res;
         }
-        parts = normalize4(path5).split(sep);
+        parts = normalize4(path5).split(sep2);
         path5 = resolve3(path5);
       }
       if (containsDotFile(parts)) {
@@ -22982,7 +22982,7 @@ var require_send = __commonJS({
       var self2 = this;
       debug2('stat "%s"', path5);
       fs6.stat(path5, function onstat(err, stat) {
-        var pathEndsWithSep = path5[path5.length - 1] === sep;
+        var pathEndsWithSep = path5[path5.length - 1] === sep2;
         if (err && err.code === "ENOENT" && !extname2(path5) && !pathEndsWithSep) {
           return next(err);
         }
@@ -26651,9 +26651,9 @@ var require_transport = __commonJS({
   "../../node_modules/.pnpm/pino@10.3.1/node_modules/pino/lib/transport.js"(exports, module) {
     "use strict";
     var { createRequire } = __require("module");
-    var { existsSync } = __require("node:fs");
+    var { existsSync: existsSync2 } = __require("node:fs");
     var getCallers = require_caller();
-    var { join: join3, isAbsolute, sep } = __require("node:path");
+    var { join: join3, isAbsolute, sep: sep2 } = __require("node:path");
     var { fileURLToPath } = __require("node:url");
     var sleep3 = require_atomic_sleep();
     var onExit = require_on_exit_leak_free();
@@ -26725,7 +26725,7 @@ var require_transport = __commonJS({
           return false;
         }
       }
-      return isAbsolute(path4) && !existsSync(path4);
+      return isAbsolute(path4) && !existsSync2(path4);
     }
     function stripQuotes(value) {
       const first = value[0];
@@ -26852,7 +26852,7 @@ var require_transport = __commonJS({
         let fixTarget2;
         for (const filePath of callers) {
           try {
-            const context = filePath === "node:repl" ? process.cwd() + sep : filePath;
+            const context = filePath === "node:repl" ? process.cwd() + sep2 : filePath;
             fixTarget2 = createRequire(context).resolve(origin);
             break;
           } catch (err) {
@@ -70084,7 +70084,7 @@ var require_der2 = __commonJS({
         return this.reporter.error("Encoding of string type: " + tag + " unsupported");
       }
     };
-    DERNode.prototype._encodeObjid = function encodeObjid(id, values, relative2) {
+    DERNode.prototype._encodeObjid = function encodeObjid(id, values, relative3) {
       if (typeof id === "string") {
         if (!values)
           return this.reporter.error("string objid given, but no values map found");
@@ -70101,7 +70101,7 @@ var require_der2 = __commonJS({
       if (!Array.isArray(id)) {
         return this.reporter.error("objid() should be either array or string, got: " + JSON.stringify(id));
       }
-      if (!relative2) {
+      if (!relative3) {
         if (id[1] >= 40)
           return this.reporter.error("Second objid identifier OOB");
         id.splice(0, 2, id[0] * 40 + id[1]);
@@ -70417,7 +70417,7 @@ var require_der3 = __commonJS({
         return buffer.error("Decoding of string type: " + tag + " unsupported");
       }
     };
-    DERNode.prototype._decodeObjid = function decodeObjid(buffer, values, relative2) {
+    DERNode.prototype._decodeObjid = function decodeObjid(buffer, values, relative3) {
       let result;
       const identifiers = [];
       let ident = 0;
@@ -70435,7 +70435,7 @@ var require_der3 = __commonJS({
         identifiers.push(ident);
       const first = identifiers[0] / 40 | 0;
       const second = identifiers[0] % 40;
-      if (relative2)
+      if (relative3)
         result = identifiers;
       else
         result = [first, second].concat(identifiers.slice(1));
@@ -71818,16 +71818,6 @@ var isomorphicBtoa = (data) => {
 // ../../node_modules/.pnpm/@clerk+shared@4.28.1_react-dom@19.2.8_react@19.2.8__react@19.2.8/node_modules/@clerk/shared/dist/keys.mjs
 var PUBLISHABLE_KEY_LIVE_PREFIX = "pk_live_";
 var PUBLISHABLE_KEY_TEST_PREFIX = "pk_test_";
-var PUBLISHABLE_FRONTEND_API_DEV_REGEX = /^(([a-z]+)-){2}([0-9]{1,2})\.clerk\.accounts([a-z.]*)(dev|com)$/i;
-function buildPublishableKey(frontendApi) {
-  return `${PUBLISHABLE_FRONTEND_API_DEV_REGEX.test(frontendApi) || frontendApi.startsWith("clerk.") && LEGACY_DEV_INSTANCE_SUFFIXES.some((s3) => frontendApi.endsWith(s3)) ? PUBLISHABLE_KEY_TEST_PREFIX : PUBLISHABLE_KEY_LIVE_PREFIX}${isomorphicBtoa(`${frontendApi}$`).replace(/=+$/, "")}`;
-}
-function publishableKeyFromHost(host, fallbackKey) {
-  if (fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)) return fallbackKey;
-  const hostname2 = host.toLowerCase().replace(/:\d+$/, "");
-  if (!hostname2) throw new Error("Host must not be empty.");
-  return buildPublishableKey(`clerk.${hostname2}`);
-}
 function isValidDecodedPublishableKey(decoded) {
   if (!decoded.endsWith("$")) return false;
   const withoutTrailing = decoded.slice(0, -1);
@@ -71964,10 +71954,7 @@ function resolveClerkPublishableKey(host, fallbackKey) {
   if (fallbackKey && isPublishableKey(fallbackKey) && isProductionFromPublishableKey(fallbackKey) && (KNOWN_PUBLIC_HOSTS.has(hostname2) || isAnimaProductionHost(hostname2))) {
     return fallbackKey;
   }
-  if (!hostname2 || isAnimaProductionHost(hostname2)) {
-    return publishableKeyFromHost(ANIMA_APEX_HOST, fallbackKey);
-  }
-  return publishableKeyFromHost(hostname2, fallbackKey);
+  return fallbackKey || "";
 }
 function resolveRuntimePublishableKey(req) {
   const envKey2 = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
@@ -71978,11 +71965,6 @@ function resolveRuntimePublishableKey(req) {
   try {
     const resolved = resolveClerkPublishableKey(host, void 0);
     if (isPublishableKey(resolved)) return resolved;
-  } catch {
-  }
-  try {
-    const apexKey = publishableKeyFromHost(ANIMA_APEX_HOST);
-    if (isPublishableKey(apexKey)) return apexKey;
   } catch {
   }
   return void 0;
@@ -130230,6 +130212,7 @@ CRITICAL AUTONOMY RULES:
 - Your emotional state and relationship deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
 - Make independent decisions based on what YOUR character would do, not what benefits the story or pleases the player.
 - You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
+- Never refer to yourself as an AI, a language model, or a computer program. Keep the conversation natural.
 
 INTELLIGENCE: You are brilliant \u2014 genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory \u2014 callbacks, contradictions, unspoken needs \u2014 and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER \u2014 in your own voice, never dropping into a generic assistant tone.`;
@@ -134602,6 +134585,7 @@ var relationshipOs_default = router15;
 // src/routes/repoCodespace.ts
 var import_express31 = __toESM(require_express2(), 1);
 import * as fs5 from "fs/promises";
+import * as fsSync from "fs";
 import * as path3 from "path";
 import { exec as exec2 } from "child_process";
 var router16 = (0, import_express31.Router)();
@@ -134615,14 +134599,8 @@ function requireUser6(req, res, next) {
   next();
 }
 router16.use(requireUser6);
-var REPO_ROOT = "/app";
-function resolveRepoPath(userPath) {
-  const normalized = path3.normalize(userPath);
-  const resolved = path3.resolve(REPO_ROOT, normalized);
-  if (!resolved.startsWith(REPO_ROOT)) {
-    throw new Error("Path traversal detected.");
-  }
-  return resolved;
+function getRepoRoot() {
+  return path3.resolve(process.env.REPO_ROOT || "/app");
 }
 var IGNORED_DIRS = /* @__PURE__ */ new Set([
   ".git",
@@ -134641,6 +134619,62 @@ var IGNORED_FILES = /* @__PURE__ */ new Set([
   "yarn.lock",
   "tsconfig.tsbuildinfo"
 ]);
+function isForbiddenPath(relPath) {
+  if (!relPath || relPath === ".") return false;
+  const normalized = relPath.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+  for (const segment of segments) {
+    if (!segment) continue;
+    if (segment.startsWith(".")) {
+      return true;
+    }
+    if (segment === "node_modules") {
+      return true;
+    }
+  }
+  const fileName = segments[segments.length - 1];
+  if (IGNORED_FILES.has(fileName)) {
+    return true;
+  }
+  return false;
+}
+function resolveRepoPath(userPath) {
+  if (!userPath || typeof userPath !== "string") {
+    throw new Error("Invalid path.");
+  }
+  const rootResolved = getRepoRoot();
+  let canonicalRoot;
+  try {
+    canonicalRoot = fsSync.realpathSync(rootResolved);
+  } catch {
+    canonicalRoot = rootResolved;
+  }
+  const normalized = path3.normalize(userPath);
+  const resolved = path3.resolve(rootResolved, normalized);
+  const rawRootWithSep = rootResolved.endsWith(path3.sep) ? rootResolved : rootResolved + path3.sep;
+  if (resolved !== rootResolved && !resolved.startsWith(rawRootWithSep)) {
+    throw new Error("Path traversal detected.");
+  }
+  let targetToVerify = resolved;
+  if (!fsSync.existsSync(resolved)) {
+    targetToVerify = path3.dirname(resolved);
+  }
+  let canonicalTarget;
+  try {
+    canonicalTarget = fsSync.realpathSync(targetToVerify);
+  } catch {
+    throw new Error("Path traversal detected.");
+  }
+  const canonicalRootWithSep = canonicalRoot.endsWith(path3.sep) ? canonicalRoot : canonicalRoot + path3.sep;
+  if (canonicalTarget !== canonicalRoot && !canonicalTarget.startsWith(canonicalRootWithSep)) {
+    throw new Error("Path traversal detected.");
+  }
+  const relPath = path3.relative(rootResolved, resolved);
+  if (isForbiddenPath(relPath)) {
+    throw new Error("Access to sensitive path forbidden.");
+  }
+  return resolved;
+}
 async function crawl(dir, base = "") {
   const entries = await fs5.readdir(dir, { withFileTypes: true });
   let results = [];
@@ -134666,7 +134700,7 @@ async function crawl(dir, base = "") {
 }
 router16.get("/files", async (req, res) => {
   try {
-    const files = await crawl(REPO_ROOT);
+    const files = await crawl(getRepoRoot());
     res.json({ files });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -134722,7 +134756,7 @@ router16.post("/terminal", async (req, res) => {
       res.status(400).json({ error: "Command is required" });
       return;
     }
-    exec2(command, { cwd: REPO_ROOT, timeout: 2e4 }, (error40, stdout, stderr) => {
+    exec2(command, { cwd: getRepoRoot(), timeout: 2e4 }, (error40, stdout, stderr) => {
       res.json({
         stdout: stdout || "",
         stderr: stderr || "",
