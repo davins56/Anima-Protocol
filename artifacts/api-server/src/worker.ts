@@ -1,5 +1,3 @@
-import app from "./app";
-
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
   [key: string]: unknown;
