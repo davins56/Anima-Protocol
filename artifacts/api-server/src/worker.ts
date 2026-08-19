@@ -1,3 +1,5 @@
+import app from "./app";
+
 type ExecutionContext = any;
 
 export default {
