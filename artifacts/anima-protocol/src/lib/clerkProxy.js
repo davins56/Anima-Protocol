@@ -1,8 +1,8 @@
 /**
  * Clerk Frontend API proxy URL helpers.
  *
- * Clerk requires proxyUrl to end with a trailing slash and to match the Proxy URL
- * configured in the Clerk dashboard exactly (production uses www.anima-protocol.com).
+ * Cloudflare is the production host. Clerk should connect directly by default.
+ * A proxy is used only when VITE_CLERK_PROXY_URL is explicitly configured.
  */
 
 export const ANIMA_APEX_HOST = 'anima-protocol.com';
@@ -55,66 +55,34 @@ export function ensureTrailingSlash(url) {
   return url.endsWith('/') ? url : `${url}/`;
 }
 
-/**
- * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
- */
+/** Legacy same-origin proxy URL, retained for explicitly configured deployments. */
 export function animaProductionClerkProxyUrl() {
   return `${ANIMA_WWW}/api/__clerk/`;
 }
 
-/**
- * Client-side proxyUrl for ClerkProvider.
- *
- * Must be a **relative** path so Clerk loads clerk-js from
- * `/api/__clerk/npm/@clerk/clerk-js@…` on the same origin. An absolute
- * https://www… URL makes Clerk build a broken script URL and the SDK never
- * reaches `clerk.loaded`.
- */
+/** Legacy relative proxy path, retained for explicitly configured deployments. */
 export function clerkProviderProxyPath() {
   return '/api/__clerk/';
 }
 
 /**
- * Whether pk_live_ should route Clerk FAPI through the same-origin proxy.
+ * Use a Clerk proxy only when the operator explicitly configured one.
+ * Production no longer auto-enables /api/__clerk merely because the key is pk_live_.
  */
-export function shouldUseClerkProxy(clerkPubKey) {
+export function shouldUseClerkProxy() {
   if (isClerkProxyExplicitlyDisabled()) return false;
-  if (configuredClerkProxyUrl()) return true;
-  if (typeof clerkPubKey !== 'string' || !clerkPubKey.startsWith('pk_live_')) {
-    return false;
-  }
-  if (typeof window === 'undefined') return false;
-
-  const host = window.location.hostname;
-  if (import.meta.env.DEV && isLocalDevHostname(host)) return true;
-  if (
-    import.meta.env.PROD &&
-    isAnimaProductionHost(host)
-  ) {
-    return true;
-  }
-  return false;
+  return Boolean(configuredClerkProxyUrl());
 }
 
-/**
- * Resolved proxy URL for ClerkProvider, or "" when Clerk should talk directly.
- */
-export function resolveClerkProxyUrl(clerkPubKey) {
+/** Resolved proxy URL for ClerkProvider, or "" for Clerk's direct connection. */
+export function resolveClerkProxyUrl() {
   if (isClerkProxyExplicitlyDisabled()) return '';
-
-  const configured = configuredClerkProxyUrl();
-  if (configured) return configured;
-
-  if (!shouldUseClerkProxy(clerkPubKey)) return '';
-
-  return clerkProviderProxyPath();
+  return configuredClerkProxyUrl();
 }
 
-/**
- * Absolute base URL for connectivity probes (fetch from the browser).
- */
-export function clerkProxyProbeBase(clerkPubKey) {
-  const proxy = resolveClerkProxyUrl(clerkPubKey);
+/** Absolute base URL for proxy connectivity probes, when a proxy is configured. */
+export function clerkProxyProbeBase() {
+  const proxy = resolveClerkProxyUrl();
   if (!proxy) return '';
   if (proxy.startsWith('/') && typeof window !== 'undefined') {
     return `${window.location.origin}${proxy.replace(/\/$/, '')}`;
@@ -122,9 +90,9 @@ export function clerkProxyProbeBase(clerkPubKey) {
   return proxy.replace(/\/$/, '');
 }
 
-/** clerk-js bundle path for connectivity probes (proxy or custom Clerk domain). */
-export function clerkJsScriptProbeUrl(clerkPubKey) {
-  const base = clerkProxyProbeBase(clerkPubKey);
+/** clerk-js bundle path for connectivity probes when a proxy is configured. */
+export function clerkJsScriptProbeUrl() {
+  const base = clerkProxyProbeBase();
   if (!base) return '';
   return `${base}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`;
 }
