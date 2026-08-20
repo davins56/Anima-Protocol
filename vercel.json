@@ -5,19 +5,8 @@
     "NODE_ENV": "production"
   },
   "installCommand": "corepack enable && corepack prepare pnpm@10.15.1 --activate && pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @workspace/api-server run build && PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$CLERK_PUBLISHABLE_KEY} pnpm --filter @workspace/anima-protocol run build",
+  "buildCommand": "PORT=23660 BASE_PATH=/ VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$CLERK_PUBLISHABLE_KEY} pnpm --filter @workspace/anima-protocol run build",
   "outputDirectory": "artifacts/anima-protocol/dist/public",
-  "functions": {
-    "api/index.mjs": {
-      "maxDuration": 60
-    }
-  },
-  "crons": [
-    {
-      "path": "/api/notifications/proactive/run",
-      "schedule": "15 * * * *"
-    }
-  ],
   "redirects": [
     {
       "source": "/:path*",
@@ -28,11 +17,7 @@
   ],
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api"
-    },
-    {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api(?:/|$)).*)",
       "destination": "/index.html"
     }
   ]
