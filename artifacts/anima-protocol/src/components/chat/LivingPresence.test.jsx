@@ -39,30 +39,21 @@ const korra = {
   build: "athletic",
 };
 
-const mountedRoots = new Set();
-
 function render(node) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  mountedRoots.add(root);
   act(() => {
     root.render(node);
   });
   return { container, root };
 }
 
-afterEach(() => {
-  act(() => {
-    for (const root of mountedRoots) {
-      root.unmount();
-    }
-  });
-  mountedRoots.clear();
-  document.body.innerHTML = "";
-});
-
 describe("LivingPresence", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
   it("renders the companion name, emotion, and portrait", () => {
     const { container } = render(
       <LivingPresence character={korra} emotion="joyful" speaking={false} />,
@@ -106,6 +97,10 @@ describe("LivingPresence", () => {
 });
 
 describe("LivingPresenceStage", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
   it("renders nothing when closed", () => {
     const { container } = render(
       <LivingPresenceStage open={false} onClose={() => {}} onSend={() => {}} cast={[korra]} />,

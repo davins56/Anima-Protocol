@@ -38,11 +38,13 @@ describe('detectMentionedStoryCharacters', () => {
     ];
     const activeSession = { mode: 'solo', character_id: 'c1' };
 
+    // Case 1: Mentioned main character
     const messages1 = [
       { role: 'assistant', content: 'I am MainHero!', character_name: 'MainHero' }
     ];
     expect(detectMentionedStoryCharacters(messages1, characters, activeSession)).toBeNull();
 
+    // Case 2: Character already in conversation as assistant
     const messages2 = [
       { role: 'assistant', content: 'Hello', character_name: 'Astra' },
       { role: 'assistant', content: 'Look Astra is here', character_name: 'MainHero' }
@@ -50,23 +52,39 @@ describe('detectMentionedStoryCharacters', () => {
     expect(detectMentionedStoryCharacters(messages2, characters, activeSession)).toBeNull();
   });
 
-  it('handles large conversations without changing detection behavior', () => {
-    const characters = Array.from({ length: 1000 }, (_, i) => ({
+  it('benchmark performance on large datasets', () => {
+    const numMessages = 2000;
+    const numCharacters = 1000;
+
+    const characters = Array.from({ length: numCharacters }, (_, i) => ({
       id: `char_${i}`,
       name: `Character_${i}`
     }));
+
     const activeSession = { mode: 'solo', character_id: 'char_0' };
-    const finalMessages = Array.from({ length: 2000 }, (_, i) => ({
+
+    const finalMessages = Array.from({ length: numMessages }, (_, i) => ({
       role: 'assistant',
       character_name: `Character_${i % 500}`,
       content: `Message ${i} talking about something irrelevant.`
     }));
 
+    // Add latest message mentioning Character_999 (last character)
     finalMessages.push({
       role: 'assistant',
       character_name: 'Character_0',
       content: 'Here comes Character_999 into the scene!'
     });
+
+    const iterations = 100;
+    const start = performance.now();
+    for (let i = 0; i < iterations; i++) {
+      detectMentionedStoryCharacters(finalMessages, characters, activeSession);
+    }
+    const end = performance.now();
+    const duration = end - start;
+
+    console.log(`[BENCHMARK] ${iterations} iterations took ${duration.toFixed(2)}ms (avg: ${(duration / iterations).toFixed(4)}ms/op)`);
 
     const result = detectMentionedStoryCharacters(finalMessages, characters, activeSession);
     expect(result?.character_name).toBe('Character_999');
