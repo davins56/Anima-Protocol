@@ -3,6 +3,7 @@ import "dotenv/config";
 
 import path from "node:path";
 import app from "./app";
+import { ensureClerkPreviewRedirects } from "./lib/ensureClerkPreviewRedirects";
 import { logger } from "./lib/logger";
 
 // If the repo is run from a different CWD, dotenv/config may not find artifacts/api-server/.env.
@@ -23,14 +24,17 @@ function requireEnv(name: string): string {
 requireEnv("DATABASE_URL");
 requireEnv("CLERK_SECRET_KEY");
 
-// Cloudflare serves the application on a stable same-origin host, so there is
-// no deployment-specific Clerk redirect registration at server startup.
+// Register this preview deployment's Clerk callback URLs on cold start. Vercel
+// preview hosts are unique per deployment, and Clerk does not allow wildcard
+// redirect URLs.
+void ensureClerkPreviewRedirects();
 
 // CLERK_WEBHOOK_SECRET is only consumed by the optional /api/webhooks/clerk svix
 // verification route. It is NOT provisioned in this project's environments
 // (development or production) and the app functions without it, so requiring it
-// at boot would needlessly crash the server. Warn if absent; the webhook route
-// degrades gracefully (returns 503) when the secret is missing.
+// at boot would needlessly crash the server — which in production fails the
+// deploy startup probe (/api/healthz) and blocks publishing. Warn if absent; the
+// webhook route degrades gracefully (returns 503) when the secret is missing.
 if (!process.env.CLERK_WEBHOOK_SECRET?.trim()) {
   logger.warn(
     "CLERK_WEBHOOK_SECRET is not set; the Clerk webhook route (/api/webhooks/clerk) will return 503. This is expected unless Clerk webhooks have been configured.",
@@ -38,6 +42,7 @@ if (!process.env.CLERK_WEBHOOK_SECRET?.trim()) {
 }
 
 const rawPort = process.env.API_PORT ?? process.env.PORT;
+
 
 if (!rawPort) {
   throw new Error(
