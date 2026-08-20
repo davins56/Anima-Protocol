@@ -1,14 +1,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   animaProductionClerkProxyUrl,
-  clerkFrontendApiProbeBase,
   clerkJsScriptProbeUrl,
-  clerkProviderOAuthCallbackUrl,
   clerkProxyProbeBase,
-  decodeClerkFrontendHost,
   ensureTrailingSlash,
   isAnimaProductionHost,
-  publishableKeyUsesCustomDomain,
   resolveClerkProxyUrl,
   shouldUseClerkProxy,
 } from './clerkProxy';
@@ -42,15 +38,17 @@ describe('clerkProxy', () => {
     );
   });
 
-  it('does not skip proxy on production', () => {
-    expect(shouldUseClerkProxy(LIVE_KEY)).toBe(true);
-    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('/api/__clerk/');
-    window.location.hostname = 'anima-protocol.com';
-    window.location.origin = 'https://anima-protocol.com';
-    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('/api/__clerk/');
+  it('uses Clerk directly by default in production', () => {
+    expect(shouldUseClerkProxy(LIVE_KEY)).toBe(false);
+    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('');
+    expect(shouldUseClerkProxy(TEST_KEY)).toBe(false);
+    expect(resolveClerkProxyUrl(TEST_KEY)).toBe('');
   });
 
-  it('builds probe URLs when proxy is on', () => {
+  it('uses a proxy only when explicitly configured', () => {
+    vi.stubEnv('VITE_CLERK_PROXY_URL', '/api/__clerk');
+    expect(shouldUseClerkProxy(LIVE_KEY)).toBe(true);
+    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('/api/__clerk/');
     expect(clerkProxyProbeBase(LIVE_KEY)).toBe(
       'https://www.anima-protocol.com/api/__clerk',
     );
@@ -59,14 +57,18 @@ describe('clerkProxy', () => {
     );
   });
 
-  it('skips proxy for pk_test_', () => {
-    expect(shouldUseClerkProxy(TEST_KEY)).toBe(false);
-    expect(resolveClerkProxyUrl(TEST_KEY)).toBe('');
+  it('can explicitly disable a configured proxy', () => {
+    vi.stubEnv('VITE_CLERK_PROXY_URL', 'none');
+    expect(shouldUseClerkProxy(LIVE_KEY)).toBe(false);
+    expect(resolveClerkProxyUrl(LIVE_KEY)).toBe('');
   });
 
   it('detects anima production hosts', () => {
     expect(isAnimaProductionHost('www.anima-protocol.com')).toBe(true);
     expect(isAnimaProductionHost('anima-protocol.com')).toBe(true);
     expect(isAnimaProductionHost('preview.vercel.app')).toBe(false);
+    expect(animaProductionClerkProxyUrl()).toBe(
+      'https://www.anima-protocol.com/api/__clerk/',
+    );
   });
 });
