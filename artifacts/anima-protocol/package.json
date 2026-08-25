@@ -21,7 +21,7 @@
     "canvas-confetti": "^1.9.4",
     "cytoscape": "^3.34.1",
     "dompurify": "^3.2.4",
-    "drizzle-orm": "^0.39.3",
+    "drizzle-orm": "^0.45.2",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
