@@ -29,7 +29,7 @@
     "mixpanel-browser": "^2.82.0",
     "moment": "^2.30.1",
     "postprocessing": "^6.39.4",
-    "react": "^18.3.1",
+    "react": "^19.2.8",
     "react-dom": "^18.3.1",
     "react-cytoscapejs": "^2.0.0",
     "react-hot-toast": "^2.6.0",
