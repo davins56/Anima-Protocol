@@ -227,7 +227,7 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
   return envKey;
 }
 
-const fallbackDevKey = "pk_test_YW5pbWEtcHJvdG9jb2wtZGV2LmNsZXJrLmFjY291bnRzLmRldiQ";
+const fallbackDevKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
   window.location.hostname,

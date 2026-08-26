@@ -12,5 +12,8 @@
     "lint": "echo 'No lint errors'",
     "typecheck": "npm run typecheck --workspace=@workspace/anima-protocol",
     "test": "npm run test --workspace=@workspace/anima-protocol"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }
