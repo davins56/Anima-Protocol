@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench,
+  Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench, Bug,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
@@ -20,6 +20,7 @@ import {
 } from "@/lib/codespace/projectModel";
 import { useCodespaceAgent } from "@/lib/codespace/useCodespaceAgent";
 import { summarizeRunErrors, buildRepairGoal } from "@/lib/codespace/repair";
+import { JULES_PERSONA, debugAndTroubleshoot } from "@/lib/codespace/julesApi";
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -53,7 +54,7 @@ export default function Codespace() {
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [previewSrcdoc, setPreviewSrcdoc] = useState("");
   const [characters, setCharacters] = useState([]);
-  const [companionId, setCompanionId] = useState(null);
+  const [companionId, setCompanionId] = useState(JULES_PERSONA.id);
   const [agentLog, setAgentLog] = useState([]);
   const [battle, setBattle] = useState(null);
   const [mobileView, setMobileView] = useState("code"); // code | preview | console
@@ -73,7 +74,8 @@ export default function Codespace() {
   const saveTimerRef = useRef(null);
   const dirtyRef = useRef(false);
 
-  const companion = characters.find((c) => c.id === companionId) || null;
+  const availableCompanions = [JULES_PERSONA, ...characters];
+  const companion = availableCompanions.find((c) => c.id === companionId) || JULES_PERSONA;
 
   // ---- persistence -------------------------------------------------------
   const persistNow = useCallback(async () => {
@@ -149,14 +151,6 @@ export default function Codespace() {
 
   useStoreSync(loadCharacters);
 
-  // Default the companion to the first available character.
-  useEffect(() => {
-    if (!companionId && characters.length) {
-      setCompanionId(characters[0].id);
-      scheduleSave();
-    }
-  }, [characters, companionId, scheduleSave]);
-
   // ---- console capture from the web preview ------------------------------
   useEffect(() => {
     const onMessage = (e) => {
@@ -212,10 +206,7 @@ export default function Codespace() {
       scan = scanCode(f.content, f.path);
     }
 
-    // Gate: any flagged code surfaces the NetNavi vs. virus moment. "high"
-    // severity is a HARD block — the code never runs from here regardless of the
-    // user's click; it must be rewritten until a fresh scan comes back below
-    // high. Medium/low are advisory and only need an acknowledgement to run.
+    // Gate: any flagged code surfaces the NetNavi vs. virus moment.
     if (scan.findings.length > 0) {
       const proceed = await requestBattle(scan);
       const blocking = scan.maxSeverity === "high";
@@ -226,8 +217,6 @@ export default function Codespace() {
             ? `Run blocked — ${scan.findings.length} high-severity threat(s) must be neutralized before this can run.`
             : `Run aborted — ${scan.findings.length} threat(s) left unresolved.`,
         });
-        // A hard block is a repairable failure (rewrite to remove the threats);
-        // a user-cancelled run is a deliberate stop, so it offers no repair.
         if (blocking) {
           setLastRun({
             path: mode === "web" ? "index.html" : path || activePath,
@@ -362,9 +351,26 @@ export default function Codespace() {
     runGoal(goal);
   }, [appendAgentLog, runGoal]);
 
-  // Adopt remote changes only when there are no unsaved local edits, no run in
-  // flight, and the agent isn't mid-build — so cross-device sync never clobbers
-  // in-progress work.
+  // Jules API automated debug & troubleshoot action
+  const handleJulesTroubleshoot = useCallback(async () => {
+    pushLog({ level: "info", text: "🔍 Jules API running codespace diagnostic..." });
+    const analysis = await debugAndTroubleshoot({
+      files: filesRef.current,
+      lastRun,
+      targetPath: activePath,
+    });
+
+    setCompanionId(JULES_PERSONA.id);
+    appendAgentLog({
+      type: "msg",
+      role: "user",
+      content: `Debug & Troubleshoot requested. ${analysis.summary}`,
+    });
+    setAgentOpen(true);
+    runGoal(analysis.repairGoal);
+  }, [lastRun, activePath, pushLog, appendAgentLog, runGoal]);
+
+  // Adopt remote changes only when safe.
   useStoreSync(() => {
     if (!dirtyRef.current && !busy && !running) loadProject();
   });
@@ -442,8 +448,6 @@ export default function Codespace() {
 
   const handleRun = useCallback(() => { runCode({ path: activePath }); }, [runCode, activePath]);
 
-  // Hand the last failed run (file + observed errors) to the companion so it can
-  // diagnose, fix, and re-run its own code until it works.
   const handleRepair = useCallback(() => {
     if (!lastRun || lastRun.ok || running) return;
     const goal = buildRepairGoal({
@@ -507,14 +511,15 @@ export default function Codespace() {
           // Codespace
         </span>
         <select
-          value={companionId || ""}
+          value={companionId}
           onChange={(e) => { setCompanionId(e.target.value); scheduleSave(); }}
-          className="bg-black/50 border border-primary/20 text-primary/80 font-mono text-[10px] px-2 py-1 focus:outline-none focus:border-primary/50 max-w-[140px]"
-          title="Companion (build agent)"
+          className="bg-black/50 border border-primary/20 text-cyan-300 font-mono text-[10px] px-2 py-1 focus:outline-none focus:border-cyan-500 max-w-[160px]"
+          title="Agent Engine persona"
         >
-          {characters.length === 0 && <option value="">No companions</option>}
-          {characters.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+          {availableCompanions.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.id === JULES_PERSONA.id ? "⚡ Jules (AI Engineer API)" : c.name}
+            </option>
           ))}
         </select>
 
@@ -534,6 +539,14 @@ export default function Codespace() {
         </div>
 
         <div className="flex items-center gap-1.5 ml-auto lg:ml-0 lg:flex-1 lg:justify-end">
+          <button
+            onClick={handleJulesTroubleshoot}
+            disabled={running || busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+            title="Use Jules API to directly code, debug, and troubleshoot this codespace"
+          >
+            <Bug className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Jules Debug</span>
+          </button>
           <button
             onClick={handleRun}
             disabled={busy}
@@ -662,6 +675,7 @@ export default function Codespace() {
                 running={running}
                 onSend={handleSend}
                 onStop={stop}
+                onDebugAndTroubleshoot={handleJulesTroubleshoot}
               />
             </motion.div>
           </>
