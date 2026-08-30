@@ -66,7 +66,7 @@ describe("useEchoLibrary", () => {
   it("keeps a normal operator on the starter Vault and does not persist a full grant", async () => {
     const { result } = renderHook(() => useEchoLibrary());
     expect(result.current.library.granted_full_library).toBe(false);
-    expect(result.current.library.owned_ids).toEqual(starterOwnedIds());
+    expect(result.current.library.owned_ids).toEqual(["pulse-base"]);
     expect(result.current.library.folder).toHaveLength(30);
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(updateMeMock).not.toHaveBeenCalled();
