@@ -1,7 +1,10 @@
 // @ts-check
-import { ECHO_KEYS, ECHO_KEY_BY_ID } from "./catalog.js";
+import { ECHO_KEY_BY_ID, allEchoKeyIds } from "./catalog.js";
 import { CANON_RESONANCE, CANON_STARTER_SHARD_IDS } from "./canon.js";
 import { compatibilityScore, TIER_LABEL, tierOf } from "./resonance.js";
+
+/** Unfiltered Codex / Vault grids page this many cards so the DOM stays testable. */
+export const ECHO_LIBRARY_GRID_CAP = 240;
 
 /** Folder rules remixed from BN3+ plus Star Force Star-card cap. */
 export const ECHO_FOLDER_RULES = {
@@ -127,6 +130,11 @@ const STARTER_IDS = [
 
 export function starterOwnedIds() {
   return STARTER_ECHO_KEY_IDS.filter((id) => ECHO_KEY_BY_ID[id]);
+}
+
+/** Every catalog id — family rows, featured resonance, and canon novel keys. */
+export function catalogOwnedIds() {
+  return allEchoKeyIds();
 }
 
 /**
@@ -304,39 +312,47 @@ function storyFields(data = {}) {
 
 /**
  * Default profile library: starter Echo Shards (including Beth, Gimel, He), not the Codex.
+ * The steward (Dàvīn) may pass `{ grantFullLibrary: true }` to own every catalog id.
  * @param {Record<string, unknown>} [saved]
+ * @param {{ grantFullLibrary?: boolean }} [opts]
  */
-export function defaultEchoLibrary(saved = {}) {
+export function defaultEchoLibrary(saved = {}, opts = {}) {
   const folder = Array.isArray(saved.folder) && saved.folder.length
     ? saved.folder
     : starterEchoFolder();
+  const grantFull = opts.grantFullLibrary === true;
   return {
     version: 1,
-    owned_ids: starterOwnedIds(),
+    owned_ids: grantFull ? catalogOwnedIds() : starterOwnedIds(),
     folder,
     regular_id: saved.regular_id ?? "pulse-base",
     star_card_id: saved.star_card_id ?? null,
-    granted_full_library: false,
+    granted_full_library: grantFull,
     ...storyFields(saved),
   };
 }
 
 /**
  * @param {unknown} raw
+ * @param {{ grantFullLibrary?: boolean }} [opts]
  */
-export function normalizeEchoLibrary(raw) {
-  if (!raw || typeof raw !== "object") return defaultEchoLibrary();
+export function normalizeEchoLibrary(raw, opts = {}) {
+  if (!raw || typeof raw !== "object") return defaultEchoLibrary({}, opts);
   const data = /** @type {Record<string, unknown>} */ (raw);
-  const catalogIds = ECHO_KEYS.map((k) => k.id);
+  const catalogIds = catalogOwnedIds();
   const ownedRaw = Array.isArray(data.owned_ids)
     ? data.owned_ids
     : Array.isArray(data.owned)
       ? data.owned
       : [];
   let owned = [...new Set(ownedRaw.filter((id) => typeof id === "string" && ECHO_KEY_BY_ID[id]))];
-  const legacyFull =
-    data.granted_full_library === true || owned.length >= catalogIds.length;
-  if (legacyFull) owned = catalogIds;
+  // Steward grant, or a profile that already persisted the full collection.
+  // Do not expand a non-steward starter handful (`granted_full_library: false`).
+  const grantFull =
+    opts.grantFullLibrary === true ||
+    data.granted_full_library === true ||
+    owned.length >= catalogIds.length;
+  if (grantFull) owned = catalogIds;
   else if (owned.length === 0) owned = starterOwnedIds();
 
   const folderSource = Array.isArray(data.folder)
@@ -366,7 +382,7 @@ export function normalizeEchoLibrary(raw) {
       typeof data.star_card_id === "string" && ECHO_KEY_BY_ID[data.star_card_id]
         ? data.star_card_id
         : null,
-    granted_full_library: legacyFull,
+    granted_full_library: grantFull,
     ...storyFields(data),
   };
 }

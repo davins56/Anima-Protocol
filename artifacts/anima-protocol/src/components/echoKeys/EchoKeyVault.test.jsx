@@ -1,7 +1,13 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import EchoKeyVault from "./EchoKeyVault";
-import { defaultEchoLibrary, ECHO_KEYS } from "@/lib/echoKeys";
+import { defaultEchoLibrary, ECHO_KEYS, ECHO_LIBRARY_GRID_CAP, tierOf } from "@/lib/echoKeys";
+
+function echoCardButtons() {
+  return screen.getAllByRole("button").filter((el) =>
+    /^\d{3,4} ·/.test((el.textContent || "").replace(/\s+/g, " ").trim()),
+  );
+}
 
 afterEach(cleanup);
 
@@ -21,6 +27,7 @@ describe("EchoKeyVault", () => {
 
       expect(screen.getByText(/on this profile/i)).toBeTruthy();
       expect(screen.getByText(/11 on this profile/i)).toBeTruthy();
+      expect(echoCardButtons()).toHaveLength(ECHO_LIBRARY_GRID_CAP);
       expect(screen.getByRole("button", { name: /^echo shard$/i })).toBeTruthy();
       expect(screen.getByRole("button", { name: /^echo key$/i })).toBeTruthy();
       expect(screen.getByRole("button", { name: /^sovereign key$/i })).toBeTruthy();
@@ -41,6 +48,33 @@ describe("EchoKeyVault", () => {
       fireEvent.click(screen.getAllByText("Beth / Home")[0]);
       expect(screen.getByText(/Presence without possession/i)).toBeTruthy();
       expect(screen.getByText(/B \*/i)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: /^sovereign key$/i }));
+      fireEvent.change(screen.getByPlaceholderText(/search echo keys/i), {
+        target: { value: "" },
+      });
+      const sovereignCount = ECHO_KEYS.filter((k) => tierOf(k) === "sovereign").length;
+      expect(screen.getByText(new RegExp(`${sovereignCount} listed`))).toBeTruthy();
+      expect(echoCardButtons().length).toBe(sovereignCount);
+      expect(echoCardButtons().length).toBeGreaterThan(0);
+    },
+    30_000,
+  );
+
+  it(
+    "caps the steward Vault at 240 cards while counting the full Codex",
+    () => {
+      render(
+        <EchoKeyVault
+          library={defaultEchoLibrary({}, { grantFullLibrary: true })}
+          onSave={vi.fn()}
+          saving={false}
+          error={null}
+          onReset={vi.fn()}
+        />,
+      );
+      expect(screen.getByText(new RegExp(`${ECHO_KEYS.length} on this profile`))).toBeTruthy();
+      expect(echoCardButtons()).toHaveLength(ECHO_LIBRARY_GRID_CAP);
     },
     30_000,
   );

@@ -4,6 +4,7 @@
  *
  * New operators start with Echo Shards. The Codex is found, synthesised,
  * or evolved. Legacy `granted_full_library` keeps a full collection.
+ * Only the Protocol steward (Dàvīn) is granted the full Codex on load.
  */
 
 import { ECHO_KEY_BY_ID } from "./catalog.js";
@@ -29,10 +30,11 @@ export const DEFAULT_FOLDER_ID = "folder-1";
 
 /**
  * @param {unknown} raw
+ * @param {{ grantFullLibrary?: boolean }} [opts]
  * @returns {EchoKeyAccount}
  */
-export function normalizeEchoKeyAccount(raw) {
-  const lib = normalizeEchoLibrary(raw);
+export function normalizeEchoKeyAccount(raw, opts = {}) {
+  const lib = normalizeEchoLibrary(raw, opts);
   return {
     owned: lib.owned_ids,
     folders: [

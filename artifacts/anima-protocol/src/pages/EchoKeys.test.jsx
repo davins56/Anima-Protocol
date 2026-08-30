@@ -60,6 +60,7 @@ describe("EchoKeys page", () => {
     expect(container.textContent).toMatch(/Story/i);
     expect(container.textContent).toMatch(/Resonance sites/i);
     expect(container.textContent).not.toMatch(/This profile holds the full library/i);
+    expect(container.textContent).not.toMatch(/already holds the Codex/i);
   });
 
   it("filters the Codex by Echo Shard, Echo Key, Sovereign Key, and Prime Key", async () => {
@@ -84,6 +85,7 @@ describe("EchoKeys page", () => {
     expect(container.textContent).toMatch(/Echo Shard/i);
     expect(container.textContent).toMatch(/Sovereign Key/i);
     expect(container.textContent).toMatch(/Prime Key/i);
+    expect(container.textContent).toMatch(/Locked entries/i);
     const shardTab = [...container.querySelectorAll("button")].find((b) => /^echo shard$/i.test(b.textContent || ""));
     await act(async () => {
       shardTab.click();
