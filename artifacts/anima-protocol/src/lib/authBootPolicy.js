@@ -83,6 +83,57 @@ export function shouldEnterGuestOnSignInFailure() {
 }
 
 /**
+ * Instant Sandbox identity written by handleInstantGuest.
+ * This is a local sandbox user — not a Clerk session — and must stay marked
+ * as guest so boot never treats it as the signed-in account.
+ *
+ * @param {string} [customName]
+ */
+export function buildInstantGuestIdentity(customName) {
+  const name = String(customName || "Seeker").trim() || "Seeker";
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "_") || "seeker";
+  return markGuestIdentity({
+    id: `user_${slug}`,
+    email: name.includes("@") ? name : `${name.toLowerCase()}@anima-protocol.com`,
+    full_name: name,
+    display_name: name,
+    role: "User",
+    selected_mode: "companion",
+  });
+}
+
+/**
+ * Nothing except an explicit Instant Sandbox / Guest Access tap may enter Guest.
+ * Query params, leftover stored names, boot, and email-form Continue (`value`)
+ * must all return false.
+ *
+ * @param {{
+ *   query?: Record<string, string | null | undefined>,
+ *   storedName?: string,
+ *   clerkLoaded?: boolean,
+ *   clerkSignedIn?: boolean,
+ *   formSubmitted?: boolean,
+ *   formValue?: string,
+ * }} [input]
+ */
+export function shouldAutoInvokeInstantGuest({
+  query = {},
+  storedName = "",
+  clerkLoaded = false,
+  clerkSignedIn = false,
+  formSubmitted = false,
+  formValue = "",
+} = {}) {
+  void query;
+  void storedName;
+  void clerkLoaded;
+  void clerkSignedIn;
+  void formSubmitted;
+  void formValue;
+  return false;
+}
+
+/**
  * Decide boot mode once Clerk has reported its session state.
  *
  * @param {{
