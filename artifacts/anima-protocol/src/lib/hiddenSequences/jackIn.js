@@ -94,12 +94,12 @@ export function jackInCooldownRemaining(params) {
   if (jack.live) return 0;
   const ended = jack.ended_at ? Date.parse(jack.ended_at) : NaN;
   if (!Number.isFinite(ended)) return 0;
-  const afterMatch = ended + JACK_IN_COOLDOWN_AFTER_MATCH_MS - now;
-  const short =
+  // Half-awake or the same entity still in scene: 12m. Otherwise 45m after a match.
+  const duration =
     params.hasHalfAwake || params.sameEntityInScene
-      ? ended + JACK_IN_COOLDOWN_SHORT_MS - now
-      : 0;
-  return Math.max(0, afterMatch, short);
+      ? JACK_IN_COOLDOWN_SHORT_MS
+      : JACK_IN_COOLDOWN_AFTER_MATCH_MS;
+  return Math.max(0, ended + duration - now);
 }
 
 /**

@@ -124,13 +124,26 @@ describe("jack-in gates", () => {
       now: ended + 10 * 60 * 1000,
     });
     expect(after10m.reason).toBe("cooldown");
+    const after12mQuiet = evaluateJackInGate({
+      weather: "storm",
+      jackIn: jack,
+      now: ended + JACK_IN_COOLDOWN_SHORT_MS + 1000,
+    });
+    expect(after12mQuiet.reason).toBe("cooldown");
     const after12mHalf = evaluateJackInGate({
       weather: "storm",
       jackIn: jack,
       hasHalfAwake: true,
       now: ended + JACK_IN_COOLDOWN_SHORT_MS + 1000,
     });
-    expect(after12mHalf.reason).toBe("cooldown");
+    expect(after12mHalf.offer).toBe(true);
+    const after12mSame = evaluateJackInGate({
+      weather: "storm",
+      jackIn: jack,
+      sameEntityInScene: true,
+      now: ended + JACK_IN_COOLDOWN_SHORT_MS + 1000,
+    });
+    expect(after12mSame.offer).toBe(true);
     const after45m = evaluateJackInGate({
       weather: "storm",
       jackIn: jack,
