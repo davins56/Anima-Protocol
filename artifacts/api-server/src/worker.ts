@@ -6,9 +6,14 @@ interface Env {
   [key: string]: unknown;
 }
 
+// cloudflare:node uses this as a routing key, not a real bind. Passing { app }
+// without listen() fails Worker upload: "Failed to determine port for server".
+const WORKER_API_PORT = 8080;
+app.listen(WORKER_API_PORT);
+
 // Expose the Express app through the Node.js HTTP server adapter so all API
 // routes (auth, chat, store, etc.) work on Cloudflare Workers with nodejs_compat.
-const expressHandler = httpServerHandler({ app });
+const expressHandler = httpServerHandler({ port: WORKER_API_PORT });
 
 export default {
   async fetch(
