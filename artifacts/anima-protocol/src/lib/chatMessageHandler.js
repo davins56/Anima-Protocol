@@ -58,6 +58,8 @@ export async function sendChatMessage({
             characterName: activeChar.name,
             userName: user?.full_name,
             userMessage: isContinue ? "" : content,
+            focusTopic: activeSession.therapy_topic,
+            focusNotes: activeSession.therapy_topic_notes,
           })
         : user?.selected_mode
           ? `\nMode: ${user.selected_mode}\n`
