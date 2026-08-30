@@ -4,6 +4,7 @@ import { track } from "@/lib/analytics";
 import {
   ECHO_KEY_BY_ID,
   ECHO_EVOLUTIONS,
+  ECHO_LIBRARY_GRID_CAP,
   FUSION_RECIPES,
   RESONANCE_SITES,
   biomeFromCoords,
@@ -28,6 +29,7 @@ function trackDiscovery(result) {
 export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
   const [selectedSite, setSelectedSite] = useState(RESONANCE_SITES[0].id);
   const [picked, setPicked] = useState([]);
+  const [fuseQuery, setFuseQuery] = useState("");
   const [status, setStatus] = useState("");
   const [found, setFound] = useState(null);
   const [fieldBusy, setFieldBusy] = useState(false);
@@ -50,6 +52,23 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
       names: recipe.ids.map((id) => ECHO_KEY_BY_ID[id]?.name || id),
     }));
   }, [account.owned]);
+
+  const fuseRows = useMemo(() => {
+    const q = fuseQuery.trim().toLowerCase();
+    if (!q) {
+      const featured = new Set(FUSION_RECIPES.flatMap((r) => [...r.ids, r.result]));
+      featured.add("last-ember");
+      featured.add("ember-that-refused");
+      return ownedKeys.filter((k) => featured.has(k.id));
+    }
+    const matched = ownedKeys.filter(
+      (k) =>
+        k.name.toLowerCase().includes(q) ||
+        k.id.includes(q) ||
+        (k.family || "").includes(q),
+    );
+    return matched.slice(0, ECHO_LIBRARY_GRID_CAP);
+  }, [ownedKeys, fuseQuery]);
 
   const applyResult = (result) => {
     if (!result.ok) {
@@ -112,9 +131,9 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
           Story mode · Vault → Loadout → Resonance Draw → Invocation → Fusion
         </p>
         <p className="text-[13px] text-primary/70 leading-relaxed max-w-3xl">
-          Echo Keys emerge wherever experience becomes sufficiently resonant that the Lattice
-          remembers it. Nature is prime territory. So is a battlefield. Attune on site — virtually
-          from here, or in the field. Coordinates are never stored; only a biome class.
+          The Vault already holds the Codex — Sovereign and Prime included. Story mode walks the
+          Lattice for flavor: attune on site, braid a Sequence, watch a remembered event change
+          interpretation. Coordinates are never stored; only a biome class.
         </p>
       </section>
 
@@ -177,7 +196,7 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
         </div>
         <p className="font-mono text-[8px] text-primary/35 tracking-widest uppercase">
           Field attune asks for location once, maps it to a biome, and discards the coordinates.
-          Sovereign Keys only answer in the field. Prime Keys stay with the novels.
+          Sovereign and Prime Keys are already in the Vault. Walking a site is flavor, not a lock.
         </p>
       </section>
 
@@ -230,10 +249,17 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
         </ul>
         <p className="font-mono text-[9px] text-primary/40">
           Select two to four owned Keys, then braid. Cartridge recipes are explicit sigil bundles.
-          Echo of Glass Keys do not fuse into one object.
+          Echo of Glass Keys do not fuse into one object. Search the Vault if you want a Key
+          outside the recipe list — ownership is already granted.
         </p>
+        <input
+          value={fuseQuery}
+          onChange={(e) => setFuseQuery(e.target.value)}
+          placeholder="Search owned Keys to braid…"
+          className="w-full bg-black/50 border border-primary/20 px-3 py-2 font-mono text-xs text-primary placeholder:text-primary/30"
+        />
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-          {ownedKeys.map((key) => (
+          {fuseRows.map((key) => (
             <EchoKeyCard
               key={key.id}
               echoKey={enrichEchoKey(key)}

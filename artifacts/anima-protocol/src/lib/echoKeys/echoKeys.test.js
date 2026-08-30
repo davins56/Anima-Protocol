@@ -28,6 +28,7 @@ import {
   makeEchoCopy,
   starterEchoFolder,
   starterOwnedIds,
+  catalogOwnedIds,
   validateEchoFolder,
   echoCodesMatch,
   echoSelectionIsLinked,
@@ -179,19 +180,24 @@ describe("echo key catalog", () => {
 });
 
 describe("folder and profile library", () => {
-  it("accepts the starter Array and does not grant the Codex", () => {
+  it("accepts the starter Array and grants the full Codex", () => {
     const folder = starterEchoFolder();
     expect(folder).toHaveLength(ECHO_FOLDER_RULES.size);
     const result = validateEchoFolder(folder);
     expect(result.ok, result.errors.join("; ")).toBe(true);
     const lib = defaultEchoLibrary();
-    expect(lib.owned_ids).toEqual(starterOwnedIds());
-    expect(lib.owned_ids).toHaveLength(11);
-    expect(lib.owned_ids).toEqual(expect.arrayContaining(["beth", "gimel", "he"]));
-    expect(lib.owned_ids).not.toContain("prime-echo-key");
-    expect(lib.owned_ids).not.toContain("wheel-crown");
-    expect(lib.owned_ids).not.toContain("final-sigil");
-    expect(lib.granted_full_library).toBe(false);
+    expect(lib.owned_ids).toEqual(catalogOwnedIds());
+    expect(lib.owned_ids).toHaveLength(ECHO_KEYS.length);
+    expect(lib.owned_ids).toEqual(expect.arrayContaining([
+      "beth",
+      "gimel",
+      "he",
+      "echo-empathy",
+      "choir-compassion",
+      "prime-echo-key",
+      "wheel-crown",
+    ]));
+    expect(lib.granted_full_library).toBe(true);
     expect(lib.folder).toHaveLength(30);
     expect(lib.regular_id).toBe("pulse-base");
     expect(lib.star_card_id).toBeNull();
@@ -214,7 +220,20 @@ describe("folder and profile library", () => {
     saved.folder[0] = makeEchoCopy("magnumlock-base");
     const next = normalizeEchoLibrary(saved);
     expect(next.folder[0].id).toBe("magnumlock-base");
-    expect(normalizeEchoLibrary(null).owned_ids).toHaveLength(11);
+    expect(normalizeEchoLibrary(null).owned_ids).toHaveLength(ECHO_KEYS.length);
+    const stale = normalizeEchoLibrary({
+      granted_full_library: false,
+      owned_ids: starterOwnedIds(),
+    });
+    expect(stale.granted_full_library).toBe(true);
+    expect(stale.owned_ids).toHaveLength(ECHO_KEYS.length);
+    expect(stale.owned_ids).toEqual(expect.arrayContaining([
+      "beth",
+      "echo-empathy",
+      "choir-compassion",
+      "prime-echo-key",
+      "wheel-crown",
+    ]));
     const legacy = normalizeEchoLibrary({ granted_full_library: true });
     expect(legacy.owned_ids.length).toBe(ECHO_KEYS.length);
   });
@@ -328,7 +347,7 @@ describe("combat adapter and lore", () => {
   it("summarizes folder stats for analytics", () => {
     const stats = echoFolderStats(defaultEchoLibrary());
     expect(stats.folder_size).toBe(30);
-    expect(stats.owned_count).toBe(11);
+    expect(stats.owned_count).toBe(ECHO_KEYS.length);
     expect(stats.star_count).toBe(0);
     expect(stats.mega_count).toBe(0);
   });
@@ -336,23 +355,44 @@ describe("combat adapter and lore", () => {
   it("exposes a prompt block for cyberspace sessions", () => {
     expect(echoKeyLoreBlock()).toMatch(/Echo Key/i);
     expect(echoKeyLoreBlock()).toMatch(/800/);
+    expect(echoKeyLoreBlock()).toMatch(/holds all of them/);
+    expect(echoKeyLoreBlock()).not.toMatch(/handful of Shards/);
     expect(echoKeyPromptBlock({ universe: "Mega Man Battle Network" }, {})).toMatch(/weapon-memory/i);
     expect(echoKeyPromptBlock({ universe: "Star Force" }, {})).toMatch(/Folder/);
     expect(echoKeyPromptBlock({ universe: "Naruto" }, { opening_scene: "a quiet village" })).toBe("");
   });
 });
 
+function shardOnlyAccount() {
+  const full = normalizeEchoKeyAccount(null);
+  const shards = starterOwnedIds();
+  return {
+    ...full,
+    owned: shards,
+    granted_full_library: false,
+    library: { ...full.library, owned_ids: shards, granted_full_library: false },
+  };
+}
+
 describe("story-mode discovery", () => {
-  it("starts the account with Shards, not the Codex", () => {
+  it("starts the account with the full Codex", () => {
     const account = normalizeEchoKeyAccount(null);
-    expect(account.owned).toEqual(starterOwnedIds());
-    expect(account.granted_full_library).toBe(false);
+    expect(account.owned).toEqual(catalogOwnedIds());
+    expect(account.owned).toHaveLength(ECHO_KEYS.length);
+    expect(account.granted_full_library).toBe(true);
+    expect(account.owned).toEqual(expect.arrayContaining([
+      "beth",
+      "echo-empathy",
+      "choir-compassion",
+      "prime-echo-key",
+      "wheel-crown",
+    ]));
     expect(echoKeyCanonLine()).toMatch(/crystallized memories of function/i);
     expect(enrichEchoKey(ECHO_KEY_BY_ID["last-ember"]).tier).toBe("key");
   });
 
   it("finds a Key at a ruin and synthesises Firestorm and Mourning Gate", () => {
-    const account = normalizeEchoKeyAccount(null);
+    const account = shardOnlyAccount();
     const ruin = discoverAtSite(account, "fallen-ruin", { rng: () => 0.1, now: 1_700_000_000_000 });
     expect(ruin.ok).toBe(true);
     expect(ruin.account.owned.length).toBe(account.owned.length + 1);
@@ -379,7 +419,7 @@ describe("story-mode discovery", () => {
   });
 
   it("evolves Last Ember after three critical survivals", () => {
-    let account = grantOwnedKey(normalizeEchoKeyAccount(null), "last-ember");
+    let account = grantOwnedKey(shardOnlyAccount(), "last-ember");
     for (let i = 0; i < 2; i += 1) {
       const step = recordCriticalBattle(account, {
         folderIds: ["last-ember"],

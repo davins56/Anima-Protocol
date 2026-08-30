@@ -6,6 +6,7 @@ import {
   STAR_FORCE_CARD_LINEAGE,
   ECHO_KEY_SYSTEM,
   ECHO_FOLDER_RULES,
+  ECHO_LIBRARY_GRID_CAP,
   ECHO_KEY_BY_ID,
   ECHO_TIERS,
   TIER_LABEL,
@@ -61,9 +62,9 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
 
   const visible = useMemo(() => {
     const q = query.trim();
-    const unfiltered = !q && tier === "all" && element === "all" && !ownedOnly;
-    return unfiltered ? filtered.slice(0, 240) : filtered;
-  }, [filtered, query, tier, element, ownedOnly]);
+    const unfiltered = !q && tier === "all" && element === "all";
+    return unfiltered ? filtered.slice(0, ECHO_LIBRARY_GRID_CAP) : filtered;
+  }, [filtered, query, tier, element]);
 
   const addToFolder = (key) => {
     if (!owned.has(key.id)) return;

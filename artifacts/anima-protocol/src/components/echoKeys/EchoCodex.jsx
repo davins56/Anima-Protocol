@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   ECHO_KEYS,
+  ECHO_LIBRARY_GRID_CAP,
   ECHO_TIERS,
   TIER_BLURB,
   TIER_LABEL,
@@ -42,9 +43,9 @@ export default function EchoCodex({ ownedIds }) {
   return (
     <div className="space-y-4">
       <p className="text-[13px] text-primary/65 leading-relaxed max-w-3xl">
-        The Codex lists every named artifact. Locked entries show only a silhouette and a site
-        hint — not the whole enchilada. Sovereign and Prime Keys keep the novels&apos; gravity;
-        they are not shop inventory.
+        The Codex lists every named artifact you hold — Echo Shards, Echo Keys, Sovereign Keys,
+        and Prime Keys. Sovereign and Prime keep the novels&apos; gravity; they are not shop
+        inventory. A Resonance Array still slots only 30.
       </p>
       <div className="flex flex-wrap gap-2">
         {TIER_FILTERS.map((id) => (
@@ -72,7 +73,7 @@ export default function EchoCodex({ ownedIds }) {
         {rows.filter((k) => owned.has(k.id)).length} known · {rows.length} listed
       </p>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-1.5">
-        {rows.slice(0, tier === "all" && !query.trim() ? 240 : rows.length).map((key) => {
+        {rows.slice(0, tier === "all" && !query.trim() ? ECHO_LIBRARY_GRID_CAP : rows.length).map((key) => {
           const have = owned.has(key.id);
           return (
             <button
