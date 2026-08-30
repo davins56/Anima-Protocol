@@ -53,12 +53,25 @@ export const DATABASE_URL_ENV_NAMES = [
   "PRISMA_DATABASE_URL",
 ] as const;
 
+const RUNTIME_ENV_READER = Symbol.for("anima.cloudflare.readRuntimeEnv");
+
 export function resolveDatabaseUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   for (const name of DATABASE_URL_ENV_NAMES) {
     const value = env[name]?.trim();
     if (value) return value;
+  }
+  const reader = (globalThis as Record<PropertyKey, unknown>)[
+    RUNTIME_ENV_READER
+  ];
+  if (typeof reader === "function") {
+    for (const name of DATABASE_URL_ENV_NAMES) {
+      const extra = String(
+        (reader as (n: string) => unknown)(name) ?? "",
+      ).trim();
+      if (extra) return extra;
+    }
   }
   return undefined;
 }

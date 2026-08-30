@@ -1,5 +1,6 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "http";
 import { logger } from "../lib/logger";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
   canonicalClerkProxyHeaderHost,
@@ -70,7 +71,7 @@ export function resolveClerkUpstreamUrl(
 }
 
 function productionProxyHostFallback(): string {
-  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  const publishableKey = readRuntimeEnv("CLERK_PUBLISHABLE_KEY") || "";
   return publishableKey.startsWith("pk_live_") ? PRODUCTION_PROXY_HOST : "";
 }
 
@@ -81,7 +82,7 @@ export function buildClerkProxyHeaderValues(
   const requestHost = normalizeHostname(getClerkProxyHost(req) || "");
   const usePublicProxy =
     isLocalDevHost(requestHost) &&
-    process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_");
+    readRuntimeEnv("CLERK_PUBLISHABLE_KEY")?.startsWith("pk_live_");
 
   const protocol = usePublicProxy
     ? "https"
