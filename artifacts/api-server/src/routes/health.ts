@@ -7,7 +7,11 @@ import {
   withTransientDbRetry,
 } from "@workspace/db";
 import { runtimeEnvPresence } from "../lib/cloudflareEnv";
-import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
+import {
+  classifyDbError,
+  databaseTargetHint,
+  secretFreeErrorSignal,
+} from "../lib/dbErrors";
 import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
 
 const router: IRouter = Router();
@@ -122,13 +126,17 @@ router.get("/healthz/db", async (_req, res) => {
       target,
     });
   } catch (err) {
+    // This catch only wraps getPool().query — any throw is a DB/Hyperdrive
+    // failure, even when classifyDbError cannot name the driver code.
     const info = classifyDbError(err);
+    const signal = secretFreeErrorSignal(err);
     res.status(503).json({
       status: "error",
       db: false,
-      error: info.safeMessage,
-      reason: info.reason,
-      code: info.code,
+      error: info.isDbError ? info.safeMessage : "Database unavailable",
+      reason: info.isDbError ? info.reason : "unavailable",
+      code: info.code || signal.code || "unavailable",
+      signal: signal.signal,
       target,
     });
   }

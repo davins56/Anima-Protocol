@@ -17,6 +17,7 @@ import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { classifyDbError } from "./lib/dbErrors";
+import { isStoreApiPath } from "./lib/workerApiGuard";
 import {
   isUnhandledConfigError,
   SERVER_MISCONFIGURED_MESSAGE,
@@ -68,18 +69,23 @@ app.use("/api", router);
 
 // Global error handler — prevents an unhandled error from wedging the process.
 app.use(
-  (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  (err: unknown, req: Request, res: Response, _next: NextFunction) => {
     logger.error({ err }, "Unhandled API error");
     if (!res.headersSent) {
       const message =
         err instanceof Error ? err.message : "Internal server error";
       const dbInfo = classifyDbError(err);
       const isConfig = isUnhandledConfigError(message);
-      if (dbInfo.isDbError) {
+      const store = isStoreApiPath(req.path || req.originalUrl || "");
+      // Dead Hyperdrive / isolate throws on /api/store must be JSON 503 so
+      // the Character library can show the bundled roster — never HTML 1101.
+      if (dbInfo.isDbError || store) {
         res.status(503).json({
-          error: dbInfo.safeMessage,
-          reason: dbInfo.reason,
-          code: dbInfo.code ?? "database_unavailable",
+          error: dbInfo.isDbError
+            ? dbInfo.safeMessage
+            : "The companion store is unreachable.",
+          reason: dbInfo.isDbError ? dbInfo.reason : "unavailable",
+          code: dbInfo.code ?? (store ? "store_unavailable" : "database_unavailable"),
         });
         return;
       }

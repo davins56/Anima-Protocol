@@ -46,9 +46,10 @@ describe("Cloudflare wrangler config", () => {
     expect(assets.run_worker_first).toEqual(
       expect.arrayContaining(["/api", "/api/*", "/assets", "/assets/*"]),
     );
-    expect(workerSource).toContain('url.pathname.startsWith("/api/")');
-    expect(workerSource).toContain('url.pathname === "/api"');
-    expect(workerSource).toContain("expressHandler.fetch");
+    expect(workerSource).toContain("isWorkerApiPath");
+    expect(workerSource).toContain("fetchApiThroughExpress");
+    expect(workerSource).toContain("expressHandler");
+    expect(workerSource).toContain("apexRedirectForWww");
     expect(workerSource).toContain("fetchAssetsRejectingSpaHtml");
     expect(workerSource).toContain("httpServerHandler");
     expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
@@ -148,6 +149,23 @@ describe("Cloudflare wrangler config", () => {
         expect(String(field)).not.toMatch(/postgres(?:ql)?:\/\//i);
       }
     }
+  });
+
+  it("does not assume a wrangler www route until the zone rule keeps ${1}", () => {
+    expect(config.routes ?? []).toEqual([]);
+    const wrangler = readFileSync(
+      path.join(repoRoot, "wrangler.jsonc"),
+      "utf8",
+    );
+    expect(wrangler).toMatch(/scripts\/cloudflare\/www-redirect\.md/);
+    expect(wrangler).toMatch(/Redirect www to root/);
+    expect(wrangler).toMatch(/Do not add www\.anima-protocol\.com routes/);
+    const notes = readFileSync(
+      path.join(repoRoot, "scripts/cloudflare/www-redirect.md"),
+      "utf8",
+    );
+    expect(notes).toMatch(/\$\{1\}/);
+    expect(notes).toMatch(/Do \*\*not\*\* add a `www\.anima-protocol\.com` route/);
   });
 
   it("binds Hyperdrive anima-postgres as HYPERDRIVE", () => {

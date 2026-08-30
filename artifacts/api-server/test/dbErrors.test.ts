@@ -3,7 +3,11 @@ import {
   bindRequestEnv,
   resetCloudflareEnvBindingsForTests,
 } from "../src/lib/cloudflareEnv";
-import { classifyDbError, databaseTargetHint } from "../src/lib/dbErrors";
+import {
+  classifyDbError,
+  databaseTargetHint,
+  secretFreeErrorSignal,
+} from "../src/lib/dbErrors";
 
 afterEach(() => {
   resetCloudflareEnvBindingsForTests();
@@ -48,10 +52,11 @@ describe("classifyDbError", () => {
   });
 
   it("does not treat unrelated errors as database failures", () => {
-    expect(classifyDbError(new Error("Publishable key not valid."))).toEqual({
+    expect(classifyDbError(new Error("Publishable key not valid."))).toMatchObject({
       isDbError: false,
       reason: "internal",
       safeMessage: "Internal server error",
+      code: "internal",
     });
   });
 
@@ -231,10 +236,103 @@ describe("classifyDbError query failures", () => {
   });
 
   it("still does not treat unrelated app errors as database failures", () => {
-    expect(classifyDbError(new Error("Publishable key not valid."))).toEqual({
+    expect(classifyDbError(new Error("Publishable key not valid."))).toMatchObject({
       isDbError: false,
       reason: "internal",
       safeMessage: "Internal server error",
+    });
+  });
+});
+
+describe("classifyDbError Hyperdrive / postgres.js", () => {
+  it("classifies postgres.js write CONNECT_TIMEOUT as a DB timeout", () => {
+    const err = Object.assign(new Error("write CONNECT_TIMEOUT"), {
+      code: "CONNECT_TIMEOUT",
+      errno: "CONNECT_TIMEOUT",
+    });
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "timeout",
+      safeMessage: "Database connection timed out",
+      code: "CONNECT_TIMEOUT",
+    });
+    expect(classifyDbError(err).safeMessage).not.toBe("Internal server error");
+  });
+
+  it("classifies postgres.js CONNECT_ERROR as a refused DB error", () => {
+    const err = Object.assign(new Error("write CONNECT_ERROR"), {
+      code: "CONNECT_ERROR",
+    });
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "refused",
+      safeMessage: "Database connection refused",
+      code: "CONNECT_ERROR",
+    });
+  });
+
+  it("classifies CONNECTION_CLOSED as a DB reset", () => {
+    const err = Object.assign(new Error("write CONNECTION_CLOSED"), {
+      code: "CONNECTION_CLOSED",
+    });
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "reset",
+      code: "CONNECTION_CLOSED",
+    });
+  });
+
+  it("classifies a Prisma Accelerate origin (db.prisma.io) as a DB error", () => {
+    const err = new Error(
+      "Hyperdrive origin db.prisma.io is not a Postgres wire server",
+    );
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "unavailable",
+      safeMessage: "Database unavailable",
+    });
+    expect(classifyDbError(err).safeMessage).not.toBe("Internal server error");
+    expect(JSON.stringify(classifyDbError(err))).not.toMatch(
+      /postgresql:\/\/|password=/i,
+    );
+  });
+
+  it("classifies Hyperdrive origin-not-postgres throws as a DB error", () => {
+    const err = new Error(
+      "Hyperdrive could not connect to origin database: invalid startup packet",
+    );
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "unavailable",
+      safeMessage: "Database unavailable",
+    });
+    expect(classifyDbError(err).signal).toMatch(/hyperdrive|startup/i);
+    expect(JSON.stringify(classifyDbError(err))).not.toMatch(
+      /postgresql:\/\/|password=/i,
+    );
+  });
+
+  it("exposes a secret-free signal without leaking the connection string", () => {
+    const info = secretFreeErrorSignal(
+      Object.assign(
+        new Error("write CONNECT_TIMEOUT postgresql://hd:s3cret@hyperdrive.local/db"),
+        { code: "CONNECT_TIMEOUT" },
+      ),
+    );
+    expect(info.code).toBe("CONNECT_TIMEOUT");
+    expect(info.signal).toMatch(/CONNECT_TIMEOUT/);
+    expect(info.signal).not.toMatch(/s3cret|postgresql:\/\//i);
+  });
+
+  it("classifies PostgresError name as a database failure", () => {
+    const err = Object.assign(new Error("too many clients already"), {
+      name: "PostgresError",
+      code: "53300",
+    });
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "limit",
+      code: "53300",
     });
   });
 });
