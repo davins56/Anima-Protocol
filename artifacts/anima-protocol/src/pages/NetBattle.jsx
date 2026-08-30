@@ -14,6 +14,7 @@ import {
   accountToLibrary,
   echoFolderToChips,
   normalizeEchoKeyAccount,
+  isEchoLibrarySteward,
   normalizeEchoLibrary,
   recordCriticalBattle,
 } from "@/lib/echoKeys";
@@ -78,7 +79,11 @@ export default function NetBattle() {
           animas?.[0] ||
           null;
         setAnima(chosen);
-        setLibrary(normalizeEchoLibrary(profile?.settings?.echo_keys));
+        setLibrary(
+          normalizeEchoLibrary(profile?.settings?.echo_keys, {
+            grantFullLibrary: isEchoLibrarySteward(profile),
+          }),
+        );
         const stored = readStoredJackIn();
         const fromAnima = normalizeHiddenState(chosen?.hidden_sequences);
         const jack = canStartNetBattleMatch(stored)

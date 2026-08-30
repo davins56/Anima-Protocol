@@ -28,6 +28,8 @@ import {
   makeEchoCopy,
   starterEchoFolder,
   starterOwnedIds,
+  catalogOwnedIds,
+  isEchoLibrarySteward,
   validateEchoFolder,
   echoCodesMatch,
   echoSelectionIsLinked,
@@ -197,6 +199,30 @@ describe("folder and profile library", () => {
     expect(lib.star_card_id).toBeNull();
   });
 
+  it("grants the full Codex only to the steward", () => {
+    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(true);
+    expect(isEchoLibrarySteward({ username: "davins56" })).toBe(true);
+    expect(isEchoLibrarySteward({
+      externalAccounts: [{ provider: "oauth_github", username: "davins56" }],
+    })).toBe(true);
+    expect(isEchoLibrarySteward({ role: "admin" })).toBe(false);
+    expect(isEchoLibrarySteward({ email: "seeker@example.com" })).toBe(false);
+    expect(isEchoLibrarySteward(null)).toBe(false);
+
+    const stewardLib = defaultEchoLibrary({}, { grantFullLibrary: true });
+    expect(stewardLib.granted_full_library).toBe(true);
+    expect(stewardLib.owned_ids).toEqual(catalogOwnedIds());
+    expect(stewardLib.owned_ids).toHaveLength(ECHO_KEYS.length);
+    expect(stewardLib.owned_ids).toEqual(expect.arrayContaining([
+      "beth",
+      "echo-empathy",
+      "choir-compassion",
+      "prime-echo-key",
+      "wheel-crown",
+    ]));
+    expect(stewardLib.folder).toHaveLength(30);
+  });
+
   it("rejects a second Star or a fifth Standard copy", () => {
     const folder = starterEchoFolder();
     folder[0] = makeEchoCopy("halo-star");
@@ -215,6 +241,25 @@ describe("folder and profile library", () => {
     const next = normalizeEchoLibrary(saved);
     expect(next.folder[0].id).toBe("magnumlock-base");
     expect(normalizeEchoLibrary(null).owned_ids).toHaveLength(11);
+    const stale = normalizeEchoLibrary({
+      granted_full_library: false,
+      owned_ids: starterOwnedIds(),
+    });
+    expect(stale.granted_full_library).toBe(false);
+    expect(stale.owned_ids).toEqual(starterOwnedIds());
+    const steward = normalizeEchoLibrary(
+      { granted_full_library: false, owned_ids: starterOwnedIds() },
+      { grantFullLibrary: true },
+    );
+    expect(steward.granted_full_library).toBe(true);
+    expect(steward.owned_ids).toHaveLength(ECHO_KEYS.length);
+    expect(steward.owned_ids).toEqual(expect.arrayContaining([
+      "beth",
+      "echo-empathy",
+      "choir-compassion",
+      "prime-echo-key",
+      "wheel-crown",
+    ]));
     const legacy = normalizeEchoLibrary({ granted_full_library: true });
     expect(legacy.owned_ids.length).toBe(ECHO_KEYS.length);
   });
@@ -336,6 +381,7 @@ describe("combat adapter and lore", () => {
   it("exposes a prompt block for cyberspace sessions", () => {
     expect(echoKeyLoreBlock()).toMatch(/Echo Key/i);
     expect(echoKeyLoreBlock()).toMatch(/800/);
+    expect(echoKeyLoreBlock()).toMatch(/handful of Shards/);
     expect(echoKeyPromptBlock({ universe: "Mega Man Battle Network" }, {})).toMatch(/weapon-memory/i);
     expect(echoKeyPromptBlock({ universe: "Star Force" }, {})).toMatch(/Folder/);
     expect(echoKeyPromptBlock({ universe: "Naruto" }, { opening_scene: "a quiet village" })).toBe("");
@@ -349,6 +395,20 @@ describe("story-mode discovery", () => {
     expect(account.granted_full_library).toBe(false);
     expect(echoKeyCanonLine()).toMatch(/crystallized memories of function/i);
     expect(enrichEchoKey(ECHO_KEY_BY_ID["last-ember"]).tier).toBe("key");
+  });
+
+  it("starts the steward account with the full Codex", () => {
+    const account = normalizeEchoKeyAccount(null, { grantFullLibrary: true });
+    expect(account.owned).toEqual(catalogOwnedIds());
+    expect(account.owned).toHaveLength(ECHO_KEYS.length);
+    expect(account.granted_full_library).toBe(true);
+    expect(account.owned).toEqual(expect.arrayContaining([
+      "beth",
+      "echo-empathy",
+      "choir-compassion",
+      "prime-echo-key",
+      "wheel-crown",
+    ]));
   });
 
   it("finds a Key at a ruin and synthesises Firestorm and Mourning Gate", () => {

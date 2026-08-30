@@ -44,12 +44,14 @@ export {
 
 export {
   ECHO_FOLDER_RULES,
+  ECHO_LIBRARY_GRID_CAP,
   ECHO_ELEMENT_WEAKNESS,
   ECHO_RESONANCE,
   STARTER_ECHO_KEY_IDS,
   makeEchoCopy,
   starterEchoFolder,
   starterOwnedIds,
+  catalogOwnedIds,
   validateEchoFolder,
   echoCodesMatch,
   echoSelectionIsLinked,
@@ -62,6 +64,12 @@ export {
   drawResonanceHand,
   echoFolderStats,
 } from "./rules.js";
+
+export {
+  ECHO_LIBRARY_STEWARD_EMAIL,
+  ECHO_LIBRARY_STEWARD_GITHUB,
+  isEchoLibrarySteward,
+} from "./steward.js";
 
 export {
   DEFAULT_FOLDER_ID,

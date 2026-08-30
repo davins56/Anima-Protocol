@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   ECHO_KEYS,
+  ECHO_LIBRARY_GRID_CAP,
   ECHO_TIERS,
   TIER_BLURB,
   TIER_LABEL,
@@ -72,7 +73,7 @@ export default function EchoCodex({ ownedIds }) {
         {rows.filter((k) => owned.has(k.id)).length} known · {rows.length} listed
       </p>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-1.5">
-        {rows.slice(0, tier === "all" && !query.trim() ? 240 : rows.length).map((key) => {
+        {rows.slice(0, tier === "all" && !query.trim() ? ECHO_LIBRARY_GRID_CAP : rows.length).map((key) => {
           const have = owned.has(key.id);
           return (
             <button
