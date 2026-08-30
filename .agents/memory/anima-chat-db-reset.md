@@ -18,8 +18,9 @@ no retry and no pool recycle.
 **Fix:**
 - `lib/db/src/client.ts` — `isTransientDbError`, `resetPool`,
   `withTransientDbRetry`; recreate the pool when `DATABASE_URL` / Hyperdrive
-  changes; `pool.on("error")` recycles idle-client deaths; shorter idle timeout
-  (2s) + `maxLifetimeSeconds`.
+  changes; `pool.on("error")` *detaches* (does not `end()`) so in-flight
+  queries are not raced into "Cannot use a pool after calling end"; shorter
+  idle timeout (2s) + `maxLifetimeSeconds`.
 - Store/chat/health wrap first-touch queries in `withTransientDbRetry`.
 - Client `storeFetch` retries once on 503 `reason: reset`.
 

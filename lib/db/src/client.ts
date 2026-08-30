@@ -89,7 +89,7 @@ const TRANSIENT_DB_CODES = new Set([
 ]);
 
 const TRANSIENT_DB_MESSAGE =
-  /ECONNRESET|EPIPE|UND_ERR_SOCKET|Connection terminated|Connection ended unexpectedly|Network connection lost|server closed the connection|Client has encountered a connection error|timeout expired|connection timeout|ConnectTimeout|SocketTimeout|aborted due to timeout/i;
+  /ECONNRESET|EPIPE|UND_ERR_SOCKET|Connection terminated|Connection ended unexpectedly|Network connection lost|server closed the connection|Client has encountered a connection error|Cannot use a pool after calling end|pool is ended|Client has already been released|timeout expired|connection timeout|ConnectTimeout|SocketTimeout|aborted due to timeout/i;
 
 /** Walk Error.cause so drizzle "Failed query" wrappers still expose ECONNRESET. */
 function collectDbErrorSignals(err: unknown): { message: string; codes: string[] } {
@@ -159,9 +159,13 @@ export async function withTransientDbRetry<T>(
 
 function attachPoolGuards(pool: pg.Pool): void {
   pool.on("error", () => {
-    // Idle client died (ECONNRESET / terminate). Recycle so the next query
-    // does not keep checking out the same dead socket.
-    if (poolInstance === pool) resetPool();
+    // Idle client died (ECONNRESET / terminate). Detach so the next getPool()
+    // opens a fresh socket. Do not end() here — that races in-flight queries
+    // into "Cannot use a pool after calling end".
+    if (poolInstance !== pool) return;
+    poolInstance = null;
+    dbInstance = null;
+    poolConnectionKey = null;
   });
 }
 
