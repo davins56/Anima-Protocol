@@ -14,6 +14,7 @@ import {
   activeEchoFolder,
   chipsFromEchoFolder,
   normalizeEchoKeyAccount,
+  recordCriticalBattle,
 } from "@/lib/echoKeys";
 
 function isBlend(spectrum) {
@@ -28,6 +29,7 @@ export default function NetBattle() {
   const [loading, setLoading] = useState(true);
   const completedRef = useRef(false);
   const echoFolderRef = useRef(null);
+  const accountRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -47,6 +49,7 @@ export default function NetBattle() {
         setAnima(nextAnima);
 
         const account = normalizeEchoKeyAccount(me?.echo_keys);
+        accountRef.current = account;
         const folder = activeEchoFolder(account);
         const echoFolder = chipsFromEchoFolder(folder?.slots || []);
         echoFolderRef.current = echoFolder.length >= 5 ? echoFolder : null;
@@ -97,6 +100,28 @@ export default function NetBattle() {
       primary_expression: dominant.id,
       is_blend: isBlend(state.player?.spectrum),
     });
+    const current = accountRef.current;
+    if (current && state.phase === "victory" && state.player?.maxHp) {
+      const ratio = state.player.hp / state.player.maxHp;
+      const folderIds = (echoFolderRef.current || []).map((chip) => chip.id);
+      const next = recordCriticalBattle(current, {
+        folderIds,
+        integrityRatio: ratio,
+        survived: true,
+      });
+      if (next.progressed) {
+        accountRef.current = next.account;
+        base44.auth.updateMe({ echo_keys: next.account }).catch(() => {});
+        if (next.evolved) {
+          track("echo_key_discovered", {
+            source: "evolution",
+            site: "none",
+            tier: next.evolved.tier || "key",
+            is_outdoor: false,
+          });
+        }
+      }
+    }
   }, [state]);
 
   const rematch = () => {

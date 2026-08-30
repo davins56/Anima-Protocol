@@ -133,20 +133,20 @@ export const ROUTE_META: Record<string, PageMeta> = {
   "/net-battle": {
     title: "NetBattle | Anima Protocol",
     description:
-      "Jack in and fight on a 4D Battle Network-style panel grid. Send Echo Keys — weapon-memories from a 30-slot Folder — as ethereal chips from the hand.",
+      "Jack in and fight on a 4D Battle Network-style panel grid. Invoke Echo Keys — crystallized harmonic instructions from an 8–30 slot Resonance Array.",
     canonical: `${BASE_URL}/net-battle`,
     ogTitle: "Anima Protocol — NetBattle",
     ogDescription:
-      "A Mega Man Battle Network-style 4D arena. Echo Keys remember weapons; the Anima summons them as ghost-steel.",
+      "A Battle Network-style 4D arena. Echo Keys are crystallized memories of function the Anima synchronizes with and executes.",
   },
   "/echo-keys": {
     title: "Echo Keys | Anima Protocol",
     description:
-      "Eight hundred distinct Echo Keys on your profile — weapon-memories inspired by Battle Network chips and Star Force cards, rewritten as original Anima battle data.",
+      "Story-mode Echo Keys: find or synthesise crystallized harmonic instructions. Nature, ruins, and other coherent places — not the full Codex on day one.",
     canonical: `${BASE_URL}/echo-keys`,
     ogTitle: "Anima Protocol — Echo Keys",
     ogDescription:
-      "Build a 30-key Folder from 800 weapon-memories. Standard, Apex, Nova, Wave, Brother, Dark, and Plus memories.",
+      "Vault, Loadout, Story, Codex. Begin with Echo Shards. Discover Keys where resonance achieved exceptional coherence.",
   },
   "/therapy": {
     title: "Therapy Mode | Anima Protocol",

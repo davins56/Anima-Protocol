@@ -5,10 +5,7 @@ import { ECHO_KEY_BY_ID, validateEchoFolder } from "@/lib/echoKeys";
 export default function EchoFolderEditor({ folder, ownedKeys, onChange }) {
   const [query, setQuery] = useState("");
   const slots = folder?.slots || [];
-  const check =
-    slots.length === 30
-      ? validateEchoFolder(slots)
-      : { ok: false, errors: [`Need 30 keys (has ${slots.length}).`] };
+  const check = validateEchoFolder(slots);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -47,10 +44,10 @@ export default function EchoFolderEditor({ folder, ownedKeys, onChange }) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-primary/60">
-            Folder · {slots.length}/30
+            Resonance Array · {slots.length}/30
           </p>
-          <p className={`font-mono text-[9px] tracking-widest uppercase ${check.ok && slots.length === 30 ? "text-emerald-300/80" : "text-rose-300/80"}`}>
-            {slots.length === 30 && check.ok ? "Legal" : check.errors[0] || "Need 30 keys"}
+          <p className={`font-mono text-[9px] tracking-widest uppercase ${check.ok ? "text-emerald-300/80" : "text-rose-300/80"}`}>
+            {check.ok ? "Legal" : check.errors[0] || "Need 8–30 keys"}
           </p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[520px] overflow-y-auto pr-1">
@@ -97,7 +94,7 @@ export default function EchoFolderEditor({ folder, ownedKeys, onChange }) {
           ))}
         </div>
         <p className="mt-2 font-mono text-[8px] text-primary/30 tracking-widest uppercase">
-          Click a library key to add · click a folder key to cycle its code
+          Click a Vault key to load · click an Array key to cycle its code · 8–30 slots
         </p>
       </div>
     </div>

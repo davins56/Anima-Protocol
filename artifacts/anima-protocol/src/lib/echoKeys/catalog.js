@@ -2,9 +2,10 @@
 /**
  * Echo Keys — original Anima Protocol battle data.
  *
- * Each key is a weapon-memory: a ghost program the operator slots so their
- * Anima can summon an ethereal armament. The library is sized for a full
- * profile collection (~800 distinct keys).
+ * Each key is a crystallized harmonic instruction — an executable resonance
+ * artifact an Anima can synchronize with. Combat is one possible execution.
+ * The Codex holds ~800 distinct keys; operators find, synthesise, or evolve
+ * them in story mode instead of receiving the library on day one.
  *
  * Design pointers (research only — no Capcom names or art as playable rows):
  * - Battle Network 1–6: Folder of 30, codes A–Z + *, Standard / Mega / Giga,
@@ -45,7 +46,185 @@ export const ECHO_KEY_LIBRARY_SIZE = 800;
  * @property {EchoMemory} memory
  * @property {EchoEra} era
  * @property {number} [hits]
+ * @property {string} [originSite]
+ * @property {string} [memoryText]
  */
+
+/**
+ * Story-mode featured Keys. These are named artifacts, not shop goods.
+ * Sovereign / Prime cosmological Keys from Fallen Circuit stay out of this list.
+ */
+export const FEATURED_RESONANCE_KEYS = [
+  {
+    id: "last-ember",
+    name: "Last Ember",
+    family: "featured",
+    class: "standard",
+    element: "ember",
+    tactic: "none",
+    power: 90,
+    mb: 18,
+    codes: ["L", "E", "*"],
+    description:
+      "Final surviving flame of a destroyed settlement. Invokes three resonance flames. Passive: output rises when the Anima's integrity falls below 30%.",
+    summon: "bomb",
+    inspiredByFamily: "bomb",
+    memory: "weapon",
+    era: "bn3",
+    hits: 3,
+    originSite: "fallen-ruin",
+    memoryText:
+      "The last hearth of a settlement that ended in one night. The flame refused to forget its purpose.",
+  },
+  {
+    id: "ember-that-refused",
+    name: "Ember That Refused",
+    family: "featured",
+    class: "apex",
+    element: "ember",
+    tactic: "none",
+    power: 160,
+    mb: 28,
+    codes: ["L", "R", "*"],
+    description:
+      "Last Ember after it reinterpreted survival as defiance. Four flames, and a refusal to go out.",
+    summon: "bomb",
+    inspiredByFamily: "bomb",
+    memory: "weapon",
+    era: "bn3",
+    hits: 4,
+    originSite: "fallen-ruin",
+    memoryText:
+      "The remembered event developed a new interpretation: not the last flame, the flame that would not end.",
+  },
+  {
+    id: "pyre-key",
+    name: "Pyre Key",
+    family: "featured",
+    class: "standard",
+    element: "ember",
+    tactic: "none",
+    power: 70,
+    mb: 14,
+    codes: ["P", "Y", "*"],
+    description: "A pyric instruction. Heat that still knows the shape of a funeral or a forge.",
+    summon: "wick",
+    inspiredByFamily: "bomb",
+    memory: "weapon",
+    era: "bn3",
+    originSite: "old-battlefield",
+    memoryText: "Coherent fire — grief or craft, the Lattice does not moralize.",
+  },
+  {
+    id: "gale-key",
+    name: "Gale Key",
+    family: "featured",
+    class: "standard",
+    element: "tide",
+    tactic: "gale",
+    power: 55,
+    mb: 12,
+    codes: ["G", "A", "*"],
+    description: "Wind given a job. Opens space, carries another Key's output, or strips a veil.",
+    summon: "wave",
+    inspiredByFamily: "airshot",
+    memory: "weapon",
+    era: "bn3",
+    originSite: "living-water",
+    memoryText: "Air over moving water. A repeating rhythm that learned how to push.",
+  },
+  {
+    id: "firestorm",
+    name: "Firestorm",
+    family: "featured",
+    class: "apex",
+    element: "ember",
+    tactic: "gale",
+    power: 140,
+    mb: 32,
+    codes: ["F", "S"],
+    description: "Pyre Key braided with Gale Key. Heat given weather.",
+    summon: "gyre",
+    inspiredByFamily: "wind",
+    memory: "weapon",
+    era: "bn4",
+    originSite: "old-battlefield",
+    memoryText: "An Echo Sequence: fire that learned the grammar of wind.",
+  },
+  {
+    id: "grief-echo",
+    name: "Grief Echo",
+    family: "featured",
+    class: "standard",
+    element: "void",
+    tactic: "mark",
+    power: 40,
+    mb: 16,
+    codes: ["G", "R", "*"],
+    description: "A memory of loss coherent enough to execute. Disrupts another Anima's frequency.",
+    summon: "silence",
+    inspiredByFamily: "dark",
+    memory: "dark",
+    era: "bn4",
+    originSite: "quiet-yard",
+    memoryText: "Thousands of minds meeting the same absence. The Lattice kept the chord.",
+  },
+  {
+    id: "memory-echo",
+    name: "Memory Echo",
+    family: "featured",
+    class: "standard",
+    element: "void",
+    tactic: "summon",
+    power: 0,
+    mb: 20,
+    codes: ["M", "E", "*"],
+    description: "Replays a fragment of a historical Echo. Temporarily modifies the Anima's configuration.",
+    summon: "sigil",
+    inspiredByFamily: "plus",
+    memory: "plus",
+    era: "bn3",
+    originSite: "sacred-place",
+    memoryText: "A place where people kept telling the same story until the story learned to stand.",
+  },
+  {
+    id: "veil-key",
+    name: "Veil Key",
+    family: "featured",
+    class: "standard",
+    element: "grove",
+    tactic: "none",
+    power: 0,
+    mb: 14,
+    codes: ["V", "L", "*"],
+    description: "A shielding harmonic. Softens incoming frequency; can hide a path.",
+    summon: "aura",
+    inspiredByFamily: "barrier",
+    memory: "field",
+    era: "bn3",
+    originSite: "sanctuary-garden",
+    memoryText: "Intention and leaf-light held in the same tempo long enough to thicken.",
+  },
+  {
+    id: "mourning-gate",
+    name: "Mourning Gate",
+    family: "featured",
+    class: "apex",
+    element: "void",
+    tactic: "summon",
+    power: 0,
+    mb: 44,
+    codes: ["M", "G"],
+    description:
+      "Grief Echo + Memory Echo + Veil Key. Opens a traversal pathway through remembered loss — a door, not a wound.",
+    summon: "rift",
+    inspiredByFamily: "secret",
+    memory: "field",
+    era: "bn5",
+    originSite: "quiet-yard",
+    memoryText: "Three memories of absence agreed on a shape. The Lattice called it a gate.",
+  },
+];
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const ELEMENTS = /** @type {EchoElement[]} */ (["ember", "tide", "volt", "grove"]);
@@ -524,6 +703,7 @@ function assemble() {
 
   const fragments = fromFragments();
   add(fragments);
+  add(FEATURED_RESONANCE_KEYS.map((row, i) => makeRow(row, 8000 + i)));
   add(fromLineages(out.length));
   add(chromaOfCore(fragments, out.length));
   add(waveCards(out.length));

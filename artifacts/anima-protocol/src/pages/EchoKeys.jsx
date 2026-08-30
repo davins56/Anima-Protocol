@@ -7,23 +7,32 @@ import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 import {
   ECHO_KEYS,
   ECHO_KEY_BY_ID,
+  echoKeyLoreBlock,
+  enrichEchoKey,
   normalizeEchoKeyAccount,
   setFolderSlots,
-  echoKeyLoreBlock,
 } from "@/lib/echoKeys";
 import EchoKeyCard from "@/components/echoKeys/EchoKeyCard";
 import EchoFolderEditor from "@/components/echoKeys/EchoFolderEditor";
+import EchoStoryMode from "@/components/echoKeys/EchoStoryMode";
+import EchoCodex from "@/components/echoKeys/EchoCodex";
 
 const MEMORIES = ["all", "weapon", "wave", "brother", "plus", "field", "dark", "nova"];
 const CLASSES = ["all", "standard", "apex", "nova"];
 const ERAS = ["all", "bn1", "bn2", "bn3", "bn4", "bn5", "bn6", "starforce"];
+const TABS = [
+  ["vault", "Vault"],
+  ["loadout", "Loadout"],
+  ["story", "Story"],
+  ["codex", "Codex"],
+];
 
 export default function EchoKeys() {
   usePageMeta(ROUTE_META["/echo-keys"]);
 
   const navigate = useNavigate();
   const [account, setAccount] = useState(() => normalizeEchoKeyAccount(null));
-  const [tab, setTab] = useState("library");
+  const [tab, setTab] = useState("story");
   const [memory, setMemory] = useState("all");
   const [klass, setKlass] = useState("all");
   const [era, setEra] = useState("all");
@@ -39,11 +48,12 @@ export default function EchoKeys() {
         if (cancelled) return;
         const next = normalizeEchoKeyAccount(me?.echo_keys);
         setAccount(next);
-        if (!me?.echo_keys?.granted_full_library) {
+        const hadOwned = Array.isArray(me?.echo_keys?.owned) && me.echo_keys.owned.length > 0;
+        if (!hadOwned) {
           await base44.auth.updateMe({ echo_keys: next });
         }
       } catch {
-        // Guest / unsigned — keep the in-memory full library.
+        // Guest — keep the in-memory starter Shards.
       }
     })();
     return () => {
@@ -52,7 +62,7 @@ export default function EchoKeys() {
   }, []);
 
   const ownedKeys = useMemo(
-    () => account.owned.map((id) => ECHO_KEY_BY_ID[id]).filter(Boolean),
+    () => account.owned.map((id) => enrichEchoKey(ECHO_KEY_BY_ID[id])).filter(Boolean),
     [account.owned],
   );
 
@@ -67,12 +77,13 @@ export default function EchoKeys() {
         k.name.toLowerCase().includes(q) ||
         k.family.includes(q) ||
         k.description.toLowerCase().includes(q) ||
-        k.inspiredByFamily.includes(q)
+        k.frequency.includes(q) ||
+        k.role.includes(q)
       );
     });
   }, [ownedKeys, memory, klass, era, query]);
 
-  const selected = ECHO_KEY_BY_ID[selectedId] || ECHO_KEYS[0];
+  const selected = enrichEchoKey(ECHO_KEY_BY_ID[selectedId] || ownedKeys[0] || ECHO_KEYS[0]);
   const activeFolder = account.folders.find((f) => f.id === account.active_folder_id) || account.folders[0];
 
   const persist = async (next) => {
@@ -81,7 +92,7 @@ export default function EchoKeys() {
       await base44.auth.updateMe({ echo_keys: next });
       setStatus("Saved to your profile.");
     } catch {
-      setStatus("Saved locally — sign in to keep the Folder on this profile.");
+      setStatus("Saved locally — sign in to keep the Array on this profile.");
     }
   };
 
@@ -94,7 +105,7 @@ export default function EchoKeys() {
           f.id === activeFolder.id ? { ...f, slots } : f,
         ),
       });
-      setStatus(result.errors[0] || "Folder is not legal yet.");
+      setStatus(result.errors[0] || "Array is not legal yet.");
       return;
     }
     persist(result.account);
@@ -110,7 +121,7 @@ export default function EchoKeys() {
           <div className="min-w-0 flex-1">
             <h1 className="font-mono text-sm text-primary tracking-[0.25em] uppercase">Echo Keys</h1>
             <p className="font-mono text-[9px] tracking-[0.3em] text-primary/40 uppercase">
-              // {account.owned.length} weapon-memories on this profile · Folder of 30
+              // {account.owned.length} in Vault · Codex of 800 · Array 8–30
             </p>
           </div>
           <button
@@ -134,10 +145,7 @@ export default function EchoKeys() {
         </p>
 
         <div className="flex flex-wrap gap-2">
-          {[
-            ["library", "Library"],
-            ["folder", "Folder"],
-          ].map(([id, label]) => (
+          {TABS.map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -158,19 +166,23 @@ export default function EchoKeys() {
           <p className="font-mono text-[10px] text-primary/50">{status}</p>
         )}
 
-        {tab === "folder" ? (
+        {tab === "loadout" ? (
           <EchoFolderEditor
             folder={activeFolder}
             ownedKeys={ownedKeys}
             onChange={handleFolderChange}
           />
+        ) : tab === "story" ? (
+          <EchoStoryMode account={account} ownedKeys={ownedKeys} onAccount={persist} />
+        ) : tab === "codex" ? (
+          <EchoCodex ownedIds={account.owned} />
         ) : (
           <>
             <div className="flex flex-wrap gap-2 items-center">
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search Echo Keys…"
+                placeholder="Search your Vault…"
                 className="flex-1 min-w-[180px] bg-black/50 border border-primary/20 px-3 py-2 font-mono text-xs text-primary placeholder:text-primary/30"
               />
               {MEMORIES.map((id) => (
@@ -184,7 +196,7 @@ export default function EchoKeys() {
               ))}
             </div>
             <p className="font-mono text-[9px] text-primary/35 tracking-widest uppercase">
-              Showing {filtered.length} / {ownedKeys.length}
+              Showing {filtered.length} / {ownedKeys.length} owned
             </p>
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
               {filtered.slice(0, 200).map((key) => (
@@ -200,9 +212,14 @@ export default function EchoKeys() {
             {selected && (
               <div className="border border-primary/20 bg-black/40 p-4 space-y-2">
                 <p className="font-mono text-sm text-primary">{selected.name}</p>
-                <p className="font-mono text-[11px] text-primary/55 leading-relaxed">{selected.description}</p>
+                <p className="font-mono text-[11px] text-primary/55 leading-relaxed">{selected.memoryText}</p>
                 <p className="font-mono text-[9px] text-primary/35 tracking-widest uppercase">
-                  {selected.era} · {selected.memory} · {selected.inspiredByFamily} · codes {selected.codes.join(" ")}
+                  {selected.tier} · {selected.frequency} · {selected.role} · cost {selected.cost} ·
+                  integrity {selected.echoIntegrity} · {selected.rarity}
+                </p>
+                <p className="font-mono text-[9px] text-primary/30">
+                  Affinity {selected.affinity.join(" / ")}
+                  {selected.evolution ? ` · evolves: ${selected.evolution.label}` : ""}
                 </p>
               </div>
             )}
