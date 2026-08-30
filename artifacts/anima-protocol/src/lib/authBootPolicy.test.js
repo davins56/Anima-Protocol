@@ -169,5 +169,6 @@ describe("boot wiring", () => {
     const app = readFileSync(join(srcRoot, "ProtocolApp.jsx"), "utf8");
     expect(app).toMatch(/isSignedInUser \|\| isGuest \|\| isAuthenticated/);
     expect(app).not.toMatch(/if \(isAuthenticated \|\| localUser \|\| user\)/);
+    expect(app).not.toMatch(/will load in guest mode/);
   });
 });
