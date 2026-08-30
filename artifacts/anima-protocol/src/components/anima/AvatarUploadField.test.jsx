@@ -87,6 +87,46 @@ describe("AvatarUploadField", () => {
     expect(onChange).toHaveBeenCalledWith("/api/storage/objects/avatars/luna.png");
   });
 
+  it("surfaces a real error when upload returns no URL", async () => {
+    uploadFileMock.mockResolvedValue({ file_url: null, url: null });
+    const { container } = renderField();
+    const input = container.querySelector('input[type="file"]');
+    const file = new File(["fake"], "luna.png", { type: "image/png" });
+
+    await act(async () => {
+      Object.defineProperty(input, "files", {
+        configurable: true,
+        value: [file],
+      });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/no file URL|Upload failed/i);
+  });
+
+  it("accepts the legacy url field when file_url is missing", async () => {
+    uploadFileMock.mockResolvedValue({
+      url: "/api/storage/objects/uploads/legacy.png",
+    });
+    const { container, onChange } = renderField();
+    const input = container.querySelector('input[type="file"]');
+    const file = new File(["fake"], "luna.png", { type: "image/png" });
+
+    await act(async () => {
+      Object.defineProperty(input, "files", {
+        configurable: true,
+        value: [file],
+      });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onChange).toHaveBeenCalledWith("/api/storage/objects/uploads/legacy.png");
+  });
+
   it("clears the current avatar", () => {
     const { container, onChange } = renderField({
       value: "/api/storage/objects/avatars/luna.png",
