@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { getPool } from "./client";
+import { getPool, withTransientDbRetry } from "./client";
 
 /** Core relations the store / chat API require. */
 export const REQUIRED_TABLES = [
@@ -69,18 +69,23 @@ async function hasPgTrgmExtension(db: Queryable): Promise<boolean> {
 
 /** Inspect whether the production schema matches what the API expects. */
 export async function inspectSchema(
-  db: Queryable = getPool(),
+  db?: Queryable,
 ): Promise<SchemaInspection> {
-  const present = await listPresentTables(db, REQUIRED_TABLES);
-  const presentTables = REQUIRED_TABLES.filter((t) => present.has(t));
-  const missingTables = REQUIRED_TABLES.filter((t) => !present.has(t));
-  const hasPgTrgm = await hasPgTrgmExtension(db);
-  return {
-    ok: missingTables.length === 0,
-    missingTables,
-    presentTables,
-    hasPgTrgm,
+  const run = async (): Promise<SchemaInspection> => {
+    const conn = db ?? getPool();
+    const present = await listPresentTables(conn, REQUIRED_TABLES);
+    const presentTables = REQUIRED_TABLES.filter((t) => present.has(t));
+    const missingTables = REQUIRED_TABLES.filter((t) => !present.has(t));
+    const hasPgTrgm = await hasPgTrgmExtension(conn);
+    return {
+      ok: missingTables.length === 0,
+      missingTables,
+      presentTables,
+      hasPgTrgm,
+    };
   };
+  // Tests pass a dedicated pool; only retry the process-wide default.
+  return db ? run() : withTransientDbRetry(run);
 }
 
 /**
@@ -93,8 +98,14 @@ export async function inspectSchema(
  * of date".
  */
 export async function ensureSchema(
-  db: Queryable = getPool(),
+  db?: Queryable,
 ): Promise<EnsureSchemaResult> {
+  if (db) return runEnsureSchema(db);
+  // Re-resolve getPool() after a reset so we do not retry on a dead client.
+  return withTransientDbRetry(() => runEnsureSchema(getPool()));
+}
+
+async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
   const before = await inspectSchema(db);
   const errors: string[] = [];
   const createdTables: RequiredTable[] = [];
@@ -499,7 +510,7 @@ let ensureOnce: Promise<EnsureSchemaResult> | null = null;
  * a transient privilege error creating an extension).
  */
 export function ensureSchemaOnce(
-  db: Queryable = getPool(),
+  db?: Queryable,
 ): Promise<EnsureSchemaResult> {
   if (!ensureOnce) {
     ensureOnce = ensureSchema(db).then(
