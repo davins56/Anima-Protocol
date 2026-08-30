@@ -1756,7 +1756,10 @@ function App() {
                   className="flex flex-col h-screen-safe"
                   style={{
                     paddingTop: "env(safe-area-inset-top, 0px)",
-                    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+                    // --safe-bottom is env(safe-area-inset-bottom) when the
+                    // keyboard is closed, and 0px while it is open so the
+                    // home indicator is not reserved above the keyboard.
+                    paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))",
                   }}
                 >
                   <AuthenticatedApp />

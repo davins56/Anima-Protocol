@@ -28,7 +28,7 @@ export default function VoiceInputPanel({ isOpen, onClose, onSubmit, isLoading }
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 20 }}
         className="fixed right-4 w-80 bg-background border border-primary/30 rounded shadow-2xl overflow-hidden flex flex-col z-40"
-        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}
+        style={{ bottom: "calc(var(--keyboard-inset, 0px) + var(--tab-bar-height, 80px) + 8px)" }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20 bg-black/60">
