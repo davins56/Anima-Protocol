@@ -20,6 +20,7 @@ export {
 export {
   ECHO_KEYS,
   ECHO_LIBRARY_SIZE,
+  ECHO_KEY_LIBRARY_SIZE,
   ECHO_KEY_BY_ID,
   getEchoKey,
   echoKeysByFamily,
@@ -50,6 +51,7 @@ export {
   echoKeyToChip,
   echoCopyToChip,
   echoFolderToChips,
+  chipsFromEchoFolder,
   echoResonanceChip,
 } from "./combat.js";
 

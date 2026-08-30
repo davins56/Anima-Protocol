@@ -36,6 +36,20 @@ function fightUntil(state, pred, max = 800) {
 }
 
 describe("createBattle", () => {
+  it("loads an Echo Key folder when the operator brings weapon-memories", () => {
+    const echoFolder = [
+      { id: "pulse-base", code: "A" },
+      { id: "pulse-base", code: "B" },
+      { id: "phantom-base", code: "S" },
+      { id: "mend-base", code: "A" },
+      { id: "halo-base", code: "C" },
+    ];
+    const battle = createBattle({ anima, seed: 2, echoFolder });
+    expect(battle.hand.length).toBe(5);
+    expect(battle.hand.every((chip) => chip.kind)).toBe(true);
+    expect(battle.hand.some((chip) => chip.id === "pulse-base" || chip.id === "phantom-base" || chip.id === "halo-base" || chip.id === "mend-base")).toBe(true);
+  });
+
   it("opens a 6x3 field with the Anima on the player side", () => {
     const battle = createBattle({ anima, seed: 7, controlMode: "manual" });
     expect(COLS).toBe(6);

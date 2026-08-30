@@ -85,6 +85,32 @@ export function echoFolderToChips(library) {
 }
 
 /**
+ * Adapt a folder for NetBattle. Accepts already-built chips, raw {id,code}
+ * slots, a #279-style {slots} folder, or this PR's library object.
+ * @param {unknown} folder
+ */
+export function chipsFromEchoFolder(folder) {
+  if (!folder) return [];
+  if (Array.isArray(folder)) {
+    if (folder.length && folder[0]?.kind) return folder.filter((chip) => chip && chip.kind);
+    return folder.map((slot) => {
+      if (!slot) return null;
+      if (slot.kind) return slot;
+      return echoCopyToChip({ id: slot.id, code: slot.code });
+    }).filter(Boolean);
+  }
+  if (typeof folder === "object" && Array.isArray(folder.slots)) {
+    return folder.slots
+      .map((slot) => echoCopyToChip({ id: slot.id, code: slot.code }))
+      .filter(Boolean);
+  }
+  if (typeof folder === "object" && Array.isArray(folder.folder)) {
+    return echoFolderToChips(folder);
+  }
+  return [];
+}
+
+/**
  * If the selected Custom IDs form a resonance or Best Link, return a fused chip.
  * @param {string[]} selectedIds
  */
