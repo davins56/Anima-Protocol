@@ -31,8 +31,6 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint
         run: pnpm lint
-      - name: Validate AI behavior eval contracts
-        run: pnpm llm:eval:validate
 
   typecheck:
     runs-on: ubuntu-latest

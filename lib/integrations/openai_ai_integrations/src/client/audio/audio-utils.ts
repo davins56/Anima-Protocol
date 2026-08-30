@@ -12,7 +12,8 @@ export function decodePCM16ToFloat32(base64Audio: string): Float32Array {
   for (let i = 0; i < raw.length; i++) {
     bytes[i] = raw.charCodeAt(i);
   }
-  const pcm16 = new Int16Array(bytes.buffer);
+  const sampleCount = Math.floor(raw.length / 2);
+  const pcm16 = new Int16Array(bytes.buffer, 0, sampleCount);
   const float32 = new Float32Array(pcm16.length);
   for (let i = 0; i < pcm16.length; i++) {
     float32[i] = pcm16[i] / 32768;

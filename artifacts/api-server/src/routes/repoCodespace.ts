@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
 import { exec } from "child_process";
 import { createRateLimit } from "../lib/rateLimit";
@@ -22,16 +23,8 @@ function requireUser(req: Request, res: Response, next: () => void) {
 
 router.use(requireUser);
 
-const REPO_ROOT = "/app";
-
-// Helper to validate and resolve paths
-function resolveRepoPath(userPath: string): string {
-  const normalized = path.normalize(userPath);
-  const resolved = path.resolve(REPO_ROOT, normalized);
-  if (!resolved.startsWith(REPO_ROOT)) {
-    throw new Error("Path traversal detected.");
-  }
-  return resolved;
+function getRepoRoot(): string {
+  return path.resolve(process.env.REPO_ROOT || "/app");
 }
 
 const IGNORED_DIRS = new Set([
@@ -52,6 +45,81 @@ const IGNORED_FILES = new Set([
   "yarn.lock",
   "tsconfig.tsbuildinfo",
 ]);
+
+function isForbiddenPath(relPath: string): boolean {
+  if (!relPath || relPath === ".") return false;
+  const normalized = relPath.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+
+  for (const segment of segments) {
+    if (!segment) continue;
+    // Disallow dotfiles / dotfolders (e.g. .env, .git, .replit, etc.)
+    if (segment.startsWith(".")) {
+      return true;
+    }
+    // Disallow node_modules
+    if (segment === "node_modules") {
+      return true;
+    }
+  }
+
+  const fileName = segments[segments.length - 1];
+  if (IGNORED_FILES.has(fileName)) {
+    return true;
+  }
+
+  return false;
+}
+
+// Helper to validate and resolve paths securely
+export function resolveRepoPath(userPath: string): string {
+  if (!userPath || typeof userPath !== "string") {
+    throw new Error("Invalid path.");
+  }
+
+  const rootResolved = getRepoRoot();
+  let canonicalRoot: string;
+  try {
+    canonicalRoot = fsSync.realpathSync(rootResolved);
+  } catch {
+    canonicalRoot = rootResolved;
+  }
+
+  const normalized = path.normalize(userPath);
+  const resolved = path.resolve(rootResolved, normalized);
+
+  // Boundary check on non-canonical resolved path against rootResolved
+  const rawRootWithSep = rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep;
+  if (resolved !== rootResolved && !resolved.startsWith(rawRootWithSep)) {
+    throw new Error("Path traversal detected.");
+  }
+
+  // Check symlinks / realpath against canonicalRoot
+  let targetToVerify = resolved;
+  if (!fsSync.existsSync(resolved)) {
+    targetToVerify = path.dirname(resolved);
+  }
+
+  let canonicalTarget: string;
+  try {
+    canonicalTarget = fsSync.realpathSync(targetToVerify);
+  } catch {
+    throw new Error("Path traversal detected.");
+  }
+
+  const canonicalRootWithSep = canonicalRoot.endsWith(path.sep) ? canonicalRoot : canonicalRoot + path.sep;
+  if (canonicalTarget !== canonicalRoot && !canonicalTarget.startsWith(canonicalRootWithSep)) {
+    throw new Error("Path traversal detected.");
+  }
+
+  // Check sensitive / forbidden path patterns
+  const relPath = path.relative(rootResolved, resolved);
+  if (isForbiddenPath(relPath)) {
+    throw new Error("Access to sensitive path forbidden.");
+  }
+
+  return resolved;
+}
 
 async function crawl(dir: string, base: string = ""): Promise<{ path: string; isDirectory: boolean }[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -85,7 +153,7 @@ async function crawl(dir: string, base: string = ""): Promise<{ path: string; is
 
 router.get("/files", async (req: Request, res: Response) => {
   try {
-    const files = await crawl(REPO_ROOT);
+    const files = await crawl(getRepoRoot());
     res.json({ files });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -148,7 +216,7 @@ router.post("/terminal", async (req: Request, res: Response) => {
     }
 
     // Run commands relative to REPO_ROOT
-    exec(command, { cwd: REPO_ROOT, timeout: 20000 }, (error, stdout, stderr) => {
+    exec(command, { cwd: getRepoRoot(), timeout: 20000 }, (error, stdout, stderr) => {
       res.json({
         stdout: stdout || "",
         stderr: stderr || "",

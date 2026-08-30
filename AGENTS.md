@@ -6,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`.
 
-The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server as a single self-contained `api/index.mjs` bundle (copied from `dist/vercel.mjs` by the `api-server` build; rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. Do not add `api/server.mjs` to `vercel.json` `functions` — only `api/index.mjs` is a valid Serverless Function entry. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server as a single self-contained `api/index.mjs` bundle (copied from `dist/vercel.mjs` by the `api-server` build; rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. `api/index.mjs` must stay committed: Vercel validates `vercel.json` `functions` against the repo **before** `buildCommand` runs, and a missing file fails the deploy with `functions.api/index.mjs does not match any file`. Do not add `api/server.mjs` to `vercel.json` `functions` — only `api/index.mjs` is a valid Serverless Function entry. Do not gitignore `api/`. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
 
 ### Node.js
 
@@ -61,6 +61,8 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
 | `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |
 | `CRON_SECRET` | Authorizes the hourly Vercel proactive-message cron |
+
+**Production (Cloudflare — anima-protocol.com):** the apex host is Workers + Assets, not Vercel. Root `wrangler.jsonc` sets `main` to `artifacts/api-server/src/worker.ts` with `nodejs_compat`. Workers Builds already runs `pnpm build` (copies the SPA to `./dist`) then `npx wrangler deploy --assets=./dist --name anima-protocol`. `assets.run_worker_first` sends `/api` and `/api/*` to Express so `/api/healthz`, `/api/store`, and `/api/__clerk` are not swallowed by the SPA fallback. Keep Clerk/DB keys as Worker **secrets** (see `scripts/cloudflare/production-secret-names.txt`); do not commit them. A deploy without `main` is assets-only and those `/api` paths 404.
 
 **Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** from the **same** Clerk Production app (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`). This deployment uses Clerk **custom domain** (`clerk.anima-protocol.com` CNAME) — leave `VITE_CLERK_PROXY_URL` empty; the frontend detects the custom domain from the publishable key and **does not** route through `/api/__clerk` on `www.anima-protocol.com`. Verify `curl https://www.anima-protocol.com/api/healthz` and `curl https://clerk.anima-protocol.com/v1/environment` return 200 after deploy. Register OAuth redirect URLs (`…/sign-in/sso-callback`, `…/sign-up/sso-callback`) in Clerk → Paths. Redeploy **without build cache** after any env change. `/api/__clerk` proxy mode is only for hosts without a Clerk custom domain (e.g. some `*.vercel.app` previews if you enable Clerk proxy in the dashboard).
 
@@ -151,6 +153,7 @@ Reload: `sudo nginx -s reload`
 - Vite configs for frontend and mockup **require** `PORT` and `BASE_PATH` at config load time.
 - API `dev` script rebuilds on each start (`build` then `start`).
 - pnpm may warn about ignored build scripts for `@clerk/shared`; add to `onlyBuiltDependencies` in `pnpm-workspace.yaml` if Clerk misbehaves after install.
+- Cloudflare Worker `anima-protocol` must deploy from root `wrangler.jsonc` (`main` = `artifacts/api-server/src/worker.ts`). An assets-only deploy (`--assets=./dist` with no `main`) makes `/api/*` 404 on anima-protocol.com.
 
 ## Analytics Tracking — Mixpanel
 
@@ -246,7 +249,8 @@ All new events must follow these conventions.
 | `crossover_session_started` | User starts a multi-universe group session | `character_count`, `universe_count` | `src/pages/Chat.jsx` |
 | `subscription_upgrade_started` | User starts a premium checkout (intent, not completion) | `tier`, `purchase_type`, `from_tier` | `src/pages/PremiumPlans.jsx` |
 | `net_battle_started` | User jacks into a NetBattle match | `control_mode`, `primary_expression`, `is_blend` | `src/pages/NetBattle.jsx` |
-| `net_battle_completed` | A NetBattle match ends (win or loss) | `result`, `control_mode`, `primary_expression`, `is_blend`, `chips_used` | `src/pages/NetBattle.jsx` |
+| `net_battle_completed` | A NetBattle match ends (win or loss) | `result`, `control_mode`, `primary_expression`, `is_blend`, `chips_used`, `echo_keys_used` | `src/pages/NetBattle.jsx` |
+| `echo_folder_saved` | User saves their Echo Key Folder to the profile | `folder_size`, `star_count`, `mega_count` | `src/hooks/useEchoLibrary.js` |
 | `presence_stage_opened` | User opens the full-body living presence stage in chat | `session_mode`, `character_count`, `is_crossover` | `src/pages/Chat.jsx` |
 | `protocol_upgrade_started` | Serenity launches a Cursor cloud agent to upgrade Protocol source | `scope`, `surface` | `src/lib/serenityProtocolUpgrade.js`, `src/components/chat/ProtocolUpgradeConsole.jsx` |
 | `image_generated` | Companion (onboard Serenity or a user-created Anima) creates an image in chat | `source` (`tag` / `request` / `modal`), `is_anima`, `session_mode` | `src/pages/Chat.jsx` |

@@ -46,25 +46,68 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [isLoadingPublicSettings] = useState(false);
   const [appPublicSettings] = useState(null);
+  const [localUser, setLocalUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('anima_local_auth_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
-  // Make the Clerk session token available to the non-React data layer so
-  // every entity/profile request can identify the user (in dev and prod).
+  const loginAsLocalUser = useCallback((customIdentity) => {
+    const fallbackId = 'user_' + Math.random().toString(36).substring(2, 10);
+    const identity = {
+      id: customIdentity?.id || fallbackId,
+      email: customIdentity?.email || 'seeker@anima-protocol.com',
+      full_name: customIdentity?.full_name || customIdentity?.name || 'Seeker',
+      display_name: customIdentity?.display_name || customIdentity?.name || 'Seeker',
+      role: 'User',
+      selected_mode: 'companion',
+    };
+    try {
+      localStorage.setItem('anima_local_auth_user', JSON.stringify(identity));
+    } catch (e) {
+      console.warn('Could not persist local auth session:', e);
+    }
+    setLocalUser(identity);
+    setUser(identity);
+    base44.auth.syncIdentity(identity);
+    bootstrapUserData(identity.id).catch((err) =>
+      console.warn('[Anima] Bootstrap failed:', err)
+    );
+    identifyUser(identity.id);
+  }, []);
+
+  // Make session token available to non-React data layer
   useEffect(() => {
-    if (!isSignedIn) {
-      clearAuthTokenGetter();
+    if (isSignedIn) {
+      setAuthTokenGetter(async () => {
+        try {
+          const token = await getToken();
+          if (token) return token;
+          return await getToken({ skipCache: true });
+        } catch (err) {
+          console.warn("[Anima] Clerk getToken failed:", err);
+          return null;
+        }
+      });
       return;
     }
-    setAuthTokenGetter(async () => {
-      try {
-        const token = await getToken();
-        if (token) return token;
-        return await getToken({ skipCache: true });
-      } catch (err) {
-        console.warn("[Anima] Clerk getToken failed:", err);
-        return null;
-      }
-    });
-  }, [getToken, isSignedIn]);
+    if (localUser) {
+      setAuthTokenGetter(async () => `local_${localUser.id}`);
+      return;
+    }
+    clearAuthTokenGetter();
+  }, [getToken, isSignedIn, localUser]);
+
+  // Sync localUser into base44 if not signed in with Clerk
+  useEffect(() => {
+    if (!isSignedIn && localUser) {
+      base44.auth.syncIdentity(localUser);
+      setUser(localUser);
+    }
+  }, [isSignedIn, localUser]);
 
   // Retry starter seeding once the session token is live, independent of whether
   // profile load succeeds — an empty roster after bootstrap usually means seeding
@@ -195,8 +238,8 @@ export const AuthProvider = ({ children }) => {
     };
   }, [isLoaded, isSignedIn, clerkUser?.id]);
 
-  const isAuthenticated = !!isSignedIn;
-  const isLoadingAuth = !isLoaded;
+  const isAuthenticated = !!isSignedIn || !!localUser;
+  const isLoadingAuth = !isLoaded && !localUser;
   const [authStalled, setAuthStalled] = useState(false);
 
   useEffect(() => {
@@ -239,8 +282,15 @@ const logout = useCallback(() => {
         );
       }
 
+      setLocalUser(null);
       setUser(null);
       setAuthError(null);
+
+      try {
+        localStorage.removeItem('anima_local_auth_user');
+      } catch (e) {
+        console.warn('Storage remove warning:', e);
+      }
 
       if (typeof signOut === 'function') {
         await signOut({ redirectUrl: '/' }).catch((err) =>
@@ -303,13 +353,15 @@ const logout = useCallback(() => {
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: user || localUser,
         setUser,
+        localUser,
+        loginAsLocalUser,
         isAuthenticated,
         setIsAuthenticated: () => {},
         isLoadingAuth,
         authStalled,
-        authChecked: isLoaded,
+        authChecked: isLoaded || !!localUser,
         checkUserAuth: () => {},
         isLoadingPublicSettings,
         authError,

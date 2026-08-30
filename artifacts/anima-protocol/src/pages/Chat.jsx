@@ -18,6 +18,7 @@ import {
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
+import { echoKeyPromptBlock } from "@/lib/echoKeys";
 import {
   imageGenerationTagInstruction,
   stripImageTags,
@@ -793,9 +794,12 @@ export default function Chat() {
 
   const handleNewSession = () => setShowModal(true);
 
-  const handleCreateSession = async ({ mode: m, character_id, group_character_ids }) => {
-    setShowModal(false);
-
+  const handleCreateSession = async ({
+    mode: m,
+    character_id,
+    group_character_ids,
+    opening_scene,
+  }) => {
     let title = "New Session";
     let initialMessages = [];
     
@@ -863,6 +867,7 @@ export default function Chat() {
       is_crossover: isCrossoverSession,
       shared_memory: [],
       title: therapySession && createdChar?.name ? `Therapy · ${createdChar.name}` : title,
+      opening_scene: opening_scene || "",
       messages: initialMessages,
       ...(therapySession ? { therapy_mode: true, companion_mode: "therapy" } : {}),
     });
@@ -890,9 +895,15 @@ export default function Chat() {
     // A new session sorts to the top (-updated_date), so jump to the first page
     // and refresh so the user sees it immediately even if they had paged deep.
     goToSessionsPage(0);
-    await loadSessions();
+    try {
+      await loadSessions();
+    } catch (err) {
+      console.warn("Session created, but refreshing the session list failed:", err);
+    }
     navigate(`/chat/${newSession.id}`);
+    setShowModal(false);
     setShowMobileMenu(false);
+    return newSession;
   };
 
   const handleDeleteSession = (id) =>
@@ -1361,7 +1372,7 @@ export default function Chat() {
           }
           const relCtx = getRelationshipContext(char.id, relationships);
           const loreCtx = loreContext;
-          const fragmentCtx = cyberspaceBattlePromptBlock(char, activeSession);
+          const fragmentCtx = `${cyberspaceBattlePromptBlock(char, activeSession)}${echoKeyPromptBlock(char, activeSession)}`;
           const memCtx = memoryContext;
           const injectedMemCtx = injectedMemoryContext;
           const calendarCtx = calendarContext;
@@ -1532,7 +1543,7 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
 
           currentGroupSpeakerRef.current = finalNextChar;
 
-          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}`;
+          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}${echoKeyPromptBlock(finalNextChar, activeSession)}`;
 
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {
