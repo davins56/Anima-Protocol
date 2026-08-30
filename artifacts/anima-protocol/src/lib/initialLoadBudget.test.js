@@ -52,8 +52,18 @@ describe("initial module graph budget", () => {
     expect(shell).toContain(
       'const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"))',
     );
+    expect(shell).toContain('lazy(() => import("./app/extraPages"))');
+    expect(shell).not.toContain('import("./pages/ProgressDashboard")');
+    expect(shell).not.toContain('import("./pages/StoryAnalyticsDashboard")');
+    expect(shell).not.toContain('import("./pages/NarrativeConflictDashboard")');
+    expect(shell).not.toContain('import("./pages/LoreArchivesDashboard")');
     expect(shell).not.toMatch(/import MainHome from /);
     expect(shell).not.toMatch(/import CustomiseAnima from /);
+
+    const extra = readSrc("app/extraPages.jsx");
+    expect(extra).toContain('import("../pages/ProgressDashboard")');
+    expect(extra).toContain('import("../pages/StoryAnalyticsDashboard")');
+    expect(extra).not.toMatch(/from\s+["']@\/lib\/seedCharacters["']/);
   });
 
   it("uses one layout Suspense instead of per-route stacked loaders", () => {

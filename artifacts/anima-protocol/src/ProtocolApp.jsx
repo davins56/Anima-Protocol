@@ -63,140 +63,22 @@ import {
 // Title screen is eager so cold opens paint Landing immediately (no spinner).
 import Landing from "./pages/Landing";
 
-// Lazy-loaded pages for code splitting
+// First-session pages only. Unused dashboards live in extraPages.jsx so
+// their mapDeps are not part of this Clerk shell or the HTML entry.
 const Chat = lazy(() => import("./pages/Chat"));
-const Codespace = lazy(() => import("./pages/Codespace"));
-const RepoCodespace = lazy(() => import("./pages/RepoCodespace"));
 const NetBattle = lazy(() => import("./pages/NetBattle"));
 const MainHome = lazy(() => import("./pages/MainHome"));
 const NewChat = lazy(() => import("./pages/NewChat"));
-
-// Keep the rest of your app's pages lazy-loaded
 const Characters = lazy(() => import("./pages/Characters"));
-const CharacterGroups = lazy(() => import("./pages/CharacterGroups"));
-const Storyboard = lazy(() => import("./pages/Storyboard"));
-const Network = lazy(() => import("./pages/Network"));
 const Settings = lazy(() => import("./pages/Settings"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
 const Animas = lazy(() => import("./pages/Animas"));
-const LoreBook = lazy(() => import("./pages/LoreBook"));
-const WorldMap = lazy(() => import("./pages/WorldMap"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
-const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
-const HallOfOrigins = lazy(() => import("./pages/HallOfOrigins"));
-const MemoryCrystals = lazy(() => import("./pages/MemoryCrystals"));
-const ConstellationMap = lazy(() => import("./pages/ConstellationMap"));
-const BookOfEchoes = lazy(() => import("./pages/BookOfEchoes"));
-const ModeSelect = lazy(() => import("./pages/ModeSelect"));
-const CheckIn = lazy(() => import("./pages/CheckIn"));
-const ReflectionLog = lazy(() => import("./pages/ReflectionLog"));
-const Journals = lazy(() => import("./pages/Journals"));
-const Wiki = lazy(() => import("./pages/Wiki"));
-const NarrativeProgress = lazy(() => import("./pages/NarrativeProgress"));
-const StoryFlowchart = lazy(() => import("./pages/StoryFlowchart"));
-const StoryboardManager = lazy(() => import("./pages/StoryboardManager"));
-const RelationshipNetwork = lazy(() => import("./pages/RelationshipNetwork"));
-const CharacterGraphVisualization = lazy(
-  () => import("./pages/CharacterGraphVisualization"),
-);
-const LoreArchive = lazy(() => import("./pages/LoreArchive"));
-const Insights = lazy(() => import("./pages/Insights"));
-const Reflections = lazy(() => import("./pages/Reflections"));
-const DiscoveryQueue = lazy(() => import("./pages/DiscoveryQueue"));
-const LocationsMap = lazy(() => import("./pages/LocationsMap"));
-const RelationshipVisualization = lazy(
-  () => import("./pages/RelationshipVisualization"),
-);
-const GlobalWiki = lazy(() => import("./pages/GlobalWiki"));
-const WorldCalendar = lazy(() => import("./pages/WorldCalendar"));
-const WorldCodex = lazy(() => import("./pages/WorldCodex"));
-const RelationshipGraph = lazy(() => import("./pages/RelationshipGraph"));
-const InventoryPanel = lazy(() => import("./pages/InventoryPanel"));
-const EnergyFragments = lazy(() => import("./pages/EnergyFragments"));
 const EchoKeys = lazy(() => import("./pages/EchoKeys"));
-const CalendarView = lazy(() => import("./pages/CalendarView"));
-const StoryBranching = lazy(() => import("./pages/StoryBranching"));
-const CharacterMemoryMap = lazy(() => import("./pages/CharacterMemoryMap"));
-const WorldPulse = lazy(() => import("./pages/WorldPulse"));
-const NarrativeBranchingMap = lazy(
-  () => import("./pages/NarrativeBranchingMap"),
-);
-const RelationshipGraphPage = lazy(
-  () => import("./pages/RelationshipGraphPage"),
-);
-const YnStoriesLibrary = lazy(() => import("./pages/YnStoriesLibrary"));
-const WorldTimeline = lazy(() => import("./pages/WorldTimeline"));
-const CharacterRepository = lazy(() => import("./pages/CharacterRepository"));
-const StoryAnalyticsDashboard = lazy(
-  () => import("./pages/StoryAnalyticsDashboard"),
-);
-const FactionNetwork = lazy(() => import("./pages/FactionNetwork"));
-const NarrativeFlowchartPage = lazy(
-  () => import("./pages/NarrativeFlowchartPage"),
-);
-const CharacterMemories = lazy(() => import("./pages/CharacterMemories"));
-const CharacterCustomization = lazy(
-  () => import("./pages/CharacterCustomization"),
-);
-const SceneOrchestrator = lazy(() => import("./pages/SceneOrchestrator"));
-const MemoryGraphDashboard = lazy(() => import("./pages/MemoryGraphDashboard"));
-const CreateScenario = lazy(() => import("./pages/CreateScenario"));
-const QuestTrackingDashboard = lazy(
-  () => import("./pages/QuestTrackingDashboard"),
-);
-const CharacterLookCustomizer = lazy(
-  () => import("./pages/CharacterLookCustomizer"),
-);
 const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"));
-const AIBehaviorSettings = lazy(() => import("./pages/AIBehaviorSettings"));
-const RelationshipAndLocationDashboard = lazy(
-  () => import("./pages/RelationshipAndLocationDashboard"),
-);
-const InteractiveGraphVisualization = lazy(
-  () => import("./pages/InteractiveGraphVisualization"),
-);
-const IntegratedWorldCalendar = lazy(
-  () => import("./pages/IntegratedWorldCalendar"),
-);
-const QuestLog = lazy(() => import("./pages/QuestLog"));
-const CharacterMemoriesDashboard = lazy(
-  () => import("./pages/CharacterMemoriesDashboard"),
-);
-const StoryBranchingGraph = lazy(() => import("./pages/StoryBranchingGraph"));
-const CharacterRelationshipForceGraph = lazy(
-  () => import("./pages/CharacterRelationshipForceGraph"),
-);
-const WorldCalendarDashboard = lazy(
-  () => import("./pages/WorldCalendarDashboard"),
-);
-const NarrativeConflictDashboard = lazy(
-  () => import("./pages/NarrativeConflictDashboard"),
-);
-const InteractiveInventory = lazy(() => import("./pages/InteractiveInventory"));
-const QuestLogPage = lazy(() => import("./pages/QuestLogPage"));
-const LoreArchivesDashboard = lazy(
-  () => import("./pages/LoreArchivesDashboard"),
-);
 const Meditation = lazy(() => import("./pages/Meditation"));
 const Therapy = lazy(() => import("./pages/Therapy"));
-const Subscription = lazy(() => import("./pages/Subscription"));
-const LifetimeAccess = lazy(() => import("./pages/LifetimeAccess"));
-const ProgressDashboard = lazy(() => import("./pages/ProgressDashboard"));
-const PremiumPlans = lazy(() => import("./pages/PremiumPlans"));
-const TemplateHub = lazy(() => import("./pages/TemplateHub"));
-const NarrativeWorldMap = lazy(() => import("./pages/NarrativeWorldMap"));
 const CompanionGenerator = lazy(() => import("./pages/CompanionGenerator"));
-const StoryReader = lazy(() => import("./pages/StoryReader"));
-const QuestJournal = lazy(() => import("./pages/QuestJournal"));
-const TimelineDashboard = lazy(() => import("./pages/TimelineDashboard"));
-const RelationshipNodeGraphPage = lazy(
-  () => import("./pages/RelationshipNodeGraphPage"),
-);
-const WhatIfScenarios = lazy(() => import("./pages/WhatIfScenarios"));
-const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
-const Chronicles = lazy(() => import("./pages/Chronicles"));
-const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
-const Disclaimer = lazy(() => import("./pages/Disclaimer"));
+const ExtraPage = lazy(() => import("./app/extraPages"));
 
 import { Navigate } from "react-router-dom";
 import AIDisclaimerModal from "@/components/legal/AIDisclaimerModal";
@@ -944,7 +826,7 @@ const AuthenticatedApp = () => {
               <Route
                 path="/repo-codespace"
                 element={
-                    <RepoCodespace />
+                    <ExtraPage name="RepoCodespace" />
                 }
               />
               <Route
@@ -956,7 +838,7 @@ const AuthenticatedApp = () => {
               <Route
                 path="/codespace"
                 element={
-                    <Codespace />
+                    <ExtraPage name="Codespace" />
                 }
               />
               <Route
@@ -970,32 +852,32 @@ const AuthenticatedApp = () => {
               <Route
                 path="/onboarding"
                 element={
-                    <OnboardingFlow />
+                    <ExtraPage name="OnboardingFlow" />
                 }
               />
               <Route
                 path="/legacy-onboarding"
                 element={
-                    <Onboarding />
+                    <ExtraPage name="Onboarding" />
                 }
               />
               <Route
                 path="/mode-select"
                 element={
-                    <ModeSelect />
+                    <ExtraPage name="ModeSelect" />
                 }
               />
               <Route path="/home" element={<Navigate to="/" replace />} />
               <Route
                 path="/check-in"
                 element={
-                    <CheckIn />
+                    <ExtraPage name="CheckIn" />
                 }
               />
               <Route
                 path="/reflection-log"
                 element={
-                    <ReflectionLog />
+                    <ExtraPage name="ReflectionLog" />
                 }
               />
               <Route
@@ -1007,25 +889,25 @@ const AuthenticatedApp = () => {
               <Route
                 path="/groups"
                 element={
-                    <CharacterGroups />
+                    <ExtraPage name="CharacterGroups" />
                 }
               />
               <Route
                 path="/storyboard"
                 element={
-                    <Storyboard />
+                    <ExtraPage name="Storyboard" />
                 }
               />
               <Route
                 path="/storyboard-manager/:sessionId"
                 element={
-                    <StoryboardManager />
+                    <ExtraPage name="StoryboardManager" />
                 }
               />
               <Route
                 path="/network"
                 element={
-                    <Network />
+                    <ExtraPage name="Network" />
                 }
               />
               <Route
@@ -1043,25 +925,25 @@ const AuthenticatedApp = () => {
               <Route
                 path="/origins"
                 element={
-                    <HallOfOrigins />
+                    <ExtraPage name="HallOfOrigins" />
                 }
               />
               <Route
                 path="/memory-crystals"
                 element={
-                    <MemoryCrystals />
+                    <ExtraPage name="MemoryCrystals" />
                 }
               />
               <Route
                 path="/constellation"
                 element={
-                    <ConstellationMap />
+                    <ExtraPage name="ConstellationMap" />
                 }
               />
               <Route
                 path="/book-of-echoes"
                 element={
-                    <BookOfEchoes />
+                    <ExtraPage name="BookOfEchoes" />
                 }
               />
               <Route
@@ -1073,121 +955,121 @@ const AuthenticatedApp = () => {
               <Route
                 path="/lorebook"
                 element={
-                    <LoreBook />
+                    <ExtraPage name="LoreBook" />
                 }
               />
               <Route
                 path="/worldmap"
                 element={
-                    <WorldMap />
+                    <ExtraPage name="WorldMap" />
                 }
               />
               <Route
                 path="/journals"
                 element={
-                    <Journals />
+                    <ExtraPage name="Journals" />
                 }
               />
               <Route
                 path="/wiki"
                 element={
-                    <Wiki />
+                    <ExtraPage name="Wiki" />
                 }
               />
               <Route
                 path="/narrative"
                 element={
-                    <NarrativeProgress />
+                    <ExtraPage name="NarrativeProgress" />
                 }
               />
               <Route
                 path="/flowchart"
                 element={
-                    <StoryFlowchart />
+                    <ExtraPage name="StoryFlowchart" />
                 }
               />
               <Route
                 path="/relationships"
                 element={
-                    <RelationshipNetwork />
+                    <ExtraPage name="RelationshipNetwork" />
                 }
               />
               <Route
                 path="/graph"
                 element={
-                    <CharacterGraphVisualization />
+                    <ExtraPage name="CharacterGraphVisualization" />
                 }
               />
               <Route
                 path="/archive"
                 element={
-                    <LoreArchive />
+                    <ExtraPage name="LoreArchive" />
                 }
               />
               <Route
                 path="/insights"
                 element={
-                    <Insights />
+                    <ExtraPage name="Insights" />
                 }
               />
               <Route
                 path="/reflections"
                 element={
-                    <Reflections />
+                    <ExtraPage name="Reflections" />
                 }
               />
               <Route
                 path="/discoveries"
                 element={
-                    <DiscoveryQueue />
+                    <ExtraPage name="DiscoveryQueue" />
                 }
               />
               <Route
                 path="/locationsmap"
                 element={
-                    <LocationsMap />
+                    <ExtraPage name="LocationsMap" />
                 }
               />
               <Route
                 path="/relationshipviz"
                 element={
-                    <RelationshipVisualization />
+                    <ExtraPage name="RelationshipVisualization" />
                 }
               />
               <Route
                 path="/globalwiki"
                 element={
-                    <GlobalWiki />
+                    <ExtraPage name="GlobalWiki" />
                 }
               />
               <Route
                 path="/worldcalendar"
                 element={
-                    <WorldCalendar />
+                    <ExtraPage name="WorldCalendar" />
                 }
               />
               <Route
                 path="/worldcodex"
                 element={
-                    <WorldCodex />
+                    <ExtraPage name="WorldCodex" />
                 }
               />
               <Route
                 path="/relationshipgraph"
                 element={
-                    <RelationshipGraph />
+                    <ExtraPage name="RelationshipGraph" />
                 }
               />
               <Route
                 path="/inventory"
                 element={
-                    <InventoryPanel />
+                    <ExtraPage name="InventoryPanel" />
                 }
               />
               <Route
                 path="/energy-fragments"
                 element={
-                    <EnergyFragments />
+                    <ExtraPage name="EnergyFragments" />
                 }
               />
               <Route
@@ -1199,85 +1081,85 @@ const AuthenticatedApp = () => {
               <Route
                 path="/calenderview"
                 element={
-                    <CalendarView />
+                    <ExtraPage name="CalendarView" />
                 }
               />
               <Route
                 path="/branching"
                 element={
-                    <StoryBranching />
+                    <ExtraPage name="StoryBranching" />
                 }
               />
               <Route
                 path="/memory-map"
                 element={
-                    <CharacterMemoryMap />
+                    <ExtraPage name="CharacterMemoryMap" />
                 }
               />
               <Route
                 path="/world-pulse"
                 element={
-                    <WorldPulse />
+                    <ExtraPage name="WorldPulse" />
                 }
               />
               <Route
                 path="/branching-map"
                 element={
-                    <NarrativeBranchingMap />
+                    <ExtraPage name="NarrativeBranchingMap" />
                 }
               />
               <Route
                 path="/relationship-graph"
                 element={
-                    <RelationshipGraphPage />
+                    <ExtraPage name="RelationshipGraphPage" />
                 }
               />
               <Route
                 path="/yn-library"
                 element={
-                    <YnStoriesLibrary />
+                    <ExtraPage name="YnStoriesLibrary" />
                 }
               />
               <Route
                 path="/world-timeline"
                 element={
-                    <WorldTimeline />
+                    <ExtraPage name="WorldTimeline" />
                 }
               />
               <Route
                 path="/characters-repository"
                 element={
-                    <CharacterRepository />
+                    <ExtraPage name="CharacterRepository" />
                 }
               />
               <Route
                 path="/analytics"
                 element={
-                    <StoryAnalyticsDashboard />
+                    <ExtraPage name="StoryAnalyticsDashboard" />
                 }
               />
               <Route
                 path="/faction-network"
                 element={
-                    <FactionNetwork />
+                    <ExtraPage name="FactionNetwork" />
                 }
               />
               <Route
                 path="/story-control"
                 element={
-                    <NarrativeFlowchartPage />
+                    <ExtraPage name="NarrativeFlowchartPage" />
                 }
               />
               <Route
                 path="/character-memories"
                 element={
-                    <CharacterMemories />
+                    <ExtraPage name="CharacterMemories" />
                 }
               />
               <Route
                 path="/customize"
                 element={
-                    <CharacterCustomization />
+                    <ExtraPage name="CharacterCustomization" />
                 }
               />
               <Route
@@ -1289,145 +1171,145 @@ const AuthenticatedApp = () => {
               <Route
                 path="/orchestrate/:sessionId"
                 element={
-                    <SceneOrchestrator />
+                    <ExtraPage name="SceneOrchestrator" />
                 }
               />
               <Route
                 path="/memory-graph/:characterId"
                 element={
-                    <MemoryGraphDashboard />
+                    <ExtraPage name="MemoryGraphDashboard" />
                 }
               />
               <Route
                 path="/create-scenario"
                 element={
-                    <CreateScenario />
+                    <ExtraPage name="CreateScenario" />
                 }
               />
               <Route
                 path="/quests/:sessionId"
                 element={
-                    <QuestTrackingDashboard />
+                    <ExtraPage name="QuestTrackingDashboard" />
                 }
               />
               <Route
                 path="/looks"
                 element={
-                    <CharacterLookCustomizer />
+                    <ExtraPage name="CharacterLookCustomizer" />
                 }
               />
               <Route
                 path="/ai-behavior"
                 element={
-                    <AIBehaviorSettings />
+                    <ExtraPage name="AIBehaviorSettings" />
                 }
               />
               <Route
                 path="/dashboard/:sessionId"
                 element={
-                    <RelationshipAndLocationDashboard />
+                    <ExtraPage name="RelationshipAndLocationDashboard" />
                 }
               />
               <Route
                 path="/graph-visualization"
                 element={
-                    <InteractiveGraphVisualization />
+                    <ExtraPage name="InteractiveGraphVisualization" />
                 }
               />
               <Route
                 path="/graph-visualization/:sessionId"
                 element={
-                    <InteractiveGraphVisualization />
+                    <ExtraPage name="InteractiveGraphVisualization" />
                 }
               />
               <Route
                 path="/integrated-calendar"
                 element={
-                    <IntegratedWorldCalendar />
+                    <ExtraPage name="IntegratedWorldCalendar" />
                 }
               />
               <Route
                 path="/integrated-calendar/:sessionId"
                 element={
-                    <IntegratedWorldCalendar />
+                    <ExtraPage name="IntegratedWorldCalendar" />
                 }
               />
               <Route
                 path="/quest-log"
                 element={
-                    <QuestLog />
+                    <ExtraPage name="QuestLog" />
                 }
               />
               <Route
                 path="/quest-log/:sessionId"
                 element={
-                    <QuestLog />
+                    <ExtraPage name="QuestLog" />
                 }
               />
               <Route
                 path="/memories"
                 element={
-                    <CharacterMemoriesDashboard />
+                    <ExtraPage name="CharacterMemoriesDashboard" />
                 }
               />
               <Route
                 path="/story-branching/:sessionId"
                 element={
-                    <StoryBranchingGraph />
+                    <ExtraPage name="StoryBranchingGraph" />
                 }
               />
               <Route
                 path="/story-branching"
                 element={
-                    <StoryBranchingGraph />
+                    <ExtraPage name="StoryBranchingGraph" />
                 }
               />
               <Route
                 path="/world-calendar-dashboard"
                 element={
-                    <WorldCalendarDashboard />
+                    <ExtraPage name="WorldCalendarDashboard" />
                 }
               />
               <Route
                 path="/world-calendar-dashboard/:sessionId"
                 element={
-                    <WorldCalendarDashboard />
+                    <ExtraPage name="WorldCalendarDashboard" />
                 }
               />
               <Route
                 path="/conflict-dashboard"
                 element={
-                    <NarrativeConflictDashboard />
+                    <ExtraPage name="NarrativeConflictDashboard" />
                 }
               />
               <Route
                 path="/interactive-inventory"
                 element={
-                    <InteractiveInventory />
+                    <ExtraPage name="InteractiveInventory" />
                 }
               />
               <Route
                 path="/interactive-inventory/:sessionId/:characterId"
                 element={
-                    <InteractiveInventory />
+                    <ExtraPage name="InteractiveInventory" />
                 }
               />
               <Route
                 path="/quest-log-page"
                 element={
-                    <QuestLogPage />
+                    <ExtraPage name="QuestLogPage" />
                 }
               />
               <Route
                 path="/quest-log-page/:sessionId"
                 element={
-                    <QuestLogPage />
+                    <ExtraPage name="QuestLogPage" />
                 }
               />
               <Route
                 path="/lore-archives"
                 element={
-                    <LoreArchivesDashboard />
+                    <ExtraPage name="LoreArchivesDashboard" />
                 }
               />
               <Route
@@ -1445,19 +1327,19 @@ const AuthenticatedApp = () => {
               <Route
                 path="/subscription"
                 element={
-                    <Subscription />
+                    <ExtraPage name="Subscription" />
                 }
               />
               <Route
                 path="/lifetime-access"
                 element={
-                    <LifetimeAccess />
+                    <ExtraPage name="LifetimeAccess" />
                 }
               />
               <Route
                 path="/narrative-world-map/:sessionId"
                 element={
-                    <NarrativeWorldMap />
+                    <ExtraPage name="NarrativeWorldMap" />
                 }
               />
               <Route
@@ -1469,79 +1351,79 @@ const AuthenticatedApp = () => {
               <Route
                 path="/what-if"
                 element={
-                    <WhatIfScenarios />
+                    <ExtraPage name="WhatIfScenarios" />
                 }
               />
               <Route
                 path="/story-reader/:sessionId"
                 element={
-                    <StoryReader />
+                    <ExtraPage name="StoryReader" />
                 }
               />
               <Route
                 path="/quest-journal"
                 element={
-                    <QuestJournal />
+                    <ExtraPage name="QuestJournal" />
                 }
               />
               <Route
                 path="/timeline/:sessionId"
                 element={
-                    <TimelineDashboard />
+                    <ExtraPage name="TimelineDashboard" />
                 }
               />
               <Route
                 path="/relationship-graph/:sessionId"
                 element={
-                    <RelationshipNodeGraphPage />
+                    <ExtraPage name="RelationshipNodeGraphPage" />
                 }
               />
               <Route
                 path="/relationship-graph"
                 element={
-                    <RelationshipNodeGraphPage />
+                    <ExtraPage name="RelationshipNodeGraphPage" />
                 }
               />
               <Route
                 path="/terms"
                 element={
-                    <TermsOfUse />
+                    <ExtraPage name="TermsOfUse" />
                 }
               />
               <Route
                 path="/chronicles"
                 element={
-                    <Chronicles />
+                    <ExtraPage name="Chronicles" />
                 }
               />
               <Route
                 path="/privacy-policy"
                 element={
-                    <PrivacyPolicy />
+                    <ExtraPage name="PrivacyPolicy" />
                 }
               />
               <Route
                 path="/disclaimer"
                 element={
-                    <Disclaimer />
+                    <ExtraPage name="Disclaimer" />
                 }
               />
               <Route
                 path="/progress"
                 element={
-                    <ProgressDashboard />
+                    <ExtraPage name="ProgressDashboard" />
                 }
               />
               <Route
                 path="/premium"
                 element={
-                    <PremiumPlans />
+                    <ExtraPage name="PremiumPlans" />
                 }
               />
               <Route
                 path="/templates"
                 element={
-                    <TemplateHub />
+                    <ExtraPage name="TemplateHub" />
                 }
               />
               <Route path="*" element={<PageNotFound />} />
