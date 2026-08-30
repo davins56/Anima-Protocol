@@ -48,6 +48,8 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("expressHandler.fetch");
     expect(workerSource).toContain("env.ASSETS.fetch");
     expect(workerSource).toContain("httpServerHandler");
+    expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
+    expect(workerSource).toContain("httpServerHandler({ port: WORKER_API_PORT })");
   });
 
   it("does not embed secrets in the committed Worker config", () => {
