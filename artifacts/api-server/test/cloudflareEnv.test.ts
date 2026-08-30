@@ -90,32 +90,65 @@ describe("mirrorCloudflareBindings", () => {
   });
 });
 
+function withWipedProcessSecrets(run: () => void | Promise<void>) {
+  const saved = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    CLERK_PUBLISHABLE_KEY: process.env.CLERK_PUBLISHABLE_KEY,
+    POSTGRES_URL: process.env.POSTGRES_URL,
+    PRISMA_DATABASE_URL: process.env.PRISMA_DATABASE_URL,
+  };
+  delete process.env.DATABASE_URL;
+  delete process.env.CLERK_SECRET_KEY;
+  delete process.env.CLERK_PUBLISHABLE_KEY;
+  delete process.env.POSTGRES_URL;
+  delete process.env.PRISMA_DATABASE_URL;
+  const restore = () => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+  try {
+    const result = run();
+    if (result && typeof (result as Promise<void>).then === "function") {
+      return (result as Promise<void>).finally(restore);
+    }
+    restore();
+    return result;
+  } catch (err) {
+    restore();
+    throw err;
+  }
+}
+
 describe("importable and request-time env", () => {
-  it("reads non-enumerable importable env after process.env is wiped", () => {
-    const importable: Record<string, unknown> = { NODE_ENV: "production" };
-    Object.defineProperty(importable, "CLERK_SECRET_KEY", {
-      value: "sk_live_importable",
-      enumerable: false,
-    });
-    Object.defineProperty(importable, "DATABASE_URL", {
-      value: "postgresql://from-importable/db",
-      enumerable: false,
-    });
-    bindImportableEnv(importable);
+  it("reads non-enumerable importable env after process.env is wiped", () =>
+    withWipedProcessSecrets(() => {
+      const importable: Record<string, unknown> = { NODE_ENV: "production" };
+      Object.defineProperty(importable, "CLERK_SECRET_KEY", {
+        value: "sk_live_importable",
+        enumerable: false,
+      });
+      Object.defineProperty(importable, "DATABASE_URL", {
+        value: "postgresql://from-importable/db",
+        enumerable: false,
+      });
+      bindImportableEnv(importable);
 
-    expect(readRuntimeEnv("CLERK_SECRET_KEY")).toBe("sk_live_importable");
-    expect(readRuntimeDatabaseUrl()).toBe("postgresql://from-importable/db");
-    expect(runtimeEnvPresence()).toEqual({
-      hasDatabaseUrl: true,
-      hasClerkSecret: true,
-      hasClerkPublishable: false,
-    });
+      expect(readRuntimeEnv("CLERK_SECRET_KEY")).toBe("sk_live_importable");
+      expect(readRuntimeDatabaseUrl()).toBe("postgresql://from-importable/db");
+      expect(runtimeEnvPresence()).toEqual({
+        hasDatabaseUrl: true,
+        hasClerkSecret: true,
+        hasClerkPublishable: false,
+      });
 
-    const target: Record<string, string | undefined> = {};
-    remirrorRuntimeEnvIntoProcess(target);
-    expect(target.CLERK_SECRET_KEY).toBe("sk_live_importable");
-    expect(target.DATABASE_URL).toBe("postgresql://from-importable/db");
-  });
+      const target: Record<string, string | undefined> = {};
+      remirrorRuntimeEnvIntoProcess(target);
+      expect(target.CLERK_SECRET_KEY).toBe("sk_live_importable");
+      expect(target.DATABASE_URL).toBe("postgresql://from-importable/db");
+    }));
 
   it("applies async Secrets Store get() bindings from the request env", async () => {
     const env: Record<string, unknown> = {
@@ -180,14 +213,15 @@ describe("importable and request-time env", () => {
     }
   });
 
-  it("reads last request env even when process.env assignment is ignored", () => {
-    bindRequestEnv({
-      DATABASE_URL: "postgresql://request-env/db",
-      CLERK_SECRET_KEY: "sk_live_request",
-    });
-    expect(readRuntimeEnv("CLERK_SECRET_KEY")).toBe("sk_live_request");
-    expect(readRuntimeDatabaseUrl()).toBe("postgresql://request-env/db");
-  });
+  it("reads last request env even when process.env assignment is ignored", () =>
+    withWipedProcessSecrets(() => {
+      bindRequestEnv({
+        DATABASE_URL: "postgresql://request-env/db",
+        CLERK_SECRET_KEY: "sk_live_request",
+      });
+      expect(readRuntimeEnv("CLERK_SECRET_KEY")).toBe("sk_live_request");
+      expect(readRuntimeDatabaseUrl()).toBe("postgresql://request-env/db");
+    }));
 });
 
 describe("resolveDatabaseUrl", () => {
