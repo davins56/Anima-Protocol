@@ -32,7 +32,17 @@ describe("initial module graph budget", () => {
     expect(entry).not.toContain("ClerkProvider");
     expect(entry).not.toMatch(/lazy\(\(\) => import\("\.\/pages\//);
     expect(entry).toContain('lazy(() => import("./ProtocolApp"))');
+    expect(entry).toContain("BrowserRouter");
     expect(entry).toMatch(/import Landing from ["']\.\/pages\/Landing["']/);
+
+    const main = readSrc("main.jsx");
+    expect(main).not.toMatch(/from\s+["']\.\/lib\/analytics["']/);
+    expect(main).toMatch(/import\(\s*["']\.\/lib\/analytics["']\s*\)/);
+    expect(main).not.toMatch(/from\s+["']@vercel\/analytics\/react["']/);
+
+    const landing = readSrc("pages/Landing.tsx");
+    expect(landing).not.toMatch(/from\s+["']@\/api\/base44Client["']/);
+    expect(landing).toMatch(/import\(\s*["']@\/api\/base44Client["']\s*\)/);
 
     const shell = readSrc("ProtocolApp.jsx");
     expect(shell).toMatch(/from\s+["']@clerk\/react["']/);

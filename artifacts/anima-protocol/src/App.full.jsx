@@ -1,4 +1,5 @@
 import { Suspense, lazy } from "react";
+import { BrowserRouter } from "react-router-dom";
 import useViewportHeight from "@/hooks/useViewportHeight";
 import Landing from "./pages/Landing";
 import { PageLoader } from "./app/PageLoader";
@@ -62,8 +63,10 @@ export default function App() {
     !hasLikelySession();
 
   return (
-    <Suspense fallback={showLandingShell ? <Landing /> : <PageLoader />}>
-      <ProtocolApp />
-    </Suspense>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <Suspense fallback={showLandingShell ? <Landing /> : <PageLoader />}>
+        <ProtocolApp />
+      </Suspense>
+    </BrowserRouter>
   );
 }
