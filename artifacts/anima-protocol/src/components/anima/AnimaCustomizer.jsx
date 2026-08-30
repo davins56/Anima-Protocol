@@ -6,9 +6,11 @@ import {
 } from "@/lib/characterAvatarUpload";
 import {
   APPEARANCE_FEATURES,
+  VESSEL_LAYER_FIELDS,
   buildAppearanceImagePrompt,
   getAppearanceSuggestions,
   normalizeAppearancePrompts,
+  normalizeVesselLayers,
 } from "@/lib/animaAppearance";
 import { X, Wand2, Loader, Check, Palette, Upload } from "lucide-react";
 
@@ -46,6 +48,9 @@ export default function AnimaCustomizer({
     () => anima?.look_reference_url || "",
   );
   const [themeColor, setThemeColor] = useState(anima?.theme_color || "#00e5e5");
+  const [vesselLayers, setVesselLayers] = useState(() =>
+    normalizeVesselLayers(anima?.hidden_sequences?.vessel_layers || anima?.vessel_layers),
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [activeFeature, setActiveFeature] = useState("skin");
@@ -58,6 +63,9 @@ export default function AnimaCustomizer({
     setPreviewUrl(anima?.avatar_url || "");
     setReferenceUrl(anima?.look_reference_url || "");
     setThemeColor(anima?.theme_color || "#00e5e5");
+    setVesselLayers(
+      normalizeVesselLayers(anima?.hidden_sequences?.vessel_layers || anima?.vessel_layers),
+    );
     setSaved(false);
     setError("");
   }, [anima?.id]);
@@ -137,11 +145,17 @@ export default function AnimaCustomizer({
         look_reference_url = await uploadDataUrl(look_reference_url);
       }
 
+      const layers = normalizeVesselLayers(vesselLayers);
       const patch = {
         avatar_url,
         look_reference_url: look_reference_url || null,
         theme_color: themeColor,
         appearance_prompts: normalizeAppearancePrompts(prompts),
+        vessel_layers: layers,
+        hidden_sequences: {
+          ...(anima?.hidden_sequences || {}),
+          vessel_layers: layers,
+        },
       };
       await base44.entities.Anima.update(anima.id, patch);
       setPreviewUrl(avatar_url);
@@ -168,8 +182,13 @@ export default function AnimaCustomizer({
   const hasReferenceChange =
     (referenceUrl || "") !== (anima?.look_reference_url || "");
   const hasThemeChange = themeColor !== (anima?.theme_color || "#00e5e5");
+  const hasVesselChange =
+    JSON.stringify(normalizeVesselLayers(vesselLayers)) !==
+    JSON.stringify(
+      normalizeVesselLayers(anima?.hidden_sequences?.vessel_layers || anima?.vessel_layers),
+    );
   const hasChanges =
-    hasAvatarChange || hasThemeChange || hasPromptChanges || hasReferenceChange;
+    hasAvatarChange || hasThemeChange || hasPromptChanges || hasReferenceChange || hasVesselChange;
   const hasPrompts = Object.values(prompts).some((v) => v.trim());
 
   const shellClass = isPage
@@ -371,6 +390,39 @@ export default function AnimaCustomizer({
           </div>
 
           <div className="p-4 border-t border-primary/15 space-y-3">
+            <div className="space-y-2 border border-primary/15 bg-black/30 p-3">
+              <p className="font-mono text-[8px] text-primary/40 tracking-[0.25em] uppercase">
+                Vessel layers · same body in Presence and NetBattle
+              </p>
+              <div className="grid grid-cols-1 gap-2">
+                {VESSEL_LAYER_FIELDS.map((field) => (
+                  <label key={field.key} className="block">
+                    <span className="font-mono text-[8px] text-primary/35 tracking-widest uppercase">
+                      {field.label}
+                    </span>
+                    <input
+                      type="text"
+                      value={vesselLayers[field.layer]?.[field.field] || ""}
+                      onChange={(e) => {
+                        setVesselLayers((prev) =>
+                          normalizeVesselLayers({
+                            ...prev,
+                            [field.layer]: {
+                              ...prev[field.layer],
+                              [field.field]: e.target.value,
+                            },
+                          }),
+                        );
+                        setSaved(false);
+                      }}
+                      placeholder={field.placeholder}
+                      className="mt-1 w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-[11px] px-2 py-1.5 focus:outline-none focus:border-primary/50"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="font-mono text-[8px] text-primary/40 tracking-widest uppercase flex items-center gap-1.5">
                 <Palette className="w-3 h-3" />
