@@ -49,6 +49,14 @@ describe("createBattle", () => {
     expect(battle.player.silhouette).toBe("serenity");
     expect(battle.enemy.silhouette).toBeTruthy();
   });
+
+  it("loads an Echo Key folder as the playable weapon-memory hand", async () => {
+    const { echoFolderToChips, defaultEchoLibrary } = await import("./echoKeys");
+    const echoFolder = echoFolderToChips(defaultEchoLibrary());
+    const battle = createBattle({ anima, seed: 5, echoFolder });
+    expect(battle.hand.length).toBeGreaterThan(0);
+    expect(battle.hand.concat(battle.folder).some((c) => c.echoKey)).toBe(true);
+  });
 });
 
 describe("movement and weapons", () => {
