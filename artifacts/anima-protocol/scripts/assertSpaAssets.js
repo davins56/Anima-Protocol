@@ -15,6 +15,27 @@ import { fileURLToPath } from "node:url";
 
 const REQUIRED_CHUNK_PREFIXES = ["EchoKeys-", "UserProfile-"];
 
+/** Must not appear in JS that index.html loads before first paint. */
+export const FORBIDDEN_IN_HTML_ENTRY = [
+  "ClerkProvider",
+  "seedCharacters",
+  "ProgressDashboard",
+  "StoryAnalyticsDashboard",
+  "NarrativeConflictDashboard",
+  "LoreArchivesDashboard",
+  "Korra",
+  "Fiercely passionate",
+];
+
+export function collectHtmlEntryJs(html) {
+  const refs = [];
+  const re =
+    /<(?:script[^>]+src|link[^>]+rel=["']modulepreload["'][^>]+href)=["']\/assets\/([A-Za-z0-9_.-]+\.js)["']/g;
+  let m;
+  while ((m = re.exec(html))) refs.push(m[1]);
+  return [...new Set(refs)];
+}
+
 export function listHashedJs(assetDir) {
   if (!existsSync(assetDir)) return [];
   return readdirSync(assetDir).filter((name) => /^[\w.-]+\.js$/.test(name));
@@ -83,7 +104,24 @@ export function assertSpaAssets(distDir) {
     );
   }
 
-  return { found, refs: refs.length, jsFiles: jsFiles.length };
+  const entryRefs = collectHtmlEntryJs(html);
+  const forbidden = [];
+  for (const name of entryRefs) {
+    const source = readFileSync(join(assetDir, name), "utf8");
+    for (const needle of FORBIDDEN_IN_HTML_ENTRY) {
+      if (source.includes(needle)) {
+        forbidden.push(`${name}: ${needle}`);
+      }
+    }
+  }
+  if (forbidden.length) {
+    throw new Error(
+      `SPA assert: HTML entry JS still contains first-load tax (${forbidden.join("; ")}). ` +
+        `Keep seedCharacters and unused dashboards out of the initial graph.`,
+    );
+  }
+
+  return { found, refs: refs.length, jsFiles: jsFiles.length, entryRefs };
 }
 
 const isCli =
