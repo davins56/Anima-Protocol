@@ -108,6 +108,24 @@ export function resetCloudflareEnvBindingsForTests(): void {
 }
 
 /**
+ * Cloudflare Hyperdrive binding: `{ connectionString }` (never a secret in
+ * wrangler.jsonc). Prefer this over DATABASE_URL from Workers so Postgres
+ * goes through the pooler instead of Supabase direct :5432.
+ */
+export function unwrapHyperdriveConnectionString(
+  value: unknown,
+): string | undefined {
+  if (typeof value === "string") {
+    return unwrapBindingString(value);
+  }
+  if (value && typeof value === "object") {
+    const record = value as { connectionString?: unknown };
+    return unwrapBindingString(record.connectionString);
+  }
+  return undefined;
+}
+
+/**
  * Worker secrets are strings. Secrets Store bindings are objects with async
  * `get()`. Some dashboard wrappers expose `{ value }`. Never log the result.
  */
@@ -220,7 +238,25 @@ export function readRuntimeEnv(name: string): string | undefined {
   return undefined;
 }
 
+export function readHyperdriveConnectionString(): string | undefined {
+  if (lastRequestEnv) {
+    const fromRequest = unwrapHyperdriveConnectionString(
+      lastRequestEnv.HYPERDRIVE,
+    );
+    if (fromRequest) return fromRequest;
+  }
+  if (importableEnv) {
+    const fromImportable = unwrapHyperdriveConnectionString(
+      importableEnv.HYPERDRIVE,
+    );
+    if (fromImportable) return fromImportable;
+  }
+  return unwrapHyperdriveConnectionString(process.env.HYPERDRIVE);
+}
+
 export function readRuntimeDatabaseUrl(): string | undefined {
+  const hyperdrive = readHyperdriveConnectionString();
+  if (hyperdrive) return hyperdrive;
   for (const name of DATABASE_URL_ENV_NAMES) {
     const value = readRuntimeEnv(name);
     if (value) return value;
@@ -248,6 +284,18 @@ function aliasDatabaseUrl(target: Record<string, string | undefined>): void {
   if (target === process.env) rememberMirrored("DATABASE_URL", alias);
 }
 
+function aliasHyperdriveUrl(
+  target: Record<string, string | undefined>,
+  env?: Record<string, unknown>,
+): void {
+  const hd =
+    unwrapHyperdriveConnectionString(env?.HYPERDRIVE) ??
+    readHyperdriveConnectionString();
+  if (!hd) return;
+  writeEnvValue(target, "DATABASE_URL", hd);
+  if (target === process.env) rememberMirrored("DATABASE_URL", hd);
+}
+
 /**
  * Mirror Worker bindings into `process.env` so existing Express/Clerk/pg
  * reads keep working. Always assign known secret names by property access —
@@ -265,6 +313,7 @@ export function mirrorCloudflareBindings(
     applyStringBinding(target, name, env[name], remember);
   }
   aliasDatabaseUrl(target);
+  aliasHyperdriveUrl(target, env);
 }
 
 async function copyUnwrappedBindings(
@@ -312,6 +361,7 @@ export async function applyCloudflareRequestEnv(
     await copyUnwrappedBindings(importableEnv, target);
   }
   aliasDatabaseUrl(target);
+  aliasHyperdriveUrl(target, env);
 }
 
 /**
@@ -338,6 +388,7 @@ export function remirrorRuntimeEnvIntoProcess(
     }
   }
   aliasDatabaseUrl(target);
+  aliasHyperdriveUrl(target);
 }
 
 export function syncCloudflareRuntimeEnvMiddleware(): RequestHandler {

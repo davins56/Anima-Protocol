@@ -91,7 +91,12 @@ router.get("/healthz/db", async (_req, res) => {
         status: "error",
         db: true,
         ok: result.rows?.[0]?.ok === 1,
-        schema: { ok: false, error: info.safeMessage, code: info.code },
+        schema: {
+          ok: false,
+          error: info.safeMessage,
+          reason: info.reason,
+          code: info.code,
+        },
         target,
       });
       return;
@@ -116,6 +121,7 @@ router.get("/healthz/db", async (_req, res) => {
       status: "error",
       db: false,
       error: info.safeMessage,
+      reason: info.reason,
       code: info.code,
       target,
     });
@@ -145,6 +151,7 @@ router.get("/healthz/schema", async (_req, res) => {
     res.status(503).json({
       status: "error",
       error: info.safeMessage,
+      reason: info.reason,
       code: info.code,
       target,
     });
@@ -165,6 +172,7 @@ router.post("/healthz/schema", async (_req, res) => {
     res.status(503).json({
       status: "error",
       error: info.safeMessage,
+      reason: info.reason,
       code: info.code,
       target,
     });

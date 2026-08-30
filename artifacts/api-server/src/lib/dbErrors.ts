@@ -1,13 +1,29 @@
-import { readRuntimeDatabaseUrl } from "./cloudflareEnv";
+import {
+  readHyperdriveConnectionString,
+  readRuntimeDatabaseUrl,
+} from "./cloudflareEnv";
 
 /**
  * Classify and sanitize database / driver errors so API responses never leak
  * connection strings or credentials, while still giving operators a usable signal.
  */
 
+export type DbErrorReason =
+  | "timeout"
+  | "ssl"
+  | "refused"
+  | "reset"
+  | "unreachable"
+  | "auth"
+  | "schema"
+  | "limit"
+  | "unavailable"
+  | "internal";
+
 export type DbErrorInfo = {
   isDbError: boolean;
   code?: string;
+  reason: DbErrorReason;
   safeMessage: string;
 };
 
@@ -54,7 +70,11 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     code === "ECONNREFUSED" ||
     code === "ENOTFOUND" ||
     code === "ETIMEDOUT" ||
+    code === "ETIMEOUT" ||
     code === "ECONNRESET" ||
+    code === "ABORT_ERR" ||
+    code === "UND_ERR_CONNECT_TIMEOUT" ||
+    code === "UND_ERR_SOCKET" ||
     code === "ERR_SSL_WRONG_VERSION_NUMBER" ||
     code === "DEPTH_ZERO_SELF_SIGNED_CERT" ||
     code === "SELF_SIGNED_CERT_IN_CHAIN" ||
@@ -62,9 +82,16 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     /Failed query/i.test(message) ||
     /DATABASE_URL/i.test(message) ||
     /connect\s+ECONNREFUSED/i.test(message) ||
+    /connection refused/i.test(message) ||
     /getaddrinfo/i.test(message) ||
     /timeout expired/i.test(message) ||
+    /connection timeout/i.test(message) ||
+    /ConnectTimeout/i.test(message) ||
+    /SocketTimeout/i.test(message) ||
+    /aborted due to timeout/i.test(message) ||
     /Connection terminated/i.test(message) ||
+    /Connection ended unexpectedly/i.test(message) ||
+    /Network connection lost/i.test(message) ||
     /sorry, too many clients/i.test(message) ||
     /password authentication failed/i.test(message) ||
     /no pg_hba\.conf/i.test(message) ||
@@ -73,45 +100,85 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     /does not exist/i.test(message);
 
   if (!looksLikeDb) {
-    return { isDbError: false, safeMessage: "Internal server error" };
+    return {
+      isDbError: false,
+      reason: "internal",
+      safeMessage: "Internal server error",
+    };
   }
 
+  const blob = `${code} ${message}`;
+  let reason: DbErrorReason = "unavailable";
   let safeMessage = "Database unavailable";
+
   if (/password authentication failed/i.test(message)) {
+    reason = "auth";
     safeMessage = "Database authentication failed";
   } else if (/does not exist/i.test(message) || code.startsWith("42")) {
+    reason = "schema";
     safeMessage = "Database schema is missing or out of date";
+  } else if (/too many clients/i.test(message)) {
+    reason = "limit";
+    safeMessage = "Database connection limit reached";
   } else if (
-    /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|getaddrinfo|timeout expired/i.test(
-      `${code} ${message}`,
+    /ERR_SSL|SSL|certificate|UNABLE_TO_VERIFY|SELF_SIGNED|wrong version number/i.test(
+      blob,
     )
   ) {
-    safeMessage = "Database host unreachable";
-  } else if (/SSL|certificate|UNABLE_TO_VERIFY|SELF_SIGNED/i.test(message)) {
+    reason = "ssl";
     safeMessage = "Database SSL connection failed";
-  } else if (/too many clients/i.test(message)) {
-    safeMessage = "Database connection limit reached";
+  } else if (/ECONNREFUSED|connection refused/i.test(blob)) {
+    reason = "refused";
+    safeMessage = "Database connection refused";
+  } else if (
+    /ETIMEDOUT|ETIMEOUT|UND_ERR_CONNECT_TIMEOUT|timeout expired|connection timeout|ConnectTimeout|SocketTimeout|aborted due to timeout/i.test(
+      blob,
+    )
+  ) {
+    reason = "timeout";
+    safeMessage = "Database connection timed out";
+  } else if (
+    /ECONNRESET|UND_ERR_SOCKET|Connection terminated|Connection ended unexpectedly|Network connection lost/i.test(
+      blob,
+    )
+  ) {
+    reason = "reset";
+    safeMessage = "Database connection reset";
+  } else if (/ENOTFOUND|getaddrinfo/i.test(blob)) {
+    reason = "unreachable";
+    safeMessage = "Database host unreachable";
   }
 
   return {
     isDbError: true,
-    code: code || undefined,
+    code: code || reason,
+    reason,
     safeMessage: scrub(safeMessage),
   };
 }
 
 /** Non-secret connection metadata for readiness probes. */
+export function databaseConnectionSource(
+  rawUrl: string | undefined = readRuntimeDatabaseUrl(),
+): "hyperdrive" | "database_url" | "none" {
+  if (readHyperdriveConnectionString()) return "hyperdrive";
+  if (rawUrl?.trim()) return "database_url";
+  return "none";
+}
+
 export function databaseTargetHint(
   rawUrl: string | undefined = readRuntimeDatabaseUrl(),
 ): {
   configured: boolean;
+  source: "hyperdrive" | "database_url" | "none";
   protocol?: string;
   host?: string;
   port?: string;
   database?: string;
   sslmode?: string | null;
 } {
-  if (!rawUrl?.trim()) return { configured: false };
+  const source = databaseConnectionSource(rawUrl);
+  if (!rawUrl?.trim()) return { configured: false, source };
 
   const sslmodeMatch = rawUrl.match(/[?&]sslmode=([^&]*)/i);
   const sslmode = sslmodeMatch
@@ -122,10 +189,13 @@ export function databaseTargetHint(
     const parsed = new URL(rawUrl.replace(/^postgres(ql)?:/i, "http:"));
     return {
       configured: true,
+      source,
       protocol: /^postgres:\/\//i.test(rawUrl) ? "postgres" : "postgresql",
       host: parsed.hostname || undefined,
       port: parsed.port || undefined,
       database: parsed.pathname.replace(/^\//, "") || undefined,
+      // Presence only. sslmode=require on Supabase :5432 can still fail from
+      // Cloudflare Workers — do not infer that sslmode is missing.
       sslmode: parsed.searchParams.get("sslmode") ?? sslmode,
     };
   } catch {
@@ -138,6 +208,7 @@ export function databaseTargetHint(
     );
     return {
       configured: true,
+      source,
       protocol: /^postgres:\/\//i.test(rawUrl) ? "postgres" : "postgresql",
       host: hostMatch?.[1]?.replace(/^\[|\]$/g, "") || undefined,
       port: hostMatch?.[2] || undefined,

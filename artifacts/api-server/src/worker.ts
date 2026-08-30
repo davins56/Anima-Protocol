@@ -9,6 +9,8 @@ import {
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
+  /** Present only when a Hyperdrive config is bound in the dashboard. */
+  HYPERDRIVE?: { connectionString?: string };
   [key: string]: unknown;
 }
 
