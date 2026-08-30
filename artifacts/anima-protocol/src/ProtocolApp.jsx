@@ -10,7 +10,6 @@ import { Toaster as SonnerToaster, toast } from "sonner";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import {
-  BrowserRouter as Router,
   Routes,
   Route,
   useLocation,
@@ -1561,7 +1560,6 @@ export default function ProtocolApp() {
 
   return (
     <QueryClientProvider client={queryClientInstance}>
-      <Router>
         <ErrorBoundary resetKey={window.location?.pathname || "init"}>
           <ClerkProviderWithRoutes>
             <AuthProvider>
@@ -1599,7 +1597,6 @@ export default function ProtocolApp() {
             },
           }}
         />
-      </Router>
     </QueryClientProvider>
   );
 }
