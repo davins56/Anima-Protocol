@@ -117,6 +117,7 @@ export function chipsFromEchoFolder(folder) {
 export function echoResonanceChip(selectedIds) {
   const recipe = findEchoResonance(selectedIds) || findBestLink(selectedIds);
   if (!recipe) return null;
+  if (recipe.fuse === false || recipe.relation) return null;
   return {
     id: recipe.id,
     name: recipe.name,

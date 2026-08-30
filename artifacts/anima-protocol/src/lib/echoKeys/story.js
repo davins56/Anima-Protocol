@@ -11,6 +11,7 @@
  */
 
 import { ECHO_KEYS, ECHO_KEY_BY_ID } from "./catalog.js";
+import { CARTRIDGE_IDS, CANON_FUSION_RECIPES } from "./canon.js";
 import { enrichEchoKey } from "./resonance.js";
 import { grantOwnedKey } from "./account.js";
 
@@ -20,7 +21,7 @@ export const VIRTUAL_ATTUNE_COOLDOWN_MS = 45 * 60 * 1000;
 export const FIELD_ATTUNE_COOLDOWN_MS = 12 * 60 * 1000;
 
 export const EVOLUTION_ONLY_IDS = new Set(["ember-that-refused"]);
-export const SYNTHESIS_ONLY_IDS = new Set(["firestorm", "mourning-gate"]);
+export const SYNTHESIS_ONLY_IDS = new Set(["firestorm", "mourning-gate", ...CARTRIDGE_IDS]);
 
 /**
  * @typedef {{
@@ -186,6 +187,7 @@ export const RESONANCE_SITES = [
 export const FUSION_RECIPES = [
   { ids: ["pyre-key", "gale-key"], result: "firestorm", name: "Firestorm" },
   { ids: ["grief-echo", "memory-echo", "veil-key"], result: "mourning-gate", name: "Mourning Gate" },
+  ...CANON_FUSION_RECIPES,
 ];
 
 const BIOME_TO_SITE = {
@@ -352,8 +354,12 @@ function sameSet(a, b) {
  */
 export function synthesiseEchoKeys(account, ingredientIds, opts = {}) {
   const ids = [...new Set((ingredientIds || []).filter((id) => typeof id === "string" && id))];
-  if (ids.length < 2 || ids.length > 3) {
-    return { ok: false, error: "Echo Sequences need two or three compatible Keys." };
+  const recipe = FUSION_RECIPES.find((r) => sameSet(r.ids, ids));
+  if (!recipe && (ids.length < 2 || ids.length > 3)) {
+    return { ok: false, error: "Echo Sequences need two or three compatible Keys, or an explicit cartridge recipe." };
+  }
+  if (ids.length < 2) {
+    return { ok: false, error: "Echo Sequences need at least two compatible Keys." };
   }
   const owned = new Set(account.owned);
   if (!ids.every((id) => owned.has(id))) {
@@ -361,7 +367,6 @@ export function synthesiseEchoKeys(account, ingredientIds, opts = {}) {
   }
 
   const at = opts.at || new Date().toISOString();
-  const recipe = FUSION_RECIPES.find((r) => sameSet(r.ids, ids));
   if (recipe) {
     if (owned.has(recipe.result)) {
       return { ok: false, error: "That Sequence already lives in your Vault." };
@@ -383,6 +388,7 @@ export function synthesiseEchoKeys(account, ingredientIds, opts = {}) {
     if (a && b && a.frequency === b.frequency && a.tactic !== b.tactic) {
       const candidate = ECHO_KEYS.find((k) => {
         if (owned.has(k.id) || EVOLUTION_ONLY_IDS.has(k.id) || SYNTHESIS_ONLY_IDS.has(k.id)) return false;
+        if (k.sources?.includes("canon")) return false;
         const e = enrichEchoKey(k);
         return e && e.frequency === a.frequency && e.tier === "key";
       });

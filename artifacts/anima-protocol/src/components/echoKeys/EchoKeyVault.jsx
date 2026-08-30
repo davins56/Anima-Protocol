@@ -7,20 +7,23 @@ import {
   ECHO_KEY_SYSTEM,
   ECHO_FOLDER_RULES,
   ECHO_KEY_BY_ID,
+  ECHO_TIERS,
+  TIER_LABEL,
   makeEchoCopy,
   validateEchoFolder,
   echoFolderStats,
+  tierOf,
 } from "@/lib/echoKeys";
-import { ECHO_CLASS_THEME, ECHO_ELEMENT_THEME } from "@/lib/echoKeys/theme";
+import { ECHO_ELEMENT_THEME, ECHO_TIER_THEME } from "@/lib/echoKeys/theme";
 import EchoKeyCard from "./EchoKeyCard";
 
 const ELEMENTS = ["all", "void", "ember", "tide", "volt", "grove"];
-const CLASSES = ["all", "standard", "mega", "star", "dark", "giga"];
+const TIERS = ["all", ...ECHO_TIERS];
 
 export default function EchoKeyVault({ library, onSave, saving, error, onReset, ownedOnly = false }) {
   const [tab, setTab] = useState("library");
   const [element, setElement] = useState("all");
-  const [klass, setKlass] = useState("all");
+  const [tier, setTier] = useState("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(ECHO_KEYS[0].id);
   const [draft, setDraft] = useState(() => library.folder.map((s) => ({ ...s })));
@@ -43,17 +46,18 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
     return ECHO_KEYS.filter((k) => {
       if (ownedOnly && !owned.has(k.id)) return false;
       if (element !== "all" && k.element !== element) return false;
-      if (klass !== "all" && k.class !== klass) return false;
+      if (tier !== "all" && tierOf(k) !== tier) return false;
       if (!q) return true;
       return (
         k.name.toLowerCase().includes(q) ||
         k.family.includes(q) ||
         k.memory.toLowerCase().includes(q) ||
+        k.description.toLowerCase().includes(q) ||
         k.inspiredBy.includes(q) ||
         k.ability?.tag?.includes(q)
       );
     });
-  }, [element, klass, query, ownedOnly, owned]);
+  }, [element, tier, query, ownedOnly, owned]);
 
   const addToFolder = (key) => {
     if (!owned.has(key.id)) return;
@@ -116,7 +120,7 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
       ) : tab === "folder" ? (
         <div className="space-y-4">
           <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-primary/35">
-            {draft.length}/{ECHO_FOLDER_RULES.size} slotted · {stats.standard_count} std · {stats.mega_count} mega · {stats.star_count} star
+            Resonance Array {draft.length}/{ECHO_FOLDER_RULES.size} slotted · {stats.shard_count} Echo Shards · {stats.key_count} Echo Keys · {stats.sovereign_count} Sovereign · {stats.prime_count} Prime
           </p>
           {!check.ok && (
             <ul className="font-mono text-[10px] text-rose-300/80 space-y-1">
@@ -216,12 +220,13 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
               placeholder="Search echo keys…"
               className="flex-1 min-w-[160px] bg-black/40 border border-primary/20 px-3 py-2 font-mono text-[11px] text-primary/80 outline-none focus:border-primary/50"
             />
-            {CLASSES.map((c) => (
+            {TIERS.map((id) => (
               <FilterChip
-                key={c}
-                active={klass === c}
-                onClick={() => setKlass(c)}
-                label={c === "all" ? "All class" : ECHO_CLASS_THEME[c].label}
+                key={id}
+                active={tier === id}
+                onClick={() => setTier(id)}
+                label={id === "all" ? "All tiers" : TIER_LABEL[id]}
+                color={id === "all" ? undefined : ECHO_TIER_THEME[id]?.color}
               />
             ))}
           </div>
@@ -237,7 +242,7 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
             ))}
           </div>
           <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-primary/35">
-            {filtered.length} keys · {owned.size} on this profile · weapons summon as remembered constructs
+            {filtered.length} listed · {owned.size} on this profile · Echo Shards, Echo Keys, Sovereign Keys, Prime Keys
           </p>
           <div className="grid lg:grid-cols-[1fr_minmax(260px,320px)] gap-4">
             <div className="grid sm:grid-cols-2 gap-2 max-h-[62vh] overflow-y-auto pr-1">
@@ -254,13 +259,17 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
             </div>
             <div className="border border-amber-300/20 bg-black/40 p-4 sticky top-2 h-fit">
               <p className="font-mono text-[9px] tracking-[0.3em] uppercase text-amber-200/50">
-                Weapon memory
+                {TIER_LABEL[tierOf(selected)] || "Weapon memory"}
               </p>
               <h2 className="mt-2 font-mono text-lg text-amber-100">{selected.name}</h2>
-              <p className="mt-2 text-[12px] text-primary/70 leading-relaxed">{selected.memory}</p>
-              <p className="mt-2 text-[11px] text-primary/50 leading-relaxed">{selected.description}</p>
+              <p className="mt-1 font-mono text-[9px] tracking-[0.18em] uppercase text-primary/45">
+                {selected.codes.join(" ")} · {selected.mb} MB · {ECHO_ELEMENT_THEME[selected.element]?.label || selected.element}
+              </p>
+              <p className="mt-2 text-[12px] text-primary/70 leading-relaxed">{selected.description}</p>
+              <p className="mt-2 text-[11px] text-primary/50 leading-relaxed">{selected.memory}</p>
               <p className="mt-3 font-mono text-[8px] tracking-[0.2em] uppercase text-primary/35">
-                Inspired by {selected.inspiredBy} · {selected.sources.join(" · ")}
+                {selected.sources.join(" · ")}
+                {selected.inspiredBy ? ` · ${selected.inspiredBy}` : ""}
               </p>
               <button
                 type="button"
@@ -300,7 +309,7 @@ function AccountPanel() {
     <div className="space-y-5 text-[13px] text-primary/70 leading-relaxed">
       <section>
         <h3 className="font-mono text-[9px] tracking-[0.25em] uppercase text-amber-200/60 mb-2">
-          Echo Keys
+          Echo Shards · Echo Keys · Sovereign Keys · Prime Keys
         </h3>
         <p>{ECHO_KEY_SYSTEM.summary}</p>
       </section>
@@ -319,7 +328,7 @@ function AccountPanel() {
         <p className="mt-2 text-primary/50">{STAR_FORCE_CARD_LINEAGE.satellites}</p>
       </section>
       <p className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/35">
-        {ECHO_FAMILIES.length} families · 10 memories each · {ECHO_KEYS.length} keys
+        {ECHO_FAMILIES.length} families · 10 memories each · {ECHO_KEYS.length} in Codex · Resonance Array 30
       </p>
     </div>
   );

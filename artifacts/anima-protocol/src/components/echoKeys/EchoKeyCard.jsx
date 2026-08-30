@@ -1,6 +1,8 @@
+import { TIER_LABEL, tierOf } from "@/lib/echoKeys";
 import {
   echoElementTheme,
   ECHO_CLASS_THEME,
+  ECHO_TIER_THEME,
   ECHO_ABILITY_LABEL,
   ECHO_KIND_LABEL,
 } from "@/lib/echoKeys/theme";
@@ -14,7 +16,8 @@ export default function EchoKeyCard({
   onClick,
 }) {
   const theme = echoElementTheme(echoKey.element);
-  const klass = ECHO_CLASS_THEME[echoKey.class] || ECHO_CLASS_THEME.standard;
+  const tier = echoKey.tier || tierOf(echoKey);
+  const klass = ECHO_TIER_THEME[tier] || ECHO_CLASS_THEME[echoKey.class] || ECHO_CLASS_THEME.standard;
   const shownCode = code || echoKey.codes[0];
 
   return (
@@ -35,7 +38,7 @@ export default function EchoKeyCard({
           className="font-mono text-[9px] tracking-[0.22em] uppercase"
           style={{ color: klass.color }}
         >
-          {String(echoKey.libraryNo).padStart(3, "0")} · {klass.label}
+          {String(echoKey.libraryNo).padStart(3, "0")} · {TIER_LABEL[tier] || klass.label}
         </span>
         <span
           className="font-mono text-sm font-bold leading-none"

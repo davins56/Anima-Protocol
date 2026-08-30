@@ -18,6 +18,18 @@ export {
 } from "./families.js";
 
 export {
+  CANON_ECHO_KEYS,
+  CANON_ECHO_KEY_NAMES,
+  CANON_RESONANCE,
+  BINARY_SIGIL_IDS,
+  ECHO_OF_GLASS_IDS,
+  FIFTH_TONE_IDS,
+  CHOIR_SOVEREIGN_IDS,
+  CARTRIDGE_IDS,
+  CANON_STARTER_SHARD_IDS,
+} from "./canon.js";
+
+export {
   ECHO_KEYS,
   ECHO_LIBRARY_SIZE,
   ECHO_KEY_LIBRARY_SIZE,
@@ -78,6 +90,7 @@ export {
   enrichEchoKey,
   compatibilityScore,
   echoKeyCanonLine,
+  tierOf,
 } from "./resonance.js";
 
 export {
@@ -96,7 +109,7 @@ export {
 } from "./story.js";
 
 export function echoKeyLoreBlock() {
-  return `Echo Keys are crystallized memories of function that an Anima can temporarily synchronize with and execute. Battle Chips contain programs. Echo Keys contain experiences that learned how to become programs — weapon-memory that is not granted as a full library. The Codex names about 800 family memories — Shards, Keys, Sovereign, and Prime — but you begin with a handful of Shards. The rest are found where resonance achieved exceptional coherence: forests, water, stone, gardens, sky, sacred ground, places of bond — and also battlefields, memorials, and ruins. Coherence is not the same as peace. A Resonance Array (Folder) of up to 30 Keys jacks into NetBattle.`;
+  return `Echo Keys are crystallized memories of function that an Anima can temporarily synchronize with and execute. Battle Chips contain programs. Echo Keys contain experiences that learned how to become programs — weapon-memory that is not granted as a full library. The Codex names about 800 family memories plus the novels' named artifacts — Echo Shards, Echo Keys, Sovereign Keys, and Prime Keys — but you begin with a handful of Shards. The rest are found where resonance achieved exceptional coherence: forests, water, stone, gardens, sky, sacred ground, places of bond — and also battlefields, memorials, and ruins. Coherence is not the same as peace. A Resonance Array (Folder) of up to 30 Keys jacks into NetBattle.`;
 }
 
 const ECHO_CUE =
