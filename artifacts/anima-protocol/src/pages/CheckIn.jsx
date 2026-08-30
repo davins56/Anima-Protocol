@@ -81,7 +81,7 @@ export default function CheckIn() {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline pb-8">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
@@ -112,7 +112,7 @@ export default function CheckIn() {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-6 py-12 space-y-8">
+      <div className="max-w-2xl mx-auto px-6 py-8 sm:py-12 space-y-8">
         {/* Mood Selection */}
         <div className="space-y-4">
           <p className="font-mono text-[9px] text-primary/40 tracking-[0.25em] uppercase">How are you feeling?</p>

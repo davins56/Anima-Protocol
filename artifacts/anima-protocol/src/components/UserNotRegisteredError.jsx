@@ -3,7 +3,7 @@ import React from 'react';
 
 const UserNotRegisteredError = () => {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-white to-slate-50">
+    <div className="flex flex-col items-center justify-center min-h-0 h-full overflow-y-auto bg-gradient-to-b from-white to-slate-50">
       <a
         href="https://apps.apple.com"
         target="_blank"

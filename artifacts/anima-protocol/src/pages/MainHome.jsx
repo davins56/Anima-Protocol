@@ -216,7 +216,7 @@ export default function MainHome() {
   const canManifest = canEditAvatar;
 
   return (
-    <div className="relative h-full bg-[#050505] scanline flex flex-col overflow-hidden">
+    <div className="relative flex-1 min-h-0 h-full bg-[#050505] scanline flex flex-col overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-0" />
 
       <header

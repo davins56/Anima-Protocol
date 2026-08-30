@@ -796,8 +796,11 @@ const AuthenticatedApp = () => {
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: -20, opacity: 0 }}
           transition={{ duration: 0.18, ease: "easeInOut" }}
-          className="flex-1 min-h-0 flex flex-col"
-          style={{ paddingBottom: isHomeFloor ? 0 : "var(--tab-bar-height, 0px)" }}
+          className="app-shell-main flex-1 min-h-0 flex flex-col"
+          style={{
+            paddingBottom:
+              showChrome && !isHomeFloor ? "var(--tab-bar-height, 0px)" : 0,
+          }}
         >
           <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageLoader />}>
@@ -1453,7 +1456,7 @@ export default function ProtocolApp() {
                 <InAppBrowserWarning />
                 <TapTargetValidator />
                 <div
-                  className="flex flex-col h-screen-safe"
+                  className="app-shell flex flex-col h-screen-safe"
                   style={{
                     paddingTop: "env(safe-area-inset-top, 0px)",
                     // --safe-bottom is env(safe-area-inset-bottom) when the

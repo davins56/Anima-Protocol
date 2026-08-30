@@ -51,7 +51,7 @@ export default function EmotionalOnboarding({ user, onComplete }) {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background scanline flex flex-col items-center justify-center p-4">
+    <div className="flex-1 min-h-0 h-full overflow-y-auto bg-background scanline flex flex-col items-center justify-center p-4">
       <AnimatePresence mode="wait">
         {step === 'greeting' && (
           <motion.div

@@ -155,14 +155,14 @@ export default function NetBattle() {
 
   if (loading) {
     return (
-      <div className="w-full min-h-screen flex items-center justify-center bg-[#05070f] text-cyan-500 font-mono text-[10px] tracking-[0.3em] uppercase">
+      <div className="w-full h-full min-h-0 flex items-center justify-center bg-[#05070f] text-cyan-500 font-mono text-[10px] tracking-[0.3em] uppercase">
         Jacking in…
       </div>
     );
   }
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-[#05070f] text-cyan-100 min-h-screen pb-[var(--tab-bar-height,64px)]">
+    <div className="w-full h-full min-h-0 overflow-y-auto flex flex-col items-center justify-center p-4 bg-[#05070f] text-cyan-100">
       <div className="w-full max-w-5xl">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h1 className="text-xl font-mono uppercase tracking-widest text-cyan-400">
