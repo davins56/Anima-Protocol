@@ -5,6 +5,7 @@ import {
   clearStoreCache,
   setAuthTokenGetter,
   STORE_FETCH_TIMEOUT_MS,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
 } from "./base44Client";
 import { isStoreDatabaseError } from "@/lib/loadRosterCharacters";
 
@@ -58,6 +59,7 @@ describe("ChatSession store wrapper", () => {
       {
         title: "Init Session",
         opening_scene: "A neon room hums.",
+        messages_migrated: true,
       },
     ]);
     expect(messageWrites).toEqual([
@@ -152,6 +154,74 @@ describe("ChatSession store wrapper", () => {
       base44.entities.ChatSession.create({ title: "Blocked" }),
     ).rejects.toThrow(/schema is missing/i);
     expect(sessionPosts).toBe(1);
+  });
+
+  it("does not POST nested messages or call replace for an empty Init payload", async () => {
+    const sessionWrites = [];
+    const messageWrites = [];
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+      if (pathname === "/api/store/ChatSession") {
+        sessionWrites.push(body);
+        return Response.json({ id: "session-solo", title: body.title }, { status: 201 });
+      }
+      if (pathname === "/api/store/messages/replace") {
+        messageWrites.push(body);
+        return Response.json([]);
+      }
+      return Response.json({});
+    });
+
+    const session = await base44.entities.ChatSession.create({
+      mode: "solo",
+      character_id: "char-1",
+      title: "T'Challa",
+      opening_scene: "A quiet room.",
+      messages: [],
+    });
+
+    expect(sessionWrites).toEqual([
+      {
+        mode: "solo",
+        character_id: "char-1",
+        title: "T'Challa",
+        opening_scene: "A quiet room.",
+        messages_migrated: true,
+      },
+    ]);
+    expect(sessionWrites[0]).not.toHaveProperty("messages");
+    expect(messageWrites).toEqual([]);
+    expect(session).toEqual({
+      id: "session-solo",
+      title: "T'Challa",
+      messages: [],
+    });
+  });
+
+  it("uses the documented Init create budget and surfaces abort as a timeout", async () => {
+    clearStoreCache();
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const controller = new AbortController();
+      controller.abort(abortErr);
+      return controller.signal;
+    });
+
+    global.fetch = vi.fn(async (_url, options = {}) => {
+      if (options.signal?.aborted) {
+        throw options.signal.reason || abortErr;
+      }
+      return Response.json({ id: "never" });
+    });
+
+    await expect(
+      base44.entities.ChatSession.create({ title: "Init Session" }),
+    ).rejects.toMatchObject({ code: "timeout" });
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBe(20000);
   });
 });
 

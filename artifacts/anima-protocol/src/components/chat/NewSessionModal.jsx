@@ -14,6 +14,7 @@ import {
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
 import { upsertCharacters } from "@/lib/seedCharacters";
+import { initSessionErrorMessage } from "@/lib/createInitSession";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -163,9 +164,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     }
   };
 
-  const sessionCreateErrorMessage = (err) =>
-    err?.message ||
-    "Could not initialize this session. Check that you are signed in and the store API is reachable.";
+  const sessionCreateErrorMessage = (err) => initSessionErrorMessage(err);
 
   const handleCreate = async () => {
     if (selected.length === 0 || creating) return;
@@ -179,6 +178,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       if (bundledSelected.length) {
         await upsertCharacters(
           bundledSelected.map(({ _bundled, ...rest }) => rest),
+          { skipExistingLookup: true },
         );
         setCharacters((prev) =>
           prev.map((c) => (c._bundled ? { ...c, _bundled: false } : c)),

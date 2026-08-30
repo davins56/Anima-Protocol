@@ -32,7 +32,10 @@ export interface EntityStore {
     search?: Record<string, string>;
   }): Promise<number>;
   get(id: string): Promise<any | null>;
-  create(data: Record<string, unknown>): Promise<any>;
+  create(
+    data: Record<string, unknown>,
+    opts?: { timeoutMs?: number; timeoutMessage?: string },
+  ): Promise<any>;
   update(id: string, data: Record<string, unknown>): Promise<any>;
   delete(id: string): Promise<void>;
   bulkCreate(dataArray: Record<string, unknown>[]): Promise<any>;
@@ -123,6 +126,7 @@ export declare function restoreData(
   mode?: "merge" | "replace",
 ): Promise<any>;
 export declare const STORE_FETCH_TIMEOUT_MS: number;
+export declare const STORE_SESSION_CREATE_TIMEOUT_MS: number;
 export declare function waitForStoreAuth(timeoutMs?: number): Promise<string>;
 export declare function notifyStoreChanged(): void;
 
