@@ -87,7 +87,7 @@ Status: **Separate legal agreements**
 - [x] DMCA Takedown procedure
 - [x] Age verification system
 - [x] Account suspension policy
-- [ ] Trademark registrations (Serenity, Anima Protocol, Echo Keys)
+- [ ] Trademark registrations (Serenity, Anima Protocol, Echo Keys — playable weapon-memory library on the steward profile)
 - [ ] Copyright registration for original lore
 - [ ] Company formation (LLC or Inc.)
 
