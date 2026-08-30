@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import {
-  formatAvatarUploadError,
-  uploadCharacterAvatar,
+  persistDataUrlWithInlineFallback,
+  persistPortraitWithInlineFallback,
 } from "@/lib/characterAvatarUpload";
 import {
   APPEARANCE_FEATURES,
@@ -45,6 +45,16 @@ export default function AnimaCustomizer({
   const [referenceUrl, setReferenceUrl] = useState(
     () => anima?.look_reference_url || "",
   );
+  // Inline bytes kept even when look_reference_url is a storage path, so
+  // Generate-from-reference still works if the Worker cannot serve file_url.
+  const [referenceDataUrl, setReferenceDataUrl] = useState(
+    () =>
+      (typeof anima?.image_data_url === "string" && anima.image_data_url) ||
+      (typeof anima?.look_reference_url === "string" &&
+      anima.look_reference_url.startsWith("data:")
+        ? anima.look_reference_url
+        : ""),
+  );
   const [themeColor, setThemeColor] = useState(anima?.theme_color || "#00e5e5");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -57,6 +67,13 @@ export default function AnimaCustomizer({
     setPrompts(normalizeAppearancePrompts(anima?.appearance_prompts));
     setPreviewUrl(anima?.avatar_url || "");
     setReferenceUrl(anima?.look_reference_url || "");
+    setReferenceDataUrl(
+      (typeof anima?.image_data_url === "string" && anima.image_data_url) ||
+        (typeof anima?.look_reference_url === "string" &&
+        anima.look_reference_url.startsWith("data:")
+          ? anima.look_reference_url
+          : ""),
+    );
     setThemeColor(anima?.theme_color || "#00e5e5");
     setSaved(false);
     setError("");
@@ -76,7 +93,9 @@ export default function AnimaCustomizer({
       // editing the current avatar used to lock old complexion in place.
       const result = await base44.integrations.Core.GenerateImage({
         prompt,
-        existing_image_urls: useReference ? [referenceUrl] : undefined,
+        existing_image_urls: useReference
+          ? [referenceDataUrl || referenceUrl]
+          : undefined,
       });
       if (!result?.url) {
         throw new Error("No image was returned. Try again in a moment.");
@@ -105,12 +124,17 @@ export default function AnimaCustomizer({
     setError("");
     setSaved(false);
     try {
-      const fileUrl = await uploadCharacterAvatar(file, (payload) =>
+      // MEMORY.md's UploadFile stub returned { url: null }. Live UploadFile
+      // posts to /api/storage/uploads. Either way we keep a data: URL so the
+      // reference still shows when the Worker cannot serve the stored path.
+      const persisted = await persistPortraitWithInlineFallback(file, (payload) =>
         base44.integrations.Core.UploadFile(payload),
       );
-      setReferenceUrl(fileUrl);
+      setReferenceUrl(persisted.url);
+      setReferenceDataUrl(persisted.image_data_url || "");
+      if (persisted.warning) setError(persisted.warning);
     } catch (err) {
-      setError(formatAvatarUploadError(err));
+      setError(err?.message || "Upload failed — try another image.");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -123,29 +147,45 @@ export default function AnimaCustomizer({
     setError("");
     try {
       let avatar_url = previewUrl || anima?.avatar_url || "";
-      // Persist generated/edited portraits to object storage instead of storing
-      // large base64 blobs on the Anima entity.
+      let saveWarning = "";
+      // Prefer object storage; if the Worker cannot serve the returned path
+      // (or UploadFile still behaves like the null stub), keep the data URL
+      // on the Anima so the portrait actually shows after save.
       if (typeof avatar_url === "string" && avatar_url.startsWith("data:")) {
-        avatar_url = await uploadDataUrl(avatar_url);
+        const persisted = await persistDataUrlWithInlineFallback(
+          avatar_url,
+          uploadDataUrl,
+        );
+        avatar_url = persisted.url;
+        if (persisted.warning) saveWarning = persisted.warning;
       }
 
       let look_reference_url = referenceUrl || "";
+      let image_data_url = referenceDataUrl || "";
       if (
         typeof look_reference_url === "string" &&
         look_reference_url.startsWith("data:")
       ) {
-        look_reference_url = await uploadDataUrl(look_reference_url);
+        const persisted = await persistDataUrlWithInlineFallback(
+          look_reference_url,
+          uploadDataUrl,
+        );
+        look_reference_url = persisted.url;
+        image_data_url = persisted.image_data_url || look_reference_url;
+        if (persisted.warning) saveWarning = persisted.warning;
       }
 
       const patch = {
         avatar_url,
         look_reference_url: look_reference_url || null,
+        ...(image_data_url ? { image_data_url } : {}),
         theme_color: themeColor,
         appearance_prompts: normalizeAppearancePrompts(prompts),
       };
       await base44.entities.Anima.update(anima.id, patch);
       setPreviewUrl(avatar_url);
       setReferenceUrl(look_reference_url || "");
+      if (saveWarning) setError(saveWarning);
       setSaved(true);
       onSave?.(patch);
       if (!isPage) {
@@ -358,6 +398,7 @@ export default function AnimaCustomizer({
                     type="button"
                     onClick={() => {
                       setReferenceUrl("");
+                      setReferenceDataUrl("");
                       setSaved(false);
                     }}
                     className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-black border border-primary/40 text-primary/70 hover:text-primary flex items-center justify-center"

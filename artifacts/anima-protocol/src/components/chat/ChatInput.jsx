@@ -1,6 +1,10 @@
 import { useState, useRef, useLayoutEffect } from "react";
 import { Send, Zap, Paperclip, Loader } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import {
+  avatarUrlFromUploadResult,
+  persistPortraitWithInlineFallback,
+} from "@/lib/characterAvatarUpload";
 
 // Max height the input grows to before it starts scrolling internally (px).
 const MAX_INPUT_HEIGHT = 200;
@@ -16,6 +20,7 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const textareaRef = useRef(null);
 
   // Grow the textarea to fit its content (up to MAX_INPUT_HEIGHT, then it
@@ -49,17 +54,33 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
     if (files.length === 0) return;
 
     setUploadingMedia(true);
+    setUploadError("");
     try {
       for (const file of files) {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
         const isAudio = file.type.startsWith("audio/");
+        if (isAudio) {
+          const result = await base44.integrations.Core.UploadFile({ file });
+          const file_url = avatarUrlFromUploadResult(result);
+          if (!file_url) {
+            throw new Error("Upload failed — no file URL returned. Try another file.");
+          }
+          setAttachments((prev) => [
+            ...prev,
+            { url: file_url, type: "audio", name: file.name },
+          ]);
+          continue;
+        }
+        const persisted = await persistPortraitWithInlineFallback(file, (payload) =>
+          base44.integrations.Core.UploadFile(payload),
+        );
         setAttachments((prev) => [
           ...prev,
-          { url: file_url, type: isAudio ? "audio" : "image", name: file.name }
+          { url: persisted.url, type: "image", name: file.name },
         ]);
+        if (persisted.warning) setUploadError(persisted.warning);
       }
     } catch (err) {
-      console.error("Media upload error:", err);
+      setUploadError(err?.message || "Upload failed — try another file.");
     } finally {
       setUploadingMedia(false);
     }
@@ -143,10 +164,16 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
           <Send className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
         </button>
       </form>
-      <p className="mt-1.5 text-[8px] sm:text-[9px] font-mono text-primary/15 tracking-widest uppercase">
-        <span className="hidden sm:inline">Enter to send · Shift+Enter for newline</span>
-        <span className="sm:hidden">Enter to send</span>
-      </p>
+      {uploadError ? (
+        <p className="mt-1.5 text-[8px] sm:text-[9px] font-mono text-red-400/90 leading-relaxed">
+          {uploadError}
+        </p>
+      ) : (
+        <p className="mt-1.5 text-[8px] sm:text-[9px] font-mono text-primary/15 tracking-widest uppercase">
+          <span className="hidden sm:inline">Enter to send · Shift+Enter for newline</span>
+          <span className="sm:hidden">Enter to send</span>
+        </p>
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ vi.mock("@/api/base44Client", () => ({
 }));
 
 import AvatarUploadField from "./AvatarUploadField";
+import { flushPortraitUpload } from "@/test/flushPortraitUpload";
 
 function renderField(props = {}) {
   const container = document.createElement("div");
@@ -39,6 +40,15 @@ function renderField(props = {}) {
 describe("AvatarUploadField", () => {
   beforeEach(() => {
     uploadFileMock.mockReset();
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).includes("/api/storage/")) {
+        return new Response(new Uint8Array([137, 80, 78, 71]), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
   });
 
   afterEach(() => {
@@ -79,17 +89,16 @@ describe("AvatarUploadField", () => {
         value: [file],
       });
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    await flushPortraitUpload();
 
     expect(uploadFileMock).toHaveBeenCalledWith({ file });
     expect(onChange).toHaveBeenCalledWith("/api/storage/objects/avatars/luna.png");
   });
 
-  it("surfaces a real error when upload returns no URL", async () => {
+  it("surfaces a warning and still attaches a data URL when upload returns no URL", async () => {
     uploadFileMock.mockResolvedValue({ file_url: null, url: null });
-    const { container } = renderField();
+    const { container, onChange } = renderField();
     const input = container.querySelector('input[type="file"]');
     const file = new File(["fake"], "luna.png", { type: "image/png" });
 
@@ -99,11 +108,12 @@ describe("AvatarUploadField", () => {
         value: [file],
       });
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    await flushPortraitUpload();
 
-    expect(container.textContent).toMatch(/no file URL|Upload failed/i);
+    expect(onChange).toHaveBeenCalled();
+    expect(onChange.mock.calls[0][0]).toMatch(/^data:/);
+    expect(container.textContent).toMatch(/no fetchable file URL|Portrait saved/i);
   });
 
   it("accepts the legacy url field when file_url is missing", async () => {
@@ -120,9 +130,8 @@ describe("AvatarUploadField", () => {
         value: [file],
       });
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    await flushPortraitUpload();
 
     expect(onChange).toHaveBeenCalledWith("/api/storage/objects/uploads/legacy.png");
   });

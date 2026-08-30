@@ -54,5 +54,17 @@ export function downscaleDataUrl(src, maxSize, quality) {
       }
     };
     img.src = src;
+    // jsdom (and some failed decodes) mark the image complete with 0×0
+    // without firing onerror. Invalid data: URLs in jsdom stay incomplete
+    // forever and never fire load/error either. Reject immediately instead
+    // of hanging until LOAD_TIMEOUT_MS — callers can fall back to the
+    // original data URL.
+    const jsdomStuck =
+      typeof navigator !== "undefined" &&
+      /jsdom/i.test(navigator.userAgent || "") &&
+      !img.complete;
+    if ((img.complete || jsdomStuck) && !(img.naturalWidth || img.width)) {
+      queueMicrotask(() => finish(reject, new Error(loadErrorMessage(src))));
+    }
   });
 }

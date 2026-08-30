@@ -1,10 +1,7 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Loader, Upload, X } from "lucide-react";
 import { base44 } from "@/api/base44Client";
-import {
-  formatAvatarUploadError,
-  uploadCharacterAvatar,
-} from "@/lib/characterAvatarUpload";
+import { persistPortraitWithInlineFallback } from "@/lib/characterAvatarUpload";
 
 /**
  * Compact avatar upload / URL field used when creating or reviewing an Anima.
@@ -39,13 +36,13 @@ export default function AvatarUploadField({
     onBusyChange?.(true);
     setError("");
     try {
-      const fileUrl = await uploadCharacterAvatar(
-        file,
-        (payload) => base44.integrations.Core.UploadFile(payload),
+      const persisted = await persistPortraitWithInlineFallback(file, (payload) =>
+        base44.integrations.Core.UploadFile(payload),
       );
-      onChange(fileUrl);
+      onChange(persisted.url);
+      if (persisted.warning) setError(persisted.warning);
     } catch (err) {
-      setError(formatAvatarUploadError(err));
+      setError(err?.message || "Upload failed — try another image.");
     } finally {
       setUploading(false);
       onBusyChange?.(false);
