@@ -56,7 +56,20 @@ export function ensureTrailingSlash(url) {
 }
 
 /**
+ * DNS hostname: letters, digits, hyphens, and dots. Rejects mojibake from
+ * base64-decoding placeholders like `pk_test_placeholder`.
+ */
+const CLERK_FRONTEND_HOST_RE =
+  /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
+
+function asClerkFrontendHostname(decoded) {
+  const host = decoded.replace(/\$$/, '').trim();
+  return CLERK_FRONTEND_HOST_RE.test(host) ? host : '';
+}
+
+/**
  * Decodes the frontend API host embedded in a Clerk publishable key.
+ * Returns "" unless the payload decodes to a hostname (never mojibake).
  */
 export function decodeClerkFrontendHost(clerkPubKey) {
   if (typeof clerkPubKey !== 'string') return '';
@@ -72,10 +85,29 @@ export function decodeClerkFrontendHost(clerkPubKey) {
           : typeof Buffer !== 'undefined'
             ? Buffer.from(rawPayload, 'base64').toString('utf-8')
             : '';
-    return decoded.replace(/\$$/, '').trim();
+    return asClerkFrontendHostname(decoded);
   } catch {
     return '';
   }
+}
+
+/**
+ * True when the key is a real pk_live_/pk_test_ whose payload decodes to a host.
+ * `pk_test_placeholder` and any other non-hostname payload are treated as unset.
+ */
+export function isUsableClerkPublishableKey(clerkPubKey) {
+  if (typeof clerkPubKey !== 'string') return false;
+  const key = clerkPubKey.trim();
+  if (!key || /placeholder/i.test(key)) return false;
+  if (!/^pk_(?:live|test)_/.test(key)) return false;
+  return Boolean(decodeClerkFrontendHost(key));
+}
+
+/** Returns the key, or "" when it must not be baked into a production build. */
+export function sanitizeClerkPublishableKey(clerkPubKey) {
+  if (typeof clerkPubKey !== 'string') return '';
+  const key = clerkPubKey.trim();
+  return isUsableClerkPublishableKey(key) ? key : '';
 }
 
 /**
