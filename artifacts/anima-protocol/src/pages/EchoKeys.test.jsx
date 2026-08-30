@@ -58,4 +58,50 @@ describe("EchoKeys page", () => {
     expect(container.textContent).toMatch(/Resonance sites/i);
     expect(container.textContent).not.toMatch(/800 weapon-memories/i);
   });
+
+  it("attunes a site and lists Vault / Loadout / Codex", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <EchoKeys />
+        </MemoryRouter>,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const ruin = Array.from(container.querySelectorAll("button")).find((el) =>
+      /Ruins of a Civilization/i.test(el.textContent || ""),
+    );
+    expect(ruin).toBeTruthy();
+    await act(async () => {
+      ruin.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const attune = Array.from(container.querySelectorAll("button")).find((el) =>
+      /Virtual attune/i.test(el.textContent || ""),
+    );
+    expect(attune).toBeTruthy();
+    await act(async () => {
+      attune.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toMatch(/Synchronized/i);
+    expect(updateMeMock).toHaveBeenCalled();
+
+    for (const label of ["Vault", "Loadout", "Codex"]) {
+      const tab = Array.from(container.querySelectorAll("button")).find((el) =>
+        el.textContent.trim() === label,
+      );
+      expect(tab, label).toBeTruthy();
+      await act(async () => {
+        tab.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    }
+    expect(container.textContent).toMatch(/Unattuned|Codex lists|known/i);
+  });
 });
