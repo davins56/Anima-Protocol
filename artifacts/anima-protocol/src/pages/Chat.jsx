@@ -25,7 +25,9 @@ import {
   parseImagePrompts,
   userRequestedImage,
   resolveChatImageAttachments,
+  messagesWithImageProgress,
 } from "@/lib/chatImageGeneration";
+import { loadOpenChatSession } from "@/lib/chatSessionLoad";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -188,6 +190,10 @@ export default function Chat() {
   const { persistTurn } = useChatPersistence();
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionLoad, setSessionLoad] = useState({ status: "idle" });
+  const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
+  const sessionLoadGenRef = useRef(0);
+  const openSessionIdRef = useRef(sessionId || null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -402,12 +408,52 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
-    if (sessionId) {
-      loadSession(sessionId);
-    } else {
+    openSessionIdRef.current = sessionId || null;
+    if (!sessionId) {
+      sessionLoadGenRef.current += 1;
       setActiveSession(null);
+      setSessionLoad({ status: "idle" });
+      return;
     }
-  }, [sessionId]);
+
+    const gen = ++sessionLoadGenRef.current;
+    const isCurrent = () => sessionLoadGenRef.current === gen;
+    setSessionLoad({ status: "loading" });
+    setActiveSession((prev) => (prev?.id === sessionId ? prev : null));
+
+    let cancelled = false;
+    loadOpenChatSession({
+      id: sessionId,
+      isCurrent: () => isCurrent() && !cancelled,
+      fetchSession: (id) =>
+        base44.entities.ChatSession.filter({ id }, undefined, 1, {
+          withMessages: false,
+        }),
+      fetchMessages: (id) => base44.messages.list(id),
+    }).then((result) => {
+      if (!isCurrent() || cancelled) return;
+      if (result.status === "ready") {
+        applyOpenedSession(result.session);
+        setSessionLoad({ status: "ready" });
+        return;
+      }
+      if (result.status === "missing") {
+        setActiveSession(null);
+        setSessionLoad({ status: "missing" });
+        return;
+      }
+      if (result.status === "error") {
+        setSessionLoad({
+          status: "error",
+          message: result.error?.message || "Couldn't open this conversation.",
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, sessionLoadNonce]);
 
   const lastMessageCountRef = useRef(0);
   useEffect(() => {
@@ -672,39 +718,31 @@ export default function Chat() {
     return null;
   };
 
-  const loadSession = async (id) => {
-    // Fetch just this session's metadata by id, then load its messages
-    // separately. Looking it up directly (rather than scanning a capped list)
-    // means sessions on deep sidebar pages still open correctly.
-    const matches = await base44.entities.ChatSession.filter({ id }, undefined, 1, {
-      withMessages: false,
-    });
-    const session = matches[0];
-    if (session) {
-      const messages = await base44.messages.list(id);
-      setActiveSession({ ...session, messages });
-      setMode(session.mode || "solo");
-      setCurrentMood("neutral");
-      setCharacterMemories([]);
-      setInventoryItems([]);
-      // Load relationships, lore, and emotional states for this session
-      loadRelationships(id);
-      loadLore(id);
-      loadCharacterEmotions(id);
-      // Load calendar for this session
-      base44.entities.Calendar.filter({ session_id: id }).then(cals => {
-        if (cals?.length > 0) setCalendar(cals[0]);
-      }).catch(() => {});
-      // Load cross-session character memories
-      if (session.character_id) {
-        loadCharacterMemories(session.character_id);
-        loadInventory(session.character_id);
-      }
+  const stillOpen = (sid) => openSessionIdRef.current === sid;
+
+  const applyOpenedSession = (session) => {
+    const id = session.id;
+    setActiveSession(session);
+    setMode(session.mode || "solo");
+    setCurrentMood("neutral");
+    setCharacterMemories([]);
+    setInventoryItems([]);
+    loadRelationships(id);
+    loadLore(id);
+    loadCharacterEmotions(id);
+    base44.entities.Calendar.filter({ session_id: id }).then((cals) => {
+      if (!stillOpen(id)) return;
+      if (cals?.length > 0) setCalendar(cals[0]);
+    }).catch(() => {});
+    if (session.character_id) {
+      loadCharacterMemories(session.character_id, id);
+      loadInventory(session.character_id, id);
     }
   };
 
   const loadRelationships = async (sid) => {
     const rels = await base44.entities.CharacterRelationship.filter({ session_id: sid });
+    if (!stillOpen(sid)) return;
     const map = {};
     (rels || []).forEach((r) => { map[r.character_id] = r; });
     setRelationships(map);
@@ -712,16 +750,19 @@ export default function Chat() {
 
   const loadLore = async (sid) => {
     const data = await base44.entities.WorldState.filter({ session_id: sid, is_active: true }, "-created_date", 100);
+    if (!stillOpen(sid)) return;
     setLoreEntries(data || []);
   };
 
-  const loadCharacterMemories = async (charId) => {
+  const loadCharacterMemories = async (charId, sid = openSessionIdRef.current) => {
     const res = await base44.functions.invoke("characterMemory", { action: "get", character_id: charId });
+    if (sid && !stillOpen(sid)) return;
     setCharacterMemories(res?.data?.memories || []);
   };
 
-  const loadInventory = async (charId) => {
+  const loadInventory = async (charId, sid = openSessionIdRef.current) => {
     const data = await base44.entities.Inventory.filter({ character_id: charId }, "-created_date", 100);
+    if (sid && !stillOpen(sid)) return;
     setInventoryItems(data || []);
   };
 
@@ -739,6 +780,7 @@ export default function Chat() {
         arousal: s.arousal != null ? s.arousal : null,
       };
     });
+    if (!stillOpen(sid)) return;
     setCharacterEmotions(map);
   };
 
@@ -1747,17 +1789,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         parseImagePrompts(result).length > 0 || userRequestedImage(content);
       let imageAttachments = [];
       if (wantsImage) {
+        const imageProgressText = stripImageTags(result.replace(eventTagRegex, "")).trim() || result;
         setActiveSession((prev) => ({
           ...prev,
-          messages: [
-            ...updatedMessages,
-            {
-              role: "assistant",
-              content: "creating image...",
-              character_name: "__thinking__",
-              timestamp: new Date().toISOString(),
-            },
-          ],
+          messages: messagesWithImageProgress(prev?.messages || updatedMessages, {
+            streamedText: imageProgressText,
+            speakerName: charName,
+          }),
         }));
         try {
           const resolved = await resolveChatImageAttachments({
@@ -1871,6 +1909,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
       } catch (persistErr) {
         console.warn("[Anima] Failed to persist reply:", persistErr);
+        // Client `turn_*` ids are still on screen. Drop any deferred remote
+        // refresh so store history that lacks this turn cannot replace it.
+        pendingRemoteSyncRef.current = false;
       }
       loadSessions().catch(() => {});
 
@@ -2762,6 +2803,57 @@ Return JSON:
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                 />
               </div>
+            </div>
+          </div>
+        ) : sessionId && sessionLoad.status === "loading" ? (
+          <div
+            className="flex-1 flex flex-col items-center justify-center gap-3"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+            <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
+              Opening conversation...
+            </p>
+          </div>
+        ) : sessionId && sessionLoad.status === "missing" ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="font-mono text-sm text-primary/70">
+              This conversation could not be found.
+            </p>
+            <button
+              type="button"
+              onClick={handleNewSession}
+              className="font-mono text-[10px] tracking-widest uppercase text-primary border border-primary/30 px-4 py-2 hover:bg-primary/10"
+            >
+              Initialize Session
+            </button>
+          </div>
+        ) : sessionId && sessionLoad.status === "error" ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="font-mono text-sm text-primary/70">
+              Couldn&apos;t open this conversation.
+            </p>
+            {sessionLoad.message ? (
+              <p className="font-mono text-[10px] text-primary/40 max-w-md">
+                {sessionLoad.message}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSessionLoadNonce((n) => n + 1)}
+                className="font-mono text-[10px] tracking-widest uppercase text-primary border border-primary/30 px-4 py-2 hover:bg-primary/10"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={handleNewSession}
+                className="font-mono text-[10px] tracking-widest uppercase text-primary/70 border border-primary/20 px-4 py-2 hover:bg-primary/10"
+              >
+                Initialize Session
+              </button>
             </div>
           </div>
         ) : (

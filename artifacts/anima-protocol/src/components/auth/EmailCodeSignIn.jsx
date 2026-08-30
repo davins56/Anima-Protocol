@@ -13,20 +13,21 @@ import {
   startGitHubOAuthSignIn,
 } from "@/lib/emailCodeSignIn";
 import { clerkOAuthCompletePath } from "@/lib/clerkOAuthPaths";
+import { buildInstantGuestIdentity } from "@/lib/authBootPolicy";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /**
  * Custom sign-in that forces email OTP (not magic link) and uses
- * Clerk Future `signIn.sso()` for GitHub OAuth. Supports fallback/guest
- * session creation if Clerk service is loading or unreachable.
+ * Clerk Future `signIn.sso()` for GitHub OAuth. Instant Sandbox / Guest
+ * Access is opt-in only — Clerk failures stay on this form.
  */
 export default function EmailCodeSignIn() {
   const { signIn, fetchStatus } = useSignIn();
   const { isLoaded: userLoaded, isSignedIn } = useUser();
   const clerk = useClerk();
   const navigate = useNavigate();
-  const { loginAsLocalUser, localUser, isAuthenticated } = useAuth();
+  const { loginAsLocalUser, isSignedInUser, isGuest } = useAuth();
 
   const [step, setStep] = useState("identifier"); // 'identifier' | 'code'
   const [identifier, setIdentifier] = useState("");
@@ -40,11 +41,12 @@ export default function EmailCodeSignIn() {
 
   // Single-session Clerk instances reject a second sign-in. Send signed-in
   // users into the app instead of leaving them stuck on this form.
+  // Leftover Instant Sandbox storage is not a signed-in session.
   useEffect(() => {
-    if ((userLoaded && isSignedIn) || (localUser && isAuthenticated)) {
+    if ((userLoaded && isSignedIn) || isSignedInUser || isGuest) {
       navigate(basePath || "/", { replace: true });
     }
-  }, [userLoaded, isSignedIn, localUser, isAuthenticated, navigate]);
+  }, [userLoaded, isSignedIn, isSignedInUser, isGuest, navigate]);
 
   const resumeExistingSession = async (err) => {
     try {
@@ -116,17 +118,14 @@ export default function EmailCodeSignIn() {
     });
   };
 
-  const handleInstantGuest = (customName) => {
+  // Guest is opt-in only. Do not pass the email-form `value` here — that used
+  // to auto-enter a blank local user on Clerk load/network errors.
+  const handleInstantGuest = () => {
     setError(null);
     setBusy("guest");
-    const name = (customName || identifier || "Seeker").trim();
+    const identity = buildInstantGuestIdentity(identifier);
     if (typeof loginAsLocalUser === "function") {
-      loginAsLocalUser({
-        id: `user_${name.toLowerCase().replace(/[^a-z0-9]/g, "_") || "seeker"}`,
-        email: name.includes("@") ? name : `${name.toLowerCase()}@anima-protocol.com`,
-        full_name: name,
-        display_name: name,
-      });
+      loginAsLocalUser(identity);
       navigate(basePath || "/", { replace: true });
     } else {
       navigate(basePath || "/", { replace: true });
@@ -146,8 +145,9 @@ export default function EmailCodeSignIn() {
       return;
     }
     if (!signIn || typeof signIn.create !== "function") {
-      // Graceful instant entry when Clerk backend is unreachable or not configured
-      handleInstantGuest(value);
+      setError(
+        "Sign-in is still loading. Wait a moment and try again, use GitHub, or tap Instant Sandbox / Guest Access.",
+      );
       return;
     }
     setBusy("email");
@@ -163,11 +163,6 @@ export default function EmailCodeSignIn() {
           humanizeIdentifierFormat: true,
           context: "identifier",
         });
-        // If Clerk rejects due to config or connectivity, allow instant local entry
-        if (!msg || msg.includes("unavailable") || msg.includes("network") || msg.includes("origin")) {
-          handleInstantGuest(value);
-          return;
-        }
         setError(msg || "Couldn't start sign-in.");
         return;
       }
@@ -205,10 +200,6 @@ export default function EmailCodeSignIn() {
         humanizeIdentifierFormat: stage === "create",
         context: "identifier",
       });
-      if (!msg || msg.includes("Failed to fetch") || msg.includes("network")) {
-        handleInstantGuest(value);
-        return;
-      }
       setError(msg || "Couldn't start sign-in.");
     } finally {
       setBusy(null);
@@ -322,7 +313,7 @@ export default function EmailCodeSignIn() {
   const secondaryBtnClass =
     "w-full rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors";
 
-  if ((userLoaded && isSignedIn) || (localUser && isAuthenticated)) {
+  if ((userLoaded && isSignedIn) || isSignedInUser || isGuest) {
     return (
       <div className={cardClass}>
         {previewBanner}
@@ -466,7 +457,7 @@ export default function EmailCodeSignIn() {
         <button
           type="button"
           className="w-full text-xs text-cyan-300/80 hover:text-cyan-200 py-1.5 px-2 rounded border border-cyan-400/20 hover:border-cyan-400/40 bg-cyan-950/30 transition-colors"
-          onClick={() => handleInstantGuest()}
+          onClick={handleInstantGuest}
           disabled={loading}
         >
           Instant Sandbox / Guest Access →

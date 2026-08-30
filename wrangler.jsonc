@@ -28,6 +28,9 @@
     // stale hashed files under /assets/* (browser then rejects HTML as a JS
     // module — Profile EchoKeys MIME error). Run the Worker first: /api →
     // Express; /assets → 404 if ASSETS returns HTML. Client routes stay SPA.
+    // Hashed /assets Cache-Control: public/_headers (copied into ./dist) plus
+    // Worker withHashedAssetCache. Do not gitignore _headers — CF Assets
+    // default is max-age=0 without it.
     "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
   },
   "vars": {

@@ -79,7 +79,6 @@ export default function MainHome() {
   const [lastCheckIn, setLastCheckIn] = useState(null);
   const [selectedMode, setSelectedMode] = useState("serenity");
   const [greeting, setGreeting] = useState(GREETINGS[0]);
-  const [loading, setLoading] = useState(true);
   const [aiEditOpen, setAiEditOpen] = useState(false);
   // The image fed into the AI edit modal: either the saved avatar (edit flow)
   // or a freshly picked photo from disk (pick-then-edit flow).
@@ -148,15 +147,14 @@ export default function MainHome() {
 
   const loadHomeData = useCallback(async () => {
     try {
-      const me = await base44.auth.me();
-      setUser(me);
-      setSelectedMode(me?.selected_mode || "serenity");
-
-      const [sessionList, animas, checkIns] = await Promise.all([
+      const [me, sessionList, animas, checkIns] = await Promise.all([
+        base44.auth.me(),
         base44.entities.ChatSession.list(),
         base44.entities.Anima.list(),
         base44.entities.CheckIn.list(),
       ]);
+      setUser(me);
+      setSelectedMode(me?.selected_mode || "serenity");
 
       const recent = [...(sessionList || [])]
         .sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0))
@@ -172,23 +170,20 @@ export default function MainHome() {
       if (sortedCheckIns.length > 0) setLastCheckIn(sortedCheckIns[0]);
     } catch (err) {
       console.debug("MainHome init in restricted context");
-    } finally {
-      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
     let cancelled = false;
-    const loadingTimeout = setTimeout(() => {
-      if (!cancelled) setLoading(false);
-    }, 12000);
+    // Paint the shell immediately; hydrate as soon as the store answers.
+    // A second pass after bootstrap picks up a just-seeded Anima.
+    loadHomeData();
     whenBootstrapReady().then(() => {
       if (!cancelled) loadHomeData();
     });
     return () => {
       cancelled = true;
-      clearTimeout(loadingTimeout);
     };
   }, [loadHomeData]);
 
@@ -254,15 +249,6 @@ export default function MainHome() {
       ? anima.evolution_path
       : null;
   const pathMeta = evolutionPath ? getPathMeta(evolutionPath) : null;
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full w-full gap-3 bg-[#050505]">
-        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-        <p className="font-mono text-xs text-primary/50 tracking-[0.3em] uppercase">Initializing...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="relative h-full overflow-y-auto bg-[#050505] scanline">
