@@ -45,9 +45,11 @@ wildcard_replace(http.request.full_uri, r"https://www.anima-protocol.com/*", r"h
 After that, `GET https://www.anima-protocol.com/api/store/Character` must 301/308
 to `https://anima-protocol.com/api/store/Character`, never `/`.
 
-`wrangler.jsonc` also declares a `www.anima-protocol.com/*` route on Worker
-`anima-protocol` plus a path-preserving 308 in `worker.ts`. Those do **not**
-run while this zone rule drops the path. Do not treat a `vercel.json` test as
-a production www test.
+Do **not** add a `www.anima-protocol.com` route on Worker `anima-protocol`
+until this zone rule keeps `${1}`. www is not a custom domain on that Worker;
+a wrangler route would not run today and can collide with
+`anima-protocol-worker`. `worker.ts` still has a path-preserving 308 helper
+if a www request ever reaches this isolate. Do not treat a `vercel.json`
+test as a production www test.
 
 Never put origin URLs or passwords in git.

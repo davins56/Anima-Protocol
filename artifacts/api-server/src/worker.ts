@@ -45,9 +45,9 @@ export default {
     const wwwRedirect = apexRedirectForWww(request);
     if (wwwRedirect) return wwwRedirect;
 
-    // Route /api/* requests through the Express app. Isolate throws, hung
-    // Hyperdrive queries, and HTML error pages are coerced to JSON 503/500 so
-    // the Character library never renders Cloudflare's IE-conditional page.
+    // Route /api/* through Express. Production 24h: 236 Uncaught Exceptions
+    // became CF exception/challenge HTML (ie6 oldie / Bot Fight), not SPA
+    // index. Wrap expressHandler.fetch so /api never returns HTML.
     if (isWorkerApiPath(url.pathname)) {
       // Request-time apply: fetch env + importable env, including non-enumerable
       // secrets and Secrets Store-style objects. Do not rely on a boot snapshot
@@ -56,7 +56,7 @@ export default {
         await applyCloudflareRequestEnv(env);
         return await fetchApiThroughExpress(request, env, ctx, expressHandler);
       } catch (err) {
-        return jsonApiErrorResponse(err);
+        return jsonApiErrorResponse(err, 503, url.pathname);
       }
     }
 

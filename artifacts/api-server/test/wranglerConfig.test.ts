@@ -151,29 +151,21 @@ describe("Cloudflare wrangler config", () => {
     }
   });
 
-  it("declares a www Worker route and documents the zone ${1} fix", () => {
-    const routes = config.routes as Array<Record<string, unknown>>;
-    expect(Array.isArray(routes)).toBe(true);
-    expect(routes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          pattern: "www.anima-protocol.com/*",
-          zone_name: "anima-protocol.com",
-        }),
-      ]),
-    );
-    expect(JSON.stringify(routes)).not.toMatch(/postgres(?:ql)?:\/\//i);
+  it("does not assume a wrangler www route until the zone rule keeps ${1}", () => {
+    expect(config.routes ?? []).toEqual([]);
     const wrangler = readFileSync(
       path.join(repoRoot, "wrangler.jsonc"),
       "utf8",
     );
     expect(wrangler).toMatch(/scripts\/cloudflare\/www-redirect\.md/);
     expect(wrangler).toMatch(/Redirect www to root/);
+    expect(wrangler).toMatch(/Do not add www\.anima-protocol\.com routes/);
     const notes = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/www-redirect.md"),
       "utf8",
     );
     expect(notes).toMatch(/\$\{1\}/);
+    expect(notes).toMatch(/Do \*\*not\*\* add a `www\.anima-protocol\.com` route/);
   });
 
   it("binds Hyperdrive anima-postgres as HYPERDRIVE", () => {
