@@ -59,6 +59,12 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
     });
   }, [element, tier, query, ownedOnly, owned]);
 
+  const visible = useMemo(() => {
+    const q = query.trim();
+    const unfiltered = !q && tier === "all" && element === "all" && !ownedOnly;
+    return unfiltered ? filtered.slice(0, 240) : filtered;
+  }, [filtered, query, tier, element, ownedOnly]);
+
   const addToFolder = (key) => {
     if (!owned.has(key.id)) return;
     if (draft.length >= ECHO_FOLDER_RULES.size) return;
@@ -246,7 +252,7 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset, 
           </p>
           <div className="grid lg:grid-cols-[1fr_minmax(260px,320px)] gap-4">
             <div className="grid sm:grid-cols-2 gap-2 max-h-[62vh] overflow-y-auto pr-1">
-              {filtered.map((k) => (
+              {visible.map((k) => (
                 <EchoKeyCard
                   key={k.id}
                   echoKey={k}
