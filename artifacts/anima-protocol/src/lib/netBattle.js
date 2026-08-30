@@ -114,16 +114,20 @@ function enemyForSpectrum(spectrum, rng) {
  * @param {object} [opts.anima]
  * @param {'manual'|'auto'} [opts.controlMode]
  * @param {number} [opts.seed]
+ * @param {object[]} [opts.echoFolder] Echo Key chips (weapon-memory). Falls back to expression chips.
  */
 export function createBattle(opts = {}) {
   const anima = opts.anima || {};
   const spectrum = anima.expression_spectrum;
   const stats = mixedCombatStats(spectrum);
   const rng = createRng(opts.seed ?? Date.now() % 1_000_000);
-  const folder = [
-    ...folderFromSpectrum(spectrum),
-    ...supportChipsFromSpectrum(spectrum),
-  ];
+  const echoFolder = Array.isArray(opts.echoFolder) ? opts.echoFolder.filter(Boolean) : [];
+  const folder = echoFolder.length
+    ? echoFolder
+    : [
+        ...folderFromSpectrum(spectrum),
+        ...supportChipsFromSpectrum(spectrum),
+      ];
   const drawn = drawHand(folder, rng);
   const hp = unitHp(stats.hp);
   const buster = busterForSpectrum(spectrum);
@@ -540,6 +544,7 @@ export function battleSummary(state) {
     result: state.phase === "victory" ? "win" : state.phase === "defeat" ? "loss" : "ongoing",
     control_mode: state.controlMode,
     chips_used: state.chipsUsed,
+    echo_keys_used: state.chipsUsed,
     player_hp: state.player.hp,
     enemy_hp: state.enemy.hp,
     ticks: state.tick,

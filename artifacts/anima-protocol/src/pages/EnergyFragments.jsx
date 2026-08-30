@@ -33,6 +33,15 @@ export default function EnergyFragments() {
           Standard / Mega / Giga caps, elemental cycle, Program Advances. Energy Fragments are new
           battle data — variations of those families plus original programs. When a fragment is
           slotted, the weapon arrives as an ethereal construct: glass-steel, afterimage, no mass.
+          The profile library of Echo Keys expands this into ~800 weapon-memories covering
+          Battle Network 1–6 and Star Force cards.{" "}
+          <button
+            type="button"
+            onClick={() => navigate("/echo-keys")}
+            className="text-amber-200/80 underline underline-offset-2 hover:text-amber-100"
+          >
+            Open Echo Keys
+          </button>
         </p>
         <FragmentLibrary />
       </motion.div>
