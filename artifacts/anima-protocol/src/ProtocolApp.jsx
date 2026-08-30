@@ -53,6 +53,7 @@ import {
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  ANIMA_PRODUCTION_SIGN_IN_URL,
   isUsableClerkPublishableKey,
   isVercelPreviewHost,
   resolveClerkProxyUrl,
@@ -225,7 +226,7 @@ function ClerkQueryClientCacheInvalidator() {
 const CLERK_DIAGNOSTICS_STALL_MS = 4000;
 
 const VERCEL_PREVIEW_SIGNIN_HINT =
-  "This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use https://www.anima-protocol.com/sign-in instead.";
+  `This is a Vercel preview URL. If OAuth callbacks are unregistered or Deployment Protection is on, use ${ANIMA_PRODUCTION_SIGN_IN_URL} instead.`;
 
 function ClerkDiagnosticsBanner({ hints }) {
   if (!hints?.length) return null;
