@@ -10,7 +10,8 @@
   // Required by worker.ts — Express runs through cloudflare:node's httpServerHandler.
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
-    // Root `pnpm build` copies artifacts/anima-protocol/dist/public → ./dist.
+    // Root `pnpm build` copies artifacts/anima-protocol/dist/public → ./dist
+    // and drops Netlify `_redirects` (invalid on Workers: 200! / SPA loop).
     // Workers Builds also passes `--assets=./dist`; keep this in sync.
     "directory": "./dist",
     "binding": "ASSETS",
