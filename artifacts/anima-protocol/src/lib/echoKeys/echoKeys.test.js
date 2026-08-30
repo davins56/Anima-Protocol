@@ -205,7 +205,7 @@ describe("folder and profile library", () => {
     expect(isEchoLibrarySteward({
       externalAccounts: [{ provider: "oauth_github", username: "davins56" }],
     })).toBe(true);
-    expect(isEchoLibrarySteward({ role: "admin" })).toBe(true);
+    expect(isEchoLibrarySteward({ role: "admin" })).toBe(false);
     expect(isEchoLibrarySteward({ email: "seeker@example.com" })).toBe(false);
     expect(isEchoLibrarySteward(null)).toBe(false);
 

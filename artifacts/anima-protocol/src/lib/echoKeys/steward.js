@@ -3,9 +3,8 @@
  * The full Echo Key Codex is granted only to Dàvīn Smith (the Protocol steward).
  * Other operators keep the starter-Shard discovery path.
  *
- * Match on the already-known identity — primary email, GitHub login, or the
- * existing profile `admin` role that ADMIN_EMAILS already sets for this steward.
- * Do not invent extra emails here.
+ * Match on the already-known identity — primary email or GitHub login.
+ * Do not invent extra emails, and do not grant via a generic admin role.
  */
 
 export const ECHO_LIBRARY_STEWARD_EMAIL = "davins56@gmail.com";
@@ -84,7 +83,6 @@ function handlesOf(user) {
 export function isEchoLibrarySteward(user) {
   if (!user || typeof user !== "object") return false;
   const record = /** @type {Record<string, unknown>} */ (user);
-  if (String(record.role || "").toLowerCase() === "admin") return true;
   if (emailsOf(record).has(ECHO_LIBRARY_STEWARD_EMAIL)) return true;
   if (handlesOf(record).has(ECHO_LIBRARY_STEWARD_GITHUB)) return true;
   return false;

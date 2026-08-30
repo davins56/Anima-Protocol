@@ -51,6 +51,18 @@ export const EMPTY_APPEARANCE_PROMPTS = Object.fromEntries(
   APPEARANCE_FEATURES.map((f) => [f.key, ""]),
 );
 
+/** Vessel layers for AnimaVesselMesh (Customise Anima Look). */
+export const VESSEL_LAYER_FIELDS = [
+  { key: "body_skin", layer: "body", field: "skin", label: "Body · skin", placeholder: "dark wet, porcelain wet, deep bronze wet" },
+  { key: "body_tone", layer: "body", field: "tone", label: "Body · tone hex", placeholder: "#3f2a22" },
+  { key: "hair_style", layer: "hair", field: "style", label: "Hair · style", placeholder: "short messy white, long side-tufts" },
+  { key: "hair_color", layer: "hair", field: "color", label: "Hair · color", placeholder: "#f8fafc" },
+  { key: "cloth_robe", layer: "cloth", field: "robe", label: "Cloth · robe", placeholder: "translucent wet white" },
+  { key: "markings_chest", layer: "markings", field: "chest", label: "Markings · chest", placeholder: "変" },
+];
+
+export { DEFAULT_VESSEL_LAYERS, normalizeVesselLayers } from "./hiddenSequences";
+
 /** Rich descriptors so image models don't collapse vague skin labels to a default. */
 const SKIN_TONE_EXPANSIONS = {
   "porcelain fair":

@@ -61,7 +61,7 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
 
   if (collapsed) {
     return (
-      <div className="border-r border-primary/20 bg-black/95 flex flex-col items-center backdrop-blur-md flex-shrink-0" style={{ height: "100dvh", width: "40px" }}>
+      <div className="border-r border-primary/20 bg-black/95 flex flex-col items-center backdrop-blur-md flex-shrink-0 h-app-viewport" style={{ height: "var(--app-height, 100dvh)", maxHeight: "100%", width: "40px" }}>
         <button
           onClick={onToggleCollapse}
           className="mt-3 p-1.5 text-primary/40 hover:text-primary transition-colors"
@@ -74,7 +74,7 @@ export default function Sidebar({ sessions, activeSessionId, onNewSession, onDel
   }
 
   return (
-    <div className="w-64 border-r border-primary/20 bg-black/95 flex flex-col backdrop-blur-md overflow-hidden flex-shrink-0" style={{ height: "100dvh", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <div className="w-64 border-r border-primary/20 bg-black/95 flex flex-col backdrop-blur-md overflow-hidden flex-shrink-0 h-app-viewport" style={{ height: "var(--app-height, 100dvh)", maxHeight: "100%", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
       {/* Mode Tabs */}
       <div className="grid grid-cols-2 border-b border-primary/20 flex-shrink-0">
         <button
