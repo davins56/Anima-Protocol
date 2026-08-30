@@ -159,6 +159,11 @@ export default function ReflectionLog() {
                         Sacred Space
                       </span>
                     )}
+                    {entry.source === "daily_resonance" && (
+                      <span className="px-2 py-0.5 border border-cyan-400/40 bg-cyan-400/10 text-[9px] font-mono tracking-[0.1em] uppercase text-cyan-300">
+                        Check-in
+                      </span>
+                    )}
                     {entry.mood && (
                       <span
                         className={`px-2 py-0.5 border text-[9px] font-mono tracking-[0.1em] uppercase ${
