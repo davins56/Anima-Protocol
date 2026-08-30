@@ -2504,12 +2504,12 @@ Return JSON:
           initial={{ x: "-100%" }}
           animate={{ x: 0 }}
           exit={{ x: "-100%" }}
-          className="fixed inset-0 z-[9998] flex"
-          style={{ top: 0, left: 0, right: 0, bottom: 0, height: "100dvh" }}
+          className="fixed inset-0 z-[9998] flex h-app-viewport"
+          style={{ top: 0, left: 0, right: 0, height: "var(--app-height, 100dvh)" }}
         >
           <motion.div
-            className="flex-shrink-0 flex flex-col"
-            style={{ width: "min(280px, 85vw)", height: "100dvh", background: "rgb(2,6,10)", borderRight: "1px solid rgba(0,229,229,0.2)" }}
+            className="flex-shrink-0 flex flex-col h-app-viewport"
+            style={{ width: "min(280px, 85vw)", height: "var(--app-height, 100dvh)", background: "rgb(2,6,10)", borderRight: "1px solid rgba(0,229,229,0.2)" }}
           >
             <Sidebar
               sessions={sessions}

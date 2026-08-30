@@ -81,7 +81,7 @@ export default function LoreBrowserPanel({ sessionId, isOpen = true, onClose }) 
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 300 }}
       transition={{ duration: 0.2 }}
-      className="fixed right-0 top-0 h-[100dvh] w-96 bg-black/95 border-l border-primary/20 backdrop-blur-md flex flex-col z-40 overflow-hidden"
+      className="fixed right-0 top-0 h-app-viewport w-96 bg-black/95 border-l border-primary/20 backdrop-blur-md flex flex-col z-40 overflow-hidden"
     >
       {/* Header */}
       <div className="border-b border-primary/20 p-4 flex-shrink-0">
