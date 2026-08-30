@@ -85,10 +85,10 @@ describe("app health checks", () => {
         missingTables: [],
       });
     } else {
-      expect(body.reason || body.schema?.reason).toMatch(
+      expect(body.reason).toMatch(
         /^(timeout|ssl|refused|reset|unreachable|auth|schema|limit|unavailable)$/,
       );
-      expect(body.code || body.schema?.code).toEqual(expect.any(String));
+      expect(body.code).toEqual(expect.any(String));
     }
   });
 

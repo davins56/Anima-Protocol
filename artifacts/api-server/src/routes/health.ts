@@ -107,6 +107,9 @@ router.get("/healthz/db", async (_req, res) => {
       status: healthy ? "ok" : "error",
       db: true,
       ok: result.rows?.[0]?.ok === 1,
+      ...(healthy
+        ? {}
+        : { reason: "schema" as const, code: "schema_missing" }),
       schema: {
         ok: schema.ok,
         missingTables: schema.missingTables,
