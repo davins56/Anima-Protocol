@@ -62,6 +62,8 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |
 | `CRON_SECRET` | Authorizes the hourly Vercel proactive-message cron |
 
+**Production (Cloudflare — anima-protocol.com):** the apex host is Workers + Assets, not Vercel. Root `wrangler.jsonc` sets `main` to `artifacts/api-server/src/worker.ts` with `nodejs_compat`. Workers Builds already runs `pnpm build` (copies the SPA to `./dist`) then `npx wrangler deploy --assets=./dist --name anima-protocol`. `assets.run_worker_first` sends `/api` and `/api/*` to Express so `/api/healthz`, `/api/store`, and `/api/__clerk` are not swallowed by the SPA fallback. Keep Clerk/DB keys as Worker **secrets** (see `scripts/cloudflare/production-secret-names.txt`); do not commit them. A deploy without `main` is assets-only and those `/api` paths 404.
+
 **Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** from the **same** Clerk Production app (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`). This deployment uses Clerk **custom domain** (`clerk.anima-protocol.com` CNAME) — leave `VITE_CLERK_PROXY_URL` empty; the frontend detects the custom domain from the publishable key and **does not** route through `/api/__clerk` on `www.anima-protocol.com`. Verify `curl https://www.anima-protocol.com/api/healthz` and `curl https://clerk.anima-protocol.com/v1/environment` return 200 after deploy. Register OAuth redirect URLs (`…/sign-in/sso-callback`, `…/sign-up/sso-callback`) in Clerk → Paths. Redeploy **without build cache** after any env change. `/api/__clerk` proxy mode is only for hosts without a Clerk custom domain (e.g. some `*.vercel.app` previews if you enable Clerk proxy in the dashboard).
 
 **Local dev with `pk_live_`:** run **api-server on 8080** and the Vite app on 23660 — the frontend auto-proxies Clerk through `http://localhost:23660/api/__clerk` so the dashboard proxy URL (`www.anima-protocol.com/api/__clerk`) matches. For simpler local auth, use **`pk_test_`** keys from the Clerk Development instance instead.
@@ -151,6 +153,7 @@ Reload: `sudo nginx -s reload`
 - Vite configs for frontend and mockup **require** `PORT` and `BASE_PATH` at config load time.
 - API `dev` script rebuilds on each start (`build` then `start`).
 - pnpm may warn about ignored build scripts for `@clerk/shared`; add to `onlyBuiltDependencies` in `pnpm-workspace.yaml` if Clerk misbehaves after install.
+- Cloudflare Worker `anima-protocol` must deploy from root `wrangler.jsonc` (`main` = `artifacts/api-server/src/worker.ts`). An assets-only deploy (`--assets=./dist` with no `main`) makes `/api/*` 404 on anima-protocol.com.
 
 ## Analytics Tracking — Mixpanel
 
