@@ -442,6 +442,9 @@ export default function EmailCodeSignIn() {
       <form className="space-y-4" onSubmit={handleIdentifierSubmit}>
         <label className="block text-sm text-cyan-300/80">
           Email or username
+          {/* In-flow field inside AuthFormShell (`min-h-screen-safe`). Same
+              visualViewport rule as the chat composer: no extra keyboard
+              padding or fixed-bottom black chrome over this input. */}
           <input
             className={inputClass}
             name="identifier"

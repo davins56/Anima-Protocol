@@ -453,8 +453,12 @@ function ClerkFailedConnectivityHints() {
 }
 
 function AuthFormShell({ mode, children }) {
+  // In-flow (not position:fixed). The shell is `min-h-screen-safe` /
+  // `--app-height` = visualViewport.height, so the email/code fields stay
+  // inside the visible area when the iOS keyboard opens. Do not add
+  // keyboard-height padding here — that double-count was the black bar.
   return (
-    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen-safe items-center justify-center bg-background px-4 overflow-y-auto">
       <div className="w-[420px] max-w-full space-y-3">
         <ClerkLoginDiagnostics />
         {mode === "sign-in" ? (
