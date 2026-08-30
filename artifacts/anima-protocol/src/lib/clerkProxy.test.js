@@ -8,8 +8,10 @@ import {
   decodeClerkFrontendHost,
   ensureTrailingSlash,
   isAnimaProductionHost,
+  isUsableClerkPublishableKey,
   publishableKeyUsesCustomDomain,
   resolveClerkProxyUrl,
+  sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
 } from './clerkProxy';
 
@@ -45,8 +47,19 @@ describe('clerkProxy', () => {
   });
 
   it('correctly decodes frontend api host', () => {
+    expect(decodeClerkFrontendHost('pk_test_placeholder')).toBe('');
     expect(decodeClerkFrontendHost(LIVE_CUSTOM_KEY)).toBe('clerk.anima-protocol.com');
     expect(decodeClerkFrontendHost(TEST_KEY)).toBe('clerk.dev.clerk.accounts.dev');
+  });
+
+  it('treats placeholder and mojibake keys as unset', () => {
+    expect(isUsableClerkPublishableKey('pk_test_placeholder')).toBe(false);
+    expect(sanitizeClerkPublishableKey('pk_test_placeholder')).toBe('');
+    expect(clerkJsScriptProbeUrl('pk_test_placeholder')).toBe('');
+    expect(clerkFrontendApiProbeBase('pk_test_placeholder')).toBe('');
+    expect(isUsableClerkPublishableKey(LIVE_CUSTOM_KEY)).toBe(true);
+    expect(sanitizeClerkPublishableKey(LIVE_CUSTOM_KEY)).toBe(LIVE_CUSTOM_KEY);
+    expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(false);
   });
 
   it('detects custom domains', () => {
