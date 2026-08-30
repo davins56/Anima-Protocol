@@ -1,0 +1,8 @@
+# Cloudflare Workers Assets default Cache-Control is
+# `public, max-age=0, must-revalidate`. Hashed Vite files are content-
+# addressed — long-cache them so mobile Safari does not re-download the
+# main graph on every visit. Applied by the asset store itself (see
+# https://developers.cloudflare.com/workers/static-assets/headers/).
+# Worker `withHashedAssetCache` is the run_worker_first backup.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

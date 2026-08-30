@@ -166,7 +166,7 @@ describe("boot wiring", () => {
   });
 
   it("HomeGate enters the app only for Clerk or explicit guest", () => {
-    const app = readFileSync(join(srcRoot, "App.full.jsx"), "utf8");
+    const app = readFileSync(join(srcRoot, "ProtocolApp.jsx"), "utf8");
     expect(app).toMatch(/isSignedInUser \|\| isGuest \|\| isAuthenticated/);
     expect(app).not.toMatch(/if \(isAuthenticated \|\| localUser \|\| user\)/);
   });
