@@ -97,6 +97,20 @@ describe("appearsInCheckInList", () => {
     expect(appearsInCheckInList({ reflection: "today was heavy", gratitude: "" })).toBe(true);
     expect(appearsInCheckInList({ reflection: "", gratitude: "sunlight" })).toBe(true);
   });
+
+  it("keeps Daily Resonance mood-only rows that the button used to write", () => {
+    expect(
+      appearsInCheckInList({
+        timestamp: "2026-08-30T15:00:00.000Z",
+        mood: "neutral",
+        mood_intensity: 5,
+        physical_state: "neutral",
+        reflection: "",
+        gratitude: "",
+        mode_used: "serenity",
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("recordSacredSpaceCheckIn", () => {
