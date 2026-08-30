@@ -46,10 +46,14 @@ export function createNodePool(
     connectionString,
     ssl,
     max: Number(process.env.PG_POOL_MAX || 1),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10_000),
+    // Origin poolers drop idle TCP well under the old 10s default.
+    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 2_000),
     connectionTimeoutMillis: Number(
       process.env.PG_CONNECTION_TIMEOUT_MS || 8_000,
     ),
+    maxLifetimeSeconds: Number(process.env.PG_MAX_LIFETIME_SECONDS || 60),
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
     allowExitOnIdle: true,
   });
 }
