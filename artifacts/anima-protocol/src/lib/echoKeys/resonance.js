@@ -41,8 +41,8 @@ export const TIER_LABEL = {
 export const TIER_BLURB = {
   shard: "Common crystallized instruction — the everyday language of resonance.",
   key: "A rare, sophisticated resonance program. Experiences that learned how to become programs.",
-  sovereign: "Civilization-scale artifacts. Not sold. Not starter loot.",
-  prime: "Lattice-level entities. The novels keep their gravity; the app only names them.",
+  sovereign: "Civilization-scale artifacts. Held in the Codex, not sold as shop inventory.",
+  prime: "Lattice-level entities. Named in the novels and owned in the Vault.",
 };
 
 const SITE_BY_ELEMENT = {

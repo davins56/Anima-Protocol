@@ -31,6 +31,7 @@ vi.mock("@/lib/analytics", () => ({
 }));
 
 import EchoKeys from "./EchoKeys";
+import { ECHO_KEYS } from "@/lib/echoKeys";
 
 describe("EchoKeys page", () => {
   beforeEach(() => {
@@ -42,7 +43,7 @@ describe("EchoKeys page", () => {
     document.body.innerHTML = "";
   });
 
-  it("opens story mode with a starter Vault, not the full Codex", async () => {
+  it("opens story mode with the full Codex owned", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -55,11 +56,12 @@ describe("EchoKeys page", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(container.textContent).toMatch(/in Vault/i);
+    expect(container.textContent).toMatch(new RegExp(`${ECHO_KEYS.length} in Vault`, "i"));
     expect(container.textContent).toMatch(/Echo Keys/i);
     expect(container.textContent).toMatch(/Story/i);
     expect(container.textContent).toMatch(/Resonance sites/i);
-    expect(container.textContent).not.toMatch(/This profile holds the full library/i);
+    expect(container.textContent).toMatch(/already holds the Codex/i);
+    expect(container.textContent).toMatch(/Sovereign and Prime Keys are already in the Vault/i);
   });
 
   it("filters the Codex by Echo Shard, Echo Key, Sovereign Key, and Prime Key", async () => {
@@ -84,11 +86,18 @@ describe("EchoKeys page", () => {
     expect(container.textContent).toMatch(/Echo Shard/i);
     expect(container.textContent).toMatch(/Sovereign Key/i);
     expect(container.textContent).toMatch(/Prime Key/i);
+    expect(container.textContent).toMatch(new RegExp(`${ECHO_KEYS.length} known`));
     const shardTab = [...container.querySelectorAll("button")].find((b) => /^echo shard$/i.test(b.textContent || ""));
     await act(async () => {
       shardTab.click();
       await Promise.resolve();
     });
     expect(container.textContent).toMatch(/Beth \/ Home/);
+    const primeTab = [...container.querySelectorAll("button")].find((b) => /^prime key$/i.test(b.textContent || ""));
+    await act(async () => {
+      primeTab.click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toMatch(/Prime Echo Key/);
   });
 });

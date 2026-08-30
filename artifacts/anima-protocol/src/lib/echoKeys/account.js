@@ -2,8 +2,9 @@
 /**
  * Profile-scoped Echo Key collection (story-mode view of the library).
  *
- * New operators start with Echo Shards. The Codex is found, synthesised,
- * or evolved. Legacy `granted_full_library` keeps a full collection.
+ * Operators hold the full Codex (family rows, featured resonance, and canon
+ * novel keys). The Resonance Array stays 30 slots. Story mode is flavor —
+ * it does not gate ownership. `granted_full_library` is always true.
  */
 
 import { ECHO_KEY_BY_ID } from "./catalog.js";

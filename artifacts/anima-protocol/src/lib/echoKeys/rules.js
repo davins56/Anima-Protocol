@@ -1,7 +1,10 @@
 // @ts-check
-import { ECHO_KEYS, ECHO_KEY_BY_ID } from "./catalog.js";
+import { ECHO_KEYS, ECHO_KEY_BY_ID, allEchoKeyIds } from "./catalog.js";
 import { CANON_RESONANCE, CANON_STARTER_SHARD_IDS } from "./canon.js";
 import { compatibilityScore, TIER_LABEL, tierOf } from "./resonance.js";
+
+/** Unfiltered Codex / Vault grids page this many cards so the DOM stays testable. */
+export const ECHO_LIBRARY_GRID_CAP = 240;
 
 /** Folder rules remixed from BN3+ plus Star Force Star-card cap. */
 export const ECHO_FOLDER_RULES = {
@@ -78,7 +81,7 @@ export const ECHO_RESONANCE = [
   },
 ];
 
-/** Opening Echo Shards — enough to load an Array, not the Codex. */
+/** Opening Resonance Array shards — enough to load 30 slots. The Codex is granted in full. */
 export const STARTER_ECHO_KEY_IDS = [
   "pulse-base",
   "halo-base",
@@ -127,6 +130,11 @@ const STARTER_IDS = [
 
 export function starterOwnedIds() {
   return STARTER_ECHO_KEY_IDS.filter((id) => ECHO_KEY_BY_ID[id]);
+}
+
+/** Every catalog id — family rows, featured resonance, and canon novel keys. */
+export function catalogOwnedIds() {
+  return allEchoKeyIds();
 }
 
 /**
@@ -303,7 +311,7 @@ function storyFields(data = {}) {
 }
 
 /**
- * Default profile library: starter Echo Shards (including Beth, Gimel, He), not the Codex.
+ * Default profile library: the entire Codex. The Resonance Array stays the 30-slot shard seed.
  * @param {Record<string, unknown>} [saved]
  */
 export function defaultEchoLibrary(saved = {}) {
@@ -312,11 +320,11 @@ export function defaultEchoLibrary(saved = {}) {
     : starterEchoFolder();
   return {
     version: 1,
-    owned_ids: starterOwnedIds(),
+    owned_ids: catalogOwnedIds(),
     folder,
     regular_id: saved.regular_id ?? "pulse-base",
     star_card_id: saved.star_card_id ?? null,
-    granted_full_library: false,
+    granted_full_library: true,
     ...storyFields(saved),
   };
 }
@@ -327,17 +335,9 @@ export function defaultEchoLibrary(saved = {}) {
 export function normalizeEchoLibrary(raw) {
   if (!raw || typeof raw !== "object") return defaultEchoLibrary();
   const data = /** @type {Record<string, unknown>} */ (raw);
-  const catalogIds = ECHO_KEYS.map((k) => k.id);
-  const ownedRaw = Array.isArray(data.owned_ids)
-    ? data.owned_ids
-    : Array.isArray(data.owned)
-      ? data.owned
-      : [];
-  let owned = [...new Set(ownedRaw.filter((id) => typeof id === "string" && ECHO_KEY_BY_ID[id]))];
-  const legacyFull =
-    data.granted_full_library === true || owned.length >= catalogIds.length;
-  if (legacyFull) owned = catalogIds;
-  else if (owned.length === 0) owned = starterOwnedIds();
+  // Operators own the full Codex. Stale profiles that still store a starter
+  // handful (granted_full_library: false) are expanded here — not gated.
+  const owned = catalogOwnedIds();
 
   const folderSource = Array.isArray(data.folder)
     ? data.folder
@@ -366,7 +366,7 @@ export function normalizeEchoLibrary(raw) {
       typeof data.star_card_id === "string" && ECHO_KEY_BY_ID[data.star_card_id]
         ? data.star_card_id
         : null,
-    granted_full_library: legacyFull,
+    granted_full_library: true,
     ...storyFields(data),
   };
 }
