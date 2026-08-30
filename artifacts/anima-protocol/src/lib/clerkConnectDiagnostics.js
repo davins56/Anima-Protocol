@@ -82,11 +82,9 @@ export async function probeClerkConnectivity(clerkPubKey) {
     hints.push('API is unreachable — /api/healthz did not respond.');
   }
 
-  const isProxy = proxyUrl.includes('/api/__clerk');
-
   try {
     const clerkRes = await fetch(`${proxyUrl}${CLERK_ENVIRONMENT_PROBE_PATH}`, {
-      credentials: isProxy ? 'same-origin' : 'omit',
+      credentials: 'same-origin',
       signal: AbortSignal.timeout(8000),
     });
     if (!clerkRes.ok) {
@@ -99,7 +97,7 @@ export async function probeClerkConnectivity(clerkPubKey) {
         return hints;
       } else if (codes.includes('host_invalid')) {
         hints.push(
-          'Clerk host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, then redeploy without cache.',
+          'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
         );
         return hints;
       } else if (clerkRes.status === 503) {
@@ -108,25 +106,19 @@ export async function probeClerkConnectivity(clerkPubKey) {
         );
       } else if (clerkRes.status === 504 || clerkRes.status === 502) {
         hints.push(
-          `Clerk connection upstream failed (${clerkRes.status}). Confirm CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY on Vercel.`,
+          `Clerk proxy upstream failed (${clerkRes.status}). Redeploy the latest API build — the server now proxies Clerk via fetch on Vercel. Also confirm CLERK_SECRET_KEY is your Production sk_live_ key.`,
         );
       } else {
         const detail = clerkErrorDetail(proxyError).replace(/[.]+$/, '');
         hints.push(
-          `Clerk service check failed (${clerkRes.status})${detail ? `: ${detail}` : ''}. Confirm CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY on Vercel.`,
+          `Clerk proxy failed (${clerkRes.status})${detail ? `: ${detail}` : ''}. Confirm CLERK_SECRET_KEY on Vercel and remove VITE_CLERK_PROXY_URL=none if set.`,
         );
       }
     }
   } catch {
-    if (isProxy) {
-      hints.push(
-        'Clerk proxy unreachable at /api/__clerk — the api-server must proxy to Clerk in production.',
-      );
-    } else {
-      hints.push(
-        `Clerk host unreachable (${proxyUrl}) — check your internet connection or ad blockers.`,
-      );
-    }
+    hints.push(
+      'Clerk proxy unreachable at /api/__clerk — the api-server must proxy to Clerk in production.',
+    );
   }
 
   const scriptUrl = clerkJsScriptProbeUrl(clerkPubKey);
@@ -134,18 +126,18 @@ export async function probeClerkConnectivity(clerkPubKey) {
     try {
       const scriptRes = await fetch(scriptUrl, {
         method: 'GET',
-        credentials: isProxy ? 'same-origin' : 'omit',
+        credentials: 'same-origin',
         redirect: 'follow',
         signal: AbortSignal.timeout(8000),
       });
       if (!scriptRes.ok) {
         hints.push(
-          `Login script failed to load (${scriptRes.status}) via ${scriptUrl}.`,
+          `Login script failed to load (${scriptRes.status}) via ${scriptUrl}. Fix the Clerk proxy environment values, then redeploy without cache.`,
         );
       }
     } catch {
       hints.push(
-        `Clerk JS bundle could not be fetched from ${scriptUrl} — sign-in cannot start until this script loads.`,
+        'Clerk JS bundle could not be fetched through /api/__clerk — sign-in cannot start until this path returns clerk.browser.js.',
       );
     }
   }

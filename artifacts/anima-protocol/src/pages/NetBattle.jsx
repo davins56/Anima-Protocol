@@ -1,147 +1,283 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import NetBattleArena from "@/components/battle/NetBattleArena";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 import { track } from "@/lib/analytics";
+import {
+  expressionBlendLabel,
+  isExpressionBlend,
+  dominantExpression,
+  normalizeSpectrum,
+  mixedAuraColor,
+} from "@/lib/animaExpressions";
 import {
   TICK_MS,
   battleSummary,
   createBattle,
   tickBattle,
 } from "@/lib/netBattle";
-import { dominantExpression } from "@/lib/animaExpressions";
-import {
-  activeEchoFolder,
-  chipsFromEchoFolder,
-  normalizeEchoKeyAccount,
-} from "@/lib/echoKeys";
+import NetBattleArena from "@/components/battle/NetBattleArena";
+import { Loader, Swords } from "lucide-react";
+import { resolveBattleModels } from "@/lib/battleModels";
+import { hasWebGL } from "@/lib/webglSupport";
+import WebGLFallback from "@/components/battle/WebGLFallback";
 
-function isBlend(spectrum) {
-  if (!spectrum || typeof spectrum !== "object") return false;
-  return Object.values(spectrum).filter((n) => Number(n) > 8).length > 1;
-}
+const AnimaVessel4D = lazy(() => import("@/components/anima/AnimaVessel4D"));
 
 export default function NetBattle() {
+  usePageMeta(ROUTE_META["/net-battle"]);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedId = searchParams.get("anima");
   const [anima, setAnima] = useState(null);
-  const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
-  const completedRef = useRef(false);
-  const echoFolderRef = useRef(null);
+  const [error, setError] = useState("");
+  const [controlMode, setControlMode] = useState("manual");
+  const [battle, setBattle] = useState(null);
+  const [started, setStarted] = useState(false);
+  const recordedRef = useRef(false);
+  const show3d = useMemo(() => hasWebGL(), []);
 
   useEffect(() => {
-    let active = true;
+    let cancelled = false;
     (async () => {
       try {
-        const [animas, characters, me] = await Promise.all([
-          base44.entities.Anima.list("-created_date", 8).catch(() => []),
-          base44.entities.Character.list("-created_date", 1).catch(() => []),
+        await whenBootstrapReady();
+        const [me, list] = await Promise.all([
           base44.auth.me().catch(() => null),
+          base44.entities.Anima.list("-created_date", 100),
         ]);
-        if (!active) return;
-        const nextAnima =
-          (animas || []).find((a) => a?._isAnima || a?.is_anima) ||
-          animas?.[0] ||
-          characters?.[0] ||
-          { name: "Serenity" };
-        setAnima(nextAnima);
-
-        const account = normalizeEchoKeyAccount(me?.echo_keys);
-        const folder = activeEchoFolder(account);
-        const echoFolder = chipsFromEchoFolder(folder?.slots || []);
-        echoFolderRef.current = echoFolder.length >= 5 ? echoFolder : null;
-        const battle = createBattle({
-          anima: nextAnima,
-          echoFolder: echoFolderRef.current || undefined,
-          controlMode: "manual",
-        });
-        setState(battle);
-
-        const dominant = dominantExpression(nextAnima.expression_spectrum);
-        track("net_battle_started", {
-          control_mode: "manual",
-          primary_expression: dominant.id,
-          is_blend: isBlend(nextAnima.expression_spectrum),
-        });
+        if (cancelled) return;
+        const rows = list || [];
+        const selected =
+          (requestedId && rows.find((a) => a.id === requestedId)) ||
+          (me?.email && rows.find((a) => a.assigned_user === me.email)) ||
+          rows[0] ||
+          null;
+        setAnima(selected);
+        if (!selected) setError("Forge an Anima before jacking into the net.");
       } catch (err) {
-        console.warn("NetBattle load failed:", err);
-        if (active) {
-          setState(createBattle({ anima: { name: "Serenity" }, controlMode: "manual" }));
-        }
+        if (!cancelled) setError(err?.message || "Failed to load your Anima.");
       } finally {
-        if (active) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
-      active = false;
+      cancelled = true;
     };
-  }, []);
+  }, [requestedId]);
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      setState((current) => {
-        if (!current || current.phase !== "fighting") return current;
-        return tickBattle(current);
-      });
-    }, TICK_MS);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (!state || completedRef.current) return;
-    if (state.phase !== "victory" && state.phase !== "defeat") return;
-    completedRef.current = true;
-    const dominant = dominantExpression(state.player?.spectrum);
-    track("net_battle_completed", {
-      ...battleSummary(state),
-      primary_expression: dominant.id,
-      is_blend: isBlend(state.player?.spectrum),
+  const dispatch = useCallback((updater) => {
+    setBattle((prev) => {
+      if (!prev) return prev;
+      return typeof updater === "function" ? updater(prev) : updater;
     });
-  }, [state]);
+  }, []);
 
-  const rematch = () => {
-    completedRef.current = false;
-    setState(
-      createBattle({
-        anima: anima || { name: "Serenity" },
-        echoFolder: echoFolderRef.current || undefined,
-        controlMode: state?.controlMode || "manual",
-      }),
-    );
-  };
+  const beginBattle = useCallback(
+    (mode = controlMode) => {
+      if (!anima) return;
+      recordedRef.current = false;
+      const next = createBattle({ anima, controlMode: mode, seed: Date.now() % 1_000_000 });
+      setControlMode(mode);
+      setBattle(next);
+      setStarted(true);
+      const spectrum = normalizeSpectrum(anima.expression_spectrum);
+      track("net_battle_started", {
+        control_mode: mode,
+        primary_expression: dominantExpression(spectrum).id,
+        is_blend: isExpressionBlend(spectrum),
+      });
+    },
+    [anima, controlMode],
+  );
 
-  if (loading || !state) {
+  useEffect(() => {
+    if (!battle || battle.phase === "custom") return;
+    if (battle.phase !== "fighting") return;
+    const id = window.setInterval(() => {
+      setBattle((prev) => (prev ? tickBattle(prev) : prev));
+    }, TICK_MS);
+    return () => window.clearInterval(id);
+  }, [battle?.phase]);
+
+  useEffect(() => {
+    if (!battle || recordedRef.current) return;
+    if (battle.phase !== "victory" && battle.phase !== "defeat") return;
+    recordedRef.current = true;
+    const summary = battleSummary(battle);
+    const spectrum = normalizeSpectrum(anima?.expression_spectrum);
+    track("net_battle_completed", {
+      result: summary.result,
+      control_mode: summary.control_mode,
+      primary_expression: dominantExpression(spectrum).id,
+      is_blend: isExpressionBlend(spectrum),
+      chips_used: summary.chips_used,
+    });
+    base44.entities.NetBattleRecord.create({
+      anima_id: anima?.id,
+      anima_name: anima?.name,
+      result: summary.result,
+      control_mode: summary.control_mode,
+      primary_expression: dominantExpression(spectrum).id,
+      is_blend: isExpressionBlend(spectrum),
+      enemy_name: battle.enemy.name,
+      player_hp: summary.player_hp,
+      ticks: summary.ticks,
+    }).catch(() => {});
+  }, [battle, anima]);
+
+  if (loading) {
     return (
-      <div className="w-full min-h-screen flex items-center justify-center bg-[#05070f] font-mono text-cyan-600 text-xs tracking-[0.3em] uppercase">
-        Jacking in…
+      <div className="flex flex-col items-center justify-center h-full gap-3 bg-[#05050c]">
+        <Loader className="w-6 h-6 text-primary/40 animate-spin" />
+        <p className="font-mono text-[10px] tracking-[0.3em] uppercase text-primary/40">
+          Jacking in…
+        </p>
+      </div>
+    );
+  }
+
+  if (!anima) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4 bg-[#05050c] px-6 text-center">
+        <Swords className="w-8 h-8 text-primary/40" />
+        <p className="font-mono text-sm text-primary/70">{error || "No Anima found."}</p>
+        <button
+          type="button"
+          onClick={() => navigate("/animas")}
+          className="px-5 py-3 border border-primary/40 text-primary font-mono text-xs tracking-widest uppercase hover:bg-primary/10"
+        >
+          Forge Anima
+        </button>
+      </div>
+    );
+  }
+
+  if (!started || !battle) {
+    const spectrum = normalizeSpectrum(anima.expression_spectrum);
+    const label = expressionBlendLabel(spectrum);
+    const dominant = dominantExpression(spectrum);
+    const previewModel = resolveBattleModels({
+      player: {
+        name: anima.name,
+        avatar_url: anima.avatar_url,
+        color: mixedAuraColor(spectrum),
+      },
+    }).player;
+    const portraitFallback = anima.avatar_url ? (
+      <img src={anima.avatar_url} alt="" className="w-full h-full object-cover" />
+    ) : (
+      <span className="w-full h-full flex items-center justify-center font-mono text-xl text-primary/40">
+        {(anima.name || "?")[0]}
+      </span>
+    );
+    return (
+      <div className="flex-1 min-h-0 overflow-y-auto bg-[#05050c] pb-[calc(var(--tab-bar-height,64px)+1.5rem)]">
+        <div className="max-w-xl mx-auto px-4 py-8 space-y-6">
+          <div>
+            <p className="font-mono text-[9px] tracking-[0.3em] uppercase text-primary/40">
+              // NetBattle
+            </p>
+            <h1 className="font-mono text-xl text-primary tracking-[0.2em] uppercase glow-text mt-1">
+              Jack In
+            </h1>
+            <p className="font-mono text-[12px] text-primary/50 leading-relaxed mt-3">
+              A Battle Network panel arena folded through 4-space. Turn and zoom
+              your Anima vessel, then jack in — move Serenity or let it fight,
+              and send weapons data: sword chips and expression-typed blasts.
+              Viruses resolve as distinct net-forms inside a tesseract lattice.
+            </p>
+          </div>
+
+          <div className="border border-primary/20 bg-black/40 overflow-hidden">
+            <div className="relative h-[min(52vh,420px)] min-h-[280px] bg-[#03040c]">
+              {show3d ? (
+                <WebGLFallback fallback={portraitFallback}>
+                  <Suspense fallback={portraitFallback}>
+                    <AnimaVessel4D model={previewModel} autoRotate />
+                  </Suspense>
+                </WebGLFallback>
+              ) : (
+                portraitFallback
+              )}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2">
+                <p className="font-mono text-[8px] tracking-[0.28em] uppercase text-primary/50">
+                  Drag to turn · Scroll to zoom
+                </p>
+              </div>
+            </div>
+            <div className="p-4 flex items-center gap-3 border-t border-primary/15">
+              <div className="min-w-0 flex-1">
+                <p className="font-mono text-sm text-primary tracking-wider uppercase truncate">
+                  {anima.name}
+                </p>
+                <p className="font-mono text-[11px]" style={{ color: dominant.color }}>
+                  {dominant.symbol} {label}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/customise-anima?anima=${anima.id}&tab=expression`)}
+                  className="font-mono text-[9px] tracking-[0.2em] uppercase text-primary/40 hover:text-primary mt-1"
+                >
+                  Tune expression →
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="font-mono text-[9px] tracking-[0.3em] uppercase text-primary/40 mb-2">
+              Operator
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "manual", title: "Control", blurb: "You move, blast, and send chips." },
+                { id: "auto", title: "Auto", blurb: "Your Anima pilots itself." },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setControlMode(opt.id)}
+                  className={`p-3 border text-left ${
+                    controlMode === opt.id
+                      ? "border-primary/50 bg-primary/10"
+                      : "border-primary/15 hover:border-primary/30"
+                  }`}
+                >
+                  <p className="font-mono text-[11px] tracking-[0.2em] uppercase text-primary">
+                    {opt.title}
+                  </p>
+                  <p className="font-mono text-[10px] text-primary/45 mt-1 leading-relaxed">
+                    {opt.blurb}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => beginBattle(controlMode)}
+            className="w-full py-4 bg-primary/15 border border-primary/50 text-primary font-mono text-sm tracking-[0.25em] uppercase hover:bg-primary/25 hud-corner glow-border"
+          >
+            Jack In
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-[#05070f] text-cyan-100 min-h-screen">
-      <div className="w-full max-w-5xl">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h1 className="text-xl font-mono uppercase tracking-widest text-cyan-400">
-            NetBattle Matrix
-          </h1>
-          <button
-            type="button"
-            onClick={() => navigate("/echo-keys")}
-            className="text-[10px] font-mono uppercase tracking-[0.2em] text-cyan-500 hover:text-cyan-300"
-          >
-            Echo Keys Folder
-          </button>
-        </div>
-        <div className="w-full border border-cyan-900/50 bg-[#090d18] rounded-lg overflow-hidden shadow-2xl">
-          <NetBattleArena
-            state={state}
-            dispatch={setState}
-            onJackOut={() => navigate("/")}
-            onRematch={rematch}
-          />
-        </div>
-      </div>
-    </div>
+    <NetBattleArena
+      state={battle}
+      dispatch={dispatch}
+      onJackOut={() => {
+        setStarted(false);
+        setBattle(null);
+      }}
+      onRematch={() => beginBattle(battle.controlMode)}
+    />
   );
 }

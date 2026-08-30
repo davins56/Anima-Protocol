@@ -11,10 +11,8 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   fill: vi.fn(),
   fillStyle: "",
 }));
-const customRaf = (cb) => Number(setTimeout(() => cb(performance.now()), 16));
-const customCaf = (id) => clearTimeout(id);
-globalThis.requestAnimationFrame = window.requestAnimationFrame = customRaf;
-globalThis.cancelAnimationFrame = window.cancelAnimationFrame = customCaf;
+globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(0), 16);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 
 vi.mock("framer-motion", async () => {
   const ReactActual = await import("react");
@@ -34,8 +32,6 @@ vi.mock("framer-motion", async () => {
 import LivingPresence from "./LivingPresence";
 import LivingPresenceStage from "./LivingPresenceStage";
 
-let mountedRoots = [];
-
 const korra = {
   id: "char_1",
   name: "Korra",
@@ -50,23 +46,12 @@ function render(node) {
   act(() => {
     root.render(node);
   });
-  mountedRoots.push({ container, root });
   return { container, root };
-}
-
-function cleanupMountedRoots() {
-  for (const { container, root } of mountedRoots) {
-    act(() => {
-      root.unmount();
-    });
-    container.remove();
-  }
-  mountedRoots = [];
 }
 
 describe("LivingPresence", () => {
   afterEach(() => {
-    cleanupMountedRoots();
+    document.body.innerHTML = "";
   });
 
   it("renders the companion name, emotion, and portrait", () => {
@@ -113,7 +98,7 @@ describe("LivingPresence", () => {
 
 describe("LivingPresenceStage", () => {
   afterEach(() => {
-    cleanupMountedRoots();
+    document.body.innerHTML = "";
   });
 
   it("renders nothing when closed", () => {

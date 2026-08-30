@@ -122,7 +122,7 @@ describe("resolveClerkPublishableKey", () => {
   });
 
   it("uses the live fallback on localhost for local dev proxy", () => {
-    const prodKey = "pk_" + "live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
+    const prodKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
     expect(resolveClerkPublishableKey("127.0.0.1:23660", prodKey)).toBe(
       prodKey,
     );
@@ -130,7 +130,7 @@ describe("resolveClerkPublishableKey", () => {
 });
 
 describe("resolveRuntimePublishableKey", () => {
-  const apexKey = "pk_" + "live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
+  const apexKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
 
   it("uses a valid CLERK_PUBLISHABLE_KEY from the environment", () => {
     const prev = process.env.CLERK_PUBLISHABLE_KEY;

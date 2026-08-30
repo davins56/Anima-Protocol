@@ -15,7 +15,6 @@ import {
   dominantExpression,
   getExpressionMeta,
 } from "./animaExpressions";
-import { chipsFromEchoFolder } from "./echoKeys";
 
 export const COLS = 6;
 export const ROWS = 3;
@@ -110,31 +109,21 @@ function enemyForSpectrum(spectrum, rng) {
   };
 }
 
-function folderForBattle(opts, spectrum) {
-  const raw = opts.echoFolder;
-  if (Array.isArray(raw) && raw.length) {
-    if (raw[0]?.kind) return raw;
-    return chipsFromEchoFolder(raw);
-  }
-  return [
-    ...folderFromSpectrum(spectrum),
-    ...supportChipsFromSpectrum(spectrum),
-  ];
-}
-
 /**
  * @param {object} opts
  * @param {object} [opts.anima]
  * @param {'manual'|'auto'} [opts.controlMode]
  * @param {number} [opts.seed]
- * @param {{ id: string, code?: string, kind?: string }[]} [opts.echoFolder]
  */
 export function createBattle(opts = {}) {
   const anima = opts.anima || {};
   const spectrum = anima.expression_spectrum;
   const stats = mixedCombatStats(spectrum);
   const rng = createRng(opts.seed ?? Date.now() % 1_000_000);
-  const folder = folderForBattle(opts, spectrum);
+  const folder = [
+    ...folderFromSpectrum(spectrum),
+    ...supportChipsFromSpectrum(spectrum),
+  ];
   const drawn = drawHand(folder, rng);
   const hp = unitHp(stats.hp);
   const buster = busterForSpectrum(spectrum);

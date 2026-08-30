@@ -107,7 +107,6 @@ const WorldCodex = lazy(() => import("./pages/WorldCodex"));
 const RelationshipGraph = lazy(() => import("./pages/RelationshipGraph"));
 const InventoryPanel = lazy(() => import("./pages/InventoryPanel"));
 const EnergyFragments = lazy(() => import("./pages/EnergyFragments"));
-const EchoKeys = lazy(() => import("./pages/EchoKeys"));
 const CalendarView = lazy(() => import("./pages/CalendarView"));
 const StoryBranching = lazy(() => import("./pages/StoryBranching"));
 const CharacterMemoryMap = lazy(() => import("./pages/CharacterMemoryMap"));
@@ -228,12 +227,10 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
   return envKey;
 }
 
-const fallbackDevKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
-
 const clerkPubKey = resolveFrontendClerkPublishableKey(
   window.location.hostname,
   viteClerkPublishableKey,
-) || fallbackDevKey;
+);
 
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
@@ -248,7 +245,7 @@ function stripBase(path) {
 }
 
 if (!clerkPubKey) {
-  console.warn("Missing VITE_CLERK_PUBLISHABLE_KEY. Running in fallback mode.");
+  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
 }
 
 if (clerkPubKey.startsWith("sk_")) {
@@ -473,22 +470,37 @@ function AuthFormShell({ mode, children }) {
 function SignInPage() {
   usePageMeta(ROUTE_META["/sign-in"]);
 
+  // Temporary bypass to fix crash
   useEffect(() => {
     document.title = "Sign In | Anima Protocol";
   }, []);
 
+
   return (
     <AuthFormShell mode="sign-in">
-      <EmailCodeSignIn />
-      <p className="px-1 text-center text-xs text-cyan-400/45">
-        Need an account?{" "}
-        <a
-          href={`${basePath}/sign-up`}
-          className="text-cyan-300 hover:text-cyan-200"
-        >
-          Join the waitlist
-        </a>
-      </p>
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-in…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-in is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <EmailCodeSignIn />
+        <p className="px-1 text-center text-xs text-cyan-400/45">
+          Need an account?{" "}
+          <a
+            href={`${basePath}/sign-up`}
+            className="text-cyan-300 hover:text-cyan-200"
+          >
+            Join the waitlist
+          </a>
+        </p>
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -498,24 +510,28 @@ function SignUpPage() {
 
   return (
     <AuthFormShell mode="sign-up">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
-      <p className="px-1 text-center text-xs text-cyan-400/45">
-        Already registered?{" "}
-        <a
-          href={`${basePath}/sign-in`}
-          className="text-cyan-300 hover:text-cyan-200"
-        >
-          Sign in
-        </a>
-      </p>
+      <ClerkLoading>
+        <p className="py-4 text-center text-sm text-cyan-400/50">
+          Loading email sign-up…
+        </p>
+      </ClerkLoading>
+      <ClerkFailed>
+        <p className="py-4 text-center text-xs leading-relaxed text-cyan-400/45">
+          Email sign-up is unavailable until Clerk connects. Set Vercel
+          CLERK_SECRET_KEY to sk_live_* (not pk_*), redeploy, then refresh.
+        </p>
+      </ClerkFailed>
+      <ClerkLoaded>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
     </AuthFormShell>
   );
 }
@@ -596,17 +612,24 @@ function SignedInHome() {
 
 // Public landing for signed-out users; full app home for signed-in users.
 function HomeGate() {
-  const { isLoadingAuth, isAuthenticated, localUser, user } = useAuth();
+  const { isLoadingAuth } = useAuth();
 
+  // Clerk <Show> renders nothing until the SDK loads. Show the title screen
+  // immediately so cold starts never sit on a blank/initialising spinner.
   if (isLoadingAuth) {
     return <Landing />;
   }
 
-  if (isAuthenticated || localUser || user) {
-    return <SignedInHome />;
-  }
-
-  return <Landing />;
+  return (
+    <>
+      <Show when="signed-in">
+        <SignedInHome />
+      </Show>
+      <Show when="signed-out">
+        <Landing />
+      </Show>
+    </>
+  );
 }
 
 function ClerkStallRecovery({ useProxy, onToggleProxy }) {
@@ -632,24 +655,40 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-  // Initialize to direct mode so routes mount immediately on the first paint
-  const [useProxy, setUseProxy] = useState(false);
+  // Skip the null/health-check wait when no proxy is configured so Clerk and
+  // the title screen mount on the first paint.
+  const [useProxy, setUseProxy] = useState(() =>
+    initialClerkProxyUrl ? null : false,
+  );
   const [providerKey, setProviderKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    const fallbackTimer = setTimeout(() => {
+      if (cancelled) return;
+      // Safari (and some network conditions) can stall the proxy health check.
+      // Fail open to direct Clerk so the app never stays on the loader.
+      setUseProxy(false);
+    }, 12_000);
+
     (async () => {
       try {
-        if (!initialClerkProxyUrl) return;
+        if (!initialClerkProxyUrl) {
+          if (!cancelled) setUseProxy(false);
+          return;
+        }
         const healthy = await isClerkProxyHealthy(clerkPubKey);
-        if (!cancelled && healthy) setUseProxy(true);
+        if (!cancelled) setUseProxy(healthy);
       } catch {
         if (!cancelled) setUseProxy(false);
+      } finally {
+        clearTimeout(fallbackTimer);
       }
     })();
 
     return () => {
       cancelled = true;
+      clearTimeout(fallbackTimer);
     };
   }, []);
 
@@ -660,6 +699,12 @@ function ClerkProviderWithRoutes({ children }) {
     setUseProxy(nextUseProxy);
     setProviderKey((key) => key + 1);
   };
+
+  // While the proxy health check runs, paint the title screen instead of a
+  // spinner so cold opens go straight to Landing.
+  if (useProxy === null) {
+    return <Landing />;
+  }
 
   return (
     <ClerkProvider
@@ -918,7 +963,7 @@ const AuthenticatedApp = () => {
                 element={<Navigate to="/sign-in/sso-callback" replace />}
               />
               <Route path="/landing" element={<Navigate to="/" replace />} />
-              <Route path="/login" element={<Navigate to="/sign-in" replace />} />
+              <Route path="/login" element={<Navigate to="/" replace />} />
               <Route
                 path="/chat"
                 element={
@@ -1255,14 +1300,6 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <EnergyFragments />
-                  </Suspense>
-                }
-              />
-              <Route
-                path="/echo-keys"
-                element={
-                  <Suspense fallback={<PageLoader />}>
-                    <EchoKeys />
                   </Suspense>
                 }
               />

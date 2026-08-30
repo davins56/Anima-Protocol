@@ -56,55 +56,6 @@ export function ensureTrailingSlash(url) {
 }
 
 /**
- * Decodes the frontend API host embedded in a Clerk publishable key.
- */
-export function decodeClerkFrontendHost(clerkPubKey) {
-  if (typeof clerkPubKey !== 'string') return '';
-  const match = clerkPubKey.match(/^pk_(?:live|test)_(.+)$/);
-  if (!match) return '';
-  try {
-    const rawPayload = match[1].replace(/\$$/, '');
-    const decoded =
-      typeof window !== 'undefined' && typeof window.atob === 'function'
-        ? window.atob(rawPayload)
-        : typeof atob === 'function'
-          ? atob(rawPayload)
-          : typeof Buffer !== 'undefined'
-            ? Buffer.from(rawPayload, 'base64').toString('utf-8')
-            : '';
-    return decoded.replace(/\$$/, '').trim();
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Returns true if the publishable key points to a Clerk custom domain (e.g. clerk.anima-protocol.com).
- */
-export function publishableKeyUsesCustomDomain(clerkPubKey) {
-  const host = decodeClerkFrontendHost(clerkPubKey);
-  if (!host) return false;
-  return !host.endsWith('.clerk.accounts.dev') && !host.endsWith('.accounts.dev');
-}
-
-/**
- * Base URL of the Frontend API host (e.g. https://clerk.anima-protocol.com).
- */
-export function clerkFrontendApiProbeBase(clerkPubKey) {
-  const host = decodeClerkFrontendHost(clerkPubKey);
-  if (host) return `https://${host}`;
-  return '';
-}
-
-/**
- * Absolute OAuth complete callback URL.
- */
-export function clerkProviderOAuthCallbackUrl() {
-  if (typeof window === 'undefined') return '';
-  return `${window.location.origin}/sso-callback`;
-}
-
-/**
  * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
  */
 export function animaProductionClerkProxyUrl() {
@@ -125,15 +76,11 @@ export function clerkProviderProxyPath() {
 
 /**
  * Whether pk_live_ should route Clerk FAPI through the same-origin proxy.
- * If a custom domain is detected (e.g. clerk.anima-protocol.com), proxy is skipped unless explicitly configured.
  */
 export function shouldUseClerkProxy(clerkPubKey) {
   if (isClerkProxyExplicitlyDisabled()) return false;
   if (configuredClerkProxyUrl()) return true;
   if (typeof clerkPubKey !== 'string' || !clerkPubKey.startsWith('pk_live_')) {
-    return false;
-  }
-  if (publishableKeyUsesCustomDomain(clerkPubKey)) {
     return false;
   }
   if (typeof window === 'undefined') return false;
@@ -168,17 +115,11 @@ export function resolveClerkProxyUrl(clerkPubKey) {
  */
 export function clerkProxyProbeBase(clerkPubKey) {
   const proxy = resolveClerkProxyUrl(clerkPubKey);
-  if (proxy) {
-    if (proxy.startsWith('/') && typeof window !== 'undefined') {
-      return `${window.location.origin}${proxy.replace(/\/$/, '')}`;
-    }
-    return proxy.replace(/\/$/, '');
+  if (!proxy) return '';
+  if (proxy.startsWith('/') && typeof window !== 'undefined') {
+    return `${window.location.origin}${proxy.replace(/\/$/, '')}`;
   }
-  const customBase = clerkFrontendApiProbeBase(clerkPubKey);
-  if (customBase) {
-    return customBase;
-  }
-  return '';
+  return proxy.replace(/\/$/, '');
 }
 
 /** clerk-js bundle path for connectivity probes (proxy or custom Clerk domain). */

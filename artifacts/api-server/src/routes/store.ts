@@ -12,7 +12,6 @@ import {
   asObject,
   sessionIdEq,
   migrateSessionMessages,
-  migrateSessionsMessages,
   ensureSchemaOnce,
   type MsgData,
 } from "@workspace/db";
@@ -871,7 +870,9 @@ router.post("/messages/by-sessions", async (req, res) => {
     return;
   }
 
-  await db.transaction((tx) => migrateSessionsMessages(tx, userId, ids));
+  for (const sid of ids) {
+    await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
+  }
 
   const rows = await db
     .select()
@@ -912,7 +913,9 @@ router.post("/messages/counts", async (req, res) => {
     return;
   }
 
-  await db.transaction((tx) => migrateSessionsMessages(tx, userId, ids));
+  for (const sid of ids) {
+    await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
+  }
 
   const rows = await db
     .select({

@@ -159,8 +159,6 @@ describe("editImageWithGemini", () => {
     expect(result.image).toContain(outB64);
 
     const body = JSON.parse(String((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body));
-    expect(body.contents[0].parts[0].text).toMatch(/visual reference/i);
-    expect(body.contents[0].parts[0].text).toMatch(/Preserve facial identity/i);
     expect(body.contents[0].parts[1].inlineData).toEqual({
       mimeType: "image/jpeg",
       data: "abc123",

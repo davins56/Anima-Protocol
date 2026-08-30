@@ -90,18 +90,11 @@ export function normalizeAppearancePrompts(raw) {
   return out;
 }
 
-/**
- * @param {object} anima
- * @param {Record<string, string>} prompts
- * @param {{ useReference?: boolean }} [opts]
- *   useReference — prompt is for image-edit from an uploaded reference photo
- */
-export function buildAppearanceImagePrompt(anima, prompts = {}, opts = {}) {
+export function buildAppearanceImagePrompt(anima, prompts = {}) {
   const name = anima?.name || "your Anima";
   const archetype = anima?.archetype || "guardian";
   const skinRaw = typeof prompts.skin === "string" ? prompts.skin.trim() : "";
   const skinDesc = expandSkinToneDescriptor(skinRaw);
-  const useReference = Boolean(opts.useReference);
 
   // Hard constraint block first — image models overweight the opening tokens.
   const skinBlock = skinDesc
@@ -110,17 +103,9 @@ export function buildAppearanceImagePrompt(anima, prompts = {}, opts = {}) {
         "The skin colour is the most important visual trait; render it accurately and consistently.",
         "Do not lighten, darken, or ignore this complexion.",
       ].join(" ")
-    : useReference
-      ? "Keep the reference photo's natural skin tone unless a skin colour is specified above."
-      : "";
+    : "";
 
-  const base = useReference
-    ? [
-        `Transform the attached reference photo into a character portrait of ${name}, a ${archetype} archetype AI companion.`,
-        "Preserve the person's facial identity, bone structure, and overall likeness from the reference.",
-        "Apply the appearance customizations below (hair, outfit, eyes, style, etc.) on top of that likeness.",
-      ].join(" ")
-    : `Create a single character portrait of ${name}, a ${archetype} archetype AI companion.`;
+  const base = `Create a single character portrait of ${name}, a ${archetype} archetype AI companion.`;
   const personality = anima?.personality
     ? `Personality vibe (expression only, do not change skin): ${String(anima.personality).slice(0, 60)}.`
     : "";
@@ -153,20 +138,7 @@ export function buildAppearanceImagePrompt(anima, prompts = {}, opts = {}) {
     ? ` Final check: skin tone must remain ${skinRaw} (${skinDesc}).`
     : "";
 
-  const referenceClose = useReference
-    ? " The output must clearly resemble the reference person while reflecting the requested look."
-    : "";
-
-  return [
-    skinBlock,
-    base,
-    personality,
-    featureParts,
-    defaults,
-    "High quality, detailed, even portrait lighting, character-focused.",
-    skinClose,
-    referenceClose,
-  ]
+  return [skinBlock, base, personality, featureParts, defaults, "High quality, detailed, even portrait lighting, character-focused.", skinClose]
     .filter(Boolean)
     .join(" ")
     .replace(/\s+/g, " ")

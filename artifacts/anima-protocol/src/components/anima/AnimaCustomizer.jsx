@@ -37,10 +37,6 @@ export default function AnimaCustomizer({
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(anima?.avatar_url || "");
-  // Optional photo used as likeness reference when generating a look.
-  const [referenceUrl, setReferenceUrl] = useState(
-    () => anima?.look_reference_url || "",
-  );
   const [themeColor, setThemeColor] = useState(anima?.theme_color || "#00e5e5");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -52,7 +48,6 @@ export default function AnimaCustomizer({
   useEffect(() => {
     setPrompts(normalizeAppearancePrompts(anima?.appearance_prompts));
     setPreviewUrl(anima?.avatar_url || "");
-    setReferenceUrl(anima?.look_reference_url || "");
     setThemeColor(anima?.theme_color || "#00e5e5");
     setSaved(false);
     setError("");
@@ -63,16 +58,12 @@ export default function AnimaCustomizer({
     setError("");
     setSaved(false);
     try {
-      const useReference = Boolean(referenceUrl);
-      const prompt = buildAppearanceImagePrompt(anima, prompts, {
-        useReference,
-      });
-      // With a reference photo, use image-edit so likeness is preserved while
-      // features (including skin) are applied. Without one, generate fresh —
-      // editing the current avatar used to lock old complexion in place.
+      const prompt = buildAppearanceImagePrompt(anima, prompts);
+      // Always generate from the feature prompts — do not image-edit the
+      // current avatar. Edit mode preserves the old complexion/hair/etc. and
+      // made Skin Colour (and other traits) appear broken.
       const result = await base44.integrations.Core.GenerateImage({
         prompt,
-        existing_image_urls: useReference ? [referenceUrl] : undefined,
       });
       if (!result?.url) {
         throw new Error("No image was returned. Try again in a moment.");
@@ -86,15 +77,15 @@ export default function AnimaCustomizer({
           : err?.code === "rate_limit"
             ? "The image service is busy right now. Please try again shortly."
             : err?.code === "auth_error"
-              ? "Image generation is temporarily unavailable. You can still upload a reference photo below."
-              : err?.message || "Failed to generate appearance. You can still upload a reference photo.";
+              ? "Image generation is temporarily unavailable. You can still upload a photo below."
+              : err?.message || "Failed to generate appearance. You can still upload a photo.";
       setError(msg);
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleUploadReference = async (e) => {
+  const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
@@ -105,11 +96,11 @@ export default function AnimaCustomizer({
       if (!result?.file_url) {
         throw new Error("Upload failed — try another image.");
       }
-      setReferenceUrl(result.file_url);
+      setPreviewUrl(result.file_url);
     } catch (err) {
       const msg = String(err?.message || "");
       if (/unauthorized|sign in|not signed|401/i.test(msg)) {
-        setError("Sign in to upload a reference photo, then try again.");
+        setError("Sign in to upload an avatar, then try again.");
       } else if (/too large/i.test(msg)) {
         setError("That image is too large. Try a smaller photo.");
       } else {
@@ -126,30 +117,20 @@ export default function AnimaCustomizer({
     setSaving(true);
     setError("");
     try {
-      let avatar_url = previewUrl || anima?.avatar_url || "";
+      let avatar_url = previewUrl;
       // Persist generated/edited portraits to object storage instead of storing
       // large base64 blobs on the Anima entity.
       if (typeof avatar_url === "string" && avatar_url.startsWith("data:")) {
         avatar_url = await uploadDataUrl(avatar_url);
       }
 
-      let look_reference_url = referenceUrl || "";
-      if (
-        typeof look_reference_url === "string" &&
-        look_reference_url.startsWith("data:")
-      ) {
-        look_reference_url = await uploadDataUrl(look_reference_url);
-      }
-
       const patch = {
         avatar_url,
-        look_reference_url: look_reference_url || null,
         theme_color: themeColor,
         appearance_prompts: normalizeAppearancePrompts(prompts),
       };
       await base44.entities.Anima.update(anima.id, patch);
       setPreviewUrl(avatar_url);
-      setReferenceUrl(look_reference_url || "");
       setSaved(true);
       onSave?.(patch);
       if (!isPage) {
@@ -169,11 +150,8 @@ export default function AnimaCustomizer({
   );
   const hasAvatarChange =
     Boolean(previewUrl) && previewUrl !== (anima?.avatar_url || "");
-  const hasReferenceChange =
-    (referenceUrl || "") !== (anima?.look_reference_url || "");
   const hasThemeChange = themeColor !== (anima?.theme_color || "#00e5e5");
-  const hasChanges =
-    hasAvatarChange || hasThemeChange || hasPromptChanges || hasReferenceChange;
+  const hasChanges = hasAvatarChange || hasThemeChange || hasPromptChanges;
   const hasPrompts = Object.values(prompts).some((v) => v.trim());
 
   const shellClass = isPage
@@ -189,7 +167,7 @@ export default function AnimaCustomizer({
               // Customise Anima — {anima?.name || "Your Anima"}
             </h2>
             <p className="text-[9px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-              Upload a reference · shape skin, hair, outfit & more · generate
+              Shape skin, hair, outfit, eyes & more · then generate a new look
             </p>
           </div>
           {onClose && (
@@ -346,32 +324,6 @@ export default function AnimaCustomizer({
                 </p>
               </div>
             )}
-
-            {referenceUrl && (
-              <div className="absolute bottom-2 left-2 right-2 sm:right-auto flex items-end gap-2">
-                <div className="relative border border-primary/40 bg-black/80 p-1 shadow-lg">
-                  <img
-                    src={referenceUrl}
-                    alt="Look reference"
-                    className="w-14 h-14 object-cover"
-                  />
-                  <p className="absolute -top-5 left-0 font-mono text-[8px] text-primary/70 tracking-widest uppercase bg-black/80 px-1.5 py-0.5 border border-primary/25">
-                    Reference
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReferenceUrl("");
-                      setSaved(false);
-                    }}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-black border border-primary/40 text-primary/70 hover:text-primary flex items-center justify-center"
-                    aria-label="Clear reference photo"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="p-4 border-t border-primary/15 space-y-3">
@@ -431,8 +383,7 @@ export default function AnimaCustomizer({
                   </>
                 ) : (
                   <>
-                    <Wand2 className="w-4 h-4" />{" "}
-                    {referenceUrl ? "Generate from Reference" : "Generate Look"}
+                    <Wand2 className="w-4 h-4" /> Generate Look
                   </>
                 )}
               </button>
@@ -448,8 +399,7 @@ export default function AnimaCustomizer({
                   </>
                 ) : (
                   <>
-                    <Upload className="w-4 h-4" />{" "}
-                    {referenceUrl ? "Change Reference" : "Upload Reference"}
+                    <Upload className="w-4 h-4" /> Upload Photo
                   </>
                 )}
               </button>
@@ -458,7 +408,7 @@ export default function AnimaCustomizer({
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={handleUploadReference}
+                onChange={handleUpload}
               />
             </div>
 
@@ -489,8 +439,8 @@ export default function AnimaCustomizer({
               </button>
             )}
 
-            <p className="font-mono text-[8px] text-primary/20 tracking-widest text-center leading-relaxed">
-              Upload a reference photo → describe features → Generate → Apply & Save
+            <p className="font-mono text-[8px] text-primary/20 tracking-widest text-center">
+              Describe features → Generate or Upload → Apply & Save
             </p>
           </div>
         </div>

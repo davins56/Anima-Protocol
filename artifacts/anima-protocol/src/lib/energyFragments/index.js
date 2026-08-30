@@ -43,7 +43,7 @@ export {
 
 /** Compact prompt block for Battle Network / cyberspace story sessions. */
 export function energyFragmentLoreBlock() {
-  return `ENERGY FRAGMENTS are this world's battle data — ghost programs the operator slots from a Folder. They remix the old Battle Chip families (cannon, sword, bomb, recovery, Navi-sigil) as original Anima data. The operator's profile also holds ECHO KEYS: about 800 distinct weapon-memories spanning Battle Network 1–6 families plus Star Force card ideas (Wave lock-on, Brother Band, Force Big Bang). When summoned, weapons look ethereal: translucent barrels, glass-steel blades, no solid mass, a faint afterimage. Classes: Standard (up to 4 copies), Apex (5 in a Folder), Nova (1). Elements: ember > grove > tide > ember; volt doubles vs tide. Codes A–Z and * link a Custom hand. Named sequences fuse into Resonance Combos (Nova Pulse, Life Veil, Chain Bloom, Prism Storm).`;
+  return `ENERGY FRAGMENTS are this world's battle data — ghost programs the operator slots from a Folder. They remix the old Battle Chip families (cannon, sword, bomb, recovery, Navi-sigil) as original Anima data. When summoned, weapons look ethereal: translucent barrels, glass-steel blades, no solid mass, a faint afterimage. Classes: Standard (up to 4 copies), Apex (5 in a Folder), Nova (1). Elements: ember > grove > tide > ember; volt doubles vs tide. Codes A–Z and * link a Custom hand. Named sequences fuse into Resonance Combos (Nova Pulse, Life Veil, Chain Bloom, Prism Storm).`;
 }
 
 const CYBERSPACE_CUE =

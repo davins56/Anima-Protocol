@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useClerk, useSignIn, useUser } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/lib/AuthContext";
 import {
   clerkErrorMessage,
   hasEmailCodeFactor,
@@ -18,21 +17,21 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /**
  * Custom sign-in that forces email OTP (not magic link) and uses
- * Clerk Future `signIn.sso()` for GitHub OAuth. Supports fallback/guest
- * session creation if Clerk service is loading or unreachable.
+ * Clerk Future `signIn.sso()` for GitHub OAuth. Avoids the prebuilt
+ * Continue → email_link hang when the verification email is opened on
+ * another device.
  */
 export default function EmailCodeSignIn() {
   const { signIn, fetchStatus } = useSignIn();
   const { isLoaded: userLoaded, isSignedIn } = useUser();
   const clerk = useClerk();
   const navigate = useNavigate();
-  const { loginAsLocalUser, localUser, isAuthenticated } = useAuth();
 
   const [step, setStep] = useState("identifier"); // 'identifier' | 'code'
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend' | 'signout' | 'guest'
+  const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend' | 'signout'
   const [maskedEmail, setMaskedEmail] = useState("");
   const onPreviewHost = isPreviewSignInHost();
 
@@ -41,10 +40,9 @@ export default function EmailCodeSignIn() {
   // Single-session Clerk instances reject a second sign-in. Send signed-in
   // users into the app instead of leaving them stuck on this form.
   useEffect(() => {
-    if ((userLoaded && isSignedIn) || (localUser && isAuthenticated)) {
-      navigate(basePath || "/", { replace: true });
-    }
-  }, [userLoaded, isSignedIn, localUser, isAuthenticated, navigate]);
+    if (!userLoaded || !isSignedIn) return;
+    navigate(basePath || "/", { replace: true });
+  }, [userLoaded, isSignedIn, navigate]);
 
   const resumeExistingSession = async (err) => {
     try {
@@ -87,7 +85,7 @@ export default function EmailCodeSignIn() {
   ) : null;
 
   const finishSignIn = async () => {
-    if (signIn?.status !== "complete") {
+    if (signIn.status !== "complete") {
       setError("Sign-in is not complete yet. Try the code again, or use GitHub.");
       return;
     }
@@ -116,23 +114,6 @@ export default function EmailCodeSignIn() {
     });
   };
 
-  const handleInstantGuest = (customName) => {
-    setError(null);
-    setBusy("guest");
-    const name = (customName || identifier || "Seeker").trim();
-    if (typeof loginAsLocalUser === "function") {
-      loginAsLocalUser({
-        id: `user_${name.toLowerCase().replace(/[^a-z0-9]/g, "_") || "seeker"}`,
-        email: name.includes("@") ? name : `${name.toLowerCase()}@anima-protocol.com`,
-        full_name: name,
-        display_name: name,
-      });
-      navigate(basePath || "/", { replace: true });
-    } else {
-      navigate(basePath || "/", { replace: true });
-    }
-  };
-
   const handleIdentifierSubmit = async (event) => {
     event.preventDefault();
     setError(null);
@@ -146,8 +127,7 @@ export default function EmailCodeSignIn() {
       return;
     }
     if (!signIn || typeof signIn.create !== "function") {
-      // Graceful instant entry when Clerk backend is unreachable or not configured
-      handleInstantGuest(value);
+      setError("Sign-in is still loading. Wait a moment and try again.");
       return;
     }
     setBusy("email");
@@ -159,16 +139,12 @@ export default function EmailCodeSignIn() {
           await resumeExistingSession(createError);
           return;
         }
-        const msg = clerkErrorMessage(createError, {
-          humanizeIdentifierFormat: true,
-          context: "identifier",
-        });
-        // If Clerk rejects due to config or connectivity, allow instant local entry
-        if (!msg || msg.includes("unavailable") || msg.includes("network") || msg.includes("origin")) {
-          handleInstantGuest(value);
-          return;
-        }
-        setError(msg || "Couldn't start sign-in.");
+        setError(
+          clerkErrorMessage(createError, {
+            humanizeIdentifierFormat: true,
+            context: "identifier",
+          }) || "Couldn't start sign-in.",
+        );
         return;
       }
 
@@ -201,15 +177,12 @@ export default function EmailCodeSignIn() {
         await resumeExistingSession(err);
         return;
       }
-      const msg = clerkErrorMessage(err, {
-        humanizeIdentifierFormat: stage === "create",
-        context: "identifier",
-      });
-      if (!msg || msg.includes("Failed to fetch") || msg.includes("network")) {
-        handleInstantGuest(value);
-        return;
-      }
-      setError(msg || "Couldn't start sign-in.");
+      setError(
+        clerkErrorMessage(err, {
+          humanizeIdentifierFormat: stage === "create",
+          context: "identifier",
+        }) || "Couldn't start sign-in.",
+      );
     } finally {
       setBusy(null);
     }
@@ -284,6 +257,8 @@ export default function EmailCodeSignIn() {
         setError("Sign-in is still loading. Wait a moment and try GitHub again.");
         return;
       }
+      // Clerk React v6 Future API: use signIn.sso(). Calling
+      // clerk.authenticateWithRedirect throws "is not a function".
       await startGitHubOAuthSignIn(signIn, basePath, clerk);
     } catch (err) {
       if (isAlreadySignedInError(err)) {
@@ -317,11 +292,11 @@ export default function EmailCodeSignIn() {
   const inputClass =
     "mt-1 w-full rounded border border-cyan-400/30 bg-[#0c1420] px-3 py-2 text-cyan-100 outline-none focus:border-cyan-400/60";
   const primaryBtnClass =
-    "w-full rounded border border-cyan-400/50 bg-cyan-400/15 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:opacity-50 transition-colors";
+    "w-full rounded border border-cyan-400/50 bg-cyan-400/15 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:opacity-50";
   const secondaryBtnClass =
-    "w-full rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors";
+    "w-full rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50";
 
-  if ((userLoaded && isSignedIn) || (localUser && isAuthenticated)) {
+  if (userLoaded && isSignedIn) {
     return (
       <div className={cardClass}>
         {previewBanner}
@@ -329,7 +304,7 @@ export default function EmailCodeSignIn() {
           You're already signed in
         </h1>
         <p className="mt-1 text-sm text-cyan-400/60">
-          This browser already has an active Anima Protocol session. Continue into the
+          This browser already has an Anima Protocol session. Continue into the
           app, or sign out if you meant to switch accounts.
         </p>
         <button
@@ -457,23 +432,12 @@ export default function EmailCodeSignIn() {
           </p>
         ) : null}
         <button type="submit" className={primaryBtnClass} disabled={loading}>
-          {busy === "email" ? "Entering…" : "Continue"}
+          {busy === "email" ? "Sending code…" : "Continue"}
         </button>
       </form>
 
-      <div className="mt-4 pt-3 border-t border-cyan-400/15">
-        <button
-          type="button"
-          className="w-full text-xs text-cyan-300/80 hover:text-cyan-200 py-1.5 px-2 rounded border border-cyan-400/20 hover:border-cyan-400/40 bg-cyan-950/30 transition-colors"
-          onClick={() => handleInstantGuest()}
-          disabled={loading}
-        >
-          Instant Sandbox / Guest Access →
-        </button>
-      </div>
-
-      <p className="mt-3 text-center text-[11px] text-cyan-400/40">
-        Passwordless sign-in with instant session resonance
+      <p className="mt-4 text-center text-xs text-cyan-400/45">
+        We email a one-time code — not a magic link — so login can finish here.
       </p>
     </div>
   );

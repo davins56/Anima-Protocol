@@ -1,6 +1,0 @@
-{
-  "name": "Anima Protocol",
-  "description": "Emotionally intelligent AI companion platform with persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding.",
-  "requestFramePermissions": ["camera", "microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
