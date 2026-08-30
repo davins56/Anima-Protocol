@@ -1,5 +1,6 @@
 import { Component, Fragment } from "react";
 import { track } from "@/lib/analytics";
+import { isStaleChunkError, recoverStaleChunk } from "@/lib/staleChunkRecovery";
 
 // A render-phase error in any child unmounts the whole React tree by default,
 // leaving the user staring at a blank screen (reads as a hard "crash"). This
@@ -66,6 +67,13 @@ class ErrorBoundary extends Component {
     console.error("[ErrorBoundary] caught render error:", error, errorInfo);
     this.report("Error Boundary Triggered", error, errorInfo);
 
+    // Stale Vite hashes / HTML-as-JS MIME errors cannot remount-heal — the
+    // import URL is still wrong. Drop the PWA cache and hard-reload.
+    if (isStaleChunkError(error)) {
+      void recoverStaleChunk();
+      return;
+    }
+
     // First crash: attempt one silent in-place self-repair. If it throws again
     // the attempt counter blocks a retry loop and the manual panel takes over.
     if (this.state.attempts < 1) {
@@ -117,6 +125,11 @@ class ErrorBoundary extends Component {
 
   handleSelfRepair = async () => {
   this.clearHealTimer();
+
+  if (isStaleChunkError(this.state.error)) {
+    await recoverStaleChunk();
+    return;
+  }
 
   try {
     // Try to cleanly sign out from both auth systems
