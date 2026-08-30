@@ -20,6 +20,10 @@ describe("static asset SPA-fallback guard", () => {
     expect(isStaticModuleAssetPath("/echo-keys")).toBe(false);
     expect(isStaticModuleAssetPath("/assets/../index.html")).toBe(false);
     expect(isStaticModuleAssetPath("/assets/EchoKeys-DsgAf3_0.js/")).toBe(false);
+    expect(isStaticModuleAssetPath("/assets/EchoKeys-DsgAf3_0.js/?v=1")).toBe(
+      false,
+    );
+    expect(isStaticModuleAssetPath("/assets/")).toBe(false);
     expect(isStaticModuleAssetPath("/api/store")).toBe(false);
   });
 
