@@ -97,4 +97,59 @@ describe("ChatSession store wrapper", () => {
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
   });
+
+  it("retries ChatSession.create after a database connection reset", async () => {
+    let sessionPosts = 0;
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        if (sessionPosts === 1) {
+          return Response.json(
+            { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+            { status: 503 },
+          );
+        }
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        return Response.json({ id: "session-2", title: body.title }, { status: 201 });
+      }
+      if (pathname === "/api/store/messages/replace") {
+        return Response.json([]);
+      }
+      return Response.json({});
+    });
+
+    const session = await base44.entities.ChatSession.create({
+      title: "Recovered session",
+    });
+
+    expect(sessionPosts).toBe(2);
+    expect(session).toEqual({
+      id: "session-2",
+      title: "Recovered session",
+    });
+  });
+
+  it("does not retry ChatSession.create on a non-reset store error", async () => {
+    let sessionPosts = 0;
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        return Response.json(
+          {
+            error: "Database schema is missing or out of date",
+            reason: "schema",
+          },
+          { status: 503 },
+        );
+      }
+      return Response.json({});
+    });
+
+    await expect(
+      base44.entities.ChatSession.create({ title: "Blocked" }),
+    ).rejects.toThrow(/schema is missing/i);
+    expect(sessionPosts).toBe(1);
+  });
 });
