@@ -162,7 +162,7 @@ export default function NetBattle() {
   }
 
   return (
-    <div className="w-full h-full min-h-0 overflow-y-auto flex flex-col items-center justify-center p-4 bg-[#05070f] text-cyan-100">
+    <div className="w-full h-full min-h-0 overflow-y-auto flex flex-col items-center justify-safe-center p-4 bg-[#05070f] text-cyan-100">
       <div className="w-full max-w-5xl">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h1 className="text-xl font-mono uppercase tracking-widest text-cyan-400">
