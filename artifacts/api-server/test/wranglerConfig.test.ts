@@ -1,0 +1,61 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../..",
+);
+
+function parseJsonc(source: string): Record<string, unknown> {
+  const withoutComments = source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  return JSON.parse(withoutComments) as Record<string, unknown>;
+}
+
+describe("Cloudflare wrangler config", () => {
+  const config = parseJsonc(
+    readFileSync(path.join(repoRoot, "wrangler.jsonc"), "utf8"),
+  );
+  const workerSource = readFileSync(
+    path.join(repoRoot, "artifacts/api-server/src/worker.ts"),
+    "utf8",
+  );
+  const assets = config.assets as Record<string, unknown>;
+
+  it("uses worker.ts as the fetch entry for anima-protocol", () => {
+    expect(config.name).toBe("anima-protocol");
+    expect(config.main).toBe("artifacts/api-server/src/worker.ts");
+    expect(config.compatibility_flags).toEqual(
+      expect.arrayContaining(["nodejs_compat"]),
+    );
+  });
+
+  it("serves the SPA from the root pnpm build output with an ASSETS binding", () => {
+    expect(assets.directory).toBe("./dist");
+    expect(assets.binding).toBe("ASSETS");
+    expect(assets.not_found_handling).toBe("single-page-application");
+  });
+
+  it("runs the Worker first for /api so Express handles healthz, store, and Clerk", () => {
+    expect(assets.run_worker_first).toEqual(
+      expect.arrayContaining(["/api", "/api/*"]),
+    );
+    expect(workerSource).toContain('url.pathname.startsWith("/api/")');
+    expect(workerSource).toContain('url.pathname === "/api"');
+    expect(workerSource).toContain("expressHandler.fetch");
+    expect(workerSource).toContain("env.ASSETS.fetch");
+    expect(workerSource).toContain("httpServerHandler");
+  });
+
+  it("does not embed secrets in the committed Worker config", () => {
+    const vars = (config.vars ?? {}) as Record<string, unknown>;
+    expect(Object.keys(vars)).toEqual(["NODE_ENV"]);
+    expect(vars.NODE_ENV).toBe("production");
+    const serialized = JSON.stringify(config);
+    expect(serialized).not.toMatch(/sk_live_|sk_test_|pk_live_/);
+    expect(serialized).not.toMatch(/DATABASE_URL|CLERK_SECRET_KEY/);
+  });
+});

@@ -1,0 +1,57 @@
+### LLaMA-Factory config for Anima Ministral 3 8B QLoRA SFT
+###
+### Install: https://github.com/hiyouga/LLaMA-Factory
+### Data: run `pnpm llm:prepare-finetune` then copy/symlink
+###   scripts/llm/output/finetune-sharegpt.jsonl into LLaMA-Factory's data dir
+###   (or set dataset_dir below).
+###
+### Train:
+###   llamafactory-cli train scripts/llm/finetune/llama_factory_ministral.yaml
+###
+### Optional preference stage (DPO/ORPO/SimPO): swap stage/preference dataset
+### after you have chosen/rejected pairs from eval.
+###
+### Note: fine-tune from the BF16 Base weights. Serve Instruct or your merged
+### checkpoint afterward via vLLM / Ollama.
+
+model_name_or_path: mistralai/Ministral-3-8B-Base-2512
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_target: all
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+### dataset (ShareGPT conversations format)
+dataset: anima_sharegpt
+dataset_dir: scripts/llm/output
+template: mistral
+cutoff_len: 4096
+max_samples: 100000
+overwrite_cache: true
+preprocessing_num_workers: 4
+
+### output
+output_dir: scripts/llm/checkpoints/anima-ministral8b-llamafactory
+logging_steps: 10
+save_steps: 200
+plot_loss: true
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-4
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+ddp_timeout: 180000000
+quantization_bit: 4
+
+### eval (optional held-out)
+# val_size: 0.02
+# per_device_eval_batch_size: 1
+# eval_strategy: steps
+# eval_steps: 200
