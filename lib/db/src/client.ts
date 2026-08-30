@@ -1,8 +1,26 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle as drizzlePostgresJs } from "drizzle-orm/postgres-js";
 import pg from "pg";
+import type { Sql } from "postgres";
 import * as schema from "./schema";
+import {
+  createNodePool,
+  createPostgresJsSql,
+  getDbDriver,
+  postgresJsQueryable,
+  type SqlQueryable,
+} from "./driver";
 
-const { Pool } = pg;
+export {
+  createNodePool,
+  createPostgresJsSql,
+  getDbDriver,
+  isCloudflareWorkerRuntime,
+  postgresJsQueryable,
+  postgresJsSslOption,
+  type DbDriver,
+  type SqlQueryable,
+} from "./driver";
 
 type DbSchema = typeof schema;
 type Db = NodePgDatabase<DbSchema>;
@@ -44,9 +62,11 @@ export function resolveDbConfig(url: string): {
   return { connectionString, ssl };
 }
 
-let poolInstance: pg.Pool | null = null;
+let queryableInstance: SqlQueryable | null = null;
 let dbInstance: Db | null = null;
-/** Connection string the live pool was built with — recreate if Hyperdrive/URL changes. */
+let nodePoolInstance: pg.Pool | null = null;
+let postgresJsSql: Sql | null = null;
+/** Driver + connection string the live client was built with. */
 let poolConnectionKey: string | null = null;
 
 export const DATABASE_URL_ENV_NAMES = [
@@ -125,15 +145,27 @@ export function isTransientDbError(err: unknown): boolean {
   return TRANSIENT_DB_MESSAGE.test(message);
 }
 
-/** Drop the process-wide pool so the next checkout opens a fresh socket. */
+/** Drop cached clients so the next checkout opens a fresh socket. */
 export function resetPool(): void {
-  const old = poolInstance;
-  poolInstance = null;
+  const oldPool = nodePoolInstance;
+  const oldSql = postgresJsSql;
+  queryableInstance = null;
   dbInstance = null;
+  nodePoolInstance = null;
+  postgresJsSql = null;
   poolConnectionKey = null;
-  if (!old) return;
-  old.removeAllListeners("error");
-  void old.end().catch(() => undefined);
+  if (oldPool) {
+    oldPool.removeAllListeners("error");
+    void oldPool.end().catch(() => undefined);
+  }
+  if (oldSql) {
+    void oldSql.end({ timeout: 1 }).catch(() => undefined);
+  }
+}
+
+/** Test helper — drop cached clients so driver / URL changes take effect. */
+export function resetDbClientsForTests(): void {
+  resetPool();
 }
 
 export async function withTransientDbRetry<T>(
@@ -162,14 +194,15 @@ function attachPoolGuards(pool: pg.Pool): void {
     // Idle client died (ECONNRESET / terminate). Detach so the next getPool()
     // opens a fresh socket. Do not end() here — that races in-flight queries
     // into "Cannot use a pool after calling end".
-    if (poolInstance !== pool) return;
-    poolInstance = null;
+    if (nodePoolInstance !== pool) return;
+    queryableInstance = null;
     dbInstance = null;
+    nodePoolInstance = null;
     poolConnectionKey = null;
   });
 }
 
-export function getPool(): pg.Pool {
+export function getPool(): SqlQueryable {
   const rawUrl = resolveDatabaseUrl();
   if (!rawUrl) {
     throw new Error(
@@ -177,34 +210,36 @@ export function getPool(): pg.Pool {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-  if (poolInstance && poolConnectionKey === connectionString) {
-    return poolInstance;
+  const driverKey = `${getDbDriver()}:${connectionString}`;
+  if (queryableInstance && poolConnectionKey === driverKey) {
+    return queryableInstance;
   }
-  if (poolInstance) resetPool();
-  // Serverless / Workers reuse isolates; origin poolers (Supavisor, Neon,
-  // Hyperdrive, PgBouncer) drop idle TCP well under the old 10s default.
-  // Keep the pool tiny and fail fast so a dead DB surfaces as 503 quickly.
-  poolInstance = new Pool({
-    connectionString,
-    ssl,
-    max: Number(process.env.PG_POOL_MAX || 1),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 2_000),
-    connectionTimeoutMillis: Number(
-      process.env.PG_CONNECTION_TIMEOUT_MS || 8_000,
-    ),
-    maxLifetimeSeconds: Number(process.env.PG_MAX_LIFETIME_SECONDS || 60),
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10_000,
-    allowExitOnIdle: true,
-  });
-  poolConnectionKey = connectionString;
-  attachPoolGuards(poolInstance);
-  return poolInstance;
+  if (queryableInstance) resetPool();
+
+  if (getDbDriver() === "postgres-js") {
+    const sql = createPostgresJsSql(rawUrl, connectionString, ssl);
+    postgresJsSql = sql;
+    queryableInstance = postgresJsQueryable(sql);
+    dbInstance = drizzlePostgresJs(sql, { schema }) as unknown as Db;
+    poolConnectionKey = driverKey;
+    return queryableInstance;
+  }
+  // Vercel Fluid / local Node: tiny node-pg pool, fail fast on a dead DB.
+  const pool = createNodePool(connectionString, ssl);
+  nodePoolInstance = pool;
+  attachPoolGuards(pool);
+  queryableInstance = pool;
+  dbInstance = drizzle(pool, { schema });
+  poolConnectionKey = driverKey;
+  return queryableInstance;
 }
 
 function getDb(): Db {
   if (dbInstance) return dbInstance;
-  dbInstance = drizzle(getPool(), { schema });
+  getPool();
+  if (!dbInstance) {
+    throw new Error("Failed to initialize database client");
+  }
   return dbInstance;
 }
 

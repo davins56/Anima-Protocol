@@ -10,5 +10,16 @@
 import { env } from "cloudflare:workers";
 import { bindImportableEnv, mirrorCloudflareBindings } from "./cloudflareEnv";
 
+// Companion store / @workspace/db stay on node-pg for local + Vercel.
+// This Worker entry selects postgres.js so isolates talk through Hyperdrive
+// instead of opening a raw TCP Pool to hosted Postgres (ECONNRESET).
+try {
+  if (!process.env.ANIMA_DB_DRIVER) {
+    process.env.ANIMA_DB_DRIVER = "postgres-js";
+  }
+} catch {
+  // some isolates reject process.env assignment
+}
+
 bindImportableEnv(env);
 mirrorCloudflareBindings(env);

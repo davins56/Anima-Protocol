@@ -1,6 +1,14 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-import { resolveDatabaseUrl, resolveDbConfig } from "@workspace/db";
+import { drizzle as drizzlePostgresJs } from "drizzle-orm/postgres-js";
+import {
+  createNodePool,
+  createPostgresJsSql,
+  getDbDriver,
+  postgresJsQueryable,
+  resolveDatabaseUrl,
+  resolveDbConfig,
+  type SqlQueryable,
+} from "@workspace/db";
 import * as schema from "./schema";
 
 type DbSchema = typeof schema;
@@ -13,11 +21,18 @@ type Db = NodePgDatabase<DbSchema>;
  * `@workspace/db` — a raw Pool({ connectionString }) breaks against Replit
  * Postgres from Vercel after pg-connection-string's verify-full change.
  *
- * Pool creation is lazy so Cloudflare Workers can instantiate the module
- * before secrets (DATABASE_URL) are mirrored from env bindings into
- * process.env. Eager createPool() fails Worker version upload with 10021.
+ * Client creation is lazy so Cloudflare Workers can instantiate the module
+ * before secrets (DATABASE_URL / Hyperdrive) are mirrored from env bindings
+ * into process.env. Eager createPool() fails Worker version upload with 10021.
+ *
+ * On the Worker runtime the companion store / this entrypoint use postgres.js
+ * (Hyperdrive-safe). Local Node and Vercel keep node-pg.
  */
-function createPool(): Pool {
+let queryableInstance: SqlQueryable | null = null;
+let dbInstance: Db | null = null;
+
+function getQueryable(): SqlQueryable {
+  if (queryableInstance) return queryableInstance;
   const rawUrl = resolveDatabaseUrl();
   if (!rawUrl) {
     throw new Error(
@@ -25,31 +40,22 @@ function createPool(): Pool {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-  return new Pool({
-    connectionString,
-    ssl,
-    max: Number(process.env.PG_POOL_MAX || 1),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10_000),
-    connectionTimeoutMillis: Number(
-      process.env.PG_CONNECTION_TIMEOUT_MS || 8_000,
-    ),
-    allowExitOnIdle: true,
-  });
-}
-
-let poolInstance: Pool | null = null;
-let dbInstance: Db | null = null;
-
-function getPool(): Pool {
-  if (!poolInstance) {
-    poolInstance = createPool();
+  if (getDbDriver() === "postgres-js") {
+    const sql = createPostgresJsSql(rawUrl, connectionString, ssl);
+    queryableInstance = postgresJsQueryable(sql);
+    dbInstance = drizzlePostgresJs(sql, { schema }) as unknown as Db;
+    return queryableInstance;
   }
-  return poolInstance;
+  const pool = createNodePool(connectionString, ssl);
+  queryableInstance = pool;
+  dbInstance = drizzle(pool, { schema });
+  return queryableInstance;
 }
 
 function getDb(): Db {
+  if (!dbInstance) getQueryable();
   if (!dbInstance) {
-    dbInstance = drizzle(getPool(), { schema });
+    throw new Error("Failed to initialize database client");
   }
   return dbInstance;
 }
@@ -65,6 +71,6 @@ function proxyBind<T extends object>(target: () => T): T {
   });
 }
 
-export const pool = proxyBind(getPool);
+export const pool = proxyBind(getQueryable);
 export const db = proxyBind(getDb);
 export * from "./schema";

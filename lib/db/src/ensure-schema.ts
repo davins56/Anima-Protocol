@@ -1,5 +1,4 @@
-import type pg from "pg";
-import { getPool, withTransientDbRetry } from "./client";
+import { getPool, withTransientDbRetry, type SqlQueryable } from "./client";
 
 /** Core relations the store / chat API require. */
 export const REQUIRED_TABLES = [
@@ -39,7 +38,7 @@ export type EnsureSchemaResult = {
   errors: string[];
 };
 
-type Queryable = Pick<pg.Pool, "query">;
+type Queryable = SqlQueryable;
 
 async function listPresentTables(
   db: Queryable,

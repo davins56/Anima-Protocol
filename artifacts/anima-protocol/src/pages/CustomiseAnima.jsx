@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { base44, waitForStoreAuth } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { useAuth } from "@/lib/AuthContext";
 import AnimaCustomizer from "@/components/anima/AnimaCustomizer";
 import AnimaPersonalityPanel from "@/components/anima/AnimaPersonalityPanel";
 import AnimaSoulprintPanel from "@/components/anima/AnimaSoulprintPanel";
@@ -9,9 +10,12 @@ import AnimaVoicePanel from "@/components/anima/AnimaVoicePanel";
 import AnimaExpressionPanel from "@/components/anima/AnimaExpressionPanel";
 import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
 import {
+  AlertTriangle,
   ChevronLeft,
+  Database,
   Fingerprint,
   Loader,
+  LogIn,
   Mic,
   Palette,
   ScanSearch,
@@ -21,6 +25,10 @@ import {
 } from "lucide-react";
 import { normalizeCustomiseAnimaTab } from "@/lib/customiseAnimaTabs";
 import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
+import {
+  classifyCustomiseAnimaLoadError,
+  customiseAnimaLoadCopy,
+} from "@/lib/customiseAnimaLoad";
 
 const TABS = [
   { id: "look", label: "Look", icon: Palette, blurb: "Portrait, theme & appearance" },
@@ -31,6 +39,26 @@ const TABS = [
   { id: "permissions", label: "Permissions", icon: ScanSearch, blurb: "Device scan & data access" },
 ];
 
+const KIND_ICONS = {
+  misconfigured: AlertTriangle,
+  unsigned: LogIn,
+  database: Database,
+  empty: Sparkles,
+  unknown: AlertTriangle,
+};
+
+function selectCompanion(rows, requestedId, me) {
+  if (requestedId) {
+    const match = rows.find((a) => a.id === requestedId);
+    if (match) return match;
+  }
+  if (me?.email) {
+    const assigned = rows.find((a) => a.assigned_user === me.email);
+    if (assigned) return assigned;
+  }
+  return rows[0] || null;
+}
+
 /**
  * Complete Customise Anima hub: Look · Personality · Soulprint · Voice.
  * Deep links: `?anima=<id>&tab=look|personality|soulprint|expression|voice|permissions`
@@ -40,22 +68,52 @@ export default function CustomiseAnima() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedId = searchParams.get("anima");
   const activeTab = normalizeCustomiseAnimaTab(searchParams.get("tab"));
+  const { isAuthenticated, isLoadingAuth, user } = useAuth();
 
   const [animas, setAnimas] = useState([]);
   const [anima, setAnima] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loadKind, setLoadKind] = useState("");
+  const [loadMessage, setLoadMessage] = useState("");
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const retryLoad = useCallback(() => {
+    setReloadNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
+      if (isLoadingAuth) return;
+
       setLoading(true);
-      setError("");
+      setLoadKind("");
+      setLoadMessage("");
+      setAnimas([]);
+      setAnima(null);
+
       try {
+        if (!isAuthenticated) {
+          if (!cancelled) {
+            setLoadKind("unsigned");
+          }
+          return;
+        }
+
         await whenBootstrapReady();
+        try {
+          await waitForStoreAuth(15000);
+        } catch (authErr) {
+          if (!cancelled) {
+            setLoadKind("unsigned");
+            setLoadMessage(authErr?.message || "");
+          }
+          return;
+        }
+
         const [me, list] = await Promise.all([
-          base44.auth.me().catch(() => null),
+          base44.auth.me().catch(() => user || null),
           listPersonalAnimas(100),
         ]);
         if (cancelled) return;
@@ -63,22 +121,15 @@ export default function CustomiseAnima() {
         const rows = list || [];
         setAnimas(rows);
 
-        let selected = null;
-        if (requestedId) {
-          selected = rows.find((a) => a.id === requestedId) || null;
-        }
-        if (!selected && me?.email) {
-          selected = rows.find((a) => a.assigned_user === me.email) || null;
-        }
-        if (!selected) selected = rows[0] || null;
-
+        const selected = selectCompanion(rows, requestedId, me);
         setAnima(selected);
         if (!selected) {
-          setError("No personal Anima found yet. Forge one first.");
+          setLoadKind("empty");
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err?.message || "Failed to load your Anima.");
+          setLoadKind(classifyCustomiseAnimaLoadError(err));
+          setLoadMessage(err?.message || "");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -89,7 +140,7 @@ export default function CustomiseAnima() {
     return () => {
       cancelled = true;
     };
-  }, [requestedId]);
+  }, [requestedId, isAuthenticated, isLoadingAuth, reloadNonce, user]);
 
   const setTab = (tabId) => {
     const next = new URLSearchParams(searchParams);
@@ -117,6 +168,9 @@ export default function CustomiseAnima() {
     [activeTab],
   );
 
+  const emptyCopy = loadKind ? customiseAnimaLoadCopy(loadKind, loadMessage) : null;
+  const EmptyIcon = KIND_ICONS[loadKind] || Sparkles;
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 pb-[calc(var(--tab-bar-height,64px)+1.5rem)]">
       <div className="max-w-5xl mx-auto space-y-5">
@@ -139,7 +193,7 @@ export default function CustomiseAnima() {
           </div>
         </div>
 
-        {loading ? (
+        {isLoadingAuth || loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 border border-primary/10">
             <Loader className="w-6 h-6 text-primary/40 animate-spin" />
             <p className="font-mono text-[10px] tracking-widest text-primary/30 uppercase">
@@ -267,35 +321,51 @@ export default function CustomiseAnima() {
             )}
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center py-16 gap-4 border border-primary/15 bg-primary/5 px-6 text-center">
-            <Sparkles className="w-8 h-8 text-primary/40" />
+          <div
+            role="status"
+            className="flex flex-col items-center justify-center py-16 gap-4 border border-primary/15 bg-primary/5 px-6 text-center"
+          >
+            <EmptyIcon className="w-8 h-8 text-primary/40" />
+            {loadKind && (
+              <p className="font-mono text-[9px] tracking-[0.35em] uppercase text-primary/30">
+                {loadKind === "empty" ? "companion" : loadKind}
+              </p>
+            )}
             <p className="font-mono text-sm text-primary/70 tracking-wider">
-              {error || "No personal Anima found yet."}
+              {emptyCopy?.headline || "No personal Anima found yet."}
             </p>
             <p className="font-mono text-[10px] text-primary/40 tracking-widest max-w-md leading-relaxed">
-              {/misconfigured|environment variables|not signed in|session/i.test(
-                error,
-              )
-                ? "The companion store could not load. Sign in again if your session expired, then retry. If this persists, the API still cannot reach Clerk or the database."
-                : "Forge your companion first, then return here to shape their look (skin, hair, outfit, eyes), personality, soulprint, expression, voice, and permissions."}
+              {emptyCopy?.body ||
+                "Forge your companion first, then return here to shape their look (skin, hair, outfit, eyes), personality, soulprint, expression, voice, and permissions."}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
-              {error && (
+              {emptyCopy?.showRetry && (
                 <button
                   type="button"
-                  onClick={() => window.location.reload()}
+                  onClick={retryLoad}
                   className="px-5 py-3 bg-transparent border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all"
                 >
                   Retry
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => navigate("/onboarding")}
-                className="px-5 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
-              >
-                Forge Anima
-              </button>
+              {emptyCopy?.showSignIn && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/sign-in")}
+                  className="px-5 py-3 bg-transparent border border-primary/35 text-primary hover:border-primary/60 font-mono text-xs tracking-widest uppercase transition-all"
+                >
+                  Sign in
+                </button>
+              )}
+              {emptyCopy?.showForge && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/onboarding")}
+                  className="px-5 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                >
+                  Forge Anima
+                </button>
+              )}
             </div>
           </div>
         )}
