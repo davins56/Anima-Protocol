@@ -341,7 +341,7 @@ const logout = useCallback(() => {
     };
     
     try {
-      const newAnima = await base44.entities.Character.create(defaultSerenity);
+      const newAnima = await base44.entities.Anima.create(defaultSerenity);
       notifyStoreChanged();
       return newAnima;
     } catch (err) {

@@ -1,6 +1,6 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { resolveDbConfig } from "@workspace/db";
+import { resolveDatabaseUrl, resolveDbConfig } from "@workspace/db";
 import * as schema from "./schema";
 
 type DbSchema = typeof schema;
@@ -18,7 +18,7 @@ type Db = NodePgDatabase<DbSchema>;
  * process.env. Eager createPool() fails Worker version upload with 10021.
  */
 function createPool(): Pool {
-  const rawUrl = process.env.DATABASE_URL;
+  const rawUrl = resolveDatabaseUrl();
   if (!rawUrl) {
     throw new Error(
       "DATABASE_URL must be set. Did you forget to provision a database?",

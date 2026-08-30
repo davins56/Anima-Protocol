@@ -50,6 +50,7 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("httpServerHandler");
     expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
     expect(workerSource).toContain("httpServerHandler({ port: WORKER_API_PORT })");
+    expect(workerSource).toContain("mirrorCloudflareBindings(env)");
   });
 
   it("excludes Netlify _redirects from Cloudflare asset uploads", () => {
