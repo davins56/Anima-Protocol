@@ -74,15 +74,27 @@ export function buildSacredSpaceCheckIn(input = {}) {
 }
 
 /**
- * Reflection Log keeps rows that captured a written reflection or gratitude.
- * Sacred Space payloads always include `reflection`, so they pass this filter.
+ * Reflection Log keeps Daily Resonance / Sacred Space rows and any row that
+ * captured a written reflection or gratitude.
+ *
+ * In-chat ritual rows write `mood` + `current_focus` / `freeform_note` and
+ * omit `physical_state` / `mood_intensity` — those stay hidden unless they
+ * also have a written reflection/gratitude.
  * @param {Record<string, unknown> | null | undefined} entry
  */
 export function appearsInCheckInList(entry) {
   if (!entry || typeof entry !== "object") return false;
   const reflection = typeof entry.reflection === "string" ? entry.reflection.trim() : "";
   const gratitude = typeof entry.gratitude === "string" ? entry.gratitude.trim() : "";
-  return Boolean(reflection || gratitude);
+  if (reflection || gratitude) return true;
+  const physical =
+    typeof entry.physical_state === "string" ? entry.physical_state.trim() : "";
+  const intensity = entry.mood_intensity;
+  const hasIntensity =
+    typeof intensity === "number"
+      ? Number.isFinite(intensity)
+      : typeof intensity === "string" && intensity.trim() !== "" && Number.isFinite(Number(intensity));
+  return Boolean(physical || hasIntensity);
 }
 
 /**
