@@ -105,6 +105,7 @@ export default function MeditationRitual({ anima, user }) {
         reflection: reflection.trim(),
         ritualFocus: activeStep?.id || activeStep?.title,
         userEmail: user?.email,
+        modeUsed: user?.selected_mode,
       });
       const result = await base44.integrations.Core.InvokeLLM({
         prompt: `You are ${anima?.name || "Serenity"}, an Anima resonance guide. The user just completed a meditation ritual step called "${activeStep?.title}". They share this reflection: "${reflection}". Respond with warmth, depth, and spiritual wisdom. 2-3 sentences max. Affirm what they've shared and offer a gentle insight.`,

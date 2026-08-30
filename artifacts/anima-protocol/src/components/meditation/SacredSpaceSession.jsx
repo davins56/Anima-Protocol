@@ -114,8 +114,8 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
         reflection,
         ritualFocus,
         characterName: character.name,
-        characterId: character.id,
         userEmail: user?.email,
+        modeUsed: user?.selected_mode,
       });
 
       let impact = { success: true, check_in: created };
