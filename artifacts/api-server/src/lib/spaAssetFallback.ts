@@ -63,6 +63,10 @@ export function withHashedAssetCache(
   }
   const headers = new Headers(response.headers);
   headers.set("cache-control", HASHED_ASSET_CACHE_CONTROL);
+  // CF Assets default is max-age=0. CDN-Cache-Control keeps the edge
+  // aligned when the browser Cache-Control is rewritten after ASSETS.fetch.
+  headers.set("cdn-cache-control", HASHED_ASSET_CACHE_CONTROL);
+  headers.set("x-anima-asset-cache", "immutable");
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

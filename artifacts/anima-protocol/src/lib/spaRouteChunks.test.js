@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("Profile / EchoKeys lazy route chunks", () => {
-  it("lazy-loads EchoKeys and UserProfile from App.full.jsx", () => {
-    const app = readFileSync(join(root, "App.full.jsx"), "utf8");
+  it("lazy-loads EchoKeys and UserProfile from ProtocolApp.jsx", () => {
+    const app = readFileSync(join(root, "ProtocolApp.jsx"), "utf8");
     expect(app).toContain('const EchoKeys = lazy(() => import("./pages/EchoKeys"))');
     expect(app).toContain('const UserProfile = lazy(() => import("./pages/UserProfile"))');
     expect(app).toContain('path="/echo-keys"');
