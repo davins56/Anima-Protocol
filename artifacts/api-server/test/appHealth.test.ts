@@ -40,13 +40,12 @@ describe("app health checks", () => {
     await expect(response.json()).resolves.toEqual({ status: "ok" });
   });
 
-  it("does not 500 Character store reads when Clerk publishable key is invalid", async () => {
+  it("returns a clear config error for store reads when Clerk publishable key is invalid", async () => {
     const response = await fetch(`${baseUrl}/api/store/Character`);
 
-    // Invalid CLERK_PUBLISHABLE_KEY is recovered via host-derived key, so the
-    // request reaches requireUser as signed-out (401) instead of crashing (500)
-    // or hard-failing config (503).
-    expect(response.status).toBe(401);
+    // Invalid CLERK_PUBLISHABLE_KEY must never crash the API with a 500. The
+    // middleware should surface a clear, typed server configuration error.
+    expect(response.status).toBe(503);
     expect(response.status).not.toBe(500);
     await expect(response.json()).resolves.toMatchObject({
       error: expect.any(String),
