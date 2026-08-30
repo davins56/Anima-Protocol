@@ -33,16 +33,12 @@
     // default is max-age=0 without it.
     "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
   },
-  // www route is inert until the zone Redirect Rule "Redirect www to root"
-  // keeps ${1} (see scripts/cloudflare/www-redirect.md). Today that rule
-  // 301s https://www.anima-protocol.com/* → https://anima-protocol.com/
-  // (path dropped) before any Worker. Pattern only — no secrets.
-  "routes": [
-    {
-      "pattern": "www.anima-protocol.com/*",
-      "zone_name": "anima-protocol.com"
-    }
-  ],
+  // Do not add www.anima-protocol.com routes here. Zone Redirect Rule
+  // "Redirect www to root" 301s www → https://anima-protocol.com/ (no ${1})
+  // before any Worker. www is not a custom domain on this Worker;
+  // *.anima-protocol.com/* goes to anima-protocol-worker. See
+  // scripts/cloudflare/www-redirect.md — fix the zone rule, do not assume
+  // a wrangler route exists until that replacement keeps ${1}.
   "vars": {
     "NODE_ENV": "production"
   },

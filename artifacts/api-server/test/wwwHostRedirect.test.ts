@@ -66,7 +66,8 @@ describe("www → apex path preservation", () => {
     expect(notes).toMatch(/<center>cloudflare<\/center>/);
     expect(notes).toMatch(/anima-protocol-worker/);
     expect(notes).toMatch(/already has a path-preserving/);
-    expect(notes).toMatch(/Do not treat a `vercel\.json` test as/);
+    expect(notes).toMatch(/Do not treat a `vercel\.json`[\s\S]*production www test/);
+    expect(notes).toMatch(/Do \*\*not\*\* add a `www\.anima-protocol\.com` route/);
     expect(notes).toContain(
       'r"https://anima-protocol.com/${1}"',
     );
