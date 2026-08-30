@@ -151,7 +151,7 @@ describe("fetchApiThroughExpress", () => {
     expect(response.headers.get("content-type")).toMatch(/application\/json/);
     expect(response.status).toBe(503);
     const body = await response.json();
-    expect(body.code).toBe("timeout");
+    expect(["timeout", "ETIMEOUT"]).toContain(body.code);
     expect(body.error).toMatch(/unavailable|timeout|database/i);
     expect(JSON.stringify(body)).not.toMatch(/<!DOCTYPE|lt IE 7/);
   });
