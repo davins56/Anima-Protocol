@@ -30,7 +30,7 @@ export function detectMentionedStoryCharacters(finalMessages, characters, active
   }
 
   const mainCharId = activeSession.character_id;
-  
+
   // Find any story character mentioned in the message that hasn't already appeared
   const mentionedChar = characters.find(c => {
     const isMainChar = c.id === mainCharId;

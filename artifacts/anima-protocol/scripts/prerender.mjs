@@ -24,12 +24,17 @@
  * The root index.html is left untouched (it serves the home/app shell).
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DIST = join(__dirname, "..", "dist", "public");
+const possibleDists = [
+  join(__dirname, "..", "..", "dist"),
+  join(__dirname, "..", "dist"),
+  join(__dirname, "..", "dist", "public"),
+];
+const DIST = possibleDists.find((d) => existsSync(join(d, "index.html"))) || possibleDists[0];
 const BASE = "https://anima-protocol.app";
 
 // ---------------------------------------------------------------------------
@@ -327,10 +332,10 @@ let shell;
 try {
   shell = readFileSync(join(DIST, "index.html"), "utf-8");
 } catch {
-  console.error(
-    "[prerender] ERROR: dist/public/index.html not found. Run `vite build` first."
+  console.warn(
+    `[prerender] WARN: ${join(DIST, "index.html")} not found. Skipping static prerendering.`
   );
-  process.exit(1);
+  process.exit(0);
 }
 
 // The root route meta matches the home page (landing for signed-out users).
