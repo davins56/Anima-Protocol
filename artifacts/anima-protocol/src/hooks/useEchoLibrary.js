@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { track } from "@/lib/analytics";
 import {
   defaultEchoLibrary,
+  isEchoLibrarySteward,
   normalizeEchoLibrary,
   validateEchoFolder,
   echoFolderStats,
@@ -26,12 +27,14 @@ export function storedLibraryIsFull(raw, catalogSize) {
 }
 
 /**
- * Load and persist the steward's Echo Key library on the user profile.
+ * Load and persist the signed-in operator's Echo Key library on the user profile.
+ * The Protocol steward (Dàvīn) is granted the full Codex; other users keep starters.
  */
 export default function useEchoLibrary() {
   const { user, setUser } = useAuth();
+  const steward = isEchoLibrarySteward(user);
   const [library, setLibrary] = useState(() =>
-    normalizeEchoLibrary(user?.settings?.echo_keys),
+    normalizeEchoLibrary(user?.settings?.echo_keys, { grantFullLibrary: steward }),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -39,17 +42,22 @@ export default function useEchoLibrary() {
   const upgradedRef = useRef(false);
 
   useEffect(() => {
-    const normalized = normalizeEchoLibrary(user?.settings?.echo_keys);
+    const grantFull = isEchoLibrarySteward(user);
+    const normalized = normalizeEchoLibrary(user?.settings?.echo_keys, {
+      grantFullLibrary: grantFull,
+    });
     setLibrary(normalized);
-    if (!user?.id || upgradedRef.current) return;
+    // Persist the full grant only for the steward, so a refresh stays unlocked.
+    if (!user?.id || !grantFull || upgradedRef.current) return;
     if (storedLibraryIsFull(user?.settings?.echo_keys, normalized.owned_ids.length)) return;
     upgradedRef.current = true;
     persistRef.current?.(normalized);
-  }, [user?.id, user?.settings?.echo_keys]);
+  }, [user, user?.id, user?.settings?.echo_keys]);
 
   const persist = useCallback(
     async (next) => {
-      const normalized = normalizeEchoLibrary(next);
+      const grantFull = isEchoLibrarySteward(user);
+      const normalized = normalizeEchoLibrary(next, { grantFullLibrary: grantFull });
       const check = validateEchoFolder(normalized.folder);
       if (!check.ok) {
         setError(check.errors[0] || "Folder is not legal.");
@@ -81,12 +89,15 @@ export default function useEchoLibrary() {
         setSaving(false);
       }
     },
-    [setUser, user?.settings],
+    [setUser, user],
   );
 
   persistRef.current = persist;
 
-  const resetFolder = useCallback(() => persist(defaultEchoLibrary()), [persist]);
+  const resetFolder = useCallback(
+    () => persist(defaultEchoLibrary({}, { grantFullLibrary: isEchoLibrarySteward(user) })),
+    [persist, user],
+  );
 
   return { library, saving, error, persist, resetFolder, setError };
 }

@@ -66,6 +66,12 @@ export {
 } from "./rules.js";
 
 export {
+  ECHO_LIBRARY_STEWARD_EMAIL,
+  ECHO_LIBRARY_STEWARD_GITHUB,
+  isEchoLibrarySteward,
+} from "./steward.js";
+
+export {
   DEFAULT_FOLDER_ID,
   normalizeEchoKeyAccount,
   grantOwnedKey,
@@ -111,7 +117,7 @@ export {
 } from "./story.js";
 
 export function echoKeyLoreBlock() {
-  return `Echo Keys are crystallized memories of function that an Anima can temporarily synchronize with and execute. Battle Chips contain programs. Echo Keys contain experiences that learned how to become programs — weapon-memory. The Codex names about 800 family memories plus the novels' named artifacts — Echo Shards, Echo Keys, Sovereign Keys, and Prime Keys — and the operator holds all of them. Story mode still walks the Lattice for flavor; it does not hide the Vault. A Resonance Array (Folder) of up to 30 Keys jacks into NetBattle.`;
+  return `Echo Keys are crystallized memories of function that an Anima can temporarily synchronize with and execute. Battle Chips contain programs. Echo Keys contain experiences that learned how to become programs — weapon-memory that is not granted as a full library. The Codex names about 800 family memories plus the novels' named artifacts — Echo Shards, Echo Keys, Sovereign Keys, and Prime Keys — but you begin with a handful of Shards. The rest are found where resonance achieved exceptional coherence: forests, water, stone, gardens, sky, sacred ground, places of bond — and also battlefields, memorials, and ruins. Coherence is not the same as peace. A Resonance Array (Folder) of up to 30 Keys jacks into NetBattle.`;
 }
 
 const ECHO_CUE =

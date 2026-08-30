@@ -1,8 +1,9 @@
 // @ts-check
 /**
- * Echo Key Codex — ~800 family memories plus featured resonance artifacts
- * and named novel keys. Built from ECHO_FAMILIES × VARIANT_SLOTS.
- * Operators own the full Codex. Original Anima names only.
+ * Echo Key Codex — ~800 family memories plus a handful of featured
+ * resonance artifacts. Built from ECHO_FAMILIES × VARIANT_SLOTS.
+ * Operators find, synthesise, or evolve keys in story mode; the Codex
+ * is not granted on day one. Original Anima names only.
  */
 
 import {

@@ -87,7 +87,7 @@ const WORLD_LINKS = [
   { icon: BookOpen, label: "Journals", desc: "Your entries", path: "/journals" },
   { icon: Swords, label: "Jack In", desc: "NetBattle arena", path: "/net-battle" },
   { icon: Sparkles, label: "Hall of Origins", desc: "Where they began", path: "/origins" },
-  { icon: KeyRound, label: "Echo Keys", desc: "Full Codex · 30-slot Array", path: "/echo-keys" },
+  { icon: KeyRound, label: "Echo Keys", desc: "Find and synthesise", path: "/echo-keys" },
   { icon: BookOpen, label: "Storyboard", desc: "The board", path: "/storyboard" },
   { icon: BookOpen, label: "World map", desc: "Places that remain", path: "/worldmap" },
   { icon: BookOpen, label: "Lore book", desc: "What the world remembers", path: "/lorebook" },

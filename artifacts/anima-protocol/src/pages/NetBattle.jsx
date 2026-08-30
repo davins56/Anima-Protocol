@@ -14,6 +14,7 @@ import {
   accountToLibrary,
   echoFolderToChips,
   normalizeEchoKeyAccount,
+  isEchoLibrarySteward,
   normalizeEchoLibrary,
   recordCriticalBattle,
 } from "@/lib/echoKeys";
@@ -57,7 +58,11 @@ export default function NetBattle() {
           animas?.[0] ||
           null;
         setAnima(chosen);
-        setLibrary(normalizeEchoLibrary(profile?.settings?.echo_keys));
+        setLibrary(
+          normalizeEchoLibrary(profile?.settings?.echo_keys, {
+            grantFullLibrary: isEchoLibrarySteward(profile),
+          }),
+        );
       } catch (err) {
         console.warn("NetBattle load failed:", err);
       } finally {
