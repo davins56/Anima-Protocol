@@ -75,6 +75,18 @@ function productionProxyHostFallback(): string {
   return publishableKey.startsWith("pk_live_") ? PRODUCTION_PROXY_HOST : "";
 }
 
+/** First hop only — Vercel/CF may send "https,https" or "https, http". */
+export function forwardedRequestProto(
+  headers: IncomingHttpHeaders,
+): "http" | "https" {
+  const raw = headers["x-forwarded-proto"];
+  const first = (Array.isArray(raw) ? raw[0] : raw)
+    ?.split(",")[0]
+    ?.trim()
+    .toLowerCase();
+  return first === "http" ? "http" : "https";
+}
+
 export function buildClerkProxyHeaderValues(
   req: { headers: IncomingHttpHeaders },
   secretKey: string,
@@ -84,9 +96,7 @@ export function buildClerkProxyHeaderValues(
     isLocalDevHost(requestHost) &&
     readRuntimeEnv("CLERK_PUBLISHABLE_KEY")?.startsWith("pk_live_");
 
-  const protocol = usePublicProxy
-    ? "https"
-    : (req.headers["x-forwarded-proto"] as string) || "https";
+  const protocol = usePublicProxy ? "https" : forwardedRequestProto(req.headers);
   const host =
     (usePublicProxy
       ? PRODUCTION_PROXY_HOST

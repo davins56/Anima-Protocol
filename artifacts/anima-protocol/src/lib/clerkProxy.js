@@ -8,6 +8,15 @@
 export const ANIMA_APEX_HOST = 'anima-protocol.com';
 const ANIMA_WWW = `https://www.${ANIMA_APEX_HOST}`;
 
+/** Apex origin — Cloudflare serves production here. www 301s to this host. */
+export const ANIMA_PRODUCTION_ORIGIN = `https://${ANIMA_APEX_HOST}`;
+
+/**
+ * Canonical sign-in URL. Do not use www: Cloudflare 301s
+ * https://www.anima-protocol.com/sign-in → https://anima-protocol.com/ (path dropped).
+ */
+export const ANIMA_PRODUCTION_SIGN_IN_URL = `${ANIMA_PRODUCTION_ORIGIN}/sign-in`;
+
 function clerkProxyEnvValue() {
   return typeof import.meta.env.VITE_CLERK_PROXY_URL === 'string'
     ? import.meta.env.VITE_CLERK_PROXY_URL.trim()
@@ -48,6 +57,15 @@ export function isAnimaProductionHost(hostname) {
     host === `www.${ANIMA_APEX_HOST}` ||
     host.endsWith(`.${ANIMA_APEX_HOST}`)
   );
+}
+
+/**
+ * Hosts allowed to talk to the production Clerk FAPI (clerk.anima-protocol.com).
+ * Any other browser origin gets origin_invalid on /v1/client.
+ */
+export function isClerkAuthorizedBrowserHost(hostname) {
+  const host = (hostname || '').toLowerCase().replace(/:\d+$/, '');
+  return isAnimaProductionHost(host) || isLocalDevHostname(host);
 }
 
 export function ensureTrailingSlash(url) {

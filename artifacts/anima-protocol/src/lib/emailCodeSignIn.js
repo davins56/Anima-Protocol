@@ -7,10 +7,13 @@
  * stuck on "Check your email". Prefer `email_code` so users can type an OTP.
  */
 
-import { isVercelPreviewHost } from "./clerkProxy";
+import {
+  ANIMA_PRODUCTION_SIGN_IN_URL,
+  isClerkAuthorizedBrowserHost,
+} from "./clerkProxy";
 import { clerkOAuthRedirectPaths } from "./clerkOAuthPaths";
 
-export const PRODUCTION_SIGN_IN_URL = "https://www.anima-protocol.com/sign-in";
+export const PRODUCTION_SIGN_IN_URL = ANIMA_PRODUCTION_SIGN_IN_URL;
 
 /** @param {Array<{ strategy?: string }> | null | undefined} factors */
 export function hasEmailCodeFactor(factors) {
@@ -78,9 +81,11 @@ export function asDisplayMessage(value) {
 
 /** @param {string | null | undefined} [hostname] */
 export function isPreviewSignInHost(hostname) {
-  if (hostname) return isVercelPreviewHost(hostname);
-  if (typeof window === "undefined") return false;
-  return isVercelPreviewHost(window.location.hostname);
+  const host =
+    hostname ||
+    (typeof window !== "undefined" ? window.location.hostname : "");
+  if (!host) return false;
+  return !isClerkAuthorizedBrowserHost(host);
 }
 
 /**
