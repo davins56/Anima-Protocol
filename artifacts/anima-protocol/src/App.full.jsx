@@ -228,7 +228,7 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
   return envKey;
 }
 
-const fallbackDevKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
+const fallbackDevKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
   window.location.hostname,
