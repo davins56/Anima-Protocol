@@ -13,8 +13,10 @@ describe("PWA Workbox config", () => {
     expect(viteConfig).toContain("navigateFallback: null");
     expect(viteConfig).toContain("cleanupOutdatedCaches: true");
     expect(viteConfig).toContain("navigateFallbackDenylist");
-    expect(viteConfig).toMatch(/\*\*\/\*\.\{js,css,/);
-    expect(viteConfig).not.toMatch(/globPatterns:[\s\S]*html/);
+    const globPatterns =
+      viteConfig.match(/globPatterns:\s*\[([\s\S]*?)\]/)?.[1] ?? "";
+    expect(globPatterns).toContain("**/*.{js,css,");
+    expect(globPatterns).not.toMatch(/html/);
   });
 
   it("denies SW navigation fallback for /api and /assets so dead hashes cannot loop", () => {
