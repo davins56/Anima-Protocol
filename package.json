@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm --filter @workspace/api-server run build && PORT=${PORT:-23660} BASE_PATH=${BASE_PATH:-/} VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_placeholder} pnpm --filter @workspace/anima-protocol run build && rm -rf dist && cp -R artifacts/anima-protocol/dist/public dist && rm -f dist/_redirects",
+    "build": "pnpm --filter @workspace/api-server run build && PORT=${PORT:-23660} BASE_PATH=${BASE_PATH:-/} pnpm --filter @workspace/anima-protocol run build && rm -rf dist && cp -R artifacts/anima-protocol/dist/public dist && rm -f dist/_redirects",
     "build:all": "pnpm run typecheck && pnpm -r --if-present run build",
     "lint": "echo 'No lint errors'",
     "typecheck:libs": "tsc --build",

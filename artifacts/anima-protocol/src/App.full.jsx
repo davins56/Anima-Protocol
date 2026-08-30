@@ -49,8 +49,10 @@ import {
   probeClerkConnectivity,
 } from "@/lib/clerkConnectDiagnostics";
 import {
+  isUsableClerkPublishableKey,
   isVercelPreviewHost,
   resolveClerkProxyUrl,
+  sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
 
@@ -222,10 +224,11 @@ const viteClerkPublishableKey =
     : "";
 
 /**
- * Use the build-time publishable key when set (pk_test_ or pk_live_).
+ * Use the build-time publishable key when it decodes to a real Clerk host.
+ * Placeholder / mojibake keys are treated as unset so fallbackDevKey applies.
  */
 function resolveFrontendClerkPublishableKey(hostname, envKey) {
-  return envKey;
+  return sanitizeClerkPublishableKey(envKey);
 }
 
 const fallbackDevKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
@@ -257,13 +260,10 @@ if (clerkPubKey.startsWith("sk_")) {
   );
 }
 
-if (
-  import.meta.env.PROD &&
-  (clerkPubKey.includes("placeholder") || !viteClerkPublishableKey)
-) {
+if (import.meta.env.PROD && !isUsableClerkPublishableKey(clerkPubKey)) {
   console.error(
-    "[Anima] VITE_CLERK_PUBLISHABLE_KEY must be set at build time on Vercel. " +
-      "GitHub sign-in will fail without the real pk_test_ or pk_live_ key.",
+    "[Anima] VITE_CLERK_PUBLISHABLE_KEY must be a real pk_test_ or pk_live_ key " +
+      "whose payload decodes to a Clerk hostname. GitHub sign-in cannot start otherwise.",
   );
 }
 
