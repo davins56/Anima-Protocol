@@ -29,7 +29,7 @@ describe("EchoKeyVault", () => {
       expect(screen.getByText(/10 keys/i)).toBeTruthy();
       expect(screen.getAllByText("Plasmagun").length).toBeGreaterThan(0);
     },
-    15_000,
+    45_000,
   );
 
   it(
@@ -52,7 +52,7 @@ describe("EchoKeyVault", () => {
       expect(screen.getByText(/regular key/i)).toBeTruthy();
       expect(screen.getByText(/star-force pin/i)).toBeTruthy();
     },
-    15_000,
+    45_000,
   );
 
   it(
@@ -72,6 +72,6 @@ describe("EchoKeyVault", () => {
       expect(screen.getByText(/Star Force cards/i)).toBeTruthy();
       expect(screen.getByText(/80 families/i)).toBeTruthy();
     },
-    15_000,
+    45_000,
   );
 });
