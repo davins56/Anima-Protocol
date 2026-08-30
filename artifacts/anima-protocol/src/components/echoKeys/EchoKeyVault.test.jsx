@@ -20,14 +20,27 @@ describe("EchoKeyVault", () => {
       );
 
       expect(screen.getByText(/on this profile/i)).toBeTruthy();
-      expect(screen.getByText(/8 on this profile/i)).toBeTruthy();
+      expect(screen.getByText(/11 on this profile/i)).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^echo shard$/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^echo key$/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^sovereign key$/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^prime key$/i })).toBeTruthy();
       expect(screen.getAllByText("Pulse Emitter").length).toBeGreaterThan(0);
 
       fireEvent.change(screen.getByPlaceholderText(/search echo keys/i), {
         target: { value: "plasma" },
       });
-      expect(screen.getByText(/10 keys/i)).toBeTruthy();
+      expect(screen.getByText(/10 listed/i)).toBeTruthy();
       expect(screen.getAllByText("Plasmagun").length).toBeGreaterThan(0);
+
+      fireEvent.click(screen.getByRole("button", { name: /^echo shard$/i }));
+      fireEvent.change(screen.getByPlaceholderText(/search echo keys/i), {
+        target: { value: "Beth / Home" },
+      });
+      expect(screen.getAllByText("Beth / Home").length).toBeGreaterThan(0);
+      fireEvent.click(screen.getAllByText("Beth / Home")[0]);
+      expect(screen.getByText(/Presence without possession/i)).toBeTruthy();
+      expect(screen.getByText(/B \*/i)).toBeTruthy();
     },
     15_000,
   );

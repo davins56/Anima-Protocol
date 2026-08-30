@@ -61,4 +61,34 @@ describe("EchoKeys page", () => {
     expect(container.textContent).toMatch(/Resonance sites/i);
     expect(container.textContent).not.toMatch(/This profile holds the full library/i);
   });
+
+  it("filters the Codex by Echo Shard, Echo Key, Sovereign Key, and Prime Key", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <EchoKeys />
+        </MemoryRouter>,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const codexTab = [...container.querySelectorAll("button")].find((b) => /^codex$/i.test(b.textContent || ""));
+    expect(codexTab).toBeTruthy();
+    await act(async () => {
+      codexTab.click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toMatch(/Echo Shard/i);
+    expect(container.textContent).toMatch(/Sovereign Key/i);
+    expect(container.textContent).toMatch(/Prime Key/i);
+    const shardTab = [...container.querySelectorAll("button")].find((b) => /^echo shard$/i.test(b.textContent || ""));
+    await act(async () => {
+      shardTab.click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toMatch(/Beth \/ Home/);
+  });
 });

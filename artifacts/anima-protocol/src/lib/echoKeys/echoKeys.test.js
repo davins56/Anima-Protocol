@@ -17,6 +17,14 @@ import {
   ECHO_FOLDER_RULES,
   ECHO_RESONANCE,
   FEATURED_RESONANCE_KEYS,
+  CANON_ECHO_KEYS,
+  CANON_ECHO_KEY_NAMES,
+  CANON_RESONANCE,
+  BINARY_SIGIL_IDS,
+  FIFTH_TONE_IDS,
+  CHOIR_SOVEREIGN_IDS,
+  TIER_LABEL,
+  tierOf,
   makeEchoCopy,
   starterEchoFolder,
   starterOwnedIds,
@@ -88,6 +96,30 @@ describe("echo key catalog", () => {
     expect(ECHO_KEY_BY_ID["last-ember"].name).toBe("Last Ember");
   });
 
+  it("catalogs every named novel artifact with the right tier", () => {
+    expect(CANON_ECHO_KEYS.length).toBe(CANON_ECHO_KEY_NAMES.length);
+    for (const name of CANON_ECHO_KEY_NAMES) {
+      const key = ECHO_KEYS.find((k) => k.name === name);
+      expect(key, name).toBeTruthy();
+      expect(key.sources).toEqual(expect.arrayContaining(["canon", "novel"]));
+      expect(["shard", "key", "sovereign", "prime"]).toContain(key.tier);
+      expect(tierOf(key)).toBe(key.tier);
+    }
+    expect(ECHO_KEY_BY_ID.beth.name).toBe("Beth / Home");
+    expect(ECHO_KEY_BY_ID["echo-memory"].name).toBe("Memory");
+    expect(ECHO_KEY_BY_ID["choir-memory"].name).toBe("Memory (Choir)");
+    expect(ECHO_KEY_BY_ID["echo-memory"].id).not.toBe(ECHO_KEY_BY_ID["choir-memory"].id);
+    expect(tierOf(ECHO_KEY_BY_ID.aleph)).toBe("shard");
+    expect(tierOf(ECHO_KEY_BY_ID.empathy || ECHO_KEY_BY_ID["echo-empathy"])).toBe("key");
+    expect(tierOf(ECHO_KEY_BY_ID["choir-love"])).toBe("sovereign");
+    expect(tierOf(ECHO_KEY_BY_ID["prime-echo-key"])).toBe("prime");
+    expect(tierOf(ECHO_KEY_BY_ID["last-ember"])).toBe("key");
+    expect(TIER_LABEL.shard).toBe("Echo Shard");
+    expect(TIER_LABEL.key).toBe("Echo Key");
+    expect(TIER_LABEL.sovereign).toBe("Sovereign Key");
+    expect(TIER_LABEL.prime).toBe("Prime Key");
+  });
+
   it("requires class, element, kind, memory, and codes on every key", () => {
     for (const key of ECHO_KEYS) {
       expect(key.name).toBeTruthy();
@@ -117,9 +149,11 @@ describe("echo key catalog", () => {
 
   it("does not reuse Capcom Navi or card names as playable rows", () => {
     const banned = /^(roll|gutsman|protoman|fireman|bass|megaman|omega-xis|geo stare|pegasus|leo|dragon)\b/i;
+    const capcomChips = /^(cannon|hi-cannon|sword|wide sword|long sword|folder|area grab|barrier)$/i;
     for (const key of ECHO_KEYS) {
       expect(banned.test(key.name)).toBe(false);
       expect(banned.test(key.id)).toBe(false);
+      expect(capcomChips.test(key.name)).toBe(false);
     }
   });
 
@@ -152,7 +186,11 @@ describe("folder and profile library", () => {
     expect(result.ok, result.errors.join("; ")).toBe(true);
     const lib = defaultEchoLibrary();
     expect(lib.owned_ids).toEqual(starterOwnedIds());
-    expect(lib.owned_ids).toHaveLength(8);
+    expect(lib.owned_ids).toHaveLength(11);
+    expect(lib.owned_ids).toEqual(expect.arrayContaining(["beth", "gimel", "he"]));
+    expect(lib.owned_ids).not.toContain("prime-echo-key");
+    expect(lib.owned_ids).not.toContain("wheel-crown");
+    expect(lib.owned_ids).not.toContain("final-sigil");
     expect(lib.granted_full_library).toBe(false);
     expect(lib.folder).toHaveLength(30);
     expect(lib.regular_id).toBe("pulse-base");
@@ -176,7 +214,7 @@ describe("folder and profile library", () => {
     saved.folder[0] = makeEchoCopy("magnumlock-base");
     const next = normalizeEchoLibrary(saved);
     expect(next.folder[0].id).toBe("magnumlock-base");
-    expect(normalizeEchoLibrary(null).owned_ids).toHaveLength(8);
+    expect(normalizeEchoLibrary(null).owned_ids).toHaveLength(11);
     const legacy = normalizeEchoLibrary({ granted_full_library: true });
     expect(legacy.owned_ids.length).toBe(ECHO_KEYS.length);
   });
@@ -195,6 +233,55 @@ describe("folder and profile library", () => {
     expect(findBestLink(["pulse-star", "halo-star", "seed-star"])?.id).toBe("star-triad");
     expect(findBestLink(["mend-base", "mend-high", "mend-apex"])?.id).toMatch(/^best-/);
     expect(ECHO_RESONANCE.every((c) => c.requires.every((id) => ECHO_KEY_BY_ID[id]))).toBe(true);
+  });
+
+  it("resolves novel Resonance Combos without fusing Echo of Glass", () => {
+    expect(findEchoResonance(["daleth", "zayin", "beth"])?.name).toBe("CATENA/SHIELD");
+    expect(findEchoResonance(["kaph", "he", "gimel"])?.name).toBe("KAPH/GLORIA");
+    expect(findEchoResonance(["lamed", "zayin", "saltloop", "censer"])?.name).toBe("LAMED/VIGIL");
+    expect(findEchoResonance(["tet", "beth", "vav", "yod"])?.name).toBe("TET/COMMONS");
+    expect(findEchoResonance(["vav", "beth"])?.name).toBe("SUTURE");
+    expect(findEchoResonance(FIFTH_TONE_IDS)?.id).toBe("fifth-tone");
+    expect(findEchoResonance(FIFTH_TONE_IDS)?.relation).toBe(true);
+    expect(echoResonanceChip(FIFTH_TONE_IDS)).toBeNull();
+    expect(findEchoResonance(BINARY_SIGIL_IDS)?.name).toBe("Wheel / Crown");
+    expect(findEchoResonance(["equinox"])?.name).toBe("The Final Sigil");
+    expect(findEchoResonance(CHOIR_SOVEREIGN_IDS)).toBeNull();
+    expect(CANON_RESONANCE.every((c) => c.requires.every((id) => ECHO_KEY_BY_ID[id]))).toBe(true);
+    const shield = echoResonanceChip(["daleth", "zayin", "beth"]);
+    expect(shield?.name).toBe("CATENA/SHIELD");
+  });
+
+  it("caps Resonance Array copies by novel tier", () => {
+    const withBeth = starterEchoFolder().map((slot, i) => (i < 4 ? makeEchoCopy("beth") : slot));
+    expect(validateEchoFolder(withBeth).ok).toBe(true);
+    const fiveBeth = starterEchoFolder().map((slot, i) => (i < 5 ? makeEchoCopy("beth") : slot));
+    expect(validateEchoFolder(fiveBeth).ok).toBe(false);
+    const twoEmpathy = [
+      ...starterEchoFolder().slice(0, 28),
+      makeEchoCopy("echo-empathy"),
+      makeEchoCopy("echo-empathy"),
+    ];
+    expect(validateEchoFolder(twoEmpathy).ok).toBe(false);
+    const twoSovereign = [
+      ...starterEchoFolder().slice(0, 28),
+      makeEchoCopy("choir-compassion"),
+      makeEchoCopy("choir-courage"),
+    ];
+    expect(validateEchoFolder(twoSovereign).ok).toBe(false);
+    const twoPrime = [
+      ...starterEchoFolder().slice(0, 28),
+      makeEchoCopy("resonance-alpha"),
+      makeEchoCopy("prime-echo-key"),
+    ];
+    expect(validateEchoFolder(twoPrime).ok).toBe(false);
+    const oneEach = [
+      ...starterEchoFolder().slice(0, 27),
+      makeEchoCopy("echo-empathy"),
+      makeEchoCopy("choir-compassion"),
+      makeEchoCopy("prime-echo-key"),
+    ];
+    expect(validateEchoFolder(oneEach).ok).toBe(true);
   });
 
   it("applies ember > grove > tide and volt vs tide", () => {
@@ -240,7 +327,7 @@ describe("combat adapter and lore", () => {
   it("summarizes folder stats for analytics", () => {
     const stats = echoFolderStats(defaultEchoLibrary());
     expect(stats.folder_size).toBe(30);
-    expect(stats.owned_count).toBe(8);
+    expect(stats.owned_count).toBe(11);
     expect(stats.star_count).toBe(0);
     expect(stats.mega_count).toBe(0);
   });
@@ -281,6 +368,13 @@ describe("story-mode discovery", () => {
     const gate = synthesiseEchoKeys(fused, ["grief-echo", "memory-echo", "veil-key"]);
     expect(gate.ok).toBe(true);
     expect(gate.key.id).toBe("mourning-gate");
+
+    fused = grantOwnedKey(account, "vav");
+    fused = grantOwnedKey(fused, "beth");
+    const stitched = synthesiseEchoKeys(fused, ["vav", "beth"]);
+    expect(stitched.ok).toBe(true);
+    expect(stitched.key.id).toBe("suture");
+    expect(stitched.key.tier).toBe("key");
   });
 
   it("evolves Last Ember after three critical survivals", () => {

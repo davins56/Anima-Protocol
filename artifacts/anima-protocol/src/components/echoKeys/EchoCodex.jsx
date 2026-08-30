@@ -18,16 +18,21 @@ export default function EchoCodex({ ownedIds }) {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return ECHO_KEYS.map((k) => enrichEchoKey(k)).filter((k) => {
-      if (tier !== "all" && k.tier !== tier) return false;
-      if (!q) return true;
-      return (
-        k.name.toLowerCase().includes(q) ||
-        k.family.includes(q) ||
-        k.frequency.includes(q) ||
-        k.role.includes(q)
-      );
-    });
+    const rank = (k) => (k.sources?.includes("canon") ? 0 : k.family === "featured" ? 1 : 2);
+    return ECHO_KEYS.map((k) => enrichEchoKey(k))
+      .filter((k) => {
+        if (tier !== "all" && k.tier !== tier) return false;
+        if (!q) return true;
+        return (
+          k.name.toLowerCase().includes(q) ||
+          k.family.includes(q) ||
+          k.frequency.includes(q) ||
+          k.role.includes(q) ||
+          k.description.toLowerCase().includes(q) ||
+          k.memory.toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => rank(a) - rank(b) || a.libraryNo - b.libraryNo);
   }, [tier, query]);
 
   const selected = rows.find((k) => k.id === selectedId) || null;
@@ -67,7 +72,7 @@ export default function EchoCodex({ ownedIds }) {
         {rows.filter((k) => owned.has(k.id)).length} known · {rows.length} listed
       </p>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-1.5">
-        {rows.slice(0, 240).map((key) => {
+        {rows.slice(0, tier === "all" && !query.trim() ? 240 : rows.length).map((key) => {
           const have = owned.has(key.id);
           return (
             <button
@@ -104,11 +109,18 @@ export default function EchoCodex({ ownedIds }) {
         <div className="border border-primary/20 bg-black/40 p-4 space-y-2">
           <p className="font-mono text-sm text-primary">{known ? selected.name : "Unattuned Echo"}</p>
           <p className="font-mono text-[9px] tracking-widest uppercase text-primary/40">
-            {TIER_LABEL[selected.tier]} · {selected.frequency} · {selected.role}
+            {TIER_LABEL[selected.tier]} · {selected.codes.join(" ")} · {selected.mb} MB · {selected.element} · {selected.frequency} · {selected.role}
           </p>
           <p className="text-[12px] text-primary/60 leading-relaxed">
-            {known ? selected.memoryText : site ? `Hint: ${site.hint} (${site.name})` : TIER_BLURB[selected.tier]}
+            {known
+              ? selected.description
+              : site
+                ? `Hint: ${site.hint} (${site.name})`
+                : TIER_BLURB[selected.tier]}
           </p>
+          {known && (
+            <p className="text-[11px] text-primary/45 leading-relaxed">{selected.memoryText}</p>
+          )}
           {!known && <p className="font-mono text-[10px] text-primary/40">{TIER_BLURB[selected.tier]}</p>}
         </div>
       )}
