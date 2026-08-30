@@ -88,7 +88,10 @@ describe("app health checks", () => {
       expect(body.reason).toMatch(
         /^(timeout|ssl|refused|reset|unreachable|auth|schema|limit|unavailable)$/,
       );
+      expect(body.reason).not.toBe("internal");
       expect(body.code).toEqual(expect.any(String));
+      expect(body.signal).toEqual(expect.any(String));
+      expect(JSON.stringify(body)).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
     }
   });
 

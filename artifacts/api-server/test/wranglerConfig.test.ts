@@ -49,6 +49,8 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain('url.pathname.startsWith("/api/")');
     expect(workerSource).toContain('url.pathname === "/api"');
     expect(workerSource).toContain("expressHandler.fetch");
+    expect(workerSource).toContain("fetchApiThroughExpress");
+    expect(workerSource).toContain("apexRedirectForWww");
     expect(workerSource).toContain("fetchAssetsRejectingSpaHtml");
     expect(workerSource).toContain("httpServerHandler");
     expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
@@ -148,6 +150,20 @@ describe("Cloudflare wrangler config", () => {
         expect(String(field)).not.toMatch(/postgres(?:ql)?:\/\//i);
       }
     }
+  });
+
+  it("routes www so /api/store is not a path-dropping 301 to apex /", () => {
+    const routes = config.routes as Array<Record<string, unknown>>;
+    expect(Array.isArray(routes)).toBe(true);
+    expect(routes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pattern: "www.anima-protocol.com/*",
+          zone_name: "anima-protocol.com",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(routes)).not.toMatch(/postgres(?:ql)?:\/\//i);
   });
 
   it("binds Hyperdrive anima-postgres as HYPERDRIVE", () => {

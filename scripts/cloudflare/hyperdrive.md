@@ -33,3 +33,19 @@ in git, chat, or `wrangler` `vars`. The Worker reads
 `env.HYPERDRIVE.connectionString` only inside `applyCloudflareRequestEnv`
 (Worker `fetch`). Do not unwrap it from `cloudflareEnvBootstrap` or any
 other module-load path — that getter does I/O and fails deploy with 10021.
+
+## Origin must be real Postgres
+
+Hyperdrive speaks the **Postgres wire protocol** to the origin. It is not an
+HTTP client. **Prisma Accelerate** (`db.prisma.io`) is an HTTP/S pooler, not
+a Postgres server — pointing the Hyperdrive origin there makes `select 1`
+fail. The Worker must not crash the isolate: `/api/healthz/db` and
+`/api/store/*` return **JSON 503** (`reason` is a DB class, plus a
+secret-free `signal` / `code`). You cannot retarget the dashboard origin from
+git. Paste the real Supabase/Neon/RDS Postgres URI into the Hyperdrive
+origin form once (never into this repo).
+
+postgres.js on Workers surfaces those failures as `write CONNECT_TIMEOUT` /
+`CONNECT_ERROR` / `CONNECTION_CLOSED` — not Node `ETIMEDOUT`. `classifyDbError`
+maps those to `timeout` / `refused` / `reset` so the Character library can
+show the bundled starter roster instead of Cloudflare HTML.

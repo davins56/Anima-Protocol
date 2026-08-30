@@ -25,7 +25,19 @@ export type DbErrorInfo = {
   code?: string;
   reason: DbErrorReason;
   safeMessage: string;
+  /** Secret-free name/code/message snippet for /healthz/db operators. */
+  signal?: string;
 };
+
+/** postgres.js connection errors use these codes (not Node's ETIMEDOUT). */
+export const POSTGRES_JS_CONNECTION_CODES = new Set([
+  "CONNECT_TIMEOUT",
+  "CONNECT_ERROR",
+  "CONNECTION_ENDED",
+  "CONNECTION_DESTROYED",
+  "CONNECTION_CLOSED",
+  "CONNECTION_TIMEOUT",
+]);
 
 const SENSITIVE =
   /postgresql:\/\/[^\s"'\\]+|postgres:\/\/[^\s"'\\]+|password=[^\s&"']+|PWD=[^\s&"']+/gi;
@@ -35,9 +47,14 @@ function scrub(message: string): string {
 }
 
 /** Walk Error.cause / nested driver errors so drizzle wrappers still expose ENOTFOUND etc. */
-function collectErrorSignals(err: unknown): { message: string; code: string } {
+function collectErrorSignals(err: unknown): {
+  message: string;
+  code: string;
+  name: string;
+} {
   const messages: string[] = [];
   const codes: string[] = [];
+  const names: string[] = [];
   const seen = new Set<unknown>();
   let current: unknown = err;
   for (let depth = 0; depth < 6 && current; depth += 1) {
@@ -45,26 +62,64 @@ function collectErrorSignals(err: unknown): { message: string; code: string } {
     seen.add(current);
     if (current instanceof Error) {
       messages.push(current.message);
+      if (current.name && current.name !== "Error") names.push(current.name);
     } else if (typeof current === "string") {
       messages.push(current);
     } else if (current && typeof current === "object" && "message" in current) {
       const nested = (current as { message?: unknown }).message;
       if (typeof nested === "string" && nested) messages.push(nested);
     }
-    if (current && typeof current === "object" && "code" in current) {
-      const c = String((current as { code?: unknown }).code ?? "");
+    if (current && typeof current === "object") {
+      const obj = current as {
+        code?: unknown;
+        errno?: unknown;
+        name?: unknown;
+        severity?: unknown;
+      };
+      const c = String(obj.code ?? obj.errno ?? "");
       if (c) codes.push(c);
+      if (typeof obj.name === "string" && obj.name && obj.name !== "Error") {
+        names.push(obj.name);
+      }
+      if (typeof obj.severity === "string" && obj.severity) {
+        names.push(obj.severity);
+      }
     }
     current =
       current && typeof current === "object" && "cause" in current
         ? (current as { cause?: unknown }).cause
         : undefined;
   }
-  return { message: messages.join("\n"), code: codes[0] || "" };
+  return {
+    message: messages.join("\n"),
+    code: codes[0] || "",
+    name: names[0] || "",
+  };
+}
+
+/** Operator-facing snippet: name + code + scrubbed message. Never a URL. */
+export function secretFreeErrorSignal(err: unknown): {
+  code?: string;
+  name?: string;
+  signal: string;
+} {
+  const { message, code, name } = collectErrorSignals(err);
+  const scrubbed = scrub(message)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  const signal = [name, code, scrubbed].filter(Boolean).join(" ").slice(0, 120);
+  return {
+    code: code || undefined,
+    name: name || undefined,
+    signal: signal || "unclassified",
+  };
 }
 
 export function classifyDbError(err: unknown): DbErrorInfo {
-  const { message, code } = collectErrorSignals(err);
+  const { message, code, name } = collectErrorSignals(err);
+  const signal = secretFreeErrorSignal(err).signal;
+  const blob = `${name} ${code} ${message}`;
 
   const looksLikeDb =
     code.startsWith("28") || // invalid auth
@@ -78,6 +133,10 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     code === "ETIMEDOUT" ||
     code === "ETIMEOUT" ||
     code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH" ||
+    code === "EAI_AGAIN" ||
     code === "ABORT_ERR" ||
     code === "UND_ERR_CONNECT_TIMEOUT" ||
     code === "UND_ERR_SOCKET" ||
@@ -85,6 +144,8 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     code === "DEPTH_ZERO_SELF_SIGNED_CERT" ||
     code === "SELF_SIGNED_CERT_IN_CHAIN" ||
     code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" ||
+    POSTGRES_JS_CONNECTION_CODES.has(code) ||
+    name === "PostgresError" ||
     /Failed query/i.test(message) ||
     /DATABASE_URL/i.test(message) ||
     /connect\s+ECONNREFUSED/i.test(message) ||
@@ -95,9 +156,21 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     /ConnectTimeout/i.test(message) ||
     /SocketTimeout/i.test(message) ||
     /aborted due to timeout/i.test(message) ||
+    /write CONNECT_/i.test(message) ||
+    /CONNECT_TIMEOUT|CONNECT_ERROR|CONNECTION_(?:ENDED|DESTROYED|CLOSED|TIMEOUT)/i.test(
+      blob,
+    ) ||
+    /hyperdrive/i.test(blob) ||
+    /could not connect to (?:origin )?database/i.test(message) ||
+    /origin database/i.test(message) ||
+    /invalid startup packet/i.test(message) ||
+    /unsupported (?:startup )?protocol/i.test(message) ||
+    /not a postgres(?:ql)? (?:server|wire)/i.test(message) ||
     /Connection terminated/i.test(message) ||
     /Connection ended unexpectedly/i.test(message) ||
     /Network connection lost/i.test(message) ||
+    /socket hang up/i.test(message) ||
+    /broken pipe/i.test(message) ||
     /sorry, too many clients/i.test(message) ||
     /password authentication failed/i.test(message) ||
     /no pg_hba\.conf/i.test(message) ||
@@ -113,10 +186,11 @@ export function classifyDbError(err: unknown): DbErrorInfo {
       isDbError: false,
       reason: "internal",
       safeMessage: "Internal server error",
+      code: code || "internal",
+      signal,
     };
   }
 
-  const blob = `${code} ${message}`;
   let reason: DbErrorReason = "unavailable";
   let safeMessage = "Database unavailable";
 
@@ -144,26 +218,29 @@ export function classifyDbError(err: unknown): DbErrorInfo {
   ) {
     reason = "ssl";
     safeMessage = "Database SSL connection failed";
-  } else if (/ECONNREFUSED|connection refused/i.test(blob)) {
+  } else if (/ECONNREFUSED|connection refused|CONNECT_ERROR/i.test(blob)) {
     reason = "refused";
     safeMessage = "Database connection refused";
   } else if (
-    /ETIMEDOUT|ETIMEOUT|UND_ERR_CONNECT_TIMEOUT|timeout expired|connection timeout|ConnectTimeout|SocketTimeout|aborted due to timeout/i.test(
+    /ETIMEDOUT|ETIMEOUT|UND_ERR_CONNECT_TIMEOUT|CONNECT_TIMEOUT|CONNECTION_TIMEOUT|timeout expired|connection timeout|ConnectTimeout|SocketTimeout|aborted due to timeout/i.test(
       blob,
     )
   ) {
     reason = "timeout";
     safeMessage = "Database connection timed out";
   } else if (
-    /ECONNRESET|UND_ERR_SOCKET|Connection terminated|Connection ended unexpectedly|Network connection lost/i.test(
+    /ECONNRESET|UND_ERR_SOCKET|CONNECTION_ENDED|CONNECTION_DESTROYED|CONNECTION_CLOSED|Connection terminated|Connection ended unexpectedly|Network connection lost/i.test(
       blob,
     )
   ) {
     reason = "reset";
     safeMessage = "Database connection reset";
-  } else if (/ENOTFOUND|getaddrinfo/i.test(blob)) {
+  } else if (/ENOTFOUND|getaddrinfo|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN/i.test(blob)) {
     reason = "unreachable";
     safeMessage = "Database host unreachable";
+  } else if (/hyperdrive|origin database|invalid startup packet|unsupported (?:startup )?protocol|not a postgres/i.test(blob)) {
+    reason = "unavailable";
+    safeMessage = "Database unavailable";
   }
 
   return {
@@ -171,6 +248,7 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     code: code || reason,
     reason,
     safeMessage: scrub(safeMessage),
+    signal,
   };
 }
 

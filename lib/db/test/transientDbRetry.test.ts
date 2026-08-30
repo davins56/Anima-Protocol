@@ -25,6 +25,13 @@ describe("isTransientDbError", () => {
     ).toBe(true);
     expect(
       isTransientDbError(
+        Object.assign(new Error("write CONNECT_TIMEOUT"), {
+          code: "CONNECT_TIMEOUT",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientDbError(
         new Error("Cannot use a pool after calling end on the pool"),
       ),
     ).toBe(true);
