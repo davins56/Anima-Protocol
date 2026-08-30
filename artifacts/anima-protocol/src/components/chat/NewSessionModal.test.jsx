@@ -186,4 +186,74 @@ describe("NewSessionModal", () => {
       container.remove();
     });
   });
+
+  it("maps a store abort on Init to a specific session error, not a generic connection toast", async () => {
+    const onCreate = vi.fn().mockRejectedValue(
+      Object.assign(new Error("The server took too long to respond. Check your connection or try again in a moment."), {
+        code: "timeout",
+      }),
+    );
+    const { container, root } = renderModal({ onCreate });
+
+    await click(buttonByText(container, "Serenity"));
+    await click(buttonByText(container, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      "Starting the session timed out. The store is reachable — tap Init to try again.",
+    );
+    expect(container.textContent).toContain("Starting the session timed out");
+    expect(container.textContent).toContain("Init");
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("upserts a bundled starter without listing the full roster first", async () => {
+    loadRosterCharactersMock.mockResolvedValue({
+      characters: [
+        {
+          id: "char-1",
+          name: "Serenity",
+          universe: "Protocol",
+          category: "companion",
+          _bundled: true,
+        },
+      ],
+      usingBundledSeed: true,
+    });
+    upsertCharactersMock.mockResolvedValue({ added: 1, skipped: 0 });
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
+    const { container, root } = renderModal({ onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(container, "Serenity"));
+    await click(buttonByText(container, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(upsertCharactersMock).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          id: "char-1",
+          name: "Serenity",
+        }),
+      ],
+      { skipExistingLookup: true },
+    );
+    expect(onCreate).toHaveBeenCalled();
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
 });

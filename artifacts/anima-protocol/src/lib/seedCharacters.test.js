@@ -192,3 +192,18 @@ describe("repairStarterCharacters", () => {
     await expect(repairStarterCharacters()).rejects.toThrow(/Only 0 of/);
   });
 });
+
+describe("upsertCharacters", () => {
+  it("skips Character.list when Init asks to upsert without a roster lookup", async () => {
+    const { upsertCharacters } = await loadSeedModule();
+    await upsertCharacters(
+      [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+      { skipExistingLookup: true },
+    );
+
+    expect(characterList).not.toHaveBeenCalled();
+    expect(characterBulkUpsert).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "seed_tchalla", name: "T'Challa" }),
+    ]);
+  });
+});
