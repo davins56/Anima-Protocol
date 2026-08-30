@@ -133,11 +133,20 @@ export const ROUTE_META: Record<string, PageMeta> = {
   "/net-battle": {
     title: "NetBattle | Anima Protocol",
     description:
-      "Jack in and fight on a 4D Battle Network-style panel grid. Inspect an HD Anima vessel you can turn and zoom, then send sword chips and expression-typed energy blasts from the hand.",
+      "Jack in and fight on a 4D Battle Network-style panel grid. Inspect an HD Anima vessel you can turn and zoom, then send Echo Keys — weapon-memories from a 30-slot Folder.",
     canonical: `${BASE_URL}/net-battle`,
     ogTitle: "Anima Protocol — NetBattle",
     ogDescription:
-      "A Mega Man Battle Network-style 4D arena. Rotate and zoom an HD Anima vessel; five expressions, sword chips, and energy blasts from the hand.",
+      "A Mega Man Battle Network-style 4D arena. Rotate and zoom an HD Anima vessel; Echo Keys remember weapons as ghost-steel from the hand.",
+  },
+  "/echo-keys": {
+    title: "Echo Keys | Anima Protocol",
+    description:
+      "Eight hundred distinct Echo Keys on your profile — weapon-memories inspired by Battle Network chips (1–6) and Star Force cards, rewritten as original Anima battle data. Slot a 30-key Folder and jack into NetBattle.",
+    canonical: `${BASE_URL}/echo-keys`,
+    ogTitle: "Anima Protocol — Echo Keys",
+    ogDescription:
+      "Eight hundred weapon-memories on your profile. Build a 30-key Folder, then jack in.",
   },
   "/therapy": {
     title: "Therapy Mode | Anima Protocol",

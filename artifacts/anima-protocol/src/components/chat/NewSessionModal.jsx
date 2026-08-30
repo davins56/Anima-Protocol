@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
@@ -162,15 +163,20 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     }
   };
 
+  const sessionCreateErrorMessage = (err) =>
+    err?.message ||
+    "Could not initialize this session. Check that you are signed in and the store API is reachable.";
+
   const handleCreate = async () => {
     if (selected.length === 0 || creating) return;
+    setCreating(true);
+    setLoadError(null);
 
     // Bundled starters are not in Postgres yet — upsert before chat so the
     // session can resolve character ids from the store.
     const bundledSelected = selectedCharacters.filter((c) => c._bundled);
-    if (bundledSelected.length) {
-      setCreating(true);
-      try {
+    try {
+      if (bundledSelected.length) {
         await upsertCharacters(
           bundledSelected.map(({ _bundled, ...rest }) => rest),
         );
@@ -178,51 +184,46 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           prev.map((c) => (c._bundled ? { ...c, _bundled: false } : c)),
         );
         setUsingBundledSeed(false);
-        setLoadError(null);
-      } catch (err) {
-        setLoadError(
-          err?.message ||
-            "Could not save starter characters to your account. Check that you are signed in and the database is reachable.",
-        );
-        setCreating(false);
-        return;
-      } finally {
-        setCreating(false);
       }
+
+      // Prepare session data
+      const sessionData = mode === "solo"
+        ? {
+            mode,
+            character_id: selected[0],
+            opening_scene: openingScene.trim() || undefined,
+          }
+        : {
+            mode,
+            group_character_ids: selected,
+            selected_character_names: selectedCharacters.map((c) => c.name),
+            crossover_universes: selectedUniverses,
+            is_crossover: isCrossover,
+            shared_memory: [],
+            opening_scene: openingScene.trim() || undefined,
+          };
+
+      const newSession = await onCreate(sessionData);
+
+      // After a brief delay, create timeline branch for the new session.
+      setTimeout(async () => {
+        try {
+          const sessionForBranch =
+            newSession ||
+            (await base44.entities.ChatSession.list("-created_date", 1))?.[0];
+          if (sessionForBranch) {
+            await createBranchForSession(sessionForBranch, characters, mode);
+          }
+        } catch (err) {
+          console.error("Error creating timeline branch:", err);
+        }
+      }, 500);
+    } catch (err) {
+      const message = sessionCreateErrorMessage(err);
+      setLoadError(message);
+      toast.error(message);
+      setCreating(false);
     }
-
-    // Prepare session data
-    const sessionData = mode === "solo"
-      ? {
-          mode,
-          character_id: selected[0],
-          opening_scene: openingScene.trim() || undefined,
-        }
-      : {
-          mode,
-          group_character_ids: selected,
-          selected_character_names: selectedCharacters.map((c) => c.name),
-          crossover_universes: selectedUniverses,
-          is_crossover: isCrossover,
-          shared_memory: [],
-          opening_scene: openingScene.trim() || undefined,
-        };
-
-    // Call onCreate callback which creates the session
-    onCreate(sessionData);
-
-    // After a brief delay, create timeline branch for the new session
-    setTimeout(async () => {
-      try {
-        // Get the newly created session (last one)
-        const allSessions = await base44.entities.ChatSession.list("-created_date", 1);
-        if (allSessions?.length > 0) {
-          await createBranchForSession(allSessions[0], characters, mode);
-        }
-      } catch (err) {
-        console.error("Error creating timeline branch:", err);
-      }
-    }, 500);
   };
 
   const handleSelectTemplate = (template) => {
@@ -353,6 +354,11 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
             <div className="space-y-4">
               {loadError && usingBundledSeed && (
                 <p className="font-mono text-[10px] text-amber-400/80 leading-relaxed border border-amber-400/20 bg-amber-400/5 px-3 py-2">
+                  {loadError}
+                </p>
+              )}
+              {loadError && !usingBundledSeed && (
+                <p className="font-mono text-[10px] text-red-300/90 leading-relaxed border border-red-400/30 bg-red-500/5 px-3 py-2">
                   {loadError}
                 </p>
               )}
