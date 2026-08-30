@@ -22,6 +22,10 @@ vi.mock("@/lib/usePageMeta", () => ({
   ROUTE_META: { "/echo-keys": {} },
 }));
 
+vi.mock("@/lib/analytics", () => ({
+  track: vi.fn(),
+}));
+
 import EchoKeys from "./EchoKeys";
 
 describe("EchoKeys page", () => {
@@ -34,7 +38,7 @@ describe("EchoKeys page", () => {
     document.body.innerHTML = "";
   });
 
-  it("shows the 800-key profile library", async () => {
+  it("opens story mode with a starter Vault, not the full Codex", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -47,8 +51,11 @@ describe("EchoKeys page", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(container.textContent).toMatch(/800 weapon-memories/i);
+    expect(container.textContent).toMatch(/8 in Vault/i);
+    expect(container.textContent).toMatch(/Codex of 800/i);
     expect(container.textContent).toMatch(/Echo Keys/i);
-    expect(container.textContent).toMatch(/Folder/i);
+    expect(container.textContent).toMatch(/Story/i);
+    expect(container.textContent).toMatch(/Resonance sites/i);
+    expect(container.textContent).not.toMatch(/800 weapon-memories/i);
   });
 });
