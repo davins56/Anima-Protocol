@@ -32,7 +32,8 @@ export default {
     }
 
     // Everything else: serve static assets (SPA fallback handled by
-    // assets.not_found_handling = "single-page-application" in wrangler.json)
+    // assets.not_found_handling = "single-page-application" in wrangler.jsonc).
+    // /api and /api/* are run_worker_first so they never hit that SPA fallback.
     return env.ASSETS.fetch(request);
   },
 };

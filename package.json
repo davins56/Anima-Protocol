@@ -29,7 +29,8 @@
     "llm:stub": "node scripts/llm/dev-local-stub-server.mjs",
     "llm:eval": "node scripts/llm/eval/run-evals.mjs",
     "llm:eval:validate": "node scripts/llm/eval/run-evals.mjs --validate",
-    "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh"
+    "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh",
+    "deploy:cloudflare": "rm -f ./dist/_redirects && npx wrangler deploy --assets=./dist --name anima-protocol"
   },
   "private": true,
   "devDependencies": {
