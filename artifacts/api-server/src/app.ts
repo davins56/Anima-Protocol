@@ -16,6 +16,10 @@ import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { classifyDbError } from "./lib/dbErrors";
+import {
+  isUnhandledConfigError,
+  SERVER_MISCONFIGURED_MESSAGE,
+} from "./lib/configErrors";
 
 const app: Express = express();
 
@@ -64,12 +68,7 @@ app.use(
       const message =
         err instanceof Error ? err.message : "Internal server error";
       const dbInfo = classifyDbError(err);
-      const isConfig =
-        message.includes("DATABASE_URL") ||
-        message.includes("CLERK_SECRET_KEY") ||
-        message.includes("CLERK_PUBLISHABLE_KEY") ||
-        /Publishable key/i.test(message) ||
-        message.includes("connection");
+      const isConfig = isUnhandledConfigError(message);
       if (dbInfo.isDbError) {
         res.status(503).json({
           error: dbInfo.safeMessage,
@@ -78,9 +77,7 @@ app.use(
         return;
       }
       res.status(isConfig ? 503 : 500).json({
-        error: isConfig
-          ? "API is misconfigured on the server. Check environment variables."
-          : "Internal server error",
+        error: isConfig ? SERVER_MISCONFIGURED_MESSAGE : "Internal server error",
       });
     }
   },
