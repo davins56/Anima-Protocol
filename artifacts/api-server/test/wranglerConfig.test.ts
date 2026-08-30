@@ -46,10 +46,9 @@ describe("Cloudflare wrangler config", () => {
     expect(assets.run_worker_first).toEqual(
       expect.arrayContaining(["/api", "/api/*", "/assets", "/assets/*"]),
     );
-    expect(workerSource).toContain('url.pathname.startsWith("/api/")');
-    expect(workerSource).toContain('url.pathname === "/api"');
-    expect(workerSource).toContain("expressHandler.fetch");
+    expect(workerSource).toContain("isWorkerApiPath");
     expect(workerSource).toContain("fetchApiThroughExpress");
+    expect(workerSource).toContain("expressHandler");
     expect(workerSource).toContain("apexRedirectForWww");
     expect(workerSource).toContain("fetchAssetsRejectingSpaHtml");
     expect(workerSource).toContain("httpServerHandler");

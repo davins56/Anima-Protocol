@@ -242,7 +242,7 @@ describe("classifyDbError query failures", () => {
       safeMessage: "Internal server error",
     });
   });
-}
+});
 
 describe("classifyDbError Hyperdrive / postgres.js", () => {
   it("classifies postgres.js write CONNECT_TIMEOUT as a DB timeout", () => {
@@ -320,5 +320,5 @@ describe("classifyDbError Hyperdrive / postgres.js", () => {
       code: "53300",
     });
   });
-}););
+});
 
