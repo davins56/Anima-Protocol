@@ -8,6 +8,10 @@ import VoicePicker from "@/components/voice/VoicePicker";
 import AnimaCustomizer from "@/components/anima/AnimaCustomizer";
 import { Link } from "react-router-dom";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  formatAvatarUploadError,
+  uploadCharacterAvatar,
+} from "@/lib/characterAvatarUpload";
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
@@ -275,19 +279,14 @@ Return JSON with a single "${field}" string field.`,
     const file = e.target.files[0];
     if (!file) return;
     setUploadingAvatar(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setForm((f) => ({ ...f, avatar_url: file_url }));
-    setUploadingAvatar(false);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      if (file_url) {
-        setForm((f) => ({ ...f, avatar_url: file_url }));
-      } else {
-        toast.error("Avatar upload failed. Try another image.");
-      }
+      const fileUrl = await uploadCharacterAvatar(file, (payload) =>
+        base44.integrations.Core.UploadFile(payload),
+      );
+      setForm((f) => ({ ...f, avatar_url: fileUrl }));
     } catch (err) {
       console.error("Avatar upload failed:", err);
-      toast.error(err?.message || "Avatar upload failed. Try another image.");
+      toast.error(formatAvatarUploadError(err));
     } finally {
       setUploadingAvatar(false);
       e.target.value = "";
