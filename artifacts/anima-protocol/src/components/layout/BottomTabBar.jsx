@@ -205,8 +205,8 @@ export default function BottomTabBar() {
 
       {/* Bottom Tab Bar */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-[999] bg-[#090912]/95 backdrop-blur-md border-t border-primary/20 flex items-stretch"
-        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)", minHeight: "52px" }}
+        className="tab-bar fixed-bottom-chrome fixed bottom-0 left-0 right-0 z-[999] bg-[#090912]/95 backdrop-blur-md border-t border-primary/20 flex items-stretch"
+        style={{ paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))", minHeight: "52px" }}
       >
         {PINNED_TABS.map(({ path, label, Icon }) => {
           const active = isTabActive(path, location.pathname);
