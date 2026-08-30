@@ -15,6 +15,12 @@
 
 import { base44 } from "@/api/base44Client";
 
+export function isOptimisticChatTail(tail) {
+  if (!tail) return false;
+  if (tail.id == null || tail.id === "") return true;
+  return typeof tail.id === "string" && tail.id.startsWith("turn_");
+}
+
 // Fetch the open thread's messages from the server and apply them, but never
 // over an in-flight reply. Returns true if applied (or there was nothing to
 // apply because the user navigated away), false if it was skipped/failed and
@@ -45,11 +51,11 @@ export async function syncActiveMessages({ sessionId, activeSessionRef, setActiv
       m.character_name === "__thinking__" ||
       m.is_streaming === true,
   );
-  // Also protect an optimistic tip that has not been persisted yet (no server
-  // id). After a failed pre-token turn the thinking bubble is removed but the
-  // user's just-sent line may still be local-only; a deferred sync would wipe it.
+  // Also protect an optimistic tip that has not been persisted yet. After a
+  // failed persist the thinking bubble is gone but the just-sent turn still
+  // carries client `turn_*` ids — a deferred sync would wipe it.
   const tail = localMessages[localMessages.length - 1];
-  const hasOptimisticTail = Boolean(tail && (tail.id == null || tail.id === ""));
+  const hasOptimisticTail = isOptimisticChatTail(tail);
   if (hasPending || hasOptimisticTail) return false;
   setActiveSession((prev) =>
     prev && prev.id === sessionId ? { ...prev, messages } : prev,
