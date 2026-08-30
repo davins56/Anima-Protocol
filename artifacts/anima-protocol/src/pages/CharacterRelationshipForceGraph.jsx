@@ -219,7 +219,7 @@ export default function CharacterRelationshipForceGraph() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0 w-full bg-background overflow-hidden">
+    <div className="flex flex-col lg:flex-row flex-1 min-h-0 w-full bg-background overflow-hidden">
       {/* Canvas */}
       <div className="flex-1 flex flex-col">
         <div className="px-4 py-3 border-b border-primary/20 bg-black/60">
@@ -242,7 +242,7 @@ export default function CharacterRelationshipForceGraph() {
       </div>
 
       {/* Legend */}
-      <div className="w-64 border-l border-primary/20 bg-black/60 flex flex-col">
+      <div className="w-full lg:w-64 max-h-40 lg:max-h-none border-t lg:border-t-0 lg:border-l border-primary/20 bg-black/60 flex flex-col min-h-0">
         <div className="px-4 py-3 border-b border-primary/20">
           <h2 className="font-mono text-xs text-primary tracking-[0.2em] uppercase">
             Legend
@@ -268,7 +268,7 @@ export default function CharacterRelationshipForceGraph() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            className="w-80 border-l border-primary/20 bg-black/60 flex flex-col overflow-hidden"
+            className="w-full lg:w-80 max-h-[45%] lg:max-h-none border-t lg:border-t-0 lg:border-l border-primary/20 bg-black/60 flex flex-col overflow-hidden min-h-0"
           >
             {/* Header */}
             <div className="px-4 py-3 border-b border-primary/20 flex items-center justify-between">
