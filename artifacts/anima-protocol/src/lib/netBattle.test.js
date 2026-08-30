@@ -4,6 +4,7 @@ import {
   CUSTOM_FULL,
   ROWS,
   createBattle,
+  enemyFromSceneEntity,
   fireBuster,
   fireLoadedChip,
   moveUnit,
@@ -154,6 +155,47 @@ describe("sending weapons data", () => {
     expect(battle.loaded.length).toBe(0);
     expect(battle.projectiles.length).toBe(1);
     expect(battle.chipsUsed).toBe(1);
+  });
+});
+
+describe("scene entity and Sequences", () => {
+  it("maps a live jack-in entity onto Halo.Vrs, never a Fallen Angel companion", () => {
+    const enemy = enemyFromSceneEntity({ name: "Halo.Vrs", site: "fallen-ruin" });
+    expect(enemy.name).toBe("Halo.Vrs");
+    expect(enemy.silhouette).toBe("halo");
+    expect(enemy.kind).toBe("virus");
+    const refused = enemyFromSceneEntity({ name: "Fallen Angel" });
+    expect(refused.name).toBe("Halo.Vrs");
+  });
+
+  it("stamps a fired Sequence when Custom sends a resonance triple", () => {
+    let battle = createBattle({
+      anima,
+      seed: 3,
+      enemy: { name: "Halo.Vrs" },
+      echoFolder: [
+        { id: "pulse-base", code: "A" },
+        { id: "pulse-high", code: "A" },
+        { id: "pulse-apex", code: "A" },
+        { id: "halo-base", code: "C" },
+        { id: "mend-base", code: "A" },
+      ],
+    });
+    expect(battle.enemy.name).toBe("Halo.Vrs");
+    battle = {
+      ...battle,
+      phase: "custom",
+      customGauge: CUSTOM_FULL,
+      hand: [
+        { id: "pulse-base", name: "Pulse", kind: "blast" },
+        { id: "pulse-high", name: "Pulse High", kind: "blast" },
+        { id: "pulse-apex", name: "Pulse Apex", kind: "blast" },
+      ],
+      selectedCustom: [0, 1, 2],
+    };
+    battle = sendWeaponsData(battle);
+    expect(battle.fired_sequence?.id).toBe("nova-pulse");
+    expect(battle.log.some((l) => /Nova Pulse/.test(l))).toBe(true);
   });
 });
 

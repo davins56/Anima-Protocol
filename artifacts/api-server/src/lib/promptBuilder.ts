@@ -35,6 +35,11 @@ import type { RelationshipState } from "./relationshipEngine";
 import type { ArcState } from "./narrativeArcEngine";
 import { relationshipStateToPrompt, arcStateToPrompt } from "./arcAndBondPrompt";
 import { formatExpressionPrompt } from "./animaExpressions";
+import {
+  hiddenSequencePromptBlock,
+  type HiddenSequencesState,
+  type Weather,
+} from "./hiddenSequences";
 
 import {
   type CharacterData,
@@ -132,6 +137,10 @@ export interface PromptBuilderParams {
   /** Layered therapy risk result; only used by the therapy mode contract. */
   therapyAssessment?: TherapySafetyAssessment | null;
   crisisResource?: CrisisResource | null;
+
+  /** Hidden Sequences / conversational weather (client-authored, sanitized as guidance). */
+  hiddenSequences?: HiddenSequencesState | null;
+  conversationalWeather?: Weather | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -307,6 +316,8 @@ export function composePrompt(params: PromptBuilderParams): string {
     modePolicy: providedModePolicy,
     therapyAssessment,
     crisisResource,
+    hiddenSequences,
+    conversationalWeather,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -499,6 +510,13 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     if (quirksBlock) evolutionBlock += `\n\n${quirksBlock}`;
   }
 
+  const hiddenSequenceBlock = hiddenSequencePromptBlock({
+    hidden: hiddenSequences,
+    weather: conversationalWeather || undefined,
+    recentMessages,
+    therapy: modePolicy.name === "therapy" || mode === "therapy",
+  });
+
   // Assemble in one authoritative pipeline:
   // scene data → identity → user/world → relationship → memory → mode/safety
   // → lore/voice → conversation → current turn → final safety guardrail.
@@ -509,6 +527,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     resonanceBlock,
     relationshipBlock,
     evolutionBlock,
+    hiddenSequenceBlock,
     arcBlock,
     memorySummary,
     memoryBlock,

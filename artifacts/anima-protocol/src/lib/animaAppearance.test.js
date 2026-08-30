@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_FEATURES,
+  VESSEL_LAYER_FIELDS,
   buildAppearanceImagePrompt,
   expandSkinToneDescriptor,
   normalizeAppearancePrompts,
+  normalizeVesselLayers,
 } from "./animaAppearance";
 
 describe("normalizeAppearancePrompts", () => {
@@ -43,6 +45,19 @@ describe("expandSkinToneDescriptor", () => {
     const custom = expandSkinToneDescriptor("rich copper brown");
     expect(custom).toMatch(/rich copper brown/i);
     expect(custom).toMatch(/face, neck, and hands/i);
+  });
+});
+
+describe("vessel layers", () => {
+  it("exposes body, hair, cloth, and markings fields for Customise Anima Look", () => {
+    const keys = VESSEL_LAYER_FIELDS.map((f) => f.layer);
+    expect(keys).toContain("body");
+    expect(keys).toContain("hair");
+    expect(keys).toContain("cloth");
+    expect(keys).toContain("markings");
+    const layers = normalizeVesselLayers(null);
+    expect(layers.artifacts.wings).toBe(true);
+    expect(layers.markings.chest).toBe("変");
   });
 });
 

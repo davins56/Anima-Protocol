@@ -17,6 +17,17 @@ import {
   normalizeEchoLibrary,
   recordCriticalBattle,
 } from "@/lib/echoKeys";
+import {
+  applyAscendedArtifacts,
+  canStartNetBattleMatch,
+  endLiveJackIn,
+  normalizeHiddenState,
+  normalizeJackIn,
+  readStoredJackIn,
+  stampFiredAt,
+  startLiveJackIn,
+  writeStoredJackIn,
+} from "@/lib/hiddenSequences";
 
 function battleReducer(state, action) {
   if (typeof action === "function") return action(state);
@@ -33,14 +44,24 @@ function spectrumMeta(spectrum) {
   };
 }
 
+function persistHidden(anima, hidden) {
+  if (!anima?.id) return;
+  base44.entities.Anima.update(anima.id, {
+    hidden_sequences: hidden,
+  }).catch(() => {});
+}
+
 export default function NetBattle() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [anima, setAnima] = useState(null);
   const [library, setLibrary] = useState(() => normalizeEchoLibrary(null));
+  const [hidden, setHidden] = useState(() => normalizeHiddenState(null));
   const [loading, setLoading] = useState(true);
   const [seed, setSeed] = useState(() => Date.now() % 1_000_000);
+  const [gated, setGated] = useState(null);
   const trackedEnd = useRef(false);
+  const stampedFire = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -58,6 +79,21 @@ export default function NetBattle() {
           null;
         setAnima(chosen);
         setLibrary(normalizeEchoLibrary(profile?.settings?.echo_keys));
+        const stored = readStoredJackIn();
+        const fromAnima = normalizeHiddenState(chosen?.hidden_sequences);
+        const jack = canStartNetBattleMatch(stored)
+          ? stored
+          : fromAnima.jack_in;
+        const nextHidden = { ...fromAnima, jack_in: normalizeJackIn(jack) };
+        setHidden(nextHidden);
+        if (!canStartNetBattleMatch(nextHidden.jack_in)) {
+          setGated({
+            reason: "no-live",
+            session_id: searchParams.get("session") || nextHidden.jack_in.session_id,
+          });
+        } else {
+          setGated(null);
+        }
       } catch (err) {
         console.warn("NetBattle load failed:", err);
       } finally {
@@ -80,12 +116,27 @@ export default function NetBattle() {
 
   const jackIn = useCallback(
     (nextSeed = Date.now() % 1_000_000) => {
+      const live = normalizeJackIn(hidden.jack_in);
+      if (!canStartNetBattleMatch(live)) {
+        setGated({
+          reason: "no-live",
+          session_id: live.session_id || searchParams.get("session"),
+        });
+        return;
+      }
       trackedEnd.current = false;
+      stampedFire.current = false;
+      const started = startLiveJackIn(live);
+      const nextHidden = { ...hidden, jack_in: started };
+      setHidden(nextHidden);
+      writeStoredJackIn(started);
+      persistHidden(anima, nextHidden);
       const next = createBattle({
         anima: anima || { name: "Anima" },
         controlMode: "manual",
         seed: nextSeed,
         echoFolder: echoFolderToChips(library),
+        enemy: started.entity,
       });
       setSeed(nextSeed);
       dispatch({ type: "replace", state: next });
@@ -95,21 +146,32 @@ export default function NetBattle() {
         ...meta,
       });
     },
-    [anima, library],
+    [anima, library, hidden, searchParams],
   );
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || gated) return;
     jackIn(seed);
-    // First jack-in after Anima / library resolve.
+    // First jack-in after Anima / library / live gate resolve.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, anima?.id, library.folder?.length]);
+  }, [loading, gated, anima?.id, library.folder?.length]);
 
   useEffect(() => {
     if (state.phase !== "fighting") return undefined;
     const id = setInterval(() => dispatch({ type: "tick" }), TICK_MS);
     return () => clearInterval(id);
   }, [state.phase]);
+
+  useEffect(() => {
+    if (!state.fired_sequence?.id || stampedFire.current) return;
+    stampedFire.current = true;
+    const result = stampFiredAt(hidden.sequences, state.fired_sequence.id);
+    if (result.fired) {
+      const nextHidden = { ...hidden, sequences: result.sequences };
+      setHidden(nextHidden);
+      persistHidden(anima, nextHidden);
+    }
+  }, [state.fired_sequence, hidden, anima]);
 
   useEffect(() => {
     if (state.phase !== "victory" && state.phase !== "defeat") return;
@@ -148,15 +210,58 @@ export default function NetBattle() {
         }
       }
     }
-  }, [state, library]);
+    const ended = endLiveJackIn(hidden.jack_in, { speak_first: true });
+    const layers = applyAscendedArtifacts(hidden.vessel_layers, hidden.sequences);
+    const nextHidden = { ...hidden, jack_in: ended, vessel_layers: layers };
+    setHidden(nextHidden);
+    writeStoredJackIn(ended);
+    persistHidden(anima, nextHidden);
+  }, [state, library, hidden, anima]);
 
-  const handleJackOut = () => navigate("/echo-keys");
-  const handleRematch = () => jackIn();
+  const returnSession =
+    hidden.jack_in.session_id || searchParams.get("session") || gated?.session_id;
+  const handleJackOut = () => {
+    if (returnSession) {
+      navigate(`/chat/${returnSession}?after_jack_in=1`);
+      return;
+    }
+    navigate("/echo-keys");
+  };
+  const handleRematch = () => {
+    if (!canStartNetBattleMatch(hidden.jack_in)) {
+      setGated({ reason: "no-live", session_id: returnSession });
+      return;
+    }
+    jackIn();
+  };
 
   if (loading) {
     return (
       <div className="w-full h-full min-h-0 flex items-center justify-center bg-[#05070f] text-cyan-500 font-mono text-[10px] tracking-[0.3em] uppercase">
         Jacking in…
+      </div>
+    );
+  }
+
+  if (gated) {
+    return (
+      <div className="w-full h-full min-h-0 flex items-center justify-center bg-[#05070f] text-cyan-100 p-6">
+        <div className="max-w-md border border-cyan-900/50 bg-[#090d18] px-6 py-8 text-center space-y-4">
+          <p className="font-mono text-[10px] tracking-[0.35em] uppercase text-cyan-400/70">
+            No live jack-in
+          </p>
+          <p className="font-mono text-sm text-cyan-100/80 leading-relaxed">
+            The arena stays dark until a storm in the thread makes her offer.
+            Fallen enemies are lattice programs — never the companion.
+          </p>
+          <button
+            type="button"
+            onClick={handleJackOut}
+            className="font-mono text-[10px] tracking-[0.25em] uppercase text-amber-200/80 hover:text-amber-100 border border-amber-200/30 px-4 py-2"
+          >
+            Return to the PET
+          </button>
+        </div>
       </div>
     );
   }
@@ -182,6 +287,8 @@ export default function NetBattle() {
             dispatch={dispatch}
             onJackOut={handleJackOut}
             onRematch={handleRematch}
+            vesselLayers={hidden.vessel_layers}
+            sequences={hidden.sequences}
           />
         </div>
       </div>
