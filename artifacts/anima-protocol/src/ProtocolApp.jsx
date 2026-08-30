@@ -492,12 +492,10 @@ function SignedInHome() {
 // Leftover Instant Sandbox storage is not a signed-in session — only Clerk
 // or an explicit this-session Guest tap may enter the app.
 function HomeGate() {
-  const { isLoadingAuth, isAuthenticated, isSignedInUser, isGuest } = useAuth();
+  const { isAuthenticated, isSignedInUser, isGuest } = useAuth();
 
-  if (isLoadingAuth) {
-    return <Landing />;
-  }
-
+  // Explicit Instant Sandbox / a live Clerk session must enter home even if
+  // Clerk is still loading. Only unsigned visitors stay on the lock screen.
   if (isSignedInUser || isGuest || isAuthenticated) {
     return <SignedInHome />;
   }
@@ -609,6 +607,7 @@ const AuthenticatedApp = () => {
     authError,
     navigateToLogin,
     isAuthenticated,
+    isGuest,
     user,
   } = useAuth();
   const location = useLocation();
@@ -732,6 +731,7 @@ const AuthenticatedApp = () => {
 
   useEffect(() => {
     if (!isLoadingAuth || !authStalled) return;
+    if (isAuthenticated || isGuest) return;
     const onSignInScreen =
       location.pathname === "/sign-in" ||
       location.pathname === "/sign-up" ||
@@ -748,7 +748,7 @@ const AuthenticatedApp = () => {
         onClick: () => window.location.reload(),
       },
     });
-  }, [isLoadingAuth, authStalled, location.pathname]);
+  }, [isLoadingAuth, authStalled, isAuthenticated, isGuest, location.pathname]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
