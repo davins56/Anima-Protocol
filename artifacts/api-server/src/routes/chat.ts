@@ -1261,6 +1261,8 @@ router.post("/messages", async (req, res) => {
       crisisResource: crisisResourceForCountry(
         worldKnowledgeResult.countryCode,
       ),
+      hiddenSequences: (body.metadata?.hidden_sequences as any) || null,
+      conversationalWeather: (body.metadata?.conversational_weather as any) || null,
     }),
   );
 
@@ -1544,6 +1546,15 @@ router.post("/messages", async (req, res) => {
             conversationCount: nextCount,
             historySummary,
             isVoidTurn,
+            significantExperienceCount: Array.isArray(
+              (body.metadata?.hidden_sequences as { learned_life?: unknown[] } | undefined)
+                ?.learned_life,
+            )
+              ? (
+                  body.metadata?.hidden_sequences as { learned_life: unknown[] }
+                ).learned_life.length
+              : 0,
+            alreadyMilestone: Number(updated?.evolutionDelta?.milestone) || 0,
           });
 
           await maybeTriggerRelationshipEvolution({

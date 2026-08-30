@@ -52,6 +52,17 @@ describe("viewport shell contract", () => {
     expect(block).toContain("var(--app-height, 100dvh)");
   });
 
+  it("sizes keyboard-open overlays to --app-height and hides bottom chrome", () => {
+    expect(css).toContain("html[data-keyboard-open] .fixed-bottom-chrome");
+    expect(css).toContain(".h-app-viewport {");
+    const overlay = css.slice(css.indexOf(".h-app-viewport {"), css.indexOf(".justify-safe-center {"));
+    expect(overlay).toContain("var(--app-height, 100dvh)");
+    expect(overlay).toContain("max-height:");
+    expect(css).toContain(".justify-safe-center {");
+    expect(css).toMatch(/justify-content:\s*safe center/);
+    expect(css).toMatch(/Do not also add the keyboard inset as padding/);
+  });
+
   it("wires ProtocolApp to the shell classes and visible-viewport hook", () => {
     expect(shell).toContain("useViewportHeight()");
     expect(shell).toContain('className="app-shell flex flex-col h-screen-safe"');
@@ -99,6 +110,44 @@ describe("representative page scroll contract", () => {
     expect(chat).toContain("visualViewport.height");
     expect(chat).toMatch(/Do not add keyboard\s+height, 100vh/);
     expect(chat).toContain("data-keyboard-open");
+    expect(chat).not.toMatch(/height:\s*"100dvh"/);
+    expect(chat).toContain('height: "var(--app-height, 100dvh)"');
+  });
+
+  it("does not leave overlay chrome on a leftover 100dvh", () => {
+    const sidebar = readSrc("components/layout/Sidebar.jsx");
+    const lore = readSrc("components/lore/LoreBrowserPanel.jsx");
+    expect(sidebar).not.toMatch(/height:\s*"100dvh"/);
+    expect(sidebar).toContain("h-app-viewport");
+    expect(sidebar).toContain("var(--app-height, 100dvh)");
+    expect(lore).not.toContain("h-[100dvh]");
+    expect(lore).toContain("h-app-viewport");
+    expect(readSrc("components/chat/ChatInput.jsx")).toMatch(
+      /do not add 100vh, keyboard padding/,
+    );
+  });
+
+  it("start-aligns overflowing NetBattle and Emotional Onboarding columns", () => {
+    const battle = readPage("NetBattle");
+    expect(battle).toContain("overflow-y-auto");
+    expect(battle).toContain("justify-safe-center");
+    expect(battle).not.toMatch(/overflow-y-auto[^"']*justify-center/);
+    const onboarding = readSrc("components/onboarding/EmotionalOnboarding.jsx");
+    expect(onboarding).toContain("overflow-y-auto");
+    expect(onboarding).toContain("justify-safe-center");
+    expect(onboarding).not.toMatch(/overflow-y-auto[^"']*justify-center/);
+  });
+
+  it("lets relationship graph legend and details scroll on a narrow column", () => {
+    const force = readPage("CharacterRelationshipForceGraph");
+    expect(force).toContain("overflow-y-auto lg:overflow-hidden");
+    expect(force).not.toContain("max-h-[45%]");
+    expect(force).not.toContain("max-h-40");
+    expect(force).toContain("h-[min(50dvh,360px)]");
+    const interactive = readPage("InteractiveGraphVisualization");
+    expect(interactive).toContain("overflow-y-auto lg:overflow-hidden");
+    expect(interactive).not.toContain("max-h-[45%]");
+    expect(interactive).toContain("h-[min(50dvh,360px)]");
   });
 
   it("PageLoader fills the remaining column instead of a second 100vh stack", () => {

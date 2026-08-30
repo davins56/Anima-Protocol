@@ -206,6 +206,27 @@ html[data-keyboard-open] .fixed-bottom-chrome {
   pointer-events: none;
   transform: translateY(100%);
 }
+
+/*
+ * Full-viewport overlays must follow `--app-height` (visualViewport when the
+ * keyboard is open). A leftover `100dvh` is taller than the locked html/body
+ * and gets clipped. Do not add extra keyboard padding on the chat composer.
+ */
+.h-app-viewport {
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+}
+
+/*
+ * Center a flex column only while it fits the scrollport; fall back to start
+ * so the first heading/control stays reachable when content overflows.
+ */
+.justify-safe-center {
+  justify-content: flex-start;
+  justify-content: safe center;
+}
+
 .h-screen-safe {
   height: 100vh;
   height: 100dvh;
