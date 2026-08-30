@@ -22,6 +22,10 @@ vi.mock("@/lib/usePageMeta", () => ({
   ROUTE_META: { "/echo-keys": {} },
 }));
 
+vi.mock("@/lib/AuthContext", () => ({
+  useAuth: () => ({ user: { settings: {} }, setUser: vi.fn() }),
+}));
+
 import EchoKeys from "./EchoKeys";
 
 describe("EchoKeys page", () => {
