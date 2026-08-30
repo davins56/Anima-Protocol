@@ -53,15 +53,18 @@
       "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
       "secret_name": "DATABASE_URL"
     }
-  ]
+  ],
   // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against
   // that secret from this Worker still ECONNRESET — do not treat the binding
   // as a Worker TCP path.
   //
-  // Hyperdrive (see scripts/cloudflare/hyperdrive.md): create the config in
-  // the dashboard and paste DATABASE_URL there once. Never put the URL or a
-  // password in this file. After you have the config id, add only:
-  // "hyperdrive": [
-  //   { "binding": "HYPERDRIVE", "id": "<hyperdrive-config-uuid>" }
-  // ]
+  // Hyperdrive anima-postgres (see scripts/cloudflare/hyperdrive.md).
+  // Binding name + config id only — never the origin URL or a password.
+  // Worker code reads env.HYPERDRIVE.connectionString at request time.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "bae77549623a4320b10211ca499fdb93"
+    }
+  ]
 }
