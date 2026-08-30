@@ -40,20 +40,57 @@ export type EnsureSchemaResult = {
 
 type Queryable = SqlQueryable;
 
+/** Identifiers we are willing to interpolate as `$n` scalars (never arrays). */
+const SAFE_TABLE_NAME = /^[a-z_][a-z0-9_]*$/;
+
+/**
+ * Build the information_schema lookup used by inspectSchema.
+ *
+ * Do **not** bind a JS `string[]` as `ANY($1::text[])`. postgres.js on the
+ * Worker / Hyperdrive path (`fetch_types: false`) stringifies that parameter
+ * via `Array#toString` (`"a,b,c"`). Postgres then throws `22P02` "malformed
+ * array literal", inspectSchema never returns `missingTables`, and
+ * ensureSchema cannot self-heal. Scalar `IN ($1, $2, …)` works on node-pg
+ * and postgres.js.
+ */
+export function buildPresentTablesInspectQuery(names: readonly string[]): {
+  text: string;
+  values: string[];
+} {
+  const values: string[] = [];
+  for (const name of names) {
+    if (!SAFE_TABLE_NAME.test(name)) {
+      throw new Error(`Invalid table name for schema inspect: ${name}`);
+    }
+    values.push(name);
+  }
+  if (values.length === 0) {
+    return {
+      text: `SELECT table_name
+     FROM information_schema.tables
+     WHERE false`,
+      values: [],
+    };
+  }
+  const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
+  return {
+    text: `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = current_schema()
+       AND table_type = 'BASE TABLE'
+       AND table_name IN (${placeholders})`,
+    values,
+  };
+}
+
 async function listPresentTables(
   db: Queryable,
   names: readonly string[],
 ): Promise<Set<string>> {
   // Use current_schema() so disposable test search_paths and production
   // `public` both work. Extensions still live in the global catalog.
-  const { rows } = await db.query<{ table_name: string }>(
-    `SELECT table_name
-     FROM information_schema.tables
-     WHERE table_schema = current_schema()
-       AND table_type = 'BASE TABLE'
-       AND table_name = ANY($1::text[])`,
-    [names],
-  );
+  const { text, values } = buildPresentTablesInspectQuery(names);
+  const { rows } = await db.query<{ table_name: string }>(text, values);
   return new Set(rows.map((r) => r.table_name));
 }
 
@@ -87,6 +124,26 @@ export async function inspectSchema(
   return db ? run() : withTransientDbRetry(run);
 }
 
+/** When the inspect query itself throws, treat every required table as missing. */
+function assumeAllTablesMissing(): SchemaInspection {
+  return {
+    ok: false,
+    missingTables: [...REQUIRED_TABLES],
+    presentTables: [],
+    hasPgTrgm: false,
+  };
+}
+
+async function inspectSchemaOrAssumeMissing(
+  db: Queryable,
+): Promise<SchemaInspection> {
+  try {
+    return await inspectSchema(db);
+  } catch {
+    return assumeAllTablesMissing();
+  }
+}
+
 /**
  * Idempotent DDL that brings a blank (or partially migrated) Postgres up to
  * the relations expected by `@workspace/db`. Safe to re-run: uses
@@ -105,7 +162,9 @@ export async function ensureSchema(
 }
 
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
-  const before = await inspectSchema(db);
+  // Inspect must not gate DDL. A Hyperdrive/postgres.js array-bind failure
+  // used to throw here and skip every CREATE IF NOT EXISTS.
+  const before = await inspectSchemaOrAssumeMissing(db);
   const errors: string[] = [];
   const createdTables: RequiredTable[] = [];
 
