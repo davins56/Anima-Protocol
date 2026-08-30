@@ -159,7 +159,7 @@ export default function BottomTabBar() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 30, stiffness: 320 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-[#090912] border-t border-primary/20 max-h-[80dvh] overflow-y-auto overscroll-contain"
+              className="fixed-bottom-chrome fixed bottom-0 left-0 right-0 z-50 bg-[#090912] border-t border-primary/20 max-h-[80dvh] overflow-y-auto overscroll-contain"
               data-no-swipe
               data-scroll-preserve
               onTouchStartCapture={(e) => e.stopPropagation()}
