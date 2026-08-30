@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assertSpaAssets,
+  collectHtmlEntryJs,
   collectIndexJsRefs,
   findRequiredChunks,
+  FORBIDDEN_IN_HTML_ENTRY,
   isJavaScriptBytes,
 } from "./assertSpaAssets.js";
 
@@ -71,5 +73,37 @@ describe("assertSpaAssets", () => {
     writeFileSync(join(assets, "UserProfile-bbbb.js"), "export default 1");
 
     expect(() => assertSpaAssets(dir)).toThrow(/index-OLDHASH\.js/);
+  });
+
+  it("rejects an HTML entry that still embeds Clerk or unused dashboards", () => {
+    expect(FORBIDDEN_IN_HTML_ENTRY).toEqual(
+      expect.arrayContaining([
+        "ClerkProvider",
+        "seedCharacters",
+        "ProgressDashboard",
+      ]),
+    );
+    expect(
+      collectHtmlEntryJs(
+        `<script type="module" src="/assets/index-aaaa.js"></script>
+         <link rel="modulepreload" href="/assets/react-bbbb.js">`,
+      ),
+    ).toEqual(["index-aaaa.js", "react-bbbb.js"]);
+
+    const dir = mkdtempSync(join(tmpdir(), "spa-entry-"));
+    const assets = join(dir, "assets");
+    mkdirSync(assets);
+    writeFileSync(
+      join(dir, "index.html"),
+      `<script type="module" src="/assets/index-aaaa.js"></script>`,
+    );
+    writeFileSync(
+      join(assets, "index-aaaa.js"),
+      'const __vite__mapDeps=["assets/ProgressDashboard-xxxx.js"]; ClerkProvider();',
+    );
+    writeFileSync(join(assets, "EchoKeys-cccc.js"), "export default 2");
+    writeFileSync(join(assets, "UserProfile-bbbb.js"), "export default 1");
+
+    expect(() => assertSpaAssets(dir)).toThrow(/first-load tax/);
   });
 });

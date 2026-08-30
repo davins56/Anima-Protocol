@@ -170,6 +170,10 @@ describe("fetchAssetsRejectingSpaHtml", () => {
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=31536000, immutable",
     );
+    expect(response.headers.get("cdn-cache-control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    expect(response.headers.get("x-anima-asset-cache")).toBe("immutable");
     expect(await response.text()).toBe("export const current = true;");
   });
 

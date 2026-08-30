@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { base44 } from "@/api/base44Client";
-import { getToken } from "@/api/authBridge";
 import { MessageSquare, Users } from "lucide-react";
 import titleBg from "@/assets/title-bg.webp";
 import serenityPortrait from "@/assets/serenity-portrait.webp";
@@ -72,9 +70,11 @@ export default function Landing() {
   useEffect(() => {
     setWelcomePhrase(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
     const loadAnimaData = async () => {
+      const { getToken } = await import("@/api/authBridge");
       const token = await getToken();
       if (!token) return;
       try {
+        const { base44 } = await import("@/api/base44Client");
         const me = await base44.auth.me();
         if (me) setUserName(me.name || me.email.split('@')[0]);
 
