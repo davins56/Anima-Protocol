@@ -23,28 +23,11 @@ Vercel keep `node-pg` against the same Secrets Store / env URL.
 - `nodejs_compat` + `nodejs_compat_populate_process_env`
 - `vars` only `NODE_ENV`
 - `DATABASE_URL` via `secrets_store_secrets` (binding + `store_id` + `secret_name` only)
-- no Hyperdrive binding until the dashboard step below
-
-## One dashboard step (Dàvīn)
-
-Create Hyperdrive in the Cloudflare dashboard. Paste `DATABASE_URL` **into
-that Hyperdrive form once**. Never put the URL in git, chat, or `wrangler`
-`vars`.
-
-1. Cloudflare Dashboard → **Storage & databases** → **Hyperdrive** → **Create configuration**.
-2. Paste the existing `DATABASE_URL` secret into Hyperdrive (prefer the
-   provider **pooler** host/port when one exists, e.g. Supabase `:6543` /
-   `*.pooler.supabase.com`, not direct `:5432`).
-3. Name it something like `anima-postgres`.
-4. Copy only the Hyperdrive **id** (UUID). Bind Worker **`anima-protocol`** as
-   **`HYPERDRIVE`** by adding this to root `wrangler.jsonc` (id / binding name
-   only) and redeploy so git deploys do not drop a dashboard-only binding:
-
-```jsonc
-"hyperdrive": [
-  { "binding": "HYPERDRIVE", "id": "<paste-hyperdrive-config-uuid>" }
-]
-```
+- Hyperdrive `anima-postgres` bound as `HYPERDRIVE` (`bae77549623a4320b10211ca499fdb93`)
 
 Leave `secrets_store_secrets` `DATABASE_URL` in place. After deploy,
 `GET /api/healthz/db` should report `"source": "hyperdrive"` and `"db": true`.
+
+Do not recreate the Hyperdrive config. Never put the origin URL or a password
+in git, chat, or `wrangler` `vars`. The Worker reads
+`env.HYPERDRIVE.connectionString` at request time.
