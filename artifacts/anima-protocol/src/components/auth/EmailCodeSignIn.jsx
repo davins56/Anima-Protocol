@@ -282,6 +282,7 @@ export default function EmailCodeSignIn() {
       }
       if (!signIn) {
         setError("Sign-in is still loading. Wait a moment and try GitHub again.");
+        setBusy(null);
         return;
       }
       await startGitHubOAuthSignIn(signIn, basePath, clerk);

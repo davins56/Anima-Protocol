@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnv } from "dotenv";
+import { sanitizeClerkPublishableKey } from "./src/lib/clerkProxy.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 loadEnv({ path: path.join(repoRoot, ".env") });
@@ -12,10 +13,13 @@ loadEnv({ path: path.join(import.meta.dirname, ".env"), override: true });
 // Vite only exposes VITE_* to the client. On Vercel, CLERK_PUBLISHABLE_KEY is
 // often set without the VITE_ prefix — mirror it so production builds embed the
 // correct Clerk instance (avoids host-derived pk_live_ + missing GitHub SSO).
-const clerkPublishableKey =
+// Never inline pk_test_placeholder: Vite would otherwise bake a key whose
+// payload decodes to mojibake and clerk-js would load from a garbled host.
+const clerkPublishableKey = sanitizeClerkPublishableKey(
   process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ||
-  process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
-  "";
+    process.env.CLERK_PUBLISHABLE_KEY?.trim() ||
+    "",
+);
 
 // Algolia Netlify indexes are per-git-branch. Netlify injects HEAD at build
 // time; expose it to the client so the widget queries the matching index.
@@ -73,12 +77,9 @@ export default defineConfig({
   base: normalizedBasePath,
 
   define: {
-    ...(clerkPublishableKey
-      ? {
-          "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY":
-            JSON.stringify(clerkPublishableKey),
-        }
-      : {}),
+    // Always define so a placeholder in the environment cannot be auto-inlined.
+    "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY":
+      JSON.stringify(clerkPublishableKey),
     "import.meta.env.VITE_ALGOLIA_BRANCH": JSON.stringify(algoliaBranch),
   },
   plugins: [
