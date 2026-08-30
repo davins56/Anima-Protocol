@@ -10,7 +10,13 @@ import {
   tickBattle,
 } from "@/lib/netBattle";
 import { dominantExpression, isExpressionBlend } from "@/lib/animaExpressions";
-import { echoFolderToChips, normalizeEchoLibrary } from "@/lib/echoKeys";
+import {
+  accountToLibrary,
+  echoFolderToChips,
+  normalizeEchoKeyAccount,
+  normalizeEchoLibrary,
+  recordCriticalBattle,
+} from "@/lib/echoKeys";
 
 function battleReducer(state, action) {
   if (typeof action === "function") return action(state);
@@ -116,7 +122,33 @@ export default function NetBattle() {
       ...meta,
       echo_keys_used: summary.chips_used,
     });
-  }, [state]);
+    if (state.phase === "victory" && state.player?.maxHp) {
+      const ratio = state.player.hp / state.player.maxHp;
+      const account = normalizeEchoKeyAccount(library);
+      const next = recordCriticalBattle(account, {
+        folderIds: (library.folder || []).map((slot) => slot.id),
+        integrityRatio: ratio,
+        survived: true,
+      });
+      if (next.progressed) {
+        const saved = accountToLibrary(next.account);
+        setLibrary(saved);
+        base44.auth
+          .updateMe({
+            settings: { echo_keys: saved },
+          })
+          .catch(() => {});
+        if (next.evolved) {
+          track("echo_key_discovered", {
+            source: "evolution",
+            site: "none",
+            tier: next.evolved.tier || "key",
+            is_outdoor: false,
+          });
+        }
+      }
+    }
+  }, [state, library]);
 
   const handleJackOut = () => navigate("/echo-keys");
   const handleRematch = () => jackIn();

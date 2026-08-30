@@ -7,7 +7,7 @@ afterEach(cleanup);
 
 describe("EchoKeyVault", () => {
   it(
-    "shows the full 800-key profile library and finds Star Force memories",
+    "lists the Codex and finds Star Force memories without granting them all",
     () => {
       render(
         <EchoKeyVault
@@ -19,8 +19,8 @@ describe("EchoKeyVault", () => {
         />,
       );
 
-      expect(screen.getByText(/800 keys/i)).toBeTruthy();
-      expect(screen.getByText(/800 on this profile/i)).toBeTruthy();
+      expect(screen.getByText(/on this profile/i)).toBeTruthy();
+      expect(screen.getByText(/8 on this profile/i)).toBeTruthy();
       expect(screen.getAllByText("Pulse Emitter").length).toBeGreaterThan(0);
 
       fireEvent.change(screen.getByPlaceholderText(/search echo keys/i), {

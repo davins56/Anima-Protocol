@@ -22,6 +22,7 @@ export {
   ECHO_LIBRARY_SIZE,
   ECHO_KEY_LIBRARY_SIZE,
   ECHO_KEY_BY_ID,
+  FEATURED_RESONANCE_KEYS,
   getEchoKey,
   echoKeysByFamily,
   echoKeysByClass,
@@ -33,8 +34,10 @@ export {
   ECHO_FOLDER_RULES,
   ECHO_ELEMENT_WEAKNESS,
   ECHO_RESONANCE,
+  STARTER_ECHO_KEY_IDS,
   makeEchoCopy,
   starterEchoFolder,
+  starterOwnedIds,
   validateEchoFolder,
   echoCodesMatch,
   echoSelectionIsLinked,
@@ -44,8 +47,18 @@ export {
   defaultEchoLibrary,
   normalizeEchoLibrary,
   drawEchoHand,
+  drawResonanceHand,
   echoFolderStats,
 } from "./rules.js";
+
+export {
+  DEFAULT_FOLDER_ID,
+  normalizeEchoKeyAccount,
+  grantOwnedKey,
+  activeEchoFolder,
+  setFolderSlots,
+  accountToLibrary,
+} from "./account.js";
 
 export {
   echoKeyToChip,
@@ -55,9 +68,35 @@ export {
   echoResonanceChip,
 } from "./combat.js";
 
-/** Compact prompt block for NetBattle / cyberspace story sessions. */
+export {
+  ECHO_TIERS,
+  FREQUENCY_FROM_ELEMENT,
+  FREQUENCY_LABEL,
+  TIER_LABEL,
+  TIER_BLURB,
+  ECHO_EVOLUTIONS,
+  enrichEchoKey,
+  compatibilityScore,
+  echoKeyCanonLine,
+} from "./resonance.js";
+
+export {
+  RESONANCE_SITES,
+  FUSION_RECIPES,
+  VIRTUAL_ATTUNE_COOLDOWN_MS,
+  FIELD_ATTUNE_COOLDOWN_MS,
+  discoverAtSite,
+  synthesiseEchoKeys,
+  recordCriticalBattle,
+  biomeFromCoords,
+  siteIdFromBiome,
+  getResonanceSite,
+  siteMatchesKey,
+  siteCooldownRemaining,
+} from "./story.js";
+
 export function echoKeyLoreBlock() {
-  return `ECHO KEYS are this world's weapon-memory. The steward's profile holds a library of about 800 distinct keys — each key remembers a construct (cannon, sword, bomb, wave, satellite, lock-on) remixed from Battle Chip families (Mega Man Battle Network 1–6, all versions) and Battle Cards (Star Force 1–3) as original Anima data. A 30-slot Folder jacks into NetBattle. Custom links by name, family, or letter code (including *). Named triples fuse into Resonance (Nova Pulse, Life Veil, Chain Bloom). Three of one family, or three Star keys, fire a Best Link. Classes: Standard (up to 4 copies), Mega (5 in a Folder), Star (1), Dark (1), Giga (1). One Regular key always opens the first hand; one Star-Force key can be pinned as a lock-on card. When summoned, weapons look ethereal: translucent barrels, glass-steel blades, no solid mass.`;
+  return `Echo Keys are crystallized memories of function that an Anima can temporarily synchronize with and execute. Battle Chips contain programs. Echo Keys contain experiences that learned how to become programs — weapon-memory that is not granted as a full library. The Codex names about 800 family memories — Shards, Keys, Sovereign, and Prime — but you begin with a handful of Shards. The rest are found where resonance achieved exceptional coherence: forests, water, stone, gardens, sky, sacred ground, places of bond — and also battlefields, memorials, and ruins. Coherence is not the same as peace. A Resonance Array (Folder) of up to 30 Keys jacks into NetBattle.`;
 }
 
 const ECHO_CUE =

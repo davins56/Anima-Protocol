@@ -17,7 +17,7 @@ import EchoKeyCard from "./EchoKeyCard";
 const ELEMENTS = ["all", "void", "ember", "tide", "volt", "grove"];
 const CLASSES = ["all", "standard", "mega", "star", "dark", "giga"];
 
-export default function EchoKeyVault({ library, onSave, saving, error, onReset }) {
+export default function EchoKeyVault({ library, onSave, saving, error, onReset, ownedOnly = false }) {
   const [tab, setTab] = useState("library");
   const [element, setElement] = useState("all");
   const [klass, setKlass] = useState("all");
@@ -41,6 +41,7 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset }
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return ECHO_KEYS.filter((k) => {
+      if (ownedOnly && !owned.has(k.id)) return false;
       if (element !== "all" && k.element !== element) return false;
       if (klass !== "all" && k.class !== klass) return false;
       if (!q) return true;
@@ -52,9 +53,10 @@ export default function EchoKeyVault({ library, onSave, saving, error, onReset }
         k.ability?.tag?.includes(q)
       );
     });
-  }, [element, klass, query]);
+  }, [element, klass, query, ownedOnly, owned]);
 
   const addToFolder = (key) => {
+    if (!owned.has(key.id)) return;
     if (draft.length >= ECHO_FOLDER_RULES.size) return;
     setDraft((prev) => [...prev, makeEchoCopy(key.id)]);
     setTab("folder");

@@ -1,7 +1,9 @@
 // @ts-check
 /**
- * Echo Key library — ~800 distinct weapon-memories.
- * Built from ECHO_FAMILIES × VARIANT_SLOTS. Original Anima names only.
+ * Echo Key Codex — ~800 family memories plus a handful of featured
+ * resonance artifacts. Built from ECHO_FAMILIES × VARIANT_SLOTS.
+ * Operators find, synthesise, or evolve keys in story mode; the Codex
+ * is not granted on day one. Original Anima names only.
  */
 
 import {
@@ -44,7 +46,197 @@ import {
  * @property {string} inspiredBy
  * @property {string[]} sources
  * @property {EchoAbility} ability
+ * @property {string} [originSite]
+ * @property {string} [memoryText]
  */
+
+/**
+ * Story-mode featured Keys. Not shop goods; not Fallen Circuit Prime Keys.
+ */
+export const FEATURED_RESONANCE_KEYS = [
+  {
+    id: "last-ember",
+    name: "Last Ember",
+    family: "featured",
+    class: "standard",
+    element: "ember",
+    tactic: "none",
+    kind: "area",
+    power: 90,
+    mb: 18,
+    codes: ["L", "E", "*"],
+    description:
+      "Final surviving flame of a destroyed settlement. Invokes three resonance flames. Passive: output rises when the Anima's integrity falls below 30%.",
+    memory: "Remembers the last hearth of a settlement that ended in one night.",
+    summon: "bomb",
+    inspiredBy: "bomb",
+    sources: ["story"],
+    ability: { tag: "burst", hits: 3 },
+    originSite: "fallen-ruin",
+    memoryText: "The last hearth of a settlement that ended in one night. The flame refused to forget its purpose.",
+  },
+  {
+    id: "ember-that-refused",
+    name: "Ember That Refused",
+    family: "featured",
+    class: "mega",
+    element: "ember",
+    tactic: "none",
+    kind: "area",
+    power: 160,
+    mb: 28,
+    codes: ["L", "R", "*"],
+    description: "Last Ember after it reinterpreted survival as defiance. Four flames, and a refusal to go out.",
+    memory: "Remembers the event developing a new interpretation.",
+    summon: "bomb",
+    inspiredBy: "bomb",
+    sources: ["story"],
+    ability: { tag: "burst", hits: 4 },
+    originSite: "fallen-ruin",
+    memoryText: "Not the last flame — the flame that would not end.",
+  },
+  {
+    id: "pyre-key",
+    name: "Pyre Key",
+    family: "featured",
+    class: "standard",
+    element: "ember",
+    tactic: "none",
+    kind: "area",
+    power: 70,
+    mb: 14,
+    codes: ["P", "Y", "*"],
+    description: "A pyric instruction. Heat that still knows the shape of a funeral or a forge.",
+    memory: "Remembers coherent fire — grief or craft.",
+    summon: "wick",
+    inspiredBy: "bomb",
+    sources: ["story"],
+    ability: { tag: "burst", hits: 1 },
+    originSite: "old-battlefield",
+    memoryText: "Coherent fire — grief or craft, the Lattice does not moralize.",
+  },
+  {
+    id: "gale-key",
+    name: "Gale Key",
+    family: "featured",
+    class: "standard",
+    element: "tide",
+    tactic: "gale",
+    kind: "blast",
+    power: 55,
+    mb: 12,
+    codes: ["G", "A", "*"],
+    description: "Wind given a job. Opens space, carries another Key's output, or strips a veil.",
+    memory: "Remembers air over moving water.",
+    summon: "wave",
+    inspiredBy: "airshot",
+    sources: ["story"],
+    ability: { tag: "push", hits: 1 },
+    originSite: "living-water",
+    memoryText: "Air over moving water. A repeating rhythm that learned how to push.",
+  },
+  {
+    id: "firestorm",
+    name: "Firestorm",
+    family: "featured",
+    class: "mega",
+    element: "ember",
+    tactic: "gale",
+    kind: "area",
+    power: 140,
+    mb: 32,
+    codes: ["F", "S"],
+    description: "Pyre Key braided with Gale Key. Heat given weather.",
+    memory: "Remembers an Echo Sequence: fire that learned the grammar of wind.",
+    summon: "gyre",
+    inspiredBy: "wind",
+    sources: ["story"],
+    ability: { tag: "storm", hits: 3, wide: true },
+    originSite: "old-battlefield",
+    memoryText: "An Echo Sequence: fire that learned the grammar of wind.",
+  },
+  {
+    id: "grief-echo",
+    name: "Grief Echo",
+    family: "featured",
+    class: "standard",
+    element: "void",
+    tactic: "mark",
+    kind: "field",
+    power: 40,
+    mb: 16,
+    codes: ["G", "R", "*"],
+    description: "A memory of loss coherent enough to execute. Disrupts another Anima's frequency.",
+    memory: "Remembers thousands of minds meeting the same absence.",
+    summon: "silence",
+    inspiredBy: "dark",
+    sources: ["story"],
+    ability: { tag: "disrupt", hits: 1 },
+    originSite: "quiet-yard",
+    memoryText: "Thousands of minds meeting the same absence. The Lattice kept the chord.",
+  },
+  {
+    id: "memory-echo",
+    name: "Memory Echo",
+    family: "featured",
+    class: "standard",
+    element: "void",
+    tactic: "summon",
+    kind: "support",
+    power: 0,
+    mb: 20,
+    codes: ["M", "E", "*"],
+    description: "Replays a fragment of a historical Echo. Temporarily modifies the Anima's configuration.",
+    memory: "Remembers a place where people kept telling the same story until the story learned to stand.",
+    summon: "sigil",
+    inspiredBy: "plus",
+    sources: ["story"],
+    ability: { tag: "recall", hits: 0 },
+    originSite: "sacred-place",
+    memoryText: "A place where people kept telling the same story until the story learned to stand.",
+  },
+  {
+    id: "veil-key",
+    name: "Veil Key",
+    family: "featured",
+    class: "standard",
+    element: "grove",
+    tactic: "none",
+    kind: "guard",
+    power: 0,
+    mb: 14,
+    codes: ["V", "L", "*"],
+    description: "A shielding harmonic. Softens incoming frequency; can hide a path.",
+    memory: "Remembers intention and leaf-light held in the same tempo.",
+    summon: "aura",
+    inspiredBy: "barrier",
+    sources: ["story"],
+    ability: { tag: "veil", hits: 0, heal: 20 },
+    originSite: "sanctuary-garden",
+    memoryText: "Intention and leaf-light held in the same tempo long enough to thicken.",
+  },
+  {
+    id: "mourning-gate",
+    name: "Mourning Gate",
+    family: "featured",
+    class: "mega",
+    element: "void",
+    tactic: "summon",
+    kind: "field",
+    power: 0,
+    mb: 44,
+    codes: ["M", "G"],
+    description:
+      "Grief Echo + Memory Echo + Veil Key. Opens a traversal pathway through remembered loss — a door, not a wound.",
+    memory: "Remembers three memories of absence agreeing on a shape.",
+    summon: "rift",
+    inspiredBy: "secret",
+    sources: ["story"],
+    ability: { tag: "gate", hits: 0 },
+    originSite: "quiet-yard",
+    memoryText: "Three memories of absence agreed on a shape. The Lattice called it a gate.",
+  },
+];
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
@@ -198,7 +390,7 @@ function buildRows() {
 }
 
 /** @type {EchoKey[]} */
-export const ECHO_KEYS = numberLibrary(buildRows());
+export const ECHO_KEYS = numberLibrary([...buildRows(), ...FEATURED_RESONANCE_KEYS]);
 
 export const ECHO_LIBRARY_SIZE = ECHO_KEYS.length;
 export const ECHO_KEY_LIBRARY_SIZE = ECHO_LIBRARY_SIZE;
