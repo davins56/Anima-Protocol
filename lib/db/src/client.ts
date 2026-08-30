@@ -1,8 +1,24 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import pg from "pg";
+import { drizzle as drizzlePostgresJs } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
+import {
+  createNodePool,
+  createPostgresJsSql,
+  getDbDriver,
+  postgresJsQueryable,
+  type SqlQueryable,
+} from "./driver";
 
-const { Pool } = pg;
+export {
+  createNodePool,
+  createPostgresJsSql,
+  getDbDriver,
+  isCloudflareWorkerRuntime,
+  postgresJsQueryable,
+  postgresJsSslOption,
+  type DbDriver,
+  type SqlQueryable,
+} from "./driver";
 
 type DbSchema = typeof schema;
 type Db = NodePgDatabase<DbSchema>;
@@ -44,7 +60,7 @@ export function resolveDbConfig(url: string): {
   return { connectionString, ssl };
 }
 
-let poolInstance: pg.Pool | null = null;
+let queryableInstance: SqlQueryable | null = null;
 let dbInstance: Db | null = null;
 
 export const DATABASE_URL_ENV_NAMES = [
@@ -76,8 +92,8 @@ export function resolveDatabaseUrl(
   return undefined;
 }
 
-export function getPool(): pg.Pool {
-  if (poolInstance) return poolInstance;
+export function getPool(): SqlQueryable {
+  if (queryableInstance) return queryableInstance;
   const rawUrl = resolveDatabaseUrl();
   if (!rawUrl) {
     throw new Error(
@@ -85,25 +101,32 @@ export function getPool(): pg.Pool {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-  // Vercel Fluid / serverless: keep the pool tiny and fail fast so a dead DB
-  // surfaces as 503 quickly instead of hanging the Character list request.
-  poolInstance = new Pool({
-    connectionString,
-    ssl,
-    max: Number(process.env.PG_POOL_MAX || 1),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10_000),
-    connectionTimeoutMillis: Number(
-      process.env.PG_CONNECTION_TIMEOUT_MS || 8_000,
-    ),
-    allowExitOnIdle: true,
-  });
-  return poolInstance;
+  if (getDbDriver() === "postgres-js") {
+    const sql = createPostgresJsSql(rawUrl, connectionString, ssl);
+    queryableInstance = postgresJsQueryable(sql);
+    dbInstance = drizzlePostgresJs(sql, { schema }) as unknown as Db;
+    return queryableInstance;
+  }
+  // Vercel Fluid / local Node: tiny node-pg pool, fail fast on a dead DB.
+  const pool = createNodePool(connectionString, ssl);
+  queryableInstance = pool;
+  dbInstance = drizzle(pool, { schema });
+  return queryableInstance;
 }
 
 function getDb(): Db {
   if (dbInstance) return dbInstance;
-  dbInstance = drizzle(getPool(), { schema });
+  getPool();
+  if (!dbInstance) {
+    throw new Error("Failed to initialize database client");
+  }
   return dbInstance;
+}
+
+/** Test helper — drop cached clients so driver / URL changes take effect. */
+export function resetDbClientsForTests(): void {
+  queryableInstance = null;
+  dbInstance = null;
 }
 
 function proxyBind<T extends object>(target: () => T): T {
