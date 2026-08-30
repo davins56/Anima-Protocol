@@ -111,6 +111,10 @@ export function resetCloudflareEnvBindingsForTests(): void {
  * Cloudflare Hyperdrive binding: `{ connectionString }` (never a secret in
  * wrangler.jsonc). Prefer this over DATABASE_URL from Workers so Postgres
  * goes through the pooler instead of Supabase direct :5432.
+ *
+ * `connectionString` is a lazy getter that performs isolate I/O. Reading it
+ * at module load / global scope fails Worker upload with error 10021.
+ * Only call this from the request path after `bindRequestEnv`.
  */
 export function unwrapHyperdriveConnectionString(
   value: unknown,
@@ -239,19 +243,11 @@ export function readRuntimeEnv(name: string): string | undefined {
 }
 
 export function readHyperdriveConnectionString(): string | undefined {
-  if (lastRequestEnv) {
-    const fromRequest = unwrapHyperdriveConnectionString(
-      lastRequestEnv.HYPERDRIVE,
-    );
-    if (fromRequest) return fromRequest;
-  }
-  if (importableEnv) {
-    const fromImportable = unwrapHyperdriveConnectionString(
-      importableEnv.HYPERDRIVE,
-    );
-    if (fromImportable) return fromImportable;
-  }
-  return unwrapHyperdriveConnectionString(process.env.HYPERDRIVE);
+  // Hyperdrive.connectionString does isolate I/O. The importable Worker env
+  // and process.env may hold the same proxy at module load — never unwrap
+  // those. Only the request `env` (set in applyCloudflareRequestEnv) is safe.
+  if (!lastRequestEnv) return undefined;
+  return unwrapHyperdriveConnectionString(lastRequestEnv.HYPERDRIVE);
 }
 
 export function readRuntimeDatabaseUrl(): string | undefined {
@@ -313,7 +309,8 @@ export function mirrorCloudflareBindings(
     applyStringBinding(target, name, env[name], remember);
   }
   aliasDatabaseUrl(target);
-  aliasHyperdriveUrl(target, env);
+  // Do not unwrap Hyperdrive here. connectionString is lazy I/O and is
+  // illegal at Worker module load. applyCloudflareRequestEnv does that.
 }
 
 async function copyUnwrappedBindings(
@@ -361,6 +358,7 @@ export async function applyCloudflareRequestEnv(
     await copyUnwrappedBindings(importableEnv, target);
   }
   aliasDatabaseUrl(target);
+  // Request path only — Worker fetch has started, so Hyperdrive I/O is legal.
   aliasHyperdriveUrl(target, env);
 }
 
@@ -388,7 +386,6 @@ export function remirrorRuntimeEnvIntoProcess(
     }
   }
   aliasDatabaseUrl(target);
-  aliasHyperdriveUrl(target);
 }
 
 export function syncCloudflareRuntimeEnvMiddleware(): RequestHandler {
