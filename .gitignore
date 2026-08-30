@@ -83,6 +83,12 @@ Desktop.ini
 .cursor/
 .aider*
 
+# Cloudflare Wrangler local state (never commit secrets)
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
 # Replit local files
 
 
