@@ -154,7 +154,8 @@ Reload: `sudo nginx -s reload`
 - API `dev` script rebuilds on each start (`build` then `start`).
 - pnpm may warn about ignored build scripts for `@clerk/shared`; add to `onlyBuiltDependencies` in `pnpm-workspace.yaml` if Clerk misbehaves after install.
 - Cloudflare Worker `anima-protocol` must deploy from root `wrangler.jsonc` (`main` = `artifacts/api-server/src/worker.ts`). An assets-only deploy (`--assets=./dist` with no `main`) makes `/api/*` 404 on anima-protocol.com.
-- Companion store "Postgres is unreachable from this host" on anima-protocol.com means the Worker has `DATABASE_URL` but no Hyperdrive path to Postgres. Create/bind Hyperdrive (`scripts/cloudflare/hyperdrive.md`); do not put the URL in `wrangler.jsonc` vars.
+- Companion store "Postgres is unreachable from this host" on anima-protocol.com means the Worker has `DATABASE_URL` but no Hyperdrive path to Postgres. Create/bind Hyperdrive (`scripts/cloudflare/hyperdrive.md`); do not put the URL in `wrangler.jsonc` vars. Hyperdrive origin must be real Postgres, not Prisma Accelerate (`db.prisma.io`).
+- www 301 to `https://anima-protocol.com/` (path dropped) is zone Redirect Rule **"Redirect www to root"** (`scripts/cloudflare/www-redirect.md`), not `vercel.json`. Fix the replacement to `https://anima-protocol.com/${1}`. Apex `/api/*` must still return JSON when the isolate throws.
 
 ## Analytics Tracking — Mixpanel
 

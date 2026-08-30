@@ -102,26 +102,57 @@ async function isRetryableStoreReset(res) {
   }
 }
 
+export const STORE_UNREACHABLE_MESSAGE =
+  'The companion store is unreachable. The database could not be reached — retry in a moment.';
+
+const STORE_API_NOT_FOUND_MESSAGE =
+  'Character store API not found — the backend may not be running or /api is not proxied to it.';
+
+/** Cloudflare error/challenge/301 pages and SPA HTML — never show this in the UI. */
+export function isHtmlErrorBody(text, contentType) {
+  const ct = String(contentType || '').toLowerCase();
+  if (ct.includes('text/html')) return true;
+  const raw = String(text || '').replace(/^\uFEFF/, '');
+  const head = raw.trimStart().slice(0, 400);
+  return (
+    /<!DOCTYPE\s+html/i.test(head) ||
+    /^<html[\s>]/i.test(head) ||
+    /<!--\[if\s+lt\s+IE/i.test(head) ||
+    /<center>\s*cloudflare\s*<\/center>/i.test(raw) ||
+    /301\s+Moved\s+Permanently/i.test(head)
+  );
+}
+
 // Parse a failed store response into a human-readable message. Non-JSON bodies
-// (e.g. an HTML 404 from a frontend-only deploy) must not surface as a blank
-// error string in the UI.
-async function parseStoreErrorResponse(res) {
+// (Cloudflare 1101/524 HTML, www→apex homepage HTML, Express 404) must never
+// dump a raw snippet into Character library loadError.
+export async function parseStoreErrorResponse(res) {
   const text = await res.text();
+  const contentType =
+    typeof res.headers?.get === 'function'
+      ? res.headers.get('content-type')
+      : undefined;
   try {
     const json = JSON.parse(text);
     return json.error || res.statusText || `HTTP ${res.status}`;
   } catch {
-    if (res.status === 404) {
-      return 'Character store API not found — the backend may not be running or /api is not proxied to it.';
+    if (res.status === 404 && !isHtmlErrorBody(text, contentType)) {
+      return STORE_API_NOT_FOUND_MESSAGE;
     }
-    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 120);
-    return snippet || res.statusText || `HTTP ${res.status}`;
+    if (isHtmlErrorBody(text, contentType) || res.status >= 500) {
+      return STORE_UNREACHABLE_MESSAGE;
+    }
+    if (res.status === 404) {
+      return STORE_API_NOT_FOUND_MESSAGE;
+    }
+    return STORE_UNREACHABLE_MESSAGE;
   }
 }
 
 function storeError(res, message) {
   const e = new Error(message);
-  e.status = res.status;
+  e.status =
+    message === STORE_UNREACHABLE_MESSAGE ? 503 : res.status;
   return e;
 }
 
@@ -802,7 +833,16 @@ async function queryEntity(entityName, opts) {
     if (!res.ok) {
       throw storeError(res, await parseStoreErrorResponse(res));
     }
-    const data = await res.json();
+    const text = await res.text();
+    if (isHtmlErrorBody(text, res.headers?.get?.('content-type'))) {
+      throw storeError({ status: 503 }, STORE_UNREACHABLE_MESSAGE);
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw storeError({ status: 503 }, STORE_UNREACHABLE_MESSAGE);
+    }
     // Don't cache an empty roster while bootstrap may still be seeding — pages
     // that fetched too early would otherwise keep [] for the TTL window.
     const skipEmptyRosterCache =

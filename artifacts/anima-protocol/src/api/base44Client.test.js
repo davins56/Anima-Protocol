@@ -6,6 +6,7 @@ import {
   setAuthTokenGetter,
   STORE_FETCH_TIMEOUT_MS,
 } from "./base44Client";
+import { isStoreDatabaseError } from "@/lib/loadRosterCharacters";
 
 describe("ChatSession store wrapper", () => {
   beforeEach(() => {
@@ -151,5 +152,120 @@ describe("ChatSession store wrapper", () => {
       base44.entities.ChatSession.create({ title: "Blocked" }),
     ).rejects.toThrow(/schema is missing/i);
     expect(sessionPosts).toBe(1);
+  });
+});
+
+describe("parseStoreErrorResponse", () => {
+  it("never dumps Cloudflare HTML into the error message", async () => {
+    const { parseStoreErrorResponse, STORE_UNREACHABLE_MESSAGE } =
+      await import("./base44Client");
+    const html = `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->`;
+    const message = await parseStoreErrorResponse(
+      new Response(html, {
+        status: 500,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+    expect(message).toBe(STORE_UNREACHABLE_MESSAGE);
+    expect(message).not.toMatch(/DOCTYPE|lt IE 7|no-js ie6/i);
+  });
+
+  it("keeps JSON store errors", async () => {
+    const { parseStoreErrorResponse } = await import("./base44Client");
+    const message = await parseStoreErrorResponse(
+      Response.json(
+        { error: "Database connection reset", reason: "reset" },
+        { status: 503 },
+      ),
+    );
+    expect(message).toBe("Database connection reset");
+  });
+
+  it("never dumps Cloudflare's www 301 HTML (<center>cloudflare</center>)", async () => {
+    const { parseStoreErrorResponse, STORE_UNREACHABLE_MESSAGE } =
+      await import("./base44Client");
+    const html = `<html>
+<head><title>301 Moved Permanently</title></head>
+<body>
+<center><h1>301 Moved Permanently</h1></center>
+<hr><center>cloudflare</center>
+</body>
+</html>`;
+    const message = await parseStoreErrorResponse(
+      new Response(html, {
+        status: 301,
+        headers: {
+          "Content-Type": "text/html",
+          Location: "https://anima-protocol.com/",
+        },
+      }),
+    );
+    expect(message).toBe(STORE_UNREACHABLE_MESSAGE);
+    expect(message).not.toMatch(/cloudflare|Moved Permanently|DOCTYPE/i);
+  });
+
+  it("explains a plain 404 without treating it as HTML", async () => {
+    const { parseStoreErrorResponse } = await import("./base44Client");
+    const message = await parseStoreErrorResponse(
+      new Response("Cannot GET /api/store/Character", { status: 404 }),
+    );
+    expect(message).toMatch(/not found|not proxied/i);
+    expect(message).not.toMatch(/Cannot GET|DOCTYPE/i);
+  });
+});
+
+describe("Character.list HTML failures", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+    clearStoreCache();
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("throws a 503 store/database error instead of Cloudflare HTML", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US">`,
+        {
+          status: 500,
+          headers: { "Content-Type": "text/html" },
+        },
+      ),
+    );
+
+    let caught;
+    try {
+      await base44.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toMatchObject({
+      status: 503,
+      message: expect.stringMatching(/unreachable|database/i),
+    });
+    expect(String(caught.message)).not.toMatch(/DOCTYPE|lt IE 7|no-js ie6/i);
+    expect(isStoreDatabaseError(caught)).toBe(true);
+  });
+
+  it("treats a 200 homepage HTML body (www path-dropped redirect) as a store error", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(`<!doctype html><html lang="en"><title>Anima Protocol</title>`, {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    await expect(
+      base44.entities.CheckIn.list(),
+    ).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringMatching(/unreachable|database/i),
+    });
   });
 });
