@@ -43,7 +43,7 @@ export const STAR_FORCE_CARD_LINEAGE = {
 export const ECHO_KEY_SYSTEM = {
   title: "Echo Keys (Anima Protocol)",
   summary:
-    "Echo Keys are weapon-memory — each key remembers a construct the Anima can summon in NetBattle. The steward's profile holds the full library (~800 distinct keys). A 30-slot Folder is what jacks in. Custom still links by name or letter code, including *. Named triples fuse into Resonance (BN Program Advance). Three Star-class keys, or three of one family, can fire a Best Link (Star Force Best Combo). One Regular key always opens the first hand. One Star-Force key can be pinned as an always-available lock-on card.",
+    "Echo Keys are crystallized memories of function — weapon-memory an Anima can synchronize with and execute. The Codex names ~800 distinct keys. Operators begin with Echo Shards and find, synthesise, or evolve the rest. A 30-slot Resonance Array (Folder) is what jacks in. Custom still links by name or letter code, including *. Named triples fuse into Resonance (BN Program Advance). Three Star-class keys, or three of one family, can fire a Best Link (Star Force Best Combo). One Regular key always opens the first hand. One Star-Force key can be pinned as an always-available lock-on card.",
 };
 
 /** BN2–6 families not already listed in energyFragments/battleChipAccount.js */

@@ -1,9 +1,11 @@
 // @ts-check
 import { ECHO_KEYS, ECHO_KEY_BY_ID } from "./catalog.js";
+import { compatibilityScore } from "./resonance.js";
 
 /** Folder rules remixed from BN3+ plus Star Force Star-card cap. */
 export const ECHO_FOLDER_RULES = {
   size: 30,
+  minSize: 8,
   maxCopiesStandard: 4,
   maxMega: 5,
   maxCopiesMega: 1,
@@ -69,38 +71,55 @@ export const ECHO_RESONANCE = [
   },
 ];
 
+/** Opening Echo Shards — enough to load an Array, not the Codex. */
+export const STARTER_ECHO_KEY_IDS = [
+  "pulse-base",
+  "halo-base",
+  "seed-base",
+  "pulse-high",
+  "phantom-base",
+  "metveil-base",
+  "mend-base",
+  "rainveil-base",
+];
+
+/** 30-slot Array filled only from the eight starter Shards (max 4 copies). */
 const STARTER_IDS = [
   "pulse-base",
   "pulse-base",
+  "pulse-base",
+  "pulse-base",
+  "halo-base",
+  "halo-base",
+  "halo-base",
+  "halo-base",
+  "seed-base",
+  "seed-base",
+  "seed-base",
+  "seed-base",
   "pulse-high",
-  "halo-base",
-  "halo-base",
-  "seed-base",
-  "seed-base",
-  "seed-apex",
+  "pulse-high",
+  "pulse-high",
+  "pulse-high",
   "phantom-base",
   "phantom-base",
-  "phantom-high",
-  "phantom-apex",
-  "tremor-base",
-  "geist-base",
-  "gleam-base",
-  "wisp-base",
-  "gyre-base",
-  "mend-base",
-  "mend-base",
+  "phantom-base",
+  "phantom-base",
   "metveil-base",
-  "fade-base",
-  "claim-base",
-  "aethersail-base",
-  "needleburst-base",
-  "plasmagun-base",
-  "heatupper-base",
-  "iceneedle-base",
-  "pulse-star",
-  "needleburst-noise",
-  "jackout-base",
+  "metveil-base",
+  "metveil-base",
+  "metveil-base",
+  "mend-base",
+  "mend-base",
+  "mend-base",
+  "mend-base",
+  "rainveil-base",
+  "rainveil-base",
 ];
+
+export function starterOwnedIds() {
+  return STARTER_ECHO_KEY_IDS.filter((id) => ECHO_KEY_BY_ID[id]);
+}
 
 /**
  * @param {string} id
@@ -123,8 +142,13 @@ export function starterEchoFolder() {
 export function validateEchoFolder(folder) {
   /** @type {string[]} */
   const errors = [];
-  if (folder.length !== ECHO_FOLDER_RULES.size) {
-    errors.push(`Folder must hold ${ECHO_FOLDER_RULES.size} Echo Keys (has ${folder.length}).`);
+  if (folder.length < ECHO_FOLDER_RULES.minSize) {
+    errors.push(
+      `Resonance Array needs at least ${ECHO_FOLDER_RULES.minSize} Keys (has ${folder.length}).`,
+    );
+  }
+  if (folder.length > ECHO_FOLDER_RULES.size) {
+    errors.push(`Resonance Array holds at most ${ECHO_FOLDER_RULES.size} Keys (has ${folder.length}).`);
   }
   /** @type {Record<string, number>} */
   const copies = {};
@@ -244,9 +268,18 @@ export function echoElementMultiplier(keyElement, virusElement) {
   return 1;
 }
 
+function storyFields(data = {}) {
+  return {
+    discoveries: Array.isArray(data.discoveries) ? data.discoveries : [],
+    evolutions: data.evolutions && typeof data.evolutions === "object" ? data.evolutions : {},
+    sites_attuned: data.sites_attuned && typeof data.sites_attuned === "object" ? data.sites_attuned : {},
+    fusion_log: Array.isArray(data.fusion_log) ? data.fusion_log : [],
+  };
+}
+
 /**
- * Default profile library: the steward holds every Echo Key.
- * @param {{ folder?: { id: string, code: string }[], regular_id?: string | null, star_card_id?: string | null }} [saved]
+ * Default profile library: eight Echo Shards, not the Codex.
+ * @param {Record<string, unknown>} [saved]
  */
 export function defaultEchoLibrary(saved = {}) {
   const folder = Array.isArray(saved.folder) && saved.folder.length
@@ -254,10 +287,12 @@ export function defaultEchoLibrary(saved = {}) {
     : starterEchoFolder();
   return {
     version: 1,
-    owned_ids: ECHO_KEYS.map((k) => k.id),
+    owned_ids: starterOwnedIds(),
     folder,
     regular_id: saved.regular_id ?? "pulse-base",
-    star_card_id: saved.star_card_id ?? "pulse-star",
+    star_card_id: saved.star_card_id ?? null,
+    granted_full_library: false,
+    ...storyFields(saved),
   };
 }
 
@@ -268,21 +303,36 @@ export function normalizeEchoLibrary(raw) {
   if (!raw || typeof raw !== "object") return defaultEchoLibrary();
   const data = /** @type {Record<string, unknown>} */ (raw);
   const catalogIds = ECHO_KEYS.map((k) => k.id);
-  const owned = Array.isArray(data.owned_ids)
-    ? data.owned_ids.filter((id) => typeof id === "string" && ECHO_KEY_BY_ID[id])
-    : catalogIds;
-  const folderSlots = Array.isArray(data.folder)
+  const ownedRaw = Array.isArray(data.owned_ids)
+    ? data.owned_ids
+    : Array.isArray(data.owned)
+      ? data.owned
+      : [];
+  let owned = [...new Set(ownedRaw.filter((id) => typeof id === "string" && ECHO_KEY_BY_ID[id]))];
+  const legacyFull =
+    data.granted_full_library === true || owned.length >= catalogIds.length;
+  if (legacyFull) owned = catalogIds;
+  else if (owned.length === 0) owned = starterOwnedIds();
+
+  const folderSource = Array.isArray(data.folder)
     ? data.folder
+    : Array.isArray(/** @type {{ folders?: { slots?: unknown }[] }} */ (data).folders)
+      ? /** @type {{ folders: { slots?: unknown }[] }} */ (data).folders[0]?.slots
+      : [];
+  const folderSlots = Array.isArray(folderSource)
+    ? folderSource
         .filter((s) => s && typeof s === "object" && ECHO_KEY_BY_ID[/** @type {{id?: string}} */ (s).id])
         .map((s) => {
           const slot = /** @type {{ id: string, code?: string }} */ (s);
           return makeEchoCopy(slot.id, slot.code);
         })
+        .filter((s) => owned.includes(s.id))
     : [];
+  const folderOk = validateEchoFolder(folderSlots).ok;
   return {
     version: 1,
-    owned_ids: owned.length ? owned : catalogIds,
-    folder: folderSlots.length === ECHO_FOLDER_RULES.size ? folderSlots : starterEchoFolder(),
+    owned_ids: owned,
+    folder: folderOk ? folderSlots : starterEchoFolder(),
     regular_id:
       typeof data.regular_id === "string" && ECHO_KEY_BY_ID[data.regular_id]
         ? data.regular_id
@@ -290,7 +340,9 @@ export function normalizeEchoLibrary(raw) {
     star_card_id:
       typeof data.star_card_id === "string" && ECHO_KEY_BY_ID[data.star_card_id]
         ? data.star_card_id
-        : "pulse-star",
+        : null,
+    granted_full_library: legacyFull,
+    ...storyFields(data),
   };
 }
 
@@ -326,6 +378,39 @@ export function echoFolderStats(library) {
     dark_count: counts.dark,
     giga_count: counts.giga,
     standard_count: counts.standard,
-    owned_count: ECHO_KEYS.length,
+    owned_count: Array.isArray(library.owned_ids) ? library.owned_ids.length : 0,
   };
+}
+
+/**
+ * Resonance Draw — Keys that match the Anima's expression surface more often.
+ *
+ * @param {{ id: string, code: string }[]} folder
+ * @param {Record<string, number> | null | undefined} spectrum
+ * @param {number} [n]
+ * @param {() => number} [rng]
+ */
+export function drawResonanceHand(folder, spectrum, n = 5, rng = Math.random) {
+  if (!spectrum) return drawEchoHand(folder, n, rng);
+  const pool = [...folder];
+  /** @type {{ id: string, code: string }[]} */
+  const hand = [];
+  while (hand.length < n && pool.length) {
+    const weights = pool.map((slot) => {
+      const key = ECHO_KEY_BY_ID[slot.id];
+      return key ? compatibilityScore(key, spectrum) : 0.5;
+    });
+    const total = weights.reduce((a, b) => a + b, 0) || 1;
+    let roll = rng() * total;
+    let picked = 0;
+    for (let i = 0; i < pool.length; i += 1) {
+      roll -= weights[i];
+      if (roll <= 0) {
+        picked = i;
+        break;
+      }
+    }
+    hand.push(pool.splice(picked, 1)[0]);
+  }
+  return hand;
 }

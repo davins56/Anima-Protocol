@@ -33,16 +33,7 @@ export default function EnergyFragments() {
           Standard / Mega / Giga caps, elemental cycle, Program Advances. Energy Fragments are new
           battle data — variations of those families plus original programs. When a fragment is
           slotted, the weapon arrives as an ethereal construct: glass-steel, afterimage, no mass.
-          Your profile keeps the full{" "}
-          <button
-            type="button"
-            onClick={() => navigate("/echo-keys")}
-            className="text-amber-200/80 underline underline-offset-2 hover:text-amber-100"
-          >
-            Echo Key
-          </button>{" "}
-          library — about 800 weapon-memories covering Battle Network 1–6 and
-          Star Force-style Wave, Brother, and Force Big Bang keys.
+          The research catalog stays here. Playable <button type="button" onClick={() => navigate("/echo-keys")} className="underline text-primary/80 hover:text-primary">Echo Keys</button> are crystallized harmonic instructions — found, synthesised, or evolved in Story mode, not granted as a full 800-key dump.
         </p>
         <FragmentLibrary />
       </motion.div>
