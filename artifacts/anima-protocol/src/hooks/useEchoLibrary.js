@@ -52,7 +52,7 @@ export default function useEchoLibrary() {
     if (storedLibraryIsFull(user?.settings?.echo_keys, normalized.owned_ids.length)) return;
     upgradedRef.current = true;
     persistRef.current?.(normalized);
-  }, [user, user?.id, user?.settings?.echo_keys]);
+  }, [user?.id, user?.email, user?.role, user?.username, user?.settings?.echo_keys]);
 
   const persist = useCallback(
     async (next) => {
