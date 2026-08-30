@@ -44,12 +44,12 @@ describe("Cloudflare wrangler config", () => {
 
   it("runs the Worker first for /api so Express handles healthz, store, and Clerk", () => {
     expect(assets.run_worker_first).toEqual(
-      expect.arrayContaining(["/api", "/api/*"]),
+      expect.arrayContaining(["/api", "/api/*", "/assets", "/assets/*"]),
     );
     expect(workerSource).toContain('url.pathname.startsWith("/api/")');
     expect(workerSource).toContain('url.pathname === "/api"');
     expect(workerSource).toContain("expressHandler.fetch");
-    expect(workerSource).toContain("env.ASSETS.fetch");
+    expect(workerSource).toContain("fetchAssetsRejectingSpaHtml");
     expect(workerSource).toContain("httpServerHandler");
     expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
     expect(workerSource).toContain("httpServerHandler({ port: WORKER_API_PORT })");
