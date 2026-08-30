@@ -115,7 +115,7 @@ export default function InteractiveGraphVisualization() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
+    <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-hidden bg-background">
       {/* Graph Canvas */}
       <div className="flex-1 border-r border-primary/20 overflow-hidden relative">
         <svg
@@ -178,7 +178,7 @@ export default function InteractiveGraphVisualization() {
             initial={{ opacity: 0, x: 400 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 400 }}
-            className="w-96 border-l border-primary/20 bg-black/60 overflow-y-auto flex flex-col"
+            className="w-full lg:w-96 max-h-[45%] lg:max-h-none border-t lg:border-t-0 lg:border-l border-primary/20 bg-black/60 overflow-y-auto flex flex-col"
           >
             <NodeDetailsPanel node={nodeDetails} onClose={() => setNodeDetails(null)} />
           </motion.div>
