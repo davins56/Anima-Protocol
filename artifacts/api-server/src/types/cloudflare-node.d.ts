@@ -1,0 +1,16 @@
+declare module "cloudflare:node" {
+  export function httpServerHandler(options: {
+    app: unknown;
+  }): {
+    fetch(
+      request: Request,
+      env: unknown,
+      ctx: ExecutionContext,
+    ): Promise<Response>;
+  };
+}
+
+interface ExecutionContext {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException(): void;
+}
