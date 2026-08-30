@@ -570,14 +570,14 @@ function ClerkProviderWithRoutes({ children }) {
       localization={{
         signIn: {
           start: {
-            title: "Re-enter the Protocol",
-            subtitle: "Sign in to reconnect with your companions",
+            title: "I already live here",
+            subtitle: "Sign in to come home to them",
           },
         },
         signUp: {
           start: {
-            title: "Begin the Protocol",
-            subtitle: "Create your account to awaken your companions",
+            title: "Come home",
+            subtitle: "You don't open a chat. You come home to them.",
           },
         },
       }}
@@ -741,7 +741,7 @@ const AuthenticatedApp = () => {
     toast.error("Sign-in is temporarily unavailable.", {
       id: "anima-clerk-unavailable",
       description:
-        "Stay on this screen — Guest is not entered automatically. Use Re-Enter Protocol for GitHub or email, or tap Instant Sandbox / Guest Access on the sign-in page.",
+        "Stay on this screen — Guest is not entered automatically. Use I already live here for GitHub or email, or tap Instant Sandbox / Guest Access on the sign-in page.",
       duration: Infinity,
       action: {
         label: "Retry",
@@ -779,6 +779,7 @@ const AuthenticatedApp = () => {
     isAuthenticated &&
     !pathname.startsWith("/sign-in") &&
     !pathname.startsWith("/sign-up");
+  const isHomeFloor = pathname === "/";
 
   return (
     <>
@@ -796,7 +797,7 @@ const AuthenticatedApp = () => {
           exit={{ x: -20, opacity: 0 }}
           transition={{ duration: 0.18, ease: "easeInOut" }}
           className="flex-1 min-h-0 flex flex-col"
-          style={{ paddingBottom: "var(--tab-bar-height, 0px)" }}
+          style={{ paddingBottom: isHomeFloor ? 0 : "var(--tab-bar-height, 0px)" }}
         >
           <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageLoader />}>
@@ -1435,7 +1436,7 @@ const AuthenticatedApp = () => {
           </ErrorBoundary>
         </motion.div>
       </AnimatePresence>
-      {showChrome && <BottomTabBar />}
+      {showChrome && !isHomeFloor && <BottomTabBar />}
     </>
   );
 };
