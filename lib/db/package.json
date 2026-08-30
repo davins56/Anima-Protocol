@@ -18,6 +18,7 @@
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.23.0",
+    "postgres": "^3.4.9",
     "zod": "catalog:"
   },
   "devDependencies": {
