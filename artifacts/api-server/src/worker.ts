@@ -6,6 +6,10 @@ import {
   applyCloudflareRequestEnv,
   bindImportableEnv,
 } from "./lib/cloudflareEnv";
+import {
+  fetchStaticModuleAsset,
+  isStaticModuleAssetPath,
+} from "./lib/staticAssets";
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
@@ -42,9 +46,17 @@ export default {
       return expressHandler.fetch(request, env, ctx);
     }
 
-    // Everything else: serve static assets (SPA fallback handled by
+    // Hashed Vite modules under /assets/* are run_worker_first so a missing
+    // chunk (stale hash, partial deploy) 404s as text/plain instead of the
+    // SPA index.html rewrite from not_found_handling.
+    if (isStaticModuleAssetPath(url.pathname)) {
+      return fetchStaticModuleAsset(request, env.ASSETS);
+    }
+
+    // Page routes: serve static assets (SPA fallback handled by
     // assets.not_found_handling = "single-page-application" in wrangler.jsonc).
-    // /api and /api/* are run_worker_first so they never hit that SPA fallback.
+    // /api, /api/*, and /assets/* are run_worker_first so they never hit that
+    // SPA fallback unfiltered.
     return env.ASSETS.fetch(request);
   },
 };

@@ -93,7 +93,8 @@ export default defineConfig({
     // build — so installed/home-screen users no longer need to remove and
     // re-add the app to see changes. Kept deliberately minimal: precache the
     // built assets only, no navigation fallback or runtime caching, so it never
-    // intercepts /api calls or the prerendered route HTML. Disabled in dev to
+    // intercepts /api calls, prerendered route HTML, or hashed /assets/*.js
+    // misses (those must 404, not rewrite to index.html). Disabled in dev to
     // avoid interfering with HMR. The existing public/manifest.json is reused
     // (manifest: false), and registration happens in src/main.jsx.
     VitePWA({

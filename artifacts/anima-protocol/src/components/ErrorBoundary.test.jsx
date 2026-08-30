@@ -2,6 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { recoverStaleChunk } from "@/lib/staleChunkRecovery";
+
+vi.mock("@/lib/staleChunkRecovery", async () => {
+  const actual = await vi.importActual("@/lib/staleChunkRecovery");
+  return {
+    ...actual,
+    recoverStaleChunk: vi.fn(async () => {}),
+  };
+});
 
 // The ErrorBoundary is the app's only safety net against a render-phase throw
 // blanking the entire screen (App.full.jsx wraps <Routes> in it, keyed on
@@ -270,6 +279,26 @@ describe("ErrorBoundary", () => {
     });
 
     expect(container.querySelector('[data-testid="ok"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Something went wrong");
+  });
+
+  it("hard-recovers MIME / stale-chunk errors instead of remounting", () => {
+    recoverStaleChunk.mockClear();
+    function ChunkBoom() {
+      throw new Error(
+        `'text/html' is not a valid JavaScript MIME type for module script 'https://anima-protocol.com/assets/EchoKeys-DsgAf3_0.js'.`,
+      );
+    }
+
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/profile">
+          <ChunkBoom />
+        </ErrorBoundary>,
+      );
+    });
+
+    expect(recoverStaleChunk).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain("Something went wrong");
   });
 

@@ -21,9 +21,14 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // SPA fallback would otherwise serve index.html for unmatched /api/* paths.
-    // Run the Worker first so worker.ts can hand /api to Express (Clerk/store/healthz).
-    "run_worker_first": ["/api", "/api/*"]
+    // Default html_handling (auto-trailing-slash) is left unset so prerendered
+    // routes like /sign-in/ resolve to sign-in/index.html. It does not rewrite
+    // hashed /assets/*.js — those are intercepted below.
+    // SPA fallback would otherwise serve index.html for unmatched /api/* and
+    // missing /assets/*.js (browser MIME error on module scripts). Run the
+    // Worker first so worker.ts can hand /api to Express and 404 missing
+    // hashed static modules with a non-HTML type.
+    "run_worker_first": ["/api", "/api/*", "/assets/*"]
   },
   "vars": {
     "NODE_ENV": "production"

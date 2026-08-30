@@ -58,6 +58,19 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("cloudflareEnvBootstrap");
   });
 
+  it("runs the Worker first for /assets/* so missing hashed JS is not HTML-fallback", () => {
+    expect(assets.not_found_handling).toBe("single-page-application");
+    expect(assets.html_handling).toBeUndefined();
+    expect(assets.run_worker_first).toEqual(
+      expect.arrayContaining(["/assets/*"]),
+    );
+    expect(workerSource).toContain("isStaticModuleAssetPath");
+    expect(workerSource).toContain("fetchStaticModuleAsset");
+    expect(readFileSync(path.join(repoRoot, "package.json"), "utf8")).toContain(
+      "assertSpaAssets.js dist",
+    );
+  });
+
   it("excludes Netlify _redirects from Cloudflare asset uploads", () => {
     const assetsIgnore = readFileSync(
       path.join(repoRoot, "artifacts/anima-protocol/public/.assetsignore"),
