@@ -35,32 +35,44 @@ export default function DiscoveryQueue() {
 
   const loadData = async () => {
     setLoading(true);
-    const query = filter === "all" ? {} : { status: filter };
-    const [discoveries, sessions] = await Promise.all([
-      base44.entities.PendingDiscovery.filter(query, "-created_date", 100),
-      base44.entities.ChatSession.list("-created_date", 100)
-    ]);
-    setDiscoveries(discoveries || []);
-    setSessions(sessions || []);
-    setLoading(false);
+    try {
+      const query = filter === "all" ? {} : { status: filter };
+      const [discoveries, sessions] = await Promise.all([
+        base44.entities.PendingDiscovery.filter(query, "-created_date", 100),
+        // Metadata only on open; scan fetches that session's messages on demand.
+        base44.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
+      ]);
+      setDiscoveries(discoveries || []);
+      setSessions(sessions || []);
+    } catch (err) {
+      console.warn("Failed to load discovery queue:", err);
+      setDiscoveries([]);
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleScanSession = async (sessionId) => {
     setScanning(true);
-    const session = sessions.find(s => s.id === sessionId);
-    if (!session?.messages) {
+    try {
+      const session = sessions.find(s => s.id === sessionId);
+      let messages = session?.messages;
+      if (!messages?.length) {
+        messages = await base44.messages.list(sessionId).catch(() => []);
+      }
+      if (!messages?.length) return;
+
+      await base44.functions.invoke('detectWorldBuildingDetails', {
+        session_id: sessionId,
+        messages,
+        start_index: 0
+      }).catch(() => {});
+
+      await loadData();
+    } finally {
       setScanning(false);
-      return;
     }
-
-    await base44.functions.invoke('detectWorldBuildingDetails', {
-      session_id: sessionId,
-      messages: session.messages || [],
-      start_index: 0
-    }).catch(() => {});
-
-    await loadData();
-    setScanning(false);
   };
 
   const handleApprove = async (discovery) => {
