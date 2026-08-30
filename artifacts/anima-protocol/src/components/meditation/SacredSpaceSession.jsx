@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, X, Check } from "lucide-react";
 
@@ -106,18 +107,40 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
         `${m.role === "user" ? "User" : m.character_name}: ${m.content}`
       ).join("\n");
 
-      const res = await base44.functions.invoke("sacredSpaceImpact", {
-        character_id: character.id,
-        session_transcript: transcript,
-        ritual_focus: ritualFocus,
-        reflection: reflection,
+      // Persist as a CheckIn first. sacredSpaceImpact is LLM-only and does not
+      // write store rows; gating on its `{ data.success }` left this a silent
+      // no-op, so Sacred Space never appeared in CheckIn.list().
+      const created = await recordSacredSpaceCheckIn({
+        reflection,
+        ritualFocus,
+        characterName: character.name,
+        characterId: character.id,
+        userEmail: user?.email,
       });
 
-      if (res?.data?.success) {
-        setImpactResult(res.data);
-        setImpactSaved(true);
-        onComplete?.(res.data);
+      let impact = { success: true, check_in: created };
+      try {
+        const res = await base44.functions.invoke("sacredSpaceImpact", {
+          character_id: character.id,
+          session_transcript: transcript,
+          ritual_focus: ritualFocus,
+          reflection: reflection,
+        });
+        const data = res && typeof res === "object" && res.data && typeof res.data === "object"
+          ? res.data
+          : res && typeof res === "object"
+            ? res
+            : null;
+        if (data && typeof data === "object") {
+          impact = { ...impact, ...data, success: true };
+        }
+      } catch (impactErr) {
+        console.error(impactErr);
       }
+
+      setImpactResult(impact);
+      setImpactSaved(true);
+      onComplete?.(impact);
     } catch (err) {
       console.error(err);
     } finally {

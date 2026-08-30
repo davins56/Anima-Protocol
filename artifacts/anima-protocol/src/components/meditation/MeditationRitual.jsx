@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
 import { motion, AnimatePresence } from "framer-motion";
 
 const RITUAL_STEPS = [
@@ -100,6 +101,11 @@ export default function MeditationRitual({ anima, user }) {
     if (!reflection.trim()) return;
     setLoadingAI(true);
     try {
+      await recordSacredSpaceCheckIn({
+        reflection: reflection.trim(),
+        ritualFocus: activeStep?.id || activeStep?.title,
+        userEmail: user?.email,
+      });
       const result = await base44.integrations.Core.InvokeLLM({
         prompt: `You are ${anima?.name || "Serenity"}, an Anima resonance guide. The user just completed a meditation ritual step called "${activeStep?.title}". They share this reflection: "${reflection}". Respond with warmth, depth, and spiritual wisdom. 2-3 sentences max. Affirm what they've shared and offer a gentle insight.`,
       });
