@@ -1,19 +1,37 @@
 /**
- * Vite hashed chunks 404 (or, before the Worker fix, SPA-fell-back to HTML).
- * React.lazy then throws a MIME / "Failed to fetch dynamically imported module"
- * error. Remounting the tree cannot heal that — the import URL is still stale.
- * Unregister the PWA SW, drop Cache Storage, and hard-reload so the next
- * navigation picks up the current index.html hashes.
+ * Vite hashed chunks that SPA-fell-back to HTML throw a module MIME error.
+ * Remounting cannot heal that — the import URL is still the stale hash.
+ *
+ * One cache-clear + hard-reload per tab session is enough to pick up the
+ * current index hashes (EchoKeys-07j-In6E.js). A second MIME failure must
+ * show the ErrorBoundary panel, not loop reloads.
+ *
+ * Generic "Failed to fetch dynamically imported module" / CORS / network
+ * errors are NOT this path — those are often transient connectivity, not a
+ * poisoned HTML-as-JS response.
  */
+
+export const STALE_CHUNK_RECOVERY_KEY = "anima:stale-chunk-recovery";
 
 export function isStaleChunkError(error) {
   const msg = (error && (error.message || String(error))) || "";
-  return (
-    /is not a valid JavaScript MIME type/i.test(msg) ||
-    /Failed to fetch dynamically imported module/i.test(msg) ||
-    /error loading dynamically imported module/i.test(msg) ||
-    /Importing a module script failed/i.test(msg)
-  );
+  return /is not a valid JavaScript MIME type/i.test(msg);
+}
+
+export function hasAttemptedStaleChunkRecovery() {
+  try {
+    return sessionStorage.getItem(STALE_CHUNK_RECOVERY_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markStaleChunkRecoveryAttempted() {
+  try {
+    sessionStorage.setItem(STALE_CHUNK_RECOVERY_KEY, "1");
+  } catch {
+    /* private mode / blocked storage */
+  }
 }
 
 async function unregisterServiceWorkers() {
@@ -30,7 +48,12 @@ async function clearCacheStorage() {
   await Promise.all(keys.map((key) => caches.delete(key)));
 }
 
+/**
+ * @returns {Promise<boolean>} true if a reload was started
+ */
 export async function recoverStaleChunk() {
+  if (hasAttemptedStaleChunkRecovery()) return false;
+  markStaleChunkRecoveryAttempted();
   try {
     await unregisterServiceWorkers();
     await clearCacheStorage();
@@ -40,4 +63,5 @@ export async function recoverStaleChunk() {
   if (typeof window !== "undefined") {
     window.location.reload();
   }
+  return true;
 }
