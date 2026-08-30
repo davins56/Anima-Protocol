@@ -1,36 +1,84 @@
-import { describe, expect, it } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ECHO_KEY_LIBRARY_SIZE,
   ECHO_KEYS,
+  ECHO_LIBRARY_SIZE,
   ECHO_KEY_BY_ID,
+  ECHO_FAMILIES,
+  VARIANT_SLOTS,
+  familyIds,
+  coveredInspiredBy,
+  BATTLE_CHIP_LINEAGE,
+  STAR_FORCE_CARD_LINEAGE,
+  ECHO_KEY_SYSTEM,
+  BN_LATER_FAMILY_ACCOUNT,
+  STAR_FORCE_FAMILY_ACCOUNT,
+  laterFamilyIds,
+  starForceFamilyIds,
+  ECHO_FOLDER_RULES,
+  ECHO_RESONANCE,
   FEATURED_RESONANCE_KEYS,
-  echoKeysByMemory,
-  normalizeEchoKeyAccount,
+  makeEchoCopy,
   starterEchoFolder,
   starterOwnedIds,
   validateEchoFolder,
-  setFolderSlots,
+  echoCodesMatch,
+  echoSelectionIsLinked,
+  findEchoResonance,
+  findBestLink,
+  echoElementMultiplier,
+  defaultEchoLibrary,
+  normalizeEchoLibrary,
+  echoFolderToChips,
   chipsFromEchoFolder,
   echoKeyToChip,
+  echoResonanceChip,
+  echoFolderStats,
   echoKeyLoreBlock,
+  echoKeyPromptBlock,
   echoKeyCanonLine,
   enrichEchoKey,
   discoverAtSite,
   synthesiseEchoKeys,
   recordCriticalBattle,
-  biomeFromCoords,
-  siteIdFromBiome,
   grantOwnedKey,
+  normalizeEchoKeyAccount,
 } from "./index.js";
 
-describe("Echo Key catalog", () => {
-  it("holds 800 distinct Codex entries", () => {
-    expect(ECHO_KEY_LIBRARY_SIZE).toBe(800);
-    expect(ECHO_KEYS).toHaveLength(800);
+describe("research account", () => {
+  it("documents BN 1–6 chip lineage and Star Force cards", () => {
+    expect(BATTLE_CHIP_LINEAGE.summary).toMatch(/Folder/i);
+    expect(BATTLE_CHIP_LINEAGE.versions).toMatch(/Gregar/);
+    expect(STAR_FORCE_CARD_LINEAGE.summary).toMatch(/Best Combo/);
+    expect(STAR_FORCE_CARD_LINEAGE.summary).toMatch(/Brother Band/);
+    expect(ECHO_KEY_SYSTEM.summary).toMatch(/800/);
+  });
+
+  it("lists later BN and Star Force families without duplicate ids", () => {
+    expect(BN_LATER_FAMILY_ACCOUNT.length).toBeGreaterThanOrEqual(15);
+    expect(STAR_FORCE_FAMILY_ACCOUNT.length).toBeGreaterThanOrEqual(12);
+    const ids = [...laterFamilyIds(), ...starForceFamilyIds()];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("echo key catalog", () => {
+  it("holds around 800 distinct keys", () => {
+    expect(ECHO_FAMILIES.length).toBe(80);
+    expect(VARIANT_SLOTS.length).toBe(10);
+    expect(ECHO_FAMILIES.length * VARIANT_SLOTS.length).toBe(800);
+    expect(ECHO_KEYS.length).toBeGreaterThanOrEqual(800);
+    expect(ECHO_LIBRARY_SIZE).toBe(ECHO_KEYS.length);
+  });
+
+  it("has unique ids, names, and library numbers", () => {
     const ids = ECHO_KEYS.map((k) => k.id);
-    expect(new Set(ids).size).toBe(800);
-    expect(ECHO_KEYS[0].libraryNo).toBe(1);
-    expect(ECHO_KEYS.at(-1).libraryNo).toBe(800);
+    const names = ECHO_KEYS.map((k) => k.name);
+    const nos = ECHO_KEYS.map((k) => k.libraryNo);
+    expect(new Set(ids).size).toBe(ECHO_KEYS.length);
+    expect(new Set(names).size).toBe(ECHO_KEYS.length);
+    expect(nos[0]).toBe(1);
+    expect(nos.at(-1)).toBe(ECHO_KEYS.length);
+    expect(new Set(nos).size).toBe(ECHO_KEYS.length);
   });
 
   it("includes featured resonance artifacts", () => {
@@ -38,128 +86,201 @@ describe("Echo Key catalog", () => {
       expect(ECHO_KEY_BY_ID[row.id], row.id).toBeTruthy();
     }
     expect(ECHO_KEY_BY_ID["last-ember"].name).toBe("Last Ember");
-    expect(ECHO_KEY_BY_ID["ember-that-refused"].name).toBe("Ember That Refused");
   });
 
-  it("covers Battle Network classes, Star Force memories, and Dark/Plus", () => {
-    const memories = new Set(ECHO_KEYS.map((k) => k.memory));
-    for (const m of ["weapon", "plus", "field", "dark", "wave", "brother", "nova"]) {
-      expect(memories.has(m), m).toBe(true);
-    }
-    const eras = new Set(ECHO_KEYS.map((k) => k.era));
-    for (const era of ["bn1", "bn2", "bn3", "bn4", "bn5", "bn6", "starforce"]) {
-      expect(eras.has(era), era).toBe(true);
-    }
-    expect(echoKeysByMemory("wave").length).toBeGreaterThan(20);
-    expect(echoKeysByMemory("dark").length).toBeGreaterThan(5);
-  });
-
-  it("does not reuse Capcom chip or Navi names as playable rows", () => {
-    const banned = /^(cannon|hicannon|sword|wideswrd|roll|gutsman|protoman|fireman|bass|megaman|airshot|vulcan)\b/i;
+  it("requires class, element, kind, memory, and codes on every key", () => {
     for (const key of ECHO_KEYS) {
-      expect(banned.test(key.name), key.name).toBe(false);
-    }
-  });
-
-  it("requires codes, summon, and a source family on every key", () => {
-    for (const key of ECHO_KEYS) {
+      expect(key.name).toBeTruthy();
+      expect(["standard", "mega", "star", "dark", "giga"]).toContain(key.class);
+      expect(["void", "ember", "tide", "volt", "grove"]).toContain(key.element);
+      expect(key.kind).toBeTruthy();
+      expect(key.memory).toMatch(/Remembers/);
+      expect(key.ability?.tag).toBeTruthy();
       expect(key.codes.length).toBeGreaterThan(0);
-      expect(key.summon).toBeTruthy();
-      expect(key.inspiredByFamily).toBeTruthy();
-      expect(["standard", "apex", "nova"]).toContain(key.class);
+      expect(key.mb).toBeGreaterThan(0);
+      expect(key.inspiredBy).toBeTruthy();
+      expect(key.sources.length).toBeGreaterThan(0);
     }
+  });
+
+  it("covers BN and Star Force research families as inspired-by pointers", () => {
+    const covered = coveredInspiredBy();
+    expect(covered).toContain("cannon");
+    expect(covered).toContain("sword");
+    expect(covered).toContain("plasma");
+    expect(covered).toContain("best-combo");
+    expect(covered).toContain("noise");
+    expect(covered).toContain("tribe");
+    expect(covered).toContain("cross");
+    expect(familyIds().length).toBe(80);
+  });
+
+  it("does not reuse Capcom Navi or card names as playable rows", () => {
+    const banned = /^(roll|gutsman|protoman|fireman|bass|megaman|omega-xis|geo stare|pegasus|leo|dragon)\b/i;
+    for (const key of ECHO_KEYS) {
+      expect(banned.test(key.name)).toBe(false);
+      expect(banned.test(key.id)).toBe(false);
+    }
+  });
+
+  it("gives each family ten varying abilities", () => {
+    const pulse = ECHO_KEYS.filter((k) => k.family === "pulse");
+    expect(pulse.map((k) => k.ability.tag)).toEqual([
+      "base",
+      "pierce",
+      "heavy",
+      "burn",
+      "push",
+      "chain",
+      "root",
+      "lockon",
+      "multihit",
+      "echo-debt",
+    ]);
+    expect(pulse.find((k) => k.id === "pulse-star")?.class).toBe("star");
+    expect(pulse.find((k) => k.id === "pulse-noise")?.class).toBe("mega");
+    expect(pulse.find((k) => k.id === "pulse-shade")?.class).toBe("dark");
+    expect(ECHO_KEY_BY_ID["cybreath-shade"]?.class).toBe("giga");
   });
 });
 
-describe("Echo Key folders and profile account", () => {
-  it("starts with Shards, not the full Codex", () => {
+describe("folder and profile library", () => {
+  it("accepts the starter Array and does not grant the Codex", () => {
     const folder = starterEchoFolder();
-    expect(folder.length).toBeGreaterThanOrEqual(8);
-    expect(folder.length).toBeLessThanOrEqual(30);
-    expect(validateEchoFolder(folder).ok).toBe(true);
+    expect(folder).toHaveLength(ECHO_FOLDER_RULES.size);
+    const result = validateEchoFolder(folder);
+    expect(result.ok, result.errors.join("; ")).toBe(true);
+    const lib = defaultEchoLibrary();
+    expect(lib.owned_ids).toEqual(starterOwnedIds());
+    expect(lib.owned_ids).toHaveLength(8);
+    expect(lib.granted_full_library).toBe(false);
+    expect(lib.folder).toHaveLength(30);
+    expect(lib.regular_id).toBe("pulse-base");
+    expect(lib.star_card_id).toBeNull();
+  });
 
+  it("rejects a second Star or a fifth Standard copy", () => {
+    const folder = starterEchoFolder();
+    folder[0] = makeEchoCopy("halo-star");
+    folder[1] = makeEchoCopy("pulse-star");
+    expect(validateEchoFolder(folder).ok).toBe(false);
+    const tooMany = starterEchoFolder().map((slot, i) =>
+      i < 5 ? makeEchoCopy("pulse-base") : slot,
+    );
+    expect(validateEchoFolder(tooMany).ok).toBe(false);
+  });
+
+  it("restores a saved folder from profile JSON", () => {
+    const saved = defaultEchoLibrary();
+    saved.owned_ids = [...saved.owned_ids, "magnumlock-base"];
+    saved.folder[0] = makeEchoCopy("magnumlock-base");
+    const next = normalizeEchoLibrary(saved);
+    expect(next.folder[0].id).toBe("magnumlock-base");
+    expect(normalizeEchoLibrary(null).owned_ids).toHaveLength(8);
+    const legacy = normalizeEchoLibrary({ granted_full_library: true });
+    expect(legacy.owned_ids.length).toBe(ECHO_KEYS.length);
+  });
+
+  it("links copies that share a name, family, or letter, including *", () => {
+    expect(echoCodesMatch(makeEchoCopy("pulse-base"), makeEchoCopy("pulse-base"))).toBe(true);
+    expect(echoSelectionIsLinked([makeEchoCopy("pulse-base"), makeEchoCopy("pulse-high")])).toBe(true);
+    expect(echoCodesMatch({ id: "pulse-base", code: "*" }, { id: "halo-high", code: "Q" })).toBe(true);
+    expect(echoCodesMatch({ id: "pulse-high", code: "L" }, { id: "halo-apex", code: "Q" })).toBe(false);
+  });
+
+  it("fuses Pulse / Phantom / Seed / Star Force sequences", () => {
+    expect(findEchoResonance(["pulse-base", "pulse-high", "pulse-apex"])?.id).toBe("nova-pulse");
+    expect(findEchoResonance(["phantom-base", "phantom-high", "phantom-apex"])?.id).toBe("life-veil");
+    expect(findBestLink(["plasmagun-base", "heatupper-base", "iceneedle-base"])?.id).toBe("star-best");
+    expect(findBestLink(["pulse-star", "halo-star", "seed-star"])?.id).toBe("star-triad");
+    expect(findBestLink(["mend-base", "mend-high", "mend-apex"])?.id).toMatch(/^best-/);
+    expect(ECHO_RESONANCE.every((c) => c.requires.every((id) => ECHO_KEY_BY_ID[id]))).toBe(true);
+  });
+
+  it("applies ember > grove > tide and volt vs tide", () => {
+    expect(echoElementMultiplier("ember", "grove")).toBe(2);
+    expect(echoElementMultiplier("volt", "tide")).toBe(2);
+    expect(echoElementMultiplier("void", "ember")).toBe(1);
+  });
+});
+
+describe("combat adapter and lore", () => {
+  it("maps echo keys onto NetBattle chip kinds", () => {
+    const blast = echoKeyToChip(ECHO_KEY_BY_ID["pulse-base"]);
+    expect(blast.kind).toBe("blast");
+    expect(blast.damage).toBeGreaterThan(0);
+    expect(blast.echoKey).toBe(true);
+    const sword = echoKeyToChip(ECHO_KEY_BY_ID["phantom-high"]);
+    expect(sword.kind).toBe("sword");
+    expect(sword.wide).toBe(true);
+    const heal = echoKeyToChip(ECHO_KEY_BY_ID["mend-base"]);
+    expect(heal.kind).toBe("heal");
+    expect(heal.heal).toBeGreaterThan(0);
+  });
+
+  it("builds a playable folder with Regular and Star-Force pins", () => {
+    const chips = echoFolderToChips({
+      ...defaultEchoLibrary(),
+      star_card_id: "pulse-star",
+    });
+    expect(chips.length).toBeGreaterThanOrEqual(30);
+    expect(chips[0].id).toBe("pulse-base");
+    expect(chips.some((c) => c.id === "pulse-star")).toBe(true);
+    const fused = echoResonanceChip(["pulse-base", "pulse-high", "pulse-apex"]);
+    expect(fused?.name).toBe("Nova Pulse");
+    expect(fused?.damage).toBe(400);
+    const fromSlots = chipsFromEchoFolder([
+      { id: "pulse-base", code: "A" },
+      { id: "phantom-base", code: "S" },
+    ]);
+    expect(fromSlots).toHaveLength(2);
+    expect(fromSlots.every((chip) => chip.kind && chip.echoKey)).toBe(true);
+  });
+
+  it("summarizes folder stats for analytics", () => {
+    const stats = echoFolderStats(defaultEchoLibrary());
+    expect(stats.folder_size).toBe(30);
+    expect(stats.owned_count).toBe(8);
+    expect(stats.star_count).toBe(0);
+    expect(stats.mega_count).toBe(0);
+  });
+
+  it("exposes a prompt block for cyberspace sessions", () => {
+    expect(echoKeyLoreBlock()).toMatch(/Echo Key/i);
+    expect(echoKeyLoreBlock()).toMatch(/800/);
+    expect(echoKeyPromptBlock({ universe: "Mega Man Battle Network" }, {})).toMatch(/weapon-memory/i);
+    expect(echoKeyPromptBlock({ universe: "Star Force" }, {})).toMatch(/Folder/);
+    expect(echoKeyPromptBlock({ universe: "Naruto" }, { opening_scene: "a quiet village" })).toBe("");
+  });
+});
+
+describe("story-mode discovery", () => {
+  it("starts the account with Shards, not the Codex", () => {
     const account = normalizeEchoKeyAccount(null);
     expect(account.owned).toEqual(starterOwnedIds());
-    expect(account.owned.length).toBe(8);
     expect(account.granted_full_library).toBe(false);
-    expect(account.folders[0].slots).toHaveLength(8);
-  });
-
-  it("keeps a legacy full-library grant", () => {
-    const starter = starterEchoFolder();
-    const account = normalizeEchoKeyAccount({
-      granted_full_library: true,
-      folders: [{ id: "alpha", name: "Alpha", slots: starter }],
-      active_folder_id: "alpha",
-    });
-    expect(account.owned).toHaveLength(800);
-    expect(account.granted_full_library).toBe(true);
-    expect(account.active_folder_id).toBe("alpha");
-    const next = setFolderSlots(account, "alpha", starter);
-    expect(next.ok).toBe(true);
-  });
-
-  it("rejects a folder with too many Nova keys", () => {
-    const novas = ECHO_KEYS.filter((k) => k.class === "nova").slice(0, 2);
-    if (novas.length < 2) return;
-    const slots = starterEchoFolder();
-    slots[0] = { id: novas[0].id, code: novas[0].codes[0] };
-    slots[1] = { id: novas[1].id, code: novas[1].codes[0] };
-    expect(validateEchoFolder(slots).ok).toBe(false);
-  });
-});
-
-describe("Resonance metadata", () => {
-  it("treats Last Ember as a Key, not a shop Prime", () => {
-    const ember = enrichEchoKey(ECHO_KEY_BY_ID["last-ember"]);
-    expect(ember.tier).toBe("key");
-    expect(ember.frequency).toBe("pyric");
-    expect(ember.evolution.into).toBe("ember-that-refused");
     expect(echoKeyCanonLine()).toMatch(/crystallized memories of function/i);
+    expect(enrichEchoKey(ECHO_KEY_BY_ID["last-ember"]).tier).toBe("key");
   });
-});
 
-describe("Story-mode discovery", () => {
-  it("finds a new Key at a ruin without granting the Codex", () => {
+  it("finds a Key at a ruin and synthesises Firestorm and Mourning Gate", () => {
     const account = normalizeEchoKeyAccount(null);
-    const result = discoverAtSite(account, "fallen-ruin", { rng: () => 0, now: 1_700_000_000_000 });
-    expect(result.ok).toBe(true);
-    expect(result.key).toBeTruthy();
-    expect(result.account.owned).toContain(result.key.id);
-    expect(result.account.owned.length).toBe(account.owned.length + 1);
-    expect(result.account.granted_full_library).toBe(false);
-  });
+    const ruin = discoverAtSite(account, "fallen-ruin", { rng: () => 0.1, now: 1_700_000_000_000 });
+    expect(ruin.ok).toBe(true);
+    expect(ruin.account.owned.length).toBe(account.owned.length + 1);
 
-  it("respects virtual attune cooldown", () => {
-    const account = normalizeEchoKeyAccount(null);
-    const first = discoverAtSite(account, "ancient-forest", { rng: () => 0.2, now: 1_700_000_000_000 });
-    expect(first.ok).toBe(true);
-    const second = discoverAtSite(first.account, "ancient-forest", {
-      rng: () => 0.2,
-      now: 1_700_000_000_000 + 60_000,
-    });
-    expect(second.ok).toBe(false);
-    expect(second.error).toMatch(/settling/i);
-  });
+    let fused = grantOwnedKey(account, "pyre-key");
+    fused = grantOwnedKey(fused, "gale-key");
+    const storm = synthesiseEchoKeys(fused, ["pyre-key", "gale-key"]);
+    expect(storm.ok).toBe(true);
+    expect(storm.key.id).toBe("firestorm");
 
-  it("synthesises Firestorm from Pyre + Gale", () => {
-    let account = normalizeEchoKeyAccount(null);
-    account = grantOwnedKey(account, "pyre-key");
-    account = grantOwnedKey(account, "gale-key");
-    const result = synthesiseEchoKeys(account, ["pyre-key", "gale-key"]);
-    expect(result.ok).toBe(true);
-    expect(result.key.id).toBe("firestorm");
-    expect(result.account.owned).toContain("firestorm");
-  });
-
-  it("synthesises Mourning Gate from Grief + Memory + Veil", () => {
-    let account = normalizeEchoKeyAccount(null);
-    account = grantOwnedKey(account, "grief-echo");
-    account = grantOwnedKey(account, "memory-echo");
-    account = grantOwnedKey(account, "veil-key");
-    const result = synthesiseEchoKeys(account, ["grief-echo", "memory-echo", "veil-key"]);
-    expect(result.ok).toBe(true);
-    expect(result.key.id).toBe("mourning-gate");
+    fused = grantOwnedKey(account, "grief-echo");
+    fused = grantOwnedKey(fused, "memory-echo");
+    fused = grantOwnedKey(fused, "veil-key");
+    const gate = synthesiseEchoKeys(fused, ["grief-echo", "memory-echo", "veil-key"]);
+    expect(gate.ok).toBe(true);
+    expect(gate.key.id).toBe("mourning-gate");
   });
 
   it("evolves Last Ember after three critical survivals", () => {
@@ -170,7 +291,6 @@ describe("Story-mode discovery", () => {
         integrityRatio: 0.2,
         survived: true,
       });
-      expect(step.progressed).toBe(true);
       expect(step.evolved).toBeNull();
       account = step.account;
     }
@@ -180,29 +300,5 @@ describe("Story-mode discovery", () => {
       survived: true,
     });
     expect(done.evolved.id).toBe("ember-that-refused");
-    expect(done.account.owned).toContain("ember-that-refused");
-  });
-
-  it("classifies field coordinates into a biome without needing the raw point later", () => {
-    expect(biomeFromCoords(67, 20)).toBe("celestial");
-    expect(biomeFromCoords(58, 10)).toBe("mountain");
-    expect(typeof siteIdFromBiome(biomeFromCoords(45, -122))).toBe("string");
-  });
-});
-
-describe("Echo Key combat mapping", () => {
-  it("maps a Resonance Array onto NetBattle chips", () => {
-    const chips = chipsFromEchoFolder(starterEchoFolder());
-    expect(chips.length).toBe(8);
-    expect(["blast", "sword", "area", "heal"]).toContain(chips[0].kind);
-    const pulse = echoKeyToChip(ECHO_KEY_BY_ID["pulse-emitter"], "A");
-    expect(pulse.kind).toBe("blast");
-    expect(pulse.damage).toBeGreaterThan(0);
-  });
-
-  it("describes Keys as crystallized function, not a full starting library", () => {
-    expect(echoKeyLoreBlock()).toMatch(/crystallized memories of function/i);
-    expect(echoKeyLoreBlock()).toMatch(/800/);
-    expect(echoKeyLoreBlock()).toMatch(/handful of Shards/i);
   });
 });

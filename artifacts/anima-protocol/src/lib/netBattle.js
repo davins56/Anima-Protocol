@@ -127,7 +127,7 @@ function folderForBattle(opts, spectrum) {
  * @param {object} [opts.anima]
  * @param {'manual'|'auto'} [opts.controlMode]
  * @param {number} [opts.seed]
- * @param {{ id: string, code?: string, kind?: string }[]} [opts.echoFolder]
+ * @param {{ id: string, code?: string, kind?: string }[]} [opts.echoFolder] Echo Key chips or raw {id,code} slots. Falls back to expression chips.
  */
 export function createBattle(opts = {}) {
   const anima = opts.anima || {};
@@ -551,6 +551,7 @@ export function battleSummary(state) {
     result: state.phase === "victory" ? "win" : state.phase === "defeat" ? "loss" : "ongoing",
     control_mode: state.controlMode,
     chips_used: state.chipsUsed,
+    echo_keys_used: state.chipsUsed,
     player_hp: state.player.hp,
     enemy_hp: state.enemy.hp,
     ticks: state.tick,
