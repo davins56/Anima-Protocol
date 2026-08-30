@@ -409,10 +409,10 @@ export default function EmailCodeSignIn() {
     <div className={cardClass}>
       {previewBanner}
       <h1 className="text-xl font-semibold tracking-wide text-cyan-200">
-        Re-enter the Protocol
+        I already live here
       </h1>
       <p className="mt-1 text-sm text-cyan-400/60">
-        Sign in to resonate with your companions
+        Sign in to come home to them
       </p>
 
       <button

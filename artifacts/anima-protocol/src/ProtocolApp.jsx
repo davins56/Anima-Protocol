@@ -492,12 +492,10 @@ function SignedInHome() {
 // Leftover Instant Sandbox storage is not a signed-in session — only Clerk
 // or an explicit this-session Guest tap may enter the app.
 function HomeGate() {
-  const { isLoadingAuth, isAuthenticated, isSignedInUser, isGuest } = useAuth();
+  const { isAuthenticated, isSignedInUser, isGuest } = useAuth();
 
-  if (isLoadingAuth) {
-    return <Landing />;
-  }
-
+  // Explicit Instant Sandbox / a live Clerk session must enter home even if
+  // Clerk is still loading. Only unsigned visitors stay on the lock screen.
   if (isSignedInUser || isGuest || isAuthenticated) {
     return <SignedInHome />;
   }
@@ -570,14 +568,14 @@ function ClerkProviderWithRoutes({ children }) {
       localization={{
         signIn: {
           start: {
-            title: "Re-enter the Protocol",
-            subtitle: "Sign in to reconnect with your companions",
+            title: "I already live here",
+            subtitle: "Sign in to come home to them",
           },
         },
         signUp: {
           start: {
-            title: "Begin the Protocol",
-            subtitle: "Create your account to awaken your companions",
+            title: "Come home",
+            subtitle: "You don't open a chat. You come home to them.",
           },
         },
       }}
@@ -609,6 +607,7 @@ const AuthenticatedApp = () => {
     authError,
     navigateToLogin,
     isAuthenticated,
+    isGuest,
     user,
   } = useAuth();
   const location = useLocation();
@@ -732,6 +731,7 @@ const AuthenticatedApp = () => {
 
   useEffect(() => {
     if (!isLoadingAuth || !authStalled) return;
+    if (isAuthenticated || isGuest) return;
     const onSignInScreen =
       location.pathname === "/sign-in" ||
       location.pathname === "/sign-up" ||
@@ -741,14 +741,14 @@ const AuthenticatedApp = () => {
     toast.error("Sign-in is temporarily unavailable.", {
       id: "anima-clerk-unavailable",
       description:
-        "Stay on this screen — Guest is not entered automatically. Use Re-Enter Protocol for GitHub or email, or tap Instant Sandbox / Guest Access on the sign-in page.",
+        "Stay on this screen — Guest is not entered automatically. Use I already live here for GitHub or email, or tap Instant Sandbox / Guest Access on the sign-in page.",
       duration: Infinity,
       action: {
         label: "Retry",
         onClick: () => window.location.reload(),
       },
     });
-  }, [isLoadingAuth, authStalled, location.pathname]);
+  }, [isLoadingAuth, authStalled, isAuthenticated, isGuest, location.pathname]);
 
   if (authError) {
     if (authError.type === "user_not_registered") {
@@ -779,6 +779,7 @@ const AuthenticatedApp = () => {
     isAuthenticated &&
     !pathname.startsWith("/sign-in") &&
     !pathname.startsWith("/sign-up");
+  const isHomeFloor = pathname === "/";
 
   return (
     <>
@@ -796,7 +797,7 @@ const AuthenticatedApp = () => {
           exit={{ x: -20, opacity: 0 }}
           transition={{ duration: 0.18, ease: "easeInOut" }}
           className="flex-1 min-h-0 flex flex-col"
-          style={{ paddingBottom: "var(--tab-bar-height, 0px)" }}
+          style={{ paddingBottom: isHomeFloor ? 0 : "var(--tab-bar-height, 0px)" }}
         >
           <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageLoader />}>
@@ -1435,7 +1436,7 @@ const AuthenticatedApp = () => {
           </ErrorBoundary>
         </motion.div>
       </AnimatePresence>
-      {showChrome && <BottomTabBar />}
+      {showChrome && !isHomeFloor && <BottomTabBar />}
     </>
   );
 };
