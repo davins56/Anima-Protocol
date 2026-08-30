@@ -201,6 +201,7 @@ function buildRows() {
 export const ECHO_KEYS = numberLibrary(buildRows());
 
 export const ECHO_LIBRARY_SIZE = ECHO_KEYS.length;
+export const ECHO_KEY_LIBRARY_SIZE = ECHO_LIBRARY_SIZE;
 
 /** @type {Record<string, EchoKey>} */
 export const ECHO_KEY_BY_ID = Object.fromEntries(ECHO_KEYS.map((k) => [k.id, k]));

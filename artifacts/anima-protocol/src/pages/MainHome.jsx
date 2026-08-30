@@ -477,7 +477,7 @@ export default function MainHome() {
                   Jack In
                 </h2>
                 <p className="font-mono text-[11px] text-amber-100/55 leading-relaxed">
-                  Panel arena in 4-space. Inspect {anima?.name || "your Anima"}&apos;s vessel, then jack in with Echo Keys — weapon-memory from the profile library.
+                  Panel arena in 4-space. Inspect {anima?.name || "your Anima"}&apos;s vessel, then jack in with Echo Keys — weapon-memories from a 30-slot Folder.
                 </p>
               </div>
               <ChevronRight className="w-5 h-5 text-amber-300/30 group-hover:text-amber-200 transition-colors flex-shrink-0" />
@@ -497,7 +497,7 @@ export default function MainHome() {
                   Echo Keys
                 </h2>
                 <p className="font-mono text-[11px] text-amber-100/50 leading-relaxed">
-                  Eight hundred weapon memories on this profile. Build a 30-key Folder, pin Regular and Star-Force, then send them.
+                  Eight hundred weapon-memories on this profile. Build a 30-key Folder and send them in NetBattle.
                 </p>
               </div>
               <ChevronRight className="w-5 h-5 text-amber-300/30 group-hover:text-amber-200 transition-colors flex-shrink-0" />
@@ -797,7 +797,7 @@ export default function MainHome() {
               }
             />
             <QuickAction icon={UserCircle} label="Profile" desc="About you" onClick={() => navigate("/profile")} />
-            <QuickAction icon={KeyRound} label="Echo Keys" desc="800 weapon memories" onClick={() => navigate("/echo-keys")} />
+            <QuickAction icon={KeyRound} label="Echo Keys" desc="800 weapon-memories" onClick={() => navigate("/echo-keys")} />
             <QuickAction icon={BookOpen} label="Journal" desc="Your entries" onClick={() => navigate("/journals")} />
             <QuickAction icon={Stars} label="Constellation" desc="Your sky" onClick={() => navigate("/constellation")} />
             <QuickAction icon={BookOpen} label="Book of Echoes" desc="Anima's journal" onClick={() => navigate("/book-of-echoes")} />

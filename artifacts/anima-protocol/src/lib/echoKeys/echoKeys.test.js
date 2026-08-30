@@ -27,6 +27,7 @@ import {
   defaultEchoLibrary,
   normalizeEchoLibrary,
   echoFolderToChips,
+  chipsFromEchoFolder,
   echoKeyToChip,
   echoResonanceChip,
   echoFolderStats,
@@ -202,6 +203,12 @@ describe("combat adapter and lore", () => {
     const fused = echoResonanceChip(["pulse-base", "pulse-high", "pulse-apex"]);
     expect(fused?.name).toBe("Nova Pulse");
     expect(fused?.damage).toBe(400);
+    const fromSlots = chipsFromEchoFolder([
+      { id: "pulse-base", code: "A" },
+      { id: "phantom-base", code: "S" },
+    ]);
+    expect(fromSlots).toHaveLength(2);
+    expect(fromSlots.every((chip) => chip.kind && chip.echoKey)).toBe(true);
   });
 
   it("summarizes folder stats for analytics", () => {

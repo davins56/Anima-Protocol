@@ -25,7 +25,7 @@ export default function EchoKeys() {
               Echo Keys
             </h1>
             <p className="font-mono text-[9px] tracking-[0.3em] text-primary/40 uppercase">
-              // {ECHO_KEYS.length} weapon memories · {ECHO_FAMILIES.length} families · profile library
+              // {ECHO_KEYS.length} weapon-memories · {ECHO_FAMILIES.length} families · profile library
             </p>
           </div>
           <button
