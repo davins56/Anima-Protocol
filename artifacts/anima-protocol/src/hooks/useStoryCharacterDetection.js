@@ -7,18 +7,39 @@ export function detectMentionedStoryCharacters(finalMessages, characters, active
   }
 
   // Get the latest AI message (the most recent assistant message)
-  const latestMsg = [...finalMessages].reverse().find(m => m.role === 'assistant' && m.character_name !== '__typing__' && m.type !== 'event');
+  // Search from end without making a full array copy and reverse
+  let latestMsg = null;
+  for (let i = finalMessages.length - 1; i >= 0; i--) {
+    const m = finalMessages[i];
+    if (m.role === 'assistant' && m.character_name !== '__typing__' && m.type !== 'event') {
+      latestMsg = m;
+      break;
+    }
+  }
   if (!latestMsg) return null;
 
   const messageText = latestMsg.content.toLowerCase();
-  
+
+  // Construct a set of assistant character names already in the conversation once O(M)
+  const assistantCharactersInConvo = new Set();
+  for (let i = 0; i < finalMessages.length; i++) {
+    const m = finalMessages[i];
+    if (m.role === 'assistant' && m.character_name) {
+      assistantCharactersInConvo.add(m.character_name);
+    }
+  }
+
+  const mainCharId = activeSession.character_id;
+
   // Find any story character mentioned in the message that hasn't already appeared
   const mentionedChar = characters.find(c => {
-    const isMainChar = c.id === activeSession.character_id;
-    const alreadyInConvo = finalMessages.some(m => m.character_name === c.name && m.role === 'assistant');
-    const isMentioned = messageText.includes(c.name.toLowerCase());
-    
-    return isMentioned && !isMainChar && !alreadyInConvo;
+    const isMainChar = c.id === mainCharId;
+    if (isMainChar) return false;
+
+    const alreadyInConvo = assistantCharactersInConvo.has(c.name);
+    if (alreadyInConvo) return false;
+
+    return messageText.includes(c.name.toLowerCase());
   });
 
   if (mentionedChar) {
