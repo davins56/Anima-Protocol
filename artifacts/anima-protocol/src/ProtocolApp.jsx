@@ -488,14 +488,16 @@ function SignedInHome() {
 }
 
 // Public landing for signed-out users; full app home for signed-in users.
+// Leftover Instant Sandbox storage is not a signed-in session — only Clerk
+// or an explicit this-session Guest tap may enter the app.
 function HomeGate() {
-  const { isLoadingAuth, isAuthenticated, localUser, user } = useAuth();
+  const { isLoadingAuth, isAuthenticated, isSignedInUser, isGuest } = useAuth();
 
   if (isLoadingAuth) {
     return <Landing />;
   }
 
-  if (isAuthenticated || localUser || user) {
+  if (isSignedInUser || isGuest || isAuthenticated) {
     return <SignedInHome />;
   }
 
