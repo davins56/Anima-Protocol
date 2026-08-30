@@ -79,6 +79,13 @@ describe("Cloudflare wrangler config", () => {
     expect(readFileSync(path.join(repoRoot, "package.json"), "utf8")).toContain(
       "rm -f dist/_redirects",
     );
+    const headers = readFileSync(
+      path.join(repoRoot, "artifacts/anima-protocol/public/_headers"),
+      "utf8",
+    );
+    expect(headers).toContain("/assets/*");
+    expect(headers).toContain("max-age=31536000, immutable");
+    expect(assetsIgnore).not.toMatch(/^_headers$/m);
   });
 
   it("persists Secrets Store bindings for Clerk and DATABASE_URL", () => {

@@ -14,6 +14,7 @@ describe("initial module graph budget", () => {
   it("keeps seedCharacters off the eager App / Auth / bootstrap graph", () => {
     const staticSeedImport = /from\s+['"]@\/lib\/seedCharacters['"]/;
     expect(readSrc("App.full.jsx")).not.toMatch(staticSeedImport);
+    expect(readSrc("ProtocolApp.jsx")).not.toMatch(staticSeedImport);
     expect(readSrc("lib/AuthContext.jsx")).not.toMatch(staticSeedImport);
     expect(readSrc("lib/syncBootstrap.js")).not.toMatch(staticSeedImport);
     expect(readSrc("lib/syncBootstrap.js")).toMatch(
@@ -24,40 +25,48 @@ describe("initial module graph budget", () => {
     );
   });
 
-  it("eager-loads only Landing; home / chat / customise stay lazy", () => {
-    const app = readSrc("App.full.jsx");
-    expect(app).toMatch(/import Landing from ["']\.\/pages\/Landing["']/);
-    expect(app).toContain('const MainHome = lazy(() => import("./pages/MainHome"))');
-    expect(app).toContain('const Chat = lazy(() => import("./pages/Chat"))');
-    expect(app).toContain(
+  it("keeps Clerk and the route map out of the HTML entry module", () => {
+    const entry = readSrc("App.full.jsx");
+    expect(entry).not.toMatch(/from\s+["']@clerk\/react["']/);
+    expect(entry).not.toMatch(/from\s+["']@clerk\/themes["']/);
+    expect(entry).not.toContain("ClerkProvider");
+    expect(entry).not.toMatch(/lazy\(\(\) => import\("\.\/pages\//);
+    expect(entry).toContain('lazy(() => import("./ProtocolApp"))');
+    expect(entry).toMatch(/import Landing from ["']\.\/pages\/Landing["']/);
+
+    const shell = readSrc("ProtocolApp.jsx");
+    expect(shell).toMatch(/from\s+["']@clerk\/react["']/);
+    expect(shell).toContain("ClerkProvider");
+    expect(shell).toContain('const MainHome = lazy(() => import("./pages/MainHome"))');
+    expect(shell).toContain('const Chat = lazy(() => import("./pages/Chat"))');
+    expect(shell).toContain(
       'const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"))',
     );
-    expect(app).not.toMatch(/import MainHome from /);
-    expect(app).not.toMatch(/import CustomiseAnima from /);
+    expect(shell).not.toMatch(/import MainHome from /);
+    expect(shell).not.toMatch(/import CustomiseAnima from /);
   });
 
   it("uses one layout Suspense instead of per-route stacked loaders", () => {
-    const app = readSrc("App.full.jsx");
-    expect(app).toContain("<Suspense fallback={<PageLoader />}>");
-    expect(app).toContain("<Routes location={location}>");
+    const shell = readSrc("ProtocolApp.jsx");
+    expect(shell).toContain("<Suspense fallback={<PageLoader />}>");
+    expect(shell).toContain("<Routes location={location}>");
     const perRoute = (
-      app.match(/<Route[\s\S]*?<Suspense fallback=\{<PageLoader \/>\}>/g) || []
+      shell.match(/<Route[\s\S]*?<Suspense fallback=\{<PageLoader \/>\}>/g) ||
+      []
     ).length;
     expect(perRoute).toBe(0);
   });
 
   it("PageLoader is a spinner without stacked Loading copy", () => {
-    const app = readSrc("App.full.jsx");
-    expect(app).toMatch(/aria-label=["']Loading page["']/);
-    expect(app).not.toMatch(
-      /PageLoader[\s\S]{0,400}Loading\.\.\./,
-    );
+    const loader = readSrc("app/PageLoader.jsx");
+    expect(loader).toMatch(/aria-label=["']Loading page["']/);
+    expect(loader).not.toMatch(/Loading\.\.\./);
   });
 
   it("SignedInHome does not block first paint on Anima.list", () => {
-    const app = readSrc("App.full.jsx");
-    expect(app).toContain("function SignedInHome");
-    expect(app).not.toMatch(
+    const shell = readSrc("ProtocolApp.jsx");
+    expect(shell).toContain("function SignedInHome");
+    expect(shell).not.toMatch(
       /function SignedInHome\(\)[\s\S]{0,800}if \(state === "checking"\) return <PageLoader/,
     );
   });
@@ -67,7 +76,7 @@ describe("initial module graph budget", () => {
     expect(prefetch).toContain('import("../pages/MainHome")');
     expect(prefetch).toContain('import("../pages/Chat")');
     expect(prefetch).toContain('import("../pages/CustomiseAnima")');
-    expect(readSrc("App.full.jsx")).toContain("prefetchHotRoutes()");
+    expect(readSrc("ProtocolApp.jsx")).toContain("prefetchHotRoutes()");
   });
 
   it("does not block first paint on Algolia CDN CSS", () => {
@@ -88,9 +97,16 @@ describe("hashed asset cache budget", () => {
       "utf8",
     );
     const vercel = readFileSync(join(repoRoot, "vercel.json"), "utf8");
+    const headers = readFileSync(
+      join(srcRoot, "..", "public/_headers"),
+      "utf8",
+    );
     expect(fallback).toContain("HASHED_ASSET_CACHE_CONTROL");
     expect(fallback).toContain("public, max-age=31536000, immutable");
+    expect(fallback).toContain("cdn-cache-control");
     expect(vercel).toContain('"/assets/(.*)"');
     expect(vercel).toContain("max-age=31536000, immutable");
+    expect(headers).toContain("/assets/*");
+    expect(headers).toContain("max-age=31536000, immutable");
   });
 });
