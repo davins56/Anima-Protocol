@@ -277,9 +277,11 @@ export async function editImageWithGemini(
   return callGeminiImage([
     {
       text: [
-        "Edit this character portrait according to the instructions.",
+        "Use the attached image as a visual reference for a character portrait.",
+        "Preserve facial identity and likeness from the reference.",
+        "Apply every HARD REQUIREMENT and appearance instruction in the prompt (hair, outfit, eyes, style, skin tone).",
         "If skin tone / complexion is specified, change it clearly and consistently on face, neck, and hands.",
-        "Keep identity/pose when possible, but never ignore a requested skin colour.",
+        "Never ignore a requested skin colour.",
         `Instructions: ${trimmed.slice(0, 2500)}`,
       ].join("\n"),
     },
