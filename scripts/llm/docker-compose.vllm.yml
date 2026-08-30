@@ -1,0 +1,51 @@
+# Local OpenAI-compatible serving for fine-tuned Ministral 3 8B via vLLM.
+#
+# Prerequisites:
+#   - NVIDIA GPU with ~8–16 GB VRAM for FP8/QLoRA, or more for BF16
+#   - Docker + NVIDIA Container Toolkit
+#   - Accept mistralai model terms; set HUGGING_FACE_HUB_TOKEN if gated
+#
+# Usage:
+#   export ANIMA_VLLM_MODEL=mistralai/Ministral-3-8B-Instruct-2512
+#   # or path to your LoRA/merged checkpoint under ./checkpoints
+#   docker compose -f scripts/llm/docker-compose.vllm.yml up
+#
+# Then point the api-server at it (the only chat backend):
+#   export ANIMA_LOCAL_LLM_BACKEND=vllm
+#   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    ports:
+      - "8000:8000"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
+      - ${ANIMA_VLLM_CHECKPOINT_DIR:-./checkpoints}:/checkpoints
+    command:
+      - "--model"
+      - "${ANIMA_VLLM_MODEL:-mistralai/Ministral-3-8B-Instruct-2512}"
+      - "--served-model-name"
+      - "${ANIMA_VLLM_SERVED_NAME:-mistralai/Ministral-3-8B-Instruct-2512}"
+      - "--dtype"
+      - "${ANIMA_VLLM_DTYPE:-auto}"
+      - "--max-model-len"
+      - "${ANIMA_VLLM_MAX_LEN:-16384}"
+      - "--gpu-memory-utilization"
+      - "${ANIMA_VLLM_GPU_UTIL:-0.90}"
+      - "--enable-prefix-caching"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
