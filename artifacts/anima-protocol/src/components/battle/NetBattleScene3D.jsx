@@ -186,7 +186,7 @@ function CinematicCamera({ enabled }) {
   return null;
 }
 
-function BattleScene({ state, models, onPanelClick, quality }) {
+function BattleScene({ state, models, onPanelClick, quality, vesselLayers, sequences }) {
   const playerColor = models.player.color;
   const fx = useMemo(() => {
     const blasts = state.projectiles.map((p) => ({
@@ -219,6 +219,8 @@ function BattleScene({ state, models, onPanelClick, quality }) {
         hpRatio={state.player.maxHp > 0 ? state.player.hp / state.player.maxHp : 1}
         facing={1}
         quality={quality}
+        layers={vesselLayers}
+        sequences={sequences}
       />
       <VirusFigure
         model={models.enemy}
@@ -241,7 +243,7 @@ function BattleScene({ state, models, onPanelClick, quality }) {
   );
 }
 
-export default function NetBattleScene3D({ state, models, onPanelClick }) {
+export default function NetBattleScene3D({ state, models, onPanelClick, vesselLayers, sequences }) {
   const { quality, handleDecline, handleIncline } = useRendererQuality();
   return (
     <Canvas
@@ -265,6 +267,8 @@ export default function NetBattleScene3D({ state, models, onPanelClick }) {
           models={models}
           onPanelClick={onPanelClick}
           quality={quality}
+          vesselLayers={vesselLayers}
+          sequences={sequences}
         />
       </PerformanceMonitor>
     </Canvas>

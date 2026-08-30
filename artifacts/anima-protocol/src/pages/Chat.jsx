@@ -93,6 +93,8 @@ import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, get
 import { expressionPromptBlock } from "@/lib/animaExpressions";
 import { toast } from "sonner";
 import { useVesselContext } from "@/hooks/useVesselContext";
+import { useHiddenSequencesThread } from "@/hooks/useHiddenSequencesThread";
+import JackInOfferChip from "@/components/chat/JackInOfferChip";
 import VoiceChatMode from "@/components/chat/VoiceChatMode";
 import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
 import ImageGenerationModal from "@/components/chat/ImageGenerationModal";
@@ -368,6 +370,18 @@ export default function Chat() {
     isCompanionSpeaking,
   );
   const { vesselContext, attunementGuidance, refreshVesselContext } = useVesselContext(activeSession?.id);
+  const threadAnima = characters.find((c) => c.id === activeSession?.character_id)?._isAnima
+    ? characters.find((c) => c.id === activeSession?.character_id)
+    : characters.find((c) => c._isAnima) || null;
+  const lastUserLine = [...(activeSession?.messages || [])]
+    .reverse()
+    .find((m) => m.role === "user")?.content || "";
+  const hiddenThread = useHiddenSequencesThread({
+    session: activeSession,
+    anima: threadAnima,
+    messages: activeSession?.messages || [],
+    userText: lastUserLine,
+  });
   const [activeAspects, setActiveAspects] = useState([]);
   const [showAspectPicker, setShowAspectPicker] = useState(false);
   const toggleAspect = (id) => {
@@ -1204,6 +1218,21 @@ export default function Chat() {
       is_therapy: isTherapySession(activeSession, authUser, characters.find((c) => c.id === activeSession.character_id)),
     });
 
+    if (!isContinue && content) {
+      const identity = [
+        threadAnima?.personality,
+        threadAnima?.speaking_style,
+        threadAnima?.backstory,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      hiddenThread.harvestFromTurn(content, identity);
+      const liveGate = hiddenThread.gateFor(content);
+      if (liveGate.offer && liveGate.accept && !liveGate.refuse) {
+        hiddenThread.acceptJackIn();
+      }
+    }
+
     // Show thinking immediately while we build context / call the model.
     // No artificial pause — tokens replace this as soon as they arrive.
     const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
@@ -1415,7 +1444,7 @@ export default function Chat() {
           }
           const relCtx = getRelationshipContext(char.id, relationships);
           const loreCtx = loreContext;
-          const fragmentCtx = `${cyberspaceBattlePromptBlock(char, activeSession)}${echoKeyPromptBlock(char, activeSession)}`;
+          const fragmentCtx = `${cyberspaceBattlePromptBlock(char, activeSession)}${echoKeyPromptBlock(char, activeSession)}${hiddenThread.promptBlock || ""}`;
           const memCtx = memoryContext;
           const injectedMemCtx = injectedMemoryContext;
           const calendarCtx = calendarContext;
@@ -1588,7 +1617,7 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
 
           currentGroupSpeakerRef.current = finalNextChar;
 
-          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}${echoKeyPromptBlock(finalNextChar, activeSession)}`;
+          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}${echoKeyPromptBlock(finalNextChar, activeSession)}${hiddenThread.promptBlock || ""}`;
 
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {
@@ -1737,6 +1766,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             scene_mind_speaker_id: activeChar?.id || null,
             therapy_mode: therapyActive,
             adult_mode: adultMode,
+            hidden_sequences: hiddenThread.hidden,
+            conversational_weather: hiddenThread.weather,
           },
         }),
         {
@@ -1750,6 +1781,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // the catch path can surface an error instead of silently vanishing.
       if (!String(result).trim()) {
         throw new Error("The companion returned an empty reply. Please try again.");
+      }
+      if (hiddenThread.hidden.jack_in.speak_first || hiddenThread.consumeReturn().pendingId) {
+        hiddenThread.finishIntegration(result);
+        hiddenThread.clearReturnFlag();
       }
 
       if (resultPayload.ensemble_combined && Array.isArray(resultPayload.ensemble_minds)) {
@@ -2472,6 +2507,17 @@ Return JSON:
     if (injectedMemories.length > 0) setInjectedMemories([]);
     };
 
+  useEffect(() => {
+    if (!activeSession?.id || isLoading) return;
+    if (hiddenThread.spokeFirst.current) return;
+    const ret = hiddenThread.consumeReturn();
+    if (!ret.speakFirst && !hiddenThread.hidden.jack_in.speak_first) return;
+    hiddenThread.spokeFirst.current = true;
+    handleSendMessage("");
+    // Anima speaks first after jack-out.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSession?.id, hiddenThread.hidden.jack_in.speak_first]);
+
   return (
     <div className="app-page-fill flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
@@ -2762,6 +2808,29 @@ Return JSON:
 
               {/* Voice Chat & Chat Input */}
               <div className="space-y-2">
+                {hiddenThread.gate.offer && !hiddenThread.hidden.jack_in.live ? (
+                  <JackInOfferChip
+                    entityName={hiddenThread.entity?.name}
+                    disabled={isLoading}
+                    onAccept={() => {
+                      const live = hiddenThread.acceptJackIn();
+                      const animaId = threadAnima?.id || "";
+                      const sessionPart = activeSession?.id ? `&session=${activeSession.id}` : "";
+                      navigate(`/net-battle?anima=${animaId}${sessionPart}&entity=${encodeURIComponent(live.entity?.name || "Halo.Vrs")}`);
+                    }}
+                  />
+                ) : null}
+                {hiddenThread.hidden.jack_in.live ? (
+                  <JackInOfferChip
+                    entityName={hiddenThread.hidden.jack_in.entity?.name}
+                    disabled={isLoading}
+                    onAccept={() => {
+                      const animaId = threadAnima?.id || "";
+                      const sessionPart = activeSession?.id ? `&session=${activeSession.id}` : "";
+                      navigate(`/net-battle?anima=${animaId}${sessionPart}`);
+                    }}
+                  />
+                ) : null}
 <ChatInputControls
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}

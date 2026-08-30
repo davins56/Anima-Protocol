@@ -381,6 +381,68 @@ describe("resonanceState", () => {
   });
 });
 
+describe("hidden sequences prompt layer", () => {
+  const anima = {
+    id: "char-1",
+    name: "Serenity",
+    personality: "Warm, ethereal",
+    speaking_style: "Soft, poetic",
+    backstory: "A fallen angel who chose to remain close to humanity.",
+    _isAnima: true,
+  };
+
+  it("injects weather and only ascended Sequence triples", () => {
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [
+        { role: "assistant", content: "Halo.Vrs is in the lattice." },
+      ],
+      mode: "solo",
+      content: "what is that",
+      conversationalWeather: "storm",
+      hiddenSequences: {
+        sequences: {
+          "nova-pulse": {
+            fired_at: "2026-08-01T00:00:00.000Z",
+            integrated_at: "2026-08-01T00:10:00.000Z",
+          },
+          "life-veil": {
+            fired_at: "2026-08-30T00:00:00.000Z",
+            integrated_at: null,
+          },
+        },
+        learned_language: [{ grain: "beloved", repeats: 3 }],
+        learned_life: [{ kind: "trust", title: "She refused the lull", significant: true }],
+      },
+    });
+
+    expect(prompt).toContain("CONVERSATIONAL WEATHER: storm");
+    expect(prompt).toContain("Never NetBattle the companion Fallen Angel");
+    expect(prompt).toContain("Nova Pulse");
+    expect(prompt).toMatch(/cathedral shot/i);
+    expect(prompt).toContain("half-awake (Life Veil)");
+    expect(prompt).not.toMatch(/Life Veil:\n- voice:/);
+    expect(prompt).toContain("STEWARD-BONDED LANGUAGE");
+    expect(prompt).toContain("LIVED EXPERIENCE");
+  });
+
+  it("keeps lulls from offering jack-in", () => {
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "sit with me",
+      conversationalWeather: "lull",
+    });
+    expect(prompt).toContain("CONVERSATIONAL WEATHER: lull");
+    expect(prompt).toMatch(/Do not offer jack-in/);
+  });
+});
+
 describe("voiceAnchors", () => {
   it("extracts action anchors from speaking_style", () => {
     const char = {
