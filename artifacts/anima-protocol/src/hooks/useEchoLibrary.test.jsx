@@ -7,6 +7,7 @@ const { updateMeMock, setUserMock, authState } = vi.hoisted(() => ({
   authState: {
     user: {
       id: "user_1",
+      email: "seeker@example.com",
       settings: {
         echo_keys: { granted_full_library: false, owned_ids: ["pulse-base"] },
       },
@@ -31,7 +32,7 @@ vi.mock("@/lib/analytics", () => ({
 }));
 
 import useEchoLibrary, { storedLibraryIsFull } from "./useEchoLibrary";
-import { ECHO_KEYS } from "@/lib/echoKeys";
+import { ECHO_KEYS, starterOwnedIds } from "@/lib/echoKeys";
 
 describe("useEchoLibrary", () => {
   beforeEach(() => {
@@ -40,13 +41,14 @@ describe("useEchoLibrary", () => {
     updateMeMock.mockResolvedValue({ id: "user_1", settings: {} });
     authState.user = {
       id: "user_1",
+      email: "seeker@example.com",
       settings: {
         echo_keys: { granted_full_library: false, owned_ids: ["pulse-base"] },
       },
     };
   });
 
-  it("treats a starter handful as not yet persisted", () => {
+  it("treats a starter handful as not yet the full Codex", () => {
     expect(
       storedLibraryIsFull(
         { granted_full_library: false, owned_ids: ["pulse-base"] },
@@ -61,7 +63,23 @@ describe("useEchoLibrary", () => {
     ).toBe(true);
   });
 
-  it("persists granted_full_library and every catalog id after load", async () => {
+  it("keeps a normal operator on the starter Vault and does not persist a full grant", async () => {
+    const { result } = renderHook(() => useEchoLibrary());
+    expect(result.current.library.granted_full_library).toBe(false);
+    expect(result.current.library.owned_ids).toEqual(starterOwnedIds());
+    expect(result.current.library.folder).toHaveLength(30);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(updateMeMock).not.toHaveBeenCalled();
+  });
+
+  it("persists the full Codex after the steward loads Echo Keys", async () => {
+    authState.user = {
+      id: "user_davin",
+      email: "davins56@gmail.com",
+      settings: {
+        echo_keys: { granted_full_library: false, owned_ids: starterOwnedIds() },
+      },
+    };
     const { result } = renderHook(() => useEchoLibrary());
     expect(result.current.library.owned_ids).toHaveLength(ECHO_KEYS.length);
     expect(result.current.library.granted_full_library).toBe(true);
@@ -71,6 +89,9 @@ describe("useEchoLibrary", () => {
     const payload = updateMeMock.mock.calls[0][0];
     expect(payload.settings.echo_keys.granted_full_library).toBe(true);
     expect(payload.settings.echo_keys.owned_ids).toHaveLength(ECHO_KEYS.length);
+    expect(payload.settings.echo_keys.owned_ids).toEqual(
+      expect.arrayContaining(["beth", "echo-empathy", "choir-compassion", "prime-echo-key", "wheel-crown"]),
+    );
     expect(payload.settings.echo_keys.folder).toHaveLength(30);
   });
 });

@@ -43,9 +43,9 @@ export default function EchoCodex({ ownedIds }) {
   return (
     <div className="space-y-4">
       <p className="text-[13px] text-primary/65 leading-relaxed max-w-3xl">
-        The Codex lists every named artifact you hold — Echo Shards, Echo Keys, Sovereign Keys,
-        and Prime Keys. Sovereign and Prime keep the novels&apos; gravity; they are not shop
-        inventory. A Resonance Array still slots only 30.
+        The Codex lists every named artifact. Locked entries show only a silhouette and a site
+        hint — not the whole enchilada. Sovereign and Prime Keys keep the novels&apos; gravity;
+        they are not shop inventory.
       </p>
       <div className="flex flex-wrap gap-2">
         {TIER_FILTERS.map((id) => (

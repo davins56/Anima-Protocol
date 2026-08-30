@@ -131,9 +131,9 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
           Story mode · Vault → Loadout → Resonance Draw → Invocation → Fusion
         </p>
         <p className="text-[13px] text-primary/70 leading-relaxed max-w-3xl">
-          The Vault already holds the Codex — Sovereign and Prime included. Story mode walks the
-          Lattice for flavor: attune on site, braid a Sequence, watch a remembered event change
-          interpretation. Coordinates are never stored; only a biome class.
+          Echo Keys emerge wherever experience becomes sufficiently resonant that the Lattice
+          remembers it. Nature is prime territory. So is a battlefield. Attune on site — virtually
+          from here, or in the field. Coordinates are never stored; only a biome class.
         </p>
       </section>
 
@@ -196,7 +196,7 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
         </div>
         <p className="font-mono text-[8px] text-primary/35 tracking-widest uppercase">
           Field attune asks for location once, maps it to a biome, and discards the coordinates.
-          Sovereign and Prime Keys are already in the Vault. Walking a site is flavor, not a lock.
+          Sovereign Keys only answer in the field. Prime Keys stay with the novels.
         </p>
       </section>
 
@@ -249,8 +249,7 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
         </ul>
         <p className="font-mono text-[9px] text-primary/40">
           Select two to four owned Keys, then braid. Cartridge recipes are explicit sigil bundles.
-          Echo of Glass Keys do not fuse into one object. Search the Vault if you want a Key
-          outside the recipe list — ownership is already granted.
+          Echo of Glass Keys do not fuse into one object.
         </p>
         <input
           value={fuseQuery}

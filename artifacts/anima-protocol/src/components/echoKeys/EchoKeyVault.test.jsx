@@ -13,7 +13,7 @@ afterEach(cleanup);
 
 describe("EchoKeyVault", () => {
   it(
-    "lists the full Codex and finds Star Force memories without rendering every card",
+    "lists the Codex and finds Star Force memories without granting them all",
     () => {
       render(
         <EchoKeyVault
@@ -26,7 +26,7 @@ describe("EchoKeyVault", () => {
       );
 
       expect(screen.getByText(/on this profile/i)).toBeTruthy();
-      expect(screen.getByText(new RegExp(`${ECHO_KEYS.length} on this profile`))).toBeTruthy();
+      expect(screen.getByText(/11 on this profile/i)).toBeTruthy();
       expect(echoCardButtons()).toHaveLength(ECHO_LIBRARY_GRID_CAP);
       expect(screen.getByRole("button", { name: /^echo shard$/i })).toBeTruthy();
       expect(screen.getByRole("button", { name: /^echo key$/i })).toBeTruthy();
@@ -57,6 +57,24 @@ describe("EchoKeyVault", () => {
       expect(screen.getByText(new RegExp(`${sovereignCount} listed`))).toBeTruthy();
       expect(echoCardButtons().length).toBe(sovereignCount);
       expect(echoCardButtons().length).toBeGreaterThan(0);
+    },
+    30_000,
+  );
+
+  it(
+    "caps the steward Vault at 240 cards while counting the full Codex",
+    () => {
+      render(
+        <EchoKeyVault
+          library={defaultEchoLibrary({}, { grantFullLibrary: true })}
+          onSave={vi.fn()}
+          saving={false}
+          error={null}
+          onReset={vi.fn()}
+        />,
+      );
+      expect(screen.getByText(new RegExp(`${ECHO_KEYS.length} on this profile`))).toBeTruthy();
+      expect(echoCardButtons()).toHaveLength(ECHO_LIBRARY_GRID_CAP);
     },
     30_000,
   );
