@@ -2,9 +2,14 @@ import { useState, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { Upload, Loader, X } from "lucide-react";
 import { motion } from "framer-motion";
+import {
+  formatAvatarUploadError,
+  uploadCharacterAvatar,
+} from "@/lib/characterAvatarUpload";
 
 export default function PortraitUploader({ onUploadSuccess, currentUrl }) {
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
   const fileInputRef = useRef(null);
 
   const handleFileSelect = async (e) => {
@@ -12,13 +17,16 @@ export default function PortraitUploader({ onUploadSuccess, currentUrl }) {
     if (!file) return;
 
     setUploading(true);
+    setError("");
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
-      if (result?.file_url) {
-        onUploadSuccess(result.file_url);
-      }
+      const fileUrl = await uploadCharacterAvatar(
+        file,
+        (payload) => base44.integrations.Core.UploadFile(payload),
+      );
+      onUploadSuccess(fileUrl);
     } catch (err) {
       console.error("Upload error:", err);
+      setError(formatAvatarUploadError(err));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -72,6 +80,9 @@ export default function PortraitUploader({ onUploadSuccess, currentUrl }) {
           </>
         )}
       </button>
+      {error ? (
+        <p className="text-[9px] font-mono text-red-400/90 leading-relaxed">{error}</p>
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,10 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Loader, Upload, X } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import {
+  formatAvatarUploadError,
+  uploadCharacterAvatar,
+} from "@/lib/characterAvatarUpload";
 
 /**
  * Compact avatar upload / URL field used when creating or reviewing an Anima.
@@ -12,6 +16,7 @@ import { base44 } from "@/api/base44Client";
  *   onGenerate?: () => Promise<void> | void,
  *   generating?: boolean,
  *   generateLabel?: string,
+ *   onBusyChange?: (busy: boolean) => void,
  * }} props
  */
 export default function AvatarUploadField({
@@ -21,6 +26,7 @@ export default function AvatarUploadField({
   onGenerate,
   generating = false,
   generateLabel = "Generate Portrait",
+  onBusyChange,
 }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -30,25 +36,19 @@ export default function AvatarUploadField({
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    onBusyChange?.(true);
     setError("");
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
-      if (result?.file_url) {
-        onChange(result.file_url);
-      } else {
-        setError("Upload failed — try another image.");
-      }
+      const fileUrl = await uploadCharacterAvatar(
+        file,
+        (payload) => base44.integrations.Core.UploadFile(payload),
+      );
+      onChange(fileUrl);
     } catch (err) {
-      const msg = String(err?.message || "");
-      if (/unauthorized|sign in|not signed|401/i.test(msg)) {
-        setError("Sign in to upload an avatar, then try again.");
-      } else if (/too large/i.test(msg)) {
-        setError("That image is too large. Try a smaller photo.");
-      } else {
-        setError(msg || "Upload failed — try another image.");
-      }
+      setError(formatAvatarUploadError(err));
     } finally {
       setUploading(false);
+      onBusyChange?.(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   };

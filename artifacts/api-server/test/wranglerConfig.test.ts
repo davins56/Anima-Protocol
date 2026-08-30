@@ -44,12 +44,12 @@ describe("Cloudflare wrangler config", () => {
 
   it("runs the Worker first for /api so Express handles healthz, store, and Clerk", () => {
     expect(assets.run_worker_first).toEqual(
-      expect.arrayContaining(["/api", "/api/*"]),
+      expect.arrayContaining(["/api", "/api/*", "/assets", "/assets/*"]),
     );
     expect(workerSource).toContain('url.pathname.startsWith("/api/")');
     expect(workerSource).toContain('url.pathname === "/api"');
     expect(workerSource).toContain("expressHandler.fetch");
-    expect(workerSource).toContain("env.ASSETS.fetch");
+    expect(workerSource).toContain("fetchAssetsRejectingSpaHtml");
     expect(workerSource).toContain("httpServerHandler");
     expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
     expect(workerSource).toContain("httpServerHandler({ port: WORKER_API_PORT })");
@@ -58,14 +58,13 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("cloudflareEnvBootstrap");
   });
 
-  it("runs the Worker first for /assets/* so missing hashed JS is not HTML-fallback", () => {
+  it("runs the Worker first for /assets so missing hashed JS is not HTML-fallback", () => {
     expect(assets.not_found_handling).toBe("single-page-application");
     expect(assets.html_handling).toBeUndefined();
     expect(assets.run_worker_first).toEqual(
-      expect.arrayContaining(["/assets/*"]),
+      expect.arrayContaining(["/assets", "/assets/*"]),
     );
-    expect(workerSource).toContain("isStaticModuleAssetPath");
-    expect(workerSource).toContain("fetchStaticModuleAsset");
+    expect(workerSource).toContain("fetchAssetsRejectingSpaHtml");
     expect(readFileSync(path.join(repoRoot, "package.json"), "utf8")).toContain(
       "assertSpaAssets.js dist",
     );

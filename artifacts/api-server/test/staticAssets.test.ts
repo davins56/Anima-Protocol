@@ -63,7 +63,7 @@ describe("static asset SPA-fallback guard", () => {
     expect(response.status).toBe(404);
     expect(response.headers.get("content-type")).toMatch(/text\/plain/);
     expect(response.headers.get("content-type")).not.toMatch(/html/);
-    await expect(response.text()).resolves.toMatch(/Not found/);
+    await expect(response.text()).resolves.toMatch(/Not [Ff]ound/);
   });
 
   it("passes through a real JavaScript module from ASSETS", async () => {
