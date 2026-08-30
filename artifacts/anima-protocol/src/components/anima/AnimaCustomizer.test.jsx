@@ -69,6 +69,17 @@ describe("AnimaCustomizer leftover reference-photo look", () => {
     expect(container.textContent).toMatch(/Change Reference/);
   });
 
+  it("exposes vessel layer fields for the same body in Presence and NetBattle", () => {
+    const { container } = renderCustomizer();
+    expect(container.textContent).toMatch(/Vessel layers/);
+    expect(container.textContent).toMatch(/Body · skin/);
+    expect(container.textContent).toMatch(/Hair · style/);
+    expect(container.textContent).toMatch(/Cloth · robe/);
+    expect(container.textContent).toMatch(/Markings · chest/);
+    const marking = container.querySelector('input[placeholder="変"]');
+    expect(marking?.value).toBe("変");
+  });
+
   it("uploads a likeness photo as the look reference, not the avatar", async () => {
     uploadFileMock.mockResolvedValue({
       file_url: "/api/storage/objects/refs/uploaded.png",

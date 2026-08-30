@@ -68,7 +68,7 @@ export function useHiddenSequencesThread({
         jackIn: hidden.jack_in,
         userText: text,
         hasHalfAwake: hasHalfAwake(hidden.sequences),
-        sameEntityInScene: Boolean(sameEntity || weatherState.entity),
+        sameEntityInScene: Boolean(sameEntity),
       }),
     [weatherState, hidden.jack_in, hidden.sequences, sameEntity],
   );
