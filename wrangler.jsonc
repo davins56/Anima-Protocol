@@ -21,9 +21,11 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // SPA fallback would otherwise serve index.html for unmatched /api/* paths.
-    // Run the Worker first so worker.ts can hand /api to Express (Clerk/store/healthz).
-    "run_worker_first": ["/api", "/api/*"]
+    // SPA fallback would otherwise serve index.html for unmatched /api/* and
+    // stale hashed files under /assets/* (browser then rejects HTML as a JS
+    // module). Run the Worker first: /api → Express; /assets → 404 if ASSETS
+    // returns HTML. Client routes (/net-battle, /meditation) stay SPA.
+    "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
   },
   "vars": {
     "NODE_ENV": "production"
