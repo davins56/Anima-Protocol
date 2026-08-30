@@ -4,6 +4,7 @@ import {
   isProductionFromPublishableKey,
 } from "@clerk/shared/keys";
 import type { IncomingHttpHeaders } from "http";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
 
 export const CLERK_PROXY_PATH = "/api/__clerk";
 
@@ -113,7 +114,7 @@ export function resolveClerkPublishableKey(
 export function resolveRuntimePublishableKey(req: {
   headers: IncomingHttpHeaders;
 }): string | undefined {
-  const envKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  const envKey = readRuntimeEnv("CLERK_PUBLISHABLE_KEY") || "";
   if (isPublishableKey(envKey)) {
     return envKey;
   }

@@ -14,4 +14,20 @@ describe("resolveDatabaseUrl", () => {
     ).toBe("postgresql://c/db");
     expect(resolveDatabaseUrl({ DATABASE_URL: "  " })).toBeUndefined();
   });
+
+  it("falls back to the Worker runtime env reader when process.env is empty", () => {
+    const key = Symbol.for("anima.cloudflare.readRuntimeEnv");
+    const previous = (globalThis as Record<PropertyKey, unknown>)[key];
+    (globalThis as Record<PropertyKey, unknown>)[key] = (name: string) =>
+      name === "DATABASE_URL" ? "postgresql://from-importable/db" : undefined;
+    try {
+      expect(resolveDatabaseUrl({})).toBe("postgresql://from-importable/db");
+    } finally {
+      if (previous === undefined) {
+        delete (globalThis as Record<PropertyKey, unknown>)[key];
+      } else {
+        (globalThis as Record<PropertyKey, unknown>)[key] = previous;
+      }
+    }
+  });
 });

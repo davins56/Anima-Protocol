@@ -8,7 +8,12 @@
   "main": "artifacts/api-server/src/worker.ts",
   "compatibility_date": "2026-08-17",
   // Required by worker.ts — Express runs through cloudflare:node's httpServerHandler.
-  "compatibility_flags": ["nodejs_compat"],
+  // populate_process_env is default after 2025-04-01; keep it explicit so
+  // dashboard secrets reach process.env. Do not commit secret values here.
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env",
+  ],
   "assets": {
     // Root `pnpm build` copies artifacts/anima-protocol/dist/public → ./dist
     // and drops Netlify `_redirects` (invalid on Workers: 200! / SPA loop).

@@ -1,11 +1,18 @@
+import "./lib/cloudflareEnvBootstrap";
 import { httpServerHandler } from "cloudflare:node";
+import { env as importableWorkerEnv } from "cloudflare:workers";
 import app from "./app";
-import { mirrorCloudflareBindings } from "./lib/cloudflareEnv";
+import {
+  applyCloudflareRequestEnv,
+  bindImportableEnv,
+} from "./lib/cloudflareEnv";
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
   [key: string]: unknown;
 }
+
+bindImportableEnv(importableWorkerEnv);
 
 // cloudflare:node uses this as a routing key, not a real bind. Passing { app }
 // without listen() fails Worker upload: "Failed to determine port for server".
@@ -26,10 +33,10 @@ export default {
 
     // Route /api/* requests through the Express app.
     if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
-      // Mirror Worker secrets/vars into process.env. Must read known secret
-      // names by property — Object.entries(env) skips non-enumerable bindings
-      // and would leave Clerk/Postgres unset (503 "API is misconfigured").
-      mirrorCloudflareBindings(env);
+      // Request-time apply: fetch env + importable env, including non-enumerable
+      // secrets and Secrets Store-style objects. Do not rely on a boot snapshot
+      // of process.env — httpServerHandler may reset it after this returns.
+      await applyCloudflareRequestEnv(env);
       return expressHandler.fetch(request, env, ctx);
     }
 

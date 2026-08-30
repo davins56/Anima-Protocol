@@ -5,6 +5,7 @@ import {
   getPool,
   inspectSchema,
 } from "@workspace/db";
+import { runtimeEnvPresence } from "../lib/cloudflareEnv";
 import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
 import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
 
@@ -18,6 +19,14 @@ const router: IRouter = Router();
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
   res.json(data);
+});
+
+/**
+ * Presence-only env probe. Never returns secret values — only whether the
+ * isolate can see DATABASE_URL / Clerk keys after request-time remirror.
+ */
+router.get("/healthz/env", (_req, res) => {
+  res.json(runtimeEnvPresence());
 });
 
 /**

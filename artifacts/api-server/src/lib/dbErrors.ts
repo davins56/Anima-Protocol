@@ -1,3 +1,5 @@
+import { readRuntimeDatabaseUrl } from "./cloudflareEnv";
+
 /**
  * Classify and sanitize database / driver errors so API responses never leak
  * connection strings or credentials, while still giving operators a usable signal.
@@ -100,7 +102,7 @@ export function classifyDbError(err: unknown): DbErrorInfo {
 
 /** Non-secret connection metadata for readiness probes. */
 export function databaseTargetHint(
-  rawUrl: string | undefined = process.env.DATABASE_URL,
+  rawUrl: string | undefined = readRuntimeDatabaseUrl(),
 ): {
   configured: boolean;
   protocol?: string;

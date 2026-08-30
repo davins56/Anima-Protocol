@@ -29,7 +29,10 @@ describe("Cloudflare wrangler config", () => {
     expect(config.name).toBe("anima-protocol");
     expect(config.main).toBe("artifacts/api-server/src/worker.ts");
     expect(config.compatibility_flags).toEqual(
-      expect.arrayContaining(["nodejs_compat"]),
+      expect.arrayContaining([
+        "nodejs_compat",
+        "nodejs_compat_populate_process_env",
+      ]),
     );
   });
 
@@ -50,7 +53,9 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("httpServerHandler");
     expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
     expect(workerSource).toContain("httpServerHandler({ port: WORKER_API_PORT })");
-    expect(workerSource).toContain("mirrorCloudflareBindings(env)");
+    expect(workerSource).toContain("applyCloudflareRequestEnv(env)");
+    expect(workerSource).toContain("cloudflare:workers");
+    expect(workerSource).toContain("cloudflareEnvBootstrap");
   });
 
   it("excludes Netlify _redirects from Cloudflare asset uploads", () => {

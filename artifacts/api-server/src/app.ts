@@ -6,6 +6,7 @@ import express, {
 } from "express";
 import cors from "cors";
 
+import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
@@ -28,9 +29,14 @@ const app: Express = express();
 // which surfaces as "Too many requests" after a single chat send.
 app.set("trust proxy", 1);
 
+// Re-apply Worker secrets onto process.env on every request. cloudflare:node
+// may snapshot or reset process.env after fetch() mirroring; Clerk/DB readers
+// then see empty keys and 503 "API is misconfigured".
+app.use(syncCloudflareRuntimeEnvMiddleware());
+
 // Clerk Frontend API proxy — must be mounted before the body parsers because it
 // streams raw request bytes. It self-guards and is only active in production /
-// pk_live; otherwise it returns a deterministic 503.
+// pk_live; otherwise it returns a deterministic 503. Keys are read per request.
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
 // Webhook route needs the raw request body for svix signature verification, so
