@@ -15,6 +15,7 @@ import {
   ensureBootstrapComplete,
   isBootstrapSettled,
 } from '@/lib/bootstrapState';
+import { STORE_FETCH_TIMEOUT_MS } from '@/lib/storeTimeouts';
 import {
   authHeaders,
   clearAuthTokenGetter,
@@ -26,8 +27,7 @@ import {
 const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
-
-const STORE_FETCH_TIMEOUT_MS = 15000;
+export { STORE_FETCH_TIMEOUT_MS };
 
 async function storeFetch(path, options = {}) {
   const token = await getToken();

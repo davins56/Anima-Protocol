@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { base44, clearAuthTokenGetter, setAuthTokenGetter } from "./base44Client";
+import {
+  base44,
+  clearAuthTokenGetter,
+  clearStoreCache,
+  setAuthTokenGetter,
+  STORE_FETCH_TIMEOUT_MS,
+} from "./base44Client";
 
 describe("ChatSession store wrapper", () => {
   beforeEach(() => {
@@ -64,6 +70,32 @@ describe("ChatSession store wrapper", () => {
       title: "Init Session",
       messages: savedMessages,
     });
+  });
+
+  it("fails fast when the store fetch timeout signal aborts", async () => {
+    clearStoreCache();
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const controller = new AbortController();
+      controller.abort(abortErr);
+      return controller.signal;
+    });
+
+    global.fetch = vi.fn(async (_url, options = {}) => {
+      if (options.signal?.aborted) {
+        const reason = options.signal.reason || abortErr;
+        throw reason;
+      }
+      return Response.json([]);
+    });
+
+    await expect(base44.entities.CheckIn.list()).rejects.toMatchObject({
+      code: "timeout",
+    });
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
   });
 
   it("retries ChatSession.create after a database connection reset", async () => {
