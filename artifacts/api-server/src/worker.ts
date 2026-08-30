@@ -46,7 +46,8 @@ export default {
     // Static assets + client routes. SPA fallback for extensionless routes is
     // handled by assets.not_found_handling = "single-page-application".
     // /api and /assets are run_worker_first so Express and this HTML→404 guard
-    // see those paths before Assets can swallow them as index.html.
+    // see those paths (including stale EchoKeys-*.js hashes) before Assets can
+    // swallow them as index.html.
     return fetchAssetsRejectingSpaHtml(request, env.ASSETS);
   },
 };

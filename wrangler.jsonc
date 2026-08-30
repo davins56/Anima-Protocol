@@ -21,10 +21,13 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
+    // Default html_handling (auto-trailing-slash) is left unset so prerendered
+    // routes like /sign-in/ resolve to sign-in/index.html. It does not rewrite
+    // hashed /assets/*.js — those are intercepted by the Worker.
     // SPA fallback would otherwise serve index.html for unmatched /api/* and
     // stale hashed files under /assets/* (browser then rejects HTML as a JS
-    // module). Run the Worker first: /api → Express; /assets → 404 if ASSETS
-    // returns HTML. Client routes (/net-battle, /meditation) stay SPA.
+    // module — Profile EchoKeys MIME error). Run the Worker first: /api →
+    // Express; /assets → 404 if ASSETS returns HTML. Client routes stay SPA.
     "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
   },
   "vars": {
