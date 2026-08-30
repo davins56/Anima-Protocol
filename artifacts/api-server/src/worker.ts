@@ -1,5 +1,6 @@
 import { httpServerHandler } from "cloudflare:node";
 import app from "./app";
+import { mirrorCloudflareBindings } from "./lib/cloudflareEnv";
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
@@ -25,14 +26,10 @@ export default {
 
     // Route /api/* requests through the Express app.
     if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
-      // Mirror Cloudflare env bindings (secrets/vars) into process.env so the
-      // Express app's existing process.env reads (DATABASE_URL, CLERK_SECRET_KEY,
-      // etc.) work without code changes. Bindings are stable per deployment.
-      for (const [key, value] of Object.entries(env)) {
-        if (typeof value === "string") {
-          process.env[key] = value;
-        }
-      }
+      // Mirror Worker secrets/vars into process.env. Must read known secret
+      // names by property — Object.entries(env) skips non-enumerable bindings
+      // and would leave Clerk/Postgres unset (503 "API is misconfigured").
+      mirrorCloudflareBindings(env);
       return expressHandler.fetch(request, env, ctx);
     }
 

@@ -20,6 +20,7 @@ import {
   UserCircle,
 } from "lucide-react";
 import { normalizeCustomiseAnimaTab } from "@/lib/customiseAnimaTabs";
+import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
 
 const TABS = [
   { id: "look", label: "Look", icon: Palette, blurb: "Portrait, theme & appearance" },
@@ -55,7 +56,7 @@ export default function CustomiseAnima() {
         await whenBootstrapReady();
         const [me, list] = await Promise.all([
           base44.auth.me().catch(() => null),
-          base44.entities.Anima.list("-created_date", 100),
+          listPersonalAnimas(100),
         ]);
         if (cancelled) return;
 
@@ -272,16 +273,30 @@ export default function CustomiseAnima() {
               {error || "No personal Anima found yet."}
             </p>
             <p className="font-mono text-[10px] text-primary/40 tracking-widest max-w-md leading-relaxed">
-              Forge your companion first, then return here to shape their look
-              (skin, hair, outfit, eyes), personality, soulprint, expression, voice, and permissions.
+              {/misconfigured|environment variables|not signed in|session/i.test(
+                error,
+              )
+                ? "The companion store could not load. Sign in again if your session expired, then retry. If this persists, the API still cannot reach Clerk or the database."
+                : "Forge your companion first, then return here to shape their look (skin, hair, outfit, eyes), personality, soulprint, expression, voice, and permissions."}
             </p>
-            <button
-              type="button"
-              onClick={() => navigate("/animas")}
-              className="mt-2 px-5 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
-            >
-              Forge Anima
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              {error && (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="px-5 py-3 bg-transparent border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all"
+                >
+                  Retry
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => navigate("/onboarding")}
+                className="px-5 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+              >
+                Forge Anima
+              </button>
+            </div>
           </div>
         )}
       </div>

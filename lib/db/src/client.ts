@@ -47,9 +47,25 @@ export function resolveDbConfig(url: string): {
 let poolInstance: pg.Pool | null = null;
 let dbInstance: Db | null = null;
 
+export const DATABASE_URL_ENV_NAMES = [
+  "DATABASE_URL",
+  "POSTGRES_URL",
+  "PRISMA_DATABASE_URL",
+] as const;
+
+export function resolveDatabaseUrl(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  for (const name of DATABASE_URL_ENV_NAMES) {
+    const value = env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
 export function getPool(): pg.Pool {
   if (poolInstance) return poolInstance;
-  const rawUrl = process.env.DATABASE_URL;
+  const rawUrl = resolveDatabaseUrl();
   if (!rawUrl) {
     throw new Error(
       "DATABASE_URL must be set. Did you forget to provision a database?",
