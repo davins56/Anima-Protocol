@@ -112,21 +112,18 @@ describe("Cloudflare wrangler config", () => {
     expect(serialized).not.toMatch(/sk_live_|sk_test_|pk_live_|pk_test_/);
     expect(serialized).not.toMatch(/postgres(?:ql)?:\/\//i);
     expect(serialized).not.toMatch(/connectionString/i);
-    // Hyperdrive id (no URL) may be added after the dashboard create step.
-    // Never commit the origin connection string or a password here.
-    if (config.hyperdrive !== undefined) {
-      const rows = config.hyperdrive as Array<Record<string, unknown>>;
-      expect(Array.isArray(rows)).toBe(true);
-      expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) {
-        expect(Object.keys(row).sort()).toEqual(["binding", "id"]);
-        expect(row.binding).toBe("HYPERDRIVE");
-        expect(String(row.id)).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-        );
-        expect(row).not.toHaveProperty("connectionString");
-        expect(row).not.toHaveProperty("localConnectionString");
-      }
+    // Hyperdrive id only — never the origin connection string or a password.
+    const hyperdrive = config.hyperdrive as Array<Record<string, unknown>>;
+    expect(Array.isArray(hyperdrive)).toBe(true);
+    expect(hyperdrive.length).toBeGreaterThan(0);
+    for (const row of hyperdrive) {
+      expect(Object.keys(row).sort()).toEqual(["binding", "id"]);
+      expect(row.binding).toBe("HYPERDRIVE");
+      expect(String(row.id)).toMatch(
+        /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i,
+      );
+      expect(row).not.toHaveProperty("connectionString");
+      expect(row).not.toHaveProperty("localConnectionString");
     }
     const bindings = (config.secrets_store_secrets ?? []) as Array<
       Record<string, unknown>
@@ -146,9 +143,19 @@ describe("Cloudflare wrangler config", () => {
     }
   });
 
+  it("binds Hyperdrive anima-postgres as HYPERDRIVE", () => {
+    expect(config.hyperdrive).toEqual([
+      {
+        binding: "HYPERDRIVE",
+        id: "bae77549623a4320b10211ca499fdb93",
+      },
+    ]);
+  });
+
   it("documents the Hyperdrive binding without embedding a connection string", () => {
     const source = readFileSync(path.join(repoRoot, "wrangler.jsonc"), "utf8");
     expect(source).toMatch(/"binding": "HYPERDRIVE"/);
+    expect(source).toMatch(/"id": "bae77549623a4320b10211ca499fdb93"/);
     expect(source).toMatch(/scripts\/cloudflare\/hyperdrive\.md/);
     expect(source).toMatch(/secrets_store_secrets/);
     expect(source).toMatch(/Keep the Secrets Store DATABASE_URL/);
