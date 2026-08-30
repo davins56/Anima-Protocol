@@ -16,6 +16,7 @@ import {
   runtimeEnvPresence,
   unwrapBindingString,
   unwrapBindingStringAsync,
+  unwrapHyperdriveConnectionString,
 } from "../src/lib/cloudflareEnv";
 
 const repoRoot = path.resolve(
@@ -240,4 +241,57 @@ describe("resolveDatabaseUrl", () => {
     ).toBe("postgresql://prisma/db");
     expect(resolveDatabaseUrl({})).toBeUndefined();
   });
+});
+
+describe("Hyperdrive binding", () => {
+  it("reads connectionString from the Worker binding object", () => {
+    expect(
+      unwrapHyperdriveConnectionString({
+        connectionString:
+          "postgresql://hd:s3cret@hyperdrive.local:5432/postgres",
+      }),
+    ).toBe("postgresql://hd:s3cret@hyperdrive.local:5432/postgres");
+    expect(unwrapHyperdriveConnectionString(undefined)).toBeUndefined();
+    expect(unwrapHyperdriveConnectionString({})).toBeUndefined();
+  });
+
+  it("prefers HYPERDRIVE.connectionString over DATABASE_URL", () =>
+    withWipedProcessSecrets(async () => {
+      const target: Record<string, string | undefined> = {};
+      await applyCloudflareRequestEnv(
+        {
+          DATABASE_URL:
+            "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+          HYPERDRIVE: {
+            connectionString:
+              "postgresql://hd:hdpass@hyperdrive.local:5432/postgres",
+          },
+        },
+        target,
+      );
+      expect(target.DATABASE_URL).toBe(
+        "postgresql://hd:hdpass@hyperdrive.local:5432/postgres",
+      );
+      expect(readRuntimeDatabaseUrl()).toBe(
+        "postgresql://hd:hdpass@hyperdrive.local:5432/postgres",
+      );
+    }));
+
+  it("falls back to DATABASE_URL when Hyperdrive is unbound", () =>
+    withWipedProcessSecrets(async () => {
+      const target: Record<string, string | undefined> = {};
+      await applyCloudflareRequestEnv(
+        {
+          DATABASE_URL:
+            "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+        },
+        target,
+      );
+      expect(target.DATABASE_URL).toBe(
+        "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+      );
+      expect(readRuntimeDatabaseUrl()).toBe(
+        "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+      );
+    }));
 });
