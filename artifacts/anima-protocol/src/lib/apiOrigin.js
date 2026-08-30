@@ -18,3 +18,27 @@ export function apiUrl(path) {
   const suffix = path.startsWith("/") ? path : `/${path}`;
   return `${base}/api${suffix}`;
 }
+
+/**
+ * Rebuild an API URL after a host bounce (www → apex) that dropped the path.
+ *
+ * Live Cloudflare currently 301s `https://www.anima-protocol.com/api/*` to
+ * `https://anima-protocol.com/` (apex root). fetch() then follows as GET `/`
+ * and the Worker never sees POST /api/storage/uploads.
+ */
+export function resolveRedirectedApiUrl(requestUrl, locationHeader) {
+  if (!locationHeader || typeof locationHeader !== "string") return null;
+  try {
+    const original = new URL(requestUrl, "https://anima-protocol.com");
+    const loc = new URL(locationHeader, original);
+    if (loc.pathname.startsWith("/api")) {
+      loc.search = loc.search || original.search;
+      return loc.toString();
+    }
+    loc.pathname = original.pathname;
+    loc.search = original.search;
+    return loc.toString();
+  } catch {
+    return null;
+  }
+}

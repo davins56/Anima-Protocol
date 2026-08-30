@@ -31,7 +31,9 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // Route /api/* requests through the Express app.
+    // Route /api/* through Express (healthz, store, Clerk, POST /api/storage/uploads).
+    // wrangler assets.run_worker_first = ["/api", "/api/*"] so SPA fallback
+    // cannot swallow those paths. Storage lives on the /api router in app.ts.
     if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
       // Request-time apply: fetch env + importable env, including non-enumerable
       // secrets and Secrets Store-style objects. Do not rely on a boot snapshot

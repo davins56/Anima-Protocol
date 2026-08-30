@@ -16,12 +16,30 @@ const objectStorageService = new ObjectStorageService();
 router.use("/storage/uploads", rateLimit);
 
 /**
+ * Public probe for the Worker/client upload route.
+ * GET /api/storage/uploads → { ok, methods } so ops can tell "route mounted"
+ * from an assets-only SPA HTML 404 without a Clerk session.
+ */
+router.get("/storage/uploads", (_req: Request, res: Response) => {
+  res.status(200).json({
+    ok: true,
+    service: "storage-uploads",
+    methods: ["POST"],
+    accepts: ["application/json"],
+    body: "{ contentType, dataBase64 } | { dataUrl }",
+  });
+});
+
+/**
  * Direct image upload (Vercel-safe). Accepts a data URL or raw base64 and
  * stores the bytes in Postgres — no Replit object-storage sidecar required.
  *
  * POST /storage/uploads
  * body: { dataUrl } | { contentType, dataBase64 }
- * → { objectPath, uploadURL? }
+ * → { objectPath, file_url }
+ *
+ * Mounted at /api via app.use("/api", router) and reached on the
+ * Cloudflare Worker because worker.ts sends /api/* to Express.
  */
 router.post("/storage/uploads", async (req: Request, res: Response) => {
   const { userId } = getAuth(req);

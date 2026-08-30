@@ -67,6 +67,14 @@ async function postUpload(userId: string | null, body: unknown) {
 }
 
 describe("POST /storage/uploads + GET /storage/objects/uploads/:id", () => {
+  it("exposes an unauthenticated probe so a missing Worker route is distinguishable from 401", async () => {
+    const res = await fetch(`${baseUrl}/storage/uploads`);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok?: boolean; methods?: string[] };
+    expect(json.ok).toBe(true);
+    expect(json.methods).toContain("POST");
+  });
+
   it("rejects unauthenticated uploads", async () => {
     const { status, json } = await postUpload(null, {
       contentType: "image/png",
