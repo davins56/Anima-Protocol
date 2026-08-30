@@ -21,8 +21,8 @@
   "redirects": [
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "anima-protocol.com" }],
-      "destination": "https://www.anima-protocol.com/:path*",
+      "has": [{ "type": "host", "value": "www.anima-protocol.com" }],
+      "destination": "https://anima-protocol.com/:path*",
       "permanent": true
     }
   ],

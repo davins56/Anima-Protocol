@@ -1,7 +1,10 @@
 import { apiUrl } from '@/lib/apiOrigin';
 import {
+  ANIMA_PRODUCTION_SIGN_IN_URL,
   clerkJsScriptProbeUrl,
   clerkProxyProbeBase,
+  isAnimaProductionHost,
+  isClerkAuthorizedBrowserHost,
   resolveClerkProxyUrl,
 } from '@/lib/clerkProxy';
 
@@ -62,8 +65,24 @@ export async function isClerkProxyHealthy(clerkPubKey) {
  * for real failures — never a false-positive "SDK did not finish loading"
  * message (that belongs in the UI when ClerkLoading is actually stalled).
  */
+export const CLERK_ORIGIN_INVALID_HINT =
+  `This page is not on the Clerk production domain. Open ${ANIMA_PRODUCTION_SIGN_IN_URL} to sign in — production keys reject other origins (including Vercel preview URLs).`;
+
+export const CLERK_ORIGIN_MISMATCH_ON_PRODUCTION_HINT =
+  'Clerk rejected this page origin. Confirm VITE_CLERK_PUBLISHABLE_KEY / CLERK_PUBLISHABLE_KEY match the clerk.anima-protocol.com instance, and leave VITE_CLERK_PROXY_URL empty.';
+
+function currentBrowserHostname() {
+  return typeof window !== 'undefined' ? window.location.hostname : '';
+}
+
 export async function probeClerkConnectivity(clerkPubKey) {
   const hints = [];
+  const hostname = currentBrowserHostname();
+  if (hostname && !isClerkAuthorizedBrowserHost(hostname)) {
+    hints.push(CLERK_ORIGIN_INVALID_HINT);
+    return hints;
+  }
+
   const proxyUrl =
     clerkProxyProbeBase(clerkPubKey) ||
     `${typeof window !== 'undefined' ? window.location.origin : ''}/api/__clerk`;
@@ -100,6 +119,13 @@ export async function probeClerkConnectivity(clerkPubKey) {
       } else if (codes.includes('host_invalid')) {
         hints.push(
           'Clerk host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, then redeploy without cache.',
+        );
+        return hints;
+      } else if (codes.includes('origin_invalid')) {
+        hints.push(
+          isAnimaProductionHost(hostname)
+            ? CLERK_ORIGIN_MISMATCH_ON_PRODUCTION_HINT
+            : CLERK_ORIGIN_INVALID_HINT,
         );
         return hints;
       } else if (clerkRes.status === 503) {
