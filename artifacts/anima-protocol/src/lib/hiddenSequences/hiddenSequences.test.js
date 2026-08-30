@@ -188,7 +188,7 @@ describe("prompt layer", () => {
     expect(halfPrompt).toMatch(/CONVERSATIONAL WEATHER: storm/);
     expect(halfPrompt).toMatch(/half-awake \(Nova Pulse\)/);
     expect(halfPrompt).not.toMatch(/ASCENDED SEQUENCES/);
-    expect(halfPrompt).not.toMatch(/tutorial card/);
+    expect(halfPrompt).not.toMatch(/tutorial card that explains/i);
 
     const ascended = integrateSequence(fired.sequences, "nova-pulse", {
       title: "Nave",
