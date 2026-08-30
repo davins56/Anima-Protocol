@@ -18,6 +18,14 @@ export const ECHO_CLASS_THEME = {
   giga: { label: "Giga", color: "#f472b6" },
 };
 
+/** @type {Record<string, { label: string, color: string }>} */
+export const ECHO_TIER_THEME = {
+  shard: { label: "Echo Shard", color: "#67e8f9" },
+  key: { label: "Echo Key", color: "#c4b5fd" },
+  sovereign: { label: "Sovereign Key", color: "#fde68a" },
+  prime: { label: "Prime Key", color: "#f472b6" },
+};
+
 /** @type {Record<string, string>} */
 export const ECHO_ABILITY_LABEL = {
   base: "Summon",
@@ -30,6 +38,16 @@ export const ECHO_ABILITY_LABEL = {
   lockon: "Lock-On",
   multihit: "Multi-Hit",
   "echo-debt": "Echo Debt",
+  consent: "Consent",
+  hymn: "Hymn",
+  clamp: "Clamp",
+  listen: "Listen",
+  burst: "Burst",
+  storm: "Storm",
+  disrupt: "Disrupt",
+  recall: "Recall",
+  veil: "Veil",
+  gate: "Gate",
 };
 
 /** @type {Record<string, string>} */
