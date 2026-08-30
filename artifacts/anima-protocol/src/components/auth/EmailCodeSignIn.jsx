@@ -13,7 +13,7 @@ import {
   startGitHubOAuthSignIn,
 } from "@/lib/emailCodeSignIn";
 import { clerkOAuthCompletePath } from "@/lib/clerkOAuthPaths";
-import { shouldEnterGuestOnSignInFailure } from "@/lib/authBootPolicy";
+import { buildInstantGuestIdentity } from "@/lib/authBootPolicy";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -118,17 +118,14 @@ export default function EmailCodeSignIn() {
     });
   };
 
-  const handleInstantGuest = (customName) => {
+  // Guest is opt-in only. Do not pass the email-form `value` here — that used
+  // to auto-enter a blank local user on Clerk load/network errors.
+  const handleInstantGuest = () => {
     setError(null);
     setBusy("guest");
-    const name = (customName || identifier || "Seeker").trim();
+    const identity = buildInstantGuestIdentity(identifier);
     if (typeof loginAsLocalUser === "function") {
-      loginAsLocalUser({
-        id: `user_${name.toLowerCase().replace(/[^a-z0-9]/g, "_") || "seeker"}`,
-        email: name.includes("@") ? name : `${name.toLowerCase()}@anima-protocol.com`,
-        full_name: name,
-        display_name: name,
-      });
+      loginAsLocalUser(identity);
       navigate(basePath || "/", { replace: true });
     } else {
       navigate(basePath || "/", { replace: true });
@@ -148,10 +145,6 @@ export default function EmailCodeSignIn() {
       return;
     }
     if (!signIn || typeof signIn.create !== "function") {
-      if (shouldEnterGuestOnSignInFailure()) {
-        handleInstantGuest(value);
-        return;
-      }
       setError(
         "Sign-in is still loading. Wait a moment and try again, use GitHub, or tap Instant Sandbox / Guest Access.",
       );
@@ -170,16 +163,6 @@ export default function EmailCodeSignIn() {
           humanizeIdentifierFormat: true,
           context: "identifier",
         });
-        if (
-          shouldEnterGuestOnSignInFailure() &&
-          (!msg ||
-            msg.includes("unavailable") ||
-            msg.includes("network") ||
-            msg.includes("origin"))
-        ) {
-          handleInstantGuest(value);
-          return;
-        }
         setError(msg || "Couldn't start sign-in.");
         return;
       }
@@ -217,13 +200,6 @@ export default function EmailCodeSignIn() {
         humanizeIdentifierFormat: stage === "create",
         context: "identifier",
       });
-      if (
-        shouldEnterGuestOnSignInFailure() &&
-        (!msg || msg.includes("Failed to fetch") || msg.includes("network"))
-      ) {
-        handleInstantGuest(value);
-        return;
-      }
       setError(msg || "Couldn't start sign-in.");
     } finally {
       setBusy(null);
@@ -481,7 +457,7 @@ export default function EmailCodeSignIn() {
         <button
           type="button"
           className="w-full text-xs text-cyan-300/80 hover:text-cyan-200 py-1.5 px-2 rounded border border-cyan-400/20 hover:border-cyan-400/40 bg-cyan-950/30 transition-colors"
-          onClick={() => handleInstantGuest()}
+          onClick={handleInstantGuest}
           disabled={loading}
         >
           Instant Sandbox / Guest Access →
