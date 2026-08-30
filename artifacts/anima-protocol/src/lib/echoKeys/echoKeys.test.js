@@ -253,9 +253,10 @@ describe("folder and profile library", () => {
   });
 
   it("caps Resonance Array copies by novel tier", () => {
-    const withBeth = starterEchoFolder().map((slot, i) => (i < 4 ? makeEchoCopy("beth") : slot));
-    expect(validateEchoFolder(withBeth).ok).toBe(true);
-    const fiveBeth = starterEchoFolder().map((slot, i) => (i < 5 ? makeEchoCopy("beth") : slot));
+    const withoutBeth = starterEchoFolder().filter((slot) => slot.id !== "beth");
+    const withBeth = [...withoutBeth.slice(0, 26), ...Array.from({ length: 4 }, () => makeEchoCopy("beth"))];
+    expect(validateEchoFolder(withBeth).ok, validateEchoFolder(withBeth).errors.join("; ")).toBe(true);
+    const fiveBeth = [...withoutBeth.slice(0, 25), ...Array.from({ length: 5 }, () => makeEchoCopy("beth"))];
     expect(validateEchoFolder(fiveBeth).ok).toBe(false);
     const twoEmpathy = [
       ...starterEchoFolder().slice(0, 28),
