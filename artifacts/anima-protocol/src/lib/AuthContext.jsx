@@ -24,7 +24,6 @@ import {
   track,
 } from '@/lib/analytics';
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
-import { retryStarterSeed } from '@/lib/seedCharacters';
 import {
   disableProactivePush,
   getProactiveMessagePreferences,
@@ -121,6 +120,7 @@ export const AuthProvider = ({ children }) => {
         if (cancelled) return;
         const chars = await base44.entities.Character.list('-created_date', 5);
         if (!chars?.length) {
+          const { retryStarterSeed } = await import('@/lib/seedCharacters');
           await retryStarterSeed();
           notifyStoreChanged();
         }

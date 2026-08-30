@@ -62,10 +62,8 @@
     <link rel="canonical" href="https://anima-protocol.app/" />
     <meta name="privacy-policy" content="/privacy-policy" />
     <meta name="terms-of-service" content="/terms-of-service" />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@algolia/algoliasearch-netlify-frontend@1/dist/algoliasearchNetlify.css"
-    />
+    <!-- Algolia CSS is loaded on demand from algoliaNetlify.js when a search
+         key is configured. Do not block first paint with the CDN stylesheet. -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -108,11 +106,7 @@
     <div id="algolia-search-host" hidden role="search" aria-label="Site search">
       <div id="search"></div>
     </div>
-    <script
-      type="text/javascript"
-      src="https://cdn.jsdelivr.net/npm/@algolia/algoliasearch-netlify-frontend@1/dist/algoliasearchNetlify.js"
-      defer
-    ></script>
+    <!-- Algolia JS is also loaded on demand from algoliaNetlify.js. -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

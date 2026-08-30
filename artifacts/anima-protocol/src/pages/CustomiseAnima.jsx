@@ -23,6 +23,7 @@ import {
   Swords,
   UserCircle,
 } from "lucide-react";
+import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import { normalizeCustomiseAnimaTab } from "@/lib/customiseAnimaTabs";
 import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
 import {
@@ -101,9 +102,11 @@ export default function CustomiseAnima() {
           return;
         }
 
-        await whenBootstrapReady();
         try {
-          await waitForStoreAuth(15000);
+          await Promise.all([
+            whenBootstrapReady(),
+            waitForStoreAuth(STORE_AUTH_WAIT_MS),
+          ]);
         } catch (authErr) {
           if (!cancelled) {
             setLoadKind("unsigned");

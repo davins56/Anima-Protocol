@@ -122,6 +122,7 @@ export declare function restoreData(
   payload?: Record<string, unknown>,
   mode?: "merge" | "replace",
 ): Promise<any>;
+export declare const STORE_FETCH_TIMEOUT_MS: number;
 export declare function waitForStoreAuth(timeoutMs?: number): Promise<string>;
 export declare function notifyStoreChanged(): void;
 
