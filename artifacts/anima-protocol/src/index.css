@@ -144,6 +144,10 @@
     height: 100%;
     min-height: 0;
   }
+  #root {
+    display: flex;
+    flex-direction: column;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
