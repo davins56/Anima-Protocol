@@ -228,5 +228,6 @@ describe("boot wiring", () => {
     expect(app).toMatch(/isSignedInUser \|\| isGuest \|\| isAuthenticated/);
     expect(app).not.toMatch(/if \(isAuthenticated \|\| localUser \|\| user\)/);
     expect(app).not.toMatch(/will load in guest mode/);
+    expect(app).not.toMatch(/if \(isLoadingAuth\) \{\s*return <Landing/);
   });
 });

@@ -86,31 +86,31 @@ export const BASE_URL = "https://anima-protocol.app";
 /** Pre-defined metadata for every public route. */
 export const ROUTE_META: Record<string, PageMeta> = {
   "/": {
-    title: "Anima Protocol | Emotionally Intelligent AI Companion with Persistent Memory",
+    title: "Anima — The home screen for AI relationships",
     description:
-      "An AI companion that evolves with you. Anima Protocol features persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding. Experience conversations that remember, adapt, and grow.",
+      "You don't open a chat. You come home to them. Anima is the home screen for AI relationships — they stay when you leave, they remember the last time, and they have a place, not a thread.",
     canonical: `${BASE_URL}/`,
-    ogTitle: "Anima Protocol — An AI Companion That Evolves With You",
+    ogTitle: "Anima — The home screen for AI relationships",
     ogDescription:
-      "Experience conversations with persistent memory, emotional continuity, and a living sci-fantasy universe. Anima Protocol is the future of emotional AI companionship.",
+      "You don't open a chat. You come home to them. Companions who stay, remember, and have a place.",
   },
   "/sign-in": {
-    title: "Sign In | Anima Protocol",
+    title: "I already live here | Anima",
     description:
-      "Sign in to Anima Protocol and reconnect with your AI companions. Your memories, stories, and emotional bonds are waiting.",
+      "Sign in to Anima and come home to them. They stayed. They remember the last time.",
     canonical: `${BASE_URL}/sign-in`,
-    ogTitle: "Sign In to Anima Protocol",
+    ogTitle: "I already live here — Anima",
     ogDescription:
-      "Sign in and reconnect with your AI companions. Your persistent memories and ongoing narratives are waiting.",
+      "Sign in and come home to your companions. They stayed while you were gone.",
   },
   "/sign-up": {
-    title: "Create Account | Anima Protocol",
+    title: "Come home | Anima",
     description:
-      "Join Anima Protocol and begin your journey with an emotionally intelligent AI companion that remembers you, grows with you, and lives inside a rich sci-fantasy universe.",
+      "Come home to Anima — the home screen for AI relationships. You don't open a chat. You come home to them.",
     canonical: `${BASE_URL}/sign-up`,
-    ogTitle: "Create Your Anima Protocol Account",
+    ogTitle: "Come home — Anima",
     ogDescription:
-      "Start your journey with an AI companion that remembers and evolves with you. Join the Anima Protocol universe today.",
+      "Create your place with them. Anima is the home screen for AI relationships.",
   },
   "/terms": {
     title: "Terms of Use | Anima Protocol",
