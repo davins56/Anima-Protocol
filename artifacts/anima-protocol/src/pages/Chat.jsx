@@ -882,6 +882,7 @@ export default function Chat() {
       track("therapy_session_started", {
         source: "chat_new_session",
         is_anima: true,
+        has_topic: false,
       });
     }
 
@@ -1434,6 +1435,8 @@ ${lewdityGuide}`;
                 characterName: char.name,
                 userName: user.full_name,
                 userMessage: isContinue ? "" : content,
+                focusTopic: activeSession.therapy_topic,
+                focusNotes: activeSession.therapy_topic_notes,
               })
             : isMultiAspect
             ? getMultiAspectPrompt(aspects, user.full_name)
@@ -2526,6 +2529,7 @@ Return JSON:
               <TherapySessionBanner
                 characterName={characters.find((c) => c.id === activeSession?.character_id)?.name}
                 country={authUser?.settings?.user_profile?.country}
+                topic={activeSession?.therapy_topic}
                 crisis={detectTherapyCrisis(
                   [...(activeSession.messages || [])]
                     .reverse()
