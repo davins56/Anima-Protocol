@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  buildInstantGuestIdentity,
   clearGuestPersistence,
   isGuestIdentity,
   markGuestIdentity,
@@ -10,6 +11,7 @@ import {
   readExplicitGuestChosen,
   readPersistedGuest,
   resolveAuthBoot,
+  shouldAutoInvokeInstantGuest,
   shouldEnterGuestOnSignInFailure,
 } from "./authBootPolicy";
 
@@ -102,6 +104,55 @@ describe("shouldEnterGuestOnSignInFailure", () => {
   });
 });
 
+describe("shouldAutoInvokeInstantGuest", () => {
+  it("does not auto-guest from query params, a stored name, or boot", () => {
+    expect(
+      shouldAutoInvokeInstantGuest({
+        query: { guest: "1", sandbox: "1", name: "Seeker" },
+        storedName: "Seeker",
+        clerkLoaded: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoInvokeInstantGuest({
+        query: { guest: "true" },
+        storedName: leftoverGuest.full_name,
+        clerkLoaded: true,
+        clerkSignedIn: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not auto-guest when the email form submits a value", () => {
+    expect(
+      shouldAutoInvokeInstantGuest({
+        formSubmitted: true,
+        formValue: "davins56@hotmail.com",
+        clerkLoaded: true,
+        clerkSignedIn: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("buildInstantGuestIdentity", () => {
+  it("writes a marked local guest, not a Clerk signed-in user", () => {
+    const guest = buildInstantGuestIdentity("Seeker");
+    expect(guest.id).toBe("user_seeker");
+    expect(guest.email).toBe("seeker@anima-protocol.com");
+    expect(isGuestIdentity(guest)).toBe(true);
+    const boot = resolveAuthBoot({
+      clerkLoaded: true,
+      clerkSignedIn: false,
+      clerkUser: null,
+      persistedGuest: guest,
+      explicitGuestChosen: false,
+    });
+    expect(boot.mode).toBe("signed-out");
+    expect(boot.isSignedInUser).toBe(false);
+  });
+});
+
 describe("guest persistence helpers", () => {
   it("restores leftover local guest only after an explicit this-session choice", () => {
     const localStorage = new Map();
@@ -153,15 +204,22 @@ describe("boot wiring", () => {
     expect(auth).toContain("const isLoadingAuth = !isLoaded");
   });
 
-  it("gates sign-in failure fallbacks so Guest is never entered automatically", () => {
+  it("only invokes handleInstantGuest from the Guest button, never boot or form value", () => {
     const signIn = readFileSync(
       join(srcRoot, "components/auth/EmailCodeSignIn.jsx"),
       "utf8",
     );
-    expect(signIn).toMatch(/shouldEnterGuestOnSignInFailure/);
-    const unguarded =
-      /if \(!signIn \|\| typeof signIn\.create !== "function"\) \{\s*handleInstantGuest/;
-    expect(signIn).not.toMatch(unguarded);
+    expect(signIn).not.toMatch(/handleInstantGuest\(value\)/);
+    expect(signIn).not.toMatch(/URLSearchParams/);
+    expect(signIn).not.toMatch(/searchParams/);
+    const effectBlocks = signIn.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[/g) || [];
+    expect(effectBlocks.some((block) => block.includes("handleInstantGuest"))).toBe(
+      false,
+    );
+    expect(signIn).toMatch(/onClick=\{handleInstantGuest\}/);
+    const invocations = signIn.match(/handleInstantGuest/g) || [];
+    // definition + onClick + comment mentioning it
+    expect(invocations.length).toBeGreaterThanOrEqual(2);
     expect(signIn).toMatch(/isSignedInUser \|\| isGuest/);
   });
 
