@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import {
+  formatAvatarUploadError,
+  uploadCharacterAvatar,
+} from "@/lib/characterAvatarUpload";
+import {
   APPEARANCE_FEATURES,
   buildAppearanceImagePrompt,
   getAppearanceSuggestions,
@@ -101,20 +105,12 @@ export default function AnimaCustomizer({
     setError("");
     setSaved(false);
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
-      if (!result?.file_url) {
-        throw new Error("Upload failed — try another image.");
-      }
-      setReferenceUrl(result.file_url);
+      const fileUrl = await uploadCharacterAvatar(file, (payload) =>
+        base44.integrations.Core.UploadFile(payload),
+      );
+      setReferenceUrl(fileUrl);
     } catch (err) {
-      const msg = String(err?.message || "");
-      if (/unauthorized|sign in|not signed|401/i.test(msg)) {
-        setError("Sign in to upload a reference photo, then try again.");
-      } else if (/too large/i.test(msg)) {
-        setError("That image is too large. Try a smaller photo.");
-      } else {
-        setError(msg || "Upload failed — try another image.");
-      }
+      setError(formatAvatarUploadError(err));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";

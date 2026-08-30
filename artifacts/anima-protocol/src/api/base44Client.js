@@ -205,26 +205,68 @@ async function blobToBase64(blob) {
   return btoa(binary);
 }
 
+async function parseUploadErrorResponse(res) {
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    if (json?.error) return String(json.error);
+  } catch {
+    // Non-JSON (HTML 404 from an assets-only deploy, Cloudflare challenge, …)
+  }
+  if (res.status === 401) {
+    return 'Sign in to upload an image, then try again.';
+  }
+  if (res.status === 413) {
+    return 'That image is too large. Try a smaller photo.';
+  }
+  if (res.status === 404) {
+    return 'Image upload API not found — /api/storage/uploads is not available on this host.';
+  }
+  const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 160);
+  return snippet || res.statusText || `Upload failed (${res.status})`;
+}
+
 /**
  * Upload an image blob and return the served object path.
  *
  * Uses the Postgres-backed POST /api/storage/uploads endpoint so avatar upload
- * works on Vercel (the legacy Replit GCS sidecar is unavailable there).
+ * works on Cloudflare Workers / Vercel (the legacy Replit GCS sidecar is
+ * unavailable there). Requires a signed-in Clerk session.
  */
 async function uploadBlob(blob) {
+  const token = await getToken();
+  if (!token) {
+    const err = new Error(
+      'Sign in to upload an image, then try again.',
+    );
+    err.status = 401;
+    throw err;
+  }
+
   const headers = await authHeaders();
   const dataBase64 = await blobToBase64(blob);
-  const res = await fetch(apiUrl('/storage/uploads'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      contentType: blob.type || 'image/jpeg',
-      dataBase64,
-    }),
-  });
+  let res;
+  try {
+    res = await fetch(apiUrl('/storage/uploads'), {
+      method: 'POST',
+      headers,
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        contentType: blob.type || 'image/jpeg',
+        dataBase64,
+      }),
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    const netErr = new Error('Network request failed — could not reach the image upload API.');
+    netErr.code = 'network';
+    throw netErr;
+  }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText || `Upload failed (${res.status})`);
+    const message = await parseUploadErrorResponse(res);
+    const err = new Error(message);
+    err.status = res.status;
+    throw err;
   }
   const payload = await res.json();
   if (payload?.file_url) return payload.file_url;
@@ -1321,7 +1363,13 @@ export const base44 = {
       },
 
       UploadFile: async ({ file } = {}) => {
-        if (!file) return { file_url: null, url: null };
+        if (!file) {
+          throw new Error('No image selected.');
+        }
+        const type = String(file.type || '');
+        if (type && !type.startsWith('image/') && type !== 'application/octet-stream') {
+          throw new Error('That file is not an image. Choose a JPEG, PNG, or WebP photo.');
+        }
         const dataUrl = await readFileAsDataUrl(file);
         const file_url = await uploadDataUrl(dataUrl);
         return { file_url, url: file_url };

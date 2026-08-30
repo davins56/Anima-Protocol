@@ -16,11 +16,12 @@ and node-postgres throws `ECONNRESET` / "Connection terminated unexpectedly".
 no retry and no pool recycle.
 
 **Fix:**
-- `lib/db/src/client.ts` — `isTransientDbError`, `resetPool`,
-  `withTransientDbRetry`; recreate the pool when `DATABASE_URL` / Hyperdrive
-  changes; `pool.on("error")` *detaches* (does not `end()`) so in-flight
-  queries are not raced into "Cannot use a pool after calling end"; shorter
-  idle timeout (2s) + `maxLifetimeSeconds`.
+- Workers use postgres.js + Hyperdrive (`lib/db/src/driver.ts`). Local/Vercel
+  stay on node-pg. Both go through `getPool(): SqlQueryable`.
+- `isTransientDbError`, `resetPool`, `withTransientDbRetry` recycle whichever
+  driver is live and retry the query. Recreate when the URL / driver changes.
+  node-pg `pool.on("error")` *detaches* (does not `end()`) so in-flight
+  queries are not raced into "Cannot use a pool after calling end".
 - Store/chat/health wrap first-touch queries in `withTransientDbRetry`.
 - Client `storeFetch` retries once on 503 `reason: reset`.
 

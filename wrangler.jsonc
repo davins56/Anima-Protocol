@@ -21,11 +21,50 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // SPA fallback would otherwise serve index.html for unmatched /api/* paths.
-    // Run the Worker first so worker.ts can hand /api to Express (Clerk/store/healthz).
-    "run_worker_first": ["/api", "/api/*"]
+    // Default html_handling (auto-trailing-slash) is left unset so prerendered
+    // routes like /sign-in/ resolve to sign-in/index.html. It does not rewrite
+    // hashed /assets/*.js — those are intercepted by the Worker.
+    // SPA fallback would otherwise serve index.html for unmatched /api/* and
+    // stale hashed files under /assets/* (browser then rejects HTML as a JS
+    // module — Profile EchoKeys MIME error). Run the Worker first: /api →
+    // Express; /assets → 404 if ASSETS returns HTML. Client routes stay SPA.
+    "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
   },
   "vars": {
     "NODE_ENV": "production"
-  }
+  },
+  // Secrets Store bindings — names and store_id only, never values.
+  // Dashboard-only bindings are dropped on `wrangler deploy` because this
+  // file is the source of truth. Keep these three so git deploys re-bind
+  // CLERK_* and DATABASE_URL from store a31e40473ef34db896b5bc1e6c1c4b86.
+  "secrets_store_secrets": [
+    {
+      "binding": "CLERK_SECRET_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "CLERK_SECRET_KEY"
+    },
+    {
+      "binding": "CLERK_PUBLISHABLE_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "CLERK_PUBLISHABLE_KEY"
+    },
+    {
+      "binding": "DATABASE_URL",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "DATABASE_URL"
+    }
+  ],
+  // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against
+  // that secret from this Worker still ECONNRESET — do not treat the binding
+  // as a Worker TCP path.
+  //
+  // Hyperdrive anima-postgres (see scripts/cloudflare/hyperdrive.md).
+  // Binding name + config id only — never the origin URL or a password.
+  // Worker code reads env.HYPERDRIVE.connectionString at request time.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "bae77549623a4320b10211ca499fdb93"
+    }
+  ]
 }

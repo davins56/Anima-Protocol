@@ -92,10 +92,11 @@ export default defineConfig({
     // which skips waiting, claims open clients, and reloads them onto the fresh
     // build — so installed/home-screen users no longer need to remove and
     // re-add the app to see changes. Kept deliberately minimal: precache the
-    // built assets only, no navigation fallback or runtime caching, so it never
-    // intercepts /api calls or the prerendered route HTML. Disabled in dev to
-    // avoid interfering with HMR. The existing public/manifest.json is reused
-    // (manifest: false), and registration happens in src/main.jsx.
+    // built assets only (`navigateFallback: null`), so it never intercepts
+    // /api calls, /assets/* hashes (EchoKeys-*.js), or the prerendered route
+    // HTML. Disabled in dev to avoid interfering with HMR. The existing
+    // public/manifest.json is reused (manifest: false), and registration
+    // happens in src/main.jsx.
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: false,
@@ -106,6 +107,14 @@ export default defineConfig({
         globPatterns: [
           "**/*.{js,css,svg,png,ico,webp,woff,woff2,jpg,jpeg,json}",
         ],
+        // Default is index.html. HTML is intentionally not precached (prerender
+        // rewrites it after the SW manifest is generated). A fallback to a
+        // non-precached document throws, and an old SW would keep serving a
+        // shell that imports dead /assets/*.js hashes. Network-only navigations
+        // + cleanup of outdated precaches let a new deploy replace those hashes.
+        navigateFallback: null,
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/assets(?:\/|$)/],
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
