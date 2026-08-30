@@ -30,4 +30,6 @@ Leave `secrets_store_secrets` `DATABASE_URL` in place. After deploy,
 
 Do not recreate the Hyperdrive config. Never put the origin URL or a password
 in git, chat, or `wrangler` `vars`. The Worker reads
-`env.HYPERDRIVE.connectionString` at request time.
+`env.HYPERDRIVE.connectionString` only inside `applyCloudflareRequestEnv`
+(Worker `fetch`). Do not unwrap it from `cloudflareEnvBootstrap` or any
+other module-load path — that getter does I/O and fails deploy with 10021.
