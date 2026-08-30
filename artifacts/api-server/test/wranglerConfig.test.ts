@@ -48,6 +48,19 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("expressHandler.fetch");
     expect(workerSource).toContain("env.ASSETS.fetch");
     expect(workerSource).toContain("httpServerHandler");
+    expect(workerSource).toContain("app.listen(WORKER_API_PORT)");
+    expect(workerSource).toContain("httpServerHandler({ port: WORKER_API_PORT })");
+  });
+
+  it("excludes Netlify _redirects from Cloudflare asset uploads", () => {
+    const assetsIgnore = readFileSync(
+      path.join(repoRoot, "artifacts/anima-protocol/public/.assetsignore"),
+      "utf8",
+    );
+    expect(assetsIgnore).toMatch(/_redirects/);
+    expect(readFileSync(path.join(repoRoot, "package.json"), "utf8")).toContain(
+      "rm -f dist/_redirects",
+    );
   });
 
   it("does not embed secrets in the committed Worker config", () => {

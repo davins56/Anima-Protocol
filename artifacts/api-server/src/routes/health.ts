@@ -10,8 +10,10 @@ import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
 
 const router: IRouter = Router();
 
-if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
-if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
+// Do not throw on missing DATABASE_URL / CLERK_SECRET_KEY at import time.
+// Cloudflare Workers instantiate this module before secrets are copied from
+// env bindings into process.env; /healthz must stay loadable without them.
+// Routes that actually talk to Postgres (below) still fail at request time.
 
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
