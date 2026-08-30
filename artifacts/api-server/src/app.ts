@@ -78,6 +78,7 @@ app.use(
       if (dbInfo.isDbError) {
         res.status(503).json({
           error: dbInfo.safeMessage,
+          reason: dbInfo.reason,
           code: dbInfo.code ?? "database_unavailable",
         });
         return;

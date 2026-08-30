@@ -73,13 +73,22 @@ describe("app health checks", () => {
     const body = await response.json();
     expect(body).toMatchObject({
       status: expect.stringMatching(/^(ok|error)$/),
-      target: expect.objectContaining({ configured: true }),
+      target: expect.objectContaining({
+        configured: true,
+        source: expect.stringMatching(/^(hyperdrive|database_url)$/),
+      }),
     });
+    expect(JSON.stringify(body)).not.toMatch(/password=|postgresql:\/\/[^:]+:[^@]+@/i);
     if (response.status === 200) {
       expect(body.schema).toMatchObject({
         ok: true,
         missingTables: [],
       });
+    } else {
+      expect(body.reason || body.schema?.reason).toMatch(
+        /^(timeout|ssl|refused|reset|unreachable|auth|schema|limit|unavailable)$/,
+      );
+      expect(body.code || body.schema?.code).toEqual(expect.any(String));
     }
   });
 

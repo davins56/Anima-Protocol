@@ -76,5 +76,7 @@ describe("Cloudflare wrangler config", () => {
     const serialized = JSON.stringify(config);
     expect(serialized).not.toMatch(/sk_live_|sk_test_|pk_live_/);
     expect(serialized).not.toMatch(/DATABASE_URL|CLERK_SECRET_KEY/);
+    expect(config.hyperdrive).toBeUndefined();
+    expect(serialized).not.toMatch(/connectionString|sk_|password/i);
   });
 });
