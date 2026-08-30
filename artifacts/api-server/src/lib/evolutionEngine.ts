@@ -112,11 +112,18 @@ export async function maybeTriggerMilestoneEvolution(params: {
   conversationCount: number;
   historySummary: string;
   isVoidTurn?: boolean;
+  significantExperienceCount?: number;
+  alreadyMilestone?: number;
 }) {
-  // Trigger only when we *reach* the milestone threshold.
-  // Example: when conversationCount becomes 50, trigger once.
-  const targetMilestone = params.conversationCount;
-  if (!MILESTONES.includes(targetMilestone as any)) return null;
+  // Trigger when conversationCount OR significant experiences hit a milestone.
+  const experienceCount = Number(params.significantExperienceCount) || 0;
+  const already = Number(params.alreadyMilestone) || 0;
+  const targetMilestone =
+    (MILESTONES as readonly number[]).find(
+      (m) =>
+        (params.conversationCount === m || experienceCount === m) && m > already,
+    ) ?? null;
+  if (targetMilestone == null) return null;
 
 
   const evolutionPrompt = `You are evolving an Anima companion personality over time.
@@ -135,6 +142,9 @@ HARD RULES:
 INPUTS:
 [CONVERSATION_COUNT]
 ${params.conversationCount}
+
+[SIGNIFICANT_EXPERIENCES]
+${experienceCount}
 
 [RECENT_HISTORY_SUMMARY]
 ${truncate(params.historySummary, 1400)}

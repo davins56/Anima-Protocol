@@ -14,7 +14,7 @@ import TesseractLattice from "@/components/battle/TesseractLattice";
 import AnimaVesselMesh from "@/components/anima/AnimaVesselMesh";
 import { useRendererQuality } from "@/hooks/useRendererQuality";
 
-function VesselStage({ model, autoRotate, quality, expression }) {
+function VesselStage({ model, autoRotate, quality, expression, layers, sequences }) {
   const color = model?.color || "#67e8f9";
   const accent = model?.accent || "#c4b5fd";
 
@@ -64,6 +64,8 @@ function VesselStage({ model, autoRotate, quality, expression }) {
             showLattice={quality.tesseracts >= 1}
             expression={expression}
             breathing
+            layers={layers}
+            sequences={sequences}
           />
         </group>
       </Float>
@@ -111,6 +113,8 @@ export default function AnimaVessel4D({
   autoRotate = true,
   dprMax,
   expression = 0,
+  layers,
+  sequences,
 }) {
   const { quality, handleDecline, handleIncline } = useRendererQuality();
   const dpr = dprMax != null ? [1, dprMax] : quality.dpr;
@@ -148,6 +152,8 @@ export default function AnimaVessel4D({
             autoRotate={autoRotate}
             quality={quality}
             expression={expression}
+            layers={layers}
+            sequences={sequences}
           />
         </PerformanceMonitor>
       </Canvas>
