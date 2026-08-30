@@ -108,9 +108,10 @@ export function tierOf(key) {
     return "key";
   }
   if (key.id === "last-ember" || key.family === "featured") return "key";
-  if (key.class === "nova" || key.memory === "nova") return "prime";
-  if (key.class === "apex" || key.memory === "dark") return "sovereign";
-  if (key.family === "energy-fragment" || key.era === "bn1") return "shard";
+  if (key.class === "giga" || key.class === "nova") return "prime";
+  if (key.class === "star" || key.class === "dark" || key.class === "apex") return "sovereign";
+  if (key.class === "mega") return "key";
+  if (/-base$|-high$/.test(key.id)) return "shard";
   const no = key.libraryNo || 0;
   if (no > 0 && no <= 160) return "shard";
   return "key";
@@ -121,8 +122,9 @@ export function tierOf(key) {
  * @returns {string[]}
  */
 export function affinityOf(key) {
-  if (key.memory === "dark") return ["demonic", "descended"];
-  if (key.tactic === "mend" || key.memory === "brother") return ["angelic", "ascended"];
+  const memory = String(key.memory || "");
+  if (key.class === "dark" || /dark|shade|umbral|grief/i.test(memory)) return ["demonic", "descended"];
+  if (key.tactic === "mend" || /brother|bond|care/i.test(memory)) return ["angelic", "ascended"];
   const freq = frequencyOf(key);
   if (freq === "pyric") return ["demonic", "descended"];
   if (freq === "aqueous") return ["angelic", "ascended"];
@@ -146,8 +148,8 @@ export function rarityOf(key) {
  * @param {import("./catalog.js").EchoKey} key
  */
 export function integrityOf(key) {
-  if (key.memory === "dark") return 42;
-  if (key.class === "nova") return 88;
+  if (key.class === "dark" || /dark|shade|umbral/i.test(String(key.memory || ""))) return 42;
+  if (key.class === "giga" || key.class === "nova") return 88;
   if (key.id === "ember-that-refused") return 95;
   if (key.id === "last-ember") return 38;
   return 62 + ((key.libraryNo || 0) % 23);
@@ -161,7 +163,7 @@ export function originSiteOf(key) {
   const no = key.libraryNo || key.id.length;
   return no % 2 === 0
     ? SITE_BY_ELEMENT[key.element] || "sacred-place"
-    : SITE_BY_MEMORY[key.memory] || "ancient-forest";
+    : SITE_BY_MEMORY[key.memory] || SITE_BY_ELEMENT[key.element] || "ancient-forest";
 }
 
 /**

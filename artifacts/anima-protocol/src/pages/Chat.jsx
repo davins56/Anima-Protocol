@@ -18,6 +18,7 @@ import {
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
+import { echoKeyPromptBlock } from "@/lib/echoKeys";
 import {
   imageGenerationTagInstruction,
   stripImageTags,
@@ -1371,7 +1372,7 @@ export default function Chat() {
           }
           const relCtx = getRelationshipContext(char.id, relationships);
           const loreCtx = loreContext;
-          const fragmentCtx = cyberspaceBattlePromptBlock(char, activeSession);
+          const fragmentCtx = `${cyberspaceBattlePromptBlock(char, activeSession)}${echoKeyPromptBlock(char, activeSession)}`;
           const memCtx = memoryContext;
           const injectedMemCtx = injectedMemoryContext;
           const calendarCtx = calendarContext;
@@ -1542,7 +1543,7 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
 
           currentGroupSpeakerRef.current = finalNextChar;
 
-          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}`;
+          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}${echoKeyPromptBlock(finalNextChar, activeSession)}`;
 
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {

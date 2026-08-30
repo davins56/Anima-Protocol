@@ -1,7 +1,10 @@
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { resolveDbConfig } from "@workspace/db";
 import * as schema from "./schema";
+
+type DbSchema = typeof schema;
+type Db = NodePgDatabase<DbSchema>;
 
 /**
  * Legacy webhook DB entrypoint (local `characters` table).
@@ -9,6 +12,10 @@ import * as schema from "./schema";
  * Must use the same sslmode stripping + rejectUnauthorized:false behaviour as
  * `@workspace/db` — a raw Pool({ connectionString }) breaks against Replit
  * Postgres from Vercel after pg-connection-string's verify-full change.
+ *
+ * Pool creation is lazy so Cloudflare Workers can instantiate the module
+ * before secrets (DATABASE_URL) are mirrored from env bindings into
+ * process.env. Eager createPool() fails Worker version upload with 10021.
  */
 function createPool(): Pool {
   const rawUrl = process.env.DATABASE_URL;
@@ -30,7 +37,34 @@ function createPool(): Pool {
   });
 }
 
-const pool = createPool();
-export const db = drizzle(pool, { schema });
-export { pool };
+let poolInstance: Pool | null = null;
+let dbInstance: Db | null = null;
+
+function getPool(): Pool {
+  if (!poolInstance) {
+    poolInstance = createPool();
+  }
+  return poolInstance;
+}
+
+function getDb(): Db {
+  if (!dbInstance) {
+    dbInstance = drizzle(getPool(), { schema });
+  }
+  return dbInstance;
+}
+
+function proxyBind<T extends object>(target: () => T): T {
+  return new Proxy({} as T, {
+    get(_obj, prop, receiver) {
+      const value = Reflect.get(target(), prop, receiver);
+      return typeof value === "function"
+        ? (value as (...args: unknown[]) => unknown).bind(target())
+        : value;
+    },
+  });
+}
+
+export const pool = proxyBind(getPool);
+export const db = proxyBind(getDb);
 export * from "./schema";
