@@ -86,6 +86,9 @@ describe("rejectSpaFallbackForStaticAsset", () => {
 
     expect(result.status).toBe(200);
     expect(result.headers.get("content-type")).toMatch(/javascript/);
+    expect(result.headers.get("cache-control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
     expect(await result.text()).toBe("export default 1;\n");
   });
 
@@ -164,7 +167,30 @@ describe("fetchAssetsRejectingSpaHtml", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/javascript");
+    expect(response.headers.get("cache-control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    expect(response.headers.get("cdn-cache-control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    expect(response.headers.get("x-anima-asset-cache")).toBe("immutable");
     expect(await response.text()).toBe("export const current = true;");
+  });
+
+  it("does not long-cache SPA HTML or 404s", async () => {
+    const html = await fetchAssetsRejectingSpaHtml(
+      new Request("https://anima-protocol.com/chat"),
+      { fetch: async () => htmlResponse() },
+    );
+    expect(html.status).toBe(200);
+    expect(html.headers.get("cache-control") ?? "").not.toMatch(/immutable/);
+
+    const missing = await fetchAssetsRejectingSpaHtml(
+      new Request("https://anima-protocol.com/assets/index-oldhash.js"),
+      { fetch: async () => htmlResponse() },
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("cache-control")).toBe("no-store");
   });
 
   it("404s missing CSS, source maps, and fonts the same way", async () => {

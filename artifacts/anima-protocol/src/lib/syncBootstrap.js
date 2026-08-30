@@ -9,7 +9,7 @@ import {
   endBootstrap,
   resetBootstrapState,
 } from "@/lib/bootstrapState";
-import { seedCharactersIfNeeded, resetSeedLock } from "@/lib/seedCharacters";
+import { BOOTSTRAP_UI_TIMEOUT_MS } from "@/lib/storeTimeouts";
 
 // One-time migration of the browser's pre-sync localStorage data up to the
 // signed-in account, followed by per-account starter seeding. Both steps are
@@ -34,9 +34,14 @@ export function bootstrapUserData(userId) {
     return bootstrapPromise;
   }
   bootstrappedUserId = userId;
-  resetSeedLock();
   resetBootstrapState();
-  bootstrapPromise = run()
+  bootstrapPromise = (async () => {
+    const { resetSeedLock, seedCharactersIfNeeded } = await import(
+      "@/lib/seedCharacters"
+    );
+    resetSeedLock();
+    return run(seedCharactersIfNeeded);
+  })()
     .catch((err) => {
       bootstrapPromise = null;
       bootstrappedUserId = null;
@@ -60,7 +65,6 @@ export function whenBootstrapReady() {
   return withBootstrapTimeout(waitForBootstrapStart());
 }
 
-const BOOTSTRAP_UI_TIMEOUT_MS = 20000;
 
 function withBootstrapTimeout(promise) {
   return Promise.race([
@@ -69,7 +73,7 @@ function withBootstrapTimeout(promise) {
   ]);
 }
 
-async function waitForBootstrapStart(timeoutMs = 15000) {
+async function waitForBootstrapStart(timeoutMs = BOOTSTRAP_UI_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (bootstrapPromise) return bootstrapPromise;
@@ -83,7 +87,7 @@ async function waitForBootstrapStart(timeoutMs = 15000) {
 //   "migrated" — local data was imported and the server confirmed success
 //   "skipped"  — nothing to migrate, or it was already migrated previously
 //   "failed"   — there was local data but the import did not confirm success
-async function run() {
+async function run(seedCharactersIfNeeded) {
   try {
     await waitForStoreAuth();
   } catch {

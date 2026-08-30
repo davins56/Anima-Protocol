@@ -15,6 +15,7 @@ import {
   ensureBootstrapComplete,
   isBootstrapSettled,
 } from '@/lib/bootstrapState';
+import { STORE_FETCH_TIMEOUT_MS } from '@/lib/storeTimeouts';
 import {
   authHeaders,
   clearAuthTokenGetter,
@@ -26,8 +27,7 @@ import {
 const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
-
-const STORE_FETCH_TIMEOUT_MS = 15000;
+export { STORE_FETCH_TIMEOUT_MS };
 
 async function storeFetch(path, options = {}) {
   const token = await getToken();
@@ -71,6 +71,11 @@ async function storeFetch(path, options = {}) {
       }
       res = retried;
     }
+    // Stale Worker/pg sockets surface as 503 "Database connection reset".
+    // One extra attempt lets the server open a fresh connection.
+    if (await isRetryableStoreReset(res)) {
+      res = await makeRequest();
+    }
     return res;
   } catch (err) {
     if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
@@ -81,6 +86,19 @@ async function storeFetch(path, options = {}) {
       throw timeoutErr;
     }
     throw err;
+  }
+}
+
+async function isRetryableStoreReset(res) {
+  if (res.status !== 503) return false;
+  try {
+    const json = await res.clone().json();
+    return (
+      json?.reason === 'reset' ||
+      /connection reset/i.test(String(json?.error || ''))
+    );
+  } catch {
+    return false;
   }
 }
 

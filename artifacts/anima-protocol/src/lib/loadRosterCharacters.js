@@ -10,6 +10,7 @@ import {
 } from "@/api/base44Client";
 import { getStarterRoster, retryStarterSeed } from "@/lib/seedCharacters";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 
 function asAnimaChars(animas) {
   return (animas || []).map((a) => ({
@@ -59,7 +60,7 @@ export async function loadRosterCharacters({
   // empty account.
   let authError = null;
   try {
-    await waitForStoreAuth(15000);
+    await waitForStoreAuth(STORE_AUTH_WAIT_MS);
   } catch (err) {
     authError = err;
     console.warn(

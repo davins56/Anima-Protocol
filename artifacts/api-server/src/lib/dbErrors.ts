@@ -47,6 +47,9 @@ function collectErrorSignals(err: unknown): { message: string; code: string } {
       messages.push(current.message);
     } else if (typeof current === "string") {
       messages.push(current);
+    } else if (current && typeof current === "object" && "message" in current) {
+      const nested = (current as { message?: unknown }).message;
+      if (typeof nested === "string" && nested) messages.push(nested);
     }
     if (current && typeof current === "object" && "code" in current) {
       const c = String((current as { code?: unknown }).code ?? "");
@@ -67,6 +70,9 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     code.startsWith("28") || // invalid auth
     code.startsWith("3D") || // invalid catalog
     code.startsWith("42") || // syntax / missing relation
+    code.startsWith("22") || // data exception (e.g. 22P02 malformed array)
+    code.startsWith("08") || // connection exception
+    /^[0-9A-Z]{5}$/.test(code) || // any other Postgres SQLSTATE
     code === "ECONNREFUSED" ||
     code === "ENOTFOUND" ||
     code === "ETIMEDOUT" ||
@@ -97,7 +103,10 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     /no pg_hba\.conf/i.test(message) ||
     /SSL/i.test(message) ||
     /certificate/i.test(message) ||
-    /does not exist/i.test(message);
+    /does not exist/i.test(message) ||
+    /malformed array literal/i.test(message) ||
+    /invalid input syntax/i.test(message) ||
+    /could not determine data type/i.test(message);
 
   if (!looksLikeDb) {
     return {
@@ -117,6 +126,14 @@ export function classifyDbError(err: unknown): DbErrorInfo {
   } else if (/does not exist/i.test(message) || code.startsWith("42")) {
     reason = "schema";
     safeMessage = "Database schema is missing or out of date";
+  } else if (
+    code.startsWith("22") ||
+    /malformed array literal|invalid input syntax|could not determine data type/i.test(
+      message,
+    )
+  ) {
+    reason = "unavailable";
+    safeMessage = "Database query failed";
   } else if (/too many clients/i.test(message)) {
     reason = "limit";
     safeMessage = "Database connection limit reached";

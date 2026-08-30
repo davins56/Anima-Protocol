@@ -24,7 +24,13 @@ import {
   track,
 } from '@/lib/analytics';
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
-import { retryStarterSeed } from '@/lib/seedCharacters';
+import {
+  clearGuestPersistence,
+  persistExplicitGuest,
+  readExplicitGuestChosen,
+  readPersistedGuest,
+  resolveAuthBoot,
+} from '@/lib/authBootPolicy';
 import {
   disableProactivePush,
   getProactiveMessagePreferences,
@@ -46,30 +52,21 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [isLoadingPublicSettings] = useState(false);
   const [appPublicSettings] = useState(null);
-  const [localUser, setLocalUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('anima_local_auth_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  // Guest is never restored from leftover localStorage on first paint.
+  // Instant Sandbox only applies after an explicit this-session Guest tap,
+  // and only when Clerk has loaded without a real session.
+  const [localUser, setLocalUser] = useState(null);
 
   const loginAsLocalUser = useCallback((customIdentity) => {
     const fallbackId = 'user_' + Math.random().toString(36).substring(2, 10);
-    const identity = {
+    const identity = persistExplicitGuest({
       id: customIdentity?.id || fallbackId,
       email: customIdentity?.email || 'seeker@anima-protocol.com',
       full_name: customIdentity?.full_name || customIdentity?.name || 'Seeker',
       display_name: customIdentity?.display_name || customIdentity?.name || 'Seeker',
       role: 'User',
       selected_mode: 'companion',
-    };
-    try {
-      localStorage.setItem('anima_local_auth_user', JSON.stringify(identity));
-    } catch (e) {
-      console.warn('Could not persist local auth session:', e);
-    }
+    });
     setLocalUser(identity);
     setUser(identity);
     base44.auth.syncIdentity(identity);
@@ -121,6 +118,7 @@ export const AuthProvider = ({ children }) => {
         if (cancelled) return;
         const chars = await base44.entities.Character.list('-created_date', 5);
         if (!chars?.length) {
+          const { retryStarterSeed } = await import('@/lib/seedCharacters');
           await retryStarterSeed();
           notifyStoreChanged();
         }
@@ -167,6 +165,29 @@ export const AuthProvider = ({ children }) => {
       cancelled = true;
     };
   }, [isLoaded, isSignedIn, user?.id]);
+
+  // After Clerk reports its session, drop leftover guest storage if a real
+  // account is present. Restore guest only when this tab explicitly chose it.
+  useEffect(() => {
+    if (!isLoaded) return;
+    const boot = resolveAuthBoot({
+      clerkLoaded: true,
+      clerkSignedIn: !!isSignedIn,
+      clerkUser: clerkUser ? { id: clerkUser.id } : null,
+      persistedGuest: readPersistedGuest(),
+      explicitGuestChosen: readExplicitGuestChosen(),
+    });
+    if (boot.mode === 'signed-in') {
+      clearGuestPersistence();
+      setLocalUser(null);
+      return;
+    }
+    if (boot.mode === 'guest') {
+      setLocalUser(boot.identity);
+      return;
+    }
+    setLocalUser(null);
+  }, [isLoaded, isSignedIn, clerkUser?.id]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -227,6 +248,9 @@ export const AuthProvider = ({ children }) => {
           }
         }
       })();
+    } else if (localUser) {
+      // Explicit Instant Sandbox — keep the guest identity. Do not clear
+      // the token getter; the other effect owns local_* for guests.
     } else {
       clearAuthTokenGetter();
       base44.auth.clearSession();
@@ -236,10 +260,13 @@ export const AuthProvider = ({ children }) => {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, clerkUser?.id]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, localUser]);
 
-  const isAuthenticated = !!isSignedIn || !!localUser;
-  const isLoadingAuth = !isLoaded && !localUser;
+  const isSignedInUser = !!isSignedIn && !!clerkUser;
+  const isGuest = !!localUser && !isSignedInUser;
+  const isAuthenticated = isSignedInUser || isGuest;
+  // Always wait for Clerk. Leftover guest localStorage must not skip login.
+  const isLoadingAuth = !isLoaded;
   const [authStalled, setAuthStalled] = useState(false);
 
   useEffect(() => {
@@ -287,7 +314,7 @@ const logout = useCallback(() => {
       setAuthError(null);
 
       try {
-        localStorage.removeItem('anima_local_auth_user');
+        clearGuestPersistence();
       } catch (e) {
         console.warn('Storage remove warning:', e);
       }
@@ -353,15 +380,17 @@ const logout = useCallback(() => {
   return (
     <AuthContext.Provider
       value={{
-        user: user || localUser,
+        user: isSignedInUser ? user : user || localUser,
         setUser,
         localUser,
         loginAsLocalUser,
         isAuthenticated,
+        isSignedInUser,
+        isGuest,
         setIsAuthenticated: () => {},
         isLoadingAuth,
         authStalled,
-        authChecked: isLoaded || !!localUser,
+        authChecked: isLoaded,
         checkUserAuth: () => {},
         isLoadingPublicSettings,
         authError,

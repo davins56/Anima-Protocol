@@ -11,6 +11,13 @@
 const STATIC_ASSET_EXTENSION =
   /\.(?:[cm]?js|map|css|json|wasm|txt|xml|webmanifest|png|jpe?g|gif|svg|webp|ico|avif|bmp|woff2?|ttf|otf|eot|mp3|mp4|webm|ogg|wav|pdf)$/i;
 
+/** Vite content-hashed files under /assets (e.g. index-Dqhepbdd.js). */
+const HASHED_ASSET_PATH =
+  /^\/assets\/[^/]+-[A-Za-z0-9_-]{6,}\.[A-Za-z0-9.]+$/;
+
+export const HASHED_ASSET_CACHE_CONTROL =
+  "public, max-age=31536000, immutable";
+
 export function isStaticAssetPath(pathname: string): boolean {
   const path = decodePathname(pathname);
   if (path === "/assets" || path.startsWith("/assets/")) {
@@ -39,10 +46,38 @@ export function staticAssetNotFoundResponse(pathname: string): Response {
   });
 }
 
+export function isHashedAssetPath(pathname: string): boolean {
+  return HASHED_ASSET_PATH.test(decodePathname(pathname));
+}
+
+/**
+ * Long-cache successful hashed /assets so repeat visits (especially mobile
+ * Safari) do not re-download the main graph. 404s stay no-store.
+ */
+export function withHashedAssetCache(
+  pathname: string,
+  response: Response,
+): Response {
+  if (!response.ok || !isHashedAssetPath(pathname)) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", HASHED_ASSET_CACHE_CONTROL);
+  // CF Assets default is max-age=0. CDN-Cache-Control keeps the edge
+  // aligned when the browser Cache-Control is rewritten after ASSETS.fetch.
+  headers.set("cdn-cache-control", HASHED_ASSET_CACHE_CONTROL);
+  headers.set("x-anima-asset-cache", "immutable");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 /**
  * If ASSETS SPA-fell-back a static file request to HTML, replace it with a
  * non-HTML 404. Pass through real JS/CSS/font responses and SPA HTML for
- * extensionless client routes.
+ * extensionless client routes. Hashed /assets get immutable cache headers.
  */
 export function rejectSpaFallbackForStaticAsset(
   pathname: string,
@@ -54,7 +89,7 @@ export function rejectSpaFallbackForStaticAsset(
   ) {
     return staticAssetNotFoundResponse(pathname);
   }
-  return response;
+  return withHashedAssetCache(pathname, response);
 }
 
 export async function fetchAssetsRejectingSpaHtml(

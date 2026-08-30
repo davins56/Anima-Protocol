@@ -24,15 +24,24 @@ export default function Journals() {
 
   const loadData = async () => {
     setLoading(true);
-    const [j, c, s] = await Promise.all([
-      base44.entities.CharacterJournal.list("-created_date", 200),
-      base44.entities.Character.list("-created_date", 100),
-      base44.entities.ChatSession.list("-created_date", 100),
-    ]);
-    setJournals(j || []);
-    setCharacters(c || []);
-    setSessions(s || []);
-    setLoading(false);
+    try {
+      const [j, c, s] = await Promise.all([
+        base44.entities.CharacterJournal.list("-created_date", 200),
+        base44.entities.Character.list("-created_date", 100),
+        // Title lookup only — skip hydrating every session's message history.
+        base44.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
+      ]);
+      setJournals(j || []);
+      setCharacters(c || []);
+      setSessions(s || []);
+    } catch (err) {
+      console.warn("Failed to load journals:", err);
+      setJournals([]);
+      setCharacters([]);
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {

@@ -199,3 +199,43 @@ describe("classifyDbError schema signals", () => {
     });
   });
 });
+
+describe("classifyDbError query failures", () => {
+  it("classifies postgres.js 22P02 malformed array literal as a DB query error", () => {
+    const err = Object.assign(
+      new Error(
+        'malformed array literal: "user_entities,user_profiles,push_subscriptions"',
+      ),
+      { code: "22P02", name: "PostgresError", severity: "ERROR" },
+    );
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "unavailable",
+      safeMessage: "Database query failed",
+      code: "22P02",
+    });
+    expect(classifyDbError(err).safeMessage).not.toBe("Internal server error");
+  });
+
+  it("classifies a non-Error driver object that only has code + message", () => {
+    const info = classifyDbError({
+      code: "22P02",
+      message: 'malformed array literal: "a,b,c"',
+    });
+    expect(info).toMatchObject({
+      isDbError: true,
+      reason: "unavailable",
+      safeMessage: "Database query failed",
+      code: "22P02",
+    });
+  });
+
+  it("still does not treat unrelated app errors as database failures", () => {
+    expect(classifyDbError(new Error("Publishable key not valid."))).toEqual({
+      isDbError: false,
+      reason: "internal",
+      safeMessage: "Internal server error",
+    });
+  });
+});
+
