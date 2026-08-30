@@ -6,6 +6,7 @@ import {
   applyCloudflareRequestEnv,
   bindImportableEnv,
 } from "./lib/cloudflareEnv";
+import { fetchAssetsRejectingSpaHtml } from "./lib/spaAssetFallback";
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
@@ -42,9 +43,10 @@ export default {
       return expressHandler.fetch(request, env, ctx);
     }
 
-    // Everything else: serve static assets (SPA fallback handled by
-    // assets.not_found_handling = "single-page-application" in wrangler.jsonc).
-    // /api and /api/* are run_worker_first so they never hit that SPA fallback.
-    return env.ASSETS.fetch(request);
+    // Static assets + client routes. SPA fallback for extensionless routes is
+    // handled by assets.not_found_handling = "single-page-application".
+    // /api and /assets are run_worker_first so Express and this HTML→404 guard
+    // see those paths before Assets can swallow them as index.html.
+    return fetchAssetsRejectingSpaHtml(request, env.ASSETS);
   },
 };
