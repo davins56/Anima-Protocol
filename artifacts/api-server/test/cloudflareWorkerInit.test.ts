@@ -1,4 +1,12 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../..",
+);
 
 /**
  * Cloudflare validates a Worker by evaluating the module graph. Secrets such
@@ -42,5 +50,32 @@ describe("Cloudflare Worker module init", () => {
     expect(() => {
       void mod.pool.options;
     }).toThrow(/DATABASE_URL must be set/);
+  });
+
+  it("Worker DB entrypoint is lazy and uses the Worker-safe postgres.js client", () => {
+    const workerDb = readFileSync(
+      path.join(repoRoot, "artifacts/api-server/src/db/index.ts"),
+      "utf8",
+    );
+    const bootstrap = readFileSync(
+      path.join(
+        repoRoot,
+        "artifacts/api-server/src/lib/cloudflareEnvBootstrap.ts",
+      ),
+      "utf8",
+    );
+    const sharedClient = readFileSync(
+      path.join(repoRoot, "lib/db/src/client.ts"),
+      "utf8",
+    );
+
+    expect(workerDb).not.toMatch(/new Pool\s*\(/);
+    expect(workerDb).toMatch(/getDbDriver\(\) === "postgres-js"/);
+    expect(workerDb).toMatch(/createPostgresJsSql/);
+    expect(workerDb).toMatch(/drizzle-orm\/postgres-js/);
+    expect(bootstrap).toMatch(/ANIMA_DB_DRIVER/);
+    expect(bootstrap).toMatch(/postgres-js/);
+    expect(sharedClient).toMatch(/getDbDriver\(\) === "postgres-js"/);
+    expect(sharedClient).toMatch(/drizzle-orm\/postgres-js/);
   });
 });
