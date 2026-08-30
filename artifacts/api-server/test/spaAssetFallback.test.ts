@@ -29,6 +29,8 @@ function jsResponse(body = "export default 1;\n"): Response {
 describe("isStaticAssetPath", () => {
   it("treats hashed files under /assets/ as static", () => {
     expect(isStaticAssetPath("/assets/NetBattle-CPeldP0I.js")).toBe(true);
+    expect(isStaticAssetPath("/assets/EchoKeys-DsgAf3_0.js")).toBe(true);
+    expect(isStaticAssetPath("/assets/UserProfile-DeLmCUJW.js")).toBe(true);
     expect(isStaticAssetPath("/assets/index-Dqhepbdd.js")).toBe(true);
     expect(isStaticAssetPath("/assets/index-Dqhepbdd.css")).toBe(true);
     expect(isStaticAssetPath("/assets/index-Dqhepbdd.js.map")).toBe(true);
@@ -43,6 +45,8 @@ describe("isStaticAssetPath", () => {
 
   it("leaves extensionless client routes as SPA candidates", () => {
     expect(isStaticAssetPath("/net-battle")).toBe(false);
+    expect(isStaticAssetPath("/profile")).toBe(false);
+    expect(isStaticAssetPath("/echo-keys")).toBe(false);
     expect(isStaticAssetPath("/meditation")).toBe(false);
     expect(isStaticAssetPath("/")).toBe(false);
     expect(isStaticAssetPath("/chat/abc")).toBe(false);
@@ -98,6 +102,22 @@ describe("rejectSpaFallbackForStaticAsset", () => {
 });
 
 describe("fetchAssetsRejectingSpaHtml", () => {
+  it("ASSETS would SPA-fallback a stale EchoKeys hash → 404 not HTML", async () => {
+    const assets = {
+      fetch: vi.fn(async () => htmlResponse()),
+    };
+
+    const response = await fetchAssetsRejectingSpaHtml(
+      new Request("https://anima-protocol.com/assets/EchoKeys-DsgAf3_0.js"),
+      assets,
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toMatch(/text\/plain/);
+    expect(response.headers.get("content-type")).not.toMatch(/html/i);
+    expect(await response.text()).toContain("/assets/EchoKeys-DsgAf3_0.js");
+  });
+
   it("ASSETS would SPA-fallback a missing /assets/*.js → 404 not HTML", async () => {
     const assets = {
       fetch: vi.fn(async () => htmlResponse()),
