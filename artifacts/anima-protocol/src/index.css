@@ -158,15 +158,28 @@
 }
 
 .safe-top { padding-top: env(safe-area-inset-top, 0px); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
-.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px); }
+.safe-bottom { padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px)); }
+.pb-safe { padding-bottom: max(var(--safe-bottom, env(safe-area-inset-bottom, 0px)), 0px); }
 
 /*
  * Visible-viewport height utilities.
  * Layered fallback: legacy `vh` -> modern dynamic `dvh` -> JS-measured
  * `--app-height` (set by useViewportHeight) which wins for pixel-accurate
  * iOS/Android sizing so mobile browser chrome never clips the bottom UI.
+ *
+ * When the virtual keyboard is open, `--app-height` equals visualViewport
+ * height. Do not also add the keyboard inset as padding on `.h-screen-safe`
+ * — that double-count was the black bar covering the chat composer.
+ * `html[data-keyboard-open]` hides `.fixed-bottom-chrome` because iOS Safari
+ * pins `position: fixed; bottom: 0` to the visual viewport and the black
+ * tab bar would sit on top of the text box.
  */
+
+html[data-keyboard-open] .fixed-bottom-chrome {
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(100%);
+}
 .h-screen-safe {
   height: 100vh;
   height: 100dvh;

@@ -2696,6 +2696,14 @@ Return JSON:
               </AnimatePresence>
               <div ref={messagesEndRef} className="mb-4 lg:mb-2" />
             </div>
+            {/*
+              Chat composer (in-flow, not position:fixed). The shell is
+              `h-screen-safe` / `--app-height` = visualViewport.height, so this
+              row already sits above the iOS keyboard. Do not add keyboard
+              height, 100vh, or extra safe-area padding here — that was the
+              black bar covering the text box. `--tab-bar-height` and
+              `--safe-bottom` go to 0 while `html[data-keyboard-open]`.
+            */}
             <div className="flex-shrink-0 border-t border-primary/10 bg-black/60 space-y-2 min-h-0 sm:pt-0 pt-3">
               {/* Narrative Choices - Horizontal */}
               {choices.length > 0 && activeSession.mode === "solo" && (

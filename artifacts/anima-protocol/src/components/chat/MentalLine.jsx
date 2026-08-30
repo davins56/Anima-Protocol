@@ -33,7 +33,7 @@ export default function MentalLine({ isOpen, onClose, onSendThought, serenity, l
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 20 }}
         className="fixed right-4 w-80 max-h-96 border border-purple-400/30 bg-purple-950/40 backdrop-blur-md rounded-lg shadow-2xl overflow-hidden flex flex-col z-40"
-        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}
+        style={{ bottom: "calc(var(--keyboard-inset, 0px) + var(--tab-bar-height, 80px) + 8px)" }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-purple-400/20 bg-purple-900/30">
