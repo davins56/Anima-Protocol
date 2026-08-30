@@ -106,9 +106,9 @@ export default function Journals() {
   };
 
   return (
-    <div className="flex-1 min-h-0 flex gap-6 p-6 bg-background">
+    <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6 p-4 sm:p-6 bg-background overflow-y-auto lg:overflow-hidden">
       {/* Journal List */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-[40vh] lg:min-h-0">
         <div className="mb-4">
           <div className="flex items-center gap-4 mb-4">
             <Link to="/" className="text-primary/40 hover:text-primary transition-colors flex-shrink-0">

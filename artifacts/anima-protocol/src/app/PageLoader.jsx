@@ -5,7 +5,7 @@
 export function PageLoader() {
   return (
     <div
-      className="flex items-center justify-center h-screen-safe"
+      className="flex items-center justify-center flex-1 min-h-0 h-full w-full"
       role="status"
       aria-label="Loading page"
     >

@@ -141,7 +141,7 @@ export default function Meditation() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col pb-20" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}>
+    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}>
 
       {/* Ambient aura glow */}
       <div className="fixed inset-0 pointer-events-none z-0">

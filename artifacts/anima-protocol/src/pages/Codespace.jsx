@@ -497,7 +497,7 @@ export default function Codespace() {
   ];
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-[#06060d] text-primary">
+    <div className="app-page-fill flex-1 min-h-0 flex flex-col bg-[#06060d] text-primary">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-primary/15 bg-[#090912]">
         <button
