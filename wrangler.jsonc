@@ -54,4 +54,11 @@
       "secret_name": "DATABASE_URL"
     }
   ]
+  // Hyperdrive: Workers cannot hold a raw TCP session to hosted Postgres
+  // (Supabase/Neon/RDS :5432 → ECONNRESET) even when DATABASE_URL is set.
+  // One dashboard step — see scripts/cloudflare/hyperdrive.md — then paste
+  // only the Hyperdrive id (never the connection string) here and redeploy:
+  // "hyperdrive": [
+  //   { "binding": "HYPERDRIVE", "id": "<hyperdrive-config-uuid>" }
+  // ]
 }
