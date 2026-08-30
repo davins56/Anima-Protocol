@@ -865,7 +865,7 @@ const AuthenticatedApp = () => {
     toast.error("Sign-in is temporarily unavailable.", {
       id: "anima-clerk-unavailable",
       description:
-        "The app will load in guest mode. Fix CLERK_SECRET_KEY on Vercel (sk_live_*), then refresh.",
+        "Stay on this screen — Guest is not entered automatically. Use Re-Enter Protocol for GitHub or email, or tap Instant Sandbox / Guest Access on the sign-in page.",
       duration: Infinity,
       action: {
         label: "Retry",
