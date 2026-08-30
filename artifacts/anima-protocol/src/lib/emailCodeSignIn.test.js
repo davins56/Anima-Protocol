@@ -62,9 +62,18 @@ describe("isPatternFormatError", () => {
 });
 
 describe("isPreviewSignInHost", () => {
-  it("detects vercel preview hosts", () => {
+  it("treats any non-anima, non-local host as unauthorized for production Clerk", () => {
     expect(isPreviewSignInHost("anima-protocol-abc.vercel.app")).toBe(true);
+    expect(isPreviewSignInHost("anima-protocol.replit.app")).toBe(true);
     expect(isPreviewSignInHost("www.anima-protocol.com")).toBe(false);
+    expect(isPreviewSignInHost("anima-protocol.com")).toBe(false);
+    expect(isPreviewSignInHost("localhost")).toBe(false);
+  });
+});
+
+describe("PRODUCTION_SIGN_IN_URL", () => {
+  it("uses the apex path that Cloudflare actually serves", () => {
+    expect(PRODUCTION_SIGN_IN_URL).toBe("https://anima-protocol.com/sign-in");
   });
 });
 

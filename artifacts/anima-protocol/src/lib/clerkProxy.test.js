@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
+  ANIMA_PRODUCTION_SIGN_IN_URL,
   animaProductionClerkProxyUrl,
   clerkFrontendApiProbeBase,
   clerkJsScriptProbeUrl,
@@ -8,6 +9,7 @@ import {
   decodeClerkFrontendHost,
   ensureTrailingSlash,
   isAnimaProductionHost,
+  isClerkAuthorizedBrowserHost,
   isUsableClerkPublishableKey,
   publishableKeyUsesCustomDomain,
   resolveClerkProxyUrl,
@@ -94,5 +96,17 @@ describe('clerkProxy', () => {
     expect(isAnimaProductionHost('www.anima-protocol.com')).toBe(true);
     expect(isAnimaProductionHost('anima-protocol.com')).toBe(true);
     expect(isAnimaProductionHost('preview.vercel.app')).toBe(false);
+  });
+
+  it('authorizes only anima and local hosts for production Clerk', () => {
+    expect(isClerkAuthorizedBrowserHost('anima-protocol.com')).toBe(true);
+    expect(isClerkAuthorizedBrowserHost('www.anima-protocol.com')).toBe(true);
+    expect(isClerkAuthorizedBrowserHost('localhost')).toBe(true);
+    expect(isClerkAuthorizedBrowserHost('anima-protocol-abc.vercel.app')).toBe(
+      false,
+    );
+    expect(ANIMA_PRODUCTION_SIGN_IN_URL).toBe(
+      'https://anima-protocol.com/sign-in',
+    );
   });
 });
