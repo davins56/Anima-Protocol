@@ -1,5 +1,5 @@
 /**
- * Spinner-only fallback so lazy routes do not stack a second "Loading..."
+ * Spinner-only fallback so lazy routes do not stack a second loading
  * label on top of in-page fetch states.
  */
 export function PageLoader() {
