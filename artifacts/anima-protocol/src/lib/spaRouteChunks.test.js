@@ -23,6 +23,6 @@ describe("Profile / EchoKeys lazy route chunks", () => {
   it("builds the SPA into dist/public so wrangler assets ./dist receives EchoKeys JS", () => {
     const vite = readFileSync(join(root, "..", "vite.config.ts"), "utf8");
     expect(vite).toContain('outDir: path.resolve(import.meta.dirname, "dist/public")');
-    expect(vite).toMatch(/no navigation fallback/i);
+    expect(vite).toContain("navigateFallback: null");
   });
 });
