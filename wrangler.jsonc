@@ -33,6 +33,15 @@
     // default is max-age=0 without it.
     "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
   },
+  // Serve the same Worker on www so /api/* is not a zone-level 301 to
+  // https://anima-protocol.com/ (path dropped). worker.ts then 308s www →
+  // apex while preserving pathname + query. Pattern only — no secrets.
+  "routes": [
+    {
+      "pattern": "www.anima-protocol.com/*",
+      "zone_name": "anima-protocol.com"
+    }
+  ],
   "vars": {
     "NODE_ENV": "production"
   },

@@ -7,6 +7,12 @@ import {
   bindImportableEnv,
 } from "./lib/cloudflareEnv";
 import { fetchAssetsRejectingSpaHtml } from "./lib/spaAssetFallback";
+import {
+  fetchApiThroughExpress,
+  isWorkerApiPath,
+  jsonApiErrorResponse,
+} from "./lib/workerApiGuard";
+import { apexRedirectForWww } from "./lib/wwwHostRedirect";
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
@@ -34,13 +40,24 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // Route /api/* requests through the Express app.
-    if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
+    // www must keep pathname + query. A host-only 301 to the apex homepage
+    // made fetch("/api/store/Character") parse homepage HTML as a store error.
+    const wwwRedirect = apexRedirectForWww(request);
+    if (wwwRedirect) return wwwRedirect;
+
+    // Route /api/* requests through the Express app. Isolate throws, hung
+    // Hyperdrive queries, and HTML error pages are coerced to JSON 503/500 so
+    // the Character library never renders Cloudflare's IE-conditional page.
+    if (isWorkerApiPath(url.pathname)) {
       // Request-time apply: fetch env + importable env, including non-enumerable
       // secrets and Secrets Store-style objects. Do not rely on a boot snapshot
       // of process.env — httpServerHandler may reset it after this returns.
-      await applyCloudflareRequestEnv(env);
-      return expressHandler.fetch(request, env, ctx);
+      try {
+        await applyCloudflareRequestEnv(env);
+        return await fetchApiThroughExpress(request, env, ctx, expressHandler);
+      } catch (err) {
+        return jsonApiErrorResponse(err);
+      }
     }
 
     // Static assets + client routes. SPA fallback for extensionless routes is
