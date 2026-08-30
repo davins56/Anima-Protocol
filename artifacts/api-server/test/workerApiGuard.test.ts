@@ -95,9 +95,33 @@ describe("coerceApiResponseToJson", () => {
     expect(looksLikeHtmlBody(CF_HTML)).toBe(true);
     expect(looksLikeHtmlBody('{"error":"Unauthorized"}')).toBe(false);
   });
+
+  it("detects Cloudflare's own 301 body", () => {
+    const cf301 = `<html><head><title>301 Moved Permanently</title></head><body><center><h1>301 Moved Permanently</h1></center><hr><center>cloudflare</center></body></html>`;
+    expect(looksLikeHtmlBody(cf301)).toBe(true);
+  });
 });
 
 describe("fetchApiThroughExpress", () => {
+  it("turns an Uncaught Exception on /api/store into JSON 503", async () => {
+    const handler = {
+      fetch: async () => {
+        throw new Error("Uncaught Exception");
+      },
+    };
+    const response = await fetchApiThroughExpress(
+      new Request("https://anima-protocol.com/api/store/Character"),
+      {},
+      {},
+      handler,
+    );
+    expect(response.headers.get("content-type")).toMatch(/application\/json/);
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.error).toMatch(/unreachable|unavailable|database/i);
+    expect(JSON.stringify(body)).not.toMatch(/<!DOCTYPE|Uncaught Exception|lt IE 7/);
+  });
+
   it("catches isolate throws and returns JSON instead of letting CF emit HTML", async () => {
     const handler = {
       fetch: async () => {

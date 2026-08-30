@@ -181,6 +181,29 @@ describe("parseStoreErrorResponse", () => {
     expect(message).toBe("Database connection reset");
   });
 
+  it("never dumps Cloudflare's www 301 HTML (<center>cloudflare</center>)", async () => {
+    const { parseStoreErrorResponse, STORE_UNREACHABLE_MESSAGE } =
+      await import("./base44Client");
+    const html = `<html>
+<head><title>301 Moved Permanently</title></head>
+<body>
+<center><h1>301 Moved Permanently</h1></center>
+<hr><center>cloudflare</center>
+</body>
+</html>`;
+    const message = await parseStoreErrorResponse(
+      new Response(html, {
+        status: 301,
+        headers: {
+          "Content-Type": "text/html",
+          Location: "https://anima-protocol.com/",
+        },
+      }),
+    );
+    expect(message).toBe(STORE_UNREACHABLE_MESSAGE);
+    expect(message).not.toMatch(/cloudflare|Moved Permanently|DOCTYPE/i);
+  });
+
   it("explains a plain 404 without treating it as HTML", async () => {
     const { parseStoreErrorResponse } = await import("./base44Client");
     const message = await parseStoreErrorResponse(

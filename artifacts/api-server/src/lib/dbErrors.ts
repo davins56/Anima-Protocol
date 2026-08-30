@@ -161,6 +161,7 @@ export function classifyDbError(err: unknown): DbErrorInfo {
       blob,
     ) ||
     /hyperdrive/i.test(blob) ||
+    /prisma\.io|prisma accelerate/i.test(blob) ||
     /could not connect to (?:origin )?database/i.test(message) ||
     /origin database/i.test(message) ||
     /invalid startup packet/i.test(message) ||
@@ -238,7 +239,11 @@ export function classifyDbError(err: unknown): DbErrorInfo {
   } else if (/ENOTFOUND|getaddrinfo|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN/i.test(blob)) {
     reason = "unreachable";
     safeMessage = "Database host unreachable";
-  } else if (/hyperdrive|origin database|invalid startup packet|unsupported (?:startup )?protocol|not a postgres/i.test(blob)) {
+  } else if (
+    /hyperdrive|prisma\.io|prisma accelerate|origin database|invalid startup packet|unsupported (?:startup )?protocol|not a postgres/i.test(
+      blob,
+    )
+  ) {
     reason = "unavailable";
     safeMessage = "Database unavailable";
   }

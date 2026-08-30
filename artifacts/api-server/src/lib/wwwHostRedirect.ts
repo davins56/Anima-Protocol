@@ -10,8 +10,9 @@ export function isAnimaWwwHost(hostname: string | null | undefined): boolean {
 
 /**
  * Canonical apex URL that keeps pathname + query + hash.
- * Live bug: www `/api/store/Character` 301'd to `https://anima-protocol.com/`
- * (path dropped). Never emit a host-only Location.
+ * Live bug: zone Redirect Rule "Redirect www to root" 301s www
+ * `/api/store/Character` to `https://anima-protocol.com/` (no `${1}`).
+ * See scripts/cloudflare/www-redirect.md. Never emit a host-only Location.
  */
 export function apexUrlPreservingPath(rawUrl: string): string {
   const url = new URL(rawUrl);

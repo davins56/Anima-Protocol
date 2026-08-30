@@ -56,7 +56,33 @@ describe("www → apex path preservation", () => {
     ).toBeNull();
   });
 
-  it("vercel.json www rule keeps :path*", () => {
+  it("documents that production www is a zone Redirect Rule, not vercel.json", () => {
+    const notes = readFileSync(
+      path.join(repoRoot, "scripts/cloudflare/www-redirect.md"),
+      "utf8",
+    );
+    expect(notes).toMatch(/Redirect www to root/);
+    expect(notes).toMatch(/\$\{1\}/);
+    expect(notes).toMatch(/<center>cloudflare<\/center>/);
+    expect(notes).toMatch(/anima-protocol-worker/);
+    expect(notes).toMatch(/already has a path-preserving/);
+    expect(notes).toMatch(/Do not treat a `vercel\.json` test as/);
+    expect(notes).toContain(
+      'r"https://anima-protocol.com/${1}"',
+    );
+    // The broken live replacement (no ${1}) must stay documented so ops
+    // can search for it. The Worker helper must never emit that Location.
+    expect(notes).toMatch(
+      /r"https:\/\/anima-protocol\.com"\)/,
+    );
+    expect(
+      apexUrlPreservingPath(
+        "https://www.anima-protocol.com/api/store/Character",
+      ),
+    ).not.toBe("https://anima-protocol.com/");
+  });
+
+  it("vercel.json www rule keeps :path* (Vercel only — not production apex/www)", () => {
     const vercel = JSON.parse(
       readFileSync(path.join(repoRoot, "vercel.json"), "utf8"),
     ) as {

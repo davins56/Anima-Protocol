@@ -23,6 +23,10 @@ export function isWorkerApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");
 }
 
+export function isStoreApiPath(pathname: string): boolean {
+  return pathname === "/api/store" || pathname.startsWith("/api/store/");
+}
+
 /**
  * Long-lived /api streams must not be raced against a wall-clock timeout
  * (SSE store push, chat completions). Store + healthz still time out so a
@@ -67,27 +71,32 @@ export function isStreamingContentType(
 }
 
 export function looksLikeHtmlBody(text: string): boolean {
-  const head = String(text || "")
-    .replace(/^\uFEFF/, "")
-    .trimStart()
-    .slice(0, 240);
+  const raw = String(text || "").replace(/^\uFEFF/, "");
+  const head = raw.trimStart().slice(0, 400);
   return (
     /<!DOCTYPE\s+html/i.test(head) ||
     /^<html[\s>]/i.test(head) ||
-    /<!--\[if\s+lt\s+IE/i.test(head)
+    /<!--\[if\s+lt\s+IE/i.test(head) ||
+    /<center>\s*cloudflare\s*<\/center>/i.test(raw) ||
+    /301\s+Moved\s+Permanently/i.test(head)
   );
 }
 
 export function jsonApiErrorResponse(
   err: unknown,
   status = 503,
+  pathname = "",
 ): Response {
   const dbInfo = classifyDbError(err);
-  const payload = dbInfo.isDbError
+  const store = isStoreApiPath(pathname);
+  const treatAsDb = dbInfo.isDbError || store;
+  const payload = treatAsDb
     ? {
-        error: dbInfo.safeMessage,
-        reason: dbInfo.reason,
-        code: dbInfo.code ?? "database_unavailable",
+        error: dbInfo.isDbError
+          ? dbInfo.safeMessage
+          : "The companion store is unreachable.",
+        reason: dbInfo.isDbError ? dbInfo.reason : "unavailable",
+        code: dbInfo.code ?? (store ? "store_unavailable" : "database_unavailable"),
       }
     : {
         error: "The API is temporarily unavailable. Retry in a moment.",
@@ -98,7 +107,7 @@ export function jsonApiErrorResponse(
             : "worker_api_failure",
       };
   return new Response(JSON.stringify(payload), {
-    status: dbInfo.isDbError ? 503 : status,
+    status: treatAsDb ? 503 : status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
@@ -112,6 +121,7 @@ export function jsonApiErrorResponse(
  */
 export async function coerceApiResponseToJson(
   response: Response,
+  pathname = "",
 ): Promise<Response> {
   const contentType = response.headers.get("content-type");
   if (isStreamingContentType(contentType)) return response;
@@ -122,6 +132,7 @@ export async function coerceApiResponseToJson(
     return jsonApiErrorResponse(
       new Error("Upstream returned an HTML error page"),
       response.status >= 500 ? 503 : response.status || 503,
+      pathname,
     );
   }
 
@@ -135,6 +146,7 @@ export async function coerceApiResponseToJson(
     return jsonApiErrorResponse(
       new Error("Upstream returned a non-JSON error"),
       response.status >= 500 ? 503 : response.status || 503,
+      pathname,
     );
   }
   return response;
@@ -172,8 +184,8 @@ export async function fetchApiThroughExpress(
     const response = shouldTimeoutApiPath(pathname)
       ? await withWorkerApiTimeout(pending, options.timeoutMs)
       : await pending;
-    return await coerceApiResponseToJson(response);
+    return await coerceApiResponseToJson(response, pathname);
   } catch (err) {
-    return jsonApiErrorResponse(err);
+    return jsonApiErrorResponse(err, 503, pathname);
   }
 }

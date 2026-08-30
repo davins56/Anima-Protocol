@@ -108,18 +108,18 @@ export const STORE_UNREACHABLE_MESSAGE =
 const STORE_API_NOT_FOUND_MESSAGE =
   'Character store API not found — the backend may not be running or /api is not proxied to it.';
 
-/** Cloudflare error/challenge pages and SPA HTML — never show this in the UI. */
+/** Cloudflare error/challenge/301 pages and SPA HTML — never show this in the UI. */
 export function isHtmlErrorBody(text, contentType) {
   const ct = String(contentType || '').toLowerCase();
   if (ct.includes('text/html')) return true;
-  const head = String(text || '')
-    .replace(/^\uFEFF/, '')
-    .trimStart()
-    .slice(0, 240);
+  const raw = String(text || '').replace(/^\uFEFF/, '');
+  const head = raw.trimStart().slice(0, 400);
   return (
     /<!DOCTYPE\s+html/i.test(head) ||
     /^<html[\s>]/i.test(head) ||
-    /<!--\[if\s+lt\s+IE/i.test(head)
+    /<!--\[if\s+lt\s+IE/i.test(head) ||
+    /<center>\s*cloudflare\s*<\/center>/i.test(raw) ||
+    /301\s+Moved\s+Permanently/i.test(head)
   );
 }
 
