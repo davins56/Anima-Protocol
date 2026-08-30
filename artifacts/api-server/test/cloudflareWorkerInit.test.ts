@@ -102,6 +102,7 @@ describe("Cloudflare Worker module init", () => {
       },
     };
 
+    delete process.env.DATABASE_URL;
     vi.resetModules();
     vi.doMock("cloudflare:workers", () => ({ env }));
 
