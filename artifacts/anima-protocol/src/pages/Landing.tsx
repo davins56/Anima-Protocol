@@ -142,7 +142,7 @@ export default function Landing() {
   const identity = resolveIdentity(animaData, { hasSignedInAnima });
 
   return (
-    <div className="relative min-h-[100dvh] bg-[#050505] flex flex-col items-center pt-10 pb-16 px-6 font-mono select-none overflow-x-clip">
+    <div className="relative flex-1 min-h-0 h-full overflow-y-auto overflow-x-clip bg-[#050505] flex flex-col items-center pt-10 pb-16 px-6 font-mono select-none">
 
       <div
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-50 pointer-events-none"

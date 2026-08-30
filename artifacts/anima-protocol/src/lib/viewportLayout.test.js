@@ -68,12 +68,14 @@ describe("viewport shell contract", () => {
 });
 
 describe("representative page scroll contract", () => {
-  it("Home / Check-In / Sacred Space / Reflection Log / Customiser can scroll", () => {
+  it("Home / Check-In / Sacred Space / Reflection Log / Customiser / Landing can scroll", () => {
     expect(readPage("MainHome")).toMatch(SCROLL_RE);
     expect(readPage("CheckIn")).toMatch(SCROLL_RE);
     expect(readPage("Meditation")).toMatch(SCROLL_RE);
     expect(readPage("ReflectionLog")).toMatch(SCROLL_RE);
     expect(readPage("CustomiseAnima")).toMatch(SCROLL_RE);
+    expect(readPage("Landing")).toMatch(SCROLL_RE);
+    expect(readPage("Landing")).not.toMatch(/min-h-\[100dvh\]/);
   });
 
   it("Check-In keeps the submit row in the scrolling column", () => {
