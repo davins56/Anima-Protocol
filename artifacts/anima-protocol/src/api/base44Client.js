@@ -10,7 +10,7 @@
 
 import { animaApi } from './animaApi';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
-import { apiUrl } from '@/lib/apiOrigin';
+import { apiUrl, resolveRedirectedApiUrl } from '@/lib/apiOrigin';
 import {
   ensureBootstrapComplete,
   isBootstrapSettled,
@@ -227,22 +227,55 @@ async function uploadBlob(blob) {
 
   const headers = await authHeaders();
   const dataBase64 = await blobToBase64(blob);
+  const body = JSON.stringify({
+    contentType: blob.type || 'image/jpeg',
+    dataBase64,
+  });
+  const uploadUrl = apiUrl('/storage/uploads');
   let res;
   try {
-    res = await fetch(apiUrl('/storage/uploads'), {
+    // redirect: 'manual' so a www → apex `/` bounce does not turn this POST
+    // into GET / (HTML). We re-POST to the Location host with the API path.
+    res = await fetch(uploadUrl, {
       method: 'POST',
       headers,
       credentials: 'same-origin',
-      body: JSON.stringify({
-        contentType: blob.type || 'image/jpeg',
-        dataBase64,
-      }),
+      redirect: 'manual',
+      body,
     });
+    if (res.status >= 300 && res.status < 400) {
+      const next = resolveRedirectedApiUrl(
+        uploadUrl,
+        res.headers.get('Location') || res.headers.get('location'),
+      );
+      if (!next) {
+        throw new Error(
+          'Image upload API redirected without a usable Location. Open anima-protocol.com and try again.',
+        );
+      }
+      res = await fetch(next, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body,
+      });
+    }
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
+    if (err?.message && /redirected without a usable Location/i.test(err.message)) {
+      throw err;
+    }
     const netErr = new Error('Network request failed — could not reach the image upload API.');
     netErr.code = 'network';
     throw netErr;
+  }
+  const replyType = String(res.headers.get('content-type') || '');
+  if (replyType.includes('text/html')) {
+    const htmlErr = new Error(
+      'Image upload API not found — /api/storage/uploads is not available on this host.',
+    );
+    htmlErr.status = res.status;
+    throw htmlErr;
   }
   if (!res.ok) {
     const message = await parseUploadErrorResponse(res);

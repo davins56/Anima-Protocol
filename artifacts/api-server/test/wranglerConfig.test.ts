@@ -42,7 +42,7 @@ describe("Cloudflare wrangler config", () => {
     expect(assets.not_found_handling).toBe("single-page-application");
   });
 
-  it("runs the Worker first for /api so Express handles healthz, store, and Clerk", () => {
+  it("runs the Worker first for /api so Express handles healthz, store, Clerk, and storage uploads", () => {
     expect(assets.run_worker_first).toEqual(
       expect.arrayContaining(["/api", "/api/*"]),
     );
@@ -56,6 +56,22 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("applyCloudflareRequestEnv(env)");
     expect(workerSource).toContain("cloudflare:workers");
     expect(workerSource).toContain("cloudflareEnvBootstrap");
+    expect(workerSource).toContain("/api/storage/uploads");
+    const appSource = readFileSync(
+      path.join(repoRoot, "artifacts/api-server/src/app.ts"),
+      "utf8",
+    );
+    const routesSource = readFileSync(
+      path.join(repoRoot, "artifacts/api-server/src/routes/index.ts"),
+      "utf8",
+    );
+    const storageSource = readFileSync(
+      path.join(repoRoot, "artifacts/api-server/src/routes/storage.ts"),
+      "utf8",
+    );
+    expect(appSource).toContain('app.use("/api", router)');
+    expect(routesSource).toContain("storageRouter");
+    expect(storageSource).toContain('router.post("/storage/uploads"');
   });
 
   it("excludes Netlify _redirects from Cloudflare asset uploads", () => {
