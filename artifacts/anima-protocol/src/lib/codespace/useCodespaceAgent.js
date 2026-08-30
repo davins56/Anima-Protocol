@@ -1,14 +1,15 @@
 // Client-side orchestrator for the agentic Codespace build loop.
 //
-// The server (base44.functions.codespaceAgentStep) runs ONE model turn at a
-// time with the file/run/scan tool schemas and returns the assistant's next
-// turn (in-character narration + any tool calls). This hook owns the loop: it
-// executes each requested tool against the in-browser virtual file system and
-// sandbox (via the caller-supplied executeTool), feeds results back, and lets
-// the companion iterate until it ends a turn with no tool calls.
+// Supports both character companions and direct Jules API (AI Engineer).
+// The backend / julesApi runs model turns with file/run/scan tool schemas and
+// returns the assistant's next turn (narration + tool calls). This hook owns the
+// loop: it executes requested tools against the in-browser virtual file system
+// and sandbox (via caller-supplied executeTool), feeds results back, and iterates
+// until the turn ends with no tool calls.
 
 import { useRef, useState, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
+import { JULES_PERSONA, executeAgentStep as executeJulesStep } from "./julesApi";
 
 const MAX_STEPS = 18;
 
@@ -34,6 +35,7 @@ export function useCodespaceAgent({
       setRunning(true);
 
       const messages = [{ role: "user", content: goal.trim() }];
+      const isJules = character?.id === JULES_PERSONA.id;
 
       try {
         for (let step = 0; step < MAX_STEPS; step += 1) {
@@ -42,21 +44,28 @@ export function useCodespaceAgent({
             break;
           }
 
-          const res = await base44.functions.codespaceAgentStep.invoke({
-            messages,
-            character: character
-              ? {
-                  name: character.name,
-                  personality: character.personality,
-                  speaking_style: character.speaking_style,
-                }
-              : null,
-            files: (getFiles?.() || []).map((f) => f.path),
-          });
+          const currentFiles = (getFiles?.() || []).map((f) => (typeof f === "string" ? f : f.path));
 
-          const assistant = res && res.message;
+          let assistant;
+          if (isJules) {
+            assistant = await executeJulesStep(messages, getFiles?.() || [], { mode: "debug" });
+          } else {
+            const res = await base44.functions.codespaceAgentStep.invoke({
+              messages,
+              character: character
+                ? {
+                    name: character.name,
+                    personality: character.personality,
+                    speaking_style: character.speaking_style,
+                  }
+                : null,
+              files: currentFiles,
+            });
+            assistant = res && res.message;
+          }
+
           if (!assistant) {
-            onError?.("The companion couldn't respond. Try again in a moment.");
+            onError?.("The agent couldn't respond. Try again in a moment.");
             break;
           }
 
