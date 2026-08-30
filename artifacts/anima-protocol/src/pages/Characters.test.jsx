@@ -80,6 +80,7 @@ vi.mock("@/api/base44Client", () => ({
 }));
 
 import Characters from "./Characters";
+import { flushPortraitUpload } from "@/test/flushPortraitUpload";
 
 function renderPage() {
   const container = document.createElement("div");
@@ -102,6 +103,15 @@ describe("Characters New Character image upload", () => {
       id: "char-1",
       ...payload,
     }));
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).includes("/api/storage/")) {
+        return new Response(new Uint8Array([137, 80, 78, 71]), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
   });
 
   afterEach(() => {
@@ -140,9 +150,8 @@ describe("Characters New Character image upload", () => {
         value: [file],
       });
       fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    await flushPortraitUpload();
 
     expect(uploadFileMock).toHaveBeenCalledWith({ file });
     const preview = container.querySelector('img[alt="avatar"]');
@@ -201,11 +210,72 @@ describe("Characters New Character image upload", () => {
         value: [file],
       });
       fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushPortraitUpload();
+
+    expect(container.textContent).toMatch(/not available|not found|Upload failed/i);
+    expect(container.querySelector('img[alt="avatar"]')?.getAttribute("src")).toMatch(
+      /^data:/,
+    );
+  });
+
+  it("persists a data URL on Character.create when UploadFile returns the MEMORY.md null stub", async () => {
+    uploadFileMock.mockResolvedValue({ file_url: null, url: null });
+
+    const { container } = renderPage();
+    await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(container.textContent).toMatch(/not available|not found|Upload failed/i);
-    expect(container.querySelector('img[alt="avatar"]')).toBeNull();
+    const newBtn = Array.from(container.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("New Character"),
+    );
+    await act(async () => {
+      newBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const fileInput = container.querySelector('input[type="file"]');
+    const file = new File(["fake"], "korra.png", { type: "image/png" });
+    await act(async () => {
+      Object.defineProperty(fileInput, "files", {
+        configurable: true,
+        value: [file],
+      });
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushPortraitUpload();
+
+    expect(container.querySelector('img[alt="avatar"]')?.getAttribute("src")).toMatch(
+      /^data:/,
+    );
+    expect(container.textContent).toMatch(/no fetchable file URL|Portrait saved/i);
+
+    const nameInput = Array.from(container.querySelectorAll("input")).find(
+      (el) => el.getAttribute("placeholder") === "e.g. Serenity",
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter.call(nameInput, "Korra");
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const createBtn = Array.from(container.querySelectorAll("button")).find(
+      (btn) => btn.textContent?.trim() === "Create",
+    );
+    await act(async () => {
+      createBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(createCharacterMock).toHaveBeenCalled();
+    const payload = createCharacterMock.mock.calls[0][0];
+    expect(payload.avatar_url).toMatch(/^data:/);
+    expect(payload.image_data_url).toMatch(/^data:/);
+    expect(payload.name).toBe("Korra");
   });
 });

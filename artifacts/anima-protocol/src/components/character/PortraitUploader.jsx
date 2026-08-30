@@ -2,10 +2,7 @@ import { useState, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { Upload, Loader, X } from "lucide-react";
 import { motion } from "framer-motion";
-import {
-  formatAvatarUploadError,
-  uploadCharacterAvatar,
-} from "@/lib/characterAvatarUpload";
+import { persistPortraitWithInlineFallback } from "@/lib/characterAvatarUpload";
 
 export default function PortraitUploader({ onUploadSuccess, currentUrl }) {
   const [uploading, setUploading] = useState(false);
@@ -19,14 +16,14 @@ export default function PortraitUploader({ onUploadSuccess, currentUrl }) {
     setUploading(true);
     setError("");
     try {
-      const fileUrl = await uploadCharacterAvatar(
-        file,
-        (payload) => base44.integrations.Core.UploadFile(payload),
+      const persisted = await persistPortraitWithInlineFallback(file, (payload) =>
+        base44.integrations.Core.UploadFile(payload),
       );
-      onUploadSuccess(fileUrl);
+      onUploadSuccess(persisted.url);
+      if (persisted.warning) setError(persisted.warning);
     } catch (err) {
       console.error("Upload error:", err);
-      setError(formatAvatarUploadError(err));
+      setError(err?.message || "Upload failed — try another image.");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";

@@ -19,6 +19,28 @@ describe("downscaleDataUrl", () => {
     }
   });
 
+  it("rejects jsdom data URLs that never fire load or error", async () => {
+    const OriginalImage = globalThis.Image;
+    class SilentImage {
+      complete = false;
+      width = 0;
+      height = 0;
+      naturalWidth = 0;
+      naturalHeight = 0;
+      set src(_value) {
+        // Never fire onload/onerror — matches jsdom + undecodable bytes.
+      }
+    }
+    globalThis.Image = SilentImage;
+    try {
+      await expect(
+        downscaleDataUrl("data:image/png;base64,ZmFrZQ==", 512, 0.8),
+      ).rejects.toThrow(/Failed to load image/i);
+    } finally {
+      globalThis.Image = OriginalImage;
+    }
+  });
+
   it("rejects zero-dimension decodes instead of uploading a blank canvas", async () => {
     const OriginalImage = globalThis.Image;
     const createElement = document.createElement.bind(document);
