@@ -1,100 +1,84 @@
 /**
- * Detects lore keywords in chat or text content and builds segments for tooltips.
+ * Detects lore keywords in text and returns matches with their entries
+ * @param {string} text - The text to search
+ * @param {array} loreEntries - Array of lore objects with 'subject' and 'fact' fields
+ * @returns {array} Array of matches with {keyword, subject, start, end, entry}
  */
-
-export function detectLoreKeywords(content, loreEntries = []) {
-  if (!content || typeof content !== "string" || !Array.isArray(loreEntries) || loreEntries.length === 0) {
-    return [];
-  }
+export function detectLoreKeywords(text, loreEntries = []) {
+  if (!text || !loreEntries.length) return [];
 
   const matches = [];
-  const textLower = content.toLowerCase();
+  const seen = new Set();
 
-  for (const entry of loreEntries) {
-    if (!entry) continue;
-    const keywords = [
-      entry.title,
-      entry.name,
-      ...(Array.isArray(entry.keywords) ? entry.keywords : []),
-      ...(Array.isArray(entry.tags) ? entry.tags : []),
-    ].filter((k) => typeof k === "string" && k.trim().length >= 3);
+  // Sort by length descending to match longer phrases first
+  const sorted = [...loreEntries].sort(
+    (a, b) => (b.subject?.length || 0) - (a.subject?.length || 0)
+  );
 
-    for (const keyword of keywords) {
-      const kwLower = keyword.toLowerCase();
-      let startIndex = 0;
+  sorted.forEach((entry) => {
+    if (!entry.subject) return;
 
-      while (startIndex < textLower.length) {
-        const foundIndex = textLower.indexOf(kwLower, startIndex);
-        if (foundIndex === -1) break;
+    const regex = new RegExp(`\\b${entry.subject}\\b`, "gi");
+    let match;
 
-        // Ensure word boundaries or basic spacing
-        const isWordStart = foundIndex === 0 || /[\s\p{P}]/u.test(content[foundIndex - 1]);
-        const isWordEnd =
-          foundIndex + keyword.length >= content.length ||
-          /[\s\p{P}]/u.test(content[foundIndex + keyword.length]);
-
-        if (isWordStart && isWordEnd) {
-          matches.push({
-            keyword: content.slice(foundIndex, foundIndex + keyword.length),
-            entry,
-            position: foundIndex,
-            length: keyword.length,
-          });
-        }
-
-        startIndex = foundIndex + keyword.length;
+    while ((match = regex.exec(text)) !== null) {
+      // Avoid duplicate matches at same position
+      const key = `${match.index}-${match.index + match[0].length}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push({
+          keyword: match[0],
+          subject: entry.subject,
+          start: match.index,
+          end: match.index + match[0].length,
+          entry,
+        });
       }
     }
-  }
+  });
 
-  // Sort matches by position and deduplicate overlaps
-  matches.sort((a, b) => a.position - b.position || b.length - a.length);
-
-  const nonOverlapping = [];
-  let lastEnd = 0;
-
-  for (const m of matches) {
-    if (m.position >= lastEnd) {
-      nonOverlapping.push(m);
-      lastEnd = m.position + m.length;
-    }
-  }
-
-  return nonOverlapping;
+  // Sort by position in text
+  return matches.sort((a, b) => a.start - b.start);
 }
 
-export function createLoreSegments(content, matches = []) {
-  if (!content || typeof content !== "string") {
-    return [];
-  }
-  if (!Array.isArray(matches) || matches.length === 0) {
-    return [{ type: "text", content }];
+/**
+ * Splits text into segments based on keyword matches
+ * @param {string} text - The text to split
+ * @param {array} matches - Array of matches from detectLoreKeywords
+ * @returns {array} Array of segments with {type: 'text'|'keyword', content, entry}
+ */
+export function createLoreSegments(text, matches) {
+  if (!matches.length) {
+    return [{ type: "text", content: text }];
   }
 
   const segments = [];
-  let cursor = 0;
+  let lastEnd = 0;
 
-  for (const match of matches) {
-    if (match.position > cursor) {
+  matches.forEach((match) => {
+    // Add text before keyword
+    if (match.start > lastEnd) {
       segments.push({
         type: "text",
-        content: content.slice(cursor, match.position),
+        content: text.slice(lastEnd, match.start),
       });
     }
 
+    // Add keyword
     segments.push({
       type: "keyword",
       content: match.keyword,
       entry: match.entry,
     });
 
-    cursor = match.position + match.length;
-  }
+    lastEnd = match.end;
+  });
 
-  if (cursor < content.length) {
+  // Add remaining text
+  if (lastEnd < text.length) {
     segments.push({
       type: "text",
-      content: content.slice(cursor),
+      content: text.slice(lastEnd),
     });
   }
 

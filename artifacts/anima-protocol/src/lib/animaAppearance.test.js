@@ -75,16 +75,4 @@ describe("buildAppearanceImagePrompt", () => {
     expect(prompt).toContain("ethereal atmospheric background");
     expect(prompt).toContain("confident and captivating expression");
   });
-
-  it("frames the prompt for reference-photo editing", () => {
-    const prompt = buildAppearanceImagePrompt(
-      { name: "Serenity", archetype: "guardian" },
-      { hair: "silver waves", skin: "warm medium brown" },
-      { useReference: true },
-    );
-    expect(prompt).toMatch(/Transform the attached reference photo/i);
-    expect(prompt).toMatch(/Preserve the person's facial identity/i);
-    expect(prompt).toMatch(/resemble the reference person/i);
-    expect(prompt).toMatch(/HARD REQUIREMENT — SKIN TONE:/);
-  });
 });

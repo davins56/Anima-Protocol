@@ -185,21 +185,13 @@ export default function AnimaExpressionPanel({ anima, onSave }) {
         {saving ? "Saving" : saved ? "Saved" : "Save Spectrum"}
       </button>
 
-      <div className="flex flex-wrap gap-2">
-        <Link
-          to="/echo-keys"
-          className="inline-flex items-center gap-2 px-4 py-2 border border-primary/30 text-primary/80 hover:text-primary hover:border-primary/50 font-mono text-[10px] tracking-widest uppercase transition-colors"
-        >
-          Echo Keys
-        </Link>
-        <Link
-          to="/net-battle"
-          className="inline-flex items-center gap-2 px-4 py-2 border border-amber-400/30 text-amber-200/80 hover:text-amber-100 hover:border-amber-300/50 font-mono text-[10px] tracking-widest uppercase transition-colors"
-        >
-          <Swords className="w-3.5 h-3.5" />
-          Jack into NetBattle
-        </Link>
-      </div>
+      <Link
+        to="/net-battle"
+        className="inline-flex items-center gap-2 px-4 py-2 border border-amber-400/30 text-amber-200/80 hover:text-amber-100 hover:border-amber-300/50 font-mono text-[10px] tracking-widest uppercase transition-colors"
+      >
+        <Swords className="w-3.5 h-3.5" />
+        Jack into NetBattle
+      </Link>
     </div>
   );
 }

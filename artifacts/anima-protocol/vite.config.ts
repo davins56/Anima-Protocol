@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnv } from "dotenv";
 
@@ -45,29 +46,6 @@ if (typeof basePath !== "string" || !basePath.trim()) {
 }
 const normalizedBasePath = (basePath || "/").trim().replace(/\/$/, "") + "/";
 
-const isReplit = process.env.REPL_ID !== undefined;
-const runtimeErrorOverlay = isReplit
-  ? await import("@replit/vite-plugin-runtime-error-modal")
-      .then((m) => m.default)
-      .catch(() => null)
-  : null;
-
-const replitDevPlugins =
-  process.env.NODE_ENV !== "production" && isReplit
-    ? await Promise.all([
-        import("@replit/vite-plugin-cartographer")
-          .then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }),
-          )
-          .catch(() => null),
-        import("@replit/vite-plugin-dev-banner")
-          .then((m) => m.devBanner())
-          .catch(() => null),
-      ]).then((plugins) => plugins.filter(Boolean))
-    : [];
-
 
 export default defineConfig({
   base: normalizedBasePath,
@@ -82,10 +60,10 @@ export default defineConfig({
     "import.meta.env.VITE_ALGOLIA_BRANCH": JSON.stringify(algoliaBranch),
   },
   plugins: [
-    react({ jsxRuntime: "automatic" }),
+    react(),
     tailwindcss({ optimize: false }),
     // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
-    ...(runtimeErrorOverlay ? [runtimeErrorOverlay()] : []),
+    ...(process.env.REPL_ID !== undefined ? [runtimeErrorOverlay()] : []),
     // Auto-updating service worker. Once installed, every new deploy is picked
     // up automatically: the regenerated precache manifest triggers a SW update,
     // which skips waiting, claims open clients, and reloads them onto the fresh
@@ -123,7 +101,19 @@ export default defineConfig({
         skipWaiting: true,
       },
     }),
-    ...replitDevPlugins,
+    ...(process.env.NODE_ENV !== "production" &&
+    process.env.REPL_ID !== undefined
+      ? [
+          await import("@replit/vite-plugin-cartographer").then((m) =>
+            m.cartographer({
+              root: path.resolve(import.meta.dirname, ".."),
+            }),
+          ),
+          await import("@replit/vite-plugin-dev-banner").then((m) =>
+            m.devBanner(),
+          ),
+        ]
+      : []),
   ],
   resolve: {
     alias: {

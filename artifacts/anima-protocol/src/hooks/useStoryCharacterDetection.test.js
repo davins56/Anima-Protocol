@@ -52,28 +52,6 @@ describe('detectMentionedStoryCharacters', () => {
     expect(detectMentionedStoryCharacters(messages2, characters, activeSession)).toBeNull();
   });
 
-  it('skips typing placeholders and event messages when finding the latest assistant turn', () => {
-    const characters = [
-      { id: 'c1', name: 'MainHero' },
-      { id: 'c2', name: 'Astra' },
-      { id: 'c3', name: 'Zephyr' },
-    ];
-    const activeSession = { mode: 'solo', character_id: 'c1' };
-    const finalMessages = [
-      { role: 'assistant', content: 'Suddenly Astra appears.', character_name: 'MainHero' },
-      { role: 'assistant', content: '', character_name: '__typing__' },
-      { role: 'assistant', content: '[Zephyr appears]', character_name: 'Zephyr', type: 'event' },
-    ];
-
-    expect(detectMentionedStoryCharacters(finalMessages, characters, activeSession)).toEqual({
-      role: 'assistant',
-      character_name: 'Astra',
-      content: '[Astra appears]',
-      timestamp: expect.any(String),
-      type: 'event',
-    });
-  });
-
   it('benchmark performance on large datasets', () => {
     const numMessages = 2000;
     const numCharacters = 1000;

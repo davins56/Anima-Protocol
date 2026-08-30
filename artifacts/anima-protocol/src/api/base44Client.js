@@ -1018,15 +1018,6 @@ function entityStore(entityName) {
   if (entityName === 'ChatSession') {
     return {
       ...base,
-      async create(data) {
-        if (data && Object.prototype.hasOwnProperty.call(data, 'messages')) {
-          const { messages, ...rest } = data;
-          const session = await base.create(rest);
-          const savedMessages = await replaceMessages(session.id, messages);
-          return { ...session, messages: savedMessages };
-        }
-        return base.create(data);
-      },
       async list(sortOrFilters, limit, opts) {
         const sessions = await base.list(sortOrFilters, limit, opts);
         if (opts && opts.withMessages === false) return sessions;

@@ -1,5 +1,4 @@
-import { useRef, useCallback, useMemo } from "react";
-import DOMPurify from "dompurify";
+import { useRef, useCallback } from "react";
 import { highlight } from "./highlight";
 import { languageForPath } from "@/lib/codespace/projectModel";
 
@@ -32,14 +31,7 @@ export default function CodeEditor({ path, value, onChange, readOnly = false }) 
     }
   };
 
-  const highlighted = useMemo(() => {
-    const rawHighlighted = highlight(value || "", language) + "\n";
-    // Sanitize highlighted HTML output before injecting via dangerouslySetInnerHTML
-    return DOMPurify.sanitize(rawHighlighted, {
-      ALLOWED_TAGS: ["span"],
-      ALLOWED_ATTR: ["class"],
-    });
-  }, [value, language]);
+  const highlighted = highlight(value || "", language) + "\n";
 
   return (
     <div className="relative flex-1 min-h-0 overflow-hidden bg-[#06060d]">
