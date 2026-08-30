@@ -12,8 +12,10 @@ const ANIMA_WWW = `https://www.${ANIMA_APEX_HOST}`;
 export const ANIMA_PRODUCTION_ORIGIN = `https://${ANIMA_APEX_HOST}`;
 
 /**
- * Canonical sign-in URL. Prefer apex. www is 308'd to the same path on
- * anima-protocol.com (pathname + query preserved — never a host-only `/`).
+ * Canonical sign-in URL. Prefer apex. Production www is a Cloudflare zone
+ * Redirect Rule that currently drops the path — see
+ * scripts/cloudflare/www-redirect.md. After that rule keeps `${1}`, www
+ * `/sign-in` 301s to apex `/sign-in`, never `/`.
  */
 export const ANIMA_PRODUCTION_SIGN_IN_URL = `${ANIMA_PRODUCTION_ORIGIN}/sign-in`;
 

@@ -151,7 +151,7 @@ describe("Cloudflare wrangler config", () => {
     }
   });
 
-  it("routes www so /api/store is not a path-dropping 301 to apex /", () => {
+  it("declares a www Worker route and documents the zone ${1} fix", () => {
     const routes = config.routes as Array<Record<string, unknown>>;
     expect(Array.isArray(routes)).toBe(true);
     expect(routes).toEqual(
@@ -163,6 +163,17 @@ describe("Cloudflare wrangler config", () => {
       ]),
     );
     expect(JSON.stringify(routes)).not.toMatch(/postgres(?:ql)?:\/\//i);
+    const wrangler = readFileSync(
+      path.join(repoRoot, "wrangler.jsonc"),
+      "utf8",
+    );
+    expect(wrangler).toMatch(/scripts\/cloudflare\/www-redirect\.md/);
+    expect(wrangler).toMatch(/Redirect www to root/);
+    const notes = readFileSync(
+      path.join(repoRoot, "scripts/cloudflare/www-redirect.md"),
+      "utf8",
+    );
+    expect(notes).toMatch(/\$\{1\}/);
   });
 
   it("binds Hyperdrive anima-postgres as HYPERDRIVE", () => {

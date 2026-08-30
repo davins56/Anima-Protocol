@@ -282,6 +282,21 @@ describe("classifyDbError Hyperdrive / postgres.js", () => {
     });
   });
 
+  it("classifies a Prisma Accelerate origin (db.prisma.io) as a DB error", () => {
+    const err = new Error(
+      "Hyperdrive origin db.prisma.io is not a Postgres wire server",
+    );
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "unavailable",
+      safeMessage: "Database unavailable",
+    });
+    expect(classifyDbError(err).safeMessage).not.toBe("Internal server error");
+    expect(JSON.stringify(classifyDbError(err))).not.toMatch(
+      /postgresql:\/\/|password=/i,
+    );
+  });
+
   it("classifies Hyperdrive origin-not-postgres throws as a DB error", () => {
     const err = new Error(
       "Hyperdrive could not connect to origin database: invalid startup packet",
