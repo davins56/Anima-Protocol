@@ -150,6 +150,8 @@ describe("Cloudflare wrangler config", () => {
     const source = readFileSync(path.join(repoRoot, "wrangler.jsonc"), "utf8");
     expect(source).toMatch(/"binding": "HYPERDRIVE"/);
     expect(source).toMatch(/scripts\/cloudflare\/hyperdrive\.md/);
+    expect(source).toMatch(/secrets_store_secrets/);
+    expect(source).toMatch(/Keep the Secrets Store DATABASE_URL/);
     expect(source).not.toMatch(/postgres(?:ql)?:\/\/[^\s"]+/i);
   });
 });
