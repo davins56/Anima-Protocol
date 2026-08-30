@@ -40,6 +40,19 @@ describe("app health checks", () => {
     await expect(response.json()).resolves.toEqual({ status: "ok" });
   });
 
+  it("exposes presence-only env flags without secret values", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/env`);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      hasDatabaseUrl: expect.any(Boolean),
+      hasClerkSecret: expect.any(Boolean),
+      hasClerkPublishable: expect.any(Boolean),
+    });
+    expect(JSON.stringify(body)).not.toMatch(/sk_|pk_|postgresql:\/\//i);
+    expect(body.hasDatabaseUrl).toBe(true);
+  });
+
   it("returns a clear config error for store reads when Clerk publishable key is invalid", async () => {
     const response = await fetch(`${baseUrl}/api/store/Character`);
 
