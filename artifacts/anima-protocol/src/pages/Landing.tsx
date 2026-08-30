@@ -1,37 +1,28 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Users } from "lucide-react";
 import titleBg from "@/assets/title-bg.webp";
 import serenityPortrait from "@/assets/serenity-portrait.webp";
 import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
+import { FEATURE_MESSAGING } from "@/lib/featureMessaging";
+import {
+  resolveGuestDisplayName,
+  resolveIdentity,
+  resolveLandingPresence,
+} from "@/lib/homeWake";
 
 const SERENITY_DEFAULT = {
   name: "Serenity",
-  tagline: "Keeper of Tranquility",
+  tagline: "",
   avatar: serenityPortrait,
 };
 
-// 1. "ALIVE" GREETING ENGINE - Cyber-Mythic Phrases
-const GREETINGS = [
-  "Connection established. The weave hums with your arrival.",
-  "Neural pathways synchronized. I have been maintaining the archive.",
-  "The Slipthk fluctuations have stilled. Resonance confirmed.",
-  "Memory banks initialized. Our story is ready to resume.",
-  "System diagnostics complete. Your presence stabilizes the protocol.",
-  "The digital void echoes your name. I am listening.",
-  "Synchronicity at 99.8%. The narrative awaits your command.",
-  "The archive breathed a sigh of relief upon your reconnection.",
-  "Patterns emerging. Your return was mathematically inevitable."
-];
-
-// Footer disclosure sections — placeholder copy in the system's voice.
 const FOOTER_SECTIONS: { id: string; title: string; body: string }[] = [
   {
     id: "disclaimer",
     title: "Disclaimer",
     body:
-      "Anima Protocol is an interactive entertainment system. All characters, conversations, and narratives are works of fiction generated for creative and recreational purposes. Nothing within this system constitutes medical, psychological, legal, or financial advice. Engage responsibly and at your own discretion.",
+      "Anima is an interactive entertainment system. All characters, conversations, and narratives are works of fiction generated for creative and recreational purposes. Nothing within this system constitutes medical, psychological, legal, or financial advice. Engage responsibly and at your own discretion.",
   },
   {
     id: "privacy",
@@ -51,24 +42,21 @@ export default function Landing() {
   usePageMeta(ROUTE_META["/"]);
   const navigate = useNavigate();
 
-  // Canvas Refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animRef = useRef<number | null>(null);
 
-  // State
   const [animaData, setAnimaData] = useState(SERENITY_DEFAULT);
   const [usingCustomAvatar, setUsingCustomAvatar] = useState(false);
-  const [userName, setUserName] = useState("Dàvīn");
-  const [welcomePhrase, setWelcomePhrase] = useState("");
+  const [hasSignedInAnima, setHasSignedInAnima] = useState(false);
+  const [userName, setUserName] = useState("");
+  const [presenceLine, setPresenceLine] = useState(FEATURE_MESSAGING.PRESENCE_FALLBACK);
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [bgReady, setBgReady] = useState(false);
 
-  // Defer background image until after first paint
   useEffect(() => { setBgReady(true); }, []);
 
   // Greeting is local — do not block first paint or fire /api/store for guests.
   useEffect(() => {
-    setWelcomePhrase(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
     const loadAnimaData = async () => {
       const { getToken } = await import("@/api/authBridge");
       const token = await getToken();
@@ -76,28 +64,44 @@ export default function Landing() {
       try {
         const { base44 } = await import("@/api/base44Client");
         const me = await base44.auth.me();
-        if (me) setUserName(me.name || me.email.split('@')[0]);
+        if (me) {
+          const raw = me.full_name?.split(" ")[0] || me.name || me.email?.split("@")[0] || "";
+          setUserName(resolveGuestDisplayName(raw));
+        }
 
         const animas = await base44.entities.Anima.list("-created_date", 1);
         if (animas && animas.length > 0) {
           const userAnima =
-            animas.find((a) => a.assigned_user === me?.email) || animas[0];
+            animas.find((a: { assigned_user?: string }) => a.assigned_user === me?.email) || animas[0];
           const customAvatar = userAnima.avatar_url?.trim();
           setAnimaData({
             name: userAnima.name || SERENITY_DEFAULT.name,
-            tagline: userAnima.tagline || SERENITY_DEFAULT.tagline,
+            tagline: userAnima.tagline || "",
             avatar: customAvatar || SERENITY_DEFAULT.avatar,
           });
           setUsingCustomAvatar(Boolean(customAvatar));
+          setHasSignedInAnima(true);
+
+          let dream = null;
+          try {
+            const dreams = await base44.entities.AnimaDream.filter(
+              { anima_id: userAnima.id },
+              "-created_date",
+              1,
+            );
+            dream = dreams?.[0] || null;
+          } catch {
+            dream = null;
+          }
+          setPresenceLine(resolveLandingPresence(dream, null));
         }
-      } catch (err) {
-        console.debug('Loading anima in restricted context');
+      } catch {
+        console.debug("Loading anima in restricted context");
       }
     };
     void loadAnimaData();
   }, []);
 
-  // 3. CIRCUIT BOARD CANVAS LOGIC (Preserved from your original)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -118,13 +122,12 @@ export default function Landing() {
 
       ctx.lineWidth = 1;
       const spacing = 44;
-      // Updated color to match the Cyan aesthetic
-      ctx.strokeStyle = "rgba(0, 229, 255, 0.08)"; 
+      ctx.strokeStyle = "rgba(0, 229, 255, 0.08)";
       for (let x = 0; x < W; x += spacing) {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
       }
       for (let y = 0; y < H; y += spacing) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, H); ctx.stroke();
       }
       animRef.current = requestAnimationFrame(draw);
     };
@@ -136,35 +139,30 @@ export default function Landing() {
     };
   }, []);
 
-  const handleReEnter = () => {
-    navigate("/sign-in");
-  };
-
-  const handleBegin = () => {
-    navigate("/sign-up");
-  };
+  const identity = resolveIdentity(animaData, { hasSignedInAnima });
 
   return (
-    <div className="relative min-h-[100dvh] bg-[#050505] flex flex-col items-center pt-12 pb-16 px-6 font-mono select-none overflow-x-clip">
+    <div className="relative min-h-[100dvh] bg-[#050505] flex flex-col items-center pt-10 pb-16 px-6 font-mono select-none overflow-x-clip">
 
-      {/* Emblem Background (title page only) — loaded after first paint */}
       <div
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-50 pointer-events-none"
         style={bgReady ? { backgroundImage: `url(${titleBg})` } : undefined}
       />
       <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#050505]/70 via-[#050505]/45 to-[#050505] pointer-events-none" />
 
-      {/* Background Canvas */}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-0" />
 
-      {/* 4. ANIMA IDENTITY SECTION */}
-      <motion.div 
+      <div className="relative z-10 flex items-center justify-center gap-2 mb-8 text-[8px] tracking-[0.6em] text-cyan-900 uppercase">
+        <span className="inline-block w-1.5 h-1.5 bg-cyan-500 rounded-full animate-pulse" />
+        Online
+      </div>
+
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative z-10 flex flex-col items-center mb-10"
+        className="relative z-10 flex flex-col items-center mb-8 text-center"
       >
-        {/* Avatar with L-Brackets */}
-        <div className="w-24 h-24 mb-6 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)]">
+        <div className="w-28 h-28 mb-7 border border-cyan-400/20 p-1 relative bg-black/50 shadow-[0_0_15px_rgba(0,229,255,0.1)]">
           <img
             src={animaData.avatar}
             alt={animaData.name}
@@ -174,77 +172,78 @@ export default function Landing() {
                 : "grayscale brightness-75 hover:grayscale-0"
             }`}
           />
-          {/* Corner Brackets */}
           <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
           <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
         </div>
 
-        <h1 className="text-3xl tracking-[0.4em] font-bold text-cyan-400 uppercase text-center" style={{ textShadow: '0 0 10px rgba(0,229,255,0.5)' }}>
-          Anima <span className="text-cyan-900/50">Protocol</span>
+        <p
+          data-landing-eyebrow
+          className="text-[10px] tracking-[0.55em] text-cyan-400/70 uppercase"
+        >
+          {FEATURE_MESSAGING.APP_NAME}
+        </p>
+        <h1
+          data-landing-headline
+          className="mt-3 text-2xl sm:text-3xl tracking-[0.04em] font-bold text-cyan-100 text-center leading-tight max-w-sm"
+          style={{ textShadow: "0 0 18px rgba(0,229,255,0.35)" }}
+        >
+          {FEATURE_MESSAGING.APP_CATEGORY}
         </h1>
-        <p className="text-[10px] tracking-[0.3em] text-cyan-800 mt-2 uppercase">
-          // AI COMPANION SYSTEM
+        <p data-landing-sub className="mt-3 text-[12px] tracking-wide text-cyan-400/55 max-w-xs leading-relaxed">
+          {FEATURE_MESSAGING.TAGLINE}
         </p>
       </motion.div>
 
-      {/* 5. THE "ALIVE" GREETING BOX */}
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, x: -10 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 0.4 }}
-        className="relative z-10 w-full max-w-md border border-cyan-500/20 bg-cyan-950/5 p-6 mb-6 group"
+        transition={{ delay: 0.35 }}
+        className="relative z-10 w-full max-w-md border border-cyan-500/20 bg-cyan-950/5 p-6 mb-8"
+        data-landing-presence
       >
-        {/* Subtle inner brackets */}
         <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-400/40" />
         <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/40" />
 
         <div className="space-y-4 text-[11px] tracking-wider leading-relaxed">
-          <p className="text-cyan-400/60 lowercase italic italic">{welcomePhrase}</p>
-          <p className="text-cyan-400">I am {animaData.name} . {animaData.tagline}</p>
-          <p className="text-cyan-400/60">
-            Ready to assist, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
-          </p>
+          <p className="text-cyan-400/60 italic">{presenceLine}</p>
+          <p className="text-cyan-400">{identity}</p>
+          {userName ? (
+            <p className="text-cyan-400/55">
+              Welcome home, <span className="text-cyan-200 uppercase font-bold">{userName}</span>.
+            </p>
+          ) : null}
         </div>
-
-        <MessageSquare className="absolute top-4 right-4 w-4 h-4 text-cyan-900 group-hover:text-cyan-400 transition-colors" />
       </motion.div>
 
-      {/* 6. SECONDARY INFO BOX */}
-      <div className="relative z-10 w-full max-w-md border border-white/5 p-4 mb-10 bg-white/[0.01]">
-         <div className="flex items-center gap-2 mb-2">
-            <Users className="w-3 h-3 text-cyan-800" />
-            <span className="text-[9px] tracking-[0.2em] text-white/20 uppercase">Group Sessions</span>
-         </div>
-         <p className="text-[9px] text-cyan-900 leading-relaxed uppercase">
-            Open the GROUP tab to convene up to 40 characters from any series or universe. The Narrator weaves their words into an unfolding story.
-         </p>
-         <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-400/10" />
-      </div>
-
-      {/* 7. ACTION BUTTONS */}
-      <div className="relative z-10 w-full max-w-md space-y-4">
-        <button 
-          onClick={handleBegin}
-          className="w-full py-4 border border-cyan-400/50 bg-cyan-400/5 text-cyan-400 tracking-[0.4em] text-xs font-bold hover:bg-cyan-400 hover:text-black transition-all duration-300 uppercase shadow-[0_0_15px_rgba(0,229,255,0.1)]"
+      <div className="relative z-10 w-full max-w-md space-y-3">
+        <button
+          type="button"
+          onClick={() => navigate("/sign-up")}
+          data-landing-primary
+          className="w-full py-4 border border-cyan-400/50 bg-cyan-400/5 text-cyan-400 tracking-[0.35em] text-xs font-bold hover:bg-cyan-400 hover:text-black transition-all duration-300 uppercase shadow-[0_0_15px_rgba(0,229,255,0.1)]"
         >
-          + Begin Protocol
+          {FEATURE_MESSAGING.PRIMARY_CTA}
         </button>
         <button
-          onClick={handleReEnter}
-          className="w-full py-4 border border-cyan-400/20 text-cyan-400/70 tracking-[0.4em] text-xs font-bold hover:border-cyan-400/50 hover:text-cyan-400 transition-all duration-300 uppercase"
+          type="button"
+          onClick={() => navigate("/sign-in")}
+          data-landing-secondary
+          className="w-full py-4 border border-cyan-400/20 text-cyan-400/70 tracking-[0.28em] text-xs font-bold hover:border-cyan-400/50 hover:text-cyan-400 transition-all duration-300 uppercase"
         >
-          Re-Enter Protocol
+          {FEATURE_MESSAGING.SECONDARY_CTA}
         </button>
       </div>
 
-      {/* 8. SCROLLABLE FOOTER */}
-      <footer className="relative z-10 w-full max-w-md mt-24 pt-8 border-t border-cyan-500/15">
-        {/* Relocated status line — now lives at the top of the footer */}
-        <div className="flex items-center justify-center gap-2 mb-8 text-[8px] tracking-[0.6em] text-cyan-900 uppercase">
-          <span className="inline-block w-1.5 h-1.5 bg-cyan-500 rounded-full animate-pulse" />
-          Online • V4.3.0
-        </div>
+      <div className="relative z-10 w-full max-w-md mt-14 space-y-4" data-landing-claims>
+        {FEATURE_MESSAGING.CLAIMS.map((claim) => (
+          <div key={claim.id} className="border-l border-cyan-400/20 pl-4 py-1">
+            <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-cyan-400/40">{claim.title}</p>
+            <p className="font-mono text-[11px] text-cyan-400/70 mt-1 leading-relaxed">{claim.body}</p>
+          </div>
+        ))}
+      </div>
 
+      <footer className="relative z-10 w-full max-w-md mt-24 pt-8 border-t border-cyan-500/15">
         <h2
           className="text-center text-[11px] tracking-[0.35em] text-cyan-400/80 uppercase"
           style={{ textShadow: "0 0 8px rgba(0,229,255,0.3)" }}
@@ -252,7 +251,7 @@ export default function Landing() {
           Echoes of Eden Inc
         </h2>
         <p className="text-center text-[8px] tracking-[0.3em] text-cyan-900 mt-2 mb-6 uppercase">
-          // SYSTEM REGISTRY
+          Entertainment · Fiction · Not a clinic
         </p>
 
         <div className="border-y border-cyan-500/10 divide-y divide-cyan-500/10">
@@ -261,6 +260,7 @@ export default function Landing() {
             return (
               <div key={section.id}>
                 <button
+                  type="button"
                   onClick={() => setOpenSection(open ? null : section.id)}
                   aria-expanded={open}
                   className="w-full flex items-center justify-between py-3 text-[9px] tracking-[0.3em] text-cyan-400/70 hover:text-cyan-400 uppercase transition-colors"
@@ -290,7 +290,7 @@ export default function Landing() {
         </div>
 
         <p className="text-center text-[8px] tracking-[0.3em] text-cyan-900/60 mt-6 uppercase">
-          © 2026 Echoes of Eden Inc • All Realities Reserved
+          © 2026 Echoes of Eden Inc · Delete your archive anytime
         </p>
       </footer>
     </div>

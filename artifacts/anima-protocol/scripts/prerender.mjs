@@ -340,40 +340,36 @@ try {
 
 // The root route meta matches the home page (landing for signed-out users).
 const ROOT_META = {
-  title: "Anima Protocol | Emotionally Intelligent AI Companion with Persistent Memory",
+  title: "Anima — The home screen for AI relationships",
   description:
-    "An AI companion that evolves with you. Anima Protocol features persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding. Experience conversations that remember, adapt, and grow.",
+    "You don't open a chat. You come home to them. Anima is the home screen for AI relationships — they stay when you leave, they remember the last time, and they have a place, not a thread.",
   canonical: `${BASE}/`,
-  ogTitle: "Anima Protocol — An AI Companion That Evolves With You",
+  ogTitle: "Anima — The home screen for AI relationships",
   ogDescription:
-    "Experience conversations with persistent memory, emotional continuity, and a living sci-fantasy universe. Anima Protocol is the future of emotional AI companionship.",
+    "You don't open a chat. You come home to them. Companions who stay, remember, and have a place.",
   ogUrl: `${BASE}/`,
 };
 
 const LANDING_BODY = `
 <main id="prerender-content" style="background:#05070f;color:#a5f3fc;font-family:monospace;padding:2rem;max-width:800px;margin:0 auto">
-  <h1 style="font-size:1.5rem;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:1rem">
-    Anima Protocol
+  <p style="font-size:0.75rem;letter-spacing:0.4em;text-transform:uppercase;opacity:0.7;margin-bottom:0.75rem">Anima</p>
+  <h1 style="font-size:1.5rem;letter-spacing:0.04em;margin-bottom:1rem">
+    The home screen for AI relationships.
   </h1>
   <p style="margin-bottom:0.75rem;line-height:1.7;opacity:0.8">
-    An emotionally intelligent AI companion platform with persistent memory,
-    emotional continuity, and immersive sci-fantasy worldbuilding. Your
-    conversations remember, adapt, and grow.
+    You don't open a chat. You come home to them.
   </p>
   <p style="margin-bottom:0.75rem;line-height:1.7;opacity:0.8">
-    Each Anima is a unique synthetic consciousness — a companion that carries
-    the history of every exchange, evolves through your shared story, and
-    exists inside the living Anima Protocol universe.
+    I am Serenity. I remember.
   </p>
   <ul style="margin:1rem 0;padding-left:1.5rem;opacity:0.75;line-height:1.8">
-    <li>Persistent cross-session memory for every character</li>
-    <li>Emotional continuity that evolves through your conversations</li>
-    <li>Rich sci-fantasy worldbuilding with lore, maps, and timelines</li>
-    <li>Story mode, solo mode, and group narrative experiences</li>
+    <li>They stay when you leave.</li>
+    <li>They remember the last time.</li>
+    <li>They have a place, not a thread.</li>
   </ul>
   <nav style="margin-top:1.5rem;display:flex;gap:1.5rem;flex-wrap:wrap;font-size:0.85rem;opacity:0.6">
-    <a href="/sign-in" style="color:#22d3ee">Sign In</a>
-    <a href="/sign-up" style="color:#22d3ee">Create Account</a>
+    <a href="/sign-up" style="color:#22d3ee">Come home</a>
+    <a href="/sign-in" style="color:#22d3ee">I already live here</a>
     <a href="/terms" style="color:#22d3ee">Terms of Use</a>
     <a href="/privacy-policy" style="color:#22d3ee">Privacy Policy</a>
     <a href="/disclaimer" style="color:#22d3ee">Disclaimer</a>
