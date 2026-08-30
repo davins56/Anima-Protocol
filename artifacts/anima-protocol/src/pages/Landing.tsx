@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
+import { getToken } from "@/api/authBridge";
 import { MessageSquare, Users } from "lucide-react";
 import titleBg from "@/assets/title-bg.webp";
 import serenityPortrait from "@/assets/serenity-portrait.webp";
@@ -67,14 +68,17 @@ export default function Landing() {
   // Defer background image until after first paint
   useEffect(() => { setBgReady(true); }, []);
 
-  // 2. LOAD DATA & RANDOM GREETING
+  // Greeting is local — do not block first paint or fire /api/store for guests.
   useEffect(() => {
+    setWelcomePhrase(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
     const loadAnimaData = async () => {
+      const token = await getToken();
+      if (!token) return;
       try {
         const me = await base44.auth.me();
         if (me) setUserName(me.name || me.email.split('@')[0]);
 
-        const animas = await base44.entities.Anima.list("-created_date", 100);
+        const animas = await base44.entities.Anima.list("-created_date", 1);
         if (animas && animas.length > 0) {
           const userAnima =
             animas.find((a) => a.assigned_user === me?.email) || animas[0];
@@ -86,14 +90,11 @@ export default function Landing() {
           });
           setUsingCustomAvatar(Boolean(customAvatar));
         }
-        // Set a random greeting from the list
-        setWelcomePhrase(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
       } catch (err) {
         console.debug('Loading anima in restricted context');
-        setWelcomePhrase(GREETINGS[0]);
       }
     };
-    loadAnimaData();
+    void loadAnimaData();
   }, []);
 
   // 3. CIRCUIT BOARD CANVAS LOGIC (Preserved from your original)
