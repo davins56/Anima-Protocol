@@ -12,7 +12,7 @@
   // dashboard secrets reach process.env. Do not commit secret values here.
   "compatibility_flags": [
     "nodejs_compat",
-    "nodejs_compat_populate_process_env",
+    "nodejs_compat_populate_process_env"
   ],
   "assets": {
     // Root `pnpm build` copies artifacts/anima-protocol/dist/public → ./dist
