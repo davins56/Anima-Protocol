@@ -179,7 +179,7 @@ describe("fetchAssetsRejectingSpaHtml", () => {
       { fetch: async () => htmlResponse() },
     );
     expect(html.status).toBe(200);
-    expect(html.headers.get("cache-control")).not.toMatch(/immutable/);
+    expect(html.headers.get("cache-control") ?? "").not.toMatch(/immutable/);
 
     const missing = await fetchAssetsRejectingSpaHtml(
       new Request("https://anima-protocol.com/assets/index-oldhash.js"),

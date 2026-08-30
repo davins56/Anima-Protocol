@@ -16,11 +16,11 @@ describe("initial module graph budget", () => {
     expect(readSrc("App.full.jsx")).not.toMatch(staticSeedImport);
     expect(readSrc("lib/AuthContext.jsx")).not.toMatch(staticSeedImport);
     expect(readSrc("lib/syncBootstrap.js")).not.toMatch(staticSeedImport);
-    expect(readSrc("lib/syncBootstrap.js")).toContain(
-      'import("@/lib/seedCharacters")',
+    expect(readSrc("lib/syncBootstrap.js")).toMatch(
+      /import\(\s*["']@\/lib\/seedCharacters["']\s*\)/,
     );
-    expect(readSrc("lib/AuthContext.jsx")).toContain(
-      'import("@/lib/seedCharacters")',
+    expect(readSrc("lib/AuthContext.jsx")).toMatch(
+      /import\(\s*["']@\/lib\/seedCharacters["']\s*\)/,
     );
   });
 
