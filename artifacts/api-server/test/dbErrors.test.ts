@@ -102,6 +102,29 @@ describe("classifyDbError", () => {
       safeMessage: "Database connection reset",
     });
   });
+
+  it("classifies a real TCP failure without leaking the password", async () => {
+    const { Client } = await import("pg");
+    const client = new Client({
+      connectionString: "postgresql://x:s3cret@127.0.0.1:1/db",
+      connectionTimeoutMillis: 500,
+    });
+    try {
+      await client.connect();
+      throw new Error("expected connect to fail");
+    } catch (err) {
+      if (err instanceof Error && err.message === "expected connect to fail") {
+        throw err;
+      }
+      const info = classifyDbError(err);
+      expect(info.isDbError).toBe(true);
+      expect(["refused", "timeout", "reset"]).toContain(info.reason);
+      expect(info.safeMessage).not.toMatch(/s3cret|postgresql:\/\//i);
+      expect(info.code).toEqual(expect.any(String));
+    } finally {
+      await client.end().catch(() => undefined);
+    }
+  });
 });
 
 describe("databaseTargetHint", () => {
