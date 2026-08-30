@@ -12,6 +12,7 @@ import {
   GIGA_FAMILY_IDS,
   variantName,
 } from "./families.js";
+import { CANON_ECHO_KEYS } from "./canon.js";
 
 /** @typedef {"standard"|"mega"|"star"|"dark"|"giga"} EchoClass */
 /** @typedef {"void"|"ember"|"tide"|"volt"|"grove"} EchoElement */
@@ -46,6 +47,7 @@ import {
  * @property {string} inspiredBy
  * @property {string[]} sources
  * @property {EchoAbility} ability
+ * @property {import("./resonance.js").EchoTier} [tier]
  * @property {string} [originSite]
  * @property {string} [memoryText]
  */
@@ -390,7 +392,11 @@ function buildRows() {
 }
 
 /** @type {EchoKey[]} */
-export const ECHO_KEYS = numberLibrary([...buildRows(), ...FEATURED_RESONANCE_KEYS]);
+export const ECHO_KEYS = numberLibrary([
+  ...buildRows(),
+  ...FEATURED_RESONANCE_KEYS,
+  ...CANON_ECHO_KEYS,
+]);
 
 export const ECHO_LIBRARY_SIZE = ECHO_KEYS.length;
 export const ECHO_KEY_LIBRARY_SIZE = ECHO_LIBRARY_SIZE;

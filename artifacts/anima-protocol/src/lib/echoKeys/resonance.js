@@ -104,6 +104,7 @@ export function roleOf(key) {
  * @returns {EchoTier}
  */
 export function tierOf(key) {
+  if (key.tier && ECHO_TIERS.includes(key.tier)) return key.tier;
   if (key.id === "ember-that-refused" || key.id === "firestorm" || key.id === "mourning-gate") {
     return "key";
   }

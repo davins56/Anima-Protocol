@@ -96,7 +96,7 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
   const togglePick = (id) => {
     setPicked((cur) => {
       if (cur.includes(id)) return cur.filter((x) => x !== id);
-      if (cur.length >= 3) return cur;
+      if (cur.length >= 4) return cur;
       return [...cur, id];
     });
   };
@@ -229,7 +229,8 @@ export default function EchoStoryMode({ account, ownedKeys, onAccount }) {
           ))}
         </ul>
         <p className="font-mono text-[9px] text-primary/40">
-          Select two or three owned Keys, then braid. Compatible frequencies can also improvise.
+          Select two to four owned Keys, then braid. Cartridge recipes are explicit sigil bundles.
+          Echo of Glass Keys do not fuse into one object.
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
           {ownedKeys.map((key) => (

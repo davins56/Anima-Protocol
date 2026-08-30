@@ -1,6 +1,7 @@
 // @ts-check
 import { ECHO_KEYS, ECHO_KEY_BY_ID } from "./catalog.js";
-import { compatibilityScore } from "./resonance.js";
+import { CANON_RESONANCE, CANON_STARTER_SHARD_IDS } from "./canon.js";
+import { compatibilityScore, TIER_LABEL, tierOf } from "./resonance.js";
 
 /** Folder rules remixed from BN3+ plus Star Force Star-card cap. */
 export const ECHO_FOLDER_RULES = {
@@ -12,6 +13,11 @@ export const ECHO_FOLDER_RULES = {
   maxStar: 1,
   maxDark: 1,
   maxGiga: 1,
+  maxCopiesShard: 4,
+  maxKey: 5,
+  maxCopiesKey: 1,
+  maxSovereign: 1,
+  maxPrime: 1,
 };
 
 /** Ember > Grove > Tide > Ember. Volt doubles vs Tide. Void has no bonus. */
@@ -29,6 +35,7 @@ export const ECHO_ELEMENT_WEAKNESS = {
  * @type {{ id: string, name: string, requires: string[], power: number, kind: string, description: string }[]}
  */
 export const ECHO_RESONANCE = [
+  ...CANON_RESONANCE,
   {
     id: "nova-pulse",
     name: "Nova Pulse",
@@ -81,15 +88,14 @@ export const STARTER_ECHO_KEY_IDS = [
   "metveil-base",
   "mend-base",
   "rainveil-base",
+  ...CANON_STARTER_SHARD_IDS,
 ];
 
-/** 30-slot Array filled only from the eight starter Shards (max 4 copies). */
+/** 30-slot Array — family Shards plus Beth, Gimel, He. Never Prime Keys. */
 const STARTER_IDS = [
   "pulse-base",
   "pulse-base",
   "pulse-base",
-  "pulse-base",
-  "halo-base",
   "halo-base",
   "halo-base",
   "halo-base",
@@ -105,7 +111,6 @@ const STARTER_IDS = [
   "phantom-base",
   "phantom-base",
   "phantom-base",
-  "metveil-base",
   "metveil-base",
   "metveil-base",
   "metveil-base",
@@ -115,6 +120,9 @@ const STARTER_IDS = [
   "mend-base",
   "rainveil-base",
   "rainveil-base",
+  "beth",
+  "gimel",
+  "he",
 ];
 
 export function starterOwnedIds() {
@@ -156,6 +164,9 @@ export function validateEchoFolder(folder) {
   let star = 0;
   let dark = 0;
   let giga = 0;
+  let keys = 0;
+  let sovereign = 0;
+  let prime = 0;
   for (const slot of folder) {
     const key = ECHO_KEY_BY_ID[slot.id];
     if (!key) {
@@ -166,25 +177,39 @@ export function validateEchoFolder(folder) {
       errors.push(`${key.name} has no code ${slot.code}.`);
     }
     copies[slot.id] = (copies[slot.id] || 0) + 1;
-    if (key.class === "mega") mega += 1;
+    const explicitTier = key.tier || null;
+    if (key.class === "mega" || explicitTier === "key") mega += 1;
     if (key.class === "star") star += 1;
     if (key.class === "dark") dark += 1;
-    if (key.class === "giga") giga += 1;
+    if (key.class === "giga" && explicitTier !== "sovereign" && explicitTier !== "prime") giga += 1;
+    if (explicitTier === "key") keys += 1;
+    if (explicitTier === "sovereign") sovereign += 1;
+    if (explicitTier === "prime") prime += 1;
   }
   for (const [id, n] of Object.entries(copies)) {
     const key = ECHO_KEY_BY_ID[id];
     if (!key) continue;
-    if (key.class === "standard" && n > ECHO_FOLDER_RULES.maxCopiesStandard) {
-      errors.push(`${key.name}: max ${ECHO_FOLDER_RULES.maxCopiesStandard} copies.`);
-    }
-    if (key.class !== "standard" && n > 1) {
-      errors.push(`${key.name}: ${key.class} copies capped at 1.`);
+    const explicitTier = key.tier || null;
+    const shardLike = explicitTier === "shard" || (key.class === "standard" && explicitTier !== "key");
+    const copyCap = shardLike ? ECHO_FOLDER_RULES.maxCopiesShard : 1;
+    if (n > copyCap) {
+      const label = (explicitTier && TIER_LABEL[explicitTier]) || key.class;
+      errors.push(`${key.name}: max ${copyCap} ${label}${copyCap === 1 ? "" : " copies"}.`);
     }
   }
   if (mega > ECHO_FOLDER_RULES.maxMega) errors.push(`Max ${ECHO_FOLDER_RULES.maxMega} Mega keys.`);
+  if (keys > ECHO_FOLDER_RULES.maxKey) {
+    errors.push(`Max ${ECHO_FOLDER_RULES.maxKey} ${TIER_LABEL.key}s.`);
+  }
   if (star > ECHO_FOLDER_RULES.maxStar) errors.push(`Max ${ECHO_FOLDER_RULES.maxStar} Star key.`);
   if (dark > ECHO_FOLDER_RULES.maxDark) errors.push(`Max ${ECHO_FOLDER_RULES.maxDark} Dark key.`);
   if (giga > ECHO_FOLDER_RULES.maxGiga) errors.push(`Max ${ECHO_FOLDER_RULES.maxGiga} Giga key.`);
+  if (sovereign > ECHO_FOLDER_RULES.maxSovereign) {
+    errors.push(`Max ${ECHO_FOLDER_RULES.maxSovereign} ${TIER_LABEL.sovereign}.`);
+  }
+  if (prime > ECHO_FOLDER_RULES.maxPrime) {
+    errors.push(`Max ${ECHO_FOLDER_RULES.maxPrime} ${TIER_LABEL.prime}.`);
+  }
   return { ok: errors.length === 0, errors };
 }
 
@@ -278,7 +303,7 @@ function storyFields(data = {}) {
 }
 
 /**
- * Default profile library: eight Echo Shards, not the Codex.
+ * Default profile library: starter Echo Shards (including Beth, Gimel, He), not the Codex.
  * @param {Record<string, unknown>} [saved]
  */
 export function defaultEchoLibrary(saved = {}) {
@@ -367,9 +392,13 @@ export function drawEchoHand(folder, n = 5, rng = Math.random) {
  */
 export function echoFolderStats(library) {
   const counts = { standard: 0, mega: 0, star: 0, dark: 0, giga: 0 };
+  const tiers = { shard: 0, key: 0, sovereign: 0, prime: 0 };
   for (const slot of library.folder || []) {
     const key = ECHO_KEY_BY_ID[slot.id];
-    if (key && counts[key.class] !== undefined) counts[key.class] += 1;
+    if (!key) continue;
+    if (counts[key.class] !== undefined) counts[key.class] += 1;
+    const tier = tierOf(key);
+    if (tiers[tier] !== undefined) tiers[tier] += 1;
   }
   return {
     folder_size: (library.folder || []).length,
@@ -378,6 +407,10 @@ export function echoFolderStats(library) {
     dark_count: counts.dark,
     giga_count: counts.giga,
     standard_count: counts.standard,
+    shard_count: tiers.shard,
+    key_count: tiers.key,
+    sovereign_count: tiers.sovereign,
+    prime_count: tiers.prime,
     owned_count: Array.isArray(library.owned_ids) ? library.owned_ids.length : 0,
   };
 }
