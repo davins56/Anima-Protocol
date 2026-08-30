@@ -71,8 +71,8 @@ export default function ReflectionLog() {
       (e.mood && e.mood.toLowerCase().includes(q)) ||
       (e.physical_state && e.physical_state.toLowerCase().includes(q)) ||
       (e.mode_used && e.mode_used.toLowerCase().includes(q)) ||
-      (e.ritual_focus && e.ritual_focus.toLowerCase().includes(q)) ||
-      (e.character_name && e.character_name.toLowerCase().includes(q))
+      (e.current_focus && e.current_focus.toLowerCase().includes(q)) ||
+      (e.freeform_note && e.freeform_note.toLowerCase().includes(q))
     );
   });
 
@@ -154,11 +154,6 @@ export default function ReflectionLog() {
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                    {entry.source === "sacred_space" && (
-                      <span className="px-2 py-0.5 border border-violet-400/40 bg-violet-400/10 text-[9px] font-mono tracking-[0.1em] uppercase text-violet-300">
-                        Sacred Space
-                      </span>
-                    )}
                     {entry.mood && (
                       <span
                         className={`px-2 py-0.5 border text-[9px] font-mono tracking-[0.1em] uppercase ${
@@ -199,12 +194,11 @@ export default function ReflectionLog() {
                 )}
 
                 {/* Footer meta */}
-                {(entry.physical_state || entry.mode_used || entry.ritual_focus || entry.character_name) && (
+                {(entry.physical_state || entry.mode_used || entry.current_focus) && (
                   <div className="flex items-center gap-3 mt-3 text-[9px] font-mono text-primary/30 tracking-widest uppercase">
                     {entry.physical_state && <span>Body: {entry.physical_state}</span>}
                     {entry.mode_used && <span>Mode: {entry.mode_used}</span>}
-                    {entry.ritual_focus && <span>Focus: {entry.ritual_focus}</span>}
-                    {entry.character_name && <span>With: {entry.character_name}</span>}
+                    {entry.current_focus && <span>Focus: {entry.current_focus}</span>}
                   </div>
                 )}
               </div>

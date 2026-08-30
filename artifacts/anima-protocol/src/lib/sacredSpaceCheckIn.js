@@ -11,7 +11,7 @@ const FOCUS_MOOD = {
 };
 
 /**
- * Map a Sacred Space ritual focus to the Check-In mood vocabulary.
+ * Map a Sacred Space ritual focus onto the Check-In page mood vocabulary.
  * @param {string | null | undefined} focus
  */
 export function moodFromRitualFocus(focus) {
@@ -20,17 +20,24 @@ export function moodFromRitualFocus(focus) {
 }
 
 /**
- * Build the CheckIn body Sacred Space writes so the reflection log
- * (`appearsInCheckInList`) and Insights readers see the same shape as
- * `/check-in` (reflection / gratitude), not only the in-chat ritual fields.
+ * Build a CheckIn body using only fields the two existing writers already use.
+ *
+ * Check-In page (`pages/CheckIn.jsx`):
+ *   timestamp, mood, mood_intensity, physical_state, reflection, gratitude, mode_used
+ * In-chat ritual (`hooks/useCheckInRitual.js`):
+ *   session_id, user_email, check_in_date, mood, current_focus, revelation,
+ *   freeform_note, processed
+ *
+ * There is no CheckIn `source` (or meditation/sacred-space discriminator) in
+ * either writer — do not invent one. Ritual focus maps to `current_focus`.
  *
  * @param {{
  *   reflection?: string,
  *   gratitude?: string,
  *   ritualFocus?: string,
  *   characterName?: string,
- *   characterId?: string,
  *   userEmail?: string,
+ *   modeUsed?: string,
  *   mood?: string,
  *   now?: Date,
  * }} input
@@ -41,8 +48,8 @@ export function buildSacredSpaceCheckIn(input = {}) {
     gratitude,
     ritualFocus,
     characterName,
-    characterId,
     userEmail,
+    modeUsed,
     mood,
     now = new Date(),
   } = input;
@@ -56,7 +63,8 @@ export function buildSacredSpaceCheckIn(input = {}) {
       : "Sacred Space session.";
 
   const ts = now.toISOString();
-  return {
+  /** @type {Record<string, unknown>} */
+  const payload = {
     timestamp: ts,
     check_in_date: ts.slice(0, 10),
     mood: mood || moodFromRitualFocus(ritualFocus),
@@ -64,13 +72,17 @@ export function buildSacredSpaceCheckIn(input = {}) {
     physical_state: "grounded",
     reflection: text || fallback,
     gratitude: thanks,
-    mode_used: "sacred_space",
-    source: "sacred_space",
-    ritual_focus: ritualFocus || "",
-    character_id: characterId || "",
-    character_name: characterName || "",
+    current_focus: ritualFocus || "",
+    freeform_note: characterName ? `Sacred Space with ${characterName}` : "",
     user_email: userEmail || "",
+    processed: false,
   };
+
+  // mode_used is the user's selected app mode (serenity / anima / …), not a
+  // new "sacred_space" enum. Omit when unknown so we don't invent a value.
+  if (modeUsed) payload.mode_used = modeUsed;
+
+  return payload;
 }
 
 /**
@@ -93,9 +105,9 @@ export function appearsInCheckInList(entry) {
 export async function recordSacredSpaceCheckIn(input) {
   const payload = buildSacredSpaceCheckIn(input);
   const created = await base44.entities.CheckIn.create(payload);
-  const focus = payload.ritual_focus ? ` (${payload.ritual_focus})` : "";
+  const focus = payload.current_focus ? ` Focus: ${payload.current_focus}.` : "";
   setGlobalCheckInContext(
-    `User mood: ${payload.mood}. Sacred Space${focus}. Reflection: ${payload.reflection}`,
+    `User mood: ${payload.mood}.${focus} Reflection: ${payload.reflection}`,
   );
   return created;
 }
