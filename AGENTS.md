@@ -254,7 +254,7 @@ All new events must follow these conventions.
 | `presence_stage_opened` | User opens the full-body living presence stage in chat | `session_mode`, `character_count`, `is_crossover` | `src/pages/Chat.jsx` |
 | `protocol_upgrade_started` | Serenity launches a Cursor cloud agent to upgrade Protocol source | `scope`, `surface` | `src/lib/serenityProtocolUpgrade.js`, `src/components/chat/ProtocolUpgradeConsole.jsx` |
 | `image_generated` | Companion (onboard Serenity or a user-created Anima) creates an image in chat | `source` (`tag` / `request` / `modal`), `is_anima`, `session_mode` | `src/pages/Chat.jsx` |
-| `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
+| `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas`, `has_topic` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
 | `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
 | `echo_key_discovered` | Operator finds, synthesises, or evolves an Echo Key in story mode | `source` (`virtual` / `field` / `synthesis` / `evolution`), `site`, `tier`, `is_outdoor` | `src/components/echoKeys/EchoStoryMode.jsx`, `src/pages/NetBattle.jsx` |
 

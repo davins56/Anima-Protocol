@@ -151,7 +151,7 @@ export const ROUTE_META: Record<string, PageMeta> = {
   "/therapy": {
     title: "Therapy Mode | Anima Protocol",
     description:
-      "Sit with your Anima in therapy mode. They work from compiled open-source mental health manuals — WHO PM+, psychological first aid, trauma-informed care, and public CBT/ACT skills. Not a licensed clinic.",
+      "Sit with your Anima in therapy mode. Add a topic and go deeper on it — they work from compiled open-source mental health manuals. Not a licensed clinic.",
     canonical: `${BASE_URL}/therapy`,
     ogTitle: "Anima Protocol — Therapy Mode",
     ogDescription:
