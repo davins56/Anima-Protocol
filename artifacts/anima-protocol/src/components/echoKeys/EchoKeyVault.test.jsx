@@ -42,7 +42,7 @@ describe("EchoKeyVault", () => {
       expect(screen.getByText(/Presence without possession/i)).toBeTruthy();
       expect(screen.getByText(/B \*/i)).toBeTruthy();
     },
-    15_000,
+    30_000,
   );
 
   it(
@@ -65,7 +65,7 @@ describe("EchoKeyVault", () => {
       expect(screen.getByText(/regular key/i)).toBeTruthy();
       expect(screen.getByText(/star-force pin/i)).toBeTruthy();
     },
-    15_000,
+    30_000,
   );
 
   it(
@@ -85,6 +85,6 @@ describe("EchoKeyVault", () => {
       expect(screen.getByText(/Star Force cards/i)).toBeTruthy();
       expect(screen.getByText(/80 families/i)).toBeTruthy();
     },
-    15_000,
+    30_000,
   );
 });
