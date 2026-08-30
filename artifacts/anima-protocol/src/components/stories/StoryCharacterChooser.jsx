@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import { toast } from "sonner";
 
 export default function StoryCharacterChooser({
   onClose,
@@ -119,6 +120,7 @@ export default function StoryCharacterChooser({
       onCreateSession(session);
     } catch (err) {
       console.error("Error creating session:", err);
+      toast.error(err?.message || "Couldn't start this story. Please try again.");
     } finally {
       setLoading(false);
     }

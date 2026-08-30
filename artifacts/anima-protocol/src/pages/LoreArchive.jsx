@@ -42,17 +42,31 @@ export default function LoreArchive() {
   }, [selectedSession]);
 
   const loadSessions = async () => {
-    const data = await base44.entities.ChatSession.list("-updated_date", 100);
-    setSessions(data || []);
-    setLoading(false);
+    try {
+      const data = await base44.entities.ChatSession.list("-updated_date", 100, {
+        withMessages: false,
+      });
+      setSessions(data || []);
+    } catch (err) {
+      console.warn("Failed to load lore sessions:", err);
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadLore = async () => {
     setLoading(true);
-    const query = { session_id: selectedSession, is_active: true };
-    const data = await base44.entities.WorldState.filter(query, "-created_date", 300);
-    setLore(data || []);
-    setLoading(false);
+    try {
+      const query = { session_id: selectedSession, is_active: true };
+      const data = await base44.entities.WorldState.filter(query, "-created_date", 300);
+      setLore(data || []);
+    } catch (err) {
+      console.warn("Failed to load lore:", err);
+      setLore([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filtered = lore.filter((entry) => {
