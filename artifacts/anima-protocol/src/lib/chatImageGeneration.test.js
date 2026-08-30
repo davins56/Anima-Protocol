@@ -6,6 +6,8 @@ import {
   enhanceImagePrompt,
   imageGenerationTagInstruction,
   resolveChatImageAttachments,
+  messagesWithImageProgress,
+  CHAT_IMAGE_TIMEOUT_MS,
 } from "./chatImageGeneration";
 
 describe("chat image generation", () => {
@@ -84,6 +86,38 @@ describe("chat image generation", () => {
       persistUrl,
     });
     expect(result.attachments[0].url).toBe("/api/storage/objects/scene.jpg");
+  });
+
+  it("keeps the streamed reply visible while an image is generating", () => {
+    const next = messagesWithImageProgress(
+      [
+        { role: "user", content: "draw this" },
+        { role: "assistant", content: "Hel", character_name: "Serenity", is_streaming: true },
+        { role: "assistant", content: "...", character_name: "__thinking__" },
+      ],
+      { streamedText: "Here is the scene.", speakerName: "Serenity" },
+    );
+    expect(next.map((m) => m.content)).toEqual([
+      "draw this",
+      "Here is the scene.",
+      "creating image...",
+    ]);
+  });
+
+  it("times out a hung generateImage call so chat can finish the turn", async () => {
+    vi.useFakeTimers();
+    const generateImage = vi.fn(() => new Promise(() => {}));
+    const pending = resolveChatImageAttachments({
+      replyText: "[IMAGE: a lantern]",
+      generateImage,
+    });
+    const expectation = expect(pending).resolves.toEqual({
+      attachments: [],
+      source: null,
+    });
+    await vi.advanceTimersByTimeAsync(CHAT_IMAGE_TIMEOUT_MS);
+    await expectation;
+    vi.useRealTimers();
   });
 
   it("returns no attachments when generation yields nothing", async () => {
