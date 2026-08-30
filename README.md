@@ -183,9 +183,11 @@ Consent gating and no-PII rules are mandatory. See `AGENTS.md` for the tracking 
 
 ## Deployment
 
+**Production hosting is on Cloudflare.** The frontend and edge-facing production infrastructure should be documented and maintained around the Cloudflare deployment path rather than Vercel or Netlify.
+
 The frontend can be deployed independently when configured with the required Vite environment variables. The API requires a reachable PostgreSQL database, authentication configuration, and access to the configured Anima LLM endpoint.
 
-Production deployment documentation is available in `docs/`, including the Vercel API migration and custom LLM deployment guides.
+Deployment documentation under `docs/` should be treated as historical where it refers to Vercel or Netlify unless explicitly marked current. New deployment work should target the Cloudflare production architecture.
 
 ## Contributing
 
