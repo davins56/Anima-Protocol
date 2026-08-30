@@ -75,7 +75,61 @@ describe("Cloudflare Worker module init", () => {
     expect(workerDb).toMatch(/drizzle-orm\/postgres-js/);
     expect(bootstrap).toMatch(/ANIMA_DB_DRIVER/);
     expect(bootstrap).toMatch(/postgres-js/);
+    expect(bootstrap).toMatch(/bindImportableEnv/);
+    expect(bootstrap).not.toMatch(/mirrorCloudflareBindings/);
+    expect(bootstrap).not.toMatch(/unwrapHyperdriveConnectionString/);
+    expect(bootstrap).not.toMatch(/aliasHyperdriveUrl/);
+    expect(bootstrap).not.toMatch(/env\.HYPERDRIVE/);
     expect(sharedClient).toMatch(/getDbDriver\(\) === "postgres-js"/);
     expect(sharedClient).toMatch(/drizzle-orm\/postgres-js/);
+  });
+
+  it("does not read Hyperdrive.connectionString during module bootstrap", async () => {
+    let allowHyperdriveIo = false;
+    const env = {
+      NODE_ENV: "production",
+      DATABASE_URL:
+        "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+      HYPERDRIVE: {
+        get connectionString() {
+          if (!allowHyperdriveIo) {
+            throw new Error(
+              "Disallowed operation called within global scope. Asynchronous I/O (ex: fetch() or connect()), setting a timeout, and generating random values are not allowed within global scope.",
+            );
+          }
+          return "postgresql://hd:hdpass@hyperdrive.local:5432/postgres";
+        },
+      },
+    };
+
+    vi.resetModules();
+    vi.doMock("cloudflare:workers", () => ({ env }));
+
+    try {
+      await expect(
+        import("../src/lib/cloudflareEnvBootstrap"),
+      ).resolves.toBeDefined();
+
+      const {
+        applyCloudflareRequestEnv,
+        readRuntimeDatabaseUrl,
+        resetCloudflareEnvBindingsForTests,
+      } = await import("../src/lib/cloudflareEnv");
+
+      expect(readRuntimeDatabaseUrl()).toBe(
+        "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+      );
+
+      allowHyperdriveIo = true;
+      const target: Record<string, string | undefined> = {};
+      await applyCloudflareRequestEnv(env, target);
+      expect(target.DATABASE_URL).toBe(
+        "postgresql://hd:hdpass@hyperdrive.local:5432/postgres",
+      );
+      resetCloudflareEnvBindingsForTests();
+    } finally {
+      vi.doUnmock("cloudflare:workers");
+      vi.resetModules();
+    }
   });
 });

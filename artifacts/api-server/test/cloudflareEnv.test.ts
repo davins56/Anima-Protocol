@@ -294,4 +294,42 @@ describe("Hyperdrive binding", () => {
         "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
       );
     }));
+
+  it("does not read HYPERDRIVE.connectionString until applyCloudflareRequestEnv", () =>
+    withWipedProcessSecrets(async () => {
+      let allowHyperdriveIo = false;
+      const hyperdrive = {
+        get connectionString() {
+          if (!allowHyperdriveIo) {
+            throw new Error(
+              "Disallowed operation called within global scope. Asynchronous I/O (ex: fetch() or connect()), setting a timeout, and generating random values are not allowed within global scope.",
+            );
+          }
+          return "postgresql://hd:hdpass@hyperdrive.local:5432/postgres";
+        },
+      };
+      const env: Record<string, unknown> = {
+        NODE_ENV: "production",
+        DATABASE_URL:
+          "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+        HYPERDRIVE: hyperdrive,
+      };
+
+      bindImportableEnv(env);
+      expect(() => mirrorCloudflareBindings(env, {})).not.toThrow();
+      expect(() => remirrorRuntimeEnvIntoProcess({})).not.toThrow();
+      expect(readRuntimeDatabaseUrl()).toBe(
+        "postgresql://direct:s3cret@db.supabase.co:5432/postgres?sslmode=require",
+      );
+
+      allowHyperdriveIo = true;
+      const target: Record<string, string | undefined> = {};
+      await applyCloudflareRequestEnv(env, target);
+      expect(target.DATABASE_URL).toBe(
+        "postgresql://hd:hdpass@hyperdrive.local:5432/postgres",
+      );
+      expect(readRuntimeDatabaseUrl()).toBe(
+        "postgresql://hd:hdpass@hyperdrive.local:5432/postgres",
+      );
+    }));
 });
