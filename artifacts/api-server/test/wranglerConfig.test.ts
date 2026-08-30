@@ -69,14 +69,53 @@ describe("Cloudflare wrangler config", () => {
     );
   });
 
+  it("persists Secrets Store bindings for Clerk and DATABASE_URL", () => {
+    const bindings = config.secrets_store_secrets as Array<
+      Record<string, unknown>
+    >;
+    expect(Array.isArray(bindings)).toBe(true);
+    const expectedNames = [
+      "CLERK_SECRET_KEY",
+      "CLERK_PUBLISHABLE_KEY",
+      "DATABASE_URL",
+    ];
+    expect(bindings.map((row) => row.binding).sort()).toEqual(
+      [...expectedNames].sort(),
+    );
+    for (const name of expectedNames) {
+      const row = bindings.find((entry) => entry.binding === name);
+      expect(row).toEqual({
+        binding: name,
+        store_id: "a31e40473ef34db896b5bc1e6c1c4b86",
+        secret_name: name,
+      });
+    }
+  });
+
   it("does not embed secrets in the committed Worker config", () => {
     const vars = (config.vars ?? {}) as Record<string, unknown>;
     expect(Object.keys(vars)).toEqual(["NODE_ENV"]);
     expect(vars.NODE_ENV).toBe("production");
     const serialized = JSON.stringify(config);
-    expect(serialized).not.toMatch(/sk_live_|sk_test_|pk_live_/);
-    expect(serialized).not.toMatch(/DATABASE_URL|CLERK_SECRET_KEY/);
+    expect(serialized).not.toMatch(/sk_live_|sk_test_|pk_live_|pk_test_/);
+    expect(serialized).not.toMatch(/postgres(?:ql)?:\/\//i);
     expect(config.hyperdrive).toBeUndefined();
-    expect(serialized).not.toMatch(/connectionString|sk_|password/i);
+    expect(serialized).not.toMatch(/connectionString/i);
+    const bindings = (config.secrets_store_secrets ?? []) as Array<
+      Record<string, unknown>
+    >;
+    for (const row of bindings) {
+      expect(row).not.toHaveProperty("value");
+      expect(row).not.toHaveProperty("secret");
+      expect(Object.keys(row).sort()).toEqual([
+        "binding",
+        "secret_name",
+        "store_id",
+      ]);
+      for (const field of Object.values(row)) {
+        expect(String(field)).not.toMatch(/sk_live_|sk_test_|pk_live_|pk_test_/);
+        expect(String(field)).not.toMatch(/postgres(?:ql)?:\/\//i);
+      }
+    }
   });
 });

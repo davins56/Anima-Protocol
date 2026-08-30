@@ -27,5 +27,26 @@
   },
   "vars": {
     "NODE_ENV": "production"
-  }
+  },
+  // Secrets Store bindings — names and store_id only, never values.
+  // Dashboard-only bindings are dropped on `wrangler deploy` because this
+  // file is the source of truth. Keep these three so git deploys re-bind
+  // CLERK_* and DATABASE_URL from store a31e40473ef34db896b5bc1e6c1c4b86.
+  "secrets_store_secrets": [
+    {
+      "binding": "CLERK_SECRET_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "CLERK_SECRET_KEY"
+    },
+    {
+      "binding": "CLERK_PUBLISHABLE_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "CLERK_PUBLISHABLE_KEY"
+    },
+    {
+      "binding": "DATABASE_URL",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "DATABASE_URL"
+    }
+  ]
 }
