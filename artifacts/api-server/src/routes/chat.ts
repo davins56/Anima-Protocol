@@ -10,6 +10,7 @@ import {
   companionMemories,
   db,
   ensureSchemaOnce,
+  withTransientDbRetry,
   makeId,
   migrateSessionMessages,
   sessionIdEq,
@@ -113,7 +114,7 @@ router.use(
 // Same self-heal as /api/store — chat dual-writes chat_sessions / companion_memories.
 router.use(async (_req, _res, next) => {
   try {
-    await ensureSchemaOnce();
+    await withTransientDbRetry(() => ensureSchemaOnce());
     next();
   } catch (err) {
     next(err);
@@ -187,32 +188,36 @@ function streamErrorMessage(err: unknown): string {
 }
 
 async function loadStoreSession(userId: string, sessionId: string) {
-  const [row] = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
-      ),
-    )
-    .limit(1);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_SESSION),
+          eq(userEntities.entityId, sessionId),
+        ),
+      )
+      .limit(1),
+  );
   return row ?? null;
 }
 
 async function loadCharacters(userId: string, characterIds: string[]) {
   if (characterIds.length === 0) return [];
-  const rows = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        inArray(userEntities.entityName, ["Character", "Anima"]),
-        inArray(userEntities.entityId, characterIds),
+  const rows = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          inArray(userEntities.entityName, ["Character", "Anima"]),
+          inArray(userEntities.entityId, characterIds),
+        ),
       ),
-    );
+  );
   // Prefer Character rows when both exist for the same id; mark Animas clearly
   // so the prompt builder can apply archetype/identity locks.
   const byId = new Map<string, MsgData>();
