@@ -4,6 +4,7 @@ import {
   ensureSchemaOnce,
   getPool,
   inspectSchema,
+  withTransientDbRetry,
 } from "@workspace/db";
 import { runtimeEnvPresence } from "../lib/cloudflareEnv";
 import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
@@ -81,7 +82,9 @@ router.get("/healthz/llm", async (req, res) => {
 router.get("/healthz/db", async (_req, res) => {
   const target = databaseTargetHint();
   try {
-    const result = await getPool().query("select 1::int as ok");
+    const result = await withTransientDbRetry(() =>
+      getPool().query("select 1::int as ok"),
+    );
     let schema: Awaited<ReturnType<typeof inspectSchema>> | undefined;
     try {
       schema = await inspectSchema();

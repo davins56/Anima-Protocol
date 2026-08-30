@@ -46,6 +46,8 @@ export function resolveDbConfig(url: string): {
 
 let poolInstance: pg.Pool | null = null;
 let dbInstance: Db | null = null;
+/** Connection string the live pool was built with — recreate if Hyperdrive/URL changes. */
+let poolConnectionKey: string | null = null;
 
 export const DATABASE_URL_ENV_NAMES = [
   "DATABASE_URL",
@@ -76,8 +78,94 @@ export function resolveDatabaseUrl(
   return undefined;
 }
 
+const TRANSIENT_DB_CODES = new Set([
+  "ECONNRESET",
+  "EPIPE",
+  "ETIMEDOUT",
+  "ETIMEOUT",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ABORT_ERR",
+]);
+
+const TRANSIENT_DB_MESSAGE =
+  /ECONNRESET|EPIPE|UND_ERR_SOCKET|Connection terminated|Connection ended unexpectedly|Network connection lost|server closed the connection|Client has encountered a connection error|timeout expired|connection timeout|ConnectTimeout|SocketTimeout|aborted due to timeout/i;
+
+/** Walk Error.cause so drizzle "Failed query" wrappers still expose ECONNRESET. */
+function collectDbErrorSignals(err: unknown): { message: string; codes: string[] } {
+  const messages: string[] = [];
+  const codes: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current instanceof Error) messages.push(current.message);
+    else if (typeof current === "string") messages.push(current);
+    if (current && typeof current === "object" && "code" in current) {
+      const code = String((current as { code?: unknown }).code ?? "");
+      if (code) codes.push(code);
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return { message: messages.join("\n"), codes };
+}
+
+/**
+ * True for stale / dropped Postgres sockets — the usual Cloudflare Worker +
+ * serverless pooler failure when an idle client is reused after the origin
+ * reset the TCP connection. Do not treat auth or missing-schema as transient.
+ */
+export function isTransientDbError(err: unknown): boolean {
+  const { message, codes } = collectDbErrorSignals(err);
+  if (codes.some((code) => TRANSIENT_DB_CODES.has(code))) return true;
+  return TRANSIENT_DB_MESSAGE.test(message);
+}
+
+/** Drop the process-wide pool so the next checkout opens a fresh socket. */
+export function resetPool(): void {
+  const old = poolInstance;
+  poolInstance = null;
+  dbInstance = null;
+  poolConnectionKey = null;
+  if (!old) return;
+  old.removeAllListeners("error");
+  void old.end().catch(() => undefined);
+}
+
+export async function withTransientDbRetry<T>(
+  operation: () => Promise<T>,
+  options: { attempts?: number } = {},
+): Promise<T> {
+  const attempts = Math.max(1, options.attempts ?? 3);
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbError(err) || attempt === attempts) throw err;
+      resetPool();
+      await new Promise((resolve) =>
+        setTimeout(resolve, 40 * 2 ** (attempt - 1)),
+      );
+    }
+  }
+  throw lastErr;
+}
+
+function attachPoolGuards(pool: pg.Pool): void {
+  pool.on("error", () => {
+    // Idle client died (ECONNRESET / terminate). Recycle so the next query
+    // does not keep checking out the same dead socket.
+    if (poolInstance === pool) resetPool();
+  });
+}
+
 export function getPool(): pg.Pool {
-  if (poolInstance) return poolInstance;
   const rawUrl = resolveDatabaseUrl();
   if (!rawUrl) {
     throw new Error(
@@ -85,18 +173,28 @@ export function getPool(): pg.Pool {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
-  // Vercel Fluid / serverless: keep the pool tiny and fail fast so a dead DB
-  // surfaces as 503 quickly instead of hanging the Character list request.
+  if (poolInstance && poolConnectionKey === connectionString) {
+    return poolInstance;
+  }
+  if (poolInstance) resetPool();
+  // Serverless / Workers reuse isolates; origin poolers (Supavisor, Neon,
+  // Hyperdrive, PgBouncer) drop idle TCP well under the old 10s default.
+  // Keep the pool tiny and fail fast so a dead DB surfaces as 503 quickly.
   poolInstance = new Pool({
     connectionString,
     ssl,
     max: Number(process.env.PG_POOL_MAX || 1),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10_000),
+    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 2_000),
     connectionTimeoutMillis: Number(
       process.env.PG_CONNECTION_TIMEOUT_MS || 8_000,
     ),
+    maxLifetimeSeconds: Number(process.env.PG_MAX_LIFETIME_SECONDS || 60),
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
     allowExitOnIdle: true,
   });
+  poolConnectionKey = connectionString;
+  attachPoolGuards(poolInstance);
   return poolInstance;
 }
 
