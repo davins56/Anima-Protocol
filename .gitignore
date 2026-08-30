@@ -83,8 +83,20 @@ Desktop.ini
 .cursor/
 .aider*
 
+# Cloudflare Wrangler local state (never commit secrets)
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
 # Replit local files
 
 
 
 .venv/
+
+# Vercel deploy-scan requires a committed api/index.mjs (see vercel.json
+# functions). Never gitignore the api/ directory — that is what broke
+# production deploys after the Cloudflare worker experiment. Source maps
+# are generated next to the bundle and are not needed in git.
+api/*.map

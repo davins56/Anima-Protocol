@@ -107,6 +107,7 @@ const WorldCodex = lazy(() => import("./pages/WorldCodex"));
 const RelationshipGraph = lazy(() => import("./pages/RelationshipGraph"));
 const InventoryPanel = lazy(() => import("./pages/InventoryPanel"));
 const EnergyFragments = lazy(() => import("./pages/EnergyFragments"));
+const EchoKeys = lazy(() => import("./pages/EchoKeys"));
 const CalendarView = lazy(() => import("./pages/CalendarView"));
 const StoryBranching = lazy(() => import("./pages/StoryBranching"));
 const CharacterMemoryMap = lazy(() => import("./pages/CharacterMemoryMap"));
@@ -227,7 +228,7 @@ function resolveFrontendClerkPublishableKey(hostname, envKey) {
   return envKey;
 }
 
-const fallbackDevKey = "pk_test_YW5pbWEtcHJvdG9jb2wtZGV2LmNsZXJrLmFjY291bnRzLmRldiQ";
+const fallbackDevKey = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA";
 
 const clerkPubKey = resolveFrontendClerkPublishableKey(
   window.location.hostname,
@@ -1254,6 +1255,14 @@ const AuthenticatedApp = () => {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <EnergyFragments />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/echo-keys"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <EchoKeys />
                   </Suspense>
                 }
               />
