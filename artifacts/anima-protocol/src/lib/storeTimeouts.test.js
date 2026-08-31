@@ -6,6 +6,8 @@ import {
   BOOTSTRAP_UI_TIMEOUT_MS,
   STORE_AUTH_WAIT_MS,
   STORE_FETCH_TIMEOUT_MS,
+  STORE_SESSION_CREATE_RETRY_LIMIT,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
 } from "./storeTimeouts";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -24,9 +26,16 @@ describe("store fail-fast budget", () => {
     const state = readFileSync(join(srcRoot, "lib/bootstrapState.js"), "utf8");
 
     expect(client).toContain("STORE_FETCH_TIMEOUT_MS");
+    expect(client).toContain("STORE_SESSION_CREATE_TIMEOUT_MS");
     expect(client).toContain("AbortSignal.timeout");
     expect(auth).toContain("STORE_AUTH_WAIT_MS");
     expect(bootstrap).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
     expect(state).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
+  });
+
+  it("documents a longer targeted budget only for ChatSession.create / Init", () => {
+    expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBe(20000);
+    expect(STORE_SESSION_CREATE_RETRY_LIMIT).toBe(1);
+    expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
   });
 });
