@@ -28,6 +28,10 @@ import {
   messagesWithImageProgress,
 } from "@/lib/chatImageGeneration";
 import { loadOpenChatSession } from "@/lib/chatSessionLoad";
+import {
+  buildInitSessionPayload,
+  createInitChatSession,
+} from "@/lib/createInitSession";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -112,7 +116,6 @@ import {
   isTherapySession,
   buildTherapyInstruction,
   detectTherapyCrisis,
-  therapyOpeningMessage,
 } from "@/lib/therapyManuals";
 import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
@@ -856,77 +859,36 @@ export default function Chat() {
     group_character_ids,
     opening_scene,
   }) => {
-    let title = "New Session";
-    let initialMessages = [];
-    
-    if (m === "solo" && character_id) {
-      const char = await resolveCharacterById(character_id);
-      title = char ? `${char.name}` : "New Session";
-    } else if (m === "group" && group_character_ids?.length) {
-      const chars = (
-        await Promise.all(
-          group_character_ids.map((id) => resolveCharacterById(id)),
-        )
-      ).filter(Boolean);
-      title = chars.slice(0, 2).map((c) => c.name).join(", ") + (chars.length > 2 ? ` +${chars.length - 2}` : "");
-
-      // Create initial narrator message for group sessions
-      const charNames = chars.map((c) => c.name).join(", ");
-      const narratorMessage = {
-        role: "assistant",
-        character_name: "Narrator",
-        content: `The stage is set. ${charNames} find themselves drawn together by fate or circumstance. The air crackles with potential as these extraordinary beings come face to face. What unfolds next will alter the course of events. The scene awaits...`,
-        timestamp: new Date().toISOString(),
-      };
-      initialMessages = [narratorMessage];
-    }
-
-    const selectedGroupChars = m === "group" && group_character_ids?.length
-      ? (
-          await Promise.all(
-            group_character_ids.map((id) => resolveCharacterById(id)),
-          )
-        ).filter(Boolean)
-      : [];
-    const crossoverUniverses = Array.from(
-      new Set(selectedGroupChars.map((c) => c.universe).filter(Boolean)),
-    );
-    const isCrossoverSession = m === "group" && crossoverUniverses.length >= 2;
-
+    // Resolve each id once. Init must not wait on auth.me() — therapy uses
+    // the already-loaded Clerk profile, same class of bug as Daily Resonance.
     const createdChar =
-      m === "solo" && character_id ? await resolveCharacterById(character_id) : null;
-    const therapySession =
-      m === "solo" &&
-      isTherapySession(
-        { mode: m, therapy_mode: false },
+      m === "solo" && character_id
+        ? await resolveCharacterById(character_id)
+        : null;
+    const selectedGroupChars =
+      m === "group" && group_character_ids?.length
+        ? (
+            await Promise.all(
+              group_character_ids.map((id) => resolveCharacterById(id)),
+            )
+          ).filter(Boolean)
+        : [];
+
+    const { payload, therapySession, isCrossoverSession, crossoverUniverses } =
+      buildInitSessionPayload({
+        mode: m,
+        characterId: character_id,
+        character: createdChar,
+        groupCharacterIds: group_character_ids,
+        groupCharacters: selectedGroupChars,
+        openingScene: opening_scene,
         authUser,
-        createdChar || { _isAnima: false },
-      );
+      });
 
-    if (therapySession && createdChar && initialMessages.length === 0) {
-      initialMessages = [
-        {
-          role: "assistant",
-          character_name: createdChar.name,
-          content: therapyOpeningMessage(createdChar.name),
-          timestamp: new Date().toISOString(),
-        },
-      ];
-    }
-
-    const newSession = await base44.entities.ChatSession.create({
-      mode: m,
-      character_id: character_id || null,
-      group_character_ids: group_character_ids || [],
-      selected_character_names: selectedGroupChars.map((c) => c.name),
-      crossover_universes: crossoverUniverses,
-      is_crossover: isCrossoverSession,
-      shared_memory: [],
-      title: therapySession && createdChar?.name ? `Therapy · ${createdChar.name}` : title,
-      opening_scene: opening_scene || "",
-      messages: initialMessages,
-      ...(therapySession ? { therapy_mode: true, companion_mode: "therapy" } : {}),
-    });
+    // Await create (do not fire-and-forget). Opening messages, when present,
+    // are persisted by ChatSession.create via /messages/replace — never a
+    // second ChatSession.update({ messages }) that used to rewrite the same rows.
+    const newSession = await createInitChatSession(payload);
 
     if (isCrossoverSession) {
       track("crossover_session_started", {
@@ -939,13 +901,6 @@ export default function Chat() {
         source: "chat_new_session",
         is_anima: true,
         has_topic: false,
-      });
-    }
-
-    // Update session with initial messages if they exist
-    if (initialMessages.length > 0) {
-      await base44.entities.ChatSession.update(newSession.id, {
-        messages: initialMessages,
       });
     }
 

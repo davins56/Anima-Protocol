@@ -15,7 +15,10 @@ import {
   ensureBootstrapComplete,
   isBootstrapSettled,
 } from '@/lib/bootstrapState';
-import { STORE_FETCH_TIMEOUT_MS } from '@/lib/storeTimeouts';
+import {
+  STORE_FETCH_TIMEOUT_MS,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
+} from '@/lib/storeTimeouts';
 import {
   authHeaders,
   clearAuthTokenGetter,
@@ -27,7 +30,10 @@ import {
 const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
-export { STORE_FETCH_TIMEOUT_MS };
+export { STORE_FETCH_TIMEOUT_MS, STORE_SESSION_CREATE_TIMEOUT_MS };
+
+const DEFAULT_STORE_TIMEOUT_MESSAGE =
+  'The server took too long to respond. Check your connection or try again in a moment.';
 
 async function storeFetch(path, options = {}) {
   const token = await getToken();
@@ -39,11 +45,22 @@ async function storeFetch(path, options = {}) {
     throw err;
   }
 
+  const {
+    timeoutMs,
+    timeoutMessage,
+    signal: userSignal,
+    headers: optionHeaders,
+    ...fetchOptions
+  } = options;
+  const budget =
+    typeof timeoutMs === 'number' && timeoutMs > 0
+      ? timeoutMs
+      : STORE_FETCH_TIMEOUT_MS;
+
   const timeoutSignal =
     typeof AbortSignal !== 'undefined' && AbortSignal.timeout
-      ? AbortSignal.timeout(STORE_FETCH_TIMEOUT_MS)
+      ? AbortSignal.timeout(budget)
       : undefined;
-  const userSignal = options.signal;
   let signal = timeoutSignal;
   if (userSignal && timeoutSignal) {
     signal = AbortSignal.any([userSignal, timeoutSignal]);
@@ -52,9 +69,9 @@ async function storeFetch(path, options = {}) {
   }
 
   const makeRequest = async (retryOptions = {}) => {
-    const headers = await authHeaders(options.headers, retryOptions);
+    const headers = await authHeaders(optionHeaders, retryOptions);
     return await fetch(`${STORE_BASE()}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers,
       credentials: 'same-origin',
       signal,
@@ -79,9 +96,7 @@ async function storeFetch(path, options = {}) {
     return res;
   } catch (err) {
     if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
-      const timeoutErr = new Error(
-        'The server took too long to respond. Check your connection or try again in a moment.',
-      );
+      const timeoutErr = new Error(timeoutMessage || DEFAULT_STORE_TIMEOUT_MESSAGE);
       timeoutErr.code = 'timeout';
       throw timeoutErr;
     }
@@ -1038,10 +1053,12 @@ function entityStore(entityName) {
       return res.json();
     },
 
-    async create(data) {
+    async create(data, opts = {}) {
       const res = await storeFetch(`/${encodeURIComponent(entityName)}`, {
         method: 'POST',
         body: JSON.stringify(data || {}),
+        timeoutMs: opts.timeoutMs,
+        timeoutMessage: opts.timeoutMessage,
       });
       if (!res.ok) await throwErr(res);
       bumpVersion(entityName);
@@ -1119,13 +1136,27 @@ function entityStore(entityName) {
     return {
       ...base,
       async create(data) {
-        if (data && Object.prototype.hasOwnProperty.call(data, 'messages')) {
-          const { messages, ...rest } = data;
-          const session = await base.create(rest);
+        const hasMessages =
+          data && Object.prototype.hasOwnProperty.call(data, 'messages');
+        const messages = hasMessages ? data.messages : undefined;
+        const rest = hasMessages
+          ? (() => {
+              const { messages: _omit, ...sessionFields } = data;
+              return sessionFields;
+            })()
+          : data || {};
+        // New sessions store chat rows separately. Never POST a nested
+        // messages array, and skip /messages/replace when there is nothing
+        // to persist — empty replace was a second 8s-budget write on Init.
+        const session = await base.create(
+          { ...rest, messages_migrated: rest.messages_migrated ?? true },
+          { timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS },
+        );
+        if (Array.isArray(messages) && messages.length > 0) {
           const savedMessages = await replaceMessages(session.id, messages);
           return { ...session, messages: savedMessages };
         }
-        return base.create(data);
+        return { ...session, messages: Array.isArray(messages) ? [] : session.messages };
       },
       async list(sortOrFilters, limit, opts) {
         const sessions = await base.list(sortOrFilters, limit, opts);

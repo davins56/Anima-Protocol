@@ -755,19 +755,26 @@ async function bulkUpsertCharactersBatched(chars) {
   }
 }
 
-export async function upsertCharacters(characters) {
+export async function upsertCharacters(characters, { skipExistingLookup = false } = {}) {
   const list = Array.isArray(characters) ? characters.filter((c) => c?.id) : [];
   if (!list.length) return { added: 0, skipped: 0 };
 
   clearStoreCache();
   await waitForStoreAuth();
-  const existing = await base44.entities.Character.list("-created_date", 5000, {
-    _bootstrapInternal: true,
-  });
-  const existingIds = new Set((existing || []).map((c) => c.id));
-  const toAdd = list.filter((c) => !existingIds.has(c.id));
-  const skipped = list.length - toAdd.length;
-  if (!toAdd.length) return { added: 0, skipped };
+  let toAdd = list;
+  let skipped = 0;
+  // Init already knows the selected bundled rows must exist in the store.
+  // Skip Character.list(5000) so that extra 8s-budget GET cannot abort Init
+  // before ChatSession.create runs. bulk-upsert is idempotent by id.
+  if (!skipExistingLookup) {
+    const existing = await base44.entities.Character.list("-created_date", 5000, {
+      _bootstrapInternal: true,
+    });
+    const existingIds = new Set((existing || []).map((c) => c.id));
+    toAdd = list.filter((c) => !existingIds.has(c.id));
+    skipped = list.length - toAdd.length;
+    if (!toAdd.length) return { added: 0, skipped };
+  }
 
   // Batch upserts so a large starter roster (or series add) stays within
   // serverless payload/time limits instead of one fragile all-or-nothing call.
