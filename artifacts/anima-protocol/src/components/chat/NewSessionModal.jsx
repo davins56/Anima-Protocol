@@ -189,7 +189,20 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           selected,
           bundledSelected,
           upserted?.items,
+          upserted?.idMap,
         );
+        const storeIds = new Set(
+          (upserted?.items || []).map((item) => item?.id).filter(Boolean),
+        );
+        const staleBundled = bundledSelected.some((character) => {
+          const nextId = selectedIds[selected.indexOf(character.id)];
+          return storeIds.size > 0 && nextId === character.id && !storeIds.has(character.id);
+        });
+        if (staleBundled) {
+          throw new Error(
+            "Could not match the selected starter to a store character. Tap Init to try again.",
+          );
+        }
         const remappedByOldId = new Map(
           selected.map((id, index) => [id, selectedIds[index]]),
         );

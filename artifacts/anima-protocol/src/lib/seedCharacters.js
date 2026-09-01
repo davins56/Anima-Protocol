@@ -5,6 +5,7 @@ import {
   clearStoreCache,
 } from "@/api/base44Client";
 import { findCharacterPhoto } from "@/lib/characterPhoto";
+import { characterUpsertIdMap } from "@/lib/createInitSession";
 
 // Characters whose photo lookup has already been attempted (by id), so we don't
 // re-query the web every page load for characters that simply have no match.
@@ -764,7 +765,7 @@ async function bulkUpsertCharactersBatched(chars) {
 
 export async function upsertCharacters(characters, { skipExistingLookup = false } = {}) {
   const list = Array.isArray(characters) ? characters.filter((c) => c?.id) : [];
-  if (!list.length) return { added: 0, skipped: 0, items: [] };
+  if (!list.length) return { added: 0, skipped: 0, items: [], idMap: {} };
 
   clearStoreCache();
   await waitForStoreAuth();
@@ -780,7 +781,9 @@ export async function upsertCharacters(characters, { skipExistingLookup = false 
     const existingIds = new Set((existing || []).map((c) => c.id));
     toAdd = list.filter((c) => !existingIds.has(c.id));
     skipped = list.length - toAdd.length;
-    if (!toAdd.length) return { added: 0, skipped, items: list };
+    if (!toAdd.length) {
+      return { added: 0, skipped, items: list, idMap: characterUpsertIdMap(list, list) };
+    }
   }
 
   // Batch upserts so a large starter roster (or series add) stays within
@@ -788,7 +791,12 @@ export async function upsertCharacters(characters, { skipExistingLookup = false 
   const items = await bulkUpsertCharactersBatched(toAdd);
   clearStoreCache();
   notifyStoreChanged();
-  return { added: toAdd.length, skipped, items };
+  return {
+    added: toAdd.length,
+    skipped,
+    items,
+    idMap: characterUpsertIdMap(toAdd, items),
+  };
 }
 
 async function upsertMissingStarters() {

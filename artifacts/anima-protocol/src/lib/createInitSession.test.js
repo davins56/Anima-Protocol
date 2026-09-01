@@ -6,6 +6,7 @@ import {
   INIT_SESSION_MISSING_ID_MESSAGE,
   INIT_SESSION_TIMEOUT_MESSAGE,
   buildInitSessionPayload,
+  characterUpsertIdMap,
   createdSessionId,
   createInitChatSession,
   initSessionErrorMessage,
@@ -166,6 +167,25 @@ describe("remapSelectedCharacterIds", () => {
         [{ id: "seed_marvel-tchalla", name: "T'Challa", universe: "MCU" }],
       ),
     ).toEqual(["seed_marvel-tchalla"]);
+  });
+
+  it("prefers an explicit idMap for solo and group picker ids", () => {
+    const bundled = [
+      { id: "seed_a", name: "Tony Stark", universe: "MCU" },
+      { id: "seed_b", name: "Steve Rogers", universe: "MCU" },
+    ];
+    const items = [
+      { id: "pg_1", name: "Tony Stark", universe: "MCU" },
+      { id: "pg_2", name: "Steve Rogers", universe: "MCU" },
+    ];
+    const idMap = characterUpsertIdMap(bundled, items);
+    expect(idMap).toEqual({ seed_a: "pg_1", seed_b: "pg_2" });
+    expect(remapSelectedCharacterIds(["seed_a"], bundled, items, idMap)).toEqual([
+      "pg_1",
+    ]);
+    expect(
+      remapSelectedCharacterIds(["seed_a", "seed_b"], bundled, items, idMap),
+    ).toEqual(["pg_1", "pg_2"]);
   });
 });
 

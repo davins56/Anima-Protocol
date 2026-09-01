@@ -222,6 +222,7 @@ describe("upsertCharacters", () => {
       added: 1,
       skipped: 0,
       items: [{ id: "char_store_1", name: "T'Challa" }],
+      idMap: { seed_tchalla: "char_store_1" },
     });
   });
 });
