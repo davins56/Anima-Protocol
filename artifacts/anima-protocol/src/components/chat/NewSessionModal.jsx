@@ -274,10 +274,21 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border max-h-[90vh] flex flex-col">
+    <div
+      data-testid="new-session-overlay"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,0px)+1rem)] min-h-0 overflow-hidden"
+    >
+      {/*
+        Do not use max-h-[90vh]: html/body are overflow-locked, and 90vh does
+        not clear .fixed-bottom-chrome. Size to the overlay (already padded
+        for the tab bar) so the character list is the only scroller.
+      */}
+      <div
+        data-testid="new-session-panel"
+        className="w-full max-w-2xl min-h-0 max-h-full flex-1 sm:flex-none flex flex-col overflow-hidden bg-background border border-primary/30 hud-corner glow-border"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20 gap-3">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20 gap-3 flex-shrink-0">
           <div className="flex-1 min-w-0">
             <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-base sm:text-lg truncate">
               {view === "templates"
@@ -302,7 +313,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         </div>
 
         {/* Search */}
-        <div className="p-4 border-b border-primary/10">
+        <div className="p-4 border-b border-primary/10 flex-shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary/30" />
             <input
@@ -314,8 +325,12 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 min-h-0">
+        {/* Content — sole touch scroller; min-h-0 so flex can shrink it. */}
+        <div
+          data-testid="new-session-character-scroller"
+          className="flex-1 overflow-y-auto overscroll-contain p-4 min-h-0 touch-pan-y"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
           {view === "templates" ? (
             <StoryTemplateBrowser
               onSelectTemplate={handleSelectTemplate}
@@ -441,7 +456,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
 
         {/* Opening Scene Input */}
         {view === "characters" && selected.length > 0 && (
-          <div className="px-4 py-3 border-t border-primary/10 bg-black/20">
+          <div className="px-4 py-3 border-t border-primary/10 bg-black/20 flex-shrink-0">
             {mode === "group" && (
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className={`text-[8px] font-mono tracking-widest uppercase border rounded px-2 py-1 ${
