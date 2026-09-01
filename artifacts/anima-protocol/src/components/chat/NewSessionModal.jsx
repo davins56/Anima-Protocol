@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -273,22 +274,29 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     oracle: "text-blue-400",
   };
 
-  return (
+  // This is the Chat → New Session modal (not WelcomeScreen). The tab bar
+  // stays visible because it is z-[999] over this sheet. Chat mounts us
+  // inside a transformed, overflow-hidden shell, so we portal to body and
+  // make this overlay the only scroller — nested overflow-y-auto + 90vh
+  // left a zero-height / non-touch scrollport on iOS.
+  return createPortal(
+    <>
     <div
       data-testid="new-session-overlay"
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,0px)+1rem)] min-h-0 overflow-hidden"
+      className="fixed inset-0 z-50 overflow-y-scroll overscroll-contain touch-pan-y bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,0px)+1rem)] h-app-viewport"
+      style={{
+        height: "var(--app-height, 100dvh)",
+        maxHeight: "var(--app-height, 100dvh)",
+        WebkitOverflowScrolling: "touch",
+      }}
     >
-      {/*
-        Bound height to the overlay, not a raw 90vh cap: html/body are
-        overflow-locked, and 90vh does not clear .fixed-bottom-chrome.
-        The character list is the only scroller.
-      */}
       <div
         data-testid="new-session-panel"
-        className="w-full max-w-2xl min-h-0 max-h-full flex-1 sm:flex-none flex flex-col overflow-hidden bg-background border border-primary/30 hud-corner glow-border"
+        className="w-full max-w-2xl mx-auto min-h-0 flex flex-col bg-background border border-primary/30 hud-corner glow-border"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20 gap-3 flex-shrink-0">
+        {/* Header + search stay pinned while the roster scrolls. */}
+        <div className="sticky top-0 z-10 bg-background">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20 gap-3">
           <div className="flex-1 min-w-0">
             <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-base sm:text-lg truncate">
               {view === "templates"
@@ -324,13 +332,9 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
             />
           </div>
         </div>
+        </div>
 
-        {/* Content — sole touch scroller; min-h-0 so flex can shrink it. */}
-        <div
-          data-testid="new-session-character-scroller"
-          className="flex-1 overflow-y-auto overscroll-contain p-4 min-h-0 touch-pan-y"
-          style={{ WebkitOverflowScrolling: "touch" }}
-        >
+        <div data-testid="new-session-character-roster" className="p-4">
           {view === "templates" ? (
             <StoryTemplateBrowser
               onSelectTemplate={handleSelectTemplate}
@@ -410,7 +414,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
                         <button
                           key={char.id}
                           onClick={() => toggleSelect(char.id)}
-                          className={`relative p-4 border text-left transition-all hud-corner ${
+                          className={`relative p-4 border text-left transition-all hud-corner touch-pan-y ${
                             isSelected
                               ? "border-primary/60 bg-primary/10 text-primary"
                               : "border-primary/15 bg-black/40 text-primary/60 hover:border-primary/40 hover:bg-primary/5"
@@ -455,8 +459,9 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         </div>
 
         {/* Opening Scene Input */}
+        <div className="sticky bottom-0 z-10 bg-background">
         {view === "characters" && selected.length > 0 && (
-          <div className="px-4 py-3 border-t border-primary/10 bg-black/20 flex-shrink-0">
+          <div className="px-4 py-3 border-t border-primary/10 bg-black/20">
             {mode === "group" && (
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className={`text-[8px] font-mono tracking-widest uppercase border rounded px-2 py-1 ${
@@ -557,19 +562,21 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
              )}
            </div>
          </div>
+        </div>
       </div>
-
-      {showStoryChooser && (
-        <StoryCharacterChooser
-          onClose={() => {
-            setShowStoryChooser(false);
-            setCanonSeed(null);
-          }}
-          onCreateSession={handleCreateFromChooser}
-          initialStory={canonSeed?.story || null}
-          initialInsertions={canonSeed?.insertions || null}
-        />
-      )}
     </div>
+    {showStoryChooser && (
+      <StoryCharacterChooser
+        onClose={() => {
+          setShowStoryChooser(false);
+          setCanonSeed(null);
+        }}
+        onCreateSession={handleCreateFromChooser}
+        initialStory={canonSeed?.story || null}
+        initialInsertions={canonSeed?.insertions || null}
+      />
+    )}
+    </>,
+    document.body,
   );
 }

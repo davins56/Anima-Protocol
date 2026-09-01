@@ -104,8 +104,13 @@ function renderModal(props = {}) {
   return { container, root };
 }
 
-function buttonByText(container, text) {
-  return Array.from(container.querySelectorAll("button")).find((button) =>
+function modalEl() {
+  return document.querySelector('[data-testid="new-session-overlay"]');
+}
+
+function buttonByText(scope, text) {
+  const root = scope instanceof HTMLElement ? scope : modalEl() || document;
+  return Array.from(root.querySelectorAll("button")).find((button) =>
     button.textContent?.includes(text),
   );
 }
@@ -155,45 +160,38 @@ describe("NewSessionModal", () => {
     upsertCharactersMock.mockReset();
   });
 
-  it("keeps a bounded inner scroller that clears the tab bar", () => {
+  it("portals a single --app-height scroller that clears the tab bar", () => {
     const { container, root } = renderModal();
-    const overlay = container.querySelector('[data-testid="new-session-overlay"]');
-    const panel = container.querySelector('[data-testid="new-session-panel"]');
-    const scroller = container.querySelector(
-      '[data-testid="new-session-character-scroller"]',
+    const overlay = modalEl();
+    const panel = document.querySelector('[data-testid="new-session-panel"]');
+    const roster = document.querySelector(
+      '[data-testid="new-session-character-roster"]',
     );
 
     expect(overlay).toBeTruthy();
     expect(panel).toBeTruthy();
-    expect(scroller).toBeTruthy();
+    expect(roster).toBeTruthy();
+    expect(overlay.parentElement).toBe(document.body);
+    expect(container.contains(overlay)).toBe(false);
 
     expect(overlay.className).toMatch(/fixed inset-0/);
-    expect(overlay.className).toMatch(/overflow-hidden/);
-    expect(overlay.className).toMatch(/min-h-0/);
+    expect(overlay.className).toMatch(/overflow-y-scroll/);
+    expect(overlay.className).toMatch(/touch-pan-y/);
+    expect(overlay.className).toContain("h-app-viewport");
     expect(overlay.className).toContain(
       "pb-[calc(var(--tab-bar-height,0px)+1rem)]",
     );
+    expect(overlay.style.height).toBe("var(--app-height, 100dvh)");
+    expect(overlay.style.maxHeight).toBe("var(--app-height, 100dvh)");
+    expect(overlay.style.WebkitOverflowScrolling).toBe("touch");
 
-    expect(panel.className).toMatch(/min-h-0/);
-    expect(panel.className).toMatch(/max-h-full/);
-    expect(panel.className).toMatch(/overflow-hidden/);
     expect(panel.className).not.toMatch(/max-h-\[90vh\]/);
-    expect(panel.className).not.toMatch(/h-screen/);
-
-    expect(scroller.className).toMatch(/flex-1/);
-    expect(scroller.className).toMatch(/min-h-0/);
-    expect(scroller.className).toMatch(/overflow-y-auto/);
-    expect(scroller.className).toMatch(/touch-pan-y/);
-    expect(scroller.style.WebkitOverflowScrolling).toBe("touch");
-
-    expect(container.querySelector("input")?.placeholder).toMatch(
-      /Search characters or universes/,
-    );
-    expect(container.textContent).toContain("Init");
-    expect(container.textContent).toContain("Cancel");
-    expect(scroller.contains(buttonByText(container, "Init"))).toBe(false);
-    expect(scroller.contains(buttonByText(container, "Cancel"))).toBe(false);
-    expect(overlay.contains(buttonByText(container, "Init"))).toBe(true);
+    expect(panel.className).not.toMatch(/overflow-hidden/);
+    expect(roster.className).not.toMatch(/overflow-y-auto/);
+    expect(overlay.textContent).toContain("Init");
+    expect(overlay.textContent).toContain("Cancel");
+    expect(overlay.contains(buttonByText(overlay, "Init"))).toBe(true);
+    expect(roster.contains(buttonByText(overlay, "Init"))).toBe(false);
 
     act(() => {
       root.unmount();
@@ -209,10 +207,11 @@ describe("NewSessionModal", () => {
       await Promise.resolve();
     });
 
-    const search = container.querySelector("input");
+    const overlay = modalEl();
+    const search = overlay.querySelector("input");
     expect(search).toBeTruthy();
-    expect(container.textContent).toContain("Serenity");
-    expect(container.textContent).toContain("Tony Stark");
+    expect(overlay.textContent).toContain("Serenity");
+    expect(overlay.textContent).toContain("Tony Stark");
 
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(
@@ -224,12 +223,12 @@ describe("NewSessionModal", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain("Serenity");
-    expect(container.textContent).toContain("Tony Stark");
+    expect(overlay.textContent).not.toContain("Serenity");
+    expect(overlay.textContent).toContain("Tony Stark");
 
-    await click(buttonByText(container, "Tony Stark"));
-    expect(buttonByText(container, "Init")?.disabled).toBe(false);
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(overlay, "Tony Stark"));
+    expect(buttonByText(overlay, "Init")?.disabled).toBe(false);
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -257,24 +256,24 @@ describe("NewSessionModal", () => {
     const onClose = vi.fn();
     const { container, root } = renderModal({ onClose, onCreate });
 
-    await click(buttonByText(container, "Serenity"));
-    await fillTextarea(container.querySelector("textarea"), "A neon room hums.");
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(modalEl(), "Serenity"));
+    await fillTextarea(modalEl().querySelector("textarea"), "A neon room hums.");
+    await click(buttonByText(modalEl(), "Init"));
 
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
       character_id: "char-1",
       opening_scene: "A neon room hums.",
     });
-    expect(container.textContent).toContain("Saving");
+    expect(modalEl().textContent).toContain("Saving");
 
     await act(async () => {
       rejectCreate(new Error("Character store API not found"));
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain("Character store API not found");
-    expect(container.textContent).toContain("Init");
+    expect(modalEl().textContent).toContain("Character store API not found");
+    expect(modalEl().textContent).toContain("Init");
     expect(onClose).not.toHaveBeenCalled();
     expect(toastErrorMock).toHaveBeenCalledWith("Character store API not found");
 
@@ -292,8 +291,8 @@ describe("NewSessionModal", () => {
     );
     const { container, root } = renderModal({ onCreate });
 
-    await click(buttonByText(container, "Serenity"));
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(modalEl(), "Serenity"));
+    await click(buttonByText(modalEl(), "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -301,8 +300,8 @@ describe("NewSessionModal", () => {
     expect(toastErrorMock).toHaveBeenCalledWith(
       "Starting the session timed out. The store is reachable — tap Init to try again.",
     );
-    expect(container.textContent).toContain("Starting the session timed out");
-    expect(container.textContent).toContain("Init");
+    expect(modalEl().textContent).toContain("Starting the session timed out");
+    expect(modalEl().textContent).toContain("Init");
 
     act(() => {
       root.unmount();
@@ -331,8 +330,8 @@ describe("NewSessionModal", () => {
       await Promise.resolve();
     });
 
-    await click(buttonByText(container, "Serenity"));
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(modalEl(), "Serenity"));
+    await click(buttonByText(modalEl(), "Init"));
     await act(async () => {
       await Promise.resolve();
     });
