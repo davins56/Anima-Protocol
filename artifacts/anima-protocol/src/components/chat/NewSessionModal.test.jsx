@@ -252,9 +252,9 @@ describe("NewSessionModal", () => {
     expect(overlay.textContent).not.toContain("Serenity");
     expect(overlay.textContent).toContain("Tony Stark");
 
-    await click(buttonByText(overlay), "Tony Stark"));
-    expect(buttonByText(overlay), "Init")?.disabled).toBe(false);
-    await click(buttonByText(overlay), "Init"));
+    await click(buttonByText(overlay, "Tony Stark"));
+    expect(buttonByText(overlay, "Init")?.disabled).toBe(false);
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -283,9 +283,9 @@ describe("NewSessionModal", () => {
     const onClose = vi.fn();
     const { container, root, overlay } = renderModal({ onClose, onCreate });
 
-    await click(buttonByText(overlay), "Serenity"));
+    await click(buttonByText(overlay, "Serenity"));
     await fillTextarea(overlay.querySelector("textarea"), "A neon room hums.");
-    await click(buttonByText(overlay), "Init"));
+    await click(buttonByText(overlay, "Init"));
 
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
@@ -319,8 +319,8 @@ describe("NewSessionModal", () => {
     );
     const { container, root, overlay } = renderModal({ onCreate });
 
-    await click(buttonByText(overlay), "Serenity"));
-    await click(buttonByText(overlay), "Init"));
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -358,8 +358,8 @@ describe("NewSessionModal", () => {
       await Promise.resolve();
     });
 
-    await click(buttonByText(overlay), "Serenity"));
-    await click(buttonByText(overlay), "Init"));
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -411,8 +411,8 @@ describe("NewSessionModal", () => {
       await Promise.resolve();
     });
 
-    await click(buttonByText(overlay), "Serenity"));
-    await click(buttonByText(overlay), "Init"));
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -427,7 +427,7 @@ describe("NewSessionModal", () => {
       opening_scene: undefined,
     });
     expect(overlay.textContent).toContain("Init");
-    expect(buttonByText(overlay), "Init")?.disabled).toBe(false);
+    expect(buttonByText(overlay, "Init")?.disabled).toBe(false);
 
     act(() => {
       root.unmount();
@@ -471,9 +471,9 @@ describe("NewSessionModal", () => {
       await Promise.resolve();
     });
 
-    await click(buttonByText(overlay), "Tony Stark"));
-    await click(buttonByText(overlay), "Steve Rogers"));
-    await click(buttonByText(overlay), "Init"));
+    await click(buttonByText(overlay, "Tony Stark"));
+    await click(buttonByText(overlay, "Steve Rogers"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
