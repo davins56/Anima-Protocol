@@ -222,19 +222,35 @@ export function buildInitSessionPayload({
 /**
  * Await ChatSession.create for Init. On abort/timeout, retry once, then throw
  * INIT_SESSION_TIMEOUT_MESSAGE (not the generic connection toast).
+ *
+ * Opening narrator/therapy rows persist via /messages/replace in the
+ * background so that write cannot block navigation onto /chat/:id.
  */
 export async function createInitChatSession(
   payload,
   {
     create = (data) => base44.entities.ChatSession.create(data),
+    persistMessages = (sessionId, messages) =>
+      base44.messages.replace(sessionId, messages),
     retryLimit = STORE_SESSION_CREATE_RETRY_LIMIT,
   } = {},
 ) {
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  const sessionFields = { ...(payload || {}) };
+  delete sessionFields.messages;
+
   const attempts = Math.max(0, retryLimit) + 1;
   let lastErr;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return requireCreatedSession(await create(payload));
+      const session = requireCreatedSession(await create(sessionFields));
+      if (messages.length > 0) {
+        Promise.resolve(persistMessages(session.id, messages)).catch((err) => {
+          console.warn("[Anima] Opening messages persist failed:", err);
+        });
+        return { ...session, messages };
+      }
+      return session;
     } catch (err) {
       lastErr = err;
       const canRetry = isStoreTimeoutError(err) && i < attempts - 1;
