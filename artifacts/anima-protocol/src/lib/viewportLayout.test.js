@@ -100,14 +100,15 @@ describe("representative page scroll contract", () => {
     expect(page).toMatch(/finally\s*\{[\s\S]*setSaving\(false\)/);
   });
 
-  it("New Session picker scrolls inside the modal and clears the tab bar", () => {
+  it("New Session picker portals a single --app-height scroller above the tab bar", () => {
     const modal = readSrc("components/chat/NewSessionModal.jsx");
-    expect(modal).toContain('data-testid="new-session-character-scroller"');
-    expect(modal).toMatch(/overflow-y-auto/);
-    expect(modal).toMatch(/min-h-0/);
+    expect(modal).toContain("createPortal");
+    expect(modal).toContain('data-testid="new-session-overlay"');
+    expect(modal).toMatch(/overflow-y-scroll/);
+    expect(modal).toContain("h-app-viewport");
+    expect(modal).toContain('height: "var(--app-height, 100dvh)"');
     expect(modal).toContain("pb-[calc(var(--tab-bar-height,0px)+1rem)]");
-    expect(modal).toContain("max-h-full");
-    expect(modal).toContain("overflow-hidden");
+    expect(modal).toContain("touch-pan-y");
     expect(modal).not.toMatch(/max-h-\[90vh\]/);
     expect(modal).not.toMatch(/h-screen(?!-)/);
   });
