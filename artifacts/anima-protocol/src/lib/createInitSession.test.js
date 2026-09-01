@@ -111,6 +111,32 @@ describe("createInitChatSession", () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
+  it("does not wait on /messages/replace before returning a group Init session", async () => {
+    let persistResolve;
+    const persistPromise = new Promise((resolve) => {
+      persistResolve = resolve;
+    });
+    const persistMessages = vi.fn(() => persistPromise);
+    const create = vi.fn().mockResolvedValue({ id: "sess-group", title: "A, B" });
+    const payload = {
+      mode: "group",
+      title: "A, B",
+      messages: [{ role: "assistant", character_name: "Narrator", content: "The stage is set." }],
+    };
+
+    const session = await createInitChatSession(payload, { create, persistMessages });
+
+    expect(create).toHaveBeenCalledWith({ mode: "group", title: "A, B" });
+    expect(session).toEqual({
+      id: "sess-group",
+      title: "A, B",
+      messages: payload.messages,
+    });
+    expect(persistMessages).toHaveBeenCalledWith("sess-group", payload.messages);
+    persistResolve([{ id: "m1" }]);
+    await persistPromise;
+  });
+
   it("does not retry a non-timeout store failure", async () => {
     const create = vi.fn().mockRejectedValue(new Error("schema is missing"));
     await expect(createInitChatSession({ title: "X" }, { create })).rejects.toThrow(
@@ -193,12 +219,28 @@ describe("Chat Init wiring", () => {
   it("awaits createInitChatSession and does not rewrite messages after create", () => {
     const chat = readFileSync(join(srcRoot, "pages/Chat.jsx"), "utf8");
     expect(chat).toContain("await createInitChatSession(payload)");
-    expect(chat).toContain("navigate(`/chat/${newSession.id}`)");
-    expect(chat).toContain("justCreatedSessionIdRef.current = newSession.id");
+    expect(chat).toContain("rememberCreatedSession(primedSession)");
+    expect(chat).toContain("navigate(`/chat/${primedSession.id}`, { state: { primedSession } })");
+    expect(chat).toContain("justCreatedSessionIdRef.current = primedSession.id");
     expect(chat).not.toMatch(/await loadSessions\(\)/);
     expect(chat).not.toMatch(
       /createInitChatSession\(payload\);[\s\S]{0,400}ChatSession\.update\([\s\S]*messages/,
     );
+  });
+
+  it("prefers the modal-passed character and does not require an id match to skip filter", () => {
+    const chat = readFileSync(join(srcRoot, "pages/Chat.jsx"), "utf8");
+    expect(chat).toContain('m === "solo" && character');
+    expect(chat).toContain("? character");
+    expect(chat).not.toContain("character.id === character_id");
+  });
+
+  it("keeps one Chat instance for /chat and /chat/:id", () => {
+    const protocol = readFileSync(join(srcRoot, "ProtocolApp.jsx"), "utf8");
+    const chatPaths = [...protocol.matchAll(/path="(\/chat[^"]*)"/g)].map((m) => m[1]);
+    expect(chatPaths).toEqual(["/chat/:sessionId?"]);
+    expect(protocol).not.toMatch(/pages\/NewChat/);
+    expect(protocol).not.toMatch(/const NewChat = lazy/);
   });
 });
 
