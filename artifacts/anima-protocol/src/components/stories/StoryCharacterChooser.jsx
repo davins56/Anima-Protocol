@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, Check } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { CANONICAL_STORIES } from "@/lib/canonicalStories";
@@ -136,14 +137,14 @@ export default function StoryCharacterChooser({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+  return createPortal(
+    <div
+      data-testid="story-character-chooser-overlay"
+      className="fixed inset-0 z-[1100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+    >
       <div
-        className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border flex flex-col"
-        style={{
-          height: "calc(var(--app-height, 100dvh) * 0.9)",
-          maxHeight: "calc(var(--app-height, 100dvh) * 0.9)",
-        }}
+        data-testid="story-character-chooser-panel"
+        className="w-full max-w-2xl min-h-0 max-h-full flex-1 sm:flex-none flex flex-col overflow-hidden bg-background border border-primary/30 hud-corner glow-border"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-3 sm:p-6 border-b border-primary/20 flex-shrink-0">
@@ -283,6 +284,7 @@ export default function StoryCharacterChooser({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
