@@ -27,7 +27,12 @@ import {
   resolveChatImageAttachments,
   messagesWithImageProgress,
 } from "@/lib/chatImageGeneration";
-import { loadOpenChatSession } from "@/lib/chatSessionLoad";
+import {
+  beginOpenSession,
+  loadOpenChatSession,
+  rememberCreatedSession,
+  resolveOpenSessionFetch,
+} from "@/lib/chatSessionLoad";
 import {
   buildInitSessionPayload,
   createInitChatSession,
@@ -418,7 +423,11 @@ export default function Chat() {
       // Auto-open new session modal when navigated from dashboard "New Chat"
       if (location.state?.openNew) {
         setShowModal(true);
-        navigate(location.pathname, { replace: true, state: {} });
+        const { openNew: _openNew, ...rest } = location.state;
+        navigate(location.pathname, {
+          replace: true,
+          state: rest.primedSession ? rest : {},
+        });
       }
     });
     return () => {
@@ -428,7 +437,11 @@ export default function Chat() {
 
   useEffect(() => {
     openSessionIdRef.current = sessionId || null;
-    if (!sessionId) {
+    const opened = beginOpenSession({
+      sessionId,
+      locationState: location.state,
+    });
+    if (opened.status === "idle") {
       sessionLoadGenRef.current += 1;
       setActiveSession(null);
       setSessionLoad({ status: "idle" });
@@ -437,8 +450,18 @@ export default function Chat() {
 
     const gen = ++sessionLoadGenRef.current;
     const isCurrent = () => sessionLoadGenRef.current === gen;
-    setSessionLoad({ status: "loading" });
-    setActiveSession((prev) => (prev?.id === sessionId ? prev : null));
+    // Init applied the POST body (and may have remounted onto /chat/:id).
+    // Do not wipe that thread with "Opening conversation..." or wait on GET.
+    if (opened.primed) {
+      justCreatedSessionIdRef.current = opened.primed.id;
+      setSessionLoad({ status: "ready" });
+      if (activeSession?.id !== opened.primed.id) {
+        applyOpenedSession(opened.primed);
+      }
+    } else {
+      setSessionLoad({ status: "loading" });
+      setActiveSession((prev) => (prev?.id === sessionId ? prev : null));
+    }
 
     let cancelled = false;
     loadOpenChatSession({
@@ -459,26 +482,22 @@ export default function Chat() {
       fetchMessages: (id) => base44.messages.list(id),
     }).then((result) => {
       if (!isCurrent() || cancelled) return;
-      if (result.status === "ready") {
-        applyOpenedSession(result.session);
+      const next = resolveOpenSessionFetch({ result, sessionId });
+      if (next.status === "stale") return;
+      if (next.status === "ready") {
+        if (next.applySession) applyOpenedSession(next.applySession);
         setSessionLoad({ status: "ready" });
         return;
       }
-      if (result.status === "missing") {
-        // Keep a session Init just applied — a follow-up read can miss for a
-        // moment after POST and used to wipe the thread as "not found".
-        if (justCreatedSessionIdRef.current === sessionId) {
-          setSessionLoad({ status: "ready" });
-          return;
-        }
+      if (next.status === "missing") {
         setActiveSession(null);
         setSessionLoad({ status: "missing" });
         return;
       }
-      if (result.status === "error") {
+      if (next.status === "error") {
         setSessionLoad({
           status: "error",
-          message: result.error?.message || "Couldn't open this conversation.",
+          message: next.message || "Couldn't open this conversation.",
         });
       }
     });
@@ -882,9 +901,9 @@ export default function Chat() {
     opening_scene,
   }) => {
     // Prefer the character the modal already resolved/upserted. Init must not
-    // wait on auth.me() or a Character.filter that blocks on bootstrap.
+    // wait on Character.filter bootstrap when that object is present.
     const createdChar =
-      m === "solo" && character && character.id === character_id
+      m === "solo" && character
         ? character
         : m === "solo" && character_id
         ? await resolveCharacterById(character_id)
@@ -911,9 +930,8 @@ export default function Chat() {
         authUser,
       });
 
-    // Await create (do not fire-and-forget). Opening messages, when present,
-    // are persisted by ChatSession.create via /messages/replace — never a
-    // second ChatSession.update({ messages }) that used to rewrite the same rows.
+    // Await create (do not fire-and-forget). Opening narrator rows persist in
+    // the background so /messages/replace cannot block navigation.
     const newSession = await createInitChatSession(payload);
     if (!isUsableSessionId(newSession?.id)) {
       throw new Error(
@@ -936,18 +954,21 @@ export default function Chat() {
     }
 
     // Apply the POST body immediately so /chat/:id does not depend on a
-    // follow-up filter/get that can miss the row we just wrote.
-    justCreatedSessionIdRef.current = newSession.id;
-    applyOpenedSession({
+    // follow-up GET that can miss the row we just wrote. Remember it in the
+    // module + location.state so a remounted Chat can prime without spinning.
+    const primedSession = {
       ...newSession,
       messages: Array.isArray(newSession.messages) ? newSession.messages : [],
-    });
+    };
+    rememberCreatedSession(primedSession);
+    justCreatedSessionIdRef.current = primedSession.id;
+    applyOpenedSession(primedSession);
     setSessionLoad({ status: "ready" });
     goToSessionsPage(0);
     loadSessions().catch((err) => {
       console.warn("Session created, but refreshing the session list failed:", err);
     });
-    navigate(`/chat/${newSession.id}`);
+    navigate(`/chat/${primedSession.id}`, { state: { primedSession } });
     setShowModal(false);
     setShowMobileMenu(false);
     return newSession;
