@@ -182,10 +182,16 @@ describe("NewSessionModal", () => {
     expect(scroller).toBeTruthy();
     expect(overlay.parentElement).toBe(document.body);
     expect(tailwindZIndex(overlay.className)).toBeGreaterThan(TAB_BAR_Z);
+    expect(tailwindZIndex(overlay.className)).toBeGreaterThanOrEqual(1000);
 
     expect(overlay.className).toMatch(/fixed inset-0/);
+    expect(overlay.className).toMatch(/h-app-viewport/);
+    expect(overlay.className).toMatch(/justify-end/);
+    expect(overlay.className).not.toMatch(/justify-center/);
     expect(overlay.className).toMatch(/overflow-hidden/);
     expect(overlay.className).toMatch(/min-h-0/);
+    expect(overlay.style.height).toBe("var(--app-height, 100dvh)");
+    expect(overlay.style.maxHeight).toBe("var(--app-height, 100dvh)");
     expect(overlay.className).toContain(
       "pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)]",
     );

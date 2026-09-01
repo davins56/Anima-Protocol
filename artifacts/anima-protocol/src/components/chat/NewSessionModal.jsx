@@ -323,14 +323,23 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   return createPortal(
     <div
       data-testid="new-session-overlay"
-      className="fixed inset-0 z-[1100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-end h-app-viewport bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        height: "var(--app-height, 100dvh)",
+        maxHeight: "var(--app-height, 100dvh)",
+      }}
     >
       {/*
-        Portaled to document.body so `fixed inset-0` is vs the viewport, not a
-        transformed Chat / .app-page-fill ancestor. z-[1100] paints above
-        .fixed-bottom-chrome (z-[999]). Padding uses a 56px tab-bar fallback
-        (never 0px) plus safe-area so Init is not covered if the CSS var
-        fails to inherit. The character list is the only scroller.
+        Portaled to document.body so `fixed` is vs the viewport, not Chat
+        overflow-hidden / ProtocolApp motion.div transform. z-[1000] covers
+        the tab bar (z-[999]); sign-out already uses this overlay token.
+        h-app-viewport / --app-height keeps iOS off the large-viewport trap
+        where URL bar + tab bar sit outside inset-0. justify-end keeps Init
+        on-screen when Opening Scene + footer wrap. The character list is
+        the only scroller.
       */}
       <div
         data-testid="new-session-panel"
