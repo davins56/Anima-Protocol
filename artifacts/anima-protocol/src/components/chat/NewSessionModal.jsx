@@ -14,7 +14,10 @@ import {
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
 import { upsertCharacters } from "@/lib/seedCharacters";
-import { initSessionErrorMessage } from "@/lib/createInitSession";
+import {
+  initSessionErrorMessage,
+  remapSelectedCharacterIds,
+} from "@/lib/createInitSession";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -172,31 +175,73 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     setLoadError(null);
 
     // Bundled starters are not in Postgres yet — upsert before chat so the
-    // session can resolve character ids from the store.
+    // session can resolve character ids from the store. Remap picker ids onto
+    // the upsert response so create never receives a leftover seed id.
     const bundledSelected = selectedCharacters.filter((c) => c._bundled);
+    let selectedIds = selected;
     try {
       if (bundledSelected.length) {
-        await upsertCharacters(
+        const upserted = await upsertCharacters(
           bundledSelected.map(({ _bundled, ...rest }) => rest),
           { skipExistingLookup: true },
         );
+        selectedIds = remapSelectedCharacterIds(
+          selected,
+          bundledSelected,
+          upserted?.items,
+          upserted?.idMap,
+        );
+        const storeIds = new Set(
+          (upserted?.items || []).map((item) => item?.id).filter(Boolean),
+        );
+        const staleBundled = bundledSelected.some((character) => {
+          const nextId = selectedIds[selected.indexOf(character.id)];
+          return storeIds.size > 0 && nextId === character.id && !storeIds.has(character.id);
+        });
+        if (staleBundled) {
+          throw new Error(
+            "Could not match the selected starter to a store character. Tap Init to try again.",
+          );
+        }
+        const remappedByOldId = new Map(
+          selected.map((id, index) => [id, selectedIds[index]]),
+        );
         setCharacters((prev) =>
-          prev.map((c) => (c._bundled ? { ...c, _bundled: false } : c)),
+          prev.map((c) => {
+            if (!c._bundled) return c;
+            const nextId = remappedByOldId.get(c.id) || c.id;
+            return { ...c, id: nextId, _bundled: false };
+          }),
         );
         setUsingBundledSeed(false);
       }
+
+      const rosterById = new Map(
+        characters.map((c) => [c.id, c]),
+      );
+      selectedIds.forEach((id, index) => {
+        const previous = selected[index];
+        if (id !== previous && rosterById.has(previous)) {
+          rosterById.set(id, { ...rosterById.get(previous), id, _bundled: false });
+        }
+      });
+      const resolvedSelected = selectedIds
+        .map((id) => rosterById.get(id))
+        .filter(Boolean);
 
       // Prepare session data
       const sessionData = mode === "solo"
         ? {
             mode,
-            character_id: selected[0],
+            character_id: selectedIds[0],
+            character: resolvedSelected[0] || selectedCharacters[0] || null,
             opening_scene: openingScene.trim() || undefined,
           }
         : {
             mode,
-            group_character_ids: selected,
-            selected_character_names: selectedCharacters.map((c) => c.name),
+            group_character_ids: selectedIds,
+            group_characters: resolvedSelected,
+            selected_character_names: resolvedSelected.map((c) => c.name),
             crossover_universes: selectedUniverses,
             is_crossover: isCrossover,
             shared_memory: [],
@@ -222,6 +267,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       const message = sessionCreateErrorMessage(err);
       setLoadError(message);
       toast.error(message);
+    } finally {
       setCreating(false);
     }
   };

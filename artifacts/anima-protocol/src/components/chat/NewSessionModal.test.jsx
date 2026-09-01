@@ -237,6 +237,7 @@ describe("NewSessionModal", () => {
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
       character_id: "char-2",
+      character: expect.objectContaining({ id: "char-2", name: "Tony Stark" }),
       opening_scene: undefined,
     });
 
@@ -264,6 +265,7 @@ describe("NewSessionModal", () => {
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
       character_id: "char-1",
+      character: expect.objectContaining({ id: "char-1", name: "Serenity" }),
       opening_scene: "A neon room hums.",
     });
     expect(container.textContent).toContain("Saving");
@@ -346,7 +348,119 @@ describe("NewSessionModal", () => {
       ],
       { skipExistingLookup: true },
     );
-    expect(onCreate).toHaveBeenCalled();
+    expect(onCreate).toHaveBeenCalledWith({
+      mode: "solo",
+      character_id: "char-1",
+      character: expect.objectContaining({ id: "char-1", name: "Serenity" }),
+      opening_scene: undefined,
+    });
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("remaps a bundled seed id to the store id returned by upsert", async () => {
+    loadRosterCharactersMock.mockResolvedValue({
+      characters: [
+        {
+          id: "seed_protocol-serenity",
+          name: "Serenity",
+          universe: "Protocol",
+          category: "companion",
+          _bundled: true,
+        },
+      ],
+      usingBundledSeed: true,
+    });
+    upsertCharactersMock.mockResolvedValue({
+      added: 1,
+      skipped: 0,
+      items: [{ id: "char_store_9", name: "Serenity", universe: "Protocol" }],
+    });
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
+    const { container, root } = renderModal({ onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(container, "Serenity"));
+    await click(buttonByText(container, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onCreate).toHaveBeenCalledWith({
+      mode: "solo",
+      character_id: "char_store_9",
+      character: expect.objectContaining({
+        id: "char_store_9",
+        name: "Serenity",
+      }),
+      opening_scene: undefined,
+    });
+    expect(container.textContent).toContain("Init");
+    expect(buttonByText(container, "Init")?.disabled).toBe(false);
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("remaps bundled seed ids for group Init before onCreate", async () => {
+    loadRosterCharactersMock.mockResolvedValue({
+      characters: [
+        {
+          id: "seed_tony",
+          name: "Tony Stark",
+          universe: "Marvel Cinematic Universe",
+          category: "scientist",
+          _bundled: true,
+        },
+        {
+          id: "seed_steve",
+          name: "Steve Rogers",
+          universe: "Marvel Cinematic Universe",
+          category: "warrior",
+          _bundled: true,
+        },
+      ],
+      usingBundledSeed: true,
+    });
+    upsertCharactersMock.mockResolvedValue({
+      added: 2,
+      skipped: 0,
+      items: [
+        { id: "pg_tony", name: "Tony Stark", universe: "Marvel Cinematic Universe" },
+        { id: "pg_steve", name: "Steve Rogers", universe: "Marvel Cinematic Universe" },
+      ],
+      idMap: { seed_tony: "pg_tony", seed_steve: "pg_steve" },
+    });
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-group" });
+    const { container, root } = renderModal({ mode: "group", onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(container, "Tony Stark"));
+    await click(buttonByText(container, "Steve Rogers"));
+    await click(buttonByText(container, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "group",
+        group_character_ids: ["pg_tony", "pg_steve"],
+      }),
+    );
+    expect(onCreate.mock.calls[0][0].group_character_ids).not.toContain("seed_tony");
+    expect(onCreate.mock.calls[0][0].group_character_ids).not.toContain("seed_steve");
 
     act(() => {
       root.unmount();
