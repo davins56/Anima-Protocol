@@ -37,31 +37,56 @@ function characterIdentityKey(character) {
 }
 
 /**
+ * Pair submitted starter rows with store-returned rows: index first (bulk
+ * upsert preserves order), then universe+name. Used so Init can replace
+ * picker seed ids with the ids Postgres actually stored.
+ */
+export function characterUpsertIdMap(submitted, upsertedItems) {
+  const map = {};
+  const list = Array.isArray(submitted) ? submitted.filter((c) => c?.id) : [];
+  const items = Array.isArray(upsertedItems) ? upsertedItems : [];
+  const byIdentity = new Map(
+    items
+      .filter((item) => isUsableSessionId(item?.id))
+      .map((item) => [characterIdentityKey(item), item.id]),
+  );
+  list.forEach((char, index) => {
+    const byIndex = items[index]?.id;
+    if (isUsableSessionId(byIndex)) {
+      map[char.id] = byIndex;
+      return;
+    }
+    map[char.id] = byIdentity.get(characterIdentityKey(char)) || char.id;
+  });
+  return map;
+}
+
+/**
  * After a bundled-starter upsert, map picker ids onto store ids.
- * Prefer the upsert response (the server may mint a new id); fall back to the
+ * Prefer an explicit idMap (old → new), then the upsert items, then the
  * client seed id when the write is idempotent.
  */
 export function remapSelectedCharacterIds(
   selectedIds,
   bundledChars,
   upsertedItems,
+  idMap = {},
 ) {
   const ids = Array.isArray(selectedIds) ? selectedIds : [];
+  const fromMap =
+    idMap && typeof idMap === "object" && !Array.isArray(idMap) ? idMap : {};
   const items = Array.isArray(upsertedItems)
     ? upsertedItems.filter((item) => isUsableSessionId(item?.id))
     : [];
-  if (!items.length) return ids;
+  const derived = characterUpsertIdMap(bundledChars, items);
+  const merged = { ...derived, ...fromMap };
+  if (!Object.keys(merged).length && !items.length) return ids;
 
   const byReturnedId = new Set(items.map((item) => item.id));
-  const byIdentity = new Map(
-    items.map((item) => [characterIdentityKey(item), item.id]),
-  );
-
   return ids.map((id) => {
+    if (merged[id]) return merged[id];
     if (byReturnedId.has(id)) return id;
-    const bundled = (bundledChars || []).find((character) => character.id === id);
-    if (!bundled) return id;
-    return byIdentity.get(characterIdentityKey(bundled)) || id;
+    return id;
   });
 }
 
