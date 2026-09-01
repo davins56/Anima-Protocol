@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -319,15 +320,26 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     oracle: "text-blue-400",
   };
 
-  return (
+  return createPortal(
     <div
       data-testid="new-session-overlay"
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,0px)+1rem)] min-h-0 overflow-hidden"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-end h-app-viewport bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        height: "var(--app-height, 100dvh)",
+        maxHeight: "var(--app-height, 100dvh)",
+      }}
     >
       {/*
-        Bound height to the overlay, not a raw 90vh cap: html/body are
-        overflow-locked, and 90vh does not clear .fixed-bottom-chrome.
-        The character list is the only scroller.
+        Portaled to document.body so `fixed` is vs the viewport, not Chat
+        overflow-hidden / ProtocolApp motion.div transform. z-[1000] covers
+        the tab bar (z-[999]); sign-out already uses this overlay token.
+        h-app-viewport / --app-height keeps iOS off the large-viewport trap
+        where URL bar + tab bar sit outside inset-0. justify-end keeps Init
+        on-screen when Opening Scene + footer wrap. The character list is
+        the only scroller.
       */}
       <div
         data-testid="new-session-panel"
@@ -616,6 +628,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           initialInsertions={canonSeed?.insertions || null}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -87,6 +87,19 @@ vi.mock("@/lib/seedCharacters", () => ({
 
 import NewSessionModal from "./NewSessionModal";
 
+const TAB_BAR_Z = 999;
+
+function tailwindZIndex(className) {
+  const bracket = className.match(/z-\[(\d+)\]/);
+  if (bracket) return Number(bracket[1]);
+  const plain = className.match(/(?:^|\s)z-(\d+)(?:\s|$)/);
+  return plain ? Number(plain[1]) : 0;
+}
+
+function modalOverlay() {
+  return document.querySelector('[data-testid="new-session-overlay"]');
+}
+
 function renderModal(props = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -101,11 +114,11 @@ function renderModal(props = {}) {
       />,
     );
   });
-  return { container, root };
+  return { container, root, overlay: modalOverlay() };
 }
 
-function buttonByText(container, text) {
-  return Array.from(container.querySelectorAll("button")).find((button) =>
+function buttonByText(root, text) {
+  return Array.from(root.querySelectorAll("button")).find((button) =>
     button.textContent?.includes(text),
   );
 }
@@ -156,29 +169,40 @@ describe("NewSessionModal", () => {
   });
 
   it("keeps a bounded inner scroller that clears the tab bar", () => {
-    const { container, root } = renderModal();
-    const overlay = container.querySelector('[data-testid="new-session-overlay"]');
-    const panel = container.querySelector('[data-testid="new-session-panel"]');
-    const scroller = container.querySelector(
+    const { container, root, overlay } = renderModal();
+    const panel = overlay.querySelector('[data-testid="new-session-panel"]');
+    const scroller = overlay.querySelector(
       '[data-testid="new-session-character-scroller"]',
     );
+    const initButton = buttonByText(overlay, "Init");
+    const initFooter = initButton?.closest(".flex-shrink-0");
 
     expect(overlay).toBeTruthy();
     expect(panel).toBeTruthy();
     expect(scroller).toBeTruthy();
+    expect(overlay.parentElement).toBe(document.body);
+    expect(tailwindZIndex(overlay.className)).toBeGreaterThan(TAB_BAR_Z);
+    expect(tailwindZIndex(overlay.className)).toBeGreaterThanOrEqual(1000);
 
     expect(overlay.className).toMatch(/fixed inset-0/);
+    expect(overlay.className).toMatch(/h-app-viewport/);
+    expect(overlay.className).toMatch(/justify-end/);
+    expect(overlay.className).not.toMatch(/justify-center/);
     expect(overlay.className).toMatch(/overflow-hidden/);
     expect(overlay.className).toMatch(/min-h-0/);
+    expect(overlay.style.height).toBe("var(--app-height, 100dvh)");
+    expect(overlay.style.maxHeight).toBe("var(--app-height, 100dvh)");
     expect(overlay.className).toContain(
-      "pb-[calc(var(--tab-bar-height,0px)+1rem)]",
+      "pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)]",
     );
+    expect(overlay.className).not.toContain("--tab-bar-height,0px");
 
     expect(panel.className).toMatch(/min-h-0/);
     expect(panel.className).toMatch(/max-h-full/);
     expect(panel.className).toMatch(/overflow-hidden/);
     expect(panel.className).not.toMatch(/max-h-\[90vh\]/);
     expect(panel.className).not.toMatch(/h-screen/);
+    expect(panel.className).not.toMatch(/\bfixed\b/);
 
     expect(scroller.className).toMatch(/flex-1/);
     expect(scroller.className).toMatch(/min-h-0/);
@@ -186,14 +210,21 @@ describe("NewSessionModal", () => {
     expect(scroller.className).toMatch(/touch-pan-y/);
     expect(scroller.style.WebkitOverflowScrolling).toBe("touch");
 
-    expect(container.querySelector("input")?.placeholder).toMatch(
+    expect(overlay.querySelector("input")?.placeholder).toMatch(
       /Search characters or universes/,
     );
-    expect(container.textContent).toContain("Init");
-    expect(container.textContent).toContain("Cancel");
-    expect(scroller.contains(buttonByText(container, "Init"))).toBe(false);
-    expect(scroller.contains(buttonByText(container, "Cancel"))).toBe(false);
-    expect(overlay.contains(buttonByText(container, "Init"))).toBe(true);
+    expect(overlay.textContent).toContain("Init");
+    expect(overlay.textContent).toContain("Cancel");
+    expect(scroller.contains(initButton)).toBe(false);
+    expect(scroller.contains(buttonByText(overlay, "Cancel"))).toBe(false);
+    expect(overlay.contains(initButton)).toBe(true);
+    expect(panel.contains(initButton)).toBe(true);
+    expect(initButton.className).not.toMatch(/\bfixed\b/);
+    expect(initFooter).toBeTruthy();
+    expect(initFooter.className).not.toMatch(/\bfixed\b/);
+    expect(initFooter.className).toMatch(/flex-shrink-0/);
+    expect(window.getComputedStyle(initButton).position).not.toBe("fixed");
+    expect(window.getComputedStyle(initFooter).position).not.toBe("fixed");
 
     act(() => {
       root.unmount();
@@ -203,16 +234,16 @@ describe("NewSessionModal", () => {
 
   it("filters the roster from search and still inits the selected character", async () => {
     const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
-    const { container, root } = renderModal({ onCreate });
+    const { container, root, overlay } = renderModal({ onCreate });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    const search = container.querySelector("input");
+    const search = overlay.querySelector("input");
     expect(search).toBeTruthy();
-    expect(container.textContent).toContain("Serenity");
-    expect(container.textContent).toContain("Tony Stark");
+    expect(overlay.textContent).toContain("Serenity");
+    expect(overlay.textContent).toContain("Tony Stark");
 
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(
@@ -224,12 +255,12 @@ describe("NewSessionModal", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain("Serenity");
-    expect(container.textContent).toContain("Tony Stark");
+    expect(overlay.textContent).not.toContain("Serenity");
+    expect(overlay.textContent).toContain("Tony Stark");
 
-    await click(buttonByText(container, "Tony Stark"));
-    expect(buttonByText(container, "Init")?.disabled).toBe(false);
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(overlay, "Tony Stark"));
+    expect(buttonByText(overlay, "Init")?.disabled).toBe(false);
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -256,11 +287,11 @@ describe("NewSessionModal", () => {
         }),
     );
     const onClose = vi.fn();
-    const { container, root } = renderModal({ onClose, onCreate });
+    const { container, root, overlay } = renderModal({ onClose, onCreate });
 
-    await click(buttonByText(container, "Serenity"));
-    await fillTextarea(container.querySelector("textarea"), "A neon room hums.");
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(overlay, "Serenity"));
+    await fillTextarea(overlay.querySelector("textarea"), "A neon room hums.");
+    await click(buttonByText(overlay, "Init"));
 
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
@@ -268,15 +299,15 @@ describe("NewSessionModal", () => {
       character: expect.objectContaining({ id: "char-1", name: "Serenity" }),
       opening_scene: "A neon room hums.",
     });
-    expect(container.textContent).toContain("Saving");
+    expect(overlay.textContent).toContain("Saving");
 
     await act(async () => {
       rejectCreate(new Error("Character store API not found"));
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain("Character store API not found");
-    expect(container.textContent).toContain("Init");
+    expect(overlay.textContent).toContain("Character store API not found");
+    expect(overlay.textContent).toContain("Init");
     expect(onClose).not.toHaveBeenCalled();
     expect(toastErrorMock).toHaveBeenCalledWith("Character store API not found");
 
@@ -292,10 +323,10 @@ describe("NewSessionModal", () => {
         code: "timeout",
       }),
     );
-    const { container, root } = renderModal({ onCreate });
+    const { container, root, overlay } = renderModal({ onCreate });
 
-    await click(buttonByText(container, "Serenity"));
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -303,8 +334,8 @@ describe("NewSessionModal", () => {
     expect(toastErrorMock).toHaveBeenCalledWith(
       "Starting the session timed out. The store is reachable — tap Init to try again.",
     );
-    expect(container.textContent).toContain("Starting the session timed out");
-    expect(container.textContent).toContain("Init");
+    expect(overlay.textContent).toContain("Starting the session timed out");
+    expect(overlay.textContent).toContain("Init");
 
     act(() => {
       root.unmount();
@@ -327,14 +358,14 @@ describe("NewSessionModal", () => {
     });
     upsertCharactersMock.mockResolvedValue({ added: 1, skipped: 0 });
     const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
-    const { container, root } = renderModal({ onCreate });
+    const { container, root, overlay } = renderModal({ onCreate });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    await click(buttonByText(container, "Serenity"));
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -380,14 +411,14 @@ describe("NewSessionModal", () => {
       items: [{ id: "char_store_9", name: "Serenity", universe: "Protocol" }],
     });
     const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
-    const { container, root } = renderModal({ onCreate });
+    const { container, root, overlay } = renderModal({ onCreate });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    await click(buttonByText(container, "Serenity"));
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
@@ -401,8 +432,8 @@ describe("NewSessionModal", () => {
       }),
       opening_scene: undefined,
     });
-    expect(container.textContent).toContain("Init");
-    expect(buttonByText(container, "Init")?.disabled).toBe(false);
+    expect(overlay.textContent).toContain("Init");
+    expect(buttonByText(overlay, "Init")?.disabled).toBe(false);
 
     act(() => {
       root.unmount();
@@ -440,15 +471,15 @@ describe("NewSessionModal", () => {
       idMap: { seed_tony: "pg_tony", seed_steve: "pg_steve" },
     });
     const onCreate = vi.fn().mockResolvedValue({ id: "session-group" });
-    const { container, root } = renderModal({ mode: "group", onCreate });
+    const { container, root, overlay } = renderModal({ mode: "group", onCreate });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    await click(buttonByText(container, "Tony Stark"));
-    await click(buttonByText(container, "Steve Rogers"));
-    await click(buttonByText(container, "Init"));
+    await click(buttonByText(overlay, "Tony Stark"));
+    await click(buttonByText(overlay, "Steve Rogers"));
+    await click(buttonByText(overlay, "Init"));
     await act(async () => {
       await Promise.resolve();
     });
