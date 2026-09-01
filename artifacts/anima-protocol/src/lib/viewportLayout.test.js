@@ -105,7 +105,13 @@ describe("representative page scroll contract", () => {
     expect(modal).toContain('data-testid="new-session-character-scroller"');
     expect(modal).toContain("createPortal");
     expect(modal).toContain("document.body");
-    expect(modal).toMatch(/z-\[1100\]/);
+    expect(modal).toMatch(/z-\[1000\]/);
+    expect(modal).toContain("h-app-viewport");
+    expect(modal).toContain('height: "var(--app-height, 100dvh)"');
+    expect(modal).toContain("justify-end");
+    expect(modal).toMatch(
+      /data-testid="new-session-overlay"[\s\S]*?justify-end/,
+    );
     expect(modal).toMatch(/overflow-y-auto/);
     expect(modal).toMatch(/min-h-0/);
     expect(modal).toContain(
@@ -120,7 +126,9 @@ describe("representative page scroll contract", () => {
     const chooser = readSrc("components/stories/StoryCharacterChooser.jsx");
     expect(chooser).toContain("createPortal");
     expect(chooser).toContain("document.body");
-    expect(chooser).toMatch(/z-\[1100\]/);
+    expect(chooser).toMatch(/z-\[1000\]/);
+    expect(chooser).toContain("h-app-viewport");
+    expect(chooser).toContain("justify-end");
     expect(chooser).toContain(
       "pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)]",
     );

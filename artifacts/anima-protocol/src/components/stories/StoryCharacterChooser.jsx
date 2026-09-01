@@ -140,7 +140,14 @@ export default function StoryCharacterChooser({
   return createPortal(
     <div
       data-testid="story-character-chooser-overlay"
-      className="fixed inset-0 z-[1100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-end h-app-viewport bg-black/80 backdrop-blur-sm p-3 sm:p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        height: "var(--app-height, 100dvh)",
+        maxHeight: "var(--app-height, 100dvh)",
+      }}
     >
       <div
         data-testid="story-character-chooser-panel"
