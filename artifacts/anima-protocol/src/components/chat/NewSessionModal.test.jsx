@@ -142,11 +142,108 @@ describe("NewSessionModal", () => {
           universe: "Protocol",
           category: "companion",
         },
+        {
+          id: "char-2",
+          name: "Tony Stark",
+          universe: "Marvel Cinematic Universe",
+          category: "scientist",
+        },
       ],
       usingBundledSeed: false,
     });
     toastErrorMock.mockReset();
     upsertCharactersMock.mockReset();
+  });
+
+  it("keeps a bounded inner scroller that clears the tab bar", () => {
+    const { container, root } = renderModal();
+    const overlay = container.querySelector('[data-testid="new-session-overlay"]');
+    const panel = container.querySelector('[data-testid="new-session-panel"]');
+    const scroller = container.querySelector(
+      '[data-testid="new-session-character-scroller"]',
+    );
+
+    expect(overlay).toBeTruthy();
+    expect(panel).toBeTruthy();
+    expect(scroller).toBeTruthy();
+
+    expect(overlay.className).toMatch(/fixed inset-0/);
+    expect(overlay.className).toMatch(/overflow-hidden/);
+    expect(overlay.className).toMatch(/min-h-0/);
+    expect(overlay.className).toContain(
+      "pb-[calc(var(--tab-bar-height,0px)+1rem)]",
+    );
+
+    expect(panel.className).toMatch(/min-h-0/);
+    expect(panel.className).toMatch(/max-h-full/);
+    expect(panel.className).toMatch(/overflow-hidden/);
+    expect(panel.className).not.toMatch(/max-h-\[90vh\]/);
+    expect(panel.className).not.toMatch(/h-screen/);
+
+    expect(scroller.className).toMatch(/flex-1/);
+    expect(scroller.className).toMatch(/min-h-0/);
+    expect(scroller.className).toMatch(/overflow-y-auto/);
+    expect(scroller.className).toMatch(/touch-pan-y/);
+    expect(scroller.style.WebkitOverflowScrolling).toBe("touch");
+
+    expect(container.querySelector("input")?.placeholder).toMatch(
+      /Search characters or universes/,
+    );
+    expect(container.textContent).toContain("Init");
+    expect(container.textContent).toContain("Cancel");
+    expect(scroller.contains(buttonByText(container, "Init"))).toBe(false);
+    expect(scroller.contains(buttonByText(container, "Cancel"))).toBe(false);
+    expect(overlay.contains(buttonByText(container, "Init"))).toBe(true);
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("filters the roster from search and still inits the selected character", async () => {
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
+    const { container, root } = renderModal({ onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const search = container.querySelector("input");
+    expect(search).toBeTruthy();
+    expect(container.textContent).toContain("Serenity");
+    expect(container.textContent).toContain("Tony Stark");
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter.call(search, "tony");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain("Serenity");
+    expect(container.textContent).toContain("Tony Stark");
+
+    await click(buttonByText(container, "Tony Stark"));
+    expect(buttonByText(container, "Init")?.disabled).toBe(false);
+    await click(buttonByText(container, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onCreate).toHaveBeenCalledWith({
+      mode: "solo",
+      character_id: "char-2",
+      opening_scene: undefined,
+    });
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
   });
 
   it("keeps Init open and shows an error when session creation fails", async () => {
