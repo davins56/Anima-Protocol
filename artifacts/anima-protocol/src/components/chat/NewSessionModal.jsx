@@ -279,9 +279,9 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,0px)+1rem)] min-h-0 overflow-hidden"
     >
       {/*
-        Do not use max-h-[90vh]: html/body are overflow-locked, and 90vh does
-        not clear .fixed-bottom-chrome. Size to the overlay (already padded
-        for the tab bar) so the character list is the only scroller.
+        Bound height to the overlay, not a raw 90vh cap: html/body are
+        overflow-locked, and 90vh does not clear .fixed-bottom-chrome.
+        The character list is the only scroller.
       */}
       <div
         data-testid="new-session-panel"
