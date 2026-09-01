@@ -31,6 +31,35 @@ describe("loadOpenChatSession", () => {
     });
   });
 
+  it("treats literal undefined/null route ids as missing", async () => {
+    expect(
+      await loadOpenChatSession({
+        id: "undefined",
+        isCurrent: () => true,
+        fetchSession: vi.fn(),
+        fetchMessages: vi.fn(),
+      }),
+    ).toEqual({ status: "missing" });
+  });
+
+  it("retries fetchSession once when the first read misses a just-created id", async () => {
+    const fetchSession = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([sessionA]);
+
+    const result = await loadOpenChatSession({
+      id: "A",
+      isCurrent: () => true,
+      fetchSession,
+      fetchMessages: async () => messagesA,
+    });
+
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("ready");
+    expect(result.session.id).toBe("A");
+  });
+
   it("returns missing when the id is unknown", async () => {
     const result = await loadOpenChatSession({
       id: "gone",
