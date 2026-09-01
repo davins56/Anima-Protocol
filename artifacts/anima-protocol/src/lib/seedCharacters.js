@@ -729,10 +729,15 @@ export function searchStarterSeries(query) {
 const UPSERT_BATCH_SIZE = 15;
 
 async function bulkUpsertCharactersBatched(chars) {
+  const upserted = [];
   for (let i = 0; i < chars.length; i += UPSERT_BATCH_SIZE) {
     const batch = chars.slice(i, i + UPSERT_BATCH_SIZE);
     try {
-      await base44.entities.Character.bulkUpsert(batch);
+      const result = await base44.entities.Character.bulkUpsert(batch);
+      const items = Array.isArray(result?.items) && result.items.length
+        ? result.items
+        : batch;
+      upserted.push(...items);
     } catch (err) {
       if (err?.status !== 404) {
         const detail =
@@ -745,6 +750,7 @@ async function bulkUpsertCharactersBatched(chars) {
       for (const char of batch) {
         try {
           await base44.entities.Character.update(char.id, char);
+          upserted.push(char);
         } catch (updateErr) {
           throw new Error(
             `Failed to save ${char.name}: ${updateErr?.message || "unknown error"}`,
@@ -753,11 +759,12 @@ async function bulkUpsertCharactersBatched(chars) {
       }
     }
   }
+  return upserted;
 }
 
 export async function upsertCharacters(characters, { skipExistingLookup = false } = {}) {
   const list = Array.isArray(characters) ? characters.filter((c) => c?.id) : [];
-  if (!list.length) return { added: 0, skipped: 0 };
+  if (!list.length) return { added: 0, skipped: 0, items: [] };
 
   clearStoreCache();
   await waitForStoreAuth();
@@ -773,15 +780,15 @@ export async function upsertCharacters(characters, { skipExistingLookup = false 
     const existingIds = new Set((existing || []).map((c) => c.id));
     toAdd = list.filter((c) => !existingIds.has(c.id));
     skipped = list.length - toAdd.length;
-    if (!toAdd.length) return { added: 0, skipped };
+    if (!toAdd.length) return { added: 0, skipped, items: list };
   }
 
   // Batch upserts so a large starter roster (or series add) stays within
   // serverless payload/time limits instead of one fragile all-or-nothing call.
-  await bulkUpsertCharactersBatched(toAdd);
+  const items = await bulkUpsertCharactersBatched(toAdd);
   clearStoreCache();
   notifyStoreChanged();
-  return { added: toAdd.length, skipped };
+  return { added: toAdd.length, skipped, items };
 }
 
 async function upsertMissingStarters() {

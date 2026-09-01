@@ -16,12 +16,78 @@ export function isStoreTimeoutError(err) {
   return err.name === "TimeoutError" || err.name === "AbortError";
 }
 
+export const INIT_SESSION_MISSING_ID_MESSAGE =
+  "The store created a session but did not return an id. Tap Init to try again.";
+
 export function initSessionErrorMessage(err) {
   if (isStoreTimeoutError(err)) return INIT_SESSION_TIMEOUT_MESSAGE;
   return (
     err?.message ||
     "Could not initialize this session. Check that you are signed in and the store API is reachable."
   );
+}
+
+/** True when a value can be used as `/chat/:id` (not `undefined` / `null`). */
+export function isUsableSessionId(id) {
+  return typeof id === "string" && id.trim() !== "" && id !== "undefined" && id !== "null";
+}
+
+function characterIdentityKey(character) {
+  return `${String(character?.universe || "").toLowerCase()}::${String(character?.name || "").toLowerCase()}`;
+}
+
+/**
+ * After a bundled-starter upsert, map picker ids onto store ids.
+ * Prefer the upsert response (the server may mint a new id); fall back to the
+ * client seed id when the write is idempotent.
+ */
+export function remapSelectedCharacterIds(
+  selectedIds,
+  bundledChars,
+  upsertedItems,
+) {
+  const ids = Array.isArray(selectedIds) ? selectedIds : [];
+  const items = Array.isArray(upsertedItems)
+    ? upsertedItems.filter((item) => isUsableSessionId(item?.id))
+    : [];
+  if (!items.length) return ids;
+
+  const byReturnedId = new Set(items.map((item) => item.id));
+  const byIdentity = new Map(
+    items.map((item) => [characterIdentityKey(item), item.id]),
+  );
+
+  return ids.map((id) => {
+    if (byReturnedId.has(id)) return id;
+    const bundled = (bundledChars || []).find((character) => character.id === id);
+    if (!bundled) return id;
+    return byIdentity.get(characterIdentityKey(bundled)) || id;
+  });
+}
+
+/**
+ * Normalize ChatSession.create's JSON. Workers / proxies have returned a
+ * wrapper or dropped `id` even when the insert succeeded — navigating to
+ * `/chat/undefined` then looks like Init failed.
+ */
+export function createdSessionId(session) {
+  if (Array.isArray(session)) return createdSessionId(session[0]);
+  if (!session || typeof session !== "object") return null;
+  const candidates = [session.id, session.entityId, session.data?.id];
+  for (const candidate of candidates) {
+    if (isUsableSessionId(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function requireCreatedSession(session) {
+  const id = createdSessionId(session);
+  if (!id) {
+    const err = new Error(INIT_SESSION_MISSING_ID_MESSAGE);
+    err.code = "missing_session_id";
+    throw err;
+  }
+  return { ...session, id };
 }
 
 /**
@@ -143,7 +209,7 @@ export async function createInitChatSession(
   let lastErr;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await create(payload);
+      return requireCreatedSession(await create(payload));
     } catch (err) {
       lastErr = err;
       const canRetry = isStoreTimeoutError(err) && i < attempts - 1;

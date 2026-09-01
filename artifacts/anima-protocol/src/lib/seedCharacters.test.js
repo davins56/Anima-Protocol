@@ -206,4 +206,22 @@ describe("upsertCharacters", () => {
       expect.objectContaining({ id: "seed_tchalla", name: "T'Challa" }),
     ]);
   });
+
+  it("returns upserted items so Init can remap picker ids", async () => {
+    characterBulkUpsert.mockResolvedValue({
+      count: 1,
+      items: [{ id: "char_store_1", name: "T'Challa" }],
+    });
+    const { upsertCharacters } = await loadSeedModule();
+    const result = await upsertCharacters(
+      [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+      { skipExistingLookup: true },
+    );
+
+    expect(result).toEqual({
+      added: 1,
+      skipped: 0,
+      items: [{ id: "char_store_1", name: "T'Challa" }],
+    });
+  });
 });

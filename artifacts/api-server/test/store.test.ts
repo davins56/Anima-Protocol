@@ -113,6 +113,25 @@ describe("progress persists per account (account A)", () => {
     const one = await call(A, "GET", `/Character/${created.json.id}`);
     expect(one.json?.name).toBe("Custom Hero A");
   });
+
+  it("ChatSession create ignores a client id so GET /:id and the JSON body match", async () => {
+    const created = await call(A, "POST", "/ChatSession", {
+      id: null,
+      title: "T'Challa",
+      mode: "solo",
+      character_id: "seed_marvel-tchalla",
+      messages_migrated: true,
+    });
+    expect(created.status).toBe(201);
+    expect(typeof created.json.id).toBe("string");
+    expect(created.json.id).toBeTruthy();
+    expect(created.json.id).not.toBe("null");
+    expect(created.json.title).toBe("T'Challa");
+
+    const one = await call(A, "GET", `/ChatSession/${created.json.id}`);
+    expect(one.json?.id).toBe(created.json.id);
+    expect(one.json?.title).toBe("T'Challa");
+  });
 });
 
 describe("per-account isolation (account B never sees account A's data)", () => {
