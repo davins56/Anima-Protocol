@@ -3,11 +3,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  INIT_SESSION_MISSING_ID_MESSAGE,
   INIT_SESSION_TIMEOUT_MESSAGE,
   buildInitSessionPayload,
+  characterUpsertIdMap,
+  createdSessionId,
   createInitChatSession,
   initSessionErrorMessage,
   isStoreTimeoutError,
+  isUsableSessionId,
+  remapSelectedCharacterIds,
+  requireCreatedSession,
 } from "./createInitSession";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -112,12 +118,84 @@ describe("createInitChatSession", () => {
     );
     expect(create).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects a create body without a usable id so Init cannot open /chat/undefined", async () => {
+    const create = vi.fn().mockResolvedValue({ title: "T'Challa" });
+    await expect(createInitChatSession({ title: "T'Challa" }, { create })).rejects.toMatchObject({
+      message: INIT_SESSION_MISSING_ID_MESSAGE,
+      code: "missing_session_id",
+    });
+  });
+
+  it("accepts an id on a wrapped create body", async () => {
+    const create = vi.fn().mockResolvedValue({ entityId: "sess-wrapped", title: "T'Challa" });
+    const session = await createInitChatSession({ title: "T'Challa" }, { create });
+    expect(session.id).toBe("sess-wrapped");
+  });
+});
+
+describe("createdSessionId", () => {
+  it("rejects undefined/null/empty and unwraps common store shapes", () => {
+    expect(isUsableSessionId("sess-1")).toBe(true);
+    expect(isUsableSessionId("undefined")).toBe(false);
+    expect(isUsableSessionId(undefined)).toBe(false);
+    expect(createdSessionId({ id: "a" })).toBe("a");
+    expect(createdSessionId({ entityId: "b" })).toBe("b");
+    expect(createdSessionId([{ id: "c" }])).toBe("c");
+    expect(createdSessionId({ title: "Nope" })).toBeNull();
+    expect(requireCreatedSession({ id: "d" }).id).toBe("d");
+    expect(() => requireCreatedSession({})).toThrow(INIT_SESSION_MISSING_ID_MESSAGE);
+  });
+});
+
+describe("remapSelectedCharacterIds", () => {
+  it("maps a bundled seed id onto the store id returned by upsert", () => {
+    expect(
+      remapSelectedCharacterIds(
+        ["seed_marvel-tchalla"],
+        [{ id: "seed_marvel-tchalla", name: "T'Challa", universe: "MCU" }],
+        [{ id: "char_store_1", name: "T'Challa", universe: "MCU" }],
+      ),
+    ).toEqual(["char_store_1"]);
+  });
+
+  it("keeps the picker id when upsert is idempotent on that id", () => {
+    expect(
+      remapSelectedCharacterIds(
+        ["seed_marvel-tchalla"],
+        [{ id: "seed_marvel-tchalla", name: "T'Challa", universe: "MCU" }],
+        [{ id: "seed_marvel-tchalla", name: "T'Challa", universe: "MCU" }],
+      ),
+    ).toEqual(["seed_marvel-tchalla"]);
+  });
+
+  it("prefers an explicit idMap for solo and group picker ids", () => {
+    const bundled = [
+      { id: "seed_a", name: "Tony Stark", universe: "MCU" },
+      { id: "seed_b", name: "Steve Rogers", universe: "MCU" },
+    ];
+    const items = [
+      { id: "pg_1", name: "Tony Stark", universe: "MCU" },
+      { id: "pg_2", name: "Steve Rogers", universe: "MCU" },
+    ];
+    const idMap = characterUpsertIdMap(bundled, items);
+    expect(idMap).toEqual({ seed_a: "pg_1", seed_b: "pg_2" });
+    expect(remapSelectedCharacterIds(["seed_a"], bundled, items, idMap)).toEqual([
+      "pg_1",
+    ]);
+    expect(
+      remapSelectedCharacterIds(["seed_a", "seed_b"], bundled, items, idMap),
+    ).toEqual(["pg_1", "pg_2"]);
+  });
 });
 
 describe("Chat Init wiring", () => {
   it("awaits createInitChatSession and does not rewrite messages after create", () => {
     const chat = readFileSync(join(srcRoot, "pages/Chat.jsx"), "utf8");
     expect(chat).toContain("await createInitChatSession(payload)");
+    expect(chat).toContain("navigate(`/chat/${newSession.id}`)");
+    expect(chat).toContain("justCreatedSessionIdRef.current = newSession.id");
+    expect(chat).not.toMatch(/await loadSessions\(\)/);
     expect(chat).not.toMatch(
       /createInitChatSession\(payload\);[\s\S]{0,400}ChatSession\.update\([\s\S]*messages/,
     );

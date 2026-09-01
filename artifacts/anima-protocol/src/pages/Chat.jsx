@@ -31,6 +31,7 @@ import { loadOpenChatSession } from "@/lib/chatSessionLoad";
 import {
   buildInitSessionPayload,
   createInitChatSession,
+  isUsableSessionId,
 } from "@/lib/createInitSession";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
@@ -199,6 +200,7 @@ export default function Chat() {
   const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
   const sessionLoadGenRef = useRef(0);
   const openSessionIdRef = useRef(sessionId || null);
+  const justCreatedSessionIdRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -442,10 +444,18 @@ export default function Chat() {
     loadOpenChatSession({
       id: sessionId,
       isCurrent: () => isCurrent() && !cancelled,
-      fetchSession: (id) =>
-        base44.entities.ChatSession.filter({ id }, undefined, 1, {
+      fetchSession: async (id) => {
+        // Lookup by entityId (GET), not jsonb filter({ id }). After POST the
+        // Hyperdrive pool can miss a filter read, and a body without data.id
+        // would never match filter even though /ChatSession/:id exists.
+        const byEntityId = await base44.entities.ChatSession.get(id, {
           withMessages: false,
-        }),
+        });
+        if (byEntityId?.id) return [byEntityId];
+        return base44.entities.ChatSession.filter({ id }, undefined, 1, {
+          withMessages: false,
+        });
+      },
       fetchMessages: (id) => base44.messages.list(id),
     }).then((result) => {
       if (!isCurrent() || cancelled) return;
@@ -455,6 +465,12 @@ export default function Chat() {
         return;
       }
       if (result.status === "missing") {
+        // Keep a session Init just applied — a follow-up read can miss for a
+        // moment after POST and used to wipe the thread as "not found".
+        if (justCreatedSessionIdRef.current === sessionId) {
+          setSessionLoad({ status: "ready" });
+          return;
+        }
         setActiveSession(null);
         setSessionLoad({ status: "missing" });
         return;
@@ -707,8 +723,12 @@ export default function Chat() {
     if (local) return local;
     try {
       const [charMatches, animaMatches] = await Promise.all([
-        base44.entities.Character.filter({ id }, undefined, 1),
-        base44.entities.Anima.filter({ id }, undefined, 1),
+        base44.entities.Character.filter({ id }, undefined, 1, {
+          _bootstrapInternal: true,
+        }),
+        base44.entities.Anima.filter({ id }, undefined, 1, {
+          _bootstrapInternal: true,
+        }),
       ]);
       if (charMatches?.[0]) {
         const char = charMatches[0];
@@ -856,17 +876,23 @@ export default function Chat() {
   const handleCreateSession = async ({
     mode: m,
     character_id,
+    character,
     group_character_ids,
+    group_characters,
     opening_scene,
   }) => {
-    // Resolve each id once. Init must not wait on auth.me() — therapy uses
-    // the already-loaded Clerk profile, same class of bug as Daily Resonance.
+    // Prefer the character the modal already resolved/upserted. Init must not
+    // wait on auth.me() or a Character.filter that blocks on bootstrap.
     const createdChar =
-      m === "solo" && character_id
+      m === "solo" && character && character.id === character_id
+        ? character
+        : m === "solo" && character_id
         ? await resolveCharacterById(character_id)
         : null;
     const selectedGroupChars =
-      m === "group" && group_character_ids?.length
+      m === "group" && Array.isArray(group_characters) && group_characters.length
+        ? group_characters.filter(Boolean)
+        : m === "group" && group_character_ids?.length
         ? (
             await Promise.all(
               group_character_ids.map((id) => resolveCharacterById(id)),
@@ -889,6 +915,11 @@ export default function Chat() {
     // are persisted by ChatSession.create via /messages/replace — never a
     // second ChatSession.update({ messages }) that used to rewrite the same rows.
     const newSession = await createInitChatSession(payload);
+    if (!isUsableSessionId(newSession?.id)) {
+      throw new Error(
+        "The store created a session but did not return an id. Tap Init to try again.",
+      );
+    }
 
     if (isCrossoverSession) {
       track("crossover_session_started", {
@@ -904,14 +935,18 @@ export default function Chat() {
       });
     }
 
-    // A new session sorts to the top (-updated_date), so jump to the first page
-    // and refresh so the user sees it immediately even if they had paged deep.
+    // Apply the POST body immediately so /chat/:id does not depend on a
+    // follow-up filter/get that can miss the row we just wrote.
+    justCreatedSessionIdRef.current = newSession.id;
+    applyOpenedSession({
+      ...newSession,
+      messages: Array.isArray(newSession.messages) ? newSession.messages : [],
+    });
+    setSessionLoad({ status: "ready" });
     goToSessionsPage(0);
-    try {
-      await loadSessions();
-    } catch (err) {
+    loadSessions().catch((err) => {
       console.warn("Session created, but refreshing the session list failed:", err);
-    }
+    });
     navigate(`/chat/${newSession.id}`);
     setShowModal(false);
     setShowMobileMenu(false);
