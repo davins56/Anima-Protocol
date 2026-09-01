@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -319,15 +320,17 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     oracle: "text-blue-400",
   };
 
-  return (
+  return createPortal(
     <div
       data-testid="new-session-overlay"
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,0px)+1rem)] min-h-0 overflow-hidden"
+      className="fixed inset-0 z-[1100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
     >
       {/*
-        Bound height to the overlay, not a raw 90vh cap: html/body are
-        overflow-locked, and 90vh does not clear .fixed-bottom-chrome.
-        The character list is the only scroller.
+        Portaled to document.body so `fixed inset-0` is vs the viewport, not a
+        transformed Chat / .app-page-fill ancestor. z-[1100] paints above
+        .fixed-bottom-chrome (z-[999]). Padding uses a 56px tab-bar fallback
+        (never 0px) plus safe-area so Init is not covered if the CSS var
+        fails to inherit. The character list is the only scroller.
       */}
       <div
         data-testid="new-session-panel"
@@ -616,6 +619,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           initialInsertions={canonSeed?.insertions || null}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
