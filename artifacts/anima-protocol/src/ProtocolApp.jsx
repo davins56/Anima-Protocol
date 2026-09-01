@@ -69,7 +69,6 @@ import Landing from "./pages/Landing";
 const Chat = lazy(() => import("./pages/Chat"));
 const NetBattle = lazy(() => import("./pages/NetBattle"));
 const MainHome = lazy(() => import("./pages/MainHome"));
-const NewChat = lazy(() => import("./pages/NewChat"));
 const Characters = lazy(() => import("./pages/Characters"));
 const Settings = lazy(() => import("./pages/Settings"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
@@ -825,21 +824,15 @@ const AuthenticatedApp = () => {
               <Route path="/landing" element={<Navigate to="/" replace />} />
               <Route path="/login" element={<Navigate to="/sign-in" replace />} />
               <Route
-                path="/chat"
+                path="/chat/:sessionId?"
                 element={
-                    <NewChat />
+                    <Chat />
                 }
               />
               <Route
                 path="/repo-codespace"
                 element={
                     <ExtraPage name="RepoCodespace" />
-                }
-              />
-              <Route
-                path="/chat/:sessionId"
-                element={
-                    <Chat />
                 }
               />
               <Route

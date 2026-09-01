@@ -6,7 +6,6 @@ export function prefetchHotRoutes() {
   const run = () => {
     void import("../pages/MainHome");
     void import("../pages/Chat");
-    void import("../pages/NewChat");
     void import("../pages/CustomiseAnima");
   };
   if (typeof requestIdleCallback === "function") {
