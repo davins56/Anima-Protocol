@@ -100,6 +100,18 @@ describe("representative page scroll contract", () => {
     expect(page).toMatch(/finally\s*\{[\s\S]*setSaving\(false\)/);
   });
 
+  it("New Session picker scrolls inside the modal and clears the tab bar", () => {
+    const modal = readSrc("components/chat/NewSessionModal.jsx");
+    expect(modal).toContain('data-testid="new-session-character-scroller"');
+    expect(modal).toMatch(/overflow-y-auto/);
+    expect(modal).toMatch(/min-h-0/);
+    expect(modal).toContain("pb-[calc(var(--tab-bar-height,0px)+1rem)]");
+    expect(modal).toContain("max-h-full");
+    expect(modal).toContain("overflow-hidden");
+    expect(modal).not.toMatch(/max-h-\[90vh\]/);
+    expect(modal).not.toMatch(/h-screen(?!-)/);
+  });
+
   it("Chat fills the shell and keeps the visualViewport keyboard path", () => {
     const chat = readPage("Chat");
     expect(chat).toContain("app-page-fill");
