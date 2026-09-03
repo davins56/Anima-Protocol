@@ -38,13 +38,15 @@ export function useChatPersistence() {
       const identifiedMessages = assignTurnMessageIds(messages, turnId);
       const storedMessages = [];
       try {
-        const results = await Promise.all(
-          identifiedMessages.map(async (message) => {
-            const stored = await base44.messages.append(sessionId, message);
-            storedMessages.push(stored);
-            return stored;
-          }),
-        );
+        // Sequential appends keep store `seq` in turn order. Concurrent
+        // Promise.all completes in network order, so group/event/aspect
+        // bubbles can land assistant-before-user.
+        const results = [];
+        for (const message of identifiedMessages) {
+          const stored = await base44.messages.append(sessionId, message);
+          storedMessages.push(stored);
+          results.push(stored);
+        }
         if (content) {
           await base44.entities.ChatSession.update(sessionId, {
             last_message: content.slice(0, 60),

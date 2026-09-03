@@ -396,7 +396,18 @@ async function updateStoreSessionMetadata(
   const currentSharedMemory = Array.isArray(data.shared_memory)
     ? data.shared_memory.slice(-24)
     : [];
-  if (sharedFact) currentSharedMemory.push(sharedFact);
+  if (sharedFact) {
+    const factTurnId = sharedFact.turn_id;
+    const already =
+      factTurnId != null &&
+      currentSharedMemory.some(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as Record<string, unknown>).turn_id === factTurnId,
+      );
+    if (!already) currentSharedMemory.push(sharedFact);
+  }
   await db
     .update(userEntities)
     .set({
@@ -617,6 +628,19 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     metadata,
   });
 
+  await recordTurnContinuity(turn);
+  await markTurnCommitted(turn.id, turn.userId);
+}
+
+/**
+ * Memory + shared crossover facts. Safe to call from both server persist and
+ * the client `commitTurn` path — does not write chat message rows (the client
+ * already appended those).
+ */
+async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
+  const metadata = asObject(turn.metadata);
+  const characterIds = asStringArray(metadata.character_ids);
+  const isCrossover = metadata.is_crossover === true;
   const sharedFact = isCrossover
     ? {
         type: "crossover_turn",
@@ -639,7 +663,174 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     userContent: turn.userContent,
     assistantContent: turn.assistantContent,
   });
-  await markTurnCommitted(turn.id, turn.userId);
+}
+
+async function applyRelationshipPostProcess(params: {
+  userId: string;
+  sessionId: string;
+  turnId: string;
+  characterIds: string[];
+  activeCharacterId: string | null;
+  content: string;
+  assistantContent: string;
+  mode: string;
+  isVoidTurn: boolean;
+  significantExperienceCount: number;
+  synchroState: SynchroState | null;
+}): Promise<void> {
+  const {
+    userId,
+    sessionId,
+    turnId,
+    characterIds,
+    activeCharacterId,
+    content,
+    assistantContent,
+    mode,
+    isVoidTurn,
+    significantExperienceCount,
+    synchroState,
+  } = params;
+  if (characterIds.length > 0) {
+    const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
+
+    for (const animaId of characterIds) {
+      const updated = await incrementConversationCount({
+        userId,
+        animaId,
+      });
+      const nextCount = Number(updated?.conversationCount ?? 0);
+
+      await maybeTriggerMilestoneEvolution({
+        userId,
+        animaId,
+        conversationCount: nextCount,
+        historySummary,
+        isVoidTurn,
+        significantExperienceCount,
+        alreadyMilestone: Number(updated?.evolutionDelta?.milestone) || 0,
+      });
+
+      await maybeTriggerRelationshipEvolution({
+        userId,
+        animaId,
+        conversationCount: nextCount,
+        historySummary,
+        isVoidTurn,
+      });
+
+      await maybeTriggerNarrativeArc({
+        userId,
+        animaId,
+        conversationCount: nextCount,
+        content: historySummary,
+      });
+    }
+  }
+  if (synchroState && assistantContent) {
+    const evolved = evolveSynchroFromCompanion(synchroState, assistantContent);
+    const serialized = serializeSynchroState(evolved);
+    for (const cid of characterIds) {
+      await db
+        .update(companionMemories)
+        .set({
+          emotionalState: serialized,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, cid),
+          ),
+        );
+    }
+
+    try {
+      const intimacy = Number(evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0);
+      if (shouldCrystallize(intimacy, evolved.lastShift, content)) {
+        const title =
+          content.length > 56
+            ? `${content.slice(0, 53).trim()}…`
+            : content.slice(0, 56) || "A moment that settled";
+        const bodyText = [
+          `User: ${truncate(content, 280)}`,
+          `Companion: ${truncate(assistantContent, 360)}`,
+          evolved.lastShift ? `Shift: ${evolved.lastShift}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        const targetIds =
+          activeCharacterId && characterIds.includes(activeCharacterId)
+            ? [activeCharacterId]
+            : characterIds.slice(0, 1);
+        for (const animaId of targetIds) {
+          await crystallizeResonanceMemory({
+            userId,
+            animaId,
+            sessionId,
+            title,
+            body: bodyText,
+            resonanceSnapshot: {
+              intimacy: evolved.vector.intimacy,
+              powerDynamic: evolved.vector.powerDynamic,
+              spiritualAttunement: evolved.vector.spiritualAttunement,
+              primalIntensity: evolved.vector.primalIntensity,
+              crossoverOpenness: evolved.vector.crossoverOpenness,
+            },
+            emotionalTone: evolved.emotionalTone,
+            tags: ["crystallized", evolved.level, mode].filter(Boolean) as string[],
+            intensity: Math.round(
+              Math.max(intimacy, Number(evolved.vector.synchroStrength ?? 0)),
+            ),
+          });
+        }
+      }
+    } catch (crystalErr) {
+      logger.warn(
+        { crystalErr, turnId, sessionId },
+        "Resonance memory crystallization failed (non-blocking)",
+      );
+    }
+  }
+}
+
+async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<void> {
+  const metadata = asObject(turn.metadata);
+  const characterIds = asStringArray(metadata.character_ids);
+  const activeCharacterId = metadata.active_character_id
+    ? String(metadata.active_character_id)
+    : characterIds[0] || null;
+  const mode = String(metadata.mode || "solo");
+  const hidden = asObject(metadata.hidden_sequences);
+  const learnedLife = Array.isArray((hidden as { learned_life?: unknown[] }).learned_life)
+    ? (hidden as { learned_life: unknown[] }).learned_life.length
+    : 0;
+  const memories = await loadMemories(turn.userId, characterIds);
+  let synchroState: SynchroState | null = null;
+  if (activeCharacterId && memories.length > 0) {
+    const memForChar = memories.find((m) => m.characterId === activeCharacterId);
+    synchroState = initSynchroState(
+      (memForChar?.emotionalState as Record<string, unknown> | null) ?? null,
+      memForChar?.resonanceNotes ?? null,
+      null,
+    );
+    if (turn.userContent) {
+      synchroState = evolveSynchroFromUser(synchroState, turn.userContent);
+    }
+  }
+  await applyRelationshipPostProcess({
+    userId: turn.userId,
+    sessionId: turn.sessionId,
+    turnId: turn.id,
+    characterIds,
+    activeCharacterId,
+    content: turn.userContent,
+    assistantContent: turn.assistantContent,
+    mode,
+    isVoidTurn: mode === "void" || Boolean(metadata.deep_mode),
+    significantExperienceCount: learnedLife,
+    synchroState,
+  });
 }
 
 async function retryTurnPersistence(turn: ChatTurn): Promise<void> {
@@ -895,7 +1086,23 @@ router.post("/turns/:turnId/commit", async (req, res) => {
     res.status(409).json({ error: "Turn generation has not completed" });
     return;
   }
-  await markTurnCommitted(turn.id, userId);
+  if (turn.status !== "committed") {
+    // Client persist already wrote message rows. Still record companion
+    // memory, crossover shared_memory, and relationship post-process —
+    // those only ran on the unused server-persist path.
+    try {
+      await recordTurnContinuity(turn);
+    } catch (error) {
+      logger.warn({ error, turnId: turn.id }, "Client commit continuity write failed");
+    }
+    await markTurnCommitted(turn.id, userId);
+    void applyRelationshipPostProcessFromTurn(turn).catch((postProcessError) => {
+      logger.warn(
+        { postProcessError, turnId: turn.id, sessionId: turn.sessionId },
+        "Chat relationship/evolution post-processing failed",
+      );
+    });
+  }
   res.json({ turn_id: turn.id, persistence_status: "committed" });
 });
 
@@ -1529,126 +1736,24 @@ router.post("/messages", async (req, res) => {
     // committed first; failures here are observable and can be rebuilt without
     // risking duplicate visible chat rows.
     try {
-      if (characterIds.length > 0) {
-        const isVoidTurn = mode === "void" || Boolean(body.deep_mode);
-        const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(fullResponse, 520)}`;
-
-        for (const animaId of characterIds) {
-          const updated = await incrementConversationCount({
-            userId,
-            animaId,
-          });
-          const nextCount = Number(updated?.conversationCount ?? 0);
-
-          await maybeTriggerMilestoneEvolution({
-            userId,
-            animaId,
-            conversationCount: nextCount,
-            historySummary,
-            isVoidTurn,
-            significantExperienceCount: Array.isArray(
-              (body.metadata?.hidden_sequences as { learned_life?: unknown[] } | undefined)
-                ?.learned_life,
-            )
-              ? (
-                  body.metadata?.hidden_sequences as { learned_life: unknown[] }
-                ).learned_life.length
-              : 0,
-            alreadyMilestone: Number(updated?.evolutionDelta?.milestone) || 0,
-          });
-
-          await maybeTriggerRelationshipEvolution({
-            userId,
-            animaId,
-            conversationCount: nextCount,
-            historySummary,
-            isVoidTurn,
-          });
-
-          await maybeTriggerNarrativeArc({
-            userId,
-            animaId,
-            conversationCount: nextCount,
-            content: historySummary,
-          });
-        }
-      }
-      if (synchroState && fullResponse) {
-        const evolved = evolveSynchroFromCompanion(synchroState, fullResponse);
-        const serialized = serializeSynchroState(evolved);
-        for (const cid of characterIds) {
-          await db
-            .update(companionMemories)
-            .set({
-              emotionalState: serialized,
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(companionMemories.userId, userId),
-                eq(companionMemories.characterId, cid),
-              ),
-            );
-        }
-
-        // Relationship OS: crystallize high-resonance moments into lasting crystals.
-        // Non-blocking — failures never interrupt the chat pipeline.
-        try {
-          const intimacy = Number(evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0);
-          if (
-            shouldCrystallize(
-              intimacy,
-              evolved.lastShift,
-              content,
-            )
-          ) {
-            const title =
-              content.length > 56
-                ? `${content.slice(0, 53).trim()}…`
-                : content.slice(0, 56) || "A moment that settled";
-            const bodyText = [
-              `User: ${truncate(content, 280)}`,
-              `Companion: ${truncate(fullResponse, 360)}`,
-              evolved.lastShift ? `Shift: ${evolved.lastShift}` : null,
-            ]
-              .filter(Boolean)
-              .join("\n");
-            const targetIds =
-              activeCharacterId && characterIds.includes(activeCharacterId)
-                ? [activeCharacterId]
-                : characterIds.slice(0, 1);
-            for (const animaId of targetIds) {
-              await crystallizeResonanceMemory({
-                userId,
-                animaId,
-                sessionId,
-                title,
-                body: bodyText,
-                resonanceSnapshot: {
-                  intimacy: evolved.vector.intimacy,
-                  powerDynamic: evolved.vector.powerDynamic,
-                  spiritualAttunement: evolved.vector.spiritualAttunement,
-                  primalIntensity: evolved.vector.primalIntensity,
-                  crossoverOpenness: evolved.vector.crossoverOpenness,
-                },
-                emotionalTone: evolved.emotionalTone,
-                tags: ["crystallized", evolved.level, mode].filter(Boolean) as string[],
-                intensity: Math.round(
-                  Math.max(
-                    intimacy,
-                    Number(evolved.vector.synchroStrength ?? 0),
-                  ),
-                ),
-              });
-            }
-          }
-        } catch (crystalErr) {
-          logger.warn(
-            { crystalErr, turnId, sessionId },
-            "Resonance memory crystallization failed (non-blocking)",
-          );
-        }
-      }
+      const hiddenLife = body.metadata?.hidden_sequences as
+        | { learned_life?: unknown[] }
+        | undefined;
+      await applyRelationshipPostProcess({
+        userId,
+        sessionId,
+        turnId,
+        characterIds,
+        activeCharacterId,
+        content,
+        assistantContent: fullResponse,
+        mode,
+        isVoidTurn: mode === "void" || Boolean(body.deep_mode),
+        significantExperienceCount: Array.isArray(hiddenLife?.learned_life)
+          ? hiddenLife.learned_life.length
+          : 0,
+        synchroState,
+      });
     } catch (postProcessError) {
       logger.warn(
         { postProcessError, turnId, sessionId },

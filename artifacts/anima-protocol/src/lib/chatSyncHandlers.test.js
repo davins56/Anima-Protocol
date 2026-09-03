@@ -133,6 +133,34 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
     expect(h.session.messages).toContain(optimisticTurn);
   });
 
+  it("never clobbers a mid-history turn_* after a later send persisted", async () => {
+    const failedPersistTurn = {
+      id: "turn_failed:assistant",
+      role: "assistant",
+      content: "first reply that never reached the store",
+    };
+    const laterPersisted = {
+      id: "srv-2",
+      role: "assistant",
+      content: "second reply that did persist",
+    };
+    const h = makeHarness([userMsg, failedPersistTurn, laterPersisted]);
+    base44.messages.list.mockResolvedValueOnce([
+      userMsg,
+      { id: "srv-2", role: "assistant", content: "second reply that did persist" },
+    ]);
+
+    const applied = await syncActiveMessages({
+      sessionId: SESSION_ID,
+      activeSessionRef: h.activeSessionRef,
+      setActiveSession: h.setActiveSession,
+    });
+
+    expect(applied).toBe(false);
+    expect(h.setActiveSession).not.toHaveBeenCalled();
+    expect(h.session.messages).toContain(failedPersistTurn);
+  });
+
   it("never clobbers an optimistic user turn that has not been persisted yet", async () => {
     const optimisticUser = { role: "user", content: "just typed" }; // no id
     const h = makeHarness([userMsg, optimisticUser]);
