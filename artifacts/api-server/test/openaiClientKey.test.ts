@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  OPENROUTER_FREE_MODEL,
+  OPENROUTER_VENICE_UNCENSORED,
   getOpenRouterApiKey,
   getOpenRouterApiKeySource,
   hasOpenRouterKey,
@@ -7,6 +9,17 @@ import {
   openRouterKeyFingerprint,
   resetLlmClientsForTests,
 } from "../src/lib/openaiClient";
+
+describe("OpenRouter catalog defaults", () => {
+  it("keeps Venice as the paid default and a live :free slug for zero-credit fallback", () => {
+    expect(OPENROUTER_VENICE_UNCENSORED).toBe(
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    );
+    expect(OPENROUTER_FREE_MODEL).toBe("google/gemma-4-31b-it:free");
+    expect(OPENROUTER_FREE_MODEL.endsWith(":free")).toBe(true);
+    expect(OPENROUTER_FREE_MODEL).not.toBe("openai/gpt-oss-20b:free");
+  });
+});
 
 describe("normalizeApiKey", () => {
   it("trims whitespace and surrounding quotes", () => {

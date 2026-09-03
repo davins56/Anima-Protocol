@@ -57,7 +57,7 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_ALGOLIA_SEARCH_API_KEY` | Frontend — Algolia **search-only** key for the Netlify crawler widget (`div#search`). Never use the Admin or crawler `ALGOLIA_API_KEY` here. Widget stays hidden when unset. |
 | `VITE_ALGOLIA_BRANCH` | Frontend — optional override for which Algolia Netlify index to query. Defaults to Netlify `HEAD` or `main`. |
 | `OPENROUTER_API_KEY` | API chat (Venice Uncensored; free-tier fallback on HTTP 402). Alias: `ANIMA_OPENROUTER_API_KEY` / `OPEN_ROUTER_API_KEY` |
-| `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `openai/gpt-oss-20b:free` |
+| `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `google/gemma-4-31b-it:free` |
 | `ANIMA_LOCAL_LLM_BASE_URL` | API — public HTTPS OpenAI-compatible `…/v1` URL (Fly: `https://anima-chat-llm.fly.dev/v1`). Never localhost on the Worker |
 | `ANIMA_LOCAL_LLM_API_KEY` | API — bearer token; must match Fly `PROXY_AUTH_TOKEN` |
 | `ANIMA_LOCAL_LLM_BACKEND` | API — `ollama` (default) or `vllm` |
