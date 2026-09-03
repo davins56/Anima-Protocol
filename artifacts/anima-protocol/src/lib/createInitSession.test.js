@@ -283,7 +283,7 @@ describe("Chat Init wiring", () => {
     );
     expect(chooser).toContain("createInitChatSession(");
     expect(chooser).toContain("buildInitSessionPayload(");
-    expect(chooser).not.toMatch(/ChatSession\.create\s*\(/);
+    expect(chooser).not.toMatch(/entities\.ChatSession\.create\s*\(/);
     expect(chooser).not.toMatch(/await\s+base44\.messages\.replace/);
   });
 
