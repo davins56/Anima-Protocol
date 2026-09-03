@@ -36,6 +36,44 @@ function characterIdentityKey(character) {
   return `${String(character?.universe || "").toLowerCase()}::${String(character?.name || "").toLowerCase()}`;
 }
 
+/** Store row whose universe+name matches a bundled starter (case-insensitive). */
+export function matchCharacterByIdentity(character, items) {
+  const key = characterIdentityKey(character);
+  if (!key || key === "::") return null;
+  const list = Array.isArray(items) ? items : [];
+  return (
+    list.find(
+      (item) =>
+        isUsableSessionId(item?.id) && characterIdentityKey(item) === key,
+    ) || null
+  );
+}
+
+/**
+ * When remap left a bundled seed id that the store did not return, resolve it
+ * by universe+name. Does not throw — Init still creates the session.
+ */
+export function applyIdentityFallback(selectedIds, originalIds, bundledChars, upsertedItems) {
+  const ids = Array.isArray(selectedIds) ? selectedIds : [];
+  const originals = Array.isArray(originalIds) ? originalIds : [];
+  const bundled = Array.isArray(bundledChars) ? bundledChars : [];
+  const items = Array.isArray(upsertedItems) ? upsertedItems : [];
+  const storeIds = new Set(
+    items.map((item) => item?.id).filter((id) => isUsableSessionId(id)),
+  );
+  if (!storeIds.size) return ids;
+
+  return ids.map((id, index) => {
+    const original = originals[index];
+    const character = bundled.find((c) => c.id === original);
+    if (!character) return id;
+    const stale = id === character.id && !storeIds.has(character.id);
+    if (!stale) return id;
+    const match = matchCharacterByIdentity(character, items);
+    return isUsableSessionId(match?.id) ? match.id : id;
+  });
+}
+
 /**
  * Pair submitted starter rows with store-returned rows: index first (bulk
  * upsert preserves order), then universe+name. Used so Init can replace

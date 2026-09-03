@@ -6,7 +6,8 @@
  * ChatSession.create / Init is the exception: one insert after a Worker cold
  * start + Hyperdrive can exceed 8s even when the write is healthy. Do not
  * raise STORE_FETCH_TIMEOUT_MS for that — use STORE_SESSION_CREATE_TIMEOUT_MS
- * only on the create write (see createInitChatSession).
+ * only on Init's create write and its bundled-starter upsert (see
+ * createInitChatSession and NewSessionModal).
  */
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;
