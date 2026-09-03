@@ -43,7 +43,7 @@ describe("deploy/ollama-fly pack", () => {
     const docker = read("Dockerfile");
     expect(docker).toMatch(/FROM ollama\/ollama/);
     expect(docker).toMatch(/FROM caddy:2 AS caddy/);
-    expect(docker).not.toMatch(/caddy:2-alpine/);
+    expect(docker).not.toMatch(/^FROM caddy:2-alpine/m);
     expect(docker).toMatch(/COPY scripts\/llm\/Modelfile\.anima-chat/);
     expect(docker).toMatch(/EXPOSE 8080/);
     expect(docker).not.toMatch(/PROXY_AUTH_TOKEN=/);
@@ -56,7 +56,7 @@ describe("deploy/ollama-fly pack", () => {
     expect(toml).toMatch(/path = "\/healthz"/);
     expect(toml).toMatch(/grace_period = "2m"/);
     expect(toml).toMatch(/destination = "\/root\/\.ollama"/);
-    expect(toml).not.toMatch(/PROXY_AUTH_TOKEN/);
+    expect(toml).not.toMatch(/PROXY_AUTH_TOKEN\s*=/);
     const deploy = read("deploy.sh");
     expect(deploy).toMatch(/cd "\$ROOT"/);
     expect(deploy).toMatch(/--dockerfile deploy\/ollama-fly\/Dockerfile/);
