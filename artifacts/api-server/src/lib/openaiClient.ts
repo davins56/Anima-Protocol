@@ -26,9 +26,12 @@ export const OPENROUTER_VENICE_UNCENSORED =
 
 /**
  * Zero-cost OpenRouter free-tier model (not uncensored-branded).
+ * Must stay on a slug that still appears in GET /api/v1/models `:free`.
+ * `openai/gpt-oss-20b:free` was retired (404; paid slug is openai/gpt-oss-20b).
+ * Gemma is already in this repo's documented open-weight families.
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
-export const OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+export const OPENROUTER_FREE_MODEL = "google/gemma-4-31b-it:free";
 
 /** Env names checked for an OpenRouter key (first non-empty wins). */
 export const OPENROUTER_KEY_ENV_NAMES = [
