@@ -12,7 +12,7 @@ Gemini, Groq, or OpenAI flagship.
 
 - Ollama on loopback `:11434`
 - Caddy on `:8080` requiring `Authorization: Bearer <PROXY_AUTH_TOKEN>` on every `/v1/*` request (401 otherwise)
-- `/healthz` — cheap liveness (Ollama `/`, no model call) so Fly checks pass during the first-boot pull
+- `/healthz` — static `ok` (no Ollama / model call) so Fly checks pass during the first-boot pull
 - Volume at `/root/.ollama` so weights survive restarts
 - One machine kept running (`auto_stop_machines = "off"`, `min_machines_running = 1`)
 
@@ -85,13 +85,16 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 
 Production is Workers + Assets (`wrangler.jsonc`, Worker `anima-protocol`).
 Dashboard-only secrets are dropped on the next git deploy unless they are
-declared in `wrangler.jsonc`. Follow the existing `secrets_store_secrets`
-convention (store `a31e40473ef34db896b5bc1e6c1c4b86`): add the **binding
-names** in git, put **values** only in the Cloudflare Secrets Store.
+declared in `wrangler.jsonc`. The LLM bindings are already in
+`secrets_store_secrets` (store `a31e40473ef34db896b5bc1e6c1c4b86`). Create
+each `secret_name` in that store **before** the Worker deploy that first
+needs it, or `wrangler deploy` fails. Put **values** only in the store —
+never in git.
 
 | Name | Where | Value |
 |------|--------|--------|
-| `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store binding (or `vars` once Fly is live) | `https://anima-chat-llm.fly.dev/v1` |
+| `ANIMA_RUNTIME` | `wrangler.jsonc` `vars` | `worker` (never invent localhost) |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store binding | `https://anima-chat-llm.fly.dev/v1` |
 | `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store binding | same as `PROXY_AUTH_TOKEN` |
 | `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` | `ollama` |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` | `anima-chat` |
@@ -125,5 +128,5 @@ Do not point `ANIMA_LOCAL_LLM_BASE_URL` at OpenAI, Groq, or Gemini.
 |------|------|
 | `Dockerfile` | `ollama/ollama` + Caddy + Modelfile + entrypoint |
 | `entrypoint.sh` | serve → proxy → background `anima-chat` bootstrap |
-| `Caddyfile` | Bearer on `/v1/*`, `/healthz` → Ollama `/` |
+| `Caddyfile` | Bearer on `/v1/*`, static `/healthz` |
 | `fly.toml` | app `anima-chat-llm`, volume, warm machine, HTTP check |

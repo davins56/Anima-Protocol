@@ -29,7 +29,9 @@ primary_region = "iad"
   processes = ["app"]
 
   [[http_service.checks]]
-    grace_period = "45s"
+    # /healthz is a static Caddy 200 (see Caddyfile). Long grace still covers
+    # a slow bind of :8080 on first boot; the model pull is not on this path.
+    grace_period = "2m"
     interval = "15s"
     timeout = "5s"
     method = "GET"

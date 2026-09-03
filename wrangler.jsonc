@@ -41,23 +41,21 @@
   // a wrangler route exists until that replacement keeps ${1}.
   "vars": {
     "NODE_ENV": "production",
-    // Safe defaults for the self-hosted Anima LLM. Do NOT set
-    // ANIMA_LOCAL_LLM_BASE_URL here until Fly anima-chat-llm is live —
-    // a committed URL would put `local` in the provider chain and skip
-    // OpenRouter. After `fly deploy`, add the public URL as a Secrets
-    // Store secret (preferred) or uncomment:
-    // "ANIMA_LOCAL_LLM_BASE_URL": "https://anima-chat-llm.fly.dev/v1",
+    // Never invent localhost on this isolate (belt-and-suspenders with
+    // navigator.userAgent === "Cloudflare-Workers").
+    "ANIMA_RUNTIME": "worker",
+    // Safe defaults for the self-hosted Anima LLM. Do NOT put
+    // ANIMA_LOCAL_LLM_BASE_URL in vars — a committed URL would put `local`
+    // in the provider chain before Fly is live and skip OpenRouter.
+    // Bind the public URL as a Secrets Store secret (same store as Clerk).
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat"
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
-  // file is the source of truth. Keep CLERK_* + DATABASE_URL so git deploys
-  // re-bind them from store a31e40473ef34db896b5bc1e6c1c4b86.
-  //
-  // After creating these names in that store, add matching objects below
-  // (same shape as CLERK_*). Do not add a binding for a secret_name that
-  // does not exist yet — wrangler deploy will fail and block the Worker.
+  // file is the source of truth. Create each secret_name in store
+  // a31e40473ef34db896b5bc1e6c1c4b86 BEFORE the deploy that first adds
+  // its binding, or wrangler deploy fails and blocks the Worker.
   //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
   //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
   //   OPENROUTER_API_KEY        = OpenRouter key (used when local URL is unset)
@@ -77,6 +75,21 @@
       "binding": "DATABASE_URL",
       "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
       "secret_name": "DATABASE_URL"
+    },
+    {
+      "binding": "ANIMA_LOCAL_LLM_BASE_URL",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "ANIMA_LOCAL_LLM_BASE_URL"
+    },
+    {
+      "binding": "ANIMA_LOCAL_LLM_API_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
+    },
+    {
+      "binding": "OPENROUTER_API_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "OPENROUTER_API_KEY"
     }
   ],
   // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against

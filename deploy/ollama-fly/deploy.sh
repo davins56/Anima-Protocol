@@ -4,6 +4,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# cwd is the repo root so COPY scripts/llm/Modelfile.anima-chat resolves.
 exec fly deploy \
   --config deploy/ollama-fly/fly.toml \
   --dockerfile deploy/ollama-fly/Dockerfile \

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { isCloudflareWorkerRuntime as dbIsCloudflareWorkerRuntime } from "@workspace/db";
 import {
   hasLocalLlm,
-  isCloudflareWorkerUserAgent,
+  isCloudflareWorkerRuntime,
   isLoopbackLlmHost,
   isLoopbackUnreachableRuntime,
   localLlmBaseUrl,
@@ -32,15 +33,19 @@ const workerGlobal = {
 } as typeof globalThis;
 
 describe("isLoopbackUnreachableRuntime", () => {
+  it("reuses @workspace/db isCloudflareWorkerRuntime (one Worker signal)", () => {
+    expect(isCloudflareWorkerRuntime).toBe(dbIsCloudflareWorkerRuntime);
+  });
+
   it("is false on plain Node (no Vercel / Worker signals)", () => {
     clearLocalLlmEnv();
     expect(isLoopbackUnreachableRuntime(process.env, globalThis)).toBe(false);
-    expect(isCloudflareWorkerUserAgent(globalThis)).toBe(false);
+    expect(isCloudflareWorkerRuntime(globalThis)).toBe(false);
   });
 
   it("is true for the Cloudflare Workers userAgent", () => {
     clearLocalLlmEnv();
-    expect(isCloudflareWorkerUserAgent(workerGlobal)).toBe(true);
+    expect(isCloudflareWorkerRuntime(workerGlobal)).toBe(true);
     expect(isLoopbackUnreachableRuntime(process.env, workerGlobal)).toBe(true);
   });
 

@@ -51,6 +51,15 @@ describe("getLlmRoutingStatus on serverless / Worker", () => {
     expect(status.chain).toEqual(["openrouter"]);
     expect(status.openrouter.configured).toBe(true);
     expect(getProviderChain()).toEqual(["openrouter"]);
+    expect(status.chain).not.toContain("local");
+  });
+
+  it("keeps localhost default on plain Node so local-dev Ollama still works", () => {
+    clearLlmEnv();
+    const status = getLlmRoutingStatus();
+    expect(status.localEndpoint.configured).toBe(true);
+    expect(status.localEndpoint.host).toBe("localhost");
+    expect(status.chain).toEqual(["local"]);
   });
 
   it("surfaces explicit localhost on the Worker as misconfigured and keeps it out of the chain", () => {

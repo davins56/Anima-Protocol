@@ -89,7 +89,7 @@ describe("Cloudflare wrangler config", () => {
     expect(assetsIgnore).not.toMatch(/^_headers$/m);
   });
 
-  it("persists Secrets Store bindings for Clerk and DATABASE_URL", () => {
+  it("persists Secrets Store bindings for Clerk, DATABASE_URL, and LLM routing", () => {
     const bindings = config.secrets_store_secrets as Array<
       Record<string, unknown>
     >;
@@ -98,6 +98,9 @@ describe("Cloudflare wrangler config", () => {
       "CLERK_SECRET_KEY",
       "CLERK_PUBLISHABLE_KEY",
       "DATABASE_URL",
+      "ANIMA_LOCAL_LLM_BASE_URL",
+      "ANIMA_LOCAL_LLM_API_KEY",
+      "OPENROUTER_API_KEY",
     ];
     expect(bindings.map((row) => row.binding).sort()).toEqual(
       [...expectedNames].sort(),
@@ -115,10 +118,11 @@ describe("Cloudflare wrangler config", () => {
   it("does not embed secrets in the committed Worker config", () => {
     const vars = (config.vars ?? {}) as Record<string, unknown>;
     expect(vars.NODE_ENV).toBe("production");
+    expect(vars.ANIMA_RUNTIME).toBe("worker");
     expect(vars.ANIMA_LOCAL_LLM_BACKEND).toBe("ollama");
     expect(vars.ANIMA_OLLAMA_MODEL_STANDARD).toBe("anima-chat");
-    // Public Fly URL stays out of committed vars until the operator adds it
-    // after anima-chat-llm is live — otherwise `local` enters the chain.
+    // Public Fly URL stays out of committed vars — it is a Secrets Store
+    // binding so a missing Fly host cannot skip OpenRouter.
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_BASE_URL");
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_API_KEY");
     expect(vars).not.toHaveProperty("OPENROUTER_API_KEY");
@@ -126,6 +130,7 @@ describe("Cloudflare wrangler config", () => {
       [
         "ANIMA_LOCAL_LLM_BACKEND",
         "ANIMA_OLLAMA_MODEL_STANDARD",
+        "ANIMA_RUNTIME",
         "NODE_ENV",
       ].sort(),
     );

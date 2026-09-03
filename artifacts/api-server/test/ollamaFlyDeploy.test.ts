@@ -14,15 +14,17 @@ function read(name: string): string {
 }
 
 describe("deploy/ollama-fly pack", () => {
-  it("requires Bearer PROXY_AUTH_TOKEN on /v1 and exposes a cheap /healthz", () => {
+  it("requires Bearer PROXY_AUTH_TOKEN on /v1 and exposes a static /healthz", () => {
     const caddy = read("Caddyfile");
     expect(caddy).toMatch(/header Authorization "Bearer \{\$PROXY_AUTH_TOKEN\}"/);
     expect(caddy).toMatch(/respond "unauthorized" 401/);
     expect(caddy).toMatch(/handle \/healthz/);
+    expect(caddy).toMatch(/respond "ok" 200/);
+    expect(caddy).toMatch(/Authorization: Bearer <ANIMA_LOCAL_LLM_API_KEY>/);
     expect(caddy).not.toMatch(/sk-|tok-|PROXY_AUTH_TOKEN=[0-9a-f]/i);
   });
 
-  it("refuses to start without PROXY_AUTH_TOKEN and bootstraps anima-chat in the background", () => {
+  it("starts Caddy immediately and bootstraps anima-chat in the background", () => {
     const entry = read("entrypoint.sh");
     expect(entry).toMatch(/PROXY_AUTH_TOKEN must be set/);
     expect(entry).toMatch(/ollama serve/);
@@ -30,11 +32,18 @@ describe("deploy/ollama-fly pack", () => {
     expect(entry).toMatch(/bootstrap_model &/);
     expect(entry).toMatch(/Modelfile\.anima-chat/);
     expect(entry).toMatch(/ANIMA_OLLAMA_CHAT_TAG/);
+    expect(entry).toMatch(/ollama list/);
+    const caddyIdx = entry.indexOf("caddy run");
+    const waitIdx = entry.indexOf("wait_for_ollama");
+    expect(caddyIdx).toBeGreaterThan(-1);
+    expect(waitIdx).toBeGreaterThan(caddyIdx);
   });
 
-  it("builds from repo-root context with the shared Modelfile and no baked token", () => {
+  it("builds from repo-root context with glibc Caddy, shared Modelfile, and no baked token", () => {
     const docker = read("Dockerfile");
     expect(docker).toMatch(/FROM ollama\/ollama/);
+    expect(docker).toMatch(/FROM caddy:2 AS caddy/);
+    expect(docker).not.toMatch(/caddy:2-alpine/);
     expect(docker).toMatch(/COPY scripts\/llm\/Modelfile\.anima-chat/);
     expect(docker).toMatch(/EXPOSE 8080/);
     expect(docker).not.toMatch(/PROXY_AUTH_TOKEN=/);
@@ -45,7 +54,11 @@ describe("deploy/ollama-fly pack", () => {
     expect(toml).toMatch(/auto_stop_machines = "off"/);
     expect(toml).toMatch(/min_machines_running = 1/);
     expect(toml).toMatch(/path = "\/healthz"/);
+    expect(toml).toMatch(/grace_period = "2m"/);
     expect(toml).toMatch(/destination = "\/root\/\.ollama"/);
     expect(toml).not.toMatch(/PROXY_AUTH_TOKEN/);
+    const deploy = read("deploy.sh");
+    expect(deploy).toMatch(/cd "\$ROOT"/);
+    expect(deploy).toMatch(/--dockerfile deploy\/ollama-fly\/Dockerfile/);
   });
 });
