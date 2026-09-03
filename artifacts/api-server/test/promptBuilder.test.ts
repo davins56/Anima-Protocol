@@ -103,6 +103,40 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("CROSS-UNIVERSE");
   });
 
+  it("does not inject another speaker's companion memories into this turn", () => {
+    const secondChar = {
+      id: "char-2",
+      name: "Linda",
+      universe: "Fallen Angel",
+      personality: "Bold, fiery, protective widow with a sharp tongue",
+    };
+    const lindaMemory = {
+      characterId: "char-2",
+      summary: "Linda's private bond about the harbor lighthouse.",
+      facts: [
+        {
+          type: "emotional",
+          text: "Linda held the user while they cried about the lighthouse",
+          created_at: new Date().toISOString(),
+        },
+      ],
+    };
+
+    const prompt = buildCompanionPrompt({
+      characters: [baseCharacter, secondChar],
+      activeCharacter: baseCharacter,
+      memories: [baseMemory, lindaMemory],
+      recentMessages: [],
+      mode: "group",
+      content: "Stay with me.",
+      isCrossover: true,
+    });
+
+    expect(prompt).toContain("User shared grief about losing their mother");
+    expect(prompt).not.toContain("harbor lighthouse");
+    expect(prompt).not.toContain("Linda held the user");
+  });
+
   it("includes resonance state derived from emotional state", () => {
     const prompt = buildCompanionPrompt({
       characters: [baseCharacter],

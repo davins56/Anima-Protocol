@@ -423,13 +423,19 @@ ${suppliedContext.slice(0, 24_000)}
   const memConfig = synchroState
     ? synchroToMemoryConfig(synchroState)
     : { topK: 12, preferTypes: undefined };
-  const scoredMemories = retrieveRelevantMemories(memories, {
+  // Crossover/group loads every participant's companion_memories. Scoring
+  // across that pool lets speaker A recall speaker B's private facts.
+  const speakerMemories =
+    mainChar?.id != null && String(mainChar.id)
+      ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
+      : memories;
+  const scoredMemories = retrieveRelevantMemories(speakerMemories, {
     topK: memConfig.topK,
     contextHint: content,
     preferTypes: memConfig.preferTypes,
   });
   const memoryBlock = formatMemoriesForPrompt(scoredMemories, characterNames);
-  const memorySummary = buildMemorySummaryBlock(memories, characterNames);
+  const memorySummary = buildMemorySummaryBlock(speakerMemories, characterNames);
 
   // 5. Voice anchors
   let voiceBlock = "";
