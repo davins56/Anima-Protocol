@@ -162,6 +162,9 @@ describe("importable and request-time env", () => {
       DATABASE_URL: {
         get: async () => "postgresql://secrets-store/db",
       },
+      OPENROUTER_API_KEY: {
+        get: async () => "sk-or-v1-secrets-store",
+      },
     };
     const target: Record<string, string | undefined> = {};
     await applyCloudflareRequestEnv(env, target);
@@ -169,6 +172,7 @@ describe("importable and request-time env", () => {
     expect(target.CLERK_SECRET_KEY).toBe("sk_live_store");
     expect(target.CLERK_PUBLISHABLE_KEY).toBe("pk_live_store");
     expect(target.DATABASE_URL).toBe("postgresql://secrets-store/db");
+    expect(target.OPENROUTER_API_KEY).toBe("sk-or-v1-secrets-store");
     expect(unwrapBindingString(env.CLERK_SECRET_KEY)).toBeUndefined();
     expect(await unwrapBindingStringAsync(env.CLERK_SECRET_KEY)).toBe(
       "sk_live_store",

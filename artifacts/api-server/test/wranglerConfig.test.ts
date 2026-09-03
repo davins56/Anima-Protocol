@@ -94,14 +94,16 @@ describe("Cloudflare wrangler config", () => {
       Record<string, unknown>
     >;
     expect(Array.isArray(bindings)).toBe(true);
-    // These three exist in store a31e40473ef34db896b5bc1e6c1c4b86 today.
-    // LLM names must NOT be bound until the operator creates those store
-    // entries (Fly URL / PROXY_AUTH_TOKEN / OpenRouter key). A binding for
-    // a missing secret_name fails wrangler deploy and takes down the site.
+    // These four exist in store a31e40473ef34db896b5bc1e6c1c4b86 today
+    // (OpenRouter is created in the same deploy window as this binding).
+    // Fly LLM names must NOT be bound until the operator creates those
+    // store entries (Fly URL / PROXY_AUTH_TOKEN). A binding for a missing
+    // secret_name fails wrangler deploy and takes down the site.
     const declaredNames = [
       "CLERK_SECRET_KEY",
       "CLERK_PUBLISHABLE_KEY",
       "DATABASE_URL",
+      "OPENROUTER_API_KEY",
     ];
     expect(bindings.map((row) => row.binding).sort()).toEqual(
       [...declaredNames].sort(),
@@ -117,7 +119,7 @@ describe("Cloudflare wrangler config", () => {
     const bound = new Set(bindings.map((row) => row.binding));
     expect(bound.has("ANIMA_LOCAL_LLM_BASE_URL")).toBe(false);
     expect(bound.has("ANIMA_LOCAL_LLM_API_KEY")).toBe(false);
-    expect(bound.has("OPENROUTER_API_KEY")).toBe(false);
+    expect(bound.has("OPENROUTER_API_KEY")).toBe(true);
     const source = readFileSync(
       path.join(repoRoot, "wrangler.jsonc"),
       "utf8",
@@ -137,6 +139,7 @@ describe("Cloudflare wrangler config", () => {
     expect(vars.ANIMA_RUNTIME).toBe("worker");
     expect(vars.ANIMA_LOCAL_LLM_BACKEND).toBe("ollama");
     expect(vars.ANIMA_OLLAMA_MODEL_STANDARD).toBe("anima-chat");
+    expect(vars.ANIMA_OPENROUTER_FREE).toBe("true");
     // Public Fly URL stays out of committed vars so a missing Fly host
     // cannot put `local` in the provider chain. Bind it only after the
     // Secrets Store entry exists (see wrangler.jsonc runbook).
@@ -147,6 +150,7 @@ describe("Cloudflare wrangler config", () => {
       [
         "ANIMA_LOCAL_LLM_BACKEND",
         "ANIMA_OLLAMA_MODEL_STANDARD",
+        "ANIMA_OPENROUTER_FREE",
         "ANIMA_RUNTIME",
         "NODE_ENV",
       ].sort(),
