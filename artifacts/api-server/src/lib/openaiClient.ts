@@ -26,12 +26,16 @@ export const OPENROUTER_VENICE_UNCENSORED =
 
 /**
  * Zero-cost OpenRouter free-tier model (not uncensored-branded).
- * Must stay on a slug that still appears in GET /api/v1/models `:free`.
+ * Must stay on a slug that still appears in GET /api/v1/models `:free`
+ * *and* accepts a live completion with a valid OpenRouter key.
  * `openai/gpt-oss-20b:free` was retired (404; paid slug is openai/gpt-oss-20b).
- * Gemma is already in this repo's documented open-weight families.
+ * `google/gemma-4-31b-it:free` is still in the catalog, but the Google
+ * provider returns HTTP 401 ("Request had invalid authentication credentials").
+ * MiniMax m2.7 is a live `:free` slug that actually completes. Gemma remains
+ * a documented open-weight family example (`google/gemma-3-12b-it:free`).
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
-export const OPENROUTER_FREE_MODEL = "google/gemma-4-31b-it:free";
+export const OPENROUTER_FREE_MODEL = "minimax/minimax-m2.7:free";
 
 /** Env names checked for an OpenRouter key (first non-empty wins). */
 export const OPENROUTER_KEY_ENV_NAMES = [

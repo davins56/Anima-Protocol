@@ -15,9 +15,10 @@ describe("OpenRouter catalog defaults", () => {
     expect(OPENROUTER_VENICE_UNCENSORED).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
-    expect(OPENROUTER_FREE_MODEL).toBe("google/gemma-4-31b-it:free");
+    expect(OPENROUTER_FREE_MODEL).toBe("minimax/minimax-m2.7:free");
     expect(OPENROUTER_FREE_MODEL.endsWith(":free")).toBe(true);
     expect(OPENROUTER_FREE_MODEL).not.toBe("openai/gpt-oss-20b:free");
+    expect(OPENROUTER_FREE_MODEL).not.toBe("google/gemma-4-31b-it:free");
   });
 });
 
