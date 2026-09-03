@@ -1,13 +1,26 @@
 import { useCallback } from "react";
 
+/**
+ * Paint a streaming/thinking bubble onto the session that started the send.
+ * After /chat/:id navigation the updater still sees the newly opened thread —
+ * never replace that history with the previous thread's prefix.
+ */
+export function applyStreamingMessage(session, { sessionId, prefixMessages, message }) {
+  if (!session) return session;
+  if (sessionId && session.id !== sessionId) return session;
+  return { ...session, messages: [...prefixMessages, message] };
+}
+
 export function useChatStreaming(setActiveSession) {
   const createStreamUi = useCallback(
-    ({ updatedMessages, characterName, timestamp, onDelta }) => {
+    ({ sessionId, updatedMessages, characterName, timestamp, onDelta }) => {
       const replaceTransient = (message) => {
         setActiveSession((session) =>
-          session
-            ? { ...session, messages: [...updatedMessages, message] }
-            : session,
+          applyStreamingMessage(session, {
+            sessionId,
+            prefixMessages: updatedMessages,
+            message,
+          }),
         );
       };
 

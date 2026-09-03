@@ -88,14 +88,16 @@ describe("useChatPersistence persistTurn", () => {
     vi.clearAllMocks();
   });
 
-  it("persists turn messages concurrently and updates session details", async () => {
+  it("persists turn messages in order and updates session details", async () => {
     let activeAppends = 0;
     let maxConcurrentAppends = 0;
-    const appendDelay = 50;
+    const appendOrder = [];
+    const appendDelay = 15;
 
     base44.messages.append.mockImplementation(async (sessionId, msg) => {
       activeAppends++;
       maxConcurrentAppends = Math.max(maxConcurrentAppends, activeAppends);
+      appendOrder.push(msg.content);
       await new Promise((resolve) => setTimeout(resolve, appendDelay));
       activeAppends--;
       return { ...msg, _stored: true };
@@ -133,8 +135,10 @@ describe("useChatPersistence persistTurn", () => {
       title: "Title 1",
     });
     expect(animaApi.chat.commitTurn).toHaveBeenCalledWith("turn_1");
+    expect(appendOrder).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(maxConcurrentAppends).toBe(1);
 
-    console.log(`[PersistTurn Benchmark Baseline] Duration for 4 messages (50ms I/O delay each): ${duration}ms, Max concurrent appends: ${maxConcurrentAppends}`);
+    console.log(`[PersistTurn sequential] Duration for 4 messages (${appendDelay}ms I/O delay each): ${duration}ms, Max concurrent appends: ${maxConcurrentAppends}`);
 
     unmount();
   });
