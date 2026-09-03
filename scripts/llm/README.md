@@ -68,14 +68,20 @@ export ANIMA_LOCAL_LLM_BACKEND=vllm
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 ```
 
-Short guide: [`docs/custom-llm.md`](../../docs/custom-llm.md) · Full: [`docs/llm-build.md`](../../docs/llm-build.md).
+Registry/CLI: [`lib/llm/README.md`](../../lib/llm/README.md) · Production host: [`deploy/ollama-fly/README.md`](../../deploy/ollama-fly/README.md).
 
 ## Production (always-on, public HTTPS)
 
-The commands above run on your laptop only — Vercel can't reach `localhost`.
-For a real deployment, see [`deploy/ollama-fly/`](../../deploy/ollama-fly/README.md):
-one `fly deploy` gets you the same `anima-chat` model behind an authenticated,
-always-on public URL, ready to plug into `ANIMA_LOCAL_LLM_BASE_URL`.
+The commands above run on your laptop only. The Cloudflare Worker at
+`anima-protocol.com` cannot reach `localhost` (isolate fetch → CF error 1003)
+and will not invent `http://localhost:11434/v1`. Set
+`ANIMA_LOCAL_LLM_BASE_URL` to a public HTTPS `…/v1` URL, or bind
+`OPENROUTER_API_KEY` so chat can use OpenRouter.
+
+For a real self-hosted deployment, see
+[`deploy/ollama-fly/`](../../deploy/ollama-fly/README.md): one `fly deploy`
+gets you the same `anima-chat` model behind an authenticated, always-on
+public URL, ready to plug into the Worker as `ANIMA_LOCAL_LLM_BASE_URL`.
 
 ## Lineup
 

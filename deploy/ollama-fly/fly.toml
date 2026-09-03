@@ -1,0 +1,46 @@
+# Anima Protocol self-hosted chat LLM (Ollama + bearer proxy).
+#
+# Deploy from the repository root so the Dockerfile can COPY
+# scripts/llm/Modelfile.anima-chat:
+#   fly deploy --config deploy/ollama-fly/fly.toml --dockerfile deploy/ollama-fly/Dockerfile
+#
+# Do not put PROXY_AUTH_TOKEN (or any secret) in this file.
+
+app = "anima-chat-llm"
+primary_region = "iad"
+
+[build]
+  dockerfile = "deploy/ollama-fly/Dockerfile"
+
+[env]
+  OLLAMA_HOST = "0.0.0.0:11434"
+  ANIMA_BOOTSTRAP_BASE = "qwen2.5:3b"
+  ANIMA_OLLAMA_CHAT_TAG = "anima-chat"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_start_machines = true
+  # Keep one machine warm. `auto_stop_machines = "stop"` / `"suspend"` (scale-to-zero)
+  # saves money but the first chat after idle waits for machine boot + Ollama
+  # load — often long enough that the Worker chat turn times out. See README.
+  auto_stop_machines = "off"
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    # /healthz is a static Caddy 200 (see Caddyfile). Long grace still covers
+    # a slow bind of :8080 on first boot; the model pull is not on this path.
+    grace_period = "2m"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/healthz"
+
+[mounts]
+  source = "ollama_data"
+  destination = "/root/.ollama"
+
+[[vm]]
+  size = "shared-cpu-4x"
+  memory = "8gb"
