@@ -16,9 +16,13 @@ import {
 } from "@/lib/loadRosterCharacters";
 import { upsertCharacters } from "@/lib/seedCharacters";
 import {
+  applyIdentityFallback,
   initSessionErrorMessage,
+  isUsableSessionId,
   remapSelectedCharacterIds,
 } from "@/lib/createInitSession";
+import { rememberCreatedSession } from "@/lib/chatSessionLoad";
+import { STORE_SESSION_CREATE_TIMEOUT_MS } from "@/lib/storeTimeouts";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -184,26 +188,22 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       if (bundledSelected.length) {
         const upserted = await upsertCharacters(
           bundledSelected.map(({ _bundled, ...rest }) => rest),
-          { skipExistingLookup: true },
+          {
+            skipExistingLookup: true,
+            timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS,
+          },
         );
-        selectedIds = remapSelectedCharacterIds(
+        selectedIds = applyIdentityFallback(
+          remapSelectedCharacterIds(
+            selected,
+            bundledSelected,
+            upserted?.items,
+            upserted?.idMap,
+          ),
           selected,
           bundledSelected,
           upserted?.items,
-          upserted?.idMap,
         );
-        const storeIds = new Set(
-          (upserted?.items || []).map((item) => item?.id).filter(Boolean),
-        );
-        const staleBundled = bundledSelected.some((character) => {
-          const nextId = selectedIds[selected.indexOf(character.id)];
-          return storeIds.size > 0 && nextId === character.id && !storeIds.has(character.id);
-        });
-        if (staleBundled) {
-          throw new Error(
-            "Could not match the selected starter to a store character. Tap Init to try again.",
-          );
-        }
         const remappedByOldId = new Map(
           selected.map((id, index) => [id, selectedIds[index]]),
         );
@@ -285,7 +285,14 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   };
 
   const handleCreateFromChooser = (session) => {
-    navigate(`/chat/${session.id}`);
+    if (!isUsableSessionId(session?.id)) {
+      toast.error(
+        "The store created a session but did not return an id. Tap Init to try again.",
+      );
+      return;
+    }
+    rememberCreatedSession(session);
+    navigate(`/chat/${session.id}`, { state: { primedSession: session } });
     setShowStoryChooser(false);
     setCanonSeed(null);
     onClose?.();

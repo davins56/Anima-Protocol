@@ -7,11 +7,23 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const {
   createBranchForSessionMock,
   loadRosterCharactersMock,
+  navigateMock,
+  rememberCreatedSessionMock,
+  storyChooserSession,
   toastErrorMock,
   upsertCharactersMock,
 } = vi.hoisted(() => ({
   createBranchForSessionMock: vi.fn(),
   loadRosterCharactersMock: vi.fn(),
+  navigateMock: vi.fn(),
+  rememberCreatedSessionMock: vi.fn(),
+  storyChooserSession: {
+    current: {
+      id: "story-sess-1",
+      title: "Serenity in The Boy Who Lived",
+      messages: [{ role: "assistant", content: "Welcome" }],
+    },
+  },
   toastErrorMock: vi.fn(),
   upsertCharactersMock: vi.fn(),
 }));
@@ -26,7 +38,7 @@ vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
     ...actual,
-    useNavigate: () => vi.fn(),
+    useNavigate: () => navigateMock,
   };
 });
 
@@ -52,7 +64,19 @@ vi.mock("@/components/stories/CanonicalStoriesBrowser", () => ({
 }));
 
 vi.mock("@/components/stories/StoryCharacterChooser", () => ({
-  default: () => <div />,
+  default: ({ onCreateSession }) => (
+    <button
+      type="button"
+      data-testid="story-chooser-create"
+      onClick={() => onCreateSession(storyChooserSession.current)}
+    >
+      Fake chooser create
+    </button>
+  ),
+}));
+
+vi.mock("@/lib/chatSessionLoad", () => ({
+  rememberCreatedSession: rememberCreatedSessionMock,
 }));
 
 vi.mock("@/hooks/useTimelineBranching", () => ({
@@ -166,6 +190,13 @@ describe("NewSessionModal", () => {
     });
     toastErrorMock.mockReset();
     upsertCharactersMock.mockReset();
+    navigateMock.mockReset();
+    rememberCreatedSessionMock.mockReset();
+    storyChooserSession.current = {
+      id: "story-sess-1",
+      title: "Serenity in The Boy Who Lived",
+      messages: [{ role: "assistant", content: "Welcome" }],
+    };
   });
 
   it("keeps a bounded inner scroller that clears the tab bar", () => {
@@ -377,7 +408,7 @@ describe("NewSessionModal", () => {
           name: "Serenity",
         }),
       ],
-      { skipExistingLookup: true },
+      { skipExistingLookup: true, timeoutMs: 20000 },
     );
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
@@ -492,6 +523,115 @@ describe("NewSessionModal", () => {
     );
     expect(onCreate.mock.calls[0][0].group_character_ids).not.toContain("seed_tony");
     expect(onCreate.mock.calls[0][0].group_character_ids).not.toContain("seed_steve");
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("falls back to universe+name when remap is stale instead of throwing", async () => {
+    loadRosterCharactersMock.mockResolvedValue({
+      characters: [
+        {
+          id: "seed_protocol-serenity",
+          name: "Serenity",
+          universe: "Protocol",
+          category: "companion",
+          _bundled: true,
+        },
+      ],
+      usingBundledSeed: true,
+    });
+    upsertCharactersMock.mockResolvedValue({
+      added: 1,
+      skipped: 0,
+      items: [{ id: "char_store_9", name: "Serenity", universe: "Protocol" }],
+      idMap: { "seed_protocol-serenity": "seed_protocol-serenity" },
+    });
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
+    const { container, root, overlay } = renderModal({ onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(upsertCharactersMock).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "seed_protocol-serenity" })],
+      { skipExistingLookup: true, timeoutMs: 20000 },
+    );
+    expect(onCreate).toHaveBeenCalledWith({
+      mode: "solo",
+      character_id: "char_store_9",
+      character: expect.objectContaining({
+        id: "char_store_9",
+        name: "Serenity",
+      }),
+      opening_scene: undefined,
+    });
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(overlay.textContent).not.toContain(
+      "Could not match the selected starter",
+    );
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("remembers a Story Chooser session and navigates with primedSession state", async () => {
+    const onClose = vi.fn();
+    const { container, root, overlay } = renderModal({ onClose });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(overlay, "Story Chooser"));
+    const create = document.querySelector('[data-testid="story-chooser-create"]');
+    expect(create).toBeTruthy();
+    await click(create);
+
+    const primed = {
+      id: "story-sess-1",
+      title: "Serenity in The Boy Who Lived",
+      messages: [{ role: "assistant", content: "Welcome" }],
+    };
+    expect(rememberCreatedSessionMock).toHaveBeenCalledWith(primed);
+    expect(navigateMock).toHaveBeenCalledWith("/chat/story-sess-1", {
+      state: { primedSession: primed },
+    });
+    expect(onClose).toHaveBeenCalled();
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("does not navigate when Story Chooser returns an unusable session id", async () => {
+    storyChooserSession.current = { id: "undefined", title: "Broken" };
+    const onClose = vi.fn();
+    const { container, root, overlay } = renderModal({ onClose });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(overlay, "Story Chooser"));
+    await click(document.querySelector('[data-testid="story-chooser-create"]'));
+
+    expect(rememberCreatedSessionMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(toastErrorMock).toHaveBeenCalled();
 
     act(() => {
       root.unmount();

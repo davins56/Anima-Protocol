@@ -41,7 +41,10 @@ export interface EntityStore {
   update(id: string, data: Record<string, unknown>): Promise<any>;
   delete(id: string): Promise<void>;
   bulkCreate(dataArray: Record<string, unknown>[]): Promise<any>;
-  bulkUpsert(dataArray: Record<string, unknown>[]): Promise<{ count: number; items: any[] }>;
+  bulkUpsert(
+    dataArray: Record<string, unknown>[],
+    opts?: { timeoutMs?: number },
+  ): Promise<{ count: number; items: any[] }>;
   filter(
     filters?: Record<string, unknown>,
     sort?: string,

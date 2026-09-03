@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, Check } from "lucide-react";
-import { base44 } from "@/api/base44Client";
 import { CANONICAL_STORIES } from "@/lib/canonicalStories";
 import StoryPointSelector from "./StoryPointSelector";
 import { motion, AnimatePresence } from "framer-motion";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import {
+  buildInitSessionPayload,
+  createInitChatSession,
+} from "@/lib/createInitSession";
 import { toast } from "sonner";
 
 export default function StoryCharacterChooser({
@@ -97,17 +100,23 @@ export default function StoryCharacterChooser({
 
       // Build narrator exposition
       const narratorExposition = `[LOCATION: ${firstInsertion.setting || selectedStory.title}]\n\n${firstInsertion.narrative}`;
-
-      const session = await base44.entities.ChatSession.create({
+      const { payload } = buildInitSessionPayload({
         mode: "solo",
-        character_id: character.id,
+        characterId: character.id,
+        character,
+        openingScene: firstInsertion.narrative,
+      });
+      // createInitChatSession fire-and-forgets /messages/replace so a narrator
+      // row cannot block navigation the way a nested messages array on create did.
+      const session = await createInitChatSession({
+        ...payload,
         title: `${character.name} in ${selectedStory.title}`,
-        opening_scene: firstInsertion.narrative,
         selected_story_points: insertions.map((p) => ({
           id: p.id,
           title: p.title,
           narrative: p.narrative,
         })),
+        last_message: firstInsertion.narrative.slice(0, 60),
         messages: [
           {
             role: "assistant",
@@ -116,7 +125,6 @@ export default function StoryCharacterChooser({
             timestamp: new Date().toISOString(),
           },
         ],
-        last_message: firstInsertion.narrative.slice(0, 60),
       });
       onCreateSession(session);
     } catch (err) {
