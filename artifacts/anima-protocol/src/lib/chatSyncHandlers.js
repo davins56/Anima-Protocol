@@ -51,12 +51,11 @@ export async function syncActiveMessages({ sessionId, activeSessionRef, setActiv
       m.character_name === "__thinking__" ||
       m.is_streaming === true,
   );
-  // Also protect an optimistic tip that has not been persisted yet. After a
-  // failed persist the thinking bubble is gone but the just-sent turn still
-  // carries client `turn_*` ids — a deferred sync would wipe it.
-  const tail = localMessages[localMessages.length - 1];
-  const hasOptimisticTail = isOptimisticChatTail(tail);
-  if (hasPending || hasOptimisticTail) return false;
+  // Protect any unpersisted `turn_*` (or id-less) row, not only the tail.
+  // A later successful send replaces the tail with server ids; a deferred
+  // sync would then wipe the earlier failed-persist turn still sitting mid-history.
+  const hasUnpersisted = localMessages.some(isOptimisticChatTail);
+  if (hasPending || hasUnpersisted) return false;
   setActiveSession((prev) =>
     prev && prev.id === sessionId ? { ...prev, messages } : prev,
   );
