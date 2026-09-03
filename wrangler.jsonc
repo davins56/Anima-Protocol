@@ -40,12 +40,28 @@
   // scripts/cloudflare/www-redirect.md — fix the zone rule, do not assume
   // a wrangler route exists until that replacement keeps ${1}.
   "vars": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    // Safe defaults for the self-hosted Anima LLM. Do NOT set
+    // ANIMA_LOCAL_LLM_BASE_URL here until Fly anima-chat-llm is live —
+    // a committed URL would put `local` in the provider chain and skip
+    // OpenRouter. After `fly deploy`, add the public URL as a Secrets
+    // Store secret (preferred) or uncomment:
+    // "ANIMA_LOCAL_LLM_BASE_URL": "https://anima-chat-llm.fly.dev/v1",
+    "ANIMA_LOCAL_LLM_BACKEND": "ollama",
+    "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat"
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
-  // file is the source of truth. Keep these three so git deploys re-bind
-  // CLERK_* and DATABASE_URL from store a31e40473ef34db896b5bc1e6c1c4b86.
+  // file is the source of truth. Keep CLERK_* + DATABASE_URL so git deploys
+  // re-bind them from store a31e40473ef34db896b5bc1e6c1c4b86.
+  //
+  // After creating these names in that store, add matching objects below
+  // (same shape as CLERK_*). Do not add a binding for a secret_name that
+  // does not exist yet — wrangler deploy will fail and block the Worker.
+  //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
+  //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
+  //   OPENROUTER_API_KEY        = OpenRouter key (used when local URL is unset)
+  // See deploy/ollama-fly/README.md.
   "secrets_store_secrets": [
     {
       "binding": "CLERK_SECRET_KEY",

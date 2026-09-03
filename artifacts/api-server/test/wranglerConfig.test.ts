@@ -114,8 +114,21 @@ describe("Cloudflare wrangler config", () => {
 
   it("does not embed secrets in the committed Worker config", () => {
     const vars = (config.vars ?? {}) as Record<string, unknown>;
-    expect(Object.keys(vars)).toEqual(["NODE_ENV"]);
     expect(vars.NODE_ENV).toBe("production");
+    expect(vars.ANIMA_LOCAL_LLM_BACKEND).toBe("ollama");
+    expect(vars.ANIMA_OLLAMA_MODEL_STANDARD).toBe("anima-chat");
+    // Public Fly URL stays out of committed vars until the operator adds it
+    // after anima-chat-llm is live — otherwise `local` enters the chain.
+    expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_BASE_URL");
+    expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_API_KEY");
+    expect(vars).not.toHaveProperty("OPENROUTER_API_KEY");
+    expect(Object.keys(vars).sort()).toEqual(
+      [
+        "ANIMA_LOCAL_LLM_BACKEND",
+        "ANIMA_OLLAMA_MODEL_STANDARD",
+        "NODE_ENV",
+      ].sort(),
+    );
     const serialized = JSON.stringify(config);
     expect(serialized).not.toMatch(/sk_live_|sk_test_|pk_live_|pk_test_/);
     expect(serialized).not.toMatch(/postgres(?:ql)?:\/\//i);
