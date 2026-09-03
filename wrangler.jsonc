@@ -53,9 +53,17 @@
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
-  // file is the source of truth. Create each secret_name in store
-  // a31e40473ef34db896b5bc1e6c1c4b86 BEFORE the deploy that first adds
-  // its binding, or wrangler deploy fails and blocks the Worker.
+  // file is the source of truth. Keep CLERK_* + DATABASE_URL (those store
+  // entries already exist).
+  //
+  // Ordered follow-up for LLM secrets (do not skip a step):
+  // 1. Create the secret_name in store a31e40473ef34db896b5bc1e6c1c4b86.
+  // 2. Add the matching { binding, store_id, secret_name } object below
+  //    in the SAME commit.
+  // 3. Then deploy.
+  // Adding a binding for a secret_name that does not exist yet makes
+  // `wrangler deploy` fail and blocks the Worker (the whole site).
+  // LLM names to add later, after Fly + OpenRouter values exist:
   //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
   //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
   //   OPENROUTER_API_KEY        = OpenRouter key (used when local URL is unset)
@@ -75,21 +83,6 @@
       "binding": "DATABASE_URL",
       "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
       "secret_name": "DATABASE_URL"
-    },
-    {
-      "binding": "ANIMA_LOCAL_LLM_BASE_URL",
-      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
-      "secret_name": "ANIMA_LOCAL_LLM_BASE_URL"
-    },
-    {
-      "binding": "ANIMA_LOCAL_LLM_API_KEY",
-      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
-      "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
-    },
-    {
-      "binding": "OPENROUTER_API_KEY",
-      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
-      "secret_name": "OPENROUTER_API_KEY"
     }
   ],
   // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against

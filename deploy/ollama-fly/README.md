@@ -83,22 +83,31 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 
 ## App-side env (Cloudflare Worker, not Vercel)
 
-Production is Workers + Assets (`wrangler.jsonc`, Worker `anima-protocol`).
-Dashboard-only secrets are dropped on the next git deploy unless they are
-declared in `wrangler.jsonc`. The LLM bindings are already in
-`secrets_store_secrets` (store `a31e40473ef34db896b5bc1e6c1c4b86`). Create
-each `secret_name` in that store **before** the Worker deploy that first
-needs it, or `wrangler deploy` fails. Put **values** only in the store —
-never in git.
+**Do not add LLM bindings to `wrangler.jsonc` until the Secrets Store
+entries exist.** Cloudflare Workers Builds auto-deploys `main`. A
+`secrets_store_secrets` object whose `secret_name` is missing from store
+`a31e40473ef34db896b5bc1e6c1c4b86` makes `wrangler deploy` fail and takes
+down the Worker (the whole site). Ordered runbook:
+
+1. Create the `secret_name` in that store (values only in the dashboard).
+2. Add the matching `{ binding, store_id, secret_name }` in `wrangler.jsonc`
+   in the **same** commit.
+3. Then deploy.
+
+Today only `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, and `DATABASE_URL`
+are bound. LLM names below are the follow-up, after Fly and OpenRouter
+values exist. Dashboard-only secrets are still dropped on the next git
+deploy unless they are declared — that is why step 2 exists, and why it
+must come after step 1.
 
 | Name | Where | Value |
 |------|--------|--------|
-| `ANIMA_RUNTIME` | `wrangler.jsonc` `vars` | `worker` (never invent localhost) |
-| `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store binding | `https://anima-chat-llm.fly.dev/v1` |
-| `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store binding | same as `PROXY_AUTH_TOKEN` |
-| `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` | `ollama` |
-| `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` | `anima-chat` |
-| `OPENROUTER_API_KEY` | Secrets Store binding | OpenRouter key (fallback when no public local URL is set) |
+| `ANIMA_RUNTIME` | `wrangler.jsonc` `vars` (already committed) | `worker` (never invent localhost) |
+| `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` (already committed) | `ollama` |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` (already committed) | `anima-chat` |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store, **then** a binding (not in git yet) | `https://anima-chat-llm.fly.dev/v1` |
+| `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store, **then** a binding (not in git yet) | same as `PROXY_AUTH_TOKEN` |
+| `OPENROUTER_API_KEY` | Secrets Store, **then** a binding (not in git yet) | OpenRouter key (used when local URL is unset) |
 
 Until `ANIMA_LOCAL_LLM_BASE_URL` is a public HTTPS `…/v1` URL, the Worker
 reports `localEndpoint.configured: false` and uses OpenRouter when a key is
