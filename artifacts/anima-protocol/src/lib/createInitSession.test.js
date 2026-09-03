@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   INIT_SESSION_MISSING_ID_MESSAGE,
   INIT_SESSION_TIMEOUT_MESSAGE,
+  applyIdentityFallback,
   buildInitSessionPayload,
   characterUpsertIdMap,
   createdSessionId,
@@ -12,6 +13,7 @@ import {
   initSessionErrorMessage,
   isStoreTimeoutError,
   isUsableSessionId,
+  matchCharacterByIdentity,
   remapSelectedCharacterIds,
   requireCreatedSession,
 } from "./createInitSession";
@@ -215,6 +217,37 @@ describe("remapSelectedCharacterIds", () => {
   });
 });
 
+describe("applyIdentityFallback", () => {
+  it("replaces a stale remapped seed id with the universe+name store id", () => {
+    const bundled = [
+      { id: "seed_protocol-serenity", name: "Serenity", universe: "Protocol" },
+    ];
+    const items = [
+      { id: "char_store_9", name: "Serenity", universe: "Protocol" },
+    ];
+    expect(
+      applyIdentityFallback(
+        ["seed_protocol-serenity"],
+        ["seed_protocol-serenity"],
+        bundled,
+        items,
+      ),
+    ).toEqual(["char_store_9"]);
+    expect(matchCharacterByIdentity(bundled[0], items)?.id).toBe("char_store_9");
+  });
+
+  it("keeps the seed id when no identity match exists so Init can still create", () => {
+    expect(
+      applyIdentityFallback(
+        ["seed_protocol-serenity"],
+        ["seed_protocol-serenity"],
+        [{ id: "seed_protocol-serenity", name: "Serenity", universe: "Protocol" }],
+        [{ id: "char_other", name: "Tony Stark", universe: "MCU" }],
+      ),
+    ).toEqual(["seed_protocol-serenity"]);
+  });
+});
+
 describe("Chat Init wiring", () => {
   it("awaits createInitChatSession and does not rewrite messages after create", () => {
     const chat = readFileSync(join(srcRoot, "pages/Chat.jsx"), "utf8");
@@ -241,6 +274,32 @@ describe("Chat Init wiring", () => {
     expect(chatPaths).toEqual(["/chat/:sessionId?"]);
     expect(protocol).not.toMatch(/pages\/NewChat/);
     expect(protocol).not.toMatch(/const NewChat = lazy/);
+  });
+
+  it("Story Chooser creates via createInitChatSession so /messages/replace cannot block", () => {
+    const chooser = readFileSync(
+      join(srcRoot, "components/stories/StoryCharacterChooser.jsx"),
+      "utf8",
+    );
+    expect(chooser).toContain("createInitChatSession(");
+    expect(chooser).toContain("buildInitSessionPayload(");
+    expect(chooser).not.toMatch(/ChatSession\.create\s*\(/);
+    expect(chooser).not.toMatch(/await\s+base44\.messages\.replace/);
+  });
+
+  it("chooser handoff remembers the primed session and navigates with location.state", () => {
+    const modal = readFileSync(
+      join(srcRoot, "components/chat/NewSessionModal.jsx"),
+      "utf8",
+    );
+    expect(modal).toContain("rememberCreatedSession(session)");
+    expect(modal).toContain(
+      "navigate(`/chat/${session.id}`, { state: { primedSession: session } })",
+    );
+    expect(modal).toContain("isUsableSessionId(session?.id)");
+    expect(modal).toContain("timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS");
+    expect(modal).toContain("applyIdentityFallback(");
+    expect(modal).not.toContain("Could not match the selected starter");
   });
 });
 
