@@ -9,7 +9,7 @@ describe("analyzeCodeRepairInput", () => {
       diagnostics: {
         openrouterConfigured: true,
         openrouterEnv: "OPENROUTER_API_KEY",
-        openrouterModel: "openai/gpt-oss-20b:free",
+        openrouterModel: "google/gemma-4-31b-it:free",
         openrouterIsFreeTier: true,
       },
     });

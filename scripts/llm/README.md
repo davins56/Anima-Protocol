@@ -32,7 +32,7 @@ export ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored
 
 # Or OpenRouter (free API key at https://openrouter.ai/keys) — Venice Uncensored:
 export OPENROUTER_API_KEY=sk-or-…
-# $0 accounts auto-fall back to openai/gpt-oss-20b:free on HTTP 402.
+# $0 accounts auto-fall back to google/gemma-4-31b-it:free on HTTP 402.
 # To skip Venice from the first turn: ANIMA_OPENROUTER_FREE=true
 ```
 

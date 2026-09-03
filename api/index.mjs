@@ -114274,7 +114274,7 @@ var openRouterClient = null;
 var openRouterClientKey = null;
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 var OPENROUTER_VENICE_UNCENSORED = "cognitivecomputations/dolphin-mistral-24b-venice-edition";
-var OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+var OPENROUTER_FREE_MODEL = "google/gemma-4-31b-it:free";
 var OPENROUTER_KEY_ENV_NAMES = [
   "OPENROUTER_API_KEY",
   "ANIMA_OPENROUTER_API_KEY",
@@ -134596,7 +134596,7 @@ function classify(input) {
 }
 function openRouterQuotaRepair(input) {
   const env = input.diagnostics?.openrouterEnv || "OPENROUTER_API_KEY";
-  const model = input.diagnostics?.openrouterModel || "openai/gpt-oss-20b:free";
+  const model = input.diagnostics?.openrouterModel || OPENROUTER_FREE_MODEL;
   const localConfigured = Boolean(input.diagnostics?.localConfigured);
   const localHost = input.diagnostics?.localHost || null;
   const customOnly = Boolean(input.diagnostics?.customOnly);
