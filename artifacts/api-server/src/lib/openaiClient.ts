@@ -1,4 +1,8 @@
 import OpenAI from "openai";
+import { isCloudflareWorkerRuntime } from "@workspace/db";
+
+/** Same Worker signal as `@workspace/db` — re-exported so LLM routing stays in lockstep. */
+export { isCloudflareWorkerRuntime };
 
 let openaiClient: OpenAI | null = null;
 let openaiClientKey: string | null = null;
@@ -73,21 +77,6 @@ const NO_LOOPBACK_ANIMA_RUNTIMES = new Set([
 const LOOPBACK_OK_ANIMA_RUNTIMES = new Set(["node", "local", "dev", "docker"]);
 
 /**
- * Cloudflare Workers identify as `Cloudflare-Workers` (same signal as
- * `@workspace/db` `isCloudflareWorkerRuntime`). Vercel/Vitest/Node do not.
- */
-export function isCloudflareWorkerUserAgent(
-  globalObj: typeof globalThis = globalThis,
-): boolean {
-  try {
-    const nav = (globalObj as { navigator?: { userAgent?: string } }).navigator;
-    return nav?.userAgent === "Cloudflare-Workers";
-  } catch {
-    return false;
-  }
-}
-
-/**
  * True on runtimes that cannot open loopback TCP (Workers isolate, Vercel,
  * Cloudflare Pages). Local Node / Docker keep the Ollama localhost default.
  *
@@ -95,7 +84,7 @@ export function isCloudflareWorkerUserAgent(
  * - `ANIMA_RUNTIME=node|local|dev|docker` → loopback allowed (tests / VPS)
  * - `ANIMA_RUNTIME=worker|cloudflare|vercel|serverless|edge` → no loopback
  * - `VERCEL` / `VERCEL_ENV` / `CF_PAGES` → no loopback
- * - `navigator.userAgent === "Cloudflare-Workers"` → no loopback
+ * - `isCloudflareWorkerRuntime()` (`navigator.userAgent === "Cloudflare-Workers"`)
  *
  * Do not treat `NODE_ENV=production` as no-loopback: a VPS can run Node
  * production next to Ollama on localhost.
@@ -111,7 +100,7 @@ export function isLoopbackUnreachableRuntime(
   }
   if (env.VERCEL || env.VERCEL_ENV) return true;
   if (env.CF_PAGES) return true;
-  return isCloudflareWorkerUserAgent(globalObj);
+  return isCloudflareWorkerRuntime(globalObj);
 }
 
 /** True when hostname is loopback / unspecified (not reachable from Workers). */

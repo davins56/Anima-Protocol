@@ -4,6 +4,10 @@
 # Fly volume already has the weights), then stays up so Fly health checks pass
 # during the first-boot pull.
 #
+# Caddy binds :8080 immediately with a static /healthz. Ollama readiness and
+# `ollama create anima-chat` run in the background so a slow first pull cannot
+# fail Fly http_service.checks.
+#
 # Same bootstrap conventions as scripts/llm/render/entrypoint.sh.
 set -eu
 
@@ -21,26 +25,30 @@ echo "Starting ollama serve on ${OLLAMA_HOST}..."
 ollama serve &
 SERVE_PID=$!
 
-echo "Waiting for ollama serve to become ready..."
-i=0
-until curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; do
-  i=$((i + 1))
-  if [ "$i" -ge 60 ]; then
-    echo "error: ollama serve did not become ready in time" >&2
-    exit 1
-  fi
-  if ! kill -0 "$SERVE_PID" 2>/dev/null; then
-    echo "error: ollama serve exited before becoming ready" >&2
-    exit 1
-  fi
-  sleep 1
-done
-
-echo "Starting auth proxy on :8080..."
+echo "Starting auth proxy on :8080 (static /healthz; /v1 requires Bearer)..."
 caddy run --config /Caddyfile --adapter caddyfile &
 CADDY_PID=$!
 
+wait_for_ollama() {
+  i=0
+  # Prefer `ollama list` (always on this image). Fall back to curl if present.
+  until ollama list >/dev/null 2>&1 || { command -v curl >/dev/null 2>&1 && curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; }; do
+    i=$((i + 1))
+    if [ "$i" -ge 120 ]; then
+      echo "error: ollama serve did not become ready in time" >&2
+      return 1
+    fi
+    if ! kill -0 "$SERVE_PID" 2>/dev/null; then
+      echo "error: ollama serve exited before becoming ready" >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
 bootstrap_model() {
+  echo "Waiting for ollama serve to become ready..."
+  wait_for_ollama || return 1
   if ollama list 2>/dev/null | grep -q "^${ANIMA_OLLAMA_CHAT_TAG}"; then
     echo "${ANIMA_OLLAMA_CHAT_TAG} already present on volume, skipping bootstrap."
     return 0

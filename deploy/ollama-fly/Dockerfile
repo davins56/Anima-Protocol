@@ -13,7 +13,9 @@
 # Mount a Fly volume at /root/.ollama so the ~2 GB of pulled weights survive
 # restarts/redeploys instead of re-downloading every time.
 
-FROM caddy:2-alpine AS caddy
+# Debian Caddy (glibc) — ollama/ollama is Ubuntu/glibc. Do not copy a
+# musl binary from caddy:2-alpine; it will not exec on this image.
+FROM caddy:2 AS caddy
 
 FROM ollama/ollama:latest
 
