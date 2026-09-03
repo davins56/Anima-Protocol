@@ -1076,12 +1076,13 @@ function entityStore(entityName) {
     },
 
     // Upsert many records with client-provided ids (starter seed/repair).
-    async bulkUpsert(dataArray) {
+    async bulkUpsert(dataArray, opts = {}) {
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/bulk-upsert`,
         {
           method: 'POST',
           body: JSON.stringify({ items: dataArray || [] }),
+          timeoutMs: opts.timeoutMs,
         },
       );
       if (!res.ok) await throwErr(res);

@@ -225,4 +225,18 @@ describe("upsertCharacters", () => {
       idMap: { seed_tchalla: "char_store_1" },
     });
   });
+
+  it("passes Init's 20s budget into auth wait and bulkUpsert", async () => {
+    const { upsertCharacters } = await loadSeedModule();
+    await upsertCharacters(
+      [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+      { skipExistingLookup: true, timeoutMs: 20000 },
+    );
+
+    expect(waitForStoreAuth).toHaveBeenCalledWith(20000);
+    expect(characterBulkUpsert).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "seed_tchalla", name: "T'Challa" })],
+      { timeoutMs: 20000 },
+    );
+  });
 });
