@@ -114274,7 +114274,7 @@ var openRouterClient = null;
 var openRouterClientKey = null;
 var OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 var OPENROUTER_VENICE_UNCENSORED = "cognitivecomputations/dolphin-mistral-24b-venice-edition";
-var OPENROUTER_FREE_MODEL = "google/gemma-4-31b-it:free";
+var OPENROUTER_FREE_MODEL = "minimax/minimax-m2.7:free";
 var OPENROUTER_KEY_ENV_NAMES = [
   "OPENROUTER_API_KEY",
   "ANIMA_OPENROUTER_API_KEY",

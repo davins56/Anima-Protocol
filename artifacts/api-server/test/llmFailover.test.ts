@@ -16,7 +16,7 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    OPENROUTER_FREE_MODEL: "google/gemma-4-31b-it:free",
+    OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
@@ -436,7 +436,7 @@ describe("resolveOpenRouterModel", () => {
     process.env.ANIMA_OPENROUTER_FREE = "true";
     delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
     delete process.env.ANIMA_OPENROUTER_MODEL_FAMILY;
-    expect(resolveOpenRouterModel("standard").model).toBe("google/gemma-4-31b-it:free");
+    expect(resolveOpenRouterModel("standard").model).toBe("minimax/minimax-m2.7:free");
   });
 
   it("can select a supported OpenRouter family by name", () => {
@@ -718,12 +718,12 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("google/gemma-4-31b-it:free");
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[0][0].model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
-    expect(createMock.mock.calls[1][0].model).toBe("google/gemma-4-31b-it:free");
+    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m2.7:free");
     expect(isOpenRouterCreditFallback()).toBe(true);
   });
 
@@ -747,7 +747,7 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("google/gemma-4-31b-it:free");
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
     expect(isOpenRouterCreditFallback()).toBe(false);
     expect(resolveOpenRouterModel("standard").model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
@@ -1296,7 +1296,7 @@ describe("probeLlmProviders", () => {
       provider: "openrouter",
       configured: true,
       ok: true,
-      model: "google/gemma-4-31b-it:free",
+      model: "minimax/minimax-m2.7:free",
     });
   });
 });
