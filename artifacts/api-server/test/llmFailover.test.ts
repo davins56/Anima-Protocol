@@ -56,17 +56,42 @@ vi.mock("../src/lib/openaiClient", () => {
       }
       return openRouterClient;
     },
+    isLoopbackUnreachableRuntime: () =>
+      Boolean(
+        process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES,
+      ),
     localLlmBaseUrl: () => {
       const explicit =
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
         process.env.VLLM_BASE_URL?.trim();
-      if (explicit) return explicit.replace(/\/$/, "");
+      if (explicit) {
+        if (
+          (process.env.ANIMA_RUNTIME === "worker" ||
+            process.env.VERCEL ||
+            process.env.VERCEL_ENV ||
+            process.env.CF_PAGES) &&
+          /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
+        ) {
+          return null;
+        }
+        return explicit.replace(/\/$/, "");
+      }
       const ollama = process.env.OLLAMA_BASE_URL?.trim();
       if (ollama) {
         const root = ollama.replace(/\/$/, "");
         return root.endsWith("/v1") ? root : `${root}/v1`;
       }
-      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      if (
+        process.env.ANIMA_RUNTIME === "worker" ||
+        process.env.VERCEL ||
+        process.env.VERCEL_ENV ||
+        process.env.CF_PAGES
+      ) {
+        return null;
+      }
       return "http://localhost:11434/v1";
     },
     hasLocalLlm: () => {
@@ -74,8 +99,25 @@ vi.mock("../src/lib/openaiClient", () => {
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
         process.env.VLLM_BASE_URL?.trim() ||
         process.env.OLLAMA_BASE_URL?.trim();
+      if (
+        explicit &&
+        (process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES) &&
+        /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
+      ) {
+        return false;
+      }
       if (explicit) return true;
-      if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
+      if (
+        process.env.ANIMA_RUNTIME === "worker" ||
+        process.env.VERCEL ||
+        process.env.VERCEL_ENV ||
+        process.env.CF_PAGES
+      ) {
+        return false;
+      }
       return true;
     },
     isCloudFlagshipLlmHost: (host: string | null | undefined) => {
@@ -100,8 +142,42 @@ vi.mock("../src/lib/openaiClient", () => {
           base = root.endsWith("/v1") ? root : `${root}/v1`;
         }
       }
-      if (!base && !(process.env.VERCEL || process.env.VERCEL_ENV)) {
+      const noLoopback = Boolean(
+        process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES,
+      );
+      const explicitLoopback = Boolean(
+        explicit && /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit),
+      );
+      const loopbackRejected = noLoopback && explicitLoopback;
+      if (!base && !noLoopback) {
         base = "http://localhost:11434/v1";
+      }
+      if (loopbackRejected) {
+        try {
+          const url = new URL(explicit.replace(/\/$/, ""));
+          return {
+            configured: false,
+            host: url.hostname,
+            hasV1Path: true,
+            isHttps: url.protocol === "https:",
+            isLocalhost: true,
+            isCloudFlagship: false,
+            isLoopbackMisconfigured: true,
+          };
+        } catch {
+          return {
+            configured: false,
+            host: "localhost",
+            hasV1Path: true,
+            isHttps: false,
+            isLocalhost: true,
+            isCloudFlagship: false,
+            isLoopbackMisconfigured: true,
+          };
+        }
       }
       if (!base) {
         return {
@@ -111,6 +187,7 @@ vi.mock("../src/lib/openaiClient", () => {
           isHttps: false,
           isLocalhost: false,
           isCloudFlagship: false,
+          isLoopbackMisconfigured: false,
         };
       }
       try {
@@ -129,6 +206,7 @@ vi.mock("../src/lib/openaiClient", () => {
           isHttps: url.protocol === "https:",
           isLocalhost: host === "localhost" || host === "127.0.0.1" || host === "::1",
           isCloudFlagship,
+          isLoopbackMisconfigured: false,
         };
       } catch {
         return {
@@ -138,6 +216,7 @@ vi.mock("../src/lib/openaiClient", () => {
           isHttps: /^https:/i.test(base),
           isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
           isCloudFlagship: /api\.openai\.com|api\.groq\.com/i.test(base),
+          isLoopbackMisconfigured: false,
         };
       }
     },
@@ -148,8 +227,21 @@ vi.mock("../src/lib/openaiClient", () => {
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
         process.env.VLLM_BASE_URL?.trim() ||
         process.env.OLLAMA_BASE_URL?.trim();
+      const noLoopback = Boolean(
+        process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES,
+      );
+      if (
+        explicit &&
+        noLoopback &&
+        /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
+      ) {
+        return null;
+      }
       if (explicit) return client;
-      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      if (noLoopback) return null;
       return client;
     },
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
