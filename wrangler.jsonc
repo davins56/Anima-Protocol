@@ -51,7 +51,7 @@
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
     // Skip Venice (402s on $0 OpenRouter accounts). Chat uses
-    // google/gemma-4-31b-it:free via preferOpenRouterFreeTier().
+    // minimax/minimax-m2.7:free via preferOpenRouterFreeTier().
     "ANIMA_OPENROUTER_FREE": "true"
   },
   // Secrets Store bindings — names and store_id only, never values.
