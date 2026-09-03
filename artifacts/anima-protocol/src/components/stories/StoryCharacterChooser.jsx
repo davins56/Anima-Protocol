@@ -107,7 +107,7 @@ export default function StoryCharacterChooser({
         openingScene: firstInsertion.narrative,
       });
       // createInitChatSession fire-and-forgets /messages/replace so a narrator
-      // row cannot block navigation the way ChatSession.create({ messages }) did.
+      // row cannot block navigation the way a nested messages array on create did.
       const session = await createInitChatSession({
         ...payload,
         title: `${character.name} in ${selectedStory.title}`,
