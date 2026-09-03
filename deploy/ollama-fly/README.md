@@ -94,20 +94,21 @@ down the Worker (the whole site). Ordered runbook:
    in the **same** commit.
 3. Then deploy.
 
-Today only `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, and `DATABASE_URL`
-are bound. LLM names below are the follow-up, after Fly and OpenRouter
-values exist. Dashboard-only secrets are still dropped on the next git
-deploy unless they are declared — that is why step 2 exists, and why it
-must come after step 1.
+Today `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `DATABASE_URL`, and
+`OPENROUTER_API_KEY` are bound. Fly names below are the follow-up, after
+the public HTTPS host is live. Dashboard-only secrets are still dropped
+on the next git deploy unless they are declared — that is why step 2
+exists, and why it must come after step 1.
 
 | Name | Where | Value |
 |------|--------|--------|
 | `ANIMA_RUNTIME` | `wrangler.jsonc` `vars` (already committed) | `worker` (never invent localhost) |
 | `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` (already committed) | `ollama` |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` (already committed) | `anima-chat` |
+| `ANIMA_OPENROUTER_FREE` | `wrangler.jsonc` `vars` (already committed) | `true` (skip Venice; use `openai/gpt-oss-20b:free`) |
 | `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store, **then** a binding (not in git yet) | `https://anima-chat-llm.fly.dev/v1` |
 | `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store, **then** a binding (not in git yet) | same as `PROXY_AUTH_TOKEN` |
-| `OPENROUTER_API_KEY` | Secrets Store, **then** a binding (not in git yet) | OpenRouter key (used when local URL is unset) |
+| `OPENROUTER_API_KEY` | Secrets Store + `wrangler.jsonc` binding (name only) | OpenRouter key (used when local URL is unset) |
 
 Until `ANIMA_LOCAL_LLM_BASE_URL` is a public HTTPS `…/v1` URL, the Worker
 reports `localEndpoint.configured: false` and uses OpenRouter when a key is

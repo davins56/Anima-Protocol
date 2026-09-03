@@ -49,24 +49,28 @@
     // in the provider chain before Fly is live and skip OpenRouter.
     // Bind the public URL as a Secrets Store secret (same store as Clerk).
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
-    "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat"
+    "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
+    // Skip Venice (402s on $0 OpenRouter accounts). Chat uses
+    // openai/gpt-oss-20b:free via preferOpenRouterFreeTier().
+    "ANIMA_OPENROUTER_FREE": "true"
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
-  // file is the source of truth. Keep CLERK_* + DATABASE_URL (those store
-  // entries already exist).
+  // file is the source of truth. Keep CLERK_* + DATABASE_URL +
+  // OPENROUTER_API_KEY (those store entries already exist or are created
+  // in the same deploy window).
   //
-  // Ordered follow-up for LLM secrets (do not skip a step):
+  // Ordered follow-up for remaining LLM secrets (do not skip a step):
   // 1. Create the secret_name in store a31e40473ef34db896b5bc1e6c1c4b86.
   // 2. Add the matching { binding, store_id, secret_name } object below
   //    in the SAME commit.
   // 3. Then deploy.
   // Adding a binding for a secret_name that does not exist yet makes
   // `wrangler deploy` fail and blocks the Worker (the whole site).
-  // LLM names to add later, after Fly + OpenRouter values exist:
+  // Fly names to add later, after the public HTTPS host is live:
   //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
   //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
-  //   OPENROUTER_API_KEY        = OpenRouter key (used when local URL is unset)
+  // OPENROUTER_API_KEY is bound below (used when the local URL is unset).
   // See deploy/ollama-fly/README.md.
   "secrets_store_secrets": [
     {
@@ -83,6 +87,11 @@
       "binding": "DATABASE_URL",
       "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
       "secret_name": "DATABASE_URL"
+    },
+    {
+      "binding": "OPENROUTER_API_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "OPENROUTER_API_KEY"
     }
   ],
   // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against
