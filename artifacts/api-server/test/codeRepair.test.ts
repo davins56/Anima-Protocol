@@ -9,7 +9,7 @@ describe("analyzeCodeRepairInput", () => {
       diagnostics: {
         openrouterConfigured: true,
         openrouterEnv: "OPENROUTER_API_KEY",
-        openrouterModel: "google/gemma-4-31b-it:free",
+        openrouterModel: "minimax/minimax-m2.7:free",
         openrouterIsFreeTier: true,
       },
     });
