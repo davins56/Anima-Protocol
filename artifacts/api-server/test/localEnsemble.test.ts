@@ -10,7 +10,7 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    OPENROUTER_FREE_MODEL: "openai/gpt-oss-20b:free",
+    OPENROUTER_FREE_MODEL: "google/gemma-4-31b-it:free",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
