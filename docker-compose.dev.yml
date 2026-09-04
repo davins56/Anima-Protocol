@@ -1,3 +1,4 @@
+
 # Local dev infra: Postgres + the self-hosted Anima LLM (Ollama, branded
 # `anima-chat`), bundled behind one command so the whole stack — including the
 # model the AI talks to — comes up together instead of a separate manual

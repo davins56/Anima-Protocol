@@ -1,0 +1,6 @@
+[submodule "vendor/airi"]
+	path = vendor/airi
+	url = https://github.com/moeru-ai/airi.git
+[submodule "external/airi"]
+	path = external/airi
+	url = https://github.com/moeru-ai/airi.git

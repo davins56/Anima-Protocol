@@ -55,6 +55,7 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_CLERK_PROXY_URL` | Explicit proxy URL, or `none` / `false` / `off` to disable all proxying. When unset, `pk_live_` auto-proxies through `/api/__clerk` on `anima-protocol.com` **unless** the publishable key decodes to a Clerk **custom domain** (e.g. `clerk.anima-protocol.com`) — then the browser talks to that host directly |
 | `VITE_MIXPANEL_TOKEN` | Frontend analytics |
 | `OPENROUTER_API_KEY` | API chat (Venice Uncensored; free-tier fallback on HTTP 402). Alias: `ANIMA_OPENROUTER_API_KEY` / `OPEN_ROUTER_API_KEY` |
+| `MINIMAX_API_KEY` / `ANIMA_MINIMAX_API_KEY` | API chat via MiniMax Global. Preferred over OpenRouter when configured; optional `ANIMA_MINIMAX_MODEL` and `ANIMA_MINIMAX_BASE_URL` overrides |
 | `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `openai/gpt-oss-20b:free` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
 | `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |

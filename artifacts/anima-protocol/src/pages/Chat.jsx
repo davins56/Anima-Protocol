@@ -1710,6 +1710,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         toast.success("Anima combined mind drafts.", {
           description: resultPayload.ensemble_minds.map(mindLabel).join(" · "),
         });
+      } else if (resultPayload.failed_over && resultPayload.provider === "minimax") {
+        toast.success("Switched to MiniMax.", {
+          description: "Your Anima LLM was unavailable, so MiniMax continued the conversation.",
+        });
       } else if (resultPayload.failed_over && resultPayload.provider === "openrouter") {
         toast.success("Switched to Venice Uncensored via OpenRouter.", {
           description: resultPayload.model
