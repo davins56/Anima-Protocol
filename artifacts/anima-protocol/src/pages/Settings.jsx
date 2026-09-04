@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { base44, exportData } from "@/api/base44Client";
@@ -1476,7 +1475,3 @@ function SaveButton({ onSave, saved }) {
     </button>
   );
 }
-=======
-import AIBehaviorSettings from "./AIBehaviorSettings";
-export default function Settings() { return <AIBehaviorSettings />; }
->>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c

@@ -1,16 +1,22 @@
-// Load local environment variables (artifacts/api-server/.env) before any imports that read process.env.
+// Load local environment variables before any imports that read process.env.
 import "dotenv/config";
 
 import path from "node:path";
+import fs from "node:fs";
 import app from "./app";
 import { ensureClerkPreviewRedirects } from "./lib/ensureClerkPreviewRedirects";
 import { logger } from "./lib/logger";
 
-// If the repo is run from a different CWD, dotenv/config may not find artifacts/api-server/.env.
-// Explicitly load it as a fallback.
+// If the repo is run from a different CWD, dotenv/config may not find the
+// package-local or repository-root .env file. Load the first existing file.
 import dotenv from "dotenv";
-const envPath = path.resolve(__dirname, "../.env");
-dotenv.config({ path: envPath });
+const envCandidates = [
+  path.resolve(__dirname, "../.env"),
+  path.resolve(__dirname, "../../.env"),
+  path.resolve(__dirname, "../../../.env"),
+];
+const envPath = envCandidates.find((candidate) => fs.existsSync(candidate));
+if (envPath) dotenv.config({ path: envPath });
 
 function requireEnv(name: string): string {
   const v = process.env[name];
