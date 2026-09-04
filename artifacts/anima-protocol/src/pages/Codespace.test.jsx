@@ -39,6 +39,18 @@ vi.mock("@/lib/codespace/sandbox", () => ({
   runScript: vi.fn(),
 }));
 
+vi.mock("@/components/codespace/ConsolePane", () => ({
+  default: () => <div>console</div>,
+}));
+
+vi.mock("@/components/codespace/PreviewPane", () => ({
+  default: () => <div>preview</div>,
+}));
+
+vi.mock("@/components/codespace/CodeEditor", () => ({
+  default: () => <div>editor</div>,
+}));
+
 vi.mock("@/lib/codespace/useCodespaceAgent", () => ({
   useCodespaceAgent: ({ character }) => {
     mocks.agentCharacter.current = character;
@@ -71,6 +83,7 @@ describe("Codespace companion picker", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    Element.prototype.scrollIntoView = vi.fn();
     mocks.agentCharacter.current = null;
     mocks.whenBootstrapReady.mockResolvedValue(undefined);
     mocks.me.mockResolvedValue({ email: "operator@example.com" });

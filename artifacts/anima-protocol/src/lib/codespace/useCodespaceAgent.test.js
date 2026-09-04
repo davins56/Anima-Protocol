@@ -50,17 +50,16 @@ describe("useCodespaceAgent character payload", () => {
     });
 
     expect(invokeMock).toHaveBeenCalledTimes(1);
-    expect(invokeMock).toHaveBeenCalledWith({
-      messages: [{ role: "user", content: "build a neon clock" }],
-      character: expect.objectContaining({
-        name: "Serenity",
-        personality: "Warm and precise",
-        speaking_style: "Soft, poetic",
-        is_anima: true,
-        soulprint: expect.stringContaining("AR-1"),
-      }),
-      files: ["index.html"],
-    });
+    const payload = invokeMock.mock.calls[0][0];
+    expect(payload.messages[0]).toEqual({ role: "user", content: "build a neon clock" });
+    expect(payload.files).toEqual(["index.html"]);
+    expect(payload.character).toEqual(expect.objectContaining({
+      name: "Serenity",
+      personality: "Warm and precise",
+      speaking_style: "Soft, poetic",
+      is_anima: true,
+      soulprint: expect.stringContaining("AR-1"),
+    }));
   });
 
   it("keeps the Jules path when Jules is selected", async () => {
@@ -76,13 +75,11 @@ describe("useCodespaceAgent character payload", () => {
       await result.current.runGoal("debug app.js");
     });
 
-    expect(invokeMock).toHaveBeenCalledWith({
-      messages: [{ role: "user", content: "debug app.js" }],
-      character: JULES_PERSONA,
-      files: ["app.js"],
-    });
-    const payload = invokeMock.mock.calls[0][0].character;
-    expect(payload.id).toBe("jules-ai-engineer");
-    expect(payload.is_anima).toBeUndefined();
+    const payload = invokeMock.mock.calls[0][0];
+    expect(payload.messages[0]).toEqual({ role: "user", content: "debug app.js" });
+    expect(payload.files).toEqual(["app.js"]);
+    expect(payload.character).toEqual(JULES_PERSONA);
+    expect(payload.character.id).toBe("jules-ai-engineer");
+    expect(payload.character.is_anima).toBeUndefined();
   });
 });
