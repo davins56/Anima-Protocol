@@ -221,27 +221,36 @@ export async function migrateUserData(
           );
       }
 
-      for (const row of sourceRows) {
-        const raw = row.data as Record<string, unknown>;
-        const { data, patched } = patchEmailFields(raw, fromEmail, toEmail);
-        emailFieldsPatched += patched;
-        await tx
-          .insert(userEntities)
-          .values({
+      if (sourceRows.length > 0) {
+        const now = new Date();
+        const recordsToInsert = sourceRows.map((row) => {
+          const raw = row.data as Record<string, unknown>;
+          const { data, patched } = patchEmailFields(raw, fromEmail, toEmail);
+          emailFieldsPatched += patched;
+          return {
             userId: toUserId!,
             entityName: row.entityName,
             entityId: row.entityId,
             data,
-          })
-          .onConflictDoUpdate({
-            target: [
-              userEntities.userId,
-              userEntities.entityName,
-              userEntities.entityId,
-            ],
-            set: { data, updatedAt: new Date() },
-          });
-        entitiesCopied += 1;
+          };
+        });
+
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < recordsToInsert.length; i += BATCH_SIZE) {
+          const batch = recordsToInsert.slice(i, i + BATCH_SIZE);
+          await tx
+            .insert(userEntities)
+            .values(batch)
+            .onConflictDoUpdate({
+              target: [
+                userEntities.userId,
+                userEntities.entityName,
+                userEntities.entityId,
+              ],
+              set: { data: sql`excluded.data`, updatedAt: now },
+            });
+        }
+        entitiesCopied += sourceRows.length;
       }
 
       await tx

@@ -182,9 +182,12 @@ export default function CharacterRelationshipForceGraph() {
   }, [nodePositions, characters, relationships, selectedCharacter]);
 
   const handleCanvasClick = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width ? canvas.width / rect.width : 1;
+    const scaleY = rect.height ? canvas.height / rect.height : 1;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
 
     // Find clicked character
     for (const char of characters) {
@@ -219,9 +222,9 @@ export default function CharacterRelationshipForceGraph() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0 w-full bg-background overflow-hidden">
-      {/* Canvas */}
-      <div className="flex-1 flex flex-col">
+    <div className="flex flex-col lg:flex-row flex-1 min-h-0 w-full bg-background overflow-y-auto lg:overflow-hidden">
+      {/* Canvas — bounded on narrow screens so legend/details stay in the scroll flow. */}
+      <div className="flex flex-col w-full shrink-0 lg:flex-1 lg:min-h-0 lg:min-w-0 lg:shrink">
         <div className="px-4 py-3 border-b border-primary/20 bg-black/60">
           <h1 className="font-mono text-primary glow-text tracking-[0.2em] uppercase">
             // Character Network
@@ -236,19 +239,19 @@ export default function CharacterRelationshipForceGraph() {
           width={800}
           height={600}
           onClick={handleCanvasClick}
-          className="flex-1 cursor-pointer bg-black/40"
-          style={{ maxWidth: "100%", maxHeight: "100%" }}
+          className="w-full cursor-pointer bg-black/40 h-[min(50dvh,360px)] lg:flex-1 lg:h-auto lg:min-h-0"
+          style={{ maxWidth: "100%" }}
         />
       </div>
 
       {/* Legend */}
-      <div className="w-64 border-l border-primary/20 bg-black/60 flex flex-col">
+      <div className="w-full lg:w-64 shrink-0 lg:h-full border-t lg:border-t-0 lg:border-l border-primary/20 bg-black/60 flex flex-col min-h-0">
         <div className="px-4 py-3 border-b border-primary/20">
           <h2 className="font-mono text-xs text-primary tracking-[0.2em] uppercase">
             Legend
           </h2>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        <div className="p-3 space-y-2 lg:flex-1 lg:overflow-y-auto">
           {RELATIONSHIP_TYPES.map((type) => (
             <div key={type.id} className="flex items-center gap-2">
               <div
@@ -268,7 +271,7 @@ export default function CharacterRelationshipForceGraph() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            className="w-80 border-l border-primary/20 bg-black/60 flex flex-col overflow-hidden"
+            className="w-full lg:w-80 shrink-0 lg:h-full border-t lg:border-t-0 lg:border-l border-primary/20 bg-black/60 flex flex-col overflow-visible lg:overflow-hidden min-h-0"
           >
             {/* Header */}
             <div className="px-4 py-3 border-b border-primary/20 flex items-center justify-between">

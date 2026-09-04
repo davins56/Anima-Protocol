@@ -151,8 +151,11 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
           )}
           {!isGroup && mood && <MoodIndicator mood={mood} />}
           {session?.therapy_mode && (
-            <span className="font-mono text-[8px] sm:text-[9px] tracking-widest uppercase px-1.5 py-0.5 border border-violet-400/40 text-violet-200 bg-violet-500/10">
-              Therapy
+            <span
+              title={session.therapy_topic || "Therapy mode"}
+              className="font-mono text-[8px] sm:text-[9px] tracking-widest uppercase px-1.5 py-0.5 border border-violet-400/40 text-violet-200 bg-violet-500/10 max-w-[12rem] truncate"
+            >
+              Therapy{session.therapy_topic ? ` · ${session.therapy_topic}` : ""}
             </span>
           )}
         </div>

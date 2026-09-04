@@ -18,13 +18,26 @@ import {
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
+import { echoKeyPromptBlock } from "@/lib/echoKeys";
 import {
   imageGenerationTagInstruction,
   stripImageTags,
   parseImagePrompts,
   userRequestedImage,
   resolveChatImageAttachments,
+  messagesWithImageProgress,
 } from "@/lib/chatImageGeneration";
+import {
+  beginOpenSession,
+  loadOpenChatSession,
+  rememberCreatedSession,
+  resolveOpenSessionFetch,
+} from "@/lib/chatSessionLoad";
+import {
+  buildInitSessionPayload,
+  createInitChatSession,
+  isUsableSessionId,
+} from "@/lib/createInitSession";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
@@ -90,6 +103,8 @@ import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, get
 import { expressionPromptBlock } from "@/lib/animaExpressions";
 import { toast } from "sonner";
 import { useVesselContext } from "@/hooks/useVesselContext";
+import { useHiddenSequencesThread } from "@/hooks/useHiddenSequencesThread";
+import JackInOfferChip from "@/components/chat/JackInOfferChip";
 import VoiceChatMode from "@/components/chat/VoiceChatMode";
 import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
 import ImageGenerationModal from "@/components/chat/ImageGenerationModal";
@@ -107,7 +122,6 @@ import {
   isTherapySession,
   buildTherapyInstruction,
   detectTherapyCrisis,
-  therapyOpeningMessage,
 } from "@/lib/therapyManuals";
 import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
@@ -187,6 +201,12 @@ export default function Chat() {
   const { persistTurn } = useChatPersistence();
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionLoad, setSessionLoad] = useState({ status: "idle" });
+  const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
+  const sessionLoadGenRef = useRef(0);
+  const openSessionIdRef = useRef(sessionId || null);
+  const prevOpenSessionIdRef = useRef(sessionId || null);
+  const justCreatedSessionIdRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -361,6 +381,18 @@ export default function Chat() {
     isCompanionSpeaking,
   );
   const { vesselContext, attunementGuidance, refreshVesselContext } = useVesselContext(activeSession?.id);
+  const threadAnima = characters.find((c) => c.id === activeSession?.character_id)?._isAnima
+    ? characters.find((c) => c.id === activeSession?.character_id)
+    : characters.find((c) => c._isAnima) || null;
+  const lastUserLine = [...(activeSession?.messages || [])]
+    .reverse()
+    .find((m) => m.role === "user")?.content || "";
+  const hiddenThread = useHiddenSequencesThread({
+    session: activeSession,
+    anima: threadAnima,
+    messages: activeSession?.messages || [],
+    userText: lastUserLine,
+  });
   const [activeAspects, setActiveAspects] = useState([]);
   const [showAspectPicker, setShowAspectPicker] = useState(false);
   const toggleAspect = (id) => {
@@ -392,7 +424,11 @@ export default function Chat() {
       // Auto-open new session modal when navigated from dashboard "New Chat"
       if (location.state?.openNew) {
         setShowModal(true);
-        navigate(location.pathname, { replace: true, state: {} });
+        const { openNew: _openNew, ...rest } = location.state;
+        navigate(location.pathname, {
+          replace: true,
+          state: rest.primedSession ? rest : {},
+        });
       }
     });
     return () => {
@@ -401,12 +437,85 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
-    if (sessionId) {
-      loadSession(sessionId);
-    } else {
-      setActiveSession(null);
+    openSessionIdRef.current = sessionId || null;
+    const previousOpenId = prevOpenSessionIdRef.current;
+    prevOpenSessionIdRef.current = sessionId || null;
+    // Loading is per open thread. Leaving mid-send used to keep the composer
+    // disabled on the newly opened conversation until the old stream finished.
+    // Do not clear on sessionLoadNonce retries of the same id.
+    if (previousOpenId !== (sessionId || null)) {
+      setIsLoading(false);
+      setPendingMessage("");
     }
-  }, [sessionId]);
+    const opened = beginOpenSession({
+      sessionId,
+      locationState: location.state,
+    });
+    if (opened.status === "idle") {
+      sessionLoadGenRef.current += 1;
+      setActiveSession(null);
+      setSessionLoad({ status: "idle" });
+      return;
+    }
+
+    const gen = ++sessionLoadGenRef.current;
+    const isCurrent = () => sessionLoadGenRef.current === gen;
+    // Init applied the POST body (and may have remounted onto /chat/:id).
+    // Do not wipe that thread with "Opening conversation..." or wait on GET.
+    if (opened.primed) {
+      justCreatedSessionIdRef.current = opened.primed.id;
+      setSessionLoad({ status: "ready" });
+      if (activeSession?.id !== opened.primed.id) {
+        applyOpenedSession(opened.primed);
+      }
+    } else {
+      setSessionLoad({ status: "loading" });
+      setActiveSession((prev) => (prev?.id === sessionId ? prev : null));
+    }
+
+    let cancelled = false;
+    loadOpenChatSession({
+      id: sessionId,
+      isCurrent: () => isCurrent() && !cancelled,
+      fetchSession: async (id) => {
+        // Lookup by entityId (GET), not jsonb filter({ id }). After POST the
+        // Hyperdrive pool can miss a filter read, and a body without data.id
+        // would never match filter even though /ChatSession/:id exists.
+        const byEntityId = await base44.entities.ChatSession.get(id, {
+          withMessages: false,
+        });
+        if (byEntityId?.id) return [byEntityId];
+        return base44.entities.ChatSession.filter({ id }, undefined, 1, {
+          withMessages: false,
+        });
+      },
+      fetchMessages: (id) => base44.messages.list(id),
+    }).then((result) => {
+      if (!isCurrent() || cancelled) return;
+      const next = resolveOpenSessionFetch({ result, sessionId });
+      if (next.status === "stale") return;
+      if (next.status === "ready") {
+        if (next.applySession) applyOpenedSession(next.applySession);
+        setSessionLoad({ status: "ready" });
+        return;
+      }
+      if (next.status === "missing") {
+        setActiveSession(null);
+        setSessionLoad({ status: "missing" });
+        return;
+      }
+      if (next.status === "error") {
+        setSessionLoad({
+          status: "error",
+          message: next.message || "Couldn't open this conversation.",
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, sessionLoadNonce]);
 
   const lastMessageCountRef = useRef(0);
   useEffect(() => {
@@ -643,8 +752,12 @@ export default function Chat() {
     if (local) return local;
     try {
       const [charMatches, animaMatches] = await Promise.all([
-        base44.entities.Character.filter({ id }, undefined, 1),
-        base44.entities.Anima.filter({ id }, undefined, 1),
+        base44.entities.Character.filter({ id }, undefined, 1, {
+          _bootstrapInternal: true,
+        }),
+        base44.entities.Anima.filter({ id }, undefined, 1, {
+          _bootstrapInternal: true,
+        }),
       ]);
       if (charMatches?.[0]) {
         const char = charMatches[0];
@@ -671,39 +784,31 @@ export default function Chat() {
     return null;
   };
 
-  const loadSession = async (id) => {
-    // Fetch just this session's metadata by id, then load its messages
-    // separately. Looking it up directly (rather than scanning a capped list)
-    // means sessions on deep sidebar pages still open correctly.
-    const matches = await base44.entities.ChatSession.filter({ id }, undefined, 1, {
-      withMessages: false,
-    });
-    const session = matches[0];
-    if (session) {
-      const messages = await base44.messages.list(id);
-      setActiveSession({ ...session, messages });
-      setMode(session.mode || "solo");
-      setCurrentMood("neutral");
-      setCharacterMemories([]);
-      setInventoryItems([]);
-      // Load relationships, lore, and emotional states for this session
-      loadRelationships(id);
-      loadLore(id);
-      loadCharacterEmotions(id);
-      // Load calendar for this session
-      base44.entities.Calendar.filter({ session_id: id }).then(cals => {
-        if (cals?.length > 0) setCalendar(cals[0]);
-      }).catch(() => {});
-      // Load cross-session character memories
-      if (session.character_id) {
-        loadCharacterMemories(session.character_id);
-        loadInventory(session.character_id);
-      }
+  const stillOpen = (sid) => openSessionIdRef.current === sid;
+
+  const applyOpenedSession = (session) => {
+    const id = session.id;
+    setActiveSession(session);
+    setMode(session.mode || "solo");
+    setCurrentMood("neutral");
+    setCharacterMemories([]);
+    setInventoryItems([]);
+    loadRelationships(id);
+    loadLore(id);
+    loadCharacterEmotions(id);
+    base44.entities.Calendar.filter({ session_id: id }).then((cals) => {
+      if (!stillOpen(id)) return;
+      if (cals?.length > 0) setCalendar(cals[0]);
+    }).catch(() => {});
+    if (session.character_id) {
+      loadCharacterMemories(session.character_id, id);
+      loadInventory(session.character_id, id);
     }
   };
 
   const loadRelationships = async (sid) => {
     const rels = await base44.entities.CharacterRelationship.filter({ session_id: sid });
+    if (!stillOpen(sid)) return;
     const map = {};
     (rels || []).forEach((r) => { map[r.character_id] = r; });
     setRelationships(map);
@@ -711,16 +816,19 @@ export default function Chat() {
 
   const loadLore = async (sid) => {
     const data = await base44.entities.WorldState.filter({ session_id: sid, is_active: true }, "-created_date", 100);
+    if (!stillOpen(sid)) return;
     setLoreEntries(data || []);
   };
 
-  const loadCharacterMemories = async (charId) => {
+  const loadCharacterMemories = async (charId, sid = openSessionIdRef.current) => {
     const res = await base44.functions.invoke("characterMemory", { action: "get", character_id: charId });
+    if (sid && !stillOpen(sid)) return;
     setCharacterMemories(res?.data?.memories || []);
   };
 
-  const loadInventory = async (charId) => {
+  const loadInventory = async (charId, sid = openSessionIdRef.current) => {
     const data = await base44.entities.Inventory.filter({ character_id: charId }, "-created_date", 100);
+    if (sid && !stillOpen(sid)) return;
     setInventoryItems(data || []);
   };
 
@@ -738,6 +846,7 @@ export default function Chat() {
         arousal: s.arousal != null ? s.arousal : null,
       };
     });
+    if (!stillOpen(sid)) return;
     setCharacterEmotions(map);
   };
 
@@ -793,79 +902,52 @@ export default function Chat() {
 
   const handleNewSession = () => setShowModal(true);
 
-  const handleCreateSession = async ({ mode: m, character_id, group_character_ids }) => {
-    setShowModal(false);
-
-    let title = "New Session";
-    let initialMessages = [];
-    
-    if (m === "solo" && character_id) {
-      const char = await resolveCharacterById(character_id);
-      title = char ? `${char.name}` : "New Session";
-    } else if (m === "group" && group_character_ids?.length) {
-      const chars = (
-        await Promise.all(
-          group_character_ids.map((id) => resolveCharacterById(id)),
-        )
-      ).filter(Boolean);
-      title = chars.slice(0, 2).map((c) => c.name).join(", ") + (chars.length > 2 ? ` +${chars.length - 2}` : "");
-
-      // Create initial narrator message for group sessions
-      const charNames = chars.map((c) => c.name).join(", ");
-      const narratorMessage = {
-        role: "assistant",
-        character_name: "Narrator",
-        content: `The stage is set. ${charNames} find themselves drawn together by fate or circumstance. The air crackles with potential as these extraordinary beings come face to face. What unfolds next will alter the course of events. The scene awaits...`,
-        timestamp: new Date().toISOString(),
-      };
-      initialMessages = [narratorMessage];
-    }
-
-    const selectedGroupChars = m === "group" && group_character_ids?.length
-      ? (
-          await Promise.all(
-            group_character_ids.map((id) => resolveCharacterById(id)),
-          )
-        ).filter(Boolean)
-      : [];
-    const crossoverUniverses = Array.from(
-      new Set(selectedGroupChars.map((c) => c.universe).filter(Boolean)),
-    );
-    const isCrossoverSession = m === "group" && crossoverUniverses.length >= 2;
-
+  const handleCreateSession = async ({
+    mode: m,
+    character_id,
+    character,
+    group_character_ids,
+    group_characters,
+    opening_scene,
+  }) => {
+    // Prefer the character the modal already resolved/upserted. Init must not
+    // wait on Character.filter bootstrap when that object is present.
     const createdChar =
-      m === "solo" && character_id ? await resolveCharacterById(character_id) : null;
-    const therapySession =
-      m === "solo" &&
-      isTherapySession(
-        { mode: m, therapy_mode: false },
+      m === "solo" && character
+        ? character
+        : m === "solo" && character_id
+        ? await resolveCharacterById(character_id)
+        : null;
+    const selectedGroupChars =
+      m === "group" && Array.isArray(group_characters) && group_characters.length
+        ? group_characters.filter(Boolean)
+        : m === "group" && group_character_ids?.length
+        ? (
+            await Promise.all(
+              group_character_ids.map((id) => resolveCharacterById(id)),
+            )
+          ).filter(Boolean)
+        : [];
+
+    const { payload, therapySession, isCrossoverSession, crossoverUniverses } =
+      buildInitSessionPayload({
+        mode: m,
+        characterId: character_id,
+        character: createdChar,
+        groupCharacterIds: group_character_ids,
+        groupCharacters: selectedGroupChars,
+        openingScene: opening_scene,
         authUser,
-        createdChar || { _isAnima: false },
+      });
+
+    // Await create (do not fire-and-forget). Opening narrator rows persist in
+    // the background so /messages/replace cannot block navigation.
+    const newSession = await createInitChatSession(payload);
+    if (!isUsableSessionId(newSession?.id)) {
+      throw new Error(
+        "The store created a session but did not return an id. Tap Init to try again.",
       );
-
-    if (therapySession && createdChar && initialMessages.length === 0) {
-      initialMessages = [
-        {
-          role: "assistant",
-          character_name: createdChar.name,
-          content: therapyOpeningMessage(createdChar.name),
-          timestamp: new Date().toISOString(),
-        },
-      ];
     }
-
-    const newSession = await base44.entities.ChatSession.create({
-      mode: m,
-      character_id: character_id || null,
-      group_character_ids: group_character_ids || [],
-      selected_character_names: selectedGroupChars.map((c) => c.name),
-      crossover_universes: crossoverUniverses,
-      is_crossover: isCrossoverSession,
-      shared_memory: [],
-      title: therapySession && createdChar?.name ? `Therapy · ${createdChar.name}` : title,
-      messages: initialMessages,
-      ...(therapySession ? { therapy_mode: true, companion_mode: "therapy" } : {}),
-    });
 
     if (isCrossoverSession) {
       track("crossover_session_started", {
@@ -877,22 +959,29 @@ export default function Chat() {
       track("therapy_session_started", {
         source: "chat_new_session",
         is_anima: true,
+        has_topic: false,
       });
     }
 
-    // Update session with initial messages if they exist
-    if (initialMessages.length > 0) {
-      await base44.entities.ChatSession.update(newSession.id, {
-        messages: initialMessages,
-      });
-    }
-
-    // A new session sorts to the top (-updated_date), so jump to the first page
-    // and refresh so the user sees it immediately even if they had paged deep.
+    // Apply the POST body immediately so /chat/:id does not depend on a
+    // follow-up GET that can miss the row we just wrote. Remember it in the
+    // module + location.state so a remounted Chat can prime without spinning.
+    const primedSession = {
+      ...newSession,
+      messages: Array.isArray(newSession.messages) ? newSession.messages : [],
+    };
+    rememberCreatedSession(primedSession);
+    justCreatedSessionIdRef.current = primedSession.id;
+    applyOpenedSession(primedSession);
+    setSessionLoad({ status: "ready" });
     goToSessionsPage(0);
-    await loadSessions();
-    navigate(`/chat/${newSession.id}`);
+    loadSessions().catch((err) => {
+      console.warn("Session created, but refreshing the session list failed:", err);
+    });
+    navigate(`/chat/${primedSession.id}`, { state: { primedSession } });
+    setShowModal(false);
     setShowMobileMenu(false);
+    return newSession;
   };
 
   const handleDeleteSession = (id) =>
@@ -1096,6 +1185,13 @@ export default function Chat() {
     const isContinue = !content.trim() && !attachments.length;
     if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") return;
     const turnId = createChatTurnId();
+    const sendSessionId = activeSession.id;
+    const applyIfSendSession = (updater) => {
+      setActiveSession((prev) => {
+        if (!prev || prev.id !== sendSessionId) return prev;
+        return typeof updater === "function" ? updater(prev) : updater;
+      });
+    };
 
     setPendingMessage(content || "");
     setIsLoading(true);
@@ -1150,6 +1246,21 @@ export default function Chat() {
       is_therapy: isTherapySession(activeSession, authUser, characters.find((c) => c.id === activeSession.character_id)),
     });
 
+    if (!isContinue && content) {
+      const identity = [
+        threadAnima?.personality,
+        threadAnima?.speaking_style,
+        threadAnima?.backstory,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      hiddenThread.harvestFromTurn(content, identity);
+      const liveGate = hiddenThread.gateFor(content);
+      if (liveGate.offer && liveGate.accept && !liveGate.refuse) {
+        hiddenThread.acceptJackIn();
+      }
+    }
+
     // Show thinking immediately while we build context / call the model.
     // No artificial pause — tokens replace this as soon as they arrive.
     const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
@@ -1169,7 +1280,7 @@ export default function Chat() {
           characters,
           userMessage,
           appendMessage: base44.messages.append,
-          setActiveSession,
+          setActiveSession: applyIfSendSession,
           isContinue,
           surface: "chat",
         });
@@ -1195,7 +1306,7 @@ export default function Chat() {
           characters,
           userMessage,
           appendMessage: base44.messages.append,
-          setActiveSession,
+          setActiveSession: applyIfSendSession,
           isContinue,
         });
         if (deviceScan?.handled) {
@@ -1361,7 +1472,7 @@ export default function Chat() {
           }
           const relCtx = getRelationshipContext(char.id, relationships);
           const loreCtx = loreContext;
-          const fragmentCtx = cyberspaceBattlePromptBlock(char, activeSession);
+          const fragmentCtx = `${cyberspaceBattlePromptBlock(char, activeSession)}${echoKeyPromptBlock(char, activeSession)}${hiddenThread.promptBlock || ""}`;
           const memCtx = memoryContext;
           const injectedMemCtx = injectedMemoryContext;
           const calendarCtx = calendarContext;
@@ -1423,6 +1534,8 @@ ${lewdityGuide}`;
                 characterName: char.name,
                 userName: user.full_name,
                 userMessage: isContinue ? "" : content,
+                focusTopic: activeSession.therapy_topic,
+                focusNotes: activeSession.therapy_topic_notes,
               })
             : isMultiAspect
             ? getMultiAspectPrompt(aspects, user.full_name)
@@ -1462,6 +1575,7 @@ ${lewdityGuide}`;
           - From the first reply onward, embody ${char.name} using the Personality, Backstory, and Voice below — never a generic assistant.
           - Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
           - If details conflict with a generic helpful tone, the character identity wins.
+          - Never refer to yourself as an AI, a language model, or a computer program. Keep the conversation natural.
 
           ${animaNote}${animaSoulNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${char.name}; invent no contradictory personality.\n`}${relCtx}${memCtx}${injectedMemCtx}${loreCtx}${fragmentCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}${worldKnowledgeContext}
           CRITICAL AUTONOMY RULES:
@@ -1531,7 +1645,7 @@ ${isContinue ? `\n          The user tapped Continue — keep the scene moving a
 
           currentGroupSpeakerRef.current = finalNextChar;
 
-          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}`;
+          const loreCtxGroup = `${loreContext}${cyberspaceBattlePromptBlock(finalNextChar, activeSession)}${echoKeyPromptBlock(finalNextChar, activeSession)}${hiddenThread.promptBlock || ""}`;
 
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {
@@ -1612,10 +1726,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               finalNextChar?.id === activeSession.next_speaker_id);
           if (consumedForce) {
             setNextSpeaker(null);
-            setActiveSession((prev) =>
+            applyIfSendSession((prev) =>
               prev ? { ...prev, next_speaker_id: null } : prev,
             );
-            base44.entities.ChatSession.update(activeSession.id, {
+            base44.entities.ChatSession.update(sendSessionId, {
               next_speaker_id: null,
             }).catch(() => {});
           }
@@ -1639,6 +1753,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Thinking indicator stays until the first delta, then the live reply grows.
       const streamTs = new Date().toISOString();
       const streamUi = createStreamUi({
+        sessionId: sendSessionId,
         updatedMessages,
         characterName: charName,
         timestamp: streamTs,
@@ -1680,6 +1795,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             scene_mind_speaker_id: activeChar?.id || null,
             therapy_mode: therapyActive,
             adult_mode: adultMode,
+            hidden_sequences: hiddenThread.hidden,
+            conversational_weather: hiddenThread.weather,
           },
         }),
         {
@@ -1693,6 +1810,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // the catch path can surface an error instead of silently vanishing.
       if (!String(result).trim()) {
         throw new Error("The companion returned an empty reply. Please try again.");
+      }
+      if (hiddenThread.hidden.jack_in.speak_first || hiddenThread.consumeReturn().pendingId) {
+        hiddenThread.finishIntegration(result);
+        hiddenThread.clearReturnFlag();
       }
 
       if (resultPayload.ensemble_combined && Array.isArray(resultPayload.ensemble_minds)) {
@@ -1736,17 +1857,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         parseImagePrompts(result).length > 0 || userRequestedImage(content);
       let imageAttachments = [];
       if (wantsImage) {
-        setActiveSession((prev) => ({
+        const imageProgressText = stripImageTags(result.replace(eventTagRegex, "")).trim() || result;
+        applyIfSendSession((prev) => ({
           ...prev,
-          messages: [
-            ...updatedMessages,
-            {
-              role: "assistant",
-              content: "creating image...",
-              character_name: "__thinking__",
-              timestamp: new Date().toISOString(),
-            },
-          ],
+          messages: messagesWithImageProgress(prev?.messages || updatedMessages, {
+            streamedText: imageProgressText,
+            speakerName: charName,
+          }),
         }));
         try {
           const resolved = await resolveChatImageAttachments({
@@ -1838,15 +1955,15 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       );
 
       // Drop is_streaming immediately so the reply resolves even if persist is slow.
-      setActiveSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
-      setIsLoading(false);
+      applyIfSendSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
+      if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
 
       const storedNew = [];
       let finalMessages = [...priorHistory, ...newMessages];
       try {
         storedNew.push(
           ...(await persistTurn({
-            sessionId: activeSession.id,
+            sessionId: sendSessionId,
             turnId,
             messages: newMessages,
             content,
@@ -1857,9 +1974,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           isContinue || storedNew.some((message) => message?.role === "user");
 
         finalMessages = [...priorHistory, ...storedNew];
-        setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
+        applyIfSendSession((prev) => ({ ...prev, messages: finalMessages }));
       } catch (persistErr) {
         console.warn("[Anima] Failed to persist reply:", persistErr);
+        // Client `turn_*` ids are still on screen. Drop any deferred remote
+        // refresh so store history that lacks this turn cannot replace it.
+        pendingRemoteSyncRef.current = false;
       }
       loadSessions().catch(() => {});
 
@@ -2036,7 +2156,7 @@ ${loyaltyGuardrailClause()}`;
           // finalMessages snapshot (replaceMessages would delete newer turns).
           const stored = await appendAmbientMessage({
             appendMessage: base44.messages.append,
-            sessionId: activeSession.id,
+            sessionId: sendSessionId,
             message: serenityMsg,
             setActiveSession,
           });
@@ -2107,20 +2227,12 @@ ${loyaltyGuardrailClause()}`;
                 timestamp: new Date().toISOString(),
               };
 
-              setActiveSession((prev) => ({
-                ...prev,
-                messages: [...(prev.messages || []), interactionMsg],
-              }));
-
-              setTimeout(() => {
-                const updated = [...finalMessages, interactionMsg];
-                base44.entities.ChatSession.update(activeSession.id, { messages: updated }).catch(() => {});
-              }, 500);
-              // Append only — a replace against stale finalMessages would wipe
-              // any messages the user sent while this background job ran.
+              // Append only — never ChatSession.update({ messages }) with a
+              // stale finalMessages snapshot (replaceMessages would delete
+              // newer turns the user sent while this job ran).
               appendAmbientMessage({
                 appendMessage: base44.messages.append,
-                sessionId: activeSession.id,
+                sessionId: sendSessionId,
                 message: interactionMsg,
                 setActiveSession,
               }).catch(() => {});
@@ -2352,14 +2464,14 @@ Return JSON:
     } catch (err) {
       console.error(err);
       // Remove typing/thinking indicators on error
-      setActiveSession((prev) => ({
+      applyIfSendSession((prev) => ({
         ...prev,
         messages: (prev.messages || []).filter((m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__"),
       }));
       // Keep any tokens already painted. The old path deleted `is_streaming`
       // bubbles on any post-token failure, which looked like the AI "stopped".
       let retained = null;
-      setActiveSession((prev) => {
+      applyIfSendSession((prev) => {
         const { messages, retained: kept } = retainStreamingOnError(prev.messages || []);
         retained = kept;
         // If state was mid-frame and lost the partial, recover from the local
@@ -2385,14 +2497,14 @@ Return JSON:
 
       // Best-effort persist so a deferred cross-device sync can't wipe the kept reply
       // (or the optimistic user turn that was never written because persist:false).
-      if (activeSession?.id) {
+      if (sendSessionId) {
         try {
           if (!isContinue && !userMessagePersisted && content.trim()) {
-            await base44.messages.append(activeSession.id, userMessage);
+            await base44.messages.append(sendSessionId, userMessage);
             userMessagePersisted = true;
           }
           if (retained) {
-            await base44.messages.append(activeSession.id, retained);
+            await base44.messages.append(sendSessionId, retained);
           }
         } catch (persistErr) {
           console.warn("[Anima] Failed to persist partial reply:", persistErr);
@@ -2415,13 +2527,24 @@ Return JSON:
     }
 
     setPendingMessage("");
-    setIsLoading(false);
+    if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
     // Clear injected memories after they've been used
     if (injectedMemories.length > 0) setInjectedMemories([]);
     };
 
+  useEffect(() => {
+    if (!activeSession?.id || isLoading) return;
+    if (hiddenThread.spokeFirst.current) return;
+    const ret = hiddenThread.consumeReturn();
+    if (!ret.speakFirst && !hiddenThread.hidden.jack_in.speak_first) return;
+    hiddenThread.spokeFirst.current = true;
+    handleSendMessage("");
+    // Anima speaks first after jack-out.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSession?.id, hiddenThread.hidden.jack_in.speak_first]);
+
   return (
-    <div className="flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
+    <div className="app-page-fill flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
       {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
       <div className="hidden">
@@ -2452,12 +2575,12 @@ Return JSON:
           initial={{ x: "-100%" }}
           animate={{ x: 0 }}
           exit={{ x: "-100%" }}
-          className="fixed inset-0 z-[9998] flex"
-          style={{ top: 0, left: 0, right: 0, bottom: 0, height: "100dvh" }}
+          className="fixed inset-0 z-[9998] flex h-app-viewport"
+          style={{ top: 0, left: 0, right: 0, height: "var(--app-height, 100dvh)" }}
         >
           <motion.div
-            className="flex-shrink-0 flex flex-col"
-            style={{ width: "min(280px, 85vw)", height: "100dvh", background: "rgb(2,6,10)", borderRight: "1px solid rgba(0,229,229,0.2)" }}
+            className="flex-shrink-0 flex flex-col h-app-viewport"
+            style={{ width: "min(280px, 85vw)", height: "var(--app-height, 100dvh)", background: "rgb(2,6,10)", borderRight: "1px solid rgba(0,229,229,0.2)" }}
           >
             <Sidebar
               sessions={sessions}
@@ -2518,6 +2641,7 @@ Return JSON:
               <TherapySessionBanner
                 characterName={characters.find((c) => c.id === activeSession?.character_id)?.name}
                 country={authUser?.settings?.user_profile?.country}
+                topic={activeSession?.therapy_topic}
                 crisis={detectTherapyCrisis(
                   [...(activeSession.messages || [])]
                     .reverse()
@@ -2688,6 +2812,14 @@ Return JSON:
               </AnimatePresence>
               <div ref={messagesEndRef} className="mb-4 lg:mb-2" />
             </div>
+            {/*
+              Chat composer (in-flow, not position:fixed). The shell is
+              `h-screen-safe` / `--app-height` = visualViewport.height, so this
+              row already sits above the iOS keyboard. Do not add keyboard
+              height, 100vh, or extra safe-area padding here — that was the
+              black bar covering the text box. `--tab-bar-height` and
+              `--safe-bottom` go to 0 while `html[data-keyboard-open]`.
+            */}
             <div className="flex-shrink-0 border-t border-primary/10 bg-black/60 space-y-2 min-h-0 sm:pt-0 pt-3">
               {/* Narrative Choices - Horizontal */}
               {choices.length > 0 && activeSession.mode === "solo" && (
@@ -2701,6 +2833,29 @@ Return JSON:
 
               {/* Voice Chat & Chat Input */}
               <div className="space-y-2">
+                {hiddenThread.gate.offer && !hiddenThread.hidden.jack_in.live ? (
+                  <JackInOfferChip
+                    entityName={hiddenThread.entity?.name}
+                    disabled={isLoading}
+                    onAccept={() => {
+                      const live = hiddenThread.acceptJackIn();
+                      const animaId = threadAnima?.id || "";
+                      const sessionPart = activeSession?.id ? `&session=${activeSession.id}` : "";
+                      navigate(`/net-battle?anima=${animaId}${sessionPart}&entity=${encodeURIComponent(live.entity?.name || "Halo.Vrs")}`);
+                    }}
+                  />
+                ) : null}
+                {hiddenThread.hidden.jack_in.live ? (
+                  <JackInOfferChip
+                    entityName={hiddenThread.hidden.jack_in.entity?.name}
+                    disabled={isLoading}
+                    onAccept={() => {
+                      const animaId = threadAnima?.id || "";
+                      const sessionPart = activeSession?.id ? `&session=${activeSession.id}` : "";
+                      navigate(`/net-battle?anima=${animaId}${sessionPart}`);
+                    }}
+                  />
+                ) : null}
 <ChatInputControls
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
@@ -2742,6 +2897,57 @@ Return JSON:
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                 />
               </div>
+            </div>
+          </div>
+        ) : sessionId && sessionLoad.status === "loading" ? (
+          <div
+            className="flex-1 flex flex-col items-center justify-center gap-3"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+            <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
+              Opening conversation...
+            </p>
+          </div>
+        ) : sessionId && sessionLoad.status === "missing" ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="font-mono text-sm text-primary/70">
+              This conversation could not be found.
+            </p>
+            <button
+              type="button"
+              onClick={handleNewSession}
+              className="font-mono text-[10px] tracking-widest uppercase text-primary border border-primary/30 px-4 py-2 hover:bg-primary/10"
+            >
+              Initialize Session
+            </button>
+          </div>
+        ) : sessionId && sessionLoad.status === "error" ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="font-mono text-sm text-primary/70">
+              Couldn&apos;t open this conversation.
+            </p>
+            {sessionLoad.message ? (
+              <p className="font-mono text-[10px] text-primary/40 max-w-md">
+                {sessionLoad.message}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSessionLoadNonce((n) => n + 1)}
+                className="font-mono text-[10px] tracking-widest uppercase text-primary border border-primary/30 px-4 py-2 hover:bg-primary/10"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={handleNewSession}
+                className="font-mono text-[10px] tracking-widest uppercase text-primary/70 border border-primary/20 px-4 py-2 hover:bg-primary/10"
+              >
+                Initialize Session
+              </button>
             </div>
           </div>
         ) : (

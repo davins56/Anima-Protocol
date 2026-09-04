@@ -40,13 +40,25 @@ describe("app health checks", () => {
     await expect(response.json()).resolves.toEqual({ status: "ok" });
   });
 
-  it("does not 500 Character store reads when Clerk publishable key is invalid", async () => {
+  it("exposes presence-only env flags without secret values", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/env`);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      hasDatabaseUrl: expect.any(Boolean),
+      hasClerkSecret: expect.any(Boolean),
+      hasClerkPublishable: expect.any(Boolean),
+    });
+    expect(JSON.stringify(body)).not.toMatch(/sk_|pk_|postgresql:\/\//i);
+    expect(body.hasDatabaseUrl).toBe(true);
+  });
+
+  it("returns a clear config error for store reads when Clerk publishable key is invalid", async () => {
     const response = await fetch(`${baseUrl}/api/store/Character`);
 
-    // Invalid CLERK_PUBLISHABLE_KEY is recovered via host-derived key, so the
-    // request reaches requireUser as signed-out (401) instead of crashing (500)
-    // or hard-failing config (503).
-    expect(response.status).toBe(401);
+    // Invalid CLERK_PUBLISHABLE_KEY must never crash the API with a 500. The
+    // middleware should surface a clear, typed server configuration error.
+    expect(response.status).toBe(503);
     expect(response.status).not.toBe(500);
     await expect(response.json()).resolves.toMatchObject({
       error: expect.any(String),
@@ -61,13 +73,27 @@ describe("app health checks", () => {
     const body = await response.json();
     expect(body).toMatchObject({
       status: expect.stringMatching(/^(ok|error)$/),
-      target: expect.objectContaining({ configured: true }),
+      target: expect.objectContaining({
+        configured: true,
+        source: expect.stringMatching(/^(hyperdrive|database_url)$/),
+      }),
     });
+    expect(JSON.stringify(body)).not.toMatch(/password=|postgresql:\/\/[^:]+:[^@]+@/i);
     if (response.status === 200) {
       expect(body.schema).toMatchObject({
         ok: true,
         missingTables: [],
       });
+    } else {
+      expect(body.reason).toMatch(
+        /^(timeout|ssl|refused|reset|unreachable|auth|schema|limit|unavailable)$/,
+      );
+      expect(body.reason).not.toBe("internal");
+      expect(body.code).toEqual(expect.any(String));
+      if (body.db === false) {
+        expect(body.signal).toEqual(expect.any(String));
+      }
+      expect(JSON.stringify(body)).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
     }
   });
 

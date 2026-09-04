@@ -1,45 +1,46 @@
-# Anima chat LLM — always-on, publicly reachable Ollama host for production.
+# Anima Protocol self-hosted chat LLM (Ollama + bearer proxy).
 #
-# Deploy (from this directory):
-#   fly launch --no-deploy         # first run only — picks app name + region;
-#                                   # answer "no" to Postgres/Redis prompts
-#   fly secrets set PROXY_AUTH_TOKEN=$(openssl rand -hex 32)
-#   fly deploy
+# Deploy from the repository root so the Dockerfile can COPY
+# scripts/llm/Modelfile.anima-chat:
+#   fly deploy --config deploy/ollama-fly/fly.toml --dockerfile deploy/ollama-fly/Dockerfile
 #
-# Then set on Vercel (see ../../docs/custom-llm.md, Production note):
-#   ANIMA_LOCAL_LLM_BACKEND=ollama
-#   ANIMA_LOCAL_LLM_BASE_URL=https://<app-name>.fly.dev/v1
-#   ANIMA_LOCAL_LLM_API_KEY=<same value as PROXY_AUTH_TOKEN>
-#   ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
-#   ANIMA_OLLAMA_MODEL_LIGHT=anima-chat
-#   ANIMA_OLLAMA_MODEL_HEAVY=anima-chat
-#
-# Verify: curl -sS https://<app-name>.fly.dev/v1/models \
-#           -H "Authorization: Bearer $PROXY_AUTH_TOKEN"
+# Do not put PROXY_AUTH_TOKEN (or any secret) in this file.
 
-app = "anima-chat-llm"   # `fly launch` offers to rename this if it's taken
-primary_region = "iad"   # pick the region nearest your users/Vercel deployment
+app = "anima-chat-llm"
+primary_region = "iad"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "deploy/ollama-fly/Dockerfile"
+
+[env]
+  OLLAMA_HOST = "0.0.0.0:11434"
+  ANIMA_BOOTSTRAP_BASE = "qwen2.5:3b"
+  ANIMA_OLLAMA_CHAT_TAG = "anima-chat"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = false   # keep the model warm — avoids ~10-30s cold starts
   auto_start_machines = true
+  # Keep one machine warm. `auto_stop_machines = "stop"` / `"suspend"` (scale-to-zero)
+  # saves money but the first chat after idle waits for machine boot + Ollama
+  # load — often long enough that the Worker chat turn times out. See README.
+  auto_stop_machines = "off"
   min_machines_running = 1
+  processes = ["app"]
 
   [[http_service.checks]]
-    grace_period = "90s"
+    # /healthz is a static Caddy 200 (see Caddyfile). Long grace still covers
+    # a slow bind of :8080 on first boot; the model pull is not on this path.
+    grace_period = "2m"
     interval = "15s"
-    method = "GET"
     timeout = "5s"
+    method = "GET"
     path = "/healthz"
 
-# qwen2.5:3b (Q4) needs headroom beyond its ~2GB file size for context +
-# inference. Bump to "4gb" if you see OOM restarts in `fly logs`.
+[mounts]
+  source = "ollama_data"
+  destination = "/root/.ollama"
+
 [[vm]]
-  memory = "2gb"
-  cpu_kind = "shared"
-  cpus = 1
+  size = "shared-cpu-4x"
+  memory = "8gb"

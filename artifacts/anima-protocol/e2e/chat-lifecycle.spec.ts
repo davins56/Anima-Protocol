@@ -375,6 +375,40 @@ test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("Initialize Session creates a session and opens it", async ({ page }) => {
+  const characterId = `e2e-init-char-${suffix}-${Math.random().toString(36).slice(2, 7)}`;
+  await seedCharacters(page, [
+    {
+      id: characterId,
+      name: "Init E2E",
+      universe: "Protocol Tests",
+      personality: "Confirms session initialization.",
+      speaking_style: "Short direct sentences.",
+    },
+  ]);
+
+  await page.goto("/chat");
+  await dismissConsent(page);
+  await page.getByRole("button", { name: /Initialize Session/i }).click();
+  await expect(page.getByText("// Select Character")).toBeVisible();
+  await page.getByRole("button", { name: /Init E2E/i }).click();
+  await page.locator("textarea").fill("A deterministic e2e opening scene.");
+  await page.getByRole("button", { name: /^Init$/i }).click();
+
+  await expect(page).toHaveURL(/\/chat\/[^/]+$/);
+  await expect(page.getByPlaceholder(/Message\.\.\./i)).toBeVisible({
+    timeout: 45_000,
+  });
+
+  const sessionId = page.url().match(/\/chat\/([^/?#]+)/)?.[1];
+  expect(sessionId).toBeTruthy();
+  const session = await browserApi<Record<string, unknown>>(
+    page,
+    `/api/store/ChatSession/${sessionId}`,
+  );
+  expect(session.opening_scene).toBe("A deterministic e2e opening scene.");
+});
+
 test("send message paints the first token and completes the response", async ({
   page,
 }) => {

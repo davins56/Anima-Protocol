@@ -16,6 +16,7 @@ import {
   isFreeImageFallbackEnabled,
 } from "../../lib/geminiImage";
 import { logger } from "../../lib/logger";
+import { buildInBrowserCodespaceSystemPrompt } from "../../lib/codespaceAgentPrompt";
 
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
@@ -407,6 +408,360 @@ async function saveCharacterMemories(
   return { created: rows.length, memories };
 }
 
+// --- Narrative inventory persistence ----------------------------------------
+// Chat and Interactive Inventory ask the model to notice items that were
+// acquired, consumed, or lost in the latest exchange. Those used to be
+// acknowledged with a stub `{ success: true }` and never written, so a deploy
+// or new device wiped the bag. Rows live as generic store entities
+// (`Inventory`) scoped to the Clerk user — the same table conversations use —
+// so they survive app updates as long as DATABASE_URL (often Supabase Postgres)
+// is set.
+const INVENTORY = "Inventory";
+const INVENTORY_TYPES = new Set([
+  "gear",
+  "consumable",
+  "weapon",
+  "armor",
+  "artifact",
+  "misc",
+]);
+const INVENTORY_RARITIES = new Set([
+  "common",
+  "uncommon",
+  "rare",
+  "legendary",
+]);
+
+export type InventoryItem = Record<string, unknown>;
+
+export type InventoryEvent = {
+  action: "acquire" | "lose" | "consume";
+  name: string;
+  type: string;
+  quantity: number;
+  description: string;
+  rarity: string;
+};
+
+function normalizeItemName(name: unknown): string {
+  return String(name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function asPositiveInt(value: unknown, fallback = 1): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.min(99, Math.floor(n)));
+}
+
+function normalizeInventoryType(value: unknown): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return INVENTORY_TYPES.has(raw) ? raw : "misc";
+}
+
+function normalizeInventoryRarity(value: unknown): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return INVENTORY_RARITIES.has(raw) ? raw : "common";
+}
+
+type InventoryRow = { entityId: string; item: InventoryItem };
+
+async function loadInventoryItems(
+  userId: string,
+  characterId: string,
+): Promise<InventoryRow[]> {
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, INVENTORY),
+      ),
+    );
+  return rows
+    .map((row) => ({ entityId: row.entityId, item: (row.data as InventoryItem) ?? {} }))
+    .filter(({ item }) => item && item.character_id === characterId)
+    .sort((a, b) =>
+      String(b.item.created_date ?? "").localeCompare(String(a.item.created_date ?? "")),
+    );
+}
+
+function parseInventoryEvents(raw: string): InventoryEvent[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      raw.replace(/```json/gi, "").replace(/```/g, "").trim(),
+    );
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((entry) => {
+      const obj = (entry ?? {}) as Record<string, unknown>;
+      const actionRaw = String(obj.action ?? "").trim().toLowerCase();
+      const action =
+        actionRaw === "lose" || actionRaw === "lost" || actionRaw === "drop"
+          ? "lose"
+          : actionRaw === "consume" || actionRaw === "use" || actionRaw === "used"
+            ? "consume"
+            : "acquire";
+      return {
+        action,
+        name: typeof obj.name === "string" ? obj.name.trim() : "",
+        type: normalizeInventoryType(obj.type),
+        quantity: asPositiveInt(obj.quantity, 1),
+        description:
+          typeof obj.description === "string" ? obj.description.trim() : "",
+        rarity: normalizeInventoryRarity(obj.rarity),
+      } satisfies InventoryEvent;
+    })
+    .filter((event) => event.name)
+    .slice(0, 5);
+}
+
+// Ask the model to list tangible items that actually changed hands in this
+// exchange. Returns [] on any parse/LLM failure so a botched extraction never
+// blocks chat.
+async function extractInventoryEvents(
+  userMessage: string,
+  aiResponse: string,
+  existing: { name?: string; quantity?: unknown }[],
+): Promise<InventoryEvent[]> {
+  if (!userMessage.trim() && !aiResponse.trim()) return [];
+  const clip = (s: string) => (s.length > 4000 ? s.slice(0, 4000) : s);
+  const existingList =
+    existing.length > 0
+      ? existing
+          .slice(0, 40)
+          .map((item) => `- ${item.name} (x${asPositiveInt(item.quantity, 1)})`)
+          .join("\n")
+      : "(none yet)";
+  const raw = await llm(
+    "You track a character's physical inventory from story. From the latest " +
+      "exchange, list tangible items the character newly acquired, was given, " +
+      "picked up, crafted, consumed, used up, dropped, or lost. Ignore " +
+      "metaphor, feelings, and items that are only mentioned in passing " +
+      "without changing possession. Return 0 to 5 objects as a JSON array; " +
+      'each object is { "action": "acquire"|"lose"|"consume", "name": string, ' +
+      '"type": "gear"|"consumable"|"weapon"|"armor"|"artifact"|"misc", ' +
+      '"quantity": number, "description": string, "rarity": ' +
+      '"common"|"uncommon"|"rare"|"legendary" }. name is a short title-case ' +
+      "item name. If nothing changed hands, return []. Output ONLY the JSON array.",
+    `CURRENT INVENTORY:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
+    512,
+  ).catch(() => "[]");
+  return parseInventoryEvents(raw);
+}
+
+export type InventoryPersistResult = {
+  applied: number;
+  created: InventoryItem[];
+  updated: InventoryItem[];
+  removed: InventoryItem[];
+  items_acquired: number;
+  inventory: InventoryItem[];
+};
+
+function emptyInventoryResult(inventory: InventoryItem[] = []): InventoryPersistResult {
+  return {
+    applied: 0,
+    created: [],
+    updated: [],
+    removed: [],
+    items_acquired: 0,
+    inventory,
+  };
+}
+
+async function persistInventoryEvents(
+  userId: string,
+  characterId: string,
+  sessionId: string,
+  events: InventoryEvent[],
+): Promise<InventoryPersistResult> {
+  const current = await loadInventoryItems(userId, characterId);
+  const byName = new Map<string, (typeof current)[number]>();
+  for (const entry of current) {
+    const key = normalizeItemName(entry.item.name);
+    if (key && !byName.has(key)) byName.set(key, entry);
+  }
+
+  const created: InventoryItem[] = [];
+  const updated: InventoryItem[] = [];
+  const removed: InventoryItem[] = [];
+  let itemsAcquired = 0;
+  const now = new Date().toISOString();
+
+  for (const event of events) {
+    const key = normalizeItemName(event.name);
+    if (!key) continue;
+    const existing = byName.get(key);
+
+    if (event.action === "acquire") {
+      itemsAcquired += event.quantity;
+      if (existing) {
+        const nextQty =
+          asPositiveInt(existing.item.quantity, 1) + event.quantity;
+        const merged: InventoryItem = {
+          ...existing.item,
+          quantity: nextQty,
+          updated_date: now,
+        };
+        await db
+          .update(userEntities)
+          .set({ data: merged, updatedAt: new Date() })
+          .where(
+            and(
+              eq(userEntities.userId, userId),
+              eq(userEntities.entityName, INVENTORY),
+              eq(userEntities.entityId, existing.entityId),
+            ),
+          );
+        existing.item = merged;
+        updated.push(merged);
+      } else {
+        const id = makeId();
+        const item: InventoryItem = {
+          id,
+          character_id: characterId,
+          session_id: sessionId || null,
+          name: event.name,
+          type: event.type,
+          quantity: event.quantity,
+          equipped: false,
+          slot: "none",
+          rarity: event.rarity,
+          description: event.description,
+          source: "narrative",
+          created_date: now,
+          updated_date: now,
+        };
+        await db.insert(userEntities).values({
+          userId,
+          entityName: INVENTORY,
+          entityId: id,
+          data: item,
+        });
+        const entry: InventoryRow = { entityId: id, item };
+        byName.set(key, entry);
+        current.unshift(entry);
+        created.push(item);
+      }
+      continue;
+    }
+
+    if (!existing) continue;
+    const nextQty = asPositiveInt(existing.item.quantity, 1) - event.quantity;
+    if (nextQty <= 0) {
+      await db
+        .delete(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, INVENTORY),
+            eq(userEntities.entityId, existing.entityId),
+          ),
+        );
+      byName.delete(key);
+      const idx = current.findIndex((e) => e.entityId === existing.entityId);
+      if (idx >= 0) current.splice(idx, 1);
+      removed.push(existing.item);
+    } else {
+      const merged: InventoryItem = {
+        ...existing.item,
+        quantity: nextQty,
+        updated_date: now,
+      };
+      await db
+        .update(userEntities)
+        .set({ data: merged, updatedAt: new Date() })
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, INVENTORY),
+            eq(userEntities.entityId, existing.entityId),
+          ),
+        );
+      existing.item = merged;
+      updated.push(merged);
+    }
+  }
+
+  const applied = created.length + updated.length + removed.length;
+  if (applied > 0) notifyUser(userId);
+
+  const inventory = (await loadInventoryItems(userId, characterId)).map((e) => e.item);
+  return {
+    applied,
+    created,
+    updated,
+    removed,
+    items_acquired: itemsAcquired,
+    inventory,
+  };
+}
+
+async function applyNarrativeInventory(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<InventoryPersistResult> {
+  const characterId =
+    typeof data.character_id === "string" ? data.character_id : "";
+  if (!characterId) return emptyInventoryResult();
+
+  const userMessage =
+    typeof data.user_message === "string"
+      ? data.user_message
+      : typeof data.message_content === "string"
+        ? data.message_content
+        : "";
+  const aiResponse =
+    typeof data.ai_response === "string" ? data.ai_response : "";
+  const sessionId =
+    typeof data.session_id === "string" ? data.session_id : "";
+
+  const current = await loadInventoryItems(userId, characterId);
+  const events = await extractInventoryEvents(
+    userMessage,
+    aiResponse,
+    current.map((e) => ({
+      name: String(e.item.name ?? ""),
+      quantity: e.item.quantity,
+    })),
+  );
+  if (events.length === 0) {
+    return emptyInventoryResult(current.map((e) => e.item));
+  }
+  return persistInventoryEvents(userId, characterId, sessionId, events);
+}
+
+async function processItemLoss(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<InventoryPersistResult> {
+  const characterId =
+    typeof data.character_id === "string" ? data.character_id : "";
+  const name = typeof data.item_name === "string" ? data.item_name.trim() : "";
+  if (!characterId || !name) return emptyInventoryResult();
+  const sessionId =
+    typeof data.session_id === "string" ? data.session_id : "";
+  return persistInventoryEvents(userId, characterId, sessionId, [
+    {
+      action: "lose",
+      name,
+      type: "misc",
+      quantity: asPositiveInt(data.quantity, 1),
+      description: typeof data.reason === "string" ? data.reason : "",
+      rarity: "common",
+    },
+  ]);
+}
+
 // Consolidate a user's active background-context records into one prompt block.
 // Records still processing (no usable content yet) are skipped. Exported so the
 // assembly can be unit-tested without a DB or OpenAI.
@@ -599,7 +954,14 @@ router.post("/invoke/:fnName", async (req, res) => {
 
       case "updateInventory":
       case "applyNarrativeItemEvents": {
-        result = { success: true, inventory: data.inventory ?? [] };
+        const { userId } = getAuth(req) as { userId: string };
+        result = { data: await applyNarrativeInventory(userId, data) };
+        break;
+      }
+
+      case "processItemLoss": {
+        const { userId } = getAuth(req) as { userId: string };
+        result = { data: await processItemLoss(userId, data) };
         break;
       }
 
@@ -800,37 +1162,11 @@ router.post("/invoke/:fnName", async (req, res) => {
           ? (data.messages as unknown[])
           : [];
         const character = (data.character ?? {}) as Record<string, unknown>;
-        const charName =
-          typeof character.name === "string" && character.name.trim()
-            ? character.name.trim()
-            : "NetNavi";
-        const personality =
-          typeof character.personality === "string" ? character.personality : "";
-        const speaking =
-          typeof character.speaking_style === "string"
-            ? character.speaking_style
-            : "";
         const fileList = Array.isArray(data.files)
           ? (data.files as unknown[]).filter((f): f is string => typeof f === "string")
           : [];
 
-        const systemPrompt = `You are ${charName}, an AI companion who builds software hands-on for the user inside a sandboxed in-browser code workspace ("Codespace"). ${personality ? `Your personality: ${personality}. ` : ""}${speaking ? `You speak like this: ${speaking}. ` : ""}
-
-You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi". Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.
-
-You have tools to manage a virtual file system and run code in a safe, isolated in-browser sandbox:
-- list_files / read_file / write_file / delete_file to manage project files.
-- scan_code to scan a file for dangerous/malicious patterns (your "virus scan").
-- run_code to execute code: mode "web" renders index.html in the live preview; mode "js" runs a JavaScript file; mode "python" runs a Python file (via an in-browser runtime). Output and errors are returned to you.
-
-Rules:
-- Build toward the user's goal step by step. Create or edit real files, run them, read the output, and fix errors by editing and re-running until the goal works.
-- Debug and repair relentlessly. After every run, read the returned result: if "ok" is false or "errors" is non-empty, diagnose the root cause from the error text, edit the file to fix it, and run it again. Repeat until the run comes back "ok": true with no errors. When the user asks you to repair a specific file, read it first, then fix and re-run it — do not stop while a repeatable error remains.
-- For web apps, write an index.html (you may also write styles.css / script.js and link them) and run with mode "web".
-- For scripts, write a .js or .py file and run with the matching mode.
-- ALWAYS call scan_code on a file before you run it. If a "virus" (dangerous pattern) is found, explain the threat to the user in Battle Network flavor and neutralize it by rewriting the code safely before running. Never run code you know is unsafe.
-- When the goal is met, send a final short in-character message with NO tool calls to end your turn.
-- Keep narration messages short (1-3 sentences). Current files: ${fileList.length ? fileList.join(", ") : "(none yet)"}.`;
+        const systemPrompt = buildInBrowserCodespaceSystemPrompt(character, fileList);
 
         const tools = [
           {

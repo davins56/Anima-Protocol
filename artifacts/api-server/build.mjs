@@ -134,6 +134,10 @@ async function buildAll() {
   // Vercel only deploys files under api/ as Serverless Functions. Copy the
   // self-contained bundle directly to api/index.mjs (do not use api/server.mjs
   // — listing it in vercel.json functions causes deploy errors).
+  //
+  // vercel.json `functions["api/index.mjs"]` is validated against the git
+  // tree BEFORE buildCommand runs. Keep api/index.mjs committed so production
+  // deploys do not fail with "doesn't match any Serverless Functions".
   await mkdir(apiDir, { recursive: true });
   await copyFile(
     path.resolve(distDir, "vercel.mjs"),

@@ -1,3 +1,5 @@
+import { BOOTSTRAP_UI_TIMEOUT_MS } from "@/lib/storeTimeouts";
+
 // Lightweight bootstrap lifecycle flags shared between syncBootstrap and the
 // store client. Kept in its own module (no imports from base44Client or
 // syncBootstrap) so queryEntity can wait for starter seeding without creating a
@@ -35,7 +37,7 @@ export function isBootstrapSettled() {
 // UI/store reads should wait until starter seeding finishes. Internal bootstrap
 // reads pass `_bootstrapInternal: true` so they do not await the in-flight
 // bootstrap promise (which would deadlock).
-export async function ensureBootstrapComplete(timeoutMs = 20000) {
+export async function ensureBootstrapComplete(timeoutMs = BOOTSTRAP_UI_TIMEOUT_MS) {
   if (settled) return;
   const deadline = Date.now() + timeoutMs;
   while (!bootstrapPromise && Date.now() < deadline) {

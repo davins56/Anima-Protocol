@@ -19,6 +19,8 @@ export default function SovereignPresenceStage({
   model,
   expression = 0.35,
   title,
+  layers,
+  sequences,
 }) {
   if (!open) return null;
 
@@ -52,7 +54,14 @@ export default function SovereignPresenceStage({
       </div>
 
       <div className="flex-1 min-h-0 w-full">
-        <AnimaVessel4D model={model} expression={expression} autoRotate className="w-full h-full" />
+        <AnimaVessel4D
+          model={model}
+          expression={expression}
+          autoRotate
+          className="w-full h-full"
+          layers={layers}
+          sequences={sequences}
+        />
       </div>
 
       <p className="absolute bottom-4 inset-x-0 text-center font-mono text-[9px] tracking-[0.3em] uppercase text-primary/40 pointer-events-none">

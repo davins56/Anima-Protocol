@@ -39,7 +39,7 @@ export default function MobileDrawerSelect({ label, value, onChange, options, cl
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 30, stiffness: 300 }}
                 className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t border-primary/20 rounded-t-2xl"
-                style={{ maxHeight: '60vh', paddingBottom: 'env(safe-area-inset-bottom)' }}
+                style={{ maxHeight: '60vh', paddingBottom: 'var(--safe-bottom, env(safe-area-inset-bottom, 0px))' }}
               >
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-primary/10">

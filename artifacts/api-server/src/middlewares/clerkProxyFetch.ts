@@ -1,5 +1,6 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "http";
 import { logger } from "../lib/logger";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
   canonicalClerkProxyHeaderHost,
@@ -70,8 +71,20 @@ export function resolveClerkUpstreamUrl(
 }
 
 function productionProxyHostFallback(): string {
-  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  const publishableKey = readRuntimeEnv("CLERK_PUBLISHABLE_KEY") || "";
   return publishableKey.startsWith("pk_live_") ? PRODUCTION_PROXY_HOST : "";
+}
+
+/** First hop only — Vercel/CF may send "https,https" or "https, http". */
+export function forwardedRequestProto(
+  headers: IncomingHttpHeaders,
+): "http" | "https" {
+  const raw = headers["x-forwarded-proto"];
+  const first = (Array.isArray(raw) ? raw[0] : raw)
+    ?.split(",")[0]
+    ?.trim()
+    .toLowerCase();
+  return first === "http" ? "http" : "https";
 }
 
 export function buildClerkProxyHeaderValues(
@@ -81,11 +94,9 @@ export function buildClerkProxyHeaderValues(
   const requestHost = normalizeHostname(getClerkProxyHost(req) || "");
   const usePublicProxy =
     isLocalDevHost(requestHost) &&
-    process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_");
+    readRuntimeEnv("CLERK_PUBLISHABLE_KEY")?.startsWith("pk_live_");
 
-  const protocol = usePublicProxy
-    ? "https"
-    : (req.headers["x-forwarded-proto"] as string) || "https";
+  const protocol = usePublicProxy ? "https" : forwardedRequestProto(req.headers);
   const host =
     (usePublicProxy
       ? PRODUCTION_PROXY_HOST

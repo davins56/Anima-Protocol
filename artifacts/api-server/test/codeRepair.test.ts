@@ -9,7 +9,7 @@ describe("analyzeCodeRepairInput", () => {
       diagnostics: {
         openrouterConfigured: true,
         openrouterEnv: "OPENROUTER_API_KEY",
-        openrouterModel: "openai/gpt-oss-20b:free",
+        openrouterModel: "minimax/minimax-m2.7:free",
         openrouterIsFreeTier: true,
       },
     });

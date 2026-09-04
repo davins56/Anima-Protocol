@@ -31,6 +31,7 @@ import {
   hasMinimaxKey,
   hasLocalLlm,
   hasOpenRouterKey,
+  isLoopbackUnreachableRuntime,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
   OPENROUTER_VENICE_UNCENSORED,
@@ -78,6 +79,11 @@ export interface LlmRoutingStatus {
     isLocalhost: boolean;
     /** True when base URL is OpenAI/Groq/Gemini/etc. (invalid for Anima chat). */
     isCloudFlagship: boolean;
+    /**
+     * True when the operator set a localhost/loopback URL on a runtime that
+     * cannot reach loopback (Workers / Vercel). `configured` is false.
+     */
+    isLoopbackMisconfigured: boolean;
     backend: string;
     model: string;
   };
@@ -386,13 +392,15 @@ function summarizeError(err: unknown): string {
  * surface the same failure as 403 with an empty body.
  */
 export const LOCAL_LLM_AUTH_FIX_HINT =
-  "ANIMA_LOCAL_LLM_API_KEY on Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
+  "ANIMA_LOCAL_LLM_API_KEY on the Cloudflare Worker (Secrets Store binding in wrangler.jsonc) " +
+  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
   "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
-  "as ANIMA_LOCAL_LLM_API_KEY and redeploy without build cache). See deploy/ollama-fly/README.md.";
+  "as ANIMA_LOCAL_LLM_API_KEY and redeploy). See deploy/ollama-fly/README.md.";
 
 /**
- * Shared operator hint when Vercel cannot open a TCP/TLS session to the LLM host.
- * Distinct from auth (401/403): the machine is down, sleeping, or TLS is broken.
+ * Shared operator hint when the Worker / Vercel cannot open a TCP/TLS session
+ * to the LLM host. Distinct from auth (401/403): the machine is down, sleeping,
+ * or TLS is broken. A localhost URL on Workers is CF error 1003, not this hint.
  */
 export const LOCAL_LLM_CONNECTION_FIX_HINT =
   "The self-hosted Anima LLM host did not accept a connection. " +
@@ -688,7 +696,7 @@ function localHostDownSuffix(include: boolean): string {
   if (host === "anima-chat-llm.fly.dev") {
     return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
   }
-  return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from Vercel.`;
+  return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from the Cloudflare Worker.`;
 }
 
 /** Operator hint when OpenRouter ran because the custom LLM was never wired. */
@@ -712,7 +720,7 @@ function enrichError(
   if (isProviderAuthError(err)) {
     if (provider === "openrouter") {
       return new Error(
-        `OpenRouter authentication failed: ${summarizeError(err)}. Check OPENROUTER_API_KEY on Vercel (https://openrouter.ai/keys), then redeploy.`,
+        `OpenRouter authentication failed: ${summarizeError(err)}. Check OPENROUTER_API_KEY on the Cloudflare Worker Secrets Store (https://openrouter.ai/keys), then redeploy.`,
       );
     }
     return new Error(
@@ -778,21 +786,41 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
 
   const customOnly = preferCustomLlmOnly();
   const openRouterFallback = allowOpenRouterFallback();
+  const noLoopback = isLoopbackUnreachableRuntime();
   const noteParts: string[] = [];
+  if (localSummary.isLoopbackMisconfigured) {
+    noteParts.push(
+      "ANIMA_LOCAL_LLM_BASE_URL points at localhost/loopback, which this serverless runtime cannot reach " +
+        "(Cloudflare Workers reject isolate fetch to localhost with error 1003). " +
+        "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
+        "e.g. https://anima-chat-llm.fly.dev/v1. See deploy/ollama-fly/README.md.",
+    );
+  }
   if (chain.length === 0) {
     if (localSummary.isCloudFlagship) {
       noteParts.push(CLOUD_FLAGSHIP_SETUP_HINT);
     } else if (customOnly) {
       noteParts.push(
-        "ANIMA_LLM_PROVIDER=custom but ANIMA_LOCAL_LLM_BASE_URL is unset. " +
+        "ANIMA_LLM_PROVIDER=custom but ANIMA_LOCAL_LLM_BASE_URL is unset or unusable. " +
           "OpenRouter will not be used. Set a public HTTPS OpenAI-compatible URL and redeploy. " +
-          "See docs/custom-llm.md.",
+          "See deploy/ollama-fly/README.md.",
       );
-    } else {
+    } else if (!localSummary.isLoopbackMisconfigured) {
       noteParts.push(
+<<<<<<< HEAD
         "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
           "or MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
             "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md.",
+=======
+        noLoopback
+          ? "ANIMA_LOCAL_LLM_BASE_URL is unset. This serverless runtime cannot invent or reach localhost. " +
+            "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1) " +
+            "(see deploy/ollama-fly/README.md), or set OPENROUTER_API_KEY for Venice Uncensored / " +
+            "free open-weight chat via OpenRouter. Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used."
+          : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
+            "or OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter. " +
+            "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See deploy/ollama-fly/README.md.",
+>>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
       );
     }
   } else {
@@ -800,12 +828,12 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       noteParts.push(
         `Self-hosted Anima LLM at host=${localSummary.host ?? "?"} model=${localModel}.`,
       );
-      if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+      if (localSummary.isLocalhost && noLoopback) {
         noteParts.push(
-          "WARNING: local endpoint is localhost on Vercel — serverless cannot reach it. Use a public HTTPS tunnel URL.",
+          "WARNING: local endpoint is localhost on a serverless runtime — it cannot be reached. Use a public HTTPS URL.",
         );
-      } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
-        noteParts.push("WARNING: local endpoint is not HTTPS — Vercel egress often requires https://…/v1.");
+      } else if (!localSummary.isHttps && noLoopback) {
+        noteParts.push("WARNING: local endpoint is not HTTPS — Worker/Vercel egress often requires https://…/v1.");
       } else if (!localSummary.hasV1Path) {
         noteParts.push("WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions.");
       }
@@ -826,7 +854,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
         `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` +
           (chain[0] === "local"
             ? " (fallback after local connection failure)."
-            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset).") +
+            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset or unusable).") +
           (openRouterCreditFallback ? " Paid model needed credits; using free-tier." : ""),
       );
     }
@@ -844,6 +872,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       isHttps: localSummary.isHttps,
       isLocalhost: localSummary.isLocalhost,
       isCloudFlagship: localSummary.isCloudFlagship,
+      isLoopbackMisconfigured: localSummary.isLoopbackMisconfigured,
       backend,
       model: localModel,
     },

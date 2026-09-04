@@ -115,6 +115,19 @@ describe("buildTherapyInstruction", () => {
     expect(prompt).toMatch(/not a licensed therapist/i);
     expect(prompt).not.toMatch(/I am a licensed/i);
   });
+
+  it("keeps a named topic in focus across the turn", () => {
+    const prompt = buildTherapyInstruction({
+      characterName: "Nyx",
+      userName: "Dav",
+      userMessage: "It started after the move",
+      focusTopic: "Grief",
+      focusNotes: "after leaving home",
+    });
+    expect(prompt).toMatch(/DEPTH FOCUS/);
+    expect(prompt).toContain("Grief");
+    expect(prompt).toContain("after leaving home");
+  });
 });
 
 describe("therapyOpeningMessage", () => {
@@ -124,5 +137,12 @@ describe("therapyOpeningMessage", () => {
     expect(msg).toMatch(/therapy mode/i);
     expect(msg).toMatch(/988/);
     expect(msg).toMatch(/not a licensed therapist/i);
+  });
+
+  it("opens on a named topic when the user asked to go deeper", () => {
+    const msg = therapyOpeningMessage("Lumen", "Work burnout");
+    expect(msg).toContain("Work burnout");
+    expect(msg).toMatch(/go deeper/i);
+    expect(msg).toMatch(/988/);
   });
 });

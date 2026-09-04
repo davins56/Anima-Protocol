@@ -1,5 +1,10 @@
 import { Component, Fragment } from "react";
 import { track } from "@/lib/analytics";
+import {
+  hasAttemptedStaleChunkRecovery,
+  isStaleChunkError,
+  recoverStaleChunk,
+} from "@/lib/staleChunkRecovery";
 
 // A render-phase error in any child unmounts the whole React tree by default,
 // leaving the user staring at a blank screen (reads as a hard "crash"). This
@@ -66,6 +71,14 @@ class ErrorBoundary extends Component {
     console.error("[ErrorBoundary] caught render error:", error, errorInfo);
     this.report("Error Boundary Triggered", error, errorInfo);
 
+    // HTML-as-JS MIME (stale hashed chunk) cannot remount-heal. One
+    // cache-clear + hard-reload per tab session; a second MIME failure falls
+    // through to the recovery panel instead of looping.
+    if (isStaleChunkError(error) && !hasAttemptedStaleChunkRecovery()) {
+      void recoverStaleChunk();
+      return;
+    }
+
     // First crash: attempt one silent in-place self-repair. If it throws again
     // the attempt counter blocks a retry loop and the manual panel takes over.
     if (this.state.attempts < 1) {
@@ -117,6 +130,14 @@ class ErrorBoundary extends Component {
 
   handleSelfRepair = async () => {
   this.clearHealTimer();
+
+  if (
+    isStaleChunkError(this.state.error) &&
+    !hasAttemptedStaleChunkRecovery()
+  ) {
+    await recoverStaleChunk();
+    return;
+  }
 
   try {
     // Try to cleanly sign out from both auth systems
