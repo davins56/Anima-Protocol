@@ -150,6 +150,9 @@ describe("repoCodespace security and path resolution", () => {
       expect(json.available).toBe(true);
       expect(json.files.some((f: { path: string }) => f.path === "src/index.ts")).toBe(true);
     });
+
+    it("allows reading valid source files", async () => {
+      const res = await call("POST", "/repo-codespace/read-file", { path: "src/index.ts" });
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.content).toContain("hello");
