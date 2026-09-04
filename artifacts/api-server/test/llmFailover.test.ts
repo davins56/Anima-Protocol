@@ -17,6 +17,7 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     OPENROUTER_FREE_MODEL: "openai/gpt-oss-20b:free",
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
@@ -52,6 +53,20 @@ vi.mock("../src/lib/openaiClient", () => {
           process.env.OPEN_ROUTER_API_KEY?.trim()
         )
       ) {
+        return null;
+      }
+      return openRouterClient;
+    },
+    hasMinimaxKey: () =>
+      Boolean(process.env.MINIMAX_API_KEY?.trim() || process.env.ANIMA_MINIMAX_API_KEY?.trim()),
+    getMinimaxApiKeySource: () =>
+      process.env.MINIMAX_API_KEY?.trim()
+        ? "MINIMAX_API_KEY"
+        : process.env.ANIMA_MINIMAX_API_KEY?.trim()
+          ? "ANIMA_MINIMAX_API_KEY"
+          : null,
+    getMinimaxClient: () => {
+      if (!(process.env.MINIMAX_API_KEY?.trim() || process.env.ANIMA_MINIMAX_API_KEY?.trim())) {
         return null;
       }
       return openRouterClient;
@@ -1149,10 +1164,11 @@ describe("probeLlmProviders", () => {
     delete process.env.OPEN_ROUTER_API_KEY;
     process.env.VERCEL = "1";
     const probes = await probeLlmProviders();
-    expect(probes).toHaveLength(2);
+    expect(probes).toHaveLength(3);
     expect(probes[0]).toMatchObject({ provider: "local", configured: false, ok: false });
-    expect(probes[1]).toMatchObject({ provider: "openrouter", configured: false, ok: false });
-    expect(probes[1].message).toMatch(/OPENROUTER_API_KEY/i);
+    expect(probes[1]).toMatchObject({ provider: "minimax", configured: false, ok: false });
+    expect(probes[2]).toMatchObject({ provider: "openrouter", configured: false, ok: false });
+    expect(probes[2].message).toMatch(/OPENROUTER_API_KEY/i);
   });
 
   it("probes the local endpoint with a tiny completion", async () => {

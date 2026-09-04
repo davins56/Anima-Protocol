@@ -6,9 +6,10 @@ import {
   CHAT_SESSION,
   asObject,
   chatMessages,
-  chatSessions,
-  companionMemories,
-  db,
+ chatSessions,
+ companionMemories,
+ memoryEmbeddings,
+ db,
   ensureSchemaOnce,
   makeId,
   migrateSessionMessages,
@@ -25,7 +26,10 @@ import {
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
-import { consumeLlmStream, LlmStreamTimeoutError } from "../lib/consumeLlmStream";
+import {
+  consumeLlmStream,
+  LlmStreamTimeoutError,
+} from "../lib/consumeLlmStream.js";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -33,6 +37,7 @@ import {
 } from "../lib/localEnsemble";
 import {
   attachStoredEmbeddings,
+  factIdFor,
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
 import {
@@ -672,20 +677,103 @@ router.get("/sessions/:sessionId/context", async (req, res) => {
   });
 });
 
-router.get("/memories/:characterId", async (req, res) => {
-  const userId = requireUser(req, res);
-  if (!userId) return;
+type EditableMemoryFact = {
+  fact_id?: string;
+  text?: string;
+  type?: string;
+  tags?: string[];
+  pinned?: boolean;
+  importance?: number;
+  session_id?: string;
+  turn_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  source?: string;
+  [key: string]: unknown;
+};
+
+function normalizeMemoryFact(raw: unknown): EditableMemoryFact | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const fact = raw as EditableMemoryFact;
+  const text = String(fact.text || "").trim();
+
+  if (!text) return null;
+
+  return {
+    ...fact,
+    fact_id: fact.fact_id || factIdFor(text),
+    text,
+    type: String(fact.type || "unknown"),
+    tags: Array.isArray(fact.tags)
+      ? fact.tags.map(String).filter(Boolean)
+      : [],
+    pinned: fact.pinned === true,
+    importance:
+      typeof fact.importance === "number"
+        ? Math.max(0, Math.min(1, fact.importance))
+        : 0.5,
+  };
+}
+
+function normalizeMemoryFacts(rawFacts: unknown): EditableMemoryFact[] {
+  if (!Array.isArray(rawFacts)) return [];
+
+  return rawFacts
+    .map(normalizeMemoryFact)
+    .filter((fact): fact is EditableMemoryFact => fact !== null);
+}
+
+async function loadCharacterMemory(
+  userId: string,
+  characterId: string,
+) {
   const [memory] = await db
     .select()
     .from(companionMemories)
     .where(
       and(
         eq(companionMemories.userId, userId),
-        eq(companionMemories.characterId, req.params.characterId),
+        eq(companionMemories.characterId, characterId),
       ),
     )
     .limit(1);
-  res.json({ memory: memory ?? null });
+
+  return memory ?? null;
+}
+
+router.get("/memories/:characterId", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+
+  const characterId = String(req.params.characterId || "").trim();
+
+  if (!characterId) {
+    res.status(400).json({ error: "characterId is required" });
+    return;
+  }
+
+  const memory = await loadCharacterMemory(userId, characterId);
+
+  if (!memory) {
+    res.json({
+      memory: {
+        characterId,
+        summary: "",
+        facts: [],
+        emotionalState: {},
+        resonanceNotes: "",
+      },
+    });
+    return;
+  }
+
+  res.json({
+    memory: {
+      ...memory,
+      facts: normalizeMemoryFacts(memory.facts),
+    },
+  });
 });
 
 function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {

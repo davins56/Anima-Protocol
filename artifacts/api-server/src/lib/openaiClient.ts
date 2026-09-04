@@ -8,6 +8,8 @@ let localLlmClientKey: string | null = null;
 
 let openRouterClient: OpenAI | null = null;
 let openRouterClientKey: string | null = null;
+let minimaxClient: OpenAI | null = null;
+let minimaxClientKey: string | null = null;
 
 /** OpenRouter OpenAI-compatible base (chat completions + models). */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -25,6 +27,18 @@ export const OPENROUTER_VENICE_UNCENSORED =
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
 export const OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+
+/** MiniMax Global OpenAI-compatible base URL. */
+export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
+
+/** Default MiniMax chat model. Override with ANIMA_MINIMAX_MODEL. */
+export const MINIMAX_DEFAULT_MODEL = "MiniMax-M2.5";
+
+/** Env names checked for a MiniMax key (first non-empty wins). */
+export const MINIMAX_KEY_ENV_NAMES = [
+  "MINIMAX_API_KEY",
+  "ANIMA_MINIMAX_API_KEY",
+] as const;
 
 /** Env names checked for an OpenRouter key (first non-empty wins). */
 export const OPENROUTER_KEY_ENV_NAMES = [
@@ -293,6 +307,44 @@ export function openRouterKeyFingerprint(): string | null {
   return key.slice(-4);
 }
 
+/** MiniMax API key, using the same OpenAI-compatible chat contract. */
+export function getMinimaxApiKey(): string | null {
+  for (const name of MINIMAX_KEY_ENV_NAMES) {
+    const key = normalizeApiKey(process.env[name]);
+    if (key) return key;
+  }
+  return null;
+}
+
+export function hasMinimaxKey(): boolean {
+  return Boolean(getMinimaxApiKey());
+}
+
+export function getMinimaxApiKeySource(): string | null {
+  for (const name of MINIMAX_KEY_ENV_NAMES) {
+    if (normalizeApiKey(process.env[name])) return name;
+  }
+  return null;
+}
+
+/** OpenAI-compatible MiniMax Global client for chat. */
+export function getMinimaxClient(): OpenAI | null {
+  const apiKey = getMinimaxApiKey();
+  if (!apiKey) return null;
+  const baseURL = (
+    process.env.ANIMA_MINIMAX_BASE_URL?.trim() ||
+    process.env.MINIMAX_BASE_URL?.trim() ||
+    MINIMAX_BASE_URL
+  ).replace(/\/$/, "");
+  const cacheKey = `${baseURL}::${apiKey}`;
+  if (!minimaxClient || minimaxClientKey !== cacheKey) {
+    minimaxClient = new OpenAI({ apiKey, baseURL, maxRetries: 0 });
+    minimaxClientKey = cacheKey;
+    console.info(`[llm] minimax client: base_url=${baseURL}`);
+  }
+  return minimaxClient;
+}
+
 /**
  * OpenAI-compatible OpenRouter client for free / uncensored open-weight chat.
  * Returns null when no OpenRouter key is configured.
@@ -335,5 +387,7 @@ export function resetLlmClientsForTests(): void {
   localLlmClientKey = null;
   openRouterClient = null;
   openRouterClientKey = null;
+  minimaxClient = null;
+  minimaxClientKey = null;
   resetLocalLlmInitLogForTests();
 }

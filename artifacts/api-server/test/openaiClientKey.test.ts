@@ -6,6 +6,9 @@ import {
   normalizeApiKey,
   openRouterKeyFingerprint,
   resetLlmClientsForTests,
+  getMinimaxApiKey,
+  getMinimaxApiKeySource,
+  hasMinimaxKey,
 } from "../src/lib/openaiClient";
 
 describe("normalizeApiKey", () => {
@@ -58,5 +61,22 @@ describe("OpenRouter key env aliases", () => {
     process.env.OPEN_ROUTER_API_KEY = "sk-or-v1-alias-yyyy";
     expect(getOpenRouterApiKey()).toBe("sk-or-v1-canonical-xxxx");
     expect(getOpenRouterApiKeySource()).toBe("OPENROUTER_API_KEY");
+  });
+});
+
+describe("MiniMax key env aliases", () => {
+  const SAVED = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmClientsForTests();
+  });
+
+  it("reads MINIMAX_API_KEY and prefers it over the Anima alias", () => {
+    process.env.MINIMAX_API_KEY = "  minimax-primary-key  ";
+    process.env.ANIMA_MINIMAX_API_KEY = "minimax-alias-key";
+    expect(hasMinimaxKey()).toBe(true);
+    expect(getMinimaxApiKey()).toBe("minimax-primary-key");
+    expect(getMinimaxApiKeySource()).toBe("MINIMAX_API_KEY");
   });
 });
