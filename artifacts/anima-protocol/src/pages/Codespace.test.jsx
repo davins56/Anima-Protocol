@@ -221,7 +221,7 @@ describe("Codespace upload + import", () => {
     expect(screen.getByTestId("codespace-toolbar-import")).toBeTruthy();
     expect(screen.getByTestId("codespace-toolbar-pull")).toBeTruthy();
     await waitFor(() => expect(screen.getByText(/Live repository filesystem isn't on this host/i)).toBeTruthy());
-    expect(screen.getByText(/Upload, Import, or Pull a repo/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText(/Upload, Import, or Pull a repo/i).length).toBeGreaterThan(0));
     expect(mocks.probeRepo).toHaveBeenCalled();
     expect(mocks.listRepo).not.toHaveBeenCalled();
   });

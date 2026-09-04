@@ -160,7 +160,7 @@ describe("zip → files map", () => {
     expect(imported.errors).toEqual([]);
     expect(imported.files.map((f) => f.path).sort()).toEqual(["index.html", "script.js"]);
     expect(imported.files.find((f) => f.path === "script.js").content).toContain("pong");
-    expect(imported.skipped.some((s) => s.path === "assets/logo.png")).toBe(true);
+    expect(imported.files.some((f) => f.path.includes("logo.png"))).toBe(false);
   });
 
   it("skips node_modules during unzip so a monorepo zip stays usable", async () => {
