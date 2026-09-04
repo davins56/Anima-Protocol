@@ -18,6 +18,7 @@ vi.mock("../src/lib/openaiClient", () => {
           process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
           process.env.OPEN_ROUTER_API_KEY?.trim(),
       ),
+    hasMinimaxKey: () => false,
     getOpenRouterApiKey: () =>
       process.env.OPENROUTER_API_KEY?.trim() ||
       process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||

@@ -818,7 +818,8 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
         noLoopback
           ? "ANIMA_LOCAL_LLM_BASE_URL is unset. This serverless runtime cannot invent or reach localhost. " +
             "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
-            "or set MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter)."
+            "or set MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
+            "See deploy/ollama-fly/README.md."
           : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
             "or MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
             "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md.",
