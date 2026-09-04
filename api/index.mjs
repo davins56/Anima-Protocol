@@ -75549,7 +75549,7 @@ function forwardedRequestProto(headers) {
 }
 function buildClerkProxyHeaderValues(req, secretKey) {
   const requestHost = normalizeHostname2(getClerkProxyHost(req) || "");
-  const usePublicProxy = isLocalDevHost(requestHost) && readRuntimeEnv("CLERK_PUBLISHABLE_KEY")?.startsWith("pk_live_");
+  const usePublicProxy = (!isAnimaProductionHost(requestHost) || isLocalDevHost(requestHost)) && readRuntimeEnv("CLERK_PUBLISHABLE_KEY")?.startsWith("pk_live_");
   const protocol = usePublicProxy ? "https" : forwardedRequestProto(req.headers);
   const host = (usePublicProxy ? PRODUCTION_PROXY_HOST : canonicalClerkProxyHeaderHost(getClerkProxyHost(req))) || productionProxyHostFallback() || requestHost;
   const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}/`;
