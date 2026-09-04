@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench, Bug,
+  FolderInput,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
@@ -12,6 +13,7 @@ import CodeEditor from "@/components/codespace/CodeEditor";
 import PreviewPane from "@/components/codespace/PreviewPane";
 import ConsolePane from "@/components/codespace/ConsolePane";
 import VirusBattleModal from "@/components/codespace/VirusBattleModal";
+import ImportRepoModal from "@/components/codespace/ImportRepoModal";
 import AgentPanel from "@/components/codespace/AgentPanel";
 import { scanCode, severityRank } from "@/lib/codespace/codeScanner";
 import { buildPreviewSrcdoc, isPreviewMessage, runScript } from "@/lib/codespace/sandbox";
@@ -22,6 +24,12 @@ import {
 import { useCodespaceAgent } from "@/lib/codespace/useCodespaceAgent";
 import { summarizeRunErrors, buildRepairGoal } from "@/lib/codespace/repair";
 import { JULES_PERSONA, debugAndTroubleshoot } from "@/lib/codespace/julesApi";
+import {
+  importFromBrowserFiles,
+  importFromZipFile,
+  mergeImportedFiles,
+  summarizeImport,
+} from "@/lib/codespace/importProject";
 import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
 import {
   buildCodespaceCompanions,
@@ -55,7 +63,7 @@ function mergeScans(scans, label) {
   };
 }
 
-export default function Codespace() {
+export default function Codespace({ isRepoMode = false }) {
   const [searchParams] = useSearchParams();
   const requestedAnimaId = searchParams.get("anima");
   const [files, setFiles] = useState([]);
@@ -71,6 +79,9 @@ export default function Codespace() {
   const [mobileView, setMobileView] = useState("code"); // code | preview | console
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   // Outcome of the most recent run, so a failed run can offer self-repair.
@@ -499,6 +510,71 @@ export default function Codespace() {
     pushLog({ level: "info", text: `Session saved to ${snap.path}` });
   }, [applyFiles, pushLog]);
 
+  const applyImportResult = useCallback((result, { replaceWorkspace }) => {
+    if (result.errors?.length) {
+      result.errors.forEach((text) => pushLog({ level: "error", text }));
+    }
+    if (!result.files?.length) {
+      const message = result.errors?.[0] || "Import brought in no text files the editor can open.";
+      setImportError(message);
+      pushLog({ level: "warn", text: message });
+      return false;
+    }
+    applyFiles((prev) => mergeImportedFiles(prev, result.files, { replaceWorkspace }));
+    const first = result.files.find((f) => !isSessionPath(f.path));
+    if (first) setActivePath(first.path);
+    setMobileView("code");
+    setExplorerOpen(false);
+    pushLog({ level: "info", text: summarizeImport(result) });
+    setImportError("");
+    return true;
+  }, [applyFiles, pushLog]);
+
+  const handleUploadFiles = useCallback(async (fileList) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromBrowserFiles(fileList, { mode: "files" });
+      applyImportResult(result, { replaceWorkspace: false });
+    } catch (err) {
+      const message = err?.message || "Could not upload files.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
+  const handleImportFolder = useCallback(async (fileList) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromBrowserFiles(fileList, { mode: "folder" });
+      if (applyImportResult(result, { replaceWorkspace: true })) setImportOpen(false);
+    } catch (err) {
+      const message = err?.message || "Could not import the folder.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
+  const handleImportZip = useCallback(async (file) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromZipFile(file);
+      if (applyImportResult(result, { replaceWorkspace: true })) setImportOpen(false);
+    } catch (err) {
+      const message = err?.message || "Could not unpack the zip.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
   const handleRestoreSession = useCallback((path) => {
     const f = filesRef.current.find((x) => x.path === path);
     if (!f) return;
@@ -551,6 +627,8 @@ export default function Codespace() {
       onDelete={handleDelete}
       onRestoreSession={handleRestoreSession}
       onSaveSession={handleSaveSession}
+      onUploadFiles={handleUploadFiles}
+      onImportRepo={() => { setImportError(""); setImportOpen(true); }}
     />
   );
 
@@ -580,7 +658,7 @@ export default function Codespace() {
           <PanelLeft className="w-4 h-4" />
         </button>
         <span className="font-mono text-[11px] tracking-[0.25em] uppercase text-primary/70 hidden sm:inline">
-          // Codespace
+          {isRepoMode ? "// Repo Codespace" : "// Codespace"}
         </span>
         <select
           aria-label="Codespace companion"
@@ -643,6 +721,13 @@ export default function Codespace() {
               <Wrench className="w-3.5 h-3.5" /> Repair
             </button>
           )}
+          <button
+            onClick={() => { setImportError(""); setImportOpen(true); }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+            title="Import a repository folder or zip into this project"
+          >
+            <FolderInput className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Import</span>
+          </button>
           <button
             onClick={handleSaveSession}
             className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
@@ -758,6 +843,15 @@ export default function Codespace() {
           </>
         )}
       </AnimatePresence>
+
+      <ImportRepoModal
+        open={importOpen}
+        busy={importBusy}
+        error={importError}
+        onClose={() => { if (!importBusy) setImportOpen(false); }}
+        onPickFolder={handleImportFolder}
+        onPickZip={handleImportZip}
+      />
 
       <VirusBattleModal
         open={Boolean(battle)}
