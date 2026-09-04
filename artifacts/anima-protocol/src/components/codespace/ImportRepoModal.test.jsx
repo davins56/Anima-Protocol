@@ -7,7 +7,7 @@ describe("ImportRepoModal", () => {
     cleanup();
   });
 
-  it("explains folder + zip import and points GitHub URLs at Download ZIP", () => {
+  it("explains folder + zip import", () => {
     render(
       <ImportRepoModal
         open
@@ -22,16 +22,34 @@ describe("ImportRepoModal", () => {
     expect(screen.getByText(/Import Repository/i)).toBeTruthy();
     expect(screen.getByText(/Choose folder/i)).toBeTruthy();
     expect(screen.getByText(/Choose \.zip/i)).toBeTruthy();
+  });
 
-    fireEvent.change(screen.getByPlaceholderText("https://github.com/owner/repo"), {
-      target: { value: "https://github.com/davins56/Anima-Protocol" },
-    });
-
-    expect(screen.getByText(/does not clone from/i)).toBeTruthy();
-    const link = screen.getByRole("link", { name: /davins56\/Anima-Protocol/i });
-    expect(link.getAttribute("href")).toBe(
-      "https://github.com/davins56/Anima-Protocol/archive/refs/heads/main.zip",
+  it("Pull defaults toward davins56/Anima-Protocol on main", () => {
+    const onPullRepo = vi.fn();
+    render(
+      <ImportRepoModal
+        open
+        variant="pull"
+        busy={false}
+        error=""
+        onClose={() => {}}
+        onPickFolder={() => {}}
+        onPickZip={() => {}}
+        onPullRepo={onPullRepo}
+      />,
     );
+
+    expect(screen.getByText(/Pull Repository/i)).toBeTruthy();
+    const url = screen.getByPlaceholderText("https://github.com/davins56/Anima-Protocol");
+    expect(url.value).toBe("https://github.com/davins56/Anima-Protocol");
+    expect(screen.getByLabelText("GitHub branch").value).toBe("main");
+
+    fireEvent.click(screen.getByRole("button", { name: /pull into codespace/i }));
+    expect(onPullRepo).toHaveBeenCalledWith({
+      owner: "davins56",
+      repo: "Anima-Protocol",
+      branch: "main",
+    });
   });
 
   it("surfaces an import error in the HUD", () => {

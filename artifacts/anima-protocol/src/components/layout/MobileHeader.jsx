@@ -38,6 +38,7 @@ const ROUTE_TITLES = {
   "/discoveries": "Discoveries",
   "/check-in": "Check-In",
   "/codespace": "Codespace",
+  "/repo-codespace": "Repo Workspace",
 };
 
 function getTitle(pathname) {
