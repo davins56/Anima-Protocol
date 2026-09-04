@@ -85,7 +85,6 @@ export default function Codespace() {
   const saveTimerRef = useRef(null);
   const dirtyRef = useRef(false);
   const savedCompanionIdRef = useRef(null);
-  const resolvedCompanionRef = useRef(false);
   const userPickedCompanionRef = useRef(false);
   const [projectLoaded, setProjectLoaded] = useState(false);
   const [rosterLoaded, setRosterLoaded] = useState(false);
@@ -154,7 +153,6 @@ export default function Codespace() {
       console.error("Codespace load failed", e);
     } finally {
       setProjectLoaded(true);
-      setLoading(false);
     }
   }, []);
 
@@ -185,42 +183,21 @@ export default function Codespace() {
   useStoreSync(loadRoster);
 
   useEffect(() => {
-    if (!projectLoaded || !rosterLoaded) return;
-    setCompanionId((current) => {
-      const next = resolveCodespaceCompanionId({
-        savedId: savedCompanionIdRef.current,
-        requestedId: requestedAnimaId,
-        animas: personalAnimas,
-        characters,
-        me,
-      });
-      if (!resolvedCompanionRef.current) {
-        resolvedCompanionRef.current = true;
-        return next;
-      }
-      if (userPickedCompanionRef.current && availableCompanions.some((c) => c.id === current)) {
-        return current;
-      }
-      if (
-        current === JULES_PERSONA.id &&
-        !savedCompanionIdRef.current &&
-        !requestedAnimaId &&
-        personalAnimas.length > 0
-      ) {
-        return next;
-      }
-      if (availableCompanions.some((c) => c.id === current)) return current;
-      return next;
-    });
-  }, [projectLoaded, rosterLoaded, availableCompanions, personalAnimas, characters, me, requestedAnimaId]);
+    if (projectLoaded && rosterLoaded) setLoading(false);
+  }, [projectLoaded, rosterLoaded]);
 
   useEffect(() => {
-    if (!resolvedCompanionRef.current || !projectIdRef.current) return;
-    if (companionId && companionId !== savedCompanionIdRef.current) {
-      savedCompanionIdRef.current = companionId;
-      scheduleSave();
-    }
-  }, [companionId, scheduleSave]);
+    if (!projectLoaded || !rosterLoaded) return;
+    if (userPickedCompanionRef.current) return;
+    const next = resolveCodespaceCompanionId({
+      savedId: savedCompanionIdRef.current,
+      requestedId: requestedAnimaId,
+      animas: personalAnimas,
+      characters,
+      me,
+    });
+    setCompanionId(next);
+  }, [projectLoaded, rosterLoaded, personalAnimas, characters, me, requestedAnimaId]);
 
   // ---- console capture from the web preview ------------------------------
   useEffect(() => {

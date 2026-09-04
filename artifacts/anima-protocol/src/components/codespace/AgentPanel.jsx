@@ -34,7 +34,7 @@ export default function AgentPanel({ companion, log, running, onSend, onStop, on
   const subtitle = isJules ? "Jules AI Engineer API" : isAnima ? displayName : "Companion Agent";
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
+    endRef.current?.scrollIntoView?.({ block: "end" });
   }, [log, running]);
 
   const submit = () => {

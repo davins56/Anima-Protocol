@@ -1,9 +1,13 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import AgentPanel from "./AgentPanel";
 import { JULES_PERSONA } from "@/lib/codespace/julesApi";
 
 describe("AgentPanel companion copy", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
   it("names the personal Anima in the header and empty copy", () => {
     render(
       <div style={{ height: 400 }}>
