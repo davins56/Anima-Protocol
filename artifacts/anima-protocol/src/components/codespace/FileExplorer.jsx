@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FileCode2, FilePlus2, Trash2, FolderClock, RotateCcw, ChevronRight, ChevronDown } from "lucide-react";
+import { useState, useRef } from "react";
+import { FileCode2, FilePlus2, Trash2, FolderClock, RotateCcw, ChevronRight, ChevronDown, Upload, FolderInput } from "lucide-react";
 import { workspaceFiles, sessionFiles } from "@/lib/codespace/projectModel";
 
 // VS Code–style file explorer. Lists workspace files plus a ".sessions" folder
@@ -12,8 +12,11 @@ export default function FileExplorer({
   onDelete,
   onRestoreSession,
   onSaveSession,
+  onUploadFiles,
+  onImportRepo,
 }) {
   const [sessionsOpen, setSessionsOpen] = useState(true);
+  const uploadRef = useRef(null);
   const ws = workspaceFiles(files);
   const sessions = sessionFiles(files);
 
@@ -28,13 +31,46 @@ export default function FileExplorer({
         <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-primary/60">
           // Explorer
         </span>
-        <button
-          onClick={handleCreate}
-          title="New file"
-          className="text-primary/40 hover:text-primary transition-colors"
-        >
-          <FilePlus2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={uploadRef}
+            type="file"
+            multiple
+            className="hidden"
+            data-testid="codespace-upload-files"
+            onChange={(e) => {
+              const list = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (list.length) onUploadFiles?.(list);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => uploadRef.current?.click()}
+            title="Upload files into this project"
+            aria-label="Upload files"
+            className="text-primary/40 hover:text-primary transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onImportRepo?.()}
+            title="Import a repository (folder or zip)"
+            aria-label="Import repository"
+            className="text-primary/40 hover:text-primary transition-colors"
+          >
+            <FolderInput className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleCreate}
+            title="New file"
+            aria-label="New file"
+            className="text-primary/40 hover:text-primary transition-colors"
+          >
+            <FilePlus2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">

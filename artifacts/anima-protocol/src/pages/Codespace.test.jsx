@@ -1,7 +1,8 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { JULES_PERSONA } from "@/lib/codespace/julesApi";
+import { buildStoreZip } from "@/lib/codespace/zipCodec";
 
 const mocks = vi.hoisted(() => ({
   me: vi.fn(),
@@ -29,6 +30,10 @@ vi.mock("@/api/base44Client", () => ({
   },
 }));
 
+vi.mock("@/lib/useStoreSync", () => ({
+  useStoreSync: () => {},
+}));
+
 vi.mock("@/lib/syncBootstrap", () => ({
   whenBootstrapReady: mocks.whenBootstrapReady,
 }));
@@ -46,9 +51,33 @@ vi.mock("@/lib/codespace/useCodespaceAgent", () => ({
   },
 }));
 
+vi.mock("@/components/codespace/ConsolePane", () => ({
+  default: () => <div data-testid="console-pane" />,
+}));
+
+vi.mock("@/components/codespace/PreviewPane", () => ({
+  default: () => <div data-testid="preview-pane" />,
+}));
+
 import Codespace from "./Codespace";
 
-const project = {
+const SESSION = {
+  path: ".sessions/keep.session.json",
+  content: JSON.stringify({ kind: "anima-codespace-session", version: 1, files: [], agent_log: [] }),
+};
+
+const starterProject = {
+  id: "proj-1",
+  files: [
+    { path: "index.html", content: "<!doctype html><title>starter</title>" },
+    { path: "styles.css", content: "body{}" },
+    SESSION,
+  ],
+  active_path: "index.html",
+  agent_log: [],
+};
+
+const companionProject = {
   id: "proj-1",
   files: [{ path: "index.html", content: "<h1>hi</h1>" }],
   active_path: "index.html",
@@ -56,13 +85,79 @@ const project = {
   companion_id: null,
 };
 
-function renderPage(path = "/codespace") {
+function renderPage(path = "/codespace", props = {}) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Codespace />
+      <Codespace {...props} />
     </MemoryRouter>,
   );
 }
+
+function seedEmptyRoster() {
+  mocks.me.mockResolvedValue({ email: "operator@example.com" });
+  mocks.whenBootstrapReady.mockResolvedValue(undefined);
+  mocks.updateProject.mockResolvedValue({});
+  mocks.listCharacter.mockResolvedValue([]);
+  mocks.listAnima.mockResolvedValue([]);
+}
+
+describe("Codespace upload + import", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.agentCharacter.current = null;
+    seedEmptyRoster();
+    mocks.listProject.mockResolvedValue([{ ...starterProject }]);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("uploads local files into the explorer without dropping .sessions", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText("index.html").length).toBeGreaterThan(0));
+    expect(screen.getByText("keep.session.json")).toBeTruthy();
+
+    const input = document.querySelector('[data-testid="codespace-upload-files"]');
+    expect(input).toBeTruthy();
+    const file = new File(["console.log('woven')"], "hello.js", { type: "text/javascript" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getAllByText("hello.js").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("index.html").length).toBeGreaterThan(0);
+    expect(screen.getByText("keep.session.json")).toBeTruthy();
+  });
+
+  it("imports a zip as the workspace while keeping session snapshots", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText("index.html").length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole("button", { name: /import repository/i }));
+    expect(screen.getByText(/Import Repository/i)).toBeTruthy();
+
+    const zip = buildStoreZip([
+      { path: "demo-main/main.py", content: "print('hi')" },
+      { path: "demo-main/lib/util.py", content: "x = 1" },
+    ]);
+    const zipFile = new File([zip], "demo.zip", { type: "application/zip" });
+    const zipInput = document.querySelector('input[accept*=".zip"]');
+    expect(zipInput).toBeTruthy();
+    fireEvent.change(zipInput, { target: { files: [zipFile] } });
+
+    await waitFor(() => expect(screen.getAllByText("main.py").length).toBeGreaterThan(0));
+    expect(screen.getByText("lib/util.py")).toBeTruthy();
+    expect(screen.queryByText("index.html")).toBeNull();
+    expect(screen.getByText("keep.session.json")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^run$/i })).toBeTruthy();
+  });
+
+  it("keeps the same import controls in repo mode", async () => {
+    renderPage("/repo-codespace", { isRepoMode: true });
+    await waitFor(() => expect(screen.getByText("// Repo Codespace")).toBeTruthy());
+    expect(screen.getByRole("button", { name: /import repository/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /upload files/i })).toBeTruthy();
+  });
+});
 
 describe("Codespace companion picker", () => {
   afterEach(() => {
@@ -74,7 +169,7 @@ describe("Codespace companion picker", () => {
     mocks.agentCharacter.current = null;
     mocks.whenBootstrapReady.mockResolvedValue(undefined);
     mocks.me.mockResolvedValue({ email: "operator@example.com" });
-    mocks.listProject.mockResolvedValue([{ ...project }]);
+    mocks.listProject.mockResolvedValue([{ ...companionProject }]);
     mocks.updateProject.mockResolvedValue({});
     mocks.listCharacter.mockResolvedValue([
       { id: "char-1", name: "Naruto", universe: "Naruto" },
@@ -114,7 +209,7 @@ describe("Codespace companion picker", () => {
       { id: "anima-2", name: "Lumen", assigned_user: "other@example.com" },
     ]);
     mocks.listProject.mockResolvedValue([
-      { ...project, companion_id: "anima-2" },
+      { ...companionProject, companion_id: "anima-2" },
     ]);
 
     renderPage();
