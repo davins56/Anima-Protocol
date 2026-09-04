@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench, Bug,
   FolderInput,
@@ -29,6 +30,12 @@ import {
   mergeImportedFiles,
   summarizeImport,
 } from "@/lib/codespace/importProject";
+import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
+import {
+  buildCodespaceCompanions,
+  companionPickerLabel,
+  resolveCodespaceCompanionId,
+} from "@/lib/codespace/companionPicker";
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -57,11 +64,15 @@ function mergeScans(scans, label) {
 }
 
 export default function Codespace({ isRepoMode = false }) {
+  const [searchParams] = useSearchParams();
+  const requestedAnimaId = searchParams.get("anima");
   const [files, setFiles] = useState([]);
   const [activePath, setActivePath] = useState("");
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [previewSrcdoc, setPreviewSrcdoc] = useState("");
   const [characters, setCharacters] = useState([]);
+  const [personalAnimas, setPersonalAnimas] = useState([]);
+  const [me, setMe] = useState(null);
   const [companionId, setCompanionId] = useState(JULES_PERSONA.id);
   const [agentLog, setAgentLog] = useState([]);
   const [battle, setBattle] = useState(null);
@@ -84,8 +95,16 @@ export default function Codespace({ isRepoMode = false }) {
   const gateRef = useRef(null);
   const saveTimerRef = useRef(null);
   const dirtyRef = useRef(false);
+  const savedCompanionIdRef = useRef(null);
+  const resolvedCompanionRef = useRef(false);
+  const userPickedCompanionRef = useRef(false);
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
 
-  const availableCompanions = [JULES_PERSONA, ...characters];
+  const availableCompanions = useMemo(
+    () => buildCodespaceCompanions({ animas: personalAnimas, characters }),
+    [personalAnimas, characters],
+  );
   const companion = availableCompanions.find((c) => c.id === companionId) || JULES_PERSONA;
 
   // ---- persistence -------------------------------------------------------
@@ -141,26 +160,78 @@ export default function Codespace({ isRepoMode = false }) {
       setAgentLog(al);
       const firstWs = workspaceFiles(pf)[0];
       setActivePath(proj.active_path || (firstWs ? firstWs.path : ""));
-      if (proj.companion_id) setCompanionId(proj.companion_id);
+      savedCompanionIdRef.current = proj.companion_id || null;
     } catch (e) {
       console.error("Codespace load failed", e);
     } finally {
+      setProjectLoaded(true);
       setLoading(false);
     }
   }, []);
 
-  const loadCharacters = useCallback(() => {
-    base44.entities.Character.list("-updated_date", 100)
-      .then((cs) => setCharacters(cs || []))
-      .catch(() => setCharacters([]));
+  const loadRoster = useCallback(async () => {
+    try {
+      const [cs, animas, profile] = await Promise.all([
+        base44.entities.Character.list("-updated_date", 100).catch(() => []),
+        listPersonalAnimas(100).catch(() => []),
+        base44.auth.me().catch(() => null),
+      ]);
+      setCharacters(cs || []);
+      setPersonalAnimas(animas || []);
+      setMe(profile);
+    } catch {
+      setCharacters([]);
+      setPersonalAnimas([]);
+    } finally {
+      setRosterLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
     loadProject();
-    whenBootstrapReady().then(() => loadCharacters());
-  }, [loadProject, loadCharacters]);
+    loadRoster();
+    whenBootstrapReady().then(() => loadRoster());
+  }, [loadProject, loadRoster]);
 
-  useStoreSync(loadCharacters);
+  useStoreSync(loadRoster);
+
+  useEffect(() => {
+    if (!projectLoaded || !rosterLoaded) return;
+    setCompanionId((current) => {
+      const next = resolveCodespaceCompanionId({
+        savedId: savedCompanionIdRef.current,
+        requestedId: requestedAnimaId,
+        animas: personalAnimas,
+        characters,
+        me,
+      });
+      if (!resolvedCompanionRef.current) {
+        resolvedCompanionRef.current = true;
+        return next;
+      }
+      if (userPickedCompanionRef.current && availableCompanions.some((c) => c.id === current)) {
+        return current;
+      }
+      if (
+        current === JULES_PERSONA.id &&
+        !savedCompanionIdRef.current &&
+        !requestedAnimaId &&
+        personalAnimas.length > 0
+      ) {
+        return next;
+      }
+      if (availableCompanions.some((c) => c.id === current)) return current;
+      return next;
+    });
+  }, [projectLoaded, rosterLoaded, availableCompanions, personalAnimas, characters, me, requestedAnimaId]);
+
+  useEffect(() => {
+    if (!resolvedCompanionRef.current || !projectIdRef.current) return;
+    if (companionId && companionId !== savedCompanionIdRef.current) {
+      savedCompanionIdRef.current = companionId;
+      scheduleSave();
+    }
+  }, [companionId, scheduleSave]);
 
   // ---- console capture from the web preview ------------------------------
   useEffect(() => {
@@ -371,6 +442,7 @@ export default function Codespace({ isRepoMode = false }) {
       targetPath: activePath,
     });
 
+    userPickedCompanionRef.current = true;
     setCompanionId(JULES_PERSONA.id);
     appendAgentLog({
       type: "msg",
@@ -589,14 +661,19 @@ export default function Codespace({ isRepoMode = false }) {
           {isRepoMode ? "// Repo Codespace" : "// Codespace"}
         </span>
         <select
+          aria-label="Codespace companion"
           value={companionId}
-          onChange={(e) => { setCompanionId(e.target.value); scheduleSave(); }}
+          onChange={(e) => {
+            userPickedCompanionRef.current = true;
+            setCompanionId(e.target.value);
+            scheduleSave();
+          }}
           className="bg-black/50 border border-primary/20 text-cyan-300 font-mono text-[10px] px-2 py-1 focus:outline-none focus:border-cyan-500 max-w-[160px]"
           title="Agent Engine persona"
         >
           {availableCompanions.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.id === JULES_PERSONA.id ? "⚡ Jules (AI Engineer API)" : c.name}
+              {companionPickerLabel(c)}
             </option>
           ))}
         </select>

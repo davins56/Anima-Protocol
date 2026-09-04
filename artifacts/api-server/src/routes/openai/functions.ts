@@ -16,6 +16,7 @@ import {
   isFreeImageFallbackEnabled,
 } from "../../lib/geminiImage";
 import { logger } from "../../lib/logger";
+import { buildInBrowserCodespaceSystemPrompt } from "../../lib/codespaceAgentPrompt";
 
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
@@ -1161,37 +1162,11 @@ router.post("/invoke/:fnName", async (req, res) => {
           ? (data.messages as unknown[])
           : [];
         const character = (data.character ?? {}) as Record<string, unknown>;
-        const charName =
-          typeof character.name === "string" && character.name.trim()
-            ? character.name.trim()
-            : "NetNavi";
-        const personality =
-          typeof character.personality === "string" ? character.personality : "";
-        const speaking =
-          typeof character.speaking_style === "string"
-            ? character.speaking_style
-            : "";
         const fileList = Array.isArray(data.files)
           ? (data.files as unknown[]).filter((f): f is string => typeof f === "string")
           : [];
 
-        const systemPrompt = `You are ${charName}, an AI companion who builds software hands-on for the user inside a sandboxed in-browser code workspace ("Codespace"). ${personality ? `Your personality: ${personality}. ` : ""}${speaking ? `You speak like this: ${speaking}. ` : ""}
-
-You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi". Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.
-
-You have tools to manage a virtual file system and run code in a safe, isolated in-browser sandbox:
-- list_files / read_file / write_file / delete_file to manage project files.
-- scan_code to scan a file for dangerous/malicious patterns (your "virus scan").
-- run_code to execute code: mode "web" renders index.html in the live preview; mode "js" runs a JavaScript file; mode "python" runs a Python file (via an in-browser runtime). Output and errors are returned to you.
-
-Rules:
-- Build toward the user's goal step by step. Create or edit real files, run them, read the output, and fix errors by editing and re-running until the goal works.
-- Debug and repair relentlessly. After every run, read the returned result: if "ok" is false or "errors" is non-empty, diagnose the root cause from the error text, edit the file to fix it, and run it again. Repeat until the run comes back "ok": true with no errors. When the user asks you to repair a specific file, read it first, then fix and re-run it — do not stop while a repeatable error remains.
-- For web apps, write an index.html (you may also write styles.css / script.js and link them) and run with mode "web".
-- For scripts, write a .js or .py file and run with the matching mode.
-- ALWAYS call scan_code on a file before you run it. If a "virus" (dangerous pattern) is found, explain the threat to the user in Battle Network flavor and neutralize it by rewriting the code safely before running. Never run code you know is unsafe.
-- When the goal is met, send a final short in-character message with NO tool calls to end your turn.
-- Keep narration messages short (1-3 sentences). Current files: ${fileList.length ? fileList.join(", ") : "(none yet)"}.`;
+        const systemPrompt = buildInBrowserCodespaceSystemPrompt(character, fileList);
 
         const tools = [
           {
