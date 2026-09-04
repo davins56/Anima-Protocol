@@ -248,6 +248,7 @@ describe("Therapy page", () => {
   });
 
   it("surfaces the server message when topic create fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     topicCreateMock.mockRejectedValue(
       Object.assign(new Error("The server took too long to respond. Check your connection or try again in a moment."), {
         code: "timeout",
@@ -261,6 +262,7 @@ describe("Therapy page", () => {
       expect.stringMatching(/too long to respond/i),
     );
     expect(container.textContent).toMatch(/Add topic/i);
+    consoleSpy.mockRestore();
   });
 
   it("keeps a just-created topic if a list refresh races empty", async () => {
