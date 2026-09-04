@@ -7,6 +7,10 @@ import { exec } from "child_process";
 import { createRateLimit } from "../lib/rateLimit";
 import { resolveModel } from "../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import {
+  fetchGithubArchiveFiles,
+  validateGithubArchiveRef,
+} from "../lib/githubArchive";
 import { describeCodespaceAgentCharacter } from "../lib/codespaceAgentPrompt";
 
 const router = Router();
@@ -27,6 +31,24 @@ router.use(requireUser);
 function getRepoRoot(): string {
   return path.resolve(process.env.REPO_ROOT || "/app");
 }
+
+export async function probeRepoRoot(root: string = getRepoRoot()): Promise<{
+  available: boolean;
+  code?: string;
+}> {
+  try {
+    await fs.access(root);
+    return { available: true };
+  } catch {
+    return { available: false, code: "filesystem_unavailable" };
+  }
+}
+
+const FILESYSTEM_UNAVAILABLE = {
+  available: false as const,
+  code: "filesystem_unavailable" as const,
+  error: "Repository filesystem is not available on this host.",
+};
 
 const IGNORED_DIRS = new Set([
   ".git",
@@ -152,12 +174,49 @@ async function crawl(dir: string, base: string = ""): Promise<{ path: string; is
   return results;
 }
 
-router.get("/files", async (req: Request, res: Response) => {
+router.get("/status", async (_req: Request, res: Response) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
+  res.json({ available: true });
+});
+
+router.get("/files", async (_req: Request, res: Response) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
   try {
     const files = await crawl(getRepoRoot());
-    res.json({ files });
+    res.json({ available: true, files });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/github-archive", async (req: Request, res: Response) => {
+  const parsed = validateGithubArchiveRef(req.body || {});
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  try {
+    const result = await fetchGithubArchiveFiles(parsed.ref);
+    if (!result.files.length && result.errors.length) {
+      const notFound = result.errors.some((e) => /not found/i.test(e));
+      res.status(notFound ? 404 : 502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      files: [],
+      skipped: [],
+      errors: [err instanceof Error ? err.message : String(err)],
+    });
   }
 });
 
