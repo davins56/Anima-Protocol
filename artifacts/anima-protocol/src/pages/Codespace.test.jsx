@@ -94,10 +94,10 @@ describe("Codespace companion picker", () => {
     renderPage();
 
     const select = await screen.findByLabelText("Codespace companion");
+    await screen.findByRole("option", { name: /Serenity \(Anima\)/ });
     await waitFor(() => {
       expect(select.value).toBe("anima-1");
     });
-    expect(screen.getByRole("option", { name: /Serenity \(Anima\)/ })).toBeTruthy();
     expect(screen.getByRole("option", { name: /Jules/ })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Naruto" })).toBeTruthy();
     expect(mocks.agentCharacter.current?.id).toBe("anima-1");
@@ -120,6 +120,7 @@ describe("Codespace companion picker", () => {
     renderPage();
 
     const select = await screen.findByLabelText("Codespace companion");
+    await screen.findByRole("option", { name: /Lumen \(Anima\)/ });
     await waitFor(() => {
       expect(select.value).toBe("anima-2");
     });
