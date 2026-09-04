@@ -25,6 +25,6 @@
     "@types/node": "catalog:",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.10",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
