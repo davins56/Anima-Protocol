@@ -10,8 +10,13 @@ import {
   importFromBrowserFiles,
   parseGithubRepoUrl,
   githubDownloadZipUrl,
+  githubCodeloadZipUrl,
   summarizeImport,
   IMPORT_LIMITS,
+  PULL_LIMITS,
+  DEFAULT_PULL_REPO,
+  archivePathIsSkipped,
+  normalizePullSpec,
 } from "./importProject.js";
 
 function enc(text) {
@@ -43,6 +48,15 @@ describe("sanitizeImportPath", () => {
     expect(sanitizeImportPath("pnpm-lock.yaml").ok).toBe(false);
     expect(sanitizeImportPath(".env").ok).toBe(false);
     expect(sanitizeImportPath(".env.local").ok).toBe(false);
+  });
+});
+
+describe("archivePathIsSkipped", () => {
+  it("skips heavy GitHub zip paths before inflate", () => {
+    expect(archivePathIsSkipped("Anima-Protocol-main/node_modules/x/index.js")).toBe(true);
+    expect(archivePathIsSkipped("Anima-Protocol-main/dist/bundle.js")).toBe(true);
+    expect(archivePathIsSkipped("Anima-Protocol-main/pnpm-lock.yaml")).toBe(true);
+    expect(archivePathIsSkipped("Anima-Protocol-main/src/pages/Codespace.jsx")).toBe(false);
   });
 });
 
@@ -146,7 +160,19 @@ describe("zip → files map", () => {
     expect(imported.errors).toEqual([]);
     expect(imported.files.map((f) => f.path).sort()).toEqual(["index.html", "script.js"]);
     expect(imported.files.find((f) => f.path === "script.js").content).toContain("pong");
-    expect(imported.skipped.some((s) => s.path === "assets/logo.png")).toBe(true);
+    expect(imported.files.some((f) => f.path.includes("logo.png"))).toBe(false);
+  });
+
+  it("skips node_modules during unzip so a monorepo zip stays usable", async () => {
+    const zip = buildStoreZip([
+      { path: "repo-main/src/app.js", content: "export const n = 1" },
+      { path: "repo-main/node_modules/left-pad/index.js", content: "module.exports=1" },
+      { path: "repo-main/dist/bundle.js", content: "/* huge */" },
+    ]);
+    const raw = await unzipToEntries(zip, { skipPath: archivePathIsSkipped });
+    expect(raw.map((e) => e.path)).toEqual(["repo-main/src/app.js"]);
+    const imported = await importFromZipBuffer(zip);
+    expect(imported.files.map((f) => f.path)).toEqual(["src/app.js"]);
   });
 
   it("crc32 is stable for a known vector", () => {
@@ -204,6 +230,30 @@ describe("GitHub URL helper", () => {
     expect(githubDownloadZipUrl("davins56", "Anima-Protocol")).toBe(
       "https://github.com/davins56/Anima-Protocol/archive/refs/heads/main.zip",
     );
+    expect(githubCodeloadZipUrl("davins56", "Anima-Protocol", "main")).toBe(
+      "https://codeload.github.com/davins56/Anima-Protocol/zip/refs/heads/main",
+    );
+  });
+
+  it("defaults Pull toward davins56/Anima-Protocol on main", () => {
+    expect(DEFAULT_PULL_REPO).toEqual({
+      owner: "davins56",
+      repo: "Anima-Protocol",
+      branch: "main",
+    });
+    expect(normalizePullSpec(DEFAULT_PULL_REPO)).toEqual(DEFAULT_PULL_REPO);
+    expect(normalizePullSpec("davins56/Anima-Protocol")).toEqual({
+      owner: "davins56",
+      repo: "Anima-Protocol",
+      branch: "main",
+    });
+    expect(normalizePullSpec({ owner: "acme", repo: "app", branch: "dev" })).toEqual({
+      owner: "acme",
+      repo: "app",
+      branch: "dev",
+    });
+    expect(normalizePullSpec({ owner: "acme", repo: "app", branch: "../etc" })).toBeNull();
+    expect(PULL_LIMITS.maxZipBytes).toBeGreaterThan(IMPORT_LIMITS.maxZipBytes);
   });
 });
 

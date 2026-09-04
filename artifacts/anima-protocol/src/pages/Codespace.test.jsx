@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => ({
   updateProject: vi.fn(),
   whenBootstrapReady: vi.fn(),
   agentCharacter: { current: null },
+  probeRepo: vi.fn(),
+  listRepo: vi.fn(),
+  readRepo: vi.fn(),
+  writeRepo: vi.fn(),
+  deleteRepo: vi.fn(),
+  pullGithub: vi.fn(),
 }));
 
 vi.mock("@/api/base44Client", () => ({
@@ -59,6 +65,19 @@ vi.mock("@/components/codespace/PreviewPane", () => ({
   default: () => <div data-testid="preview-pane" />,
 }));
 
+vi.mock("@/lib/codespace/repoApi", () => ({
+  probeRepoFilesystem: (...args) => mocks.probeRepo(...args),
+  listRepoFiles: (...args) => mocks.listRepo(...args),
+  readRepoFile: (...args) => mocks.readRepo(...args),
+  writeRepoFile: (...args) => mocks.writeRepo(...args),
+  deleteRepoFile: (...args) => mocks.deleteRepo(...args),
+  pullGithubArchiveApi: vi.fn(),
+}));
+
+vi.mock("@/lib/codespace/pullGithubRepo", () => ({
+  pullGithubRepo: (...args) => mocks.pullGithub(...args),
+}));
+
 import Codespace from "./Codespace";
 
 const SESSION = {
@@ -68,6 +87,7 @@ const SESSION = {
 
 const starterProject = {
   id: "proj-1",
+  name: "my-codespace",
   files: [
     { path: "index.html", content: "<!doctype html><title>starter</title>" },
     { path: "styles.css", content: "body{}" },
@@ -97,8 +117,25 @@ function seedEmptyRoster() {
   mocks.me.mockResolvedValue({ email: "operator@example.com" });
   mocks.whenBootstrapReady.mockResolvedValue(undefined);
   mocks.updateProject.mockResolvedValue({});
+  mocks.createProject.mockResolvedValue({
+    id: "repo-1",
+    name: "anima-protocol-repo",
+    files: [],
+    active_path: "",
+    agent_log: [],
+  });
   mocks.listCharacter.mockResolvedValue([]);
   mocks.listAnima.mockResolvedValue([]);
+  mocks.probeRepo.mockResolvedValue({ available: false });
+  mocks.listRepo.mockResolvedValue({ ok: false, files: [] });
+  mocks.readRepo.mockResolvedValue({ ok: false, error: "not found" });
+  mocks.writeRepo.mockResolvedValue({ ok: false, error: "unavailable" });
+  mocks.deleteRepo.mockResolvedValue({ ok: false, error: "unavailable" });
+  mocks.pullGithub.mockResolvedValue({
+    files: [{ path: "README.md", content: "# Anima Protocol" }],
+    skipped: [],
+    errors: [],
+  });
 }
 
 describe("Codespace upload + import", () => {
@@ -151,11 +188,62 @@ describe("Codespace upload + import", () => {
     expect(screen.getByRole("button", { name: /^run$/i })).toBeTruthy();
   });
 
-  it("keeps the same import controls in repo mode", async () => {
+  it("shows Upload, Import, and Pull on the toolbar", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("codespace-toolbar-pull")).toBeTruthy());
+    expect(screen.getByTestId("codespace-toolbar-upload-btn")).toBeTruthy();
+    expect(screen.getByTestId("codespace-toolbar-import")).toBeTruthy();
+    expect(screen.getByTestId("codespace-toolbar-upload-btn").getAttribute("aria-label")).toBe("Upload files");
+    expect(screen.getByTestId("codespace-toolbar-import").getAttribute("aria-label")).toBe("Import folder or zip");
+    expect(screen.getByTestId("codespace-toolbar-pull").getAttribute("aria-label")).toBe("Pull a GitHub repo");
+  });
+
+  it("Pull defaults toward davins56/Anima-Protocol", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("codespace-toolbar-pull")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("codespace-toolbar-pull"));
+    expect(screen.getByText(/Pull Repository/i)).toBeTruthy();
+    const url = screen.getByPlaceholderText("https://github.com/davins56/Anima-Protocol");
+    expect(url.value).toBe("https://github.com/davins56/Anima-Protocol");
+    fireEvent.click(screen.getByRole("button", { name: /pull into codespace/i }));
+    await waitFor(() => expect(mocks.pullGithub).toHaveBeenCalledWith({
+      owner: "davins56",
+      repo: "Anima-Protocol",
+      branch: "main",
+    }));
+    await waitFor(() => expect(screen.getAllByText("README.md").length).toBeGreaterThan(0));
+  });
+
+  it("keeps toolbar controls in repo mode and falls back when the live API is down", async () => {
     renderPage("/repo-codespace", { isRepoMode: true });
-    await waitFor(() => expect(screen.getByText("// Repo Codespace")).toBeTruthy());
-    expect(screen.getByRole("button", { name: /import repository/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /upload files/i })).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("// Repo Workspace")).toBeTruthy());
+    expect(screen.getByTestId("codespace-toolbar-upload-btn")).toBeTruthy();
+    expect(screen.getByTestId("codespace-toolbar-import")).toBeTruthy();
+    expect(screen.getByTestId("codespace-toolbar-pull")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Live repository filesystem isn't on this host/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText(/Upload, Import, or Pull a repo/i).length).toBeGreaterThan(0));
+    expect(mocks.probeRepo).toHaveBeenCalled();
+    expect(mocks.listRepo).not.toHaveBeenCalled();
+  });
+
+  it("uses the repo file API when isRepoMode and the live tree is available", async () => {
+    mocks.probeRepo.mockResolvedValue({ available: true });
+    mocks.listRepo.mockResolvedValue({
+      ok: true,
+      files: [{ path: "src/app.js", isDirectory: false }],
+    });
+    mocks.readRepo.mockResolvedValue({ ok: true, content: "export const woven = true;" });
+    mocks.writeRepo.mockResolvedValue({ ok: true });
+
+    renderPage("/repo-codespace", { isRepoMode: true });
+    await waitFor(() => expect(screen.getAllByText("src/app.js").length).toBeGreaterThan(0));
+    expect(mocks.listRepo).toHaveBeenCalled();
+    expect(screen.queryByText(/Live repository filesystem isn't on this host/i)).toBeNull();
+    expect(screen.getByText(/Editing the live Anima Protocol tree/i)).toBeTruthy();
+
+    fireEvent.click(screen.getAllByText("src/app.js")[0]);
+    await waitFor(() => expect(mocks.readRepo).toHaveBeenCalledWith("src/app.js"));
+    await waitFor(() => expect(screen.getByDisplayValue("export const woven = true;")).toBeTruthy());
   });
 });
 
@@ -183,6 +271,8 @@ describe("Codespace companion picker", () => {
         assigned_user: "operator@example.com",
       },
     ]);
+    mocks.probeRepo.mockResolvedValue({ available: false });
+    mocks.createProject.mockResolvedValue({ id: "c1", files: [], agent_log: [] });
   });
 
   it("lists the personal Anima and defaults to it over Jules", async () => {

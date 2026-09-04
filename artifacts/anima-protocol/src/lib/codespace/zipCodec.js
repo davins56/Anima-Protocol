@@ -130,7 +130,10 @@ function decodeName(bytes, utf8) {
 }
 
 // Unpack a zip ArrayBuffer into { path, bytes }[] (files only; dirs skipped).
-export async function unzipToEntries(buffer, { maxUncompressedBytes = 8 * 1024 * 1024 } = {}) {
+export async function unzipToEntries(buffer, {
+  maxUncompressedBytes = 8 * 1024 * 1024,
+  skipPath,
+} = {}) {
   if (!buffer || !(buffer instanceof ArrayBuffer) && !ArrayBuffer.isView(buffer)) {
     throw new Error("Zip data is missing.");
   }
@@ -166,10 +169,13 @@ export async function unzipToEntries(buffer, { maxUncompressedBytes = 8 * 1024 *
     cursor += 46 + nameLen + extraLen + commentLen;
 
     if (!path || path.endsWith("/")) continue;
+    if (typeof skipPath === "function" && skipPath(path)) continue;
+
+    if (uncompSize > maxUncompressedBytes) continue;
 
     totalUncompressed += uncompSize;
-    if (uncompSize > maxUncompressedBytes || totalUncompressed > maxUncompressedBytes * 2) {
-      throw new Error("Zip is too large to unpack in the Codespace (size limit).");
+    if (totalUncompressed > maxUncompressedBytes * 2) {
+      break;
     }
 
     if (localOffset + 30 > view.byteLength) throw new Error("Zip local header is truncated.");
