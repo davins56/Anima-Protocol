@@ -117720,6 +117720,10 @@ function preferCustomLlmOnly() {
   const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
   return raw === "custom" || raw === "local" || raw === "anima" || raw === "local-only" || raw === "local-first";
 }
+function preferMinimaxOnly() {
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  return raw === "minimax" || raw === "minimax-only";
+}
 function allowOpenRouterFallback() {
   if (preferCustomLlmOnly()) return false;
   const raw = (process.env.ANIMA_OPENROUTER_FALLBACK || "").trim().toLowerCase();
@@ -117770,8 +117774,10 @@ function localUsable() {
 }
 function getProviderChain() {
   const chain = [];
-  if (localUsable()) chain.push("local");
-  if (hasMinimaxKey() && !preferCustomLlmOnly()) chain.push("minimax");
+  if (!preferMinimaxOnly() && localUsable()) chain.push("local");
+  if (hasMinimaxKey() && (preferMinimaxOnly() || !preferCustomLlmOnly())) {
+    chain.push("minimax");
+  }
   const openRouterAllowed = hasOpenRouterKey() && !hasMinimaxKey() && !preferCustomLlmOnly() && (chain.length === 0 || allowOpenRouterFallback());
   if (openRouterAllowed) chain.push("openrouter");
   return chain;
@@ -140079,6 +140085,295 @@ import * as fs5 from "fs/promises";
 import * as fsSync from "fs";
 import * as path4 from "path";
 import { exec as exec2 } from "child_process";
+
+// src/lib/githubArchive.ts
+import { inflateRawSync } from "node:zlib";
+var GITHUB_ARCHIVE_LIMITS = {
+  maxZipBytes: 32 * 1024 * 1024,
+  maxFileBytes: 512 * 1024,
+  maxFiles: 400,
+  maxTotalBytes: 3 * 1024 * 1024
+};
+var SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  ".vercel",
+  ".turbo",
+  "coverage",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".idea",
+  "__macosx"
+]);
+var SKIP_FILES = /* @__PURE__ */ new Set([
+  ".ds_store",
+  "thumbs.db",
+  "desktop.ini",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "composer.lock"
+]);
+var BINARY_EXTS = /* @__PURE__ */ new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "ico",
+  "bmp",
+  "avif",
+  "pdf",
+  "zip",
+  "gz",
+  "tgz",
+  "7z",
+  "rar",
+  "wasm",
+  "exe",
+  "dll",
+  "so",
+  "dylib",
+  "bin",
+  "class",
+  "jar",
+  "woff",
+  "woff2",
+  "ttf",
+  "otf",
+  "eot",
+  "mp3",
+  "mp4",
+  "webm",
+  "wav",
+  "ogg",
+  "mov"
+]);
+var REF_RE = /^[\w.-]+$/;
+var BRANCH_RE = /^[\w./-]+$/;
+var LOCAL_SIG = 67324752;
+var CENTRAL_SIG = 33639248;
+var EOCD_SIG = 101010256;
+function validateGithubArchiveRef(input) {
+  const owner = String(input.owner || "").trim();
+  const repo = String(input.repo || "").trim().replace(/\.git$/i, "");
+  const branch = String(input.branch || "main").trim() || "main";
+  if (!REF_RE.test(owner) || !REF_RE.test(repo)) {
+    return { ok: false, error: "GitHub owner and repo must be simple names." };
+  }
+  if (!BRANCH_RE.test(branch) || branch.includes("..") || branch.startsWith("/")) {
+    return { ok: false, error: "GitHub branch name is invalid." };
+  }
+  return { ok: true, ref: { owner, repo, branch } };
+}
+function githubCodeloadUrls(ref) {
+  const { owner, repo, branch } = ref;
+  const urls = [
+    `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${branch}`,
+    `https://codeload.github.com/${owner}/${repo}/zip/${branch}`
+  ];
+  if (branch === "main") {
+    urls.push(`https://codeload.github.com/${owner}/${repo}/zip/refs/heads/master`);
+  }
+  return urls;
+}
+function archivePathIsHeavy(raw = "") {
+  const p = String(raw).replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!p || p.endsWith("/")) return true;
+  const parts = p.split("/").filter(Boolean);
+  if (parts.some((s2) => s2 === "..")) return true;
+  const lower = parts.map((s2) => s2.toLowerCase());
+  if (lower.some((s2) => SKIP_DIRS.has(s2))) return true;
+  const name = lower[lower.length - 1] || "";
+  if (SKIP_FILES.has(name)) return true;
+  if (name === ".env" || name.startsWith(".env.")) return true;
+  if (lower.includes(".sessions")) return true;
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1) : "";
+  if (BINARY_EXTS.has(ext)) return true;
+  return false;
+}
+function stripCommonRoot(paths) {
+  if (!paths.length) return "";
+  const first = paths[0].split("/")[0];
+  if (!first) return "";
+  const allShare = paths.every((p) => p === first || p.startsWith(`${first}/`));
+  const hasNested = paths.some((p) => p.includes("/"));
+  if (allShare && hasNested && paths.some((p) => p.startsWith(`${first}/`))) return first;
+  return "";
+}
+function findEocd(view) {
+  const len = view.byteLength;
+  const min = Math.max(0, len - 22 - 65535);
+  for (let i = len - 22; i >= min; i--) {
+    if (view.getUint32(i, true) !== EOCD_SIG) continue;
+    const commentLen = view.getUint16(i + 20, true);
+    if (i + 22 + commentLen === len) return i;
+  }
+  throw new Error("Not a zip archive.");
+}
+function isLikelyText(bytes) {
+  if (!bytes.length) return true;
+  const n = Math.min(bytes.length, 8192);
+  let suspicious = 0;
+  for (let i = 0; i < n; i++) {
+    const b2 = bytes[i];
+    if (b2 === 0) return false;
+    if (b2 < 7 || b2 > 13 && b2 < 32 && b2 !== 27) suspicious += 1;
+  }
+  return suspicious / n < 0.12;
+}
+function unpackZipToTextFiles(buffer2, limits = GITHUB_ARCHIVE_LIMITS) {
+  const errors = [];
+  const skipped = [];
+  const files = [];
+  if (!buffer2 || buffer2.byteLength < 22) {
+    return { files: [], skipped: [], errors: ["Zip is empty."] };
+  }
+  if (buffer2.byteLength > limits.maxZipBytes) {
+    return {
+      files: [],
+      skipped: [],
+      errors: [`Zip is larger than ${Math.round(limits.maxZipBytes / (1024 * 1024))}MB.`]
+    };
+  }
+  const view = new DataView(buffer2);
+  let eocd;
+  try {
+    eocd = findEocd(view);
+  } catch (err) {
+    return { files: [], skipped: [], errors: [err instanceof Error ? err.message : String(err)] };
+  }
+  const count = view.getUint16(eocd + 10, true);
+  const cdSize = view.getUint32(eocd + 12, true);
+  const cdOffset = view.getUint32(eocd + 16, true);
+  if (cdOffset + cdSize > view.byteLength) {
+    return { files: [], skipped: [], errors: ["Zip central directory is truncated."] };
+  }
+  const rawEntries = [];
+  let cursor = cdOffset;
+  let totalUncompressed = 0;
+  for (let i = 0; i < count; i++) {
+    if (cursor + 46 > view.byteLength) break;
+    if (view.getUint32(cursor, true) !== CENTRAL_SIG) {
+      errors.push("Zip central directory is corrupt.");
+      break;
+    }
+    const method = view.getUint16(cursor + 10, true);
+    const compSize = view.getUint32(cursor + 20, true);
+    const uncompSize = view.getUint32(cursor + 24, true);
+    const nameLen = view.getUint16(cursor + 28, true);
+    const extraLen = view.getUint16(cursor + 30, true);
+    const commentLen = view.getUint16(cursor + 32, true);
+    const localOffset = view.getUint32(cursor + 42, true);
+    const nameBytes = new Uint8Array(buffer2, cursor + 46, nameLen);
+    const path5 = new TextDecoder("utf-8").decode(nameBytes);
+    cursor += 46 + nameLen + extraLen + commentLen;
+    if (!path5 || path5.endsWith("/")) continue;
+    if (archivePathIsHeavy(path5)) {
+      skipped.push({ path: path5, reason: "ignored folder or binary" });
+      continue;
+    }
+    if (uncompSize > limits.maxFileBytes) {
+      skipped.push({ path: path5, reason: `larger than ${Math.round(limits.maxFileBytes / 1024)}KB` });
+      continue;
+    }
+    totalUncompressed += uncompSize;
+    if (totalUncompressed > limits.maxZipBytes * 2) break;
+    if (localOffset + 30 > view.byteLength) continue;
+    if (view.getUint32(localOffset, true) !== LOCAL_SIG) continue;
+    const localNameLen = view.getUint16(localOffset + 26, true);
+    const localExtraLen = view.getUint16(localOffset + 28, true);
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+    if (dataStart + compSize > view.byteLength) continue;
+    const raw = new Uint8Array(buffer2, dataStart, compSize);
+    let bytes;
+    try {
+      if (method === 0) bytes = raw.slice();
+      else if (method === 8) bytes = new Uint8Array(inflateRawSync(raw));
+      else {
+        skipped.push({ path: path5, reason: `unsupported compression ${method}` });
+        continue;
+      }
+    } catch {
+      skipped.push({ path: path5, reason: "could not inflate" });
+      continue;
+    }
+    rawEntries.push({ path: path5, bytes });
+  }
+  const root = stripCommonRoot(rawEntries.map((e) => e.path));
+  let total = 0;
+  for (const entry of rawEntries) {
+    if (files.length >= limits.maxFiles) {
+      errors.push(`Import capped at ${limits.maxFiles} files \u2014 extra paths were not added.`);
+      break;
+    }
+    let rel = entry.path;
+    if (root && rel.startsWith(`${root}/`)) rel = rel.slice(root.length + 1);
+    if (!rel || archivePathIsHeavy(rel)) continue;
+    if (!isLikelyText(entry.bytes)) {
+      skipped.push({ path: rel, reason: "binary file the editor cannot open" });
+      continue;
+    }
+    total += entry.bytes.length;
+    if (total > limits.maxTotalBytes) {
+      errors.push(`Import exceeded the ${Math.round(limits.maxTotalBytes / 1024)}KB text budget.`);
+      break;
+    }
+    files.push({ path: rel, content: new TextDecoder("utf-8").decode(entry.bytes) });
+  }
+  return { files, skipped, errors };
+}
+async function fetchGithubArchiveFiles(ref, fetchImpl = fetch, limits = GITHUB_ARCHIVE_LIMITS) {
+  const urls = githubCodeloadUrls(ref);
+  let lastStatus = 0;
+  for (const url3 of urls) {
+    let res;
+    try {
+      res = await fetchImpl(url3, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(25e3)
+      });
+    } catch {
+      lastStatus = 0;
+      continue;
+    }
+    lastStatus = res.status;
+    if (!res.ok) continue;
+    const lenHeader = res.headers.get("content-length");
+    if (lenHeader && Number(lenHeader) > limits.maxZipBytes) {
+      return {
+        files: [],
+        skipped: [],
+        errors: [`Zip is larger than ${Math.round(limits.maxZipBytes / (1024 * 1024))}MB.`]
+      };
+    }
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > limits.maxZipBytes) {
+      return {
+        files: [],
+        skipped: [],
+        errors: [`Zip is larger than ${Math.round(limits.maxZipBytes / (1024 * 1024))}MB.`]
+      };
+    }
+    const magic = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+    if (magic[0] !== 80 || magic[1] !== 75) continue;
+    return unpackZipToTextFiles(buf, limits);
+  }
+  return {
+    files: [],
+    skipped: [],
+    errors: [
+      lastStatus === 404 ? `GitHub repo ${ref.owner}/${ref.repo} (${ref.branch}) was not found.` : `Could not download ${ref.owner}/${ref.repo} from GitHub.`
+    ]
+  };
+}
+
+// src/routes/repoCodespace.ts
 var router16 = (0, import_express31.Router)();
 router16.use(createRateLimit({ name: "repo-codespace", max: 100 }));
 function requireUser6(req, res, next) {
@@ -140093,6 +140388,19 @@ router16.use(requireUser6);
 function getRepoRoot() {
   return path4.resolve(process.env.REPO_ROOT || "/app");
 }
+async function probeRepoRoot(root = getRepoRoot()) {
+  try {
+    await fs5.access(root);
+    return { available: true };
+  } catch {
+    return { available: false, code: "filesystem_unavailable" };
+  }
+}
+var FILESYSTEM_UNAVAILABLE = {
+  available: false,
+  code: "filesystem_unavailable",
+  error: "Repository filesystem is not available on this host."
+};
 var IGNORED_DIRS = /* @__PURE__ */ new Set([
   ".git",
   "node_modules",
@@ -140189,12 +140497,47 @@ async function crawl(dir, base = "") {
   }
   return results;
 }
-router16.get("/files", async (req, res) => {
+router16.get("/status", async (_req, res) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
+  res.json({ available: true });
+});
+router16.get("/files", async (_req, res) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
   try {
     const files = await crawl(getRepoRoot());
-    res.json({ files });
+    res.json({ available: true, files });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router16.post("/github-archive", async (req, res) => {
+  const parsed = validateGithubArchiveRef(req.body || {});
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  try {
+    const result = await fetchGithubArchiveFiles(parsed.ref);
+    if (!result.files.length && result.errors.length) {
+      const notFound = result.errors.some((e) => /not found/i.test(e));
+      res.status(notFound ? 404 : 502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      files: [],
+      skipped: [],
+      errors: [err instanceof Error ? err.message : String(err)]
+    });
   }
 });
 router16.post("/read-file", async (req, res) => {

@@ -202,6 +202,12 @@ export function preferCustomLlmOnly(): boolean {
   );
 }
 
+/** True when the operator explicitly selected MiniMax instead of local chat. */
+export function preferMinimaxOnly(): boolean {
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  return raw === "minimax" || raw === "minimax-only";
+}
+
 /**
  * OpenRouter may follow a configured custom LLM only when explicitly enabled.
  * Default is off: a working (or misconfigured) custom LLM must not be skipped
@@ -308,8 +314,10 @@ function localUsable(): boolean {
  */
 export function getProviderChain(): LlmProviderId[] {
   const chain: LlmProviderId[] = [];
-  if (localUsable()) chain.push("local");
-  if (hasMinimaxKey() && !preferCustomLlmOnly()) chain.push("minimax");
+  if (!preferMinimaxOnly() && localUsable()) chain.push("local");
+  if (hasMinimaxKey() && (preferMinimaxOnly() || !preferCustomLlmOnly())) {
+    chain.push("minimax");
+  }
   const openRouterAllowed =
     hasOpenRouterKey() &&
     !hasMinimaxKey() &&
