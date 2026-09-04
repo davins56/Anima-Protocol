@@ -28,17 +28,18 @@ function makeId(): string {
 }
 
 function isMissingRelationError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err ?? "");
-  return (
-    /relation .* does not exist/i.test(msg) ||
-    /Failed query:[\s\S]*relationship_timeline_events/i.test(msg)
-  );
+  let current: unknown = err;
+  const seen = new Set<unknown>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (typeof current === "object" && "code" in current && (current as { code?: unknown }).code === "42P01") {
+      return true;
+    }
+    current = typeof current === "object" && "cause" in current ? (current as { cause?: unknown }).cause : undefined;
+  }
+  return false;
 }
 
-/**
- * Append a new entry to the relationship timeline.
- * Safe to call from evolution / relationship / chat turn hooks.
- */
 export async function appendTimelineEvent(input: TimelineEventInput) {
   try {
     const id = makeId();
@@ -55,7 +56,6 @@ export async function appendTimelineEvent(input: TimelineEventInput) {
       occurredAt: input.occurredAt ?? new Date(),
       createdAt: new Date(),
     };
-
     await db.insert(relationshipTimelineEvents).values(row);
     return row;
   } catch (err) {
@@ -64,9 +64,6 @@ export async function appendTimelineEvent(input: TimelineEventInput) {
   }
 }
 
-/**
- * Load recent timeline events for an Anima (newest first).
- */
 export async function loadTimelineEvents(params: {
   userId: string;
   animaId: string;
@@ -79,27 +76,19 @@ export async function loadTimelineEvents(params: {
       eq(relationshipTimelineEvents.userId, params.userId),
       eq(relationshipTimelineEvents.animaId, params.animaId),
     ];
-    if (params.eventType) {
-      conditions.push(eq(relationshipTimelineEvents.eventType, params.eventType));
-    }
-
-    const rows = await db
+    if (params.eventType) conditions.push(eq(relationshipTimelineEvents.eventType, params.eventType));
+    return await db
       .select()
       .from(relationshipTimelineEvents)
       .where(and(...conditions))
       .orderBy(desc(relationshipTimelineEvents.occurredAt))
       .limit(limit);
-
-    return rows;
   } catch (err) {
     if (isMissingRelationError(err)) return [];
     throw err;
   }
 }
 
-/**
- * Convenience: record a relationship evolution as a timeline milestone.
- */
 export async function recordRelationshipMilestone(params: {
   userId: string;
   animaId: string;
@@ -113,17 +102,11 @@ export async function recordRelationshipMilestone(params: {
     eventType: "milestone",
     title: `Relationship milestone · ${params.conversationCount} conversations`,
     summary: params.summary,
-    payload: {
-      conversationCount: params.conversationCount,
-      delta: params.delta ?? null,
-    },
+    payload: { conversationCount: params.conversationCount, delta: params.delta ?? null },
     significance: Math.min(100, 40 + Math.floor(params.conversationCount / 10)),
   });
 }
 
-/**
- * Convenience: open a new Relationship Chapter.
- */
 export async function openRelationshipChapter(params: {
   userId: string;
   animaId: string;
@@ -137,9 +120,7 @@ export async function openRelationshipChapter(params: {
     eventType: "chapter",
     title: params.title,
     summary: params.summary ?? "",
-    payload: {
-      chapterIndex: params.chapterIndex ?? null,
-    },
+    payload: { chapterIndex: params.chapterIndex ?? null },
     significance: 85,
   });
 }

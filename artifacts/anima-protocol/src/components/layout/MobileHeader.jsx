@@ -22,6 +22,8 @@ const ROUTE_TITLES = {
   "/archive": "Lore Archive",
   "/inventory": "Inventory",
   "/energy-fragments": "Energy Fragments",
+  "/echo-keys": "Echo Keys",
+  "/net-battle": "NetBattle",
   "/worldmap": "World Map",
   "/storyboard": "Storyboard",
   "/reflections": "Reflections",

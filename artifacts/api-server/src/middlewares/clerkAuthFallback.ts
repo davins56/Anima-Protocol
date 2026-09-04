@@ -1,6 +1,8 @@
 import type { Request, RequestHandler, Response, NextFunction } from "express";
 import { clerkMiddleware } from "@clerk/express";
 import { logger } from "../lib/logger";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
+import { SERVER_MISCONFIGURED_MESSAGE } from "../lib/configErrors";
 import { resolveRuntimePublishableKey } from "./clerkProxyHosts";
 
 /**
@@ -70,7 +72,11 @@ export function isClerkConfigError(err: unknown): boolean {
 export function safeClerkMiddleware(): RequestHandler {
   const inner = clerkMiddleware((req) => {
     const publishableKey = resolveRuntimePublishableKey(req);
-    return publishableKey ? { publishableKey } : {};
+    const secretKey = readRuntimeEnv("CLERK_SECRET_KEY");
+    return {
+      ...(publishableKey ? { publishableKey } : {}),
+      ...(secretKey ? { secretKey } : {}),
+    };
   });
 
   return (req: Request, res: Response, next: NextFunction) => {
@@ -82,8 +88,7 @@ export function safeClerkMiddleware(): RequestHandler {
         );
         if (!res.headersSent) {
           res.status(503).json({
-            error:
-              "API is misconfigured on the server. Check environment variables.",
+            error: SERVER_MISCONFIGURED_MESSAGE,
           });
         }
         return;

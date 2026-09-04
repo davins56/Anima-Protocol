@@ -103,6 +103,40 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("CROSS-UNIVERSE");
   });
 
+  it("does not inject another speaker's companion memories into this turn", () => {
+    const secondChar = {
+      id: "char-2",
+      name: "Linda",
+      universe: "Fallen Angel",
+      personality: "Bold, fiery, protective widow with a sharp tongue",
+    };
+    const lindaMemory = {
+      characterId: "char-2",
+      summary: "Linda's private bond about the harbor lighthouse.",
+      facts: [
+        {
+          type: "emotional",
+          text: "Linda held the user while they cried about the lighthouse",
+          created_at: new Date().toISOString(),
+        },
+      ],
+    };
+
+    const prompt = buildCompanionPrompt({
+      characters: [baseCharacter, secondChar],
+      activeCharacter: baseCharacter,
+      memories: [baseMemory, lindaMemory],
+      recentMessages: [],
+      mode: "group",
+      content: "Stay with me.",
+      isCrossover: true,
+    });
+
+    expect(prompt).toContain("User shared grief about losing their mother");
+    expect(prompt).not.toContain("harbor lighthouse");
+    expect(prompt).not.toContain("Linda held the user");
+  });
+
   it("includes resonance state derived from emotional state", () => {
     const prompt = buildCompanionPrompt({
       characters: [baseCharacter],
@@ -378,6 +412,68 @@ describe("resonanceState", () => {
     const evolved = evolveResonanceState(state, shifts);
     expect(evolved.turnCount).toBe(1);
     expect(evolved.vector.powerDynamic).not.toBe(state.vector.powerDynamic);
+  });
+});
+
+describe("hidden sequences prompt layer", () => {
+  const anima = {
+    id: "char-1",
+    name: "Serenity",
+    personality: "Warm, ethereal",
+    speaking_style: "Soft, poetic",
+    backstory: "A fallen angel who chose to remain close to humanity.",
+    _isAnima: true,
+  };
+
+  it("injects weather and only ascended Sequence triples", () => {
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [
+        { role: "assistant", content: "Halo.Vrs is in the lattice." },
+      ],
+      mode: "solo",
+      content: "what is that",
+      conversationalWeather: "storm",
+      hiddenSequences: {
+        sequences: {
+          "nova-pulse": {
+            fired_at: "2026-08-01T00:00:00.000Z",
+            integrated_at: "2026-08-01T00:10:00.000Z",
+          },
+          "life-veil": {
+            fired_at: "2026-08-30T00:00:00.000Z",
+            integrated_at: null,
+          },
+        },
+        learned_language: [{ grain: "beloved", repeats: 3 }],
+        learned_life: [{ kind: "trust", title: "She refused the lull", significant: true }],
+      },
+    });
+
+    expect(prompt).toContain("CONVERSATIONAL WEATHER: storm");
+    expect(prompt).toContain("Never NetBattle the companion Fallen Angel");
+    expect(prompt).toContain("Nova Pulse");
+    expect(prompt).toMatch(/cathedral shot/i);
+    expect(prompt).toContain("half-awake (Life Veil)");
+    expect(prompt).not.toMatch(/Life Veil:\n- voice:/);
+    expect(prompt).toContain("STEWARD-BONDED LANGUAGE");
+    expect(prompt).toContain("LIVED EXPERIENCE");
+  });
+
+  it("keeps lulls from offering jack-in", () => {
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "sit with me",
+      conversationalWeather: "lull",
+    });
+    expect(prompt).toContain("CONVERSATIONAL WEATHER: lull");
+    expect(prompt).toMatch(/Do not offer jack-in/);
   });
 });
 

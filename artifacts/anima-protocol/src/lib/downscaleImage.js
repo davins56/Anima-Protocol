@@ -5,20 +5,53 @@
 // Shared by the photo-pick flow (large phone photos must be shrunk before the
 // AI image-edit request so they don't hit size limits / 413s) and by the final
 // avatar save (which downscales further to a small thumbnail).
+
+const HEIC_HINT = /image\/hei[cf]|data:image\/hei[cf]/i;
+const LOAD_TIMEOUT_MS = 15000;
+
+function loadErrorMessage(src) {
+  if (HEIC_HINT.test(String(src || ""))) {
+    return "This photo format (HEIC) isn't supported here. Choose a JPEG or PNG, or set iPhone camera to Most Compatible.";
+  }
+  return "Failed to load image. Try a JPEG, PNG, or WebP.";
+}
+
 export function downscaleDataUrl(src, maxSize, quality) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onerror = () => reject(new Error("Failed to load image"));
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      finish(reject, new Error(loadErrorMessage(src)));
+    }, LOAD_TIMEOUT_MS);
+    img.onerror = () => finish(reject, new Error(loadErrorMessage(src)));
     img.onload = () => {
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * scale));
-      const h = Math.max(1, Math.round(img.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", quality));
+      try {
+        if (!img.width || !img.height) {
+          finish(reject, new Error(loadErrorMessage(src)));
+          return;
+        }
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          finish(reject, new Error("Failed to prepare image for upload."));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        finish(resolve, canvas.toDataURL("image/jpeg", quality));
+      } catch (err) {
+        finish(reject, err instanceof Error ? err : new Error(loadErrorMessage(src)));
+      }
     };
     img.src = src;
   });

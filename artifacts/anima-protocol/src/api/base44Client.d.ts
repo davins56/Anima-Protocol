@@ -17,6 +17,8 @@ export interface ListOptions {
   // Case-insensitive substring search per field (e.g. { title: "quest" }),
   // pushed into SQL so it spans the whole history, not just the loaded page.
   search?: Record<string, string>;
+  // Roster reads: skip waiting for starter seeding (Init resolve / seed).
+  _bootstrapInternal?: boolean;
 }
 
 export interface EntityStore {
@@ -31,12 +33,18 @@ export interface EntityStore {
     filters?: Record<string, unknown>;
     search?: Record<string, string>;
   }): Promise<number>;
-  get(id: string): Promise<any | null>;
-  create(data: Record<string, unknown>): Promise<any>;
+  get(id: string, opts?: ListOptions): Promise<any | null>;
+  create(
+    data: Record<string, unknown>,
+    opts?: { timeoutMs?: number; timeoutMessage?: string },
+  ): Promise<any>;
   update(id: string, data: Record<string, unknown>): Promise<any>;
   delete(id: string): Promise<void>;
   bulkCreate(dataArray: Record<string, unknown>[]): Promise<any>;
-  bulkUpsert(dataArray: Record<string, unknown>[]): Promise<{ count: number; items: any[] }>;
+  bulkUpsert(
+    dataArray: Record<string, unknown>[],
+    opts?: { timeoutMs?: number },
+  ): Promise<{ count: number; items: any[] }>;
   filter(
     filters?: Record<string, unknown>,
     sort?: string,
@@ -122,6 +130,8 @@ export declare function restoreData(
   payload?: Record<string, unknown>,
   mode?: "merge" | "replace",
 ): Promise<any>;
+export declare const STORE_FETCH_TIMEOUT_MS: number;
+export declare const STORE_SESSION_CREATE_TIMEOUT_MS: number;
 export declare function waitForStoreAuth(timeoutMs?: number): Promise<string>;
 export declare function notifyStoreChanged(): void;
 

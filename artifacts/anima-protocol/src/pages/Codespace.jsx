@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
-  Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench,
+  Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench, Bug,
+  FolderInput,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
@@ -11,6 +13,7 @@ import CodeEditor from "@/components/codespace/CodeEditor";
 import PreviewPane from "@/components/codespace/PreviewPane";
 import ConsolePane from "@/components/codespace/ConsolePane";
 import VirusBattleModal from "@/components/codespace/VirusBattleModal";
+import ImportRepoModal from "@/components/codespace/ImportRepoModal";
 import AgentPanel from "@/components/codespace/AgentPanel";
 import { scanCode, severityRank } from "@/lib/codespace/codeScanner";
 import { buildPreviewSrcdoc, isPreviewMessage, runScript } from "@/lib/codespace/sandbox";
@@ -20,6 +23,19 @@ import {
 } from "@/lib/codespace/projectModel";
 import { useCodespaceAgent } from "@/lib/codespace/useCodespaceAgent";
 import { summarizeRunErrors, buildRepairGoal } from "@/lib/codespace/repair";
+import { JULES_PERSONA, debugAndTroubleshoot } from "@/lib/codespace/julesApi";
+import {
+  importFromBrowserFiles,
+  importFromZipFile,
+  mergeImportedFiles,
+  summarizeImport,
+} from "@/lib/codespace/importProject";
+import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
+import {
+  buildCodespaceCompanions,
+  companionPickerLabel,
+  resolveCodespaceCompanionId,
+} from "@/lib/codespace/companionPicker";
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,18 +63,25 @@ function mergeScans(scans, label) {
   };
 }
 
-export default function Codespace() {
+export default function Codespace({ isRepoMode = false }) {
+  const [searchParams] = useSearchParams();
+  const requestedAnimaId = searchParams.get("anima");
   const [files, setFiles] = useState([]);
   const [activePath, setActivePath] = useState("");
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [previewSrcdoc, setPreviewSrcdoc] = useState("");
   const [characters, setCharacters] = useState([]);
-  const [companionId, setCompanionId] = useState(null);
+  const [personalAnimas, setPersonalAnimas] = useState([]);
+  const [me, setMe] = useState(null);
+  const [companionId, setCompanionId] = useState(JULES_PERSONA.id);
   const [agentLog, setAgentLog] = useState([]);
   const [battle, setBattle] = useState(null);
   const [mobileView, setMobileView] = useState("code"); // code | preview | console
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   // Outcome of the most recent run, so a failed run can offer self-repair.
@@ -72,8 +95,17 @@ export default function Codespace() {
   const gateRef = useRef(null);
   const saveTimerRef = useRef(null);
   const dirtyRef = useRef(false);
+  const savedCompanionIdRef = useRef(null);
+  const resolvedCompanionRef = useRef(false);
+  const userPickedCompanionRef = useRef(false);
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
 
-  const companion = characters.find((c) => c.id === companionId) || null;
+  const availableCompanions = useMemo(
+    () => buildCodespaceCompanions({ animas: personalAnimas, characters }),
+    [personalAnimas, characters],
+  );
+  const companion = availableCompanions.find((c) => c.id === companionId) || JULES_PERSONA;
 
   // ---- persistence -------------------------------------------------------
   const persistNow = useCallback(async () => {
@@ -128,34 +160,78 @@ export default function Codespace() {
       setAgentLog(al);
       const firstWs = workspaceFiles(pf)[0];
       setActivePath(proj.active_path || (firstWs ? firstWs.path : ""));
-      if (proj.companion_id) setCompanionId(proj.companion_id);
+      savedCompanionIdRef.current = proj.companion_id || null;
     } catch (e) {
       console.error("Codespace load failed", e);
     } finally {
+      setProjectLoaded(true);
       setLoading(false);
     }
   }, []);
 
-  const loadCharacters = useCallback(() => {
-    base44.entities.Character.list("-updated_date", 100)
-      .then((cs) => setCharacters(cs || []))
-      .catch(() => setCharacters([]));
+  const loadRoster = useCallback(async () => {
+    try {
+      const [cs, animas, profile] = await Promise.all([
+        base44.entities.Character.list("-updated_date", 100).catch(() => []),
+        listPersonalAnimas(100).catch(() => []),
+        base44.auth.me().catch(() => null),
+      ]);
+      setCharacters(cs || []);
+      setPersonalAnimas(animas || []);
+      setMe(profile);
+    } catch {
+      setCharacters([]);
+      setPersonalAnimas([]);
+    } finally {
+      setRosterLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
     loadProject();
-    whenBootstrapReady().then(() => loadCharacters());
-  }, [loadProject, loadCharacters]);
+    loadRoster();
+    whenBootstrapReady().then(() => loadRoster());
+  }, [loadProject, loadRoster]);
 
-  useStoreSync(loadCharacters);
+  useStoreSync(loadRoster);
 
-  // Default the companion to the first available character.
   useEffect(() => {
-    if (!companionId && characters.length) {
-      setCompanionId(characters[0].id);
+    if (!projectLoaded || !rosterLoaded) return;
+    setCompanionId((current) => {
+      const next = resolveCodespaceCompanionId({
+        savedId: savedCompanionIdRef.current,
+        requestedId: requestedAnimaId,
+        animas: personalAnimas,
+        characters,
+        me,
+      });
+      if (!resolvedCompanionRef.current) {
+        resolvedCompanionRef.current = true;
+        return next;
+      }
+      if (userPickedCompanionRef.current && availableCompanions.some((c) => c.id === current)) {
+        return current;
+      }
+      if (
+        current === JULES_PERSONA.id &&
+        !savedCompanionIdRef.current &&
+        !requestedAnimaId &&
+        personalAnimas.length > 0
+      ) {
+        return next;
+      }
+      if (availableCompanions.some((c) => c.id === current)) return current;
+      return next;
+    });
+  }, [projectLoaded, rosterLoaded, availableCompanions, personalAnimas, characters, me, requestedAnimaId]);
+
+  useEffect(() => {
+    if (!resolvedCompanionRef.current || !projectIdRef.current) return;
+    if (companionId && companionId !== savedCompanionIdRef.current) {
+      savedCompanionIdRef.current = companionId;
       scheduleSave();
     }
-  }, [characters, companionId, scheduleSave]);
+  }, [companionId, scheduleSave]);
 
   // ---- console capture from the web preview ------------------------------
   useEffect(() => {
@@ -212,10 +288,7 @@ export default function Codespace() {
       scan = scanCode(f.content, f.path);
     }
 
-    // Gate: any flagged code surfaces the NetNavi vs. virus moment. "high"
-    // severity is a HARD block — the code never runs from here regardless of the
-    // user's click; it must be rewritten until a fresh scan comes back below
-    // high. Medium/low are advisory and only need an acknowledgement to run.
+    // Gate: any flagged code surfaces the NetNavi vs. virus moment.
     if (scan.findings.length > 0) {
       const proceed = await requestBattle(scan);
       const blocking = scan.maxSeverity === "high";
@@ -226,8 +299,6 @@ export default function Codespace() {
             ? `Run blocked — ${scan.findings.length} high-severity threat(s) must be neutralized before this can run.`
             : `Run aborted — ${scan.findings.length} threat(s) left unresolved.`,
         });
-        // A hard block is a repairable failure (rewrite to remove the threats);
-        // a user-cancelled run is a deliberate stop, so it offers no repair.
         if (blocking) {
           setLastRun({
             path: mode === "web" ? "index.html" : path || activePath,
@@ -362,9 +433,27 @@ export default function Codespace() {
     runGoal(goal);
   }, [appendAgentLog, runGoal]);
 
-  // Adopt remote changes only when there are no unsaved local edits, no run in
-  // flight, and the agent isn't mid-build — so cross-device sync never clobbers
-  // in-progress work.
+  // Jules API automated debug & troubleshoot action
+  const handleJulesTroubleshoot = useCallback(async () => {
+    pushLog({ level: "info", text: "🔍 Jules API running codespace diagnostic..." });
+    const analysis = await debugAndTroubleshoot({
+      files: filesRef.current,
+      lastRun,
+      targetPath: activePath,
+    });
+
+    userPickedCompanionRef.current = true;
+    setCompanionId(JULES_PERSONA.id);
+    appendAgentLog({
+      type: "msg",
+      role: "user",
+      content: `Debug & Troubleshoot requested. ${analysis.summary}`,
+    });
+    setAgentOpen(true);
+    runGoal(analysis.repairGoal);
+  }, [lastRun, activePath, pushLog, appendAgentLog, runGoal]);
+
+  // Adopt remote changes only when safe.
   useStoreSync(() => {
     if (!dirtyRef.current && !busy && !running) loadProject();
   });
@@ -421,6 +510,71 @@ export default function Codespace() {
     pushLog({ level: "info", text: `Session saved to ${snap.path}` });
   }, [applyFiles, pushLog]);
 
+  const applyImportResult = useCallback((result, { replaceWorkspace }) => {
+    if (result.errors?.length) {
+      result.errors.forEach((text) => pushLog({ level: "error", text }));
+    }
+    if (!result.files?.length) {
+      const message = result.errors?.[0] || "Import brought in no text files the editor can open.";
+      setImportError(message);
+      pushLog({ level: "warn", text: message });
+      return false;
+    }
+    applyFiles((prev) => mergeImportedFiles(prev, result.files, { replaceWorkspace }));
+    const first = result.files.find((f) => !isSessionPath(f.path));
+    if (first) setActivePath(first.path);
+    setMobileView("code");
+    setExplorerOpen(false);
+    pushLog({ level: "info", text: summarizeImport(result) });
+    setImportError("");
+    return true;
+  }, [applyFiles, pushLog]);
+
+  const handleUploadFiles = useCallback(async (fileList) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromBrowserFiles(fileList, { mode: "files" });
+      applyImportResult(result, { replaceWorkspace: false });
+    } catch (err) {
+      const message = err?.message || "Could not upload files.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
+  const handleImportFolder = useCallback(async (fileList) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromBrowserFiles(fileList, { mode: "folder" });
+      if (applyImportResult(result, { replaceWorkspace: true })) setImportOpen(false);
+    } catch (err) {
+      const message = err?.message || "Could not import the folder.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
+  const handleImportZip = useCallback(async (file) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromZipFile(file);
+      if (applyImportResult(result, { replaceWorkspace: true })) setImportOpen(false);
+    } catch (err) {
+      const message = err?.message || "Could not unpack the zip.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
   const handleRestoreSession = useCallback((path) => {
     const f = filesRef.current.find((x) => x.path === path);
     if (!f) return;
@@ -442,8 +596,6 @@ export default function Codespace() {
 
   const handleRun = useCallback(() => { runCode({ path: activePath }); }, [runCode, activePath]);
 
-  // Hand the last failed run (file + observed errors) to the companion so it can
-  // diagnose, fix, and re-run its own code until it works.
   const handleRepair = useCallback(() => {
     if (!lastRun || lastRun.ok || running) return;
     const goal = buildRepairGoal({
@@ -475,6 +627,8 @@ export default function Codespace() {
       onDelete={handleDelete}
       onRestoreSession={handleRestoreSession}
       onSaveSession={handleSaveSession}
+      onUploadFiles={handleUploadFiles}
+      onImportRepo={() => { setImportError(""); setImportOpen(true); }}
     />
   );
 
@@ -493,7 +647,7 @@ export default function Codespace() {
   ];
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-[#06060d] text-primary">
+    <div className="app-page-fill flex-1 min-h-0 flex flex-col bg-[#06060d] text-primary">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-primary/15 bg-[#090912]">
         <button
@@ -504,17 +658,23 @@ export default function Codespace() {
           <PanelLeft className="w-4 h-4" />
         </button>
         <span className="font-mono text-[11px] tracking-[0.25em] uppercase text-primary/70 hidden sm:inline">
-          // Codespace
+          {isRepoMode ? "// Repo Codespace" : "// Codespace"}
         </span>
         <select
-          value={companionId || ""}
-          onChange={(e) => { setCompanionId(e.target.value); scheduleSave(); }}
-          className="bg-black/50 border border-primary/20 text-primary/80 font-mono text-[10px] px-2 py-1 focus:outline-none focus:border-primary/50 max-w-[140px]"
-          title="Companion (build agent)"
+          aria-label="Codespace companion"
+          value={companionId}
+          onChange={(e) => {
+            userPickedCompanionRef.current = true;
+            setCompanionId(e.target.value);
+            scheduleSave();
+          }}
+          className="bg-black/50 border border-primary/20 text-cyan-300 font-mono text-[10px] px-2 py-1 focus:outline-none focus:border-cyan-500 max-w-[160px]"
+          title="Agent Engine persona"
         >
-          {characters.length === 0 && <option value="">No companions</option>}
-          {characters.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+          {availableCompanions.map((c) => (
+            <option key={c.id} value={c.id}>
+              {companionPickerLabel(c)}
+            </option>
           ))}
         </select>
 
@@ -535,6 +695,14 @@ export default function Codespace() {
 
         <div className="flex items-center gap-1.5 ml-auto lg:ml-0 lg:flex-1 lg:justify-end">
           <button
+            onClick={handleJulesTroubleshoot}
+            disabled={running || busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+            title="Use Jules API to directly code, debug, and troubleshoot this codespace"
+          >
+            <Bug className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Jules Debug</span>
+          </button>
+          <button
             onClick={handleRun}
             disabled={busy}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
@@ -553,6 +721,13 @@ export default function Codespace() {
               <Wrench className="w-3.5 h-3.5" /> Repair
             </button>
           )}
+          <button
+            onClick={() => { setImportError(""); setImportOpen(true); }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+            title="Import a repository folder or zip into this project"
+          >
+            <FolderInput className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Import</span>
+          </button>
           <button
             onClick={handleSaveSession}
             className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
@@ -662,11 +837,21 @@ export default function Codespace() {
                 running={running}
                 onSend={handleSend}
                 onStop={stop}
+                onDebugAndTroubleshoot={handleJulesTroubleshoot}
               />
             </motion.div>
           </>
         )}
       </AnimatePresence>
+
+      <ImportRepoModal
+        open={importOpen}
+        busy={importBusy}
+        error={importError}
+        onClose={() => { if (!importBusy) setImportOpen(false); }}
+        onPickFolder={handleImportFolder}
+        onPickZip={handleImportZip}
+      />
 
       <VirusBattleModal
         open={Boolean(battle)}

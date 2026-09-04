@@ -7,9 +7,9 @@ import { Shield } from "lucide-react";
 
 /**
  * Persistent care banner for therapy-mode chat sessions.
- * @param {{ crisis?: boolean, characterName?: string, country?: string }} props
+ * @param {{ crisis?: boolean, characterName?: string, country?: string, topic?: string }} props
  */
-export default function TherapySessionBanner({ crisis = false, characterName, country }) {
+export default function TherapySessionBanner({ crisis = false, characterName, country, topic }) {
   const localResource = localizedTherapyResource(country);
   return (
     <div
@@ -23,7 +23,8 @@ export default function TherapySessionBanner({ crisis = false, characterName, co
         <Shield className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${crisis ? "text-red-300" : "text-violet-300"}`} />
         <div className="min-w-0 space-y-1">
           <p className="text-[9px] sm:text-[10px] tracking-[0.2em] uppercase">
-            Therapy mode{characterName ? ` · ${characterName}` : ""} · compiled care manuals
+            Therapy mode{characterName ? ` · ${characterName}` : ""}
+            {topic ? ` · ${topic}` : ""} · compiled care manuals
           </p>
           {crisis ? (
             <p className="text-[11px] leading-relaxed text-red-50/90">

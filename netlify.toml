@@ -13,21 +13,12 @@
   PORT = "23660"
   BASE_PATH = "/"
   VITE_CLERK_PROXY_URL = ""
-  # Placeholder so PR/deploy-preview builds succeed when the site env is unset.
-  # Override with your real pk_live/pk_test key in Netlify → Site settings → Environment.
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+  # Do not default to pk_test_placeholder — its payload decodes to a garbled
+  # Clerk host. When unset, App.full.jsx uses the clerk.anima-protocol.com
+  # publishable-key fallback. Override in Netlify → Site settings → Environment.
 
-# Deploy previews / branch builds inherit the placeholder unless overridden per-site.
-[context.deploy-preview.environment]
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
-
-[context.branch-deploy.environment]
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
-
-# Production sites (e.g. animaprotocolmain) need a build-time key too when the
-# Netlify UI does not set one — override in Site settings for real deploys.
-[context.production.environment]
-  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_placeholder"
+# Deploy previews / branch builds: leave the key unset unless the site UI
+# provides a real pk_live/pk_test key. Never bake pk_test_placeholder.
 
 # API → Replit backend (character store, chat, Clerk proxy, etc.)
 [[redirects]]
@@ -53,3 +44,12 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Algolia Crawler for Netlify. JS rendering is required because the frontend
+# is a Vite SPA; without it the crawler only sees the empty #root shell.
+# Set VITE_ALGOLIA_SEARCH_API_KEY (search-only key) in Netlify env for the widget.
+[[plugins]]
+  package = "@algolia/netlify-plugin-crawler"
+  [plugins.inputs]
+    branches = ["main"]
+    renderJavaScript = true

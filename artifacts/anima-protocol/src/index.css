@@ -122,6 +122,32 @@
   * {
     border-color: hsl(var(--border));
   }
+  /*
+   * PWA viewport lock. Mobile browsers treat `100vh` as the *large* viewport
+   * (address bar hidden), so a height-locked shell with no inner scroller
+   * clips the last rows behind chrome. Size html/body/#root to the visible
+   * viewport (`100dvh`, then JS `--app-height`) and keep document scroll
+   * off — `.app-shell-main` (or a page's own overflow-y-auto) is the scroller.
+   */
+  html {
+    height: 100%;
+    height: 100dvh;
+    height: var(--app-height, 100dvh);
+  }
+  html, body, #root {
+    max-height: 100%;
+    max-height: 100dvh;
+    max-height: var(--app-height, 100dvh);
+    overflow: hidden;
+  }
+  body, #root {
+    height: 100%;
+    min-height: 0;
+  }
+  #root {
+    display: flex;
+    flex-direction: column;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
@@ -158,15 +184,49 @@
 }
 
 .safe-top { padding-top: env(safe-area-inset-top, 0px); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
-.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px); }
+.safe-bottom { padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px)); }
+.pb-safe { padding-bottom: max(var(--safe-bottom, env(safe-area-inset-bottom, 0px)), 0px); }
 
 /*
  * Visible-viewport height utilities.
  * Layered fallback: legacy `vh` -> modern dynamic `dvh` -> JS-measured
  * `--app-height` (set by useViewportHeight) which wins for pixel-accurate
  * iOS/Android sizing so mobile browser chrome never clips the bottom UI.
+ *
+ * When the virtual keyboard is open, `--app-height` equals visualViewport
+ * height. Do not also add the keyboard inset as padding on `.h-screen-safe`
+ * — that double-count was the black bar covering the chat composer.
+ * `html[data-keyboard-open]` hides `.fixed-bottom-chrome` because iOS Safari
+ * pins `position: fixed; bottom: 0` to the visual viewport and the black
+ * tab bar would sit on top of the text box.
  */
+
+html[data-keyboard-open] .fixed-bottom-chrome {
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
+/*
+ * Full-viewport overlays must follow `--app-height` (visualViewport when the
+ * keyboard is open). A leftover `100dvh` is taller than the locked html/body
+ * and gets clipped. Do not add extra keyboard padding on the chat composer.
+ */
+.h-app-viewport {
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+}
+
+/*
+ * Center a flex column only while it fits the scrollport; fall back to start
+ * so the first heading/control stays reachable when content overflows.
+ */
+.justify-safe-center {
+  justify-content: flex-start;
+  justify-content: safe center;
+}
+
 .h-screen-safe {
   height: 100vh;
   height: 100dvh;
@@ -181,6 +241,34 @@
   max-height: 100vh;
   max-height: 100dvh;
   max-height: var(--app-height, 100dvh);
+}
+
+/* Root app chrome: fills the locked viewport, never becomes a second document. */
+.app-shell {
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/*
+ * Default route scroller — sits between the in-flow header and the reserved
+ * tab-bar padding. Pages that grow taller than this region scroll here.
+ * Pages that manage their own column (Chat) use `.app-page-fill`.
+ */
+.app-shell-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fill the shell and clip; the page must provide an inner overflow-y-auto. */
+.app-page-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Mobile page content padding — adds space for bottom tab bar on small screens */
@@ -455,4 +543,29 @@
 .emotion-conflicted {
   background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
   animation: strobe 2s ease-in-out infinite;
+}
+
+/* Algolia Netlify search — persistent host outside #root */
+#algolia-search-host {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  right: 0.75rem;
+  z-index: 45;
+  width: min(16rem, calc(100vw - 1.5rem));
+}
+
+@media (max-width: 1023px) {
+  #algolia-search-host {
+    top: max(3rem, calc(env(safe-area-inset-top, 0px) + 2.75rem));
+  }
+}
+
+#algolia-search-host[hidden] {
+  display: none !important;
+}
+
+#algolia-search-host .aa-DetachedSearchButton,
+#algolia-search-host .aa-Form,
+#algolia-search-host input {
+  font-family: var(--font-mono), ui-monospace, monospace;
 }

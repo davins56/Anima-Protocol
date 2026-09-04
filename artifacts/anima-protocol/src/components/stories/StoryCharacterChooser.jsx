@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, Check } from "lucide-react";
-import { base44 } from "@/api/base44Client";
 import { CANONICAL_STORIES } from "@/lib/canonicalStories";
 import StoryPointSelector from "./StoryPointSelector";
 import { motion, AnimatePresence } from "framer-motion";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import {
+  buildInitSessionPayload,
+  createInitChatSession,
+} from "@/lib/createInitSession";
+import { toast } from "sonner";
 
 export default function StoryCharacterChooser({
   onClose,
@@ -95,17 +100,23 @@ export default function StoryCharacterChooser({
 
       // Build narrator exposition
       const narratorExposition = `[LOCATION: ${firstInsertion.setting || selectedStory.title}]\n\n${firstInsertion.narrative}`;
-
-      const session = await base44.entities.ChatSession.create({
+      const { payload } = buildInitSessionPayload({
         mode: "solo",
-        character_id: character.id,
+        characterId: character.id,
+        character,
+        openingScene: firstInsertion.narrative,
+      });
+      // createInitChatSession fire-and-forgets /messages/replace so a narrator
+      // row cannot block navigation the way a nested messages array on create did.
+      const session = await createInitChatSession({
+        ...payload,
         title: `${character.name} in ${selectedStory.title}`,
-        opening_scene: firstInsertion.narrative,
         selected_story_points: insertions.map((p) => ({
           id: p.id,
           title: p.title,
           narrative: p.narrative,
         })),
+        last_message: firstInsertion.narrative.slice(0, 60),
         messages: [
           {
             role: "assistant",
@@ -114,11 +125,11 @@ export default function StoryCharacterChooser({
             timestamp: new Date().toISOString(),
           },
         ],
-        last_message: firstInsertion.narrative.slice(0, 60),
       });
       onCreateSession(session);
     } catch (err) {
       console.error("Error creating session:", err);
+      toast.error(err?.message || "Couldn't start this story. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -134,14 +145,21 @@ export default function StoryCharacterChooser({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+  return createPortal(
+    <div
+      data-testid="story-character-chooser-overlay"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-end h-app-viewport bg-black/80 backdrop-blur-sm p-3 sm:p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        height: "var(--app-height, 100dvh)",
+        maxHeight: "var(--app-height, 100dvh)",
+      }}
+    >
       <div
-        className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border flex flex-col"
-        style={{
-          height: "calc(var(--app-height, 100dvh) * 0.9)",
-          maxHeight: "calc(var(--app-height, 100dvh) * 0.9)",
-        }}
+        data-testid="story-character-chooser-panel"
+        className="w-full max-w-2xl min-h-0 max-h-full flex-1 sm:flex-none flex flex-col overflow-hidden bg-background border border-primary/30 hud-corner glow-border"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-3 sm:p-6 border-b border-primary/20 flex-shrink-0">
@@ -281,6 +299,7 @@ export default function StoryCharacterChooser({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -2,9 +2,9 @@ import {
   isDevelopmentFromPublishableKey,
   isPublishableKey,
   isProductionFromPublishableKey,
-  publishableKeyFromHost,
 } from "@clerk/shared/keys";
 import type { IncomingHttpHeaders } from "http";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
 
 export const CLERK_PROXY_PATH = "/api/__clerk";
 
@@ -103,10 +103,7 @@ export function resolveClerkPublishableKey(
   ) {
     return fallbackKey;
   }
-  if (!hostname || isAnimaProductionHost(hostname)) {
-    return publishableKeyFromHost(ANIMA_APEX_HOST, fallbackKey);
-  }
-  return publishableKeyFromHost(hostname, fallbackKey);
+  return fallbackKey || "";
 }
 
 /**
@@ -117,7 +114,7 @@ export function resolveClerkPublishableKey(
 export function resolveRuntimePublishableKey(req: {
   headers: IncomingHttpHeaders;
 }): string | undefined {
-  const envKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  const envKey = readRuntimeEnv("CLERK_PUBLISHABLE_KEY") || "";
   if (isPublishableKey(envKey)) {
     return envKey;
   }
@@ -127,15 +124,9 @@ export function resolveRuntimePublishableKey(req: {
     const resolved = resolveClerkPublishableKey(host, undefined);
     if (isPublishableKey(resolved)) return resolved;
   } catch {
-    // Host empty / unparseable — try apex custom-domain key below.
+    // Host empty / unparseable
   }
 
-  try {
-    const apexKey = publishableKeyFromHost(ANIMA_APEX_HOST);
-    if (isPublishableKey(apexKey)) return apexKey;
-  } catch {
-    // ignore
-  }
   return undefined;
 }
 

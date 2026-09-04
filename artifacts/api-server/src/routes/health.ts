@@ -4,18 +4,34 @@ import {
   ensureSchemaOnce,
   getPool,
   inspectSchema,
+  withTransientDbRetry,
 } from "@workspace/db";
-import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
+import { runtimeEnvPresence } from "../lib/cloudflareEnv";
+import {
+  classifyDbError,
+  databaseTargetHint,
+  secretFreeErrorSignal,
+} from "../lib/dbErrors";
 import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
 
 const router: IRouter = Router();
 
-if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
-if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
+// Do not throw on missing DATABASE_URL / CLERK_SECRET_KEY at import time.
+// Cloudflare Workers instantiate this module before secrets are copied from
+// env bindings into process.env; /healthz must stay loadable without them.
+// Routes that actually talk to Postgres (below) still fail at request time.
 
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
   res.json(data);
+});
+
+/**
+ * Presence-only env probe. Never returns secret values — only whether the
+ * isolate can see DATABASE_URL / Clerk keys after request-time remirror.
+ */
+router.get("/healthz/env", (_req, res) => {
+  res.json(runtimeEnvPresence());
 });
 
 /**
@@ -70,7 +86,9 @@ router.get("/healthz/llm", async (req, res) => {
 router.get("/healthz/db", async (_req, res) => {
   const target = databaseTargetHint();
   try {
-    const result = await getPool().query("select 1::int as ok");
+    const result = await withTransientDbRetry(() =>
+      getPool().query("select 1::int as ok"),
+    );
     let schema: Awaited<ReturnType<typeof inspectSchema>> | undefined;
     try {
       schema = await inspectSchema();
@@ -80,7 +98,12 @@ router.get("/healthz/db", async (_req, res) => {
         status: "error",
         db: true,
         ok: result.rows?.[0]?.ok === 1,
-        schema: { ok: false, error: info.safeMessage, code: info.code },
+        schema: {
+          ok: false,
+          error: info.safeMessage,
+          reason: info.reason,
+          code: info.code,
+        },
         target,
       });
       return;
@@ -91,6 +114,9 @@ router.get("/healthz/db", async (_req, res) => {
       status: healthy ? "ok" : "error",
       db: true,
       ok: result.rows?.[0]?.ok === 1,
+      ...(healthy
+        ? {}
+        : { reason: "schema" as const, code: "schema_missing" }),
       schema: {
         ok: schema.ok,
         missingTables: schema.missingTables,
@@ -100,12 +126,17 @@ router.get("/healthz/db", async (_req, res) => {
       target,
     });
   } catch (err) {
+    // This catch only wraps getPool().query — any throw is a DB/Hyperdrive
+    // failure, even when classifyDbError cannot name the driver code.
     const info = classifyDbError(err);
+    const signal = secretFreeErrorSignal(err);
     res.status(503).json({
       status: "error",
       db: false,
-      error: info.safeMessage,
-      code: info.code,
+      error: info.isDbError ? info.safeMessage : "Database unavailable",
+      reason: info.isDbError ? info.reason : "unavailable",
+      code: info.code || signal.code || "unavailable",
+      signal: signal.signal,
       target,
     });
   }
@@ -134,6 +165,7 @@ router.get("/healthz/schema", async (_req, res) => {
     res.status(503).json({
       status: "error",
       error: info.safeMessage,
+      reason: info.reason,
       code: info.code,
       target,
     });
@@ -154,6 +186,7 @@ router.post("/healthz/schema", async (_req, res) => {
     res.status(503).json({
       status: "error",
       error: info.safeMessage,
+      reason: info.reason,
       code: info.code,
       target,
     });

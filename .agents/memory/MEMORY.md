@@ -29,7 +29,7 @@
 - [Anima Codespace run gate & sandbox](anima-codespace.md) — high-severity scan HARD-blocks run (never executes); iframe no allow-same-origin; sync guarded by dirty/busy/running.
 - [Anima story mode](anima-story-mode.md) — self-insert canonical-scene chat; NOT a distinct session.mode (creates mode:"solo"); NewChat selector "Story" button just opens StoryCharacterChooser.
 - [Anima identity systems](anima-identity-systems.md) — soulprint/resonance/evolution/dream all live on schemaless Anima; resonance accrues client-side in Chat (resonanceRef vs stale closure); useAnimaPresence lockRef stops last_visit write-loop.
-- [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by two flows (check-in page vs in-chat ritual) with divergent fields; filter by the field you need; list() no-limit = full history.
+- [Anima CheckIn dual schema](anima-checkin-dual-schema.md) — CheckIn entity written by three flows (check-in page, in-chat ritual, Sacred Space) with divergent fields; filter by the field you need; list() no-limit = full history.
 - [.replit deployment-section loss](replit-deployment-section.md) — publish fails "missing the deployment section" when gitignored .replit is regenerated minimally; agent CANNOT edit .replit (guarded), user restores [deployment].
 - [api-server boot env & route-mounting regression](anima-apiserver-boot-env.md) — never hard-require optional env (CLERK_WEBHOOK_SECRET→503); keep app.ts whole (gutting broke /api/healthz probe); use getAuth(req) per @clerk/express v2.
 - [pnpm packageManager pin hang](pnpm-version-pin-hang.md) — root pin `pnpm@X` ≠ env pnpm → every local pnpm cmd + workflow hangs on self-switch; fix = `.npmrc manage-package-manager-versions=false`, keep the pin.

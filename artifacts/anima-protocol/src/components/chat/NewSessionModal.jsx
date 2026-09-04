@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
@@ -13,6 +15,14 @@ import {
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
 import { upsertCharacters } from "@/lib/seedCharacters";
+import {
+  applyIdentityFallback,
+  initSessionErrorMessage,
+  isUsableSessionId,
+  remapSelectedCharacterIds,
+} from "@/lib/createInitSession";
+import { rememberCreatedSession } from "@/lib/chatSessionLoad";
+import { STORE_SESSION_CREATE_TIMEOUT_MS } from "@/lib/storeTimeouts";
 
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
@@ -162,67 +172,105 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     }
   };
 
+  const sessionCreateErrorMessage = (err) => initSessionErrorMessage(err);
+
   const handleCreate = async () => {
     if (selected.length === 0 || creating) return;
+    setCreating(true);
+    setLoadError(null);
 
     // Bundled starters are not in Postgres yet — upsert before chat so the
-    // session can resolve character ids from the store.
+    // session can resolve character ids from the store. Remap picker ids onto
+    // the upsert response so create never receives a leftover seed id.
     const bundledSelected = selectedCharacters.filter((c) => c._bundled);
-    if (bundledSelected.length) {
-      setCreating(true);
-      try {
-        await upsertCharacters(
+    let selectedIds = selected;
+    try {
+      if (bundledSelected.length) {
+        const upserted = await upsertCharacters(
           bundledSelected.map(({ _bundled, ...rest }) => rest),
+          {
+            skipExistingLookup: true,
+            timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS,
+          },
+        );
+        selectedIds = applyIdentityFallback(
+          remapSelectedCharacterIds(
+            selected,
+            bundledSelected,
+            upserted?.items,
+            upserted?.idMap,
+          ),
+          selected,
+          bundledSelected,
+          upserted?.items,
+        );
+        const remappedByOldId = new Map(
+          selected.map((id, index) => [id, selectedIds[index]]),
         );
         setCharacters((prev) =>
-          prev.map((c) => (c._bundled ? { ...c, _bundled: false } : c)),
+          prev.map((c) => {
+            if (!c._bundled) return c;
+            const nextId = remappedByOldId.get(c.id) || c.id;
+            return { ...c, id: nextId, _bundled: false };
+          }),
         );
         setUsingBundledSeed(false);
-        setLoadError(null);
-      } catch (err) {
-        setLoadError(
-          err?.message ||
-            "Could not save starter characters to your account. Check that you are signed in and the database is reachable.",
-        );
-        setCreating(false);
-        return;
-      } finally {
-        setCreating(false);
       }
-    }
 
-    // Prepare session data
-    const sessionData = mode === "solo"
-      ? {
-          mode,
-          character_id: selected[0],
-          opening_scene: openingScene.trim() || undefined,
+      const rosterById = new Map(
+        characters.map((c) => [c.id, c]),
+      );
+      selectedIds.forEach((id, index) => {
+        const previous = selected[index];
+        if (id !== previous && rosterById.has(previous)) {
+          rosterById.set(id, { ...rosterById.get(previous), id, _bundled: false });
         }
-      : {
-          mode,
-          group_character_ids: selected,
-          selected_character_names: selectedCharacters.map((c) => c.name),
-          crossover_universes: selectedUniverses,
-          is_crossover: isCrossover,
-          shared_memory: [],
-          opening_scene: openingScene.trim() || undefined,
-        };
-    
-    // Call onCreate callback which creates the session
-    onCreate(sessionData);
-    
-    // After a brief delay, create timeline branch for the new session
-    setTimeout(async () => {
-      try {
-        // Get the newly created session (last one)
-        const allSessions = await base44.entities.ChatSession.list("-created_date", 1);
-        if (allSessions?.length > 0) {
-          await createBranchForSession(allSessions[0], characters, mode);
+      });
+      const resolvedSelected = selectedIds
+        .map((id) => rosterById.get(id))
+        .filter(Boolean);
+
+      // Prepare session data
+      const sessionData = mode === "solo"
+        ? {
+            mode,
+            character_id: selectedIds[0],
+            character: resolvedSelected[0] || selectedCharacters[0] || null,
+            opening_scene: openingScene.trim() || undefined,
+          }
+        : {
+            mode,
+            group_character_ids: selectedIds,
+            group_characters: resolvedSelected,
+            selected_character_names: resolvedSelected.map((c) => c.name),
+            crossover_universes: selectedUniverses,
+            is_crossover: isCrossover,
+            shared_memory: [],
+            opening_scene: openingScene.trim() || undefined,
+          };
+
+      const newSession = await onCreate(sessionData);
+
+      // After a brief delay, create timeline branch for the new session.
+      setTimeout(async () => {
+        try {
+          const sessionForBranch =
+            newSession ||
+            (await base44.entities.ChatSession.list("-created_date", 1))?.[0];
+          if (sessionForBranch) {
+            await createBranchForSession(sessionForBranch, characters, mode);
+          }
+        } catch (err) {
+          console.error("Error creating timeline branch:", err);
         }
-      } catch (err) {
-        console.error("Error creating timeline branch:", err);
-      }
-    }, 500);
+      }, 500);
+    } catch (err) {
+      const message = sessionCreateErrorMessage(err);
+      setLoadError(message);
+      toast.error(message);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleSelectTemplate = (template) => {
@@ -237,7 +285,14 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   };
 
   const handleCreateFromChooser = (session) => {
-    navigate(`/chat/${session.id}`);
+    if (!isUsableSessionId(session?.id)) {
+      toast.error(
+        "The store created a session but did not return an id. Tap Init to try again.",
+      );
+      return;
+    }
+    rememberCreatedSession(session);
+    navigate(`/chat/${session.id}`, { state: { primedSession: session } });
     setShowStoryChooser(false);
     setCanonSeed(null);
     onClose?.();
@@ -272,11 +327,33 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     oracle: "text-blue-400",
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border max-h-[90vh] flex flex-col">
+  return createPortal(
+    <div
+      data-testid="new-session-overlay"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-end h-app-viewport bg-black/80 backdrop-blur-sm p-4 pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)] min-h-0 overflow-hidden"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        height: "var(--app-height, 100dvh)",
+        maxHeight: "var(--app-height, 100dvh)",
+      }}
+    >
+      {/*
+        Portaled to document.body so `fixed` is vs the viewport, not Chat
+        overflow-hidden / ProtocolApp motion.div transform. z-[1000] covers
+        the tab bar (z-[999]); sign-out already uses this overlay token.
+        h-app-viewport / --app-height keeps iOS off the large-viewport trap
+        where URL bar + tab bar sit outside inset-0. justify-end keeps Init
+        on-screen when Opening Scene + footer wrap. The character list is
+        the only scroller.
+      */}
+      <div
+        data-testid="new-session-panel"
+        className="w-full max-w-2xl min-h-0 max-h-full flex-1 sm:flex-none flex flex-col overflow-hidden bg-background border border-primary/30 hud-corner glow-border"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20 gap-3">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20 gap-3 flex-shrink-0">
           <div className="flex-1 min-w-0">
             <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase text-base sm:text-lg truncate">
               {view === "templates"
@@ -301,7 +378,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         </div>
 
         {/* Search */}
-        <div className="p-4 border-b border-primary/10">
+        <div className="p-4 border-b border-primary/10 flex-shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary/30" />
             <input
@@ -313,8 +390,12 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 min-h-0">
+        {/* Content — sole touch scroller; min-h-0 so flex can shrink it. */}
+        <div
+          data-testid="new-session-character-scroller"
+          className="flex-1 overflow-y-auto overscroll-contain p-4 min-h-0 touch-pan-y"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
           {view === "templates" ? (
             <StoryTemplateBrowser
               onSelectTemplate={handleSelectTemplate}
@@ -353,6 +434,11 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
             <div className="space-y-4">
               {loadError && usingBundledSeed && (
                 <p className="font-mono text-[10px] text-amber-400/80 leading-relaxed border border-amber-400/20 bg-amber-400/5 px-3 py-2">
+                  {loadError}
+                </p>
+              )}
+              {loadError && !usingBundledSeed && (
+                <p className="font-mono text-[10px] text-red-300/90 leading-relaxed border border-red-400/30 bg-red-500/5 px-3 py-2">
                   {loadError}
                 </p>
               )}
@@ -435,7 +521,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
 
         {/* Opening Scene Input */}
         {view === "characters" && selected.length > 0 && (
-          <div className="px-4 py-3 border-t border-primary/10 bg-black/20">
+          <div className="px-4 py-3 border-t border-primary/10 bg-black/20 flex-shrink-0">
             {mode === "group" && (
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className={`text-[8px] font-mono tracking-widest uppercase border rounded px-2 py-1 ${
@@ -549,6 +635,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
           initialInsertions={canonSeed?.insertions || null}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
