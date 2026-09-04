@@ -1039,7 +1039,7 @@ function entityStore(entityName) {
       return countEntity(entityName, { filters, search });
     },
 
-    async get(id) {
+    async get(id, opts) {
       const token = await getToken();
       if (!token) return null;
       const res = await storeFetch(
@@ -1076,12 +1076,13 @@ function entityStore(entityName) {
     },
 
     // Upsert many records with client-provided ids (starter seed/repair).
-    async bulkUpsert(dataArray) {
+    async bulkUpsert(dataArray, opts = {}) {
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/bulk-upsert`,
         {
           method: 'POST',
           body: JSON.stringify({ items: dataArray || [] }),
+          timeoutMs: opts.timeoutMs,
         },
       );
       if (!res.ok) await throwErr(res);
@@ -1118,7 +1119,13 @@ function entityStore(entityName) {
     // optional sort string, numeric limit and { offset } for SQL-side paging.
     async filter(filters = {}, sort, limit, opts) {
       const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
-      return queryEntity(entityName, { filters, sort, limit, offset });
+      return queryEntity(entityName, {
+        filters,
+        sort,
+        limit,
+        offset,
+        _bootstrapInternal: opts?._bootstrapInternal,
+      });
     },
   };
 
@@ -1169,8 +1176,10 @@ function entityStore(entityName) {
         if (opts && opts.withMessages === false) return sessions;
         return hydrateMany(sessions);
       },
-      async get(id) {
-        return hydrateOne(await base.get(id));
+      async get(id, opts) {
+        const session = await base.get(id, opts);
+        if (opts && opts.withMessages === false) return session;
+        return hydrateOne(session);
       },
       async update(id, data) {
         if (data && Object.prototype.hasOwnProperty.call(data, 'messages')) {

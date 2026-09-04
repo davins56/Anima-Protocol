@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Play, Save, PanelLeft, Bot, FileCode2, Loader2, Cpu, Terminal as TerminalIcon, Globe, Wrench, Bug,
+  FolderInput, Upload, GitPullRequest,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
@@ -11,16 +13,37 @@ import CodeEditor from "@/components/codespace/CodeEditor";
 import PreviewPane from "@/components/codespace/PreviewPane";
 import ConsolePane from "@/components/codespace/ConsolePane";
 import VirusBattleModal from "@/components/codespace/VirusBattleModal";
+import ImportRepoModal from "@/components/codespace/ImportRepoModal";
 import AgentPanel from "@/components/codespace/AgentPanel";
 import { scanCode, severityRank } from "@/lib/codespace/codeScanner";
 import { buildPreviewSrcdoc, isPreviewMessage, runScript } from "@/lib/codespace/sandbox";
 import {
-  newProject, makeSessionSnapshot, parseSessionSnapshot, languageForPath,
-  isSessionPath, workspaceFiles,
+  newProject, emptyRepoProject, pickCodespaceProject, makeSessionSnapshot,
+  parseSessionSnapshot, languageForPath, isSessionPath, workspaceFiles, sessionFiles,
 } from "@/lib/codespace/projectModel";
 import { useCodespaceAgent } from "@/lib/codespace/useCodespaceAgent";
 import { summarizeRunErrors, buildRepairGoal } from "@/lib/codespace/repair";
 import { JULES_PERSONA, debugAndTroubleshoot } from "@/lib/codespace/julesApi";
+import {
+  importFromBrowserFiles,
+  importFromZipFile,
+  mergeImportedFiles,
+  summarizeImport,
+} from "@/lib/codespace/importProject";
+import { pullGithubRepo } from "@/lib/codespace/pullGithubRepo";
+import {
+  probeRepoFilesystem,
+  listRepoFiles,
+  readRepoFile,
+  writeRepoFile,
+  deleteRepoFile,
+} from "@/lib/codespace/repoApi";
+import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
+import {
+  buildCodespaceCompanions,
+  companionPickerLabel,
+  resolveCodespaceCompanionId,
+} from "@/lib/codespace/companionPicker";
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,18 +71,27 @@ function mergeScans(scans, label) {
   };
 }
 
-export default function Codespace() {
+export default function Codespace({ isRepoMode = false }) {
+  const [searchParams] = useSearchParams();
+  const requestedAnimaId = searchParams.get("anima");
   const [files, setFiles] = useState([]);
   const [activePath, setActivePath] = useState("");
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [previewSrcdoc, setPreviewSrcdoc] = useState("");
   const [characters, setCharacters] = useState([]);
+  const [personalAnimas, setPersonalAnimas] = useState([]);
+  const [me, setMe] = useState(null);
   const [companionId, setCompanionId] = useState(JULES_PERSONA.id);
   const [agentLog, setAgentLog] = useState([]);
   const [battle, setBattle] = useState(null);
   const [mobileView, setMobileView] = useState("code"); // code | preview | console
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [workspaceModal, setWorkspaceModal] = useState(null); // "import" | "pull" | null
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [repoLive, setRepoLive] = useState(false);
+  const [repoUnavailable, setRepoUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   // Outcome of the most recent run, so a failed run can offer self-repair.
@@ -73,16 +105,43 @@ export default function Codespace() {
   const gateRef = useRef(null);
   const saveTimerRef = useRef(null);
   const dirtyRef = useRef(false);
+  const repoLiveRef = useRef(false);
+  const dirtyRepoPathsRef = useRef(new Set());
+  const toolbarUploadRef = useRef(null);
+  const savedCompanionIdRef = useRef(null);
+  const resolvedCompanionRef = useRef(false);
+  const userPickedCompanionRef = useRef(false);
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
 
-  const availableCompanions = [JULES_PERSONA, ...characters];
+  const availableCompanions = useMemo(
+    () => buildCodespaceCompanions({ animas: personalAnimas, characters }),
+    [personalAnimas, characters],
+  );
   const companion = availableCompanions.find((c) => c.id === companionId) || JULES_PERSONA;
 
   // ---- persistence -------------------------------------------------------
   const persistNow = useCallback(async () => {
+    if (repoLiveRef.current) {
+      const dirty = [...dirtyRepoPathsRef.current];
+      dirtyRepoPathsRef.current = new Set();
+      for (const p of dirty) {
+        if (isSessionPath(p)) continue;
+        const f = filesRef.current.find((x) => x.path === p);
+        if (!f) continue;
+        const written = await writeRepoFile(p, f.content ?? "");
+        if (!written.ok) {
+          dirtyRepoPathsRef.current.add(p);
+          console.error("Codespace live write failed", written.error);
+        }
+      }
+    }
     if (!projectIdRef.current) return;
     try {
       await base44.entities.CodespaceProject.update(projectIdRef.current, {
-        files: filesRef.current,
+        files: repoLiveRef.current
+          ? sessionFiles(filesRef.current)
+          : filesRef.current,
         active_path: activePath,
         agent_log: agentLogRef.current,
         companion_id: companionId,
@@ -100,11 +159,19 @@ export default function Codespace() {
     saveTimerRef.current = setTimeout(() => persistNow(), 800);
   }, [persistNow]);
 
-  const applyFiles = useCallback((updater) => {
-    const next = typeof updater === "function" ? updater(filesRef.current) : updater;
+  const applyFiles = useCallback((updater, { persist = true } = {}) => {
+    const prev = filesRef.current;
+    const next = typeof updater === "function" ? updater(prev) : updater;
     filesRef.current = next;
     setFiles(next);
-    scheduleSave();
+    if (repoLiveRef.current && persist) {
+      const prevMap = new Map(prev.map((f) => [f.path, f.content]));
+      for (const f of next) {
+        if (!f?.path || isSessionPath(f.path)) continue;
+        if (prevMap.get(f.path) !== f.content) dirtyRepoPathsRef.current.add(f.path);
+      }
+    }
+    if (persist) scheduleSave();
   }, [scheduleSave]);
 
   const appendAgentLog = useCallback((entry) => {
@@ -116,40 +183,129 @@ export default function Codespace() {
 
   const loadProject = useCallback(async () => {
     try {
-      const list = await base44.entities.CodespaceProject.list("-updated_date", 1);
-      let proj = list && list[0];
+      const list = await base44.entities.CodespaceProject.list("-updated_date", 20);
+      let proj = pickCodespaceProject(list, { isRepoMode });
       if (!proj) {
-        proj = await base44.entities.CodespaceProject.create(newProject("my-codespace"));
+        proj = await base44.entities.CodespaceProject.create(
+          isRepoMode ? emptyRepoProject() : newProject("my-codespace"),
+        );
       }
       projectIdRef.current = proj.id;
-      const pf = Array.isArray(proj.files) && proj.files.length ? proj.files : newProject().files;
-      filesRef.current = pf;
-      setFiles(pf);
+      const storedFiles = Array.isArray(proj.files) ? proj.files : [];
       const al = Array.isArray(proj.agent_log) ? proj.agent_log : [];
       agentLogRef.current = al;
       setAgentLog(al);
+      savedCompanionIdRef.current = proj.companion_id || null;
+
+      if (isRepoMode) {
+        const status = await probeRepoFilesystem();
+        if (status.available) {
+          const listed = await listRepoFiles();
+          if (listed.ok) {
+            repoLiveRef.current = true;
+            setRepoLive(true);
+            setRepoUnavailable(false);
+            const sessions = sessionFiles(storedFiles);
+            const mapped = (listed.files || [])
+              .filter((f) => f && !f.isDirectory && f.path)
+              .map((f) => ({ path: f.path, content: "", loaded: false }));
+            const merged = [...mapped, ...sessions];
+            filesRef.current = merged;
+            setFiles(merged);
+            const firstWs = mapped[0];
+            const keepActive = proj.active_path
+              && mapped.some((f) => f.path === proj.active_path);
+            setActivePath(keepActive ? proj.active_path : (firstWs ? firstWs.path : ""));
+            return;
+          }
+        }
+        repoLiveRef.current = false;
+        setRepoLive(false);
+        setRepoUnavailable(true);
+      } else {
+        repoLiveRef.current = false;
+        setRepoLive(false);
+        setRepoUnavailable(false);
+      }
+
+      const pf = storedFiles.length
+        ? storedFiles
+        : (isRepoMode ? [] : newProject().files);
+      filesRef.current = pf;
+      setFiles(pf);
       const firstWs = workspaceFiles(pf)[0];
       setActivePath(proj.active_path || (firstWs ? firstWs.path : ""));
-      if (proj.companion_id) setCompanionId(proj.companion_id);
     } catch (e) {
       console.error("Codespace load failed", e);
     } finally {
+      setProjectLoaded(true);
       setLoading(false);
     }
-  }, []);
+  }, [isRepoMode]);
 
-  const loadCharacters = useCallback(() => {
-    base44.entities.Character.list("-updated_date", 100)
-      .then((cs) => setCharacters(cs || []))
-      .catch(() => setCharacters([]));
+  const loadRoster = useCallback(async () => {
+    try {
+      const [cs, animas, profile] = await Promise.all([
+        base44.entities.Character.list("-updated_date", 100).catch(() => []),
+        listPersonalAnimas(100).catch(() => []),
+        base44.auth.me().catch(() => null),
+      ]);
+      setCharacters(cs || []);
+      setPersonalAnimas(animas || []);
+      setMe(profile);
+    } catch {
+      setCharacters([]);
+      setPersonalAnimas([]);
+    } finally {
+      setRosterLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
     loadProject();
-    whenBootstrapReady().then(() => loadCharacters());
-  }, [loadProject, loadCharacters]);
+    loadRoster();
+    whenBootstrapReady().then(() => loadRoster());
+  }, [loadProject, loadRoster]);
 
-  useStoreSync(loadCharacters);
+  useStoreSync(loadRoster);
+
+  useEffect(() => {
+    if (!projectLoaded || !rosterLoaded) return;
+    setCompanionId((current) => {
+      const next = resolveCodespaceCompanionId({
+        savedId: savedCompanionIdRef.current,
+        requestedId: requestedAnimaId,
+        animas: personalAnimas,
+        characters,
+        me,
+      });
+      if (!resolvedCompanionRef.current) {
+        resolvedCompanionRef.current = true;
+        return next;
+      }
+      if (userPickedCompanionRef.current && availableCompanions.some((c) => c.id === current)) {
+        return current;
+      }
+      if (
+        current === JULES_PERSONA.id &&
+        !savedCompanionIdRef.current &&
+        !requestedAnimaId &&
+        personalAnimas.length > 0
+      ) {
+        return next;
+      }
+      if (availableCompanions.some((c) => c.id === current)) return current;
+      return next;
+    });
+  }, [projectLoaded, rosterLoaded, availableCompanions, personalAnimas, characters, me, requestedAnimaId]);
+
+  useEffect(() => {
+    if (!resolvedCompanionRef.current || !projectIdRef.current) return;
+    if (companionId && companionId !== savedCompanionIdRef.current) {
+      savedCompanionIdRef.current = companionId;
+      scheduleSave();
+    }
+  }, [companionId, scheduleSave]);
 
   // ---- console capture from the web preview ------------------------------
   useEffect(() => {
@@ -288,36 +444,72 @@ export default function Codespace() {
     }
   }, [activePath, pushLog, requestBattle]);
 
+  const ensureFileLoaded = useCallback(async (path) => {
+    if (!path || isSessionPath(path)) return filesRef.current.find((f) => f.path === path) || null;
+    const existing = filesRef.current.find((f) => f.path === path);
+    if (!repoLiveRef.current) return existing || null;
+    if (existing && existing.loaded !== false) return existing;
+    const result = await readRepoFile(path);
+    if (!result.ok) return null;
+    const row = { path, content: result.content ?? "", loaded: true };
+    applyFiles((prev) => {
+      const idx = prev.findIndex((f) => f.path === path);
+      if (idx === -1) return [...prev, row];
+      const next = prev.slice();
+      next[idx] = { ...next[idx], ...row };
+      return next;
+    }, { persist: false });
+    return row;
+  }, [applyFiles]);
+
   // ---- tool dispatch for the agent loop ----------------------------------
   const executeTool = useCallback(async (name, args = {}) => {
     const findFile = (p) => filesRef.current.find((f) => f.path === p);
     switch (name) {
       case "list_files":
+      case "list_repo_files":
         return { files: filesRef.current.map((f) => f.path) };
-      case "read_file": {
-        const f = findFile(args.path);
-        return f ? { path: f.path, content: f.content } : { error: "File not found." };
+      case "read_file":
+      case "read_repo_file": {
+        const loaded = await ensureFileLoaded(args.path);
+        return loaded
+          ? { path: loaded.path, content: loaded.content }
+          : { error: "File not found." };
       }
-      case "write_file": {
+      case "write_file":
+      case "write_repo_file": {
         const path = String(args.path || "").trim();
         if (!path) return { error: "A file path is required." };
+        if (path.includes("..")) return { error: "Path traversal is not allowed." };
+        if (repoLiveRef.current && !isSessionPath(path)) {
+          const written = await writeRepoFile(path, args.content || "");
+          if (!written.ok) return { error: written.error || "Live repo write failed." };
+        }
         applyFiles((prev) => {
           const idx = prev.findIndex((f) => f.path === path);
-          if (idx === -1) return [...prev, { path, content: args.content || "" }];
+          const row = { path, content: args.content || "", loaded: true };
+          if (idx === -1) return [...prev, row];
           const next = prev.slice();
-          next[idx] = { ...next[idx], content: args.content || "" };
+          next[idx] = { ...next[idx], ...row };
           return next;
-        });
+        }, { persist: !repoLiveRef.current || isSessionPath(path) });
         if (!isSessionPath(path)) setActivePath(path);
         return { ok: true, path };
       }
-      case "delete_file": {
+      case "delete_file":
+      case "delete_repo_file": {
         const path = String(args.path || "");
-        applyFiles((prev) => prev.filter((f) => f.path !== path));
+        if (repoLiveRef.current && path && !isSessionPath(path)) {
+          const removed = await deleteRepoFile(path);
+          if (!removed.ok) return { error: removed.error || "Live repo delete failed." };
+        }
+        applyFiles((prev) => prev.filter((f) => f.path !== path), {
+          persist: !repoLiveRef.current || isSessionPath(path),
+        });
         return { ok: true, path };
       }
       case "scan_code": {
-        const f = findFile(args.path);
+        const f = await ensureFileLoaded(args.path) || findFile(args.path);
         if (!f) return { error: "File not found." };
         const s = scanCode(f.content, f.path);
         return { path: f.path, maxSeverity: s.maxSeverity, safe: s.safe, findings: s.findings };
@@ -327,7 +519,7 @@ export default function Codespace() {
       default:
         return { error: `Unknown tool: ${name}` };
     }
-  }, [applyFiles, runCode]);
+  }, [applyFiles, ensureFileLoaded, runCode]);
 
   const { running, runGoal, stop } = useCodespaceAgent({
     character: companion,
@@ -360,6 +552,7 @@ export default function Codespace() {
       targetPath: activePath,
     });
 
+    userPickedCompanionRef.current = true;
     setCompanionId(JULES_PERSONA.id);
     appendAgentLog({
       type: "msg",
@@ -390,18 +583,27 @@ export default function Codespace() {
       setActivePath(name);
       return;
     }
-    applyFiles((prev) => [...prev, { path: name, content: "" }]);
+    applyFiles((prev) => [...prev, { path: name, content: "", loaded: true }]);
     setActivePath(name);
     setMobileView("code");
   }, [applyFiles]);
 
-  const handleDelete = useCallback((path) => {
-    applyFiles((prev) => prev.filter((f) => f.path !== path));
+  const handleDelete = useCallback(async (path) => {
+    if (repoLiveRef.current && path && !isSessionPath(path)) {
+      const removed = await deleteRepoFile(path);
+      if (!removed.ok) {
+        pushLog({ level: "error", text: removed.error || "Live repo delete failed." });
+        return;
+      }
+    }
+    applyFiles((prev) => prev.filter((f) => f.path !== path), {
+      persist: !repoLiveRef.current || isSessionPath(path),
+    });
     if (activePath === path) {
       const remaining = workspaceFiles(filesRef.current);
       setActivePath(remaining[0] ? remaining[0].path : "");
     }
-  }, [applyFiles, activePath]);
+  }, [applyFiles, activePath, pushLog]);
 
   const handleEdit = useCallback((value) => {
     if (!activePath) return;
@@ -426,6 +628,86 @@ export default function Codespace() {
     });
     pushLog({ level: "info", text: `Session saved to ${snap.path}` });
   }, [applyFiles, pushLog]);
+
+  const applyImportResult = useCallback((result, { replaceWorkspace }) => {
+    if (result.errors?.length) {
+      result.errors.forEach((text) => pushLog({ level: "error", text }));
+    }
+    if (!result.files?.length) {
+      const message = result.errors?.[0] || "Import brought in no text files the editor can open.";
+      setImportError(message);
+      pushLog({ level: "warn", text: message });
+      return false;
+    }
+    applyFiles((prev) => mergeImportedFiles(prev, result.files, { replaceWorkspace }));
+    const first = result.files.find((f) => !isSessionPath(f.path));
+    if (first) setActivePath(first.path);
+    setMobileView("code");
+    setExplorerOpen(false);
+    pushLog({ level: "info", text: summarizeImport(result) });
+    setImportError("");
+    return true;
+  }, [applyFiles, pushLog]);
+
+  const handleUploadFiles = useCallback(async (fileList) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromBrowserFiles(fileList, { mode: "files" });
+      applyImportResult(result, { replaceWorkspace: false });
+    } catch (err) {
+      const message = err?.message || "Could not upload files.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
+  const handleImportFolder = useCallback(async (fileList) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromBrowserFiles(fileList, { mode: "folder" });
+      if (applyImportResult(result, { replaceWorkspace: true })) setWorkspaceModal(null);
+    } catch (err) {
+      const message = err?.message || "Could not import the folder.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
+  const handleImportZip = useCallback(async (file) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await importFromZipFile(file);
+      if (applyImportResult(result, { replaceWorkspace: true })) setWorkspaceModal(null);
+    } catch (err) {
+      const message = err?.message || "Could not unpack the zip.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
+
+  const handlePullRepo = useCallback(async (spec) => {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await pullGithubRepo(spec);
+      if (applyImportResult(result, { replaceWorkspace: true })) setWorkspaceModal(null);
+    } catch (err) {
+      const message = err?.message || "Could not pull the GitHub repo.";
+      setImportError(message);
+      pushLog({ level: "error", text: message });
+    } finally {
+      setImportBusy(false);
+    }
+  }, [applyImportResult, pushLog]);
 
   const handleRestoreSession = useCallback((path) => {
     const f = filesRef.current.find((x) => x.path === path);
@@ -469,6 +751,15 @@ export default function Codespace() {
     setPreviewSrcdoc(buildPreviewSrcdoc(filesRef.current) + `\n<!-- run ${runSeqRef.current} -->`);
   }, []);
 
+  useEffect(() => {
+    if (!repoLive || !activePath) return;
+    ensureFileLoaded(activePath);
+  }, [repoLive, activePath, ensureFileLoaded]);
+
+  const openImport = () => { setImportError(""); setWorkspaceModal("import"); };
+  const openPull = () => { setImportError(""); setWorkspaceModal("pull"); };
+  const workspaceEmpty = workspaceFiles(files).length === 0;
+
   // ---- render ------------------------------------------------------------
   const renderExplorer = () => (
     <FileExplorer
@@ -479,6 +770,9 @@ export default function Codespace() {
       onDelete={handleDelete}
       onRestoreSession={handleRestoreSession}
       onSaveSession={handleSaveSession}
+      onUploadFiles={handleUploadFiles}
+      onImportRepo={openImport}
+      onPullRepo={openPull}
     />
   );
 
@@ -508,17 +802,22 @@ export default function Codespace() {
           <PanelLeft className="w-4 h-4" />
         </button>
         <span className="font-mono text-[11px] tracking-[0.25em] uppercase text-primary/70 hidden sm:inline">
-          // Codespace
+          {isRepoMode ? "// Repo Workspace" : "// Codespace"}
         </span>
         <select
+          aria-label="Codespace companion"
           value={companionId}
-          onChange={(e) => { setCompanionId(e.target.value); scheduleSave(); }}
+          onChange={(e) => {
+            userPickedCompanionRef.current = true;
+            setCompanionId(e.target.value);
+            scheduleSave();
+          }}
           className="bg-black/50 border border-primary/20 text-cyan-300 font-mono text-[10px] px-2 py-1 focus:outline-none focus:border-cyan-500 max-w-[160px]"
           title="Agent Engine persona"
         >
           {availableCompanions.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.id === JULES_PERSONA.id ? "⚡ Jules (AI Engineer API)" : c.name}
+              {companionPickerLabel(c)}
             </option>
           ))}
         </select>
@@ -538,7 +837,49 @@ export default function Codespace() {
           ))}
         </div>
 
-        <div className="flex items-center gap-1.5 ml-auto lg:ml-0 lg:flex-1 lg:justify-end">
+        <div className="flex items-center gap-1.5 ml-auto lg:ml-0 lg:flex-1 lg:justify-end overflow-x-auto">
+          <input
+            ref={toolbarUploadRef}
+            type="file"
+            multiple
+            className="hidden"
+            data-testid="codespace-toolbar-upload"
+            onChange={(e) => {
+              const list = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (list.length) handleUploadFiles(list);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => toolbarUploadRef.current?.click()}
+            data-testid="codespace-toolbar-upload-btn"
+            aria-label="Upload files"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+            title="Upload files into this project"
+          >
+            <Upload className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Upload</span>
+          </button>
+          <button
+            type="button"
+            onClick={openImport}
+            data-testid="codespace-toolbar-import"
+            aria-label="Import folder or zip"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/70 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+            title="Import a repository folder or zip into this project"
+          >
+            <FolderInput className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Import</span>
+          </button>
+          <button
+            type="button"
+            onClick={openPull}
+            data-testid="codespace-toolbar-pull"
+            aria-label="Pull a GitHub repo"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 border border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/10 font-mono text-[10px] tracking-[0.15em] uppercase transition-all"
+            title="Pull a GitHub repository (defaults to davins56/Anima-Protocol)"
+          >
+            <GitPullRequest className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Pull</span>
+          </button>
           <button
             onClick={handleJulesTroubleshoot}
             disabled={running || busy}
@@ -587,6 +928,30 @@ export default function Codespace() {
         </div>
       </div>
 
+      {isRepoMode && repoLive && (
+        <div className="px-3 py-1.5 border-b border-cyan-500/20 bg-cyan-500/5 font-mono text-[10px] text-cyan-200/80">
+          Editing the live Anima Protocol tree on this host. Writes go to /api/repo-codespace.
+        </div>
+      )}
+      {isRepoMode && repoUnavailable && (
+        <div
+          role="status"
+          className="px-3 py-2 border-b border-amber-400/25 bg-amber-500/5 font-mono text-[10px] text-amber-100/85 leading-relaxed"
+        >
+          Live repository filesystem isn&apos;t on this host (typical on Cloudflare). Pull{" "}
+          <span className="text-cyan-200">davins56/Anima-Protocol</span>
+          {" "}into the virtual Codespace to edit it here, with your Anima assisting.
+          {" "}
+          <button
+            type="button"
+            onClick={openPull}
+            className="underline underline-offset-2 text-cyan-200 hover:text-cyan-100"
+          >
+            Pull Anima Protocol
+          </button>
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex-1 min-h-0 flex">
         {/* Explorer (desktop) */}
@@ -604,13 +969,53 @@ export default function Codespace() {
                   {activePath || "no file selected"}
                 </span>
               </div>
-              {activeFile ? (
+              {activeFile && activeFile.loaded === false ? (
+                <div className="flex-1 grid place-items-center bg-[#06060d]">
+                  <Loader2 className="w-5 h-5 text-primary/50 animate-spin" />
+                </div>
+              ) : activeFile ? (
                 <CodeEditor path={activeFile.path} value={activeFile.content} onChange={handleEdit} />
               ) : (
-                <div className="flex-1 grid place-items-center bg-[#06060d]">
-                  <p className="font-mono text-[10px] text-primary/30 tracking-widest uppercase">
-                    Select or create a file
-                  </p>
+                <div className="flex-1 grid place-items-center bg-[#06060d] px-6">
+                  {workspaceEmpty ? (
+                    <div className="text-center space-y-3 max-w-sm">
+                      <p className="font-mono text-[11px] tracking-[0.2em] uppercase text-cyan-200">
+                        Upload, Import, or Pull a repo
+                      </p>
+                      <p className="font-mono text-[10px] text-primary/45 leading-relaxed">
+                        {isRepoMode
+                          ? "This Repo Workspace is for Anima Protocol (or any pulled GitHub repo), not a blank toy project."
+                          : "Bring files into this Codespace, then ask your Anima to help edit them."}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toolbarUploadRef.current?.click()}
+                          className="px-3 py-1.5 border border-primary/30 font-mono text-[10px] tracking-[0.15em] uppercase text-primary/80 hover:text-primary hover:border-primary/50"
+                        >
+                          Upload
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openImport}
+                          className="px-3 py-1.5 border border-primary/30 font-mono text-[10px] tracking-[0.15em] uppercase text-primary/80 hover:text-primary hover:border-primary/50"
+                        >
+                          Import
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openPull}
+                          className="px-3 py-1.5 border border-cyan-500/40 font-mono text-[10px] tracking-[0.15em] uppercase text-cyan-200 hover:bg-cyan-500/10"
+                        >
+                          Pull
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="font-mono text-[10px] text-primary/30 tracking-widest uppercase">
+                      Select or create a file
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -681,6 +1086,17 @@ export default function Codespace() {
           </>
         )}
       </AnimatePresence>
+
+      <ImportRepoModal
+        open={Boolean(workspaceModal)}
+        variant={workspaceModal === "pull" ? "pull" : "import"}
+        busy={importBusy}
+        error={importError}
+        onClose={() => { if (!importBusy) setWorkspaceModal(null); }}
+        onPickFolder={handleImportFolder}
+        onPickZip={handleImportZip}
+        onPullRepo={handlePullRepo}
+      />
 
       <VirusBattleModal
         open={Boolean(battle)}

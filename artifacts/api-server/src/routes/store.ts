@@ -1312,11 +1312,14 @@ router.post("/:entity", async (req, res) => {
 
   const id = makeId();
   const now = new Date().toISOString();
+  // `id` must win over a client body. Spreading `data` after `id` used to
+  // store entityId=generated while data.id was null/undefined — POST returned
+  // no id, and ChatSession.filter({ id }) could not find the row.
   const record = {
-    id,
     created_date: now,
     updated_date: now,
     ...data,
+    id,
   };
   await upsertEntity(userId, entity, id, record);
   res.status(201).json(record);

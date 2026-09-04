@@ -145,7 +145,110 @@ The repository already includes:
 
 The highest-value product loop is:
 
+<<<<<<< HEAD
+Use Node 24 before running workspace commands:
+
+```bash
+export NVM_DIR="$HOME/.nvm"
+. "$NVM_DIR/nvm.sh"
+export PATH="$NVM_DIR/versions/node/v24.16.0/bin:$PATH"
+```
+
+Install dependencies with pnpm only:
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+For local Postgres development:
+
+```bash
+export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
+pnpm --filter @workspace/db run push
+```
+
+### One-command dev infra (Postgres + Anima LLM)
+
+`docker-compose.dev.yml` bundles the two infra pieces that aren't already a `pnpm dev` process — Postgres and the self-hosted Anima LLM (Ollama, branded `anima-chat` from open Qwen2.5 weights) — so both come up together instead of running `pnpm llm:up` separately:
+
+```bash
+pnpm dev:infra:up            # starts postgres + ollama, then bootstraps anima-chat
+pnpm dev:infra:logs          # watch the anima-llm-bootstrap step pull weights
+export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
+pnpm --filter @workspace/db run push
+```
+
+Then start the api-server / frontend as usual (below) — they connect to this stack via `DATABASE_URL` and `ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1` (the `.env.example` defaults already point here). `pnpm dev:infra:down` tears it down. GPU vLLM serving is a separate opt-in file: `scripts/llm/docker-compose.vllm.yml` (see `docs/custom-llm.md`). Deploying this to production with a public HTTPS endpoint: `docs/llm-deploy.md`.
+
+## Running Services
+
+Start the API:
+
+```bash
+export DATABASE_URL=postgresql://anima:anima_dev@localhost:5432/anima_dev
+export OPENAI_API_KEY=sk-...
+export CLERK_PUBLISHABLE_KEY=pk_test_...
+export CLERK_SECRET_KEY=sk_test_...
+export PORT=8080
+export NODE_ENV=development
+pnpm --filter @workspace/api-server run dev
+```
+
+Start the frontend:
+
+```bash
+export PORT=23660
+export BASE_PATH=/
+export VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+export VITE_CLERK_PROXY_URL=
+export VITE_MIXPANEL_TOKEN=...
+pnpm --filter @workspace/anima-protocol run dev
+```
+
+The current Vite config proxies local `/api` calls to `http://localhost:8080` by default. Set `API_PROXY_TARGET` if the API runs elsewhere. If you use the local nginx reverse proxy, open `http://127.0.0.1:3000/` after the API and frontend are both running.
+
+Start the mockup sandbox:
+
+```bash
+export PORT=8081
+export BASE_PATH=/__mockup
+pnpm --filter @workspace/mockup-sandbox run dev
+```
+
+## Environment Variables
+
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | API, Drizzle push | PostgreSQL connection string |
+| `GEMINI_API_KEY` | API | Preferred image generate/edit via Gemini Flash Image (`gemini-2.5-flash-image`). `GOOGLE_API_KEY` also accepted. Never used for chat. |
+| `OPENAI_API_KEY` | API | Secondary image generate/edit (`gpt-image-1`) if Gemini is unset or fails. Never used for chat. |
+| `IMAGE_FREE_FALLBACK` | API | Enable Gemini image path (default on; set `off` to disable) |
+| `ANIMA_LOCAL_LLM_BASE_URL` | API | Public HTTPS OpenAI-compatible endpoint for the self-hosted Anima LLM (Ollama/vLLM). This is chat's only backend. Verify via `/api/healthz/llm` |
+| `MINIMAX_API_KEY` / `ANIMA_MINIMAX_API_KEY` | API | MiniMax Global chat key. MiniMax is preferred over OpenRouter when configured; defaults to `MiniMax-M2.5` at `https://api.minimax.io/v1` |
+| `ANIMA_MINIMAX_MODEL` | API | Optional MiniMax model override |
+| `ANIMA_MINIMAX_BASE_URL` | API | Optional MiniMax-compatible endpoint override |
+| `ANIMA_LOCAL_LLM_BACKEND` | API | `ollama` (default) or `vllm` |
+| `ANIMA_OLLAMA_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | Ollama model tags per tier (default `anima-chat`). If the endpoint doesn't serve the tag, chat discovers a working model via `/v1/models` instead of failing — see [docs/custom-llm.md](docs/custom-llm.md) |
+| `ANIMA_VLLM_MODEL_LIGHT` / `_STANDARD` / `_HEAVY` | API | vLLM model ids per tier |
+| `ANIMA_OPENROUTER_MODEL_FAMILY` | API | Optional free OpenRouter family selector: `llama`, `qwen`, `mistral`, `gemma`, or `deepseek`. Exact `ANIMA_OPENROUTER_MODEL_*` overrides still win |
+| `ANIMA_LOCAL_LLM_MAX_RETRIES` | API | Transport retries against the LLM host (default `2`). Covers tunnel drops and cold-start 502s; `0` disables |
+| `PORT` | API, frontend, mockup | API `8080`, frontend `23660`, mockup `8081` |
+| `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
+| `CLERK_PUBLISHABLE_KEY` | API | Fallback publishable key for Clerk middleware |
+| `CLERK_SECRET_KEY` | API | Server-side Clerk session verification |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend | Vite-exposed Clerk publishable key |
+| `VITE_CLERK_PROXY_URL` | Frontend | Empty string in local development unless proxying Clerk |
+| `VITE_MIXPANEL_TOKEN` | Frontend | Mixpanel project token |
+| `API_PROXY_TARGET` | Frontend dev server | Optional override for local `/api` proxy target |
+| `ELEVENLABS_API_KEY` | API | Optional TTS routes |
+| `CURSOR_API_KEY` | API | Optional. Lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks. Alias: `CURSOR_CLOUD_API_KEY` |
+| `CURSOR_CLOUD_REPO_URL` | API | Optional. Defaults to `https://github.com/davins56/Anima-Protocol` |
+| `PROTOCOL_UPGRADE_ADMIN_EMAILS` | API | Optional comma-separated steward emails. Defaults to `davins56@gmail.com,davins56@hotmail.com` |
+
+Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback`; Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`.
+=======
 **create companion → start chat → retrieve memory → generate in-character response → persist the turn → deepen continuity**
+>>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
 
 ## Validation
 

@@ -24,13 +24,18 @@ import {
 } from "./modelRouter";
 import {
   getLocalLlmClient,
+  getMinimaxApiKeySource,
+  getMinimaxClient,
   getOpenRouterApiKeySource,
   getOpenRouterClient,
+  hasMinimaxKey,
   hasLocalLlm,
   hasOpenRouterKey,
+  isLoopbackUnreachableRuntime,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
   OPENROUTER_VENICE_UNCENSORED,
+  MINIMAX_DEFAULT_MODEL,
   openRouterKeyFingerprint,
   summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
@@ -48,13 +53,13 @@ const CLOUD_FLAGSHIP_SETUP_HINT =
   "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. " +
   "Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set " +
   "ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy. " +
-  "Or set OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter.";
+  "Or set MINIMAX_API_KEY for MiniMax chat, or OPENROUTER_API_KEY for OpenRouter.";
 
 /** Self-hosted Anima LLM, or OpenRouter open-weight models (not flagship BYOK). */
-export type LlmProviderId = "local" | "openrouter";
+export type LlmProviderId = "local" | "minimax" | "openrouter";
 
 /** Brand for chat replies. */
-export type LlmBrand = "anima" | "openrouter";
+export type LlmBrand = "anima" | "minimax" | "openrouter";
 
 /** Public, secret-free snapshot of chat routing (for /api/healthz/llm). */
 export interface LlmRoutingStatus {
@@ -74,6 +79,11 @@ export interface LlmRoutingStatus {
     isLocalhost: boolean;
     /** True when base URL is OpenAI/Groq/Gemini/etc. (invalid for Anima chat). */
     isCloudFlagship: boolean;
+    /**
+     * True when the operator set a localhost/loopback URL on a runtime that
+     * cannot reach loopback (Workers / Vercel). `configured` is false.
+     */
+    isLoopbackMisconfigured: boolean;
     backend: string;
     model: string;
   };
@@ -88,6 +98,11 @@ export interface LlmRoutingStatus {
     keyTail: string | null;
     /** True when a paid model 402'd and later turns use the free-tier model. */
     creditFallback: boolean;
+  };
+  minimax: {
+    configured: boolean;
+    model: string;
+    env: string | null;
   };
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
@@ -256,6 +271,17 @@ export function resolveOpenRouterModel(tier: ModelTier): ResolvedModel {
   return { tier, model, maxTokens };
 }
 
+/** Resolve MiniMax model for a tier. MiniMax uses one model unless overridden. */
+export function resolveMinimaxModel(tier: ModelTier): ResolvedModel {
+  const model =
+    process.env[`ANIMA_MINIMAX_MODEL_${tier.toUpperCase()}`]?.trim() ||
+    process.env.ANIMA_MINIMAX_MODEL?.trim() ||
+    process.env.MINIMAX_MODEL?.trim() ||
+    MINIMAX_DEFAULT_MODEL;
+  const maxTokens = tier === "light" ? 4096 : tier === "heavy" ? 16384 : 8192;
+  return { tier, model, maxTokens };
+}
+
 /** Resolve model for local vLLM / Ollama OpenAI-compatible serving. */
 export function resolveLocalModel(tier: ModelTier): ResolvedModel {
   // Default to ollama (bootstrap anima-chat). Set ANIMA_LOCAL_LLM_BACKEND=vllm
@@ -283,8 +309,10 @@ function localUsable(): boolean {
 export function getProviderChain(): LlmProviderId[] {
   const chain: LlmProviderId[] = [];
   if (localUsable()) chain.push("local");
+  if (hasMinimaxKey() && !preferCustomLlmOnly()) chain.push("minimax");
   const openRouterAllowed =
     hasOpenRouterKey() &&
+    !hasMinimaxKey() &&
     !preferCustomLlmOnly() &&
     (chain.length === 0 || allowOpenRouterFallback());
   if (openRouterAllowed) chain.push("openrouter");
@@ -307,7 +335,7 @@ function shouldTryNextProvider(
 }
 
 function brandFor(provider: LlmProviderId): LlmBrand {
-  return provider === "openrouter" ? "openrouter" : "anima";
+  return provider === "openrouter" ? "openrouter" : provider === "minimax" ? "minimax" : "anima";
 }
 
 /** Collect message / code / cause fragments without secrets (max ~200 chars). */
@@ -364,13 +392,15 @@ function summarizeError(err: unknown): string {
  * surface the same failure as 403 with an empty body.
  */
 export const LOCAL_LLM_AUTH_FIX_HINT =
-  "ANIMA_LOCAL_LLM_API_KEY on Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
+  "ANIMA_LOCAL_LLM_API_KEY on the Cloudflare Worker (Secrets Store binding in wrangler.jsonc) " +
+  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
   "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
-  "as ANIMA_LOCAL_LLM_API_KEY and redeploy without build cache). See deploy/ollama-fly/README.md.";
+  "as ANIMA_LOCAL_LLM_API_KEY and redeploy). See deploy/ollama-fly/README.md.";
 
 /**
- * Shared operator hint when Vercel cannot open a TCP/TLS session to the LLM host.
- * Distinct from auth (401/403): the machine is down, sleeping, or TLS is broken.
+ * Shared operator hint when the Worker / Vercel cannot open a TCP/TLS session
+ * to the LLM host. Distinct from auth (401/403): the machine is down, sleeping,
+ * or TLS is broken. A localhost URL on Workers is CF error 1003, not this hint.
  */
 export const LOCAL_LLM_CONNECTION_FIX_HINT =
   "The self-hosted Anima LLM host did not accept a connection. " +
@@ -632,8 +662,8 @@ function noProviderConfiguredError(): Error {
   return new Error(
     "No chat LLM configured. Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL " +
       "(ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1, ANIMA_OLLAMA_MODEL_STANDARD=anima-chat), " +
-      "or set OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat " +
-      "(see https://openrouter.ai/keys). Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. " +
+      "or set MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
+      "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. " +
       "See docs/custom-llm.md.",
   );
 }
@@ -648,7 +678,7 @@ function requireLocalClient(): OpenAI {
     "Anima custom LLM is not configured: ANIMA_LOCAL_LLM_BASE_URL is unset (or the endpoint is unreachable). " +
       "Host Ollama/vLLM with a public HTTPS OpenAI-compatible URL, set ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1 " +
       "and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat (or your vLLM model id), then redeploy. " +
-      "Or set OPENROUTER_API_KEY for Venice Uncensored via OpenRouter. See docs/custom-llm.md and docs/llm-deploy.md.",
+      "Or set MINIMAX_API_KEY for MiniMax chat, or OPENROUTER_API_KEY for OpenRouter. See docs/custom-llm.md and docs/llm-deploy.md.",
   );
 }
 
@@ -666,7 +696,7 @@ function localHostDownSuffix(include: boolean): string {
   if (host === "anima-chat-llm.fly.dev") {
     return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
   }
-  return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from Vercel.`;
+  return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from the Cloudflare Worker.`;
 }
 
 /** Operator hint when OpenRouter ran because the custom LLM was never wired. */
@@ -690,7 +720,7 @@ function enrichError(
   if (isProviderAuthError(err)) {
     if (provider === "openrouter") {
       return new Error(
-        `OpenRouter authentication failed: ${summarizeError(err)}. Check OPENROUTER_API_KEY on Vercel (https://openrouter.ai/keys), then redeploy.`,
+        `OpenRouter authentication failed: ${summarizeError(err)}. Check OPENROUTER_API_KEY on the Cloudflare Worker Secrets Store (https://openrouter.ai/keys), then redeploy.`,
       );
     }
     return new Error(
@@ -747,6 +777,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     process.env.ANIMA_VLLM_MODEL?.trim() ||
     resolveLocalModel(tier).model;
   const openRouterModel = resolveOpenRouterModel(tier);
+  const minimaxModel = resolveMinimaxModel(tier);
   const chain = getProviderChain();
   const isFreeTier = preferOpenRouterFreeTier() || openRouterModel.model.endsWith(":free");
 
@@ -755,21 +786,34 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
 
   const customOnly = preferCustomLlmOnly();
   const openRouterFallback = allowOpenRouterFallback();
+  const noLoopback = isLoopbackUnreachableRuntime();
   const noteParts: string[] = [];
+  if (localSummary.isLoopbackMisconfigured) {
+    noteParts.push(
+      "ANIMA_LOCAL_LLM_BASE_URL points at localhost/loopback, which this serverless runtime cannot reach " +
+        "(Cloudflare Workers reject isolate fetch to localhost with error 1003). " +
+        "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
+        "e.g. https://anima-chat-llm.fly.dev/v1. See deploy/ollama-fly/README.md.",
+    );
+  }
   if (chain.length === 0) {
     if (localSummary.isCloudFlagship) {
       noteParts.push(CLOUD_FLAGSHIP_SETUP_HINT);
     } else if (customOnly) {
       noteParts.push(
-        "ANIMA_LLM_PROVIDER=custom but ANIMA_LOCAL_LLM_BASE_URL is unset. " +
+        "ANIMA_LLM_PROVIDER=custom but ANIMA_LOCAL_LLM_BASE_URL is unset or unusable. " +
           "OpenRouter will not be used. Set a public HTTPS OpenAI-compatible URL and redeploy. " +
-          "See docs/custom-llm.md.",
+          "See deploy/ollama-fly/README.md.",
       );
-    } else {
+    } else if (!localSummary.isLoopbackMisconfigured) {
       noteParts.push(
-        "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
-          "or OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter. " +
-          "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md.",
+        noLoopback
+          ? "ANIMA_LOCAL_LLM_BASE_URL is unset. This serverless runtime cannot invent or reach localhost. " +
+            "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
+            "or set MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter)."
+          : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
+            "or MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
+            "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md.",
       );
     }
   } else {
@@ -777,12 +821,12 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       noteParts.push(
         `Self-hosted Anima LLM at host=${localSummary.host ?? "?"} model=${localModel}.`,
       );
-      if (localSummary.isLocalhost && (process.env.VERCEL || process.env.VERCEL_ENV)) {
+      if (localSummary.isLocalhost && noLoopback) {
         noteParts.push(
-          "WARNING: local endpoint is localhost on Vercel — serverless cannot reach it. Use a public HTTPS tunnel URL.",
+          "WARNING: local endpoint is localhost on a serverless runtime — it cannot be reached. Use a public HTTPS URL.",
         );
-      } else if (!localSummary.isHttps && (process.env.VERCEL || process.env.VERCEL_ENV)) {
-        noteParts.push("WARNING: local endpoint is not HTTPS — Vercel egress often requires https://…/v1.");
+      } else if (!localSummary.isHttps && noLoopback) {
+        noteParts.push("WARNING: local endpoint is not HTTPS — Worker/Vercel egress often requires https://…/v1.");
       } else if (!localSummary.hasV1Path) {
         noteParts.push("WARNING: base URL should end with /v1 for OpenAI-compatible chat/completions.");
       }
@@ -793,12 +837,17 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
         );
       }
     }
+    if (chain.includes("minimax")) {
+      noteParts.push(
+        `MiniMax model=${minimaxModel.model} (primary cloud provider).`,
+      );
+    }
     if (chain.includes("openrouter")) {
       noteParts.push(
         `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` +
           (chain[0] === "local"
             ? " (fallback after local connection failure)."
-            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset).") +
+            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset or unusable).") +
           (openRouterCreditFallback ? " Paid model needed credits; using free-tier." : ""),
       );
     }
@@ -816,6 +865,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       isHttps: localSummary.isHttps,
       isLocalhost: localSummary.isLocalhost,
       isCloudFlagship: localSummary.isCloudFlagship,
+      isLoopbackMisconfigured: localSummary.isLoopbackMisconfigured,
       backend,
       model: localModel,
     },
@@ -826,6 +876,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       env: getOpenRouterApiKeySource(),
       keyTail: openRouterKeyFingerprint(),
       creditFallback: openRouterCreditFallback,
+    },
+    minimax: {
+      configured: hasMinimaxKey(),
+      model: minimaxModel.model,
+      env: getMinimaxApiKeySource(),
     },
     chain,
     customOnly,
@@ -838,6 +893,50 @@ async function probeOneProvider(
   provider: LlmProviderId,
   tier: ModelTier,
 ): Promise<LlmProviderProbeResult> {
+  if (provider === "minimax") {
+    if (!hasMinimaxKey()) {
+      return { provider: "minimax", configured: false, ok: false };
+    }
+    const resolved = resolveMinimaxModel(tier);
+    const started = Date.now();
+    try {
+      const client = getMinimaxClient();
+      if (!client) return { provider: "minimax", configured: false, ok: false };
+      await client.chat.completions.create({
+        model: resolved.model,
+        max_tokens: 16,
+        messages: [{ role: "user", content: "Reply with the single word: ok" }],
+        temperature: 0,
+      });
+      return {
+        provider: "minimax",
+        configured: true,
+        ok: true,
+        model: resolved.model,
+        configuredModel: resolved.model,
+        latencyMs: Date.now() - started,
+      };
+    } catch (err) {
+      const status = err && typeof err === "object" && "status" in err
+        ? Number((err as { status?: unknown }).status)
+        : undefined;
+      const auth = isProviderAuthError(err);
+      const connection = !auth && isProviderConnectionError(err);
+      const quota = !auth && !connection && isProviderQuotaError(err);
+      return {
+        provider: "minimax",
+        configured: true,
+        ok: false,
+        status: Number.isFinite(status) ? status : undefined,
+        errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
+        message: summarizeError(err),
+        model: resolved.model,
+        configuredModel: resolved.model,
+        latencyMs: Date.now() - started,
+      };
+    }
+  }
+
   if (provider === "openrouter") {
     if (!hasOpenRouterKey()) {
       return { provider: "openrouter", configured: false, ok: false };
@@ -965,9 +1064,14 @@ async function probeOneProvider(
 export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<LlmProviderProbeResult[]> {
   const chain = getProviderChain();
   if (chain.length === 0) {
-    // Always surface OpenRouter so operators see the free/uncensored option.
     return [
       { provider: "local", configured: hasLocalLlm(), ok: false },
+      {
+        provider: "minimax",
+        configured: hasMinimaxKey(),
+        ok: false,
+        message: hasMinimaxKey() ? undefined : "Set MINIMAX_API_KEY for MiniMax chat.",
+      },
       {
         provider: "openrouter",
         configured: hasOpenRouterKey(),
@@ -1059,6 +1163,32 @@ async function runOpenRouterStream(
   };
 }
 
+async function runMinimaxStream(
+  req: ChatStreamRequest,
+  failedOver: boolean,
+): Promise<ChatStreamResult> {
+  const client = getMinimaxClient();
+  if (!client) throw new Error("Set MINIMAX_API_KEY for MiniMax chat.");
+  const resolved = resolveMinimaxModel(req.tier);
+  const stream = await client.chat.completions.create(
+    {
+      model: resolved.model,
+      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      messages: req.messages,
+      stream: true,
+    },
+    ...(req.signal ? [{ signal: req.signal }] : []),
+  );
+  return {
+    stream,
+    provider: "minimax",
+    brand: "minimax",
+    model: resolved.model,
+    tier: resolved.tier,
+    failedOver,
+  };
+}
+
 async function runOpenRouterCompletion(
   req: ChatCompletionRequest,
   failedOver: boolean,
@@ -1094,10 +1224,41 @@ async function runOpenRouterCompletion(
   };
 }
 
+async function runMinimaxCompletion(
+  req: ChatCompletionRequest,
+  failedOver: boolean,
+): Promise<ChatCompletionResult> {
+  const client = getMinimaxClient();
+  if (!client) throw new Error("Set MINIMAX_API_KEY for MiniMax chat.");
+  const resolved = resolveMinimaxModel(req.tier);
+  const completion = await client.chat.completions.create(
+    {
+      model: resolved.model,
+      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      messages: req.messages,
+      ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+      ...(req.tools && req.tools.length
+        ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
+        : {}),
+    },
+    req.signal ? { signal: req.signal } : undefined,
+  );
+  const content = completion.choices?.[0]?.message?.content ?? "";
+  return {
+    content: typeof content === "string" ? content : "",
+    provider: "minimax",
+    brand: "minimax",
+    model: resolved.model,
+    tier: resolved.tier,
+    failedOver,
+    toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
+  };
+}
+
 /** Open a streaming chat completion (local Anima LLM, then OpenRouter). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() || preferCustomLlmOnly())) {
+  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() && !hasMinimaxKey() || preferCustomLlmOnly())) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1134,6 +1295,10 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         };
       }
 
+      if (provider === "minimax") {
+        return await runMinimaxStream(req, triedLocal);
+      }
+
       return await runOpenRouterStream(req, triedLocal);
     } catch (err) {
       lastErr = err;
@@ -1166,7 +1331,7 @@ export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() || preferCustomLlmOnly())) {
+  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() && !hasMinimaxKey() || preferCustomLlmOnly())) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1206,6 +1371,10 @@ export async function createChatCompletionWithFailover(
           failedOver: false,
           toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
         };
+      }
+
+      if (provider === "minimax") {
+        return await runMinimaxCompletion(req, triedLocal);
       }
 
       return await runOpenRouterCompletion(req, triedLocal);

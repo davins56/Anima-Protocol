@@ -95,7 +95,8 @@ const WORLD_LINKS = [
   { icon: BookOpen, label: "Quest journal", desc: "Shared story", path: "/quest-journal" },
   { icon: Sparkles, label: "Energy fragments", desc: "Residue of the weave", path: "/energy-fragments" },
   { icon: BookOpen, label: "Inventory", desc: "What you carry", path: "/inventory" },
-  { icon: Settings, label: "Codespace", desc: "The weave underneath", path: "/codespace" },
+  { icon: Settings, label: "Codespace", desc: "Virtual in-browser project", path: "/codespace" },
+  { icon: Settings, label: "Repo Workspace", desc: "Anima Protocol source — live or pulled", path: "/repo-codespace" },
 ];
 
 export const HOME_MODES = {

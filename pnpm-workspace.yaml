@@ -5,6 +5,11 @@ packages:
   - scripts
   - '.'
 
+allowBuilds:
+  '@clerk/shared': true
+  core-js: true
+  esbuild: true
+
 autoInstallPeers: false
 
 catalog:
@@ -52,12 +57,6 @@ minimumReleaseAgeExclude:
   - react-router-dom
   - undici
   - vite
-
-onlyBuiltDependencies:
-  - '@swc/core'
-  - esbuild
-  - msw
-  - unrs-resolver
 
 overrides:
   '@clerk/shared': 4.14.0

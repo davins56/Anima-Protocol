@@ -27,10 +27,16 @@ import {
   resolveChatImageAttachments,
   messagesWithImageProgress,
 } from "@/lib/chatImageGeneration";
-import { loadOpenChatSession } from "@/lib/chatSessionLoad";
+import {
+  beginOpenSession,
+  loadOpenChatSession,
+  rememberCreatedSession,
+  resolveOpenSessionFetch,
+} from "@/lib/chatSessionLoad";
 import {
   buildInitSessionPayload,
   createInitChatSession,
+  isUsableSessionId,
 } from "@/lib/createInitSession";
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
@@ -199,6 +205,8 @@ export default function Chat() {
   const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
   const sessionLoadGenRef = useRef(0);
   const openSessionIdRef = useRef(sessionId || null);
+  const prevOpenSessionIdRef = useRef(sessionId || null);
+  const justCreatedSessionIdRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -416,7 +424,11 @@ export default function Chat() {
       // Auto-open new session modal when navigated from dashboard "New Chat"
       if (location.state?.openNew) {
         setShowModal(true);
-        navigate(location.pathname, { replace: true, state: {} });
+        const { openNew: _openNew, ...rest } = location.state;
+        navigate(location.pathname, {
+          replace: true,
+          state: rest.primedSession ? rest : {},
+        });
       }
     });
     return () => {
@@ -426,7 +438,20 @@ export default function Chat() {
 
   useEffect(() => {
     openSessionIdRef.current = sessionId || null;
-    if (!sessionId) {
+    const previousOpenId = prevOpenSessionIdRef.current;
+    prevOpenSessionIdRef.current = sessionId || null;
+    // Loading is per open thread. Leaving mid-send used to keep the composer
+    // disabled on the newly opened conversation until the old stream finished.
+    // Do not clear on sessionLoadNonce retries of the same id.
+    if (previousOpenId !== (sessionId || null)) {
+      setIsLoading(false);
+      setPendingMessage("");
+    }
+    const opened = beginOpenSession({
+      sessionId,
+      locationState: location.state,
+    });
+    if (opened.status === "idle") {
       sessionLoadGenRef.current += 1;
       setActiveSession(null);
       setSessionLoad({ status: "idle" });
@@ -435,34 +460,54 @@ export default function Chat() {
 
     const gen = ++sessionLoadGenRef.current;
     const isCurrent = () => sessionLoadGenRef.current === gen;
-    setSessionLoad({ status: "loading" });
-    setActiveSession((prev) => (prev?.id === sessionId ? prev : null));
+    // Init applied the POST body (and may have remounted onto /chat/:id).
+    // Do not wipe that thread with "Opening conversation..." or wait on GET.
+    if (opened.primed) {
+      justCreatedSessionIdRef.current = opened.primed.id;
+      setSessionLoad({ status: "ready" });
+      if (activeSession?.id !== opened.primed.id) {
+        applyOpenedSession(opened.primed);
+      }
+    } else {
+      setSessionLoad({ status: "loading" });
+      setActiveSession((prev) => (prev?.id === sessionId ? prev : null));
+    }
 
     let cancelled = false;
     loadOpenChatSession({
       id: sessionId,
       isCurrent: () => isCurrent() && !cancelled,
-      fetchSession: (id) =>
-        base44.entities.ChatSession.filter({ id }, undefined, 1, {
+      fetchSession: async (id) => {
+        // Lookup by entityId (GET), not jsonb filter({ id }). After POST the
+        // Hyperdrive pool can miss a filter read, and a body without data.id
+        // would never match filter even though /ChatSession/:id exists.
+        const byEntityId = await base44.entities.ChatSession.get(id, {
           withMessages: false,
-        }),
+        });
+        if (byEntityId?.id) return [byEntityId];
+        return base44.entities.ChatSession.filter({ id }, undefined, 1, {
+          withMessages: false,
+        });
+      },
       fetchMessages: (id) => base44.messages.list(id),
     }).then((result) => {
       if (!isCurrent() || cancelled) return;
-      if (result.status === "ready") {
-        applyOpenedSession(result.session);
+      const next = resolveOpenSessionFetch({ result, sessionId });
+      if (next.status === "stale") return;
+      if (next.status === "ready") {
+        if (next.applySession) applyOpenedSession(next.applySession);
         setSessionLoad({ status: "ready" });
         return;
       }
-      if (result.status === "missing") {
+      if (next.status === "missing") {
         setActiveSession(null);
         setSessionLoad({ status: "missing" });
         return;
       }
-      if (result.status === "error") {
+      if (next.status === "error") {
         setSessionLoad({
           status: "error",
-          message: result.error?.message || "Couldn't open this conversation.",
+          message: next.message || "Couldn't open this conversation.",
         });
       }
     });
@@ -707,8 +752,12 @@ export default function Chat() {
     if (local) return local;
     try {
       const [charMatches, animaMatches] = await Promise.all([
-        base44.entities.Character.filter({ id }, undefined, 1),
-        base44.entities.Anima.filter({ id }, undefined, 1),
+        base44.entities.Character.filter({ id }, undefined, 1, {
+          _bootstrapInternal: true,
+        }),
+        base44.entities.Anima.filter({ id }, undefined, 1, {
+          _bootstrapInternal: true,
+        }),
       ]);
       if (charMatches?.[0]) {
         const char = charMatches[0];
@@ -856,17 +905,23 @@ export default function Chat() {
   const handleCreateSession = async ({
     mode: m,
     character_id,
+    character,
     group_character_ids,
+    group_characters,
     opening_scene,
   }) => {
-    // Resolve each id once. Init must not wait on auth.me() — therapy uses
-    // the already-loaded Clerk profile, same class of bug as Daily Resonance.
+    // Prefer the character the modal already resolved/upserted. Init must not
+    // wait on Character.filter bootstrap when that object is present.
     const createdChar =
-      m === "solo" && character_id
+      m === "solo" && character
+        ? character
+        : m === "solo" && character_id
         ? await resolveCharacterById(character_id)
         : null;
     const selectedGroupChars =
-      m === "group" && group_character_ids?.length
+      m === "group" && Array.isArray(group_characters) && group_characters.length
+        ? group_characters.filter(Boolean)
+        : m === "group" && group_character_ids?.length
         ? (
             await Promise.all(
               group_character_ids.map((id) => resolveCharacterById(id)),
@@ -885,10 +940,14 @@ export default function Chat() {
         authUser,
       });
 
-    // Await create (do not fire-and-forget). Opening messages, when present,
-    // are persisted by ChatSession.create via /messages/replace — never a
-    // second ChatSession.update({ messages }) that used to rewrite the same rows.
+    // Await create (do not fire-and-forget). Opening narrator rows persist in
+    // the background so /messages/replace cannot block navigation.
     const newSession = await createInitChatSession(payload);
+    if (!isUsableSessionId(newSession?.id)) {
+      throw new Error(
+        "The store created a session but did not return an id. Tap Init to try again.",
+      );
+    }
 
     if (isCrossoverSession) {
       track("crossover_session_started", {
@@ -904,15 +963,22 @@ export default function Chat() {
       });
     }
 
-    // A new session sorts to the top (-updated_date), so jump to the first page
-    // and refresh so the user sees it immediately even if they had paged deep.
+    // Apply the POST body immediately so /chat/:id does not depend on a
+    // follow-up GET that can miss the row we just wrote. Remember it in the
+    // module + location.state so a remounted Chat can prime without spinning.
+    const primedSession = {
+      ...newSession,
+      messages: Array.isArray(newSession.messages) ? newSession.messages : [],
+    };
+    rememberCreatedSession(primedSession);
+    justCreatedSessionIdRef.current = primedSession.id;
+    applyOpenedSession(primedSession);
+    setSessionLoad({ status: "ready" });
     goToSessionsPage(0);
-    try {
-      await loadSessions();
-    } catch (err) {
+    loadSessions().catch((err) => {
       console.warn("Session created, but refreshing the session list failed:", err);
-    }
-    navigate(`/chat/${newSession.id}`);
+    });
+    navigate(`/chat/${primedSession.id}`, { state: { primedSession } });
     setShowModal(false);
     setShowMobileMenu(false);
     return newSession;
@@ -1119,6 +1185,13 @@ export default function Chat() {
     const isContinue = !content.trim() && !attachments.length;
     if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") return;
     const turnId = createChatTurnId();
+    const sendSessionId = activeSession.id;
+    const applyIfSendSession = (updater) => {
+      setActiveSession((prev) => {
+        if (!prev || prev.id !== sendSessionId) return prev;
+        return typeof updater === "function" ? updater(prev) : updater;
+      });
+    };
 
     setPendingMessage(content || "");
     setIsLoading(true);
@@ -1207,7 +1280,7 @@ export default function Chat() {
           characters,
           userMessage,
           appendMessage: base44.messages.append,
-          setActiveSession,
+          setActiveSession: applyIfSendSession,
           isContinue,
           surface: "chat",
         });
@@ -1233,7 +1306,7 @@ export default function Chat() {
           characters,
           userMessage,
           appendMessage: base44.messages.append,
-          setActiveSession,
+          setActiveSession: applyIfSendSession,
           isContinue,
         });
         if (deviceScan?.handled) {
@@ -1653,10 +1726,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               finalNextChar?.id === activeSession.next_speaker_id);
           if (consumedForce) {
             setNextSpeaker(null);
-            setActiveSession((prev) =>
+            applyIfSendSession((prev) =>
               prev ? { ...prev, next_speaker_id: null } : prev,
             );
-            base44.entities.ChatSession.update(activeSession.id, {
+            base44.entities.ChatSession.update(sendSessionId, {
               next_speaker_id: null,
             }).catch(() => {});
           }
@@ -1680,6 +1753,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Thinking indicator stays until the first delta, then the live reply grows.
       const streamTs = new Date().toISOString();
       const streamUi = createStreamUi({
+        sessionId: sendSessionId,
         updatedMessages,
         characterName: charName,
         timestamp: streamTs,
@@ -1757,6 +1831,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         toast.success("Anima combined mind drafts.", {
           description: resultPayload.ensemble_minds.map(mindLabel).join(" · "),
         });
+      } else if (resultPayload.failed_over && resultPayload.provider === "minimax") {
+        toast.success("Switched to MiniMax.", {
+          description: "Your Anima LLM was unavailable, so MiniMax continued the conversation.",
+        });
       } else if (resultPayload.failed_over && resultPayload.provider === "openrouter") {
         toast.success("Switched to Venice Uncensored via OpenRouter.", {
           description: resultPayload.model
@@ -1780,7 +1858,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       let imageAttachments = [];
       if (wantsImage) {
         const imageProgressText = stripImageTags(result.replace(eventTagRegex, "")).trim() || result;
-        setActiveSession((prev) => ({
+        applyIfSendSession((prev) => ({
           ...prev,
           messages: messagesWithImageProgress(prev?.messages || updatedMessages, {
             streamedText: imageProgressText,
@@ -1877,15 +1955,15 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       );
 
       // Drop is_streaming immediately so the reply resolves even if persist is slow.
-      setActiveSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
-      setIsLoading(false);
+      applyIfSendSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
+      if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
 
       const storedNew = [];
       let finalMessages = [...priorHistory, ...newMessages];
       try {
         storedNew.push(
           ...(await persistTurn({
-            sessionId: activeSession.id,
+            sessionId: sendSessionId,
             turnId,
             messages: newMessages,
             content,
@@ -1896,7 +1974,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           isContinue || storedNew.some((message) => message?.role === "user");
 
         finalMessages = [...priorHistory, ...storedNew];
-        setActiveSession((prev) => ({ ...prev, messages: finalMessages }));
+        applyIfSendSession((prev) => ({ ...prev, messages: finalMessages }));
       } catch (persistErr) {
         console.warn("[Anima] Failed to persist reply:", persistErr);
         // Client `turn_*` ids are still on screen. Drop any deferred remote
@@ -2078,7 +2156,7 @@ ${loyaltyGuardrailClause()}`;
           // finalMessages snapshot (replaceMessages would delete newer turns).
           const stored = await appendAmbientMessage({
             appendMessage: base44.messages.append,
-            sessionId: activeSession.id,
+            sessionId: sendSessionId,
             message: serenityMsg,
             setActiveSession,
           });
@@ -2149,20 +2227,12 @@ ${loyaltyGuardrailClause()}`;
                 timestamp: new Date().toISOString(),
               };
 
-              setActiveSession((prev) => ({
-                ...prev,
-                messages: [...(prev.messages || []), interactionMsg],
-              }));
-
-              setTimeout(() => {
-                const updated = [...finalMessages, interactionMsg];
-                base44.entities.ChatSession.update(activeSession.id, { messages: updated }).catch(() => {});
-              }, 500);
-              // Append only — a replace against stale finalMessages would wipe
-              // any messages the user sent while this background job ran.
+              // Append only — never ChatSession.update({ messages }) with a
+              // stale finalMessages snapshot (replaceMessages would delete
+              // newer turns the user sent while this job ran).
               appendAmbientMessage({
                 appendMessage: base44.messages.append,
-                sessionId: activeSession.id,
+                sessionId: sendSessionId,
                 message: interactionMsg,
                 setActiveSession,
               }).catch(() => {});
@@ -2394,14 +2464,14 @@ Return JSON:
     } catch (err) {
       console.error(err);
       // Remove typing/thinking indicators on error
-      setActiveSession((prev) => ({
+      applyIfSendSession((prev) => ({
         ...prev,
         messages: (prev.messages || []).filter((m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__"),
       }));
       // Keep any tokens already painted. The old path deleted `is_streaming`
       // bubbles on any post-token failure, which looked like the AI "stopped".
       let retained = null;
-      setActiveSession((prev) => {
+      applyIfSendSession((prev) => {
         const { messages, retained: kept } = retainStreamingOnError(prev.messages || []);
         retained = kept;
         // If state was mid-frame and lost the partial, recover from the local
@@ -2427,14 +2497,14 @@ Return JSON:
 
       // Best-effort persist so a deferred cross-device sync can't wipe the kept reply
       // (or the optimistic user turn that was never written because persist:false).
-      if (activeSession?.id) {
+      if (sendSessionId) {
         try {
           if (!isContinue && !userMessagePersisted && content.trim()) {
-            await base44.messages.append(activeSession.id, userMessage);
+            await base44.messages.append(sendSessionId, userMessage);
             userMessagePersisted = true;
           }
           if (retained) {
-            await base44.messages.append(activeSession.id, retained);
+            await base44.messages.append(sendSessionId, retained);
           }
         } catch (persistErr) {
           console.warn("[Anima] Failed to persist partial reply:", persistErr);
@@ -2457,7 +2527,7 @@ Return JSON:
     }
 
     setPendingMessage("");
-    setIsLoading(false);
+    if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
     // Clear injected memories after they've been used
     if (injectedMemories.length > 0) setInjectedMemories([]);
     };

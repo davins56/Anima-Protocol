@@ -103,13 +103,36 @@ describe("representative page scroll contract", () => {
   it("New Session picker scrolls inside the modal and clears the tab bar", () => {
     const modal = readSrc("components/chat/NewSessionModal.jsx");
     expect(modal).toContain('data-testid="new-session-character-scroller"');
+    expect(modal).toContain("createPortal");
+    expect(modal).toContain("document.body");
+    expect(modal).toMatch(/z-\[1000\]/);
+    expect(modal).toContain("h-app-viewport");
+    expect(modal).toContain('height: "var(--app-height, 100dvh)"');
+    expect(modal).toContain("justify-end");
+    expect(modal).toMatch(
+      /data-testid="new-session-overlay"[\s\S]*?justify-end/,
+    );
     expect(modal).toMatch(/overflow-y-auto/);
     expect(modal).toMatch(/min-h-0/);
-    expect(modal).toContain("pb-[calc(var(--tab-bar-height,0px)+1rem)]");
+    expect(modal).toContain(
+      "pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)]",
+    );
+    expect(modal).not.toContain("pb-[calc(var(--tab-bar-height,0px)+1rem)]");
     expect(modal).toContain("max-h-full");
     expect(modal).toContain("overflow-hidden");
     expect(modal).not.toMatch(/max-h-\[90vh\]/);
     expect(modal).not.toMatch(/h-screen(?!-)/);
+
+    const chooser = readSrc("components/stories/StoryCharacterChooser.jsx");
+    expect(chooser).toContain("createPortal");
+    expect(chooser).toContain("document.body");
+    expect(chooser).toMatch(/z-\[1000\]/);
+    expect(chooser).toContain("h-app-viewport");
+    expect(chooser).toContain("justify-end");
+    expect(chooser).toContain(
+      "pb-[calc(var(--tab-bar-height,56px)+env(safe-area-inset-bottom,0px)+1rem)]",
+    );
+    expect(chooser).not.toMatch(/\bz-50\b/);
   });
 
   it("Chat fills the shell and keeps the visualViewport keyboard path", () => {

@@ -24,10 +24,13 @@ export async function appendAmbientMessage({
   }
   const stored = await appendMessage(sessionId, message);
   if (typeof setActiveSession === "function") {
-    setActiveSession((prev) => ({
-      ...prev,
-      messages: [...(prev?.messages || []), stored],
-    }));
+    setActiveSession((prev) => {
+      if (!prev || prev.id !== sessionId) return prev;
+      return {
+        ...prev,
+        messages: [...(prev.messages || []), stored],
+      };
+    });
   }
   return stored;
 }

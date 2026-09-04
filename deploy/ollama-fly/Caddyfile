@@ -1,0 +1,33 @@
+{
+	admin off
+	persist_config off
+	auto_https off
+}
+
+# Public HTTPS is terminated by Fly. This proxy only binds loopback-facing
+# Ollama on :11434 and requires a bearer token on every OpenAI-compatible path.
+# PROXY_AUTH_TOKEN is substituted at Caddy start from the process environment.
+# Never bake a token into this file or the image.
+#
+# The api-server OpenAI SDK sends `Authorization: Bearer <ANIMA_LOCAL_LLM_API_KEY>`.
+# That value must equal PROXY_AUTH_TOKEN.
+:8080 {
+	# Static liveness — does not wait on Ollama or a model pull, so Fly
+	# http_service.checks stay green during first-boot `ollama pull`.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	@openai path /v1 /v1/*
+	handle @openai {
+		@authorized {
+			header Authorization "Bearer {$PROXY_AUTH_TOKEN}"
+		}
+		handle @authorized {
+			reverse_proxy 127.0.0.1:11434
+		}
+		respond "unauthorized" 401
+	}
+
+	respond 404
+}

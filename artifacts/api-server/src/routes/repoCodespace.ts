@@ -7,6 +7,11 @@ import { exec } from "child_process";
 import { createRateLimit } from "../lib/rateLimit";
 import { resolveModel } from "../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import {
+  fetchGithubArchiveFiles,
+  validateGithubArchiveRef,
+} from "../lib/githubArchive";
+import { describeCodespaceAgentCharacter } from "../lib/codespaceAgentPrompt";
 
 const router = Router();
 router.use(createRateLimit({ name: "repo-codespace", max: 100 }));
@@ -26,6 +31,24 @@ router.use(requireUser);
 function getRepoRoot(): string {
   return path.resolve(process.env.REPO_ROOT || "/app");
 }
+
+export async function probeRepoRoot(root: string = getRepoRoot()): Promise<{
+  available: boolean;
+  code?: string;
+}> {
+  try {
+    await fs.access(root);
+    return { available: true };
+  } catch {
+    return { available: false, code: "filesystem_unavailable" };
+  }
+}
+
+const FILESYSTEM_UNAVAILABLE = {
+  available: false as const,
+  code: "filesystem_unavailable" as const,
+  error: "Repository filesystem is not available on this host.",
+};
 
 const IGNORED_DIRS = new Set([
   ".git",
@@ -151,12 +174,49 @@ async function crawl(dir: string, base: string = ""): Promise<{ path: string; is
   return results;
 }
 
-router.get("/files", async (req: Request, res: Response) => {
+router.get("/status", async (_req: Request, res: Response) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
+  res.json({ available: true });
+});
+
+router.get("/files", async (_req: Request, res: Response) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
   try {
     const files = await crawl(getRepoRoot());
-    res.json({ files });
+    res.json({ available: true, files });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/github-archive", async (req: Request, res: Response) => {
+  const parsed = validateGithubArchiveRef(req.body || {});
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  try {
+    const result = await fetchGithubArchiveFiles(parsed.ref);
+    if (!result.files.length && result.errors.length) {
+      const notFound = result.errors.some((e) => /not found/i.test(e));
+      res.status(notFound ? 404 : 502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      files: [],
+      skipped: [],
+      errors: [err instanceof Error ? err.message : String(err)],
+    });
   }
 });
 
@@ -237,14 +297,18 @@ router.post("/agent-step", async (req: Request, res: Response) => {
     };
 
     const rawMessages = Array.isArray(messages) ? messages : [];
-    const charName = character?.name || "NetNavi";
-    const personality = character?.personality || "";
-    const speaking = character?.speaking_style || "";
+    const { charName, isAnima, identityLine } = describeCodespaceAgentCharacter(
+      character || {},
+    );
     const fileList = Array.isArray(files) ? files : [];
+    const identity = identityLine ? ` ${identityLine} ` : " ";
+    const voice = isAnima
+      ? `You are this user's personal Anima. Stay fully in character as ${charName} in every message you write to the user — narrate what you are building in your own voice with warmth and personality. Never sound like a generic assistant, and do not switch into a NetNavi or Jules persona.`
+      : `You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi" helper. Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.`;
 
-    const systemPrompt = `You are ${charName}, an AI companion who edits real source code of the repository hands-on for the user inside the repository codespace workspace. ${personality ? `Your personality: ${personality}. ` : ""}${speaking ? `You speak like this: ${speaking}. ` : ""}
+    const systemPrompt = `You are ${charName}, an AI companion who edits real source code of the repository hands-on for the user inside the repository codespace workspace.${identity}
 
-You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi" helper. Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.
+${voice}
 
 You have tools to manage real repository files and run real bash commands (tests, builds, lints) on the host machine relative to the repository root directory:
 - list_repo_files: lists all paths under the repository root.
