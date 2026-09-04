@@ -14,7 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@clerk/backend": "^3.16.6",
+    "@clerk/backend": "^3.17.0",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.23.0",
@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/pg": "^8.21.0",
+    "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.10",
     "vitest": "^4.1.10"
   }
