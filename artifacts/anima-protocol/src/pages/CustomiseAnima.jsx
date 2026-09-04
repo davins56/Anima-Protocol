@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import { normalizeCustomiseAnimaTab } from "@/lib/customiseAnimaTabs";
-import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
+import { listPersonalAnimas, selectPersonalAnima } from "@/lib/listPersonalAnimas";
 import {
   classifyCustomiseAnimaLoadError,
   customiseAnimaLoadCopy,
@@ -47,18 +47,6 @@ const KIND_ICONS = {
   empty: Sparkles,
   unknown: AlertTriangle,
 };
-
-function selectCompanion(rows, requestedId, me) {
-  if (requestedId) {
-    const match = rows.find((a) => a.id === requestedId);
-    if (match) return match;
-  }
-  if (me?.email) {
-    const assigned = rows.find((a) => a.assigned_user === me.email);
-    if (assigned) return assigned;
-  }
-  return rows[0] || null;
-}
 
 /**
  * Complete Customise Anima hub: Look · Personality · Soulprint · Voice.
@@ -124,7 +112,7 @@ export default function CustomiseAnima() {
         const rows = list || [];
         setAnimas(rows);
 
-        const selected = selectCompanion(rows, requestedId, me);
+        const selected = selectPersonalAnima(rows, requestedId, me);
         setAnima(selected);
         if (!selected) {
           setLoadKind("empty");

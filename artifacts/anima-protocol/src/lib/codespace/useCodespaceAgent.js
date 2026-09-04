@@ -10,6 +10,7 @@
 import { useRef, useState, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
 import { JULES_PERSONA, executeAgentStep as executeJulesStep } from "./julesApi";
+import { toCodespaceAgentCharacter } from "./companionPicker";
 
 const MAX_STEPS = 18;
 
@@ -52,13 +53,7 @@ export function useCodespaceAgent({
           } else {
             const res = await base44.functions.codespaceAgentStep.invoke({
               messages,
-              character: character
-                ? {
-                    name: character.name,
-                    personality: character.personality,
-                    speaking_style: character.speaking_style,
-                  }
-                : null,
+              character: toCodespaceAgentCharacter(character),
               files: currentFiles,
             });
             assistant = res && res.message;

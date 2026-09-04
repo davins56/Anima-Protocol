@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Square, Cpu, FileCode2, Play, ScanLine, Bot, Wrench, Terminal, ShieldAlert } from "lucide-react";
+import { isAnimaCompanion } from "@/lib/codespace/companionPicker";
 
 const TOOL_ICON = {
   write_file: FileCode2,
@@ -27,6 +28,10 @@ export default function AgentPanel({ companion, log, running, onSend, onStop, on
   const endRef = useRef(null);
 
   const isJules = companion?.id === "jules-ai-engineer";
+  const isAnima = isAnimaCompanion(companion);
+  const displayName = companion?.name || (isJules ? "Jules" : "NetNavi");
+  const roleLabel = isJules ? "Jules API Agent" : isAnima ? "Anima Agent" : "Build Agent";
+  const subtitle = isJules ? "Jules AI Engineer API" : isAnima ? displayName : "Companion Agent";
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -53,7 +58,7 @@ export default function AgentPanel({ companion, log, running, onSend, onStop, on
       <div className="flex items-center gap-2 px-3 py-2 border-b border-primary/10 bg-[#0c0c16]">
         <Bot className={`w-3.5 h-3.5 ${isJules ? "text-cyan-400" : "text-primary/60"}`} />
         <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-primary/80 flex-1 truncate">
-          {companion?.name || "NetNavi"} · {isJules ? "Jules API Agent" : "Build Agent"}
+          {displayName} · {roleLabel}
         </span>
         {running && (
           <span className="flex items-center gap-1 font-mono text-[8px] tracking-widest uppercase text-cyan-300">
@@ -64,7 +69,7 @@ export default function AgentPanel({ companion, log, running, onSend, onStop, on
 
       <div className="px-3 py-1.5 border-b border-primary/10 bg-black/40 flex items-center justify-between">
         <span className="font-mono text-[9px] text-primary/50 uppercase tracking-wider">
-          {isJules ? "Jules AI Engineer API" : "Companion Agent"}
+          {subtitle}
         </span>
         <button
           onClick={handleTroubleshootClick}
@@ -82,7 +87,7 @@ export default function AgentPanel({ companion, log, running, onSend, onStop, on
             <p>
               {isJules
                 ? "Jules API is active. Ask Jules to code features, debug runtime errors, scan for security issues, or troubleshoot your project directly."
-                : `Give ${companion?.name || "your companion"} a build goal — e.g. “build a neon snake game” or “write a python script that prints the first 20 primes.”`}
+                : `Give ${displayName} a build goal — e.g. “build a neon snake game” or “write a python script that prints the first 20 primes.”`}
             </p>
             <div className="pt-2 border-t border-primary/10 flex flex-col gap-1">
               <span className="text-[9px] uppercase text-cyan-400 font-semibold tracking-wider">Quick Commands:</span>
@@ -129,7 +134,7 @@ export default function AgentPanel({ companion, log, running, onSend, onStop, on
             >
               {!isUser && (
                 <span className={`block text-[8px] tracking-[0.2em] uppercase mb-1 ${isJules ? "text-cyan-400" : "text-primary/40"}`}>
-                  [{companion?.name || "NetNavi"}]
+                  [{displayName}]
                 </span>
               )}
               {entry.content}
@@ -150,7 +155,13 @@ export default function AgentPanel({ companion, log, running, onSend, onStop, on
                 submit();
               }
             }}
-            placeholder={isJules ? "Code, debug, or troubleshoot with Jules..." : "Describe what to build..."}
+            placeholder={
+              isJules
+                ? "Code, debug, or troubleshoot with Jules..."
+                : isAnima
+                  ? `Ask ${displayName} to build or debug...`
+                  : "Describe what to build..."
+            }
             rows={2}
             className="flex-1 resize-none bg-black/50 border border-primary/20 text-primary/90 font-mono text-[11px] p-2 focus:outline-none focus:border-primary/50"
           />

@@ -22,3 +22,20 @@ export async function listPersonalAnimas(limit = 100) {
   ).catch(() => []);
   return (characters || []).filter(isPersonalAnimaRecord);
 }
+
+/**
+ * Same selection order as Customise Anima:
+ * `?anima=` / requested id, else assigned_user === me.email, else first row.
+ */
+export function selectPersonalAnima(rows, requestedId, me) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (requestedId) {
+    const match = list.find((a) => a && a.id === requestedId);
+    if (match) return match;
+  }
+  if (me?.email) {
+    const assigned = list.find((a) => a && a.assigned_user === me.email);
+    if (assigned) return assigned;
+  }
+  return list[0] || null;
+}
