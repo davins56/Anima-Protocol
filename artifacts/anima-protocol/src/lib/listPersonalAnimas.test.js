@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPersonalAnimaRecord } from "./listPersonalAnimas";
+import { isPersonalAnimaRecord, selectPersonalAnima } from "./listPersonalAnimas";
 
 describe("isPersonalAnimaRecord", () => {
   it("accepts explicit Anima flags and construct categories", () => {
@@ -16,5 +16,24 @@ describe("isPersonalAnimaRecord", () => {
       isPersonalAnimaRecord({ name: "Naruto", universe: "Naruto" }),
     ).toBe(false);
     expect(isPersonalAnimaRecord({ category: "warrior" })).toBe(false);
+  });
+});
+
+describe("selectPersonalAnima", () => {
+  const rows = [
+    { id: "anima-1", name: "Lumen", assigned_user: "other@example.com" },
+    { id: "anima-2", name: "Serenity", assigned_user: "operator@example.com" },
+  ];
+
+  it("honors a requested id, then assigned_user, then the first row", () => {
+    expect(selectPersonalAnima(rows, "anima-1", { email: "operator@example.com" })?.id).toBe(
+      "anima-1",
+    );
+    expect(selectPersonalAnima(rows, null, { email: "operator@example.com" })?.id).toBe(
+      "anima-2",
+    );
+    expect(selectPersonalAnima(rows, null, { email: "nobody@example.com" })?.id).toBe(
+      "anima-1",
+    );
   });
 });
