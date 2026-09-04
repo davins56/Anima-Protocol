@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Brain, MessageCircle, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,12 @@ import {
   THERAPY_DISCLAIMER,
   localizedTherapyResource,
 } from "@/lib/therapyManuals";
+import {
+  PENDING_THERAPY_TOPIC_MS,
+  createTherapyTopic,
+  mergePreservedTherapyTopics,
+  therapyTopicSaveErrorMessage,
+} from "@/lib/createTherapyTopic";
 import { pickDefaultAnima, startTherapySession } from "@/lib/startTherapySession";
 import { normalizeTherapyTopic } from "@/lib/therapyTopics";
 
@@ -28,10 +34,14 @@ export default function Therapy() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [savingTopic, setSavingTopic] = useState(false);
   const [startingId, setStartingId] = useState(null);
+  const pendingTopicIdsRef = useRef(new Set());
 
   const loadTopics = async () => {
     const rows = await base44.entities.TherapyTopic.list("-created_date", 100);
-    setTopics((rows || []).filter((t) => t.is_active !== false));
+    const listed = (rows || []).filter((t) => t.is_active !== false);
+    setTopics((prev) =>
+      mergePreservedTherapyTopics(listed, prev, pendingTopicIdsRef.current),
+    );
   };
 
   const refresh = async ({ withSpinner = false } = {}) => {
@@ -62,21 +72,31 @@ export default function Therapy() {
 
   const handleAddTopic = async () => {
     const { title, notes } = normalizeTherapyTopic({ title: newTitle, notes: newNotes });
+    // Topics persist on the account store — an Anima is only required to start a session.
     if (!title || savingTopic) return;
     setSavingTopic(true);
     try {
-      const created = await base44.entities.TherapyTopic.create({
+      const created = await createTherapyTopic({
         title,
         notes,
         is_active: true,
       });
-      setTopics((prev) => [created, ...prev]);
+      if (created?.id) {
+        pendingTopicIdsRef.current.add(created.id);
+        window.setTimeout(() => {
+          pendingTopicIdsRef.current.delete(created.id);
+        }, PENDING_THERAPY_TOPIC_MS);
+      }
+      setTopics((prev) => {
+        const rest = created?.id ? prev.filter((t) => t.id !== created.id) : prev;
+        return [created, ...rest];
+      });
       setNewTitle("");
       setNewNotes("");
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
-      toast.error("Could not save that topic. Try again.");
+      toast.error(therapyTopicSaveErrorMessage(err));
     } finally {
       setSavingTopic(false);
     }
@@ -85,10 +105,11 @@ export default function Therapy() {
   const handleRemoveTopic = async (id) => {
     try {
       await base44.entities.TherapyTopic.update(id, { is_active: false });
+      pendingTopicIdsRef.current.delete(id);
       setTopics((prev) => prev.filter((t) => t.id !== id));
     } catch (err) {
       console.error(err);
-      toast.error("Could not remove that topic.");
+      toast.error(err?.message || "Could not remove that topic.");
     }
   };
 
