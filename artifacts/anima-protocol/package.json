@@ -107,13 +107,9 @@
     "vitest": "^3.0.5",
     "workbox-window": "^7.4.1",
     "wouter": "^3.3.5",
-<<<<<<< HEAD
     "zod": "catalog:"
   },
   "resolutions": {
     "glob": "^11.0.0"
-=======
-    "zod": "^4.4.3"
->>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
   }
 }

@@ -807,20 +807,13 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       );
     } else if (!localSummary.isLoopbackMisconfigured) {
       noteParts.push(
-<<<<<<< HEAD
-        "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
-          "or MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
-            "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md.",
-=======
         noLoopback
           ? "ANIMA_LOCAL_LLM_BASE_URL is unset. This serverless runtime cannot invent or reach localhost. " +
-            "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1) " +
-            "(see deploy/ollama-fly/README.md), or set OPENROUTER_API_KEY for Venice Uncensored / " +
-            "free open-weight chat via OpenRouter. Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used."
+            "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
+            "or set MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter)."
           : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
-            "or OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter. " +
-            "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See deploy/ollama-fly/README.md.",
->>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
+            "or MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
+            "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md.",
       );
     }
   } else {
