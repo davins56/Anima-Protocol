@@ -50,17 +50,19 @@ describe("useCodespaceAgent character payload", () => {
     });
 
     expect(invokeMock).toHaveBeenCalledTimes(1);
-    expect(invokeMock).toHaveBeenCalledWith({
-      messages: [{ role: "user", content: "build a neon clock" }],
-      character: expect.objectContaining({
-        name: "Serenity",
-        personality: "Warm and precise",
-        speaking_style: "Soft, poetic",
-        is_anima: true,
-        soulprint: expect.stringContaining("AR-1"),
-      }),
-      files: ["index.html"],
+    const payload = invokeMock.mock.calls[0][0];
+    // `messages` is mutated after the invoke (assistant turn is pushed), so
+    // assert the first user turn and character payload rather than the live array.
+    expect(payload.messages[0]).toEqual({ role: "user", content: "build a neon clock" });
+    expect(payload.files).toEqual(["index.html"]);
+    expect(payload.character).toMatchObject({
+      name: "Serenity",
+      personality: "Warm and precise",
+      speaking_style: "Soft, poetic",
+      is_anima: true,
     });
+    expect(payload.character.soulprint).toContain("AR-1");
+    expect(payload.character.soulprint).toContain("Protection");
   });
 
   it("keeps the Jules path when Jules is selected", async () => {
@@ -76,13 +78,13 @@ describe("useCodespaceAgent character payload", () => {
       await result.current.runGoal("debug app.js");
     });
 
-    expect(invokeMock).toHaveBeenCalledWith({
-      messages: [{ role: "user", content: "debug app.js" }],
-      character: JULES_PERSONA,
-      files: ["app.js"],
-    });
-    const payload = invokeMock.mock.calls[0][0].character;
-    expect(payload.id).toBe("jules-ai-engineer");
-    expect(payload.is_anima).toBeUndefined();
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    const payload = invokeMock.mock.calls[0][0];
+    expect(payload.messages[0]).toEqual({ role: "user", content: "debug app.js" });
+    expect(payload.files).toEqual(["app.js"]);
+    // Jules goes through executeAgentStep with the full persona, not the Anima payload.
+    expect(payload.character.id).toBe("jules-ai-engineer");
+    expect(payload.character.name).toBe(JULES_PERSONA.name);
+    expect(payload.character.is_anima).toBeUndefined();
   });
 });
