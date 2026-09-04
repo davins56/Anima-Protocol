@@ -16,12 +16,8 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-<<<<<<< HEAD
-    OPENROUTER_FREE_MODEL: "openai/gpt-oss-20b:free",
-    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
-=======
     OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
->>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
@@ -61,7 +57,6 @@ vi.mock("../src/lib/openaiClient", () => {
       }
       return openRouterClient;
     },
-<<<<<<< HEAD
     hasMinimaxKey: () =>
       Boolean(process.env.MINIMAX_API_KEY?.trim() || process.env.ANIMA_MINIMAX_API_KEY?.trim()),
     getMinimaxApiKeySource: () =>
@@ -76,7 +71,6 @@ vi.mock("../src/lib/openaiClient", () => {
       }
       return openRouterClient;
     },
-=======
     isLoopbackUnreachableRuntime: () =>
       Boolean(
         process.env.ANIMA_RUNTIME === "worker" ||
@@ -84,7 +78,6 @@ vi.mock("../src/lib/openaiClient", () => {
           process.env.VERCEL_ENV ||
           process.env.CF_PAGES,
       ),
->>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
     localLlmBaseUrl: () => {
       const explicit =
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
