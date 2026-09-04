@@ -13,6 +13,21 @@ export const IMPORT_LIMITS = {
   maxTotalBytes: 2 * 1024 * 1024,
 };
 
+// GitHub monorepo pulls are larger on the wire; the editor still caps how
+// much text lands in the tree after skipping node_modules / dist / lockfiles.
+export const PULL_LIMITS = {
+  maxFileBytes: 512 * 1024,
+  maxFiles: 400,
+  maxZipBytes: 32 * 1024 * 1024,
+  maxTotalBytes: 3 * 1024 * 1024,
+};
+
+export const DEFAULT_PULL_REPO = {
+  owner: "davins56",
+  repo: "Anima-Protocol",
+  branch: "main",
+};
+
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
@@ -115,6 +130,24 @@ export function sanitizeImportPath(raw = "") {
   }
 
   return { ok: true, path: joined };
+}
+
+// True when a raw zip path (including GitHub's wrapping folder) should not
+// even be inflated — node_modules, dist, lockfiles, secrets, binaries, etc.
+export function archivePathIsSkipped(raw = "") {
+  const p = String(raw).replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!p || p.endsWith("/")) return true;
+  const parts = p.split("/").filter(Boolean);
+  if (parts.some((s) => s === "..")) return true;
+  const lowerParts = parts.map((s) => s.toLowerCase());
+  if (lowerParts.some((s) => SKIP_DIRS.has(s))) return true;
+  const name = lowerParts[lowerParts.length - 1] || "";
+  if (SKIP_FILES.has(name)) return true;
+  if (name === ".env" || name.startsWith(".env.")) return true;
+  if (parts[0] === ".sessions" || lowerParts.includes(".sessions")) return true;
+  const ext = extensionOf(p);
+  if (BINARY_EXTS.has(ext)) return true;
+  return false;
 }
 
 export function stripCommonRoot(paths = []) {
@@ -315,7 +348,10 @@ export async function importFromZipBuffer(buffer, { limits = IMPORT_LIMITS } = {
     };
   }
   try {
-    const raw = await unzipToEntries(buffer, { maxUncompressedBytes: limits.maxZipBytes });
+    const raw = await unzipToEntries(buffer, {
+      maxUncompressedBytes: limits.maxZipBytes,
+      skipPath: archivePathIsSkipped,
+    });
     return filesFromEntries(raw, { stripRoot: true, limits });
   } catch (err) {
     return { files: [], skipped: [], errors: [err?.message || "Could not unpack zip."] };
@@ -352,6 +388,25 @@ export function parseGithubRepoUrl(input = "") {
 
 export function githubDownloadZipUrl(owner, repo, branch = "main") {
   return `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`;
+}
+
+export function githubCodeloadZipUrl(owner, repo, branch = "main") {
+  return `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${branch}`;
+}
+
+export function normalizePullSpec(input = {}) {
+  if (typeof input === "string") {
+    const parsed = parseGithubRepoUrl(input);
+    if (!parsed) return null;
+    return { owner: parsed.owner, repo: parsed.repo, branch: "main" };
+  }
+  const parsed = parseGithubRepoUrl(
+    input.owner && input.repo ? `${input.owner}/${input.repo}` : input.url || "",
+  );
+  if (!parsed) return null;
+  const branch = String(input.branch || DEFAULT_PULL_REPO.branch || "main").trim() || "main";
+  if (branch.includes("..") || branch.startsWith("/") || branch.includes("\\")) return null;
+  return { owner: parsed.owner, repo: parsed.repo, branch };
 }
 
 export function summarizeImport(result) {

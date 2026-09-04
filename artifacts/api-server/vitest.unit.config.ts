@@ -17,6 +17,7 @@ export default defineConfig({
       "test/protocolUpgradeRoute.test.ts",
       "test/protocolUpgrade.test.ts",
       "test/repoCodespace.test.ts",
+      "test/githubArchive.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

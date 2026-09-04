@@ -20,7 +20,7 @@ vi.mock("@clerk/express", () => ({
   }),
 }));
 
-import repoCodespaceRouter, { resolveRepoPath } from "../src/routes/repoCodespace";
+import repoCodespaceRouter, { resolveRepoPath, probeRepoRoot } from "../src/routes/repoCodespace";
 
 let server: Server;
 let baseUrl = "";
@@ -121,6 +121,12 @@ describe("repoCodespace security and path resolution", () => {
       }
     });
 
+    it("probeRepoRoot reports unavailable when the folder is missing", async () => {
+      const status = await probeRepoRoot("/nope/does-not-exist-codespace");
+      expect(status.available).toBe(false);
+      expect(status.code).toBe("filesystem_unavailable");
+    });
+
     it("rejects sensitive files like .env and .git", () => {
       expect(() => resolveRepoPath(".env")).toThrow(/sensitive|forbidden|traversal/i);
       expect(() => resolveRepoPath(".env.local")).toThrow(/sensitive|forbidden|traversal/i);
@@ -130,6 +136,21 @@ describe("repoCodespace security and path resolution", () => {
   });
 
   describe("API endpoints security", () => {
+    it("reports the live tree as available when REPO_ROOT exists", async () => {
+      const res = await call("GET", "/repo-codespace/status");
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.available).toBe(true);
+    });
+
+    it("lists files with available: true", async () => {
+      const res = await call("GET", "/repo-codespace/files");
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.available).toBe(true);
+      expect(json.files.some((f: { path: string }) => f.path === "src/index.ts")).toBe(true);
+    });
+
     it("allows reading valid source files", async () => {
       const res = await call("POST", "/repo-codespace/read-file", { path: "src/index.ts" });
       expect(res.status).toBe(200);
@@ -170,6 +191,17 @@ describe("repoCodespace security and path resolution", () => {
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json.error).toMatch(/sensitive|forbidden|traversal/i);
+    });
+
+    it("rejects an invalid github-archive ref", async () => {
+      const res = await call("POST", "/repo-codespace/github-archive", {
+        owner: "../evil",
+        repo: "Anima-Protocol",
+        branch: "main",
+      });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toMatch(/owner|repo|invalid/i);
     });
   });
 });
