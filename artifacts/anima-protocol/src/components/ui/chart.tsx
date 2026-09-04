@@ -100,16 +100,31 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip
 
+type ChartTooltipPayload = {
+  dataKey?: string | number
+  name?: string | number
+  value?: unknown
+  color?: string
+  type?: string
+  payload?: Record<string, unknown>
+}
+
+type ChartTooltipContentProps = Omit<
+  React.ComponentProps<typeof RechartsPrimitive.Tooltip>,
+  "label" | "payload"
+> & {
+  label?: unknown
+  payload?: ChartTooltipPayload[]
+  hideLabel?: boolean
+  hideIndicator?: boolean
+  indicator?: "line" | "dot" | "dashed"
+  nameKey?: string
+  labelKey?: string
+}
+
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
-    React.ComponentProps<"div"> & {
-      hideLabel?: boolean
-      hideIndicator?: boolean
-      indicator?: "line" | "dot" | "dashed"
-      nameKey?: string
-      labelKey?: string
-    }
+  ChartTooltipContentProps & React.ComponentProps<"div">
 >(
   (
     {
@@ -147,7 +162,7 @@ const ChartTooltipContent = React.forwardRef<
       if (labelFormatter) {
         return (
           <div className={cn("font-medium", labelClassName)}>
-            {labelFormatter(value, payload)}
+            {labelFormatter(value, payload as never)}
           </div>
         )
       }
@@ -199,7 +214,13 @@ const ChartTooltipContent = React.forwardRef<
                   )}
                 >
                   {formatter && item?.value !== undefined && item.name ? (
-                    formatter(item.value, item.name, item, index, item.payload)
+                    formatter(
+                      item.value as never,
+                      item.name as never,
+                      item as never,
+                      index,
+                      item.payload as never,
+                    )
                   ) : (
                     <>
                       {itemConfig?.icon ? (
@@ -258,13 +279,21 @@ ChartTooltipContent.displayName = "ChartTooltip"
 
 const ChartLegend = RechartsPrimitive.Legend
 
+type ChartLegendPayload = {
+  dataKey?: string | number
+  value?: string | number
+  type?: string
+  color?: string
+}
+
 const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<"div"> &
-    Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
-      hideIcon?: boolean
-      nameKey?: string
-    }
+  React.ComponentProps<"div"> & {
+    payload?: ChartLegendPayload[]
+    verticalAlign?: "top" | "middle" | "bottom"
+    hideIcon?: boolean
+    nameKey?: string
+  }
 >(
   (
     { className, hideIcon = false, payload, verticalAlign = "bottom", nameKey },
