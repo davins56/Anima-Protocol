@@ -101,4 +101,14 @@ describe("POST /storage/uploads + GET /storage/objects/uploads/:id", () => {
     expect(status).toBe(400);
     expect(json.error).toMatch(/only image/i);
   });
+
+  it("returns 413 for an oversized image payload", async () => {
+    const tooBig = "A".repeat(Math.ceil((4 * 1024 * 1024 * 4) / 3) + 16);
+    const { status, json } = await postUpload(user("owner"), {
+      contentType: "image/jpeg",
+      dataBase64: tooBig,
+    });
+    expect(status).toBe(413);
+    expect(json.error).toMatch(/too large/i);
+  });
 });
