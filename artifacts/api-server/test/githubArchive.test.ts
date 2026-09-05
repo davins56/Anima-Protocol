@@ -3,11 +3,16 @@ import {
   archivePathIsHeavy,
   buildStoreZip,
   fetchGithubArchiveFiles,
+  GITHUB_ARCHIVE_LIMITS,
   unpackZipToTextFiles,
   validateGithubArchiveRef,
 } from "../src/lib/githubArchive";
 
 describe("githubArchive", () => {
+  it("keeps the GitHub archive zip ceiling at 50MB", () => {
+    expect(GITHUB_ARCHIVE_LIMITS.maxZipBytes).toBe(50 * 1024 * 1024);
+  });
+
   it("validates owner/repo/branch and rejects traversal", () => {
     expect(validateGithubArchiveRef({
       owner: "davins56",

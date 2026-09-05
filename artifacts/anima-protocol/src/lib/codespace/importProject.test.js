@@ -7,6 +7,7 @@ import {
   filesFromEntries,
   mergeImportedFiles,
   importFromZipBuffer,
+  importFromZipFile,
   importFromBrowserFiles,
   parseGithubRepoUrl,
   githubDownloadZipUrl,
@@ -180,10 +181,37 @@ describe("zip → files map", () => {
     expect(crc32(enc("123456789"))).toBe(0xcbf43926);
   });
 
-  it("rejects a huge zip before unpacking", async () => {
-    const imported = await importFromZipBuffer(new ArrayBuffer(IMPORT_LIMITS.maxZipBytes + 1));
+  it("keeps the Import archive ceiling at 50MB", () => {
+    expect(IMPORT_LIMITS.maxZipBytes).toBe(50 * 1024 * 1024);
+    expect(PULL_LIMITS.maxZipBytes).toBe(50 * 1024 * 1024);
+  });
+
+  it("rejects a zip over 50MB before unpacking", async () => {
+    const imported = await importFromZipBuffer({ byteLength: IMPORT_LIMITS.maxZipBytes + 1 });
     expect(imported.files).toEqual([]);
-    expect(imported.errors[0]).toMatch(/larger than/i);
+    expect(imported.errors[0]).toMatch(/larger than 50MB/i);
+
+    const fromFile = await importFromZipFile({
+      size: IMPORT_LIMITS.maxZipBytes + 1,
+      name: "too-big.zip",
+    });
+    expect(fromFile.files).toEqual([]);
+    expect(fromFile.errors[0]).toMatch(/larger than 50MB/i);
+  });
+
+  it("accepts a mocked zip just under the 50MB archive ceiling", async () => {
+    const zip = buildStoreZip([
+      { path: "repo-main/ok.js", content: "export const ok = 1" },
+    ]);
+    const file = {
+      name: "under-ceiling.zip",
+      size: IMPORT_LIMITS.maxZipBytes - 1,
+      arrayBuffer: async () => zip,
+    };
+    const imported = await importFromZipFile(file);
+    expect(imported.errors).toEqual([]);
+    expect(imported.files.map((f) => f.path)).toEqual(["ok.js"]);
+    expect(imported.files[0].content).toContain("export const ok = 1");
   });
 
   it("reports a clear error for non-zip bytes", async () => {
@@ -253,7 +281,7 @@ describe("GitHub URL helper", () => {
       branch: "dev",
     });
     expect(normalizePullSpec({ owner: "acme", repo: "app", branch: "../etc" })).toBeNull();
-    expect(PULL_LIMITS.maxZipBytes).toBeGreaterThan(IMPORT_LIMITS.maxZipBytes);
+    expect(PULL_LIMITS.maxZipBytes).toBe(IMPORT_LIMITS.maxZipBytes);
   });
 });
 

@@ -4,21 +4,23 @@
 // `.sessions/` are never replaced by an import.
 
 import { isSessionPath } from "./projectModel";
-import { unzipToEntries } from "./zipCodec";
+import { unzipToEntries, DEFAULT_MAX_UNCOMPRESSED_BYTES } from "./zipCodec";
 
 export const IMPORT_LIMITS = {
   maxFileBytes: 512 * 1024,
   maxFiles: 250,
-  maxZipBytes: 8 * 1024 * 1024,
+  maxZipBytes: DEFAULT_MAX_UNCOMPRESSED_BYTES, // 50MB
   maxTotalBytes: 2 * 1024 * 1024,
 };
 
 // GitHub monorepo pulls are larger on the wire; the editor still caps how
 // much text lands in the tree after skipping node_modules / dist / lockfiles.
+// Archive ceiling matches Import (50MB). Pull fetches GitHub → Worker, so
+// this is not a Cloudflare incoming request-body upload (100MB Worker limit).
 export const PULL_LIMITS = {
   maxFileBytes: 512 * 1024,
   maxFiles: 400,
-  maxZipBytes: 32 * 1024 * 1024,
+  maxZipBytes: DEFAULT_MAX_UNCOMPRESSED_BYTES, // 50MB
   maxTotalBytes: 3 * 1024 * 1024,
 };
 

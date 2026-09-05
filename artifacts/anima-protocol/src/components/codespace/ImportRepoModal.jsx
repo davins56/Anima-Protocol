@@ -146,7 +146,7 @@ export default function ImportRepoModal({
                         Choose .zip
                       </span>
                       <span className="block font-mono text-[9px] text-primary/45 mt-0.5">
-                        A zipped repo folder — GitHub&apos;s Code → Download ZIP works
+                        A zipped repo folder up to 50MB — GitHub&apos;s Code → Download ZIP works
                       </span>
                     </span>
                   </button>
