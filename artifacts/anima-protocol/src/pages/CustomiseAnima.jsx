@@ -12,6 +12,7 @@ import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
 import {
   AlertTriangle,
   ChevronLeft,
+  Clock,
   Database,
   Fingerprint,
   Loader,
@@ -44,6 +45,7 @@ const KIND_ICONS = {
   misconfigured: AlertTriangle,
   unsigned: LogIn,
   database: Database,
+  timeout: Clock,
   empty: Sparkles,
   unknown: AlertTriangle,
 };

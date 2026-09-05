@@ -131,6 +131,7 @@ export declare function restoreData(
   mode?: "merge" | "replace",
 ): Promise<any>;
 export declare const STORE_FETCH_TIMEOUT_MS: number;
+export declare const STORE_LIST_RETRY_LIMIT: number;
 export declare const STORE_SESSION_CREATE_TIMEOUT_MS: number;
 export declare function waitForStoreAuth(timeoutMs?: number): Promise<string>;
 export declare function notifyStoreChanged(): void;
