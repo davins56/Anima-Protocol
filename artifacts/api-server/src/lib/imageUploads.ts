@@ -8,7 +8,7 @@
 
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
-import { db, uploadedImages, ensureSchemaOnce } from "@workspace/db";
+import { db, uploadedImages, ensureSchemaOnce, withTransientDbRetry } from "@workspace/db";
 
 export const UPLOADS_PATH_PREFIX = "/objects/uploads/";
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MiB decoded
@@ -104,15 +104,21 @@ export async function storeUploadedImage(
   userId: string,
   payload: { contentType?: unknown; dataBase64?: unknown; dataUrl?: unknown },
 ): Promise<{ id: string; objectPath: string; contentType: string; byteSize: number }> {
-  await ensureSchemaOnce();
+  // Parse before touching Postgres so a bad payload never burns a retry.
   const parsed = parseImagePayload(payload);
   const id = randomUUID();
-  await db.insert(uploadedImages).values({
-    id,
-    userId,
-    contentType: parsed.contentType,
-    dataBase64: parsed.dataBase64,
-    byteSize: parsed.byteSize,
+  // Stale Worker/Hyperdrive sockets reset on the first query. Store routes
+  // already wrap writes in withTransientDbRetry; uploads must too or Settings
+  // image picks surface as 503 "Database connection reset".
+  await withTransientDbRetry(async () => {
+    await ensureSchemaOnce();
+    await db.insert(uploadedImages).values({
+      id,
+      userId,
+      contentType: parsed.contentType,
+      dataBase64: parsed.dataBase64,
+      byteSize: parsed.byteSize,
+    });
   });
   return {
     id,
@@ -127,19 +133,21 @@ export async function getUploadedImage(
 ): Promise<StoredImage | null> {
   const id = uploadIdFromObjectPath(objectPath);
   if (!id) return null;
-  await ensureSchemaOnce();
-  const rows = await db
-    .select()
-    .from(uploadedImages)
-    .where(eq(uploadedImages.id, id))
-    .limit(1);
-  const row = rows[0];
-  if (!row) return null;
-  return {
-    id: row.id,
-    userId: row.userId,
-    contentType: row.contentType,
-    dataBase64: row.dataBase64,
-    byteSize: row.byteSize,
-  };
+  return withTransientDbRetry(async () => {
+    await ensureSchemaOnce();
+    const rows = await db
+      .select()
+      .from(uploadedImages)
+      .where(eq(uploadedImages.id, id))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.userId,
+      contentType: row.contentType,
+      dataBase64: row.dataBase64,
+      byteSize: row.byteSize,
+    };
+  });
 }
