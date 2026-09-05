@@ -95,6 +95,13 @@ Desktop.ini
 
 .venv/
 
+# Optional local checkouts — never commit these as git submodules.
+# Cloudflare Workers Builds always runs `git submodule update` on clone,
+# so unused or unmapped gitlinks fail production deploys at Cloning.
+vendor/airi/
+external/airi/
+anima-work/
+
 # Vercel deploy-scan requires a committed api/index.mjs (see vercel.json
 # functions). Never gitignore the api/ directory — that is what broke
 # production deploys after the Cloudflare worker experiment. Source maps
