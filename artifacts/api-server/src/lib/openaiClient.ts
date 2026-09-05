@@ -177,7 +177,10 @@ export function localLlmBaseUrl(
 
   if (isLoopbackUnreachableRuntime(env, globalObj)) return null;
 
-  return "http://localhost:11434/v1";
+  const backend = (env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
+  return backend === "vllm"
+    ? "http://localhost:8000/v1"
+    : "http://localhost:11434/v1";
 }
 
 /** True when a usable (non-loopback-on-serverless) local LLM endpoint is set. */
