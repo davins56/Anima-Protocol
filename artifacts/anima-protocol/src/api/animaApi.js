@@ -4,12 +4,13 @@ import { readSseJsonStream } from '@/lib/readSseJsonStream';
 
 /**
  * Cap a hung SSE body so Chat cannot sit on "Processing..." forever.
- * Must stay above the Worker free-tier open budget (80s) plus first-chunk
- * (35s) so the browser does not abort while OpenRouter is still hopping
- * m2.7 → m3 → Gemma 4. Keep in lockstep with
+ * Must stay above the Worker free-tier open budget (80s) plus the stream
+ * consume cap (50s) so the browser does not abort while OpenRouter is
+ * still hopping m2.7 → m3 → Gemma 4 or finishing a valid reply.
+ * Keep in lockstep with
  * `artifacts/api-server/src/lib/chatTimeouts.ts` `CHAT_STREAM_TIMEOUT_MS`.
  */
-export const CHAT_STREAM_TIMEOUT_MS = 115_000;
+export const CHAT_STREAM_TIMEOUT_MS = 130_000;
 
 function chatStreamTimeoutError() {
   const err = new Error("The companion took too long to reply. Please try again.");

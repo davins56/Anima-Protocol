@@ -28,6 +28,7 @@ import {
   isOpenRouterGenericProviderError,
   OPENROUTER_FREE_PROVIDER_HINT,
   remapGenericProviderError,
+  resolveOpenRouterModel,
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
@@ -1672,7 +1673,11 @@ router.post("/messages", async (req, res) => {
       }
     } else {
       const open = openStreamAbort(
-        llmOpenTimeoutMs({ freeTierCascade: isOpenRouterAlreadyFreeTier() }),
+        llmOpenTimeoutMs({
+          freeTierCascade: isOpenRouterAlreadyFreeTier(
+            resolveOpenRouterModel(routed.tier).model,
+          ),
+        }),
       );
       let completion;
       try {

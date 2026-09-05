@@ -7,6 +7,7 @@ import {
   LLM_OPEN_TIMEOUT_FREE_TIER_MS,
   LLM_OPEN_TIMEOUT_MS,
   LLM_STREAM_FIRST_CHUNK_MS,
+  LLM_STREAM_TOTAL_MS,
   llmOpenTimeoutMs,
   openStreamAbort,
 } from "../src/lib/chatTimeouts";
@@ -34,11 +35,14 @@ describe("llmOpenTimeoutMs", () => {
     );
   });
 
-  it("keeps the client abort above the free-tier open plus first-chunk wait", () => {
+  it("keeps the client abort above the free-tier open plus consume cap", () => {
     expect(CHAT_STREAM_TIMEOUT_MS).toBe(
-      LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS,
+      LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_TOTAL_MS,
     );
     expect(CHAT_STREAM_TIMEOUT_MS).toBeGreaterThan(LLM_OPEN_TIMEOUT_FREE_TIER_MS);
+    expect(CHAT_STREAM_TIMEOUT_MS).toBeGreaterThan(
+      LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS,
+    );
   });
 });
 
@@ -78,7 +82,8 @@ describe("client/server budget lockstep", () => {
       join(repoRoot, "artifacts/api-server/src/routes/chat.ts"),
       "utf8",
     );
-    expect(chatRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: isOpenRouterAlreadyFreeTier() })");
+    expect(chatRoute).toContain("resolveOpenRouterModel(routed.tier).model");
+    expect(chatRoute).toContain("isOpenRouterAlreadyFreeTier(");
     expect(chatRoute).toContain("openStreamAbort(");
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
   });
@@ -88,7 +93,7 @@ describe("client/server budget lockstep", () => {
       join(repoRoot, "artifacts/anima-protocol/src/api/animaApi.js"),
       "utf8",
     );
-    expect(animaApi).toMatch(/CHAT_STREAM_TIMEOUT_MS = 115_000/);
-    expect(CHAT_STREAM_TIMEOUT_MS).toBe(115_000);
+    expect(animaApi).toMatch(/CHAT_STREAM_TIMEOUT_MS = 130_000/);
+    expect(CHAT_STREAM_TIMEOUT_MS).toBe(130_000);
   });
 });
