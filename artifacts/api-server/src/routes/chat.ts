@@ -24,6 +24,9 @@ import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  isOpenRouterGenericProviderError,
+  OPENROUTER_FREE_PROVIDER_HINT,
+  remapGenericProviderError,
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
@@ -185,6 +188,10 @@ function openStreamAbort(): { signal: AbortSignal; cancel: () => void } {
 
 function streamErrorMessage(err: unknown): string {
   if (err instanceof LlmStreamTimeoutError) return err.message;
+  if (isOpenRouterGenericProviderError(err)) {
+    const remapped = err instanceof Error ? remapGenericProviderError(err) : new Error(OPENROUTER_FREE_PROVIDER_HINT);
+    return remapped.message;
+  }
   const raw = err instanceof Error ? err.message : String(err);
   if (/aborted|abort/i.test(raw)) {
     return "The companion took too long to reply. Please try again.";
