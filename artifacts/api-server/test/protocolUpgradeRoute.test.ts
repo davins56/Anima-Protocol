@@ -28,41 +28,6 @@ vi.mock("@clerk/express", () => ({
   }),
 }));
 
-vi.mock("@workspace/db", () => {
-  const mockDb = {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => [],
-        }),
-        orderBy: () => ({
-          limit: () => [],
-        }),
-      }),
-    }),
-    insert: () => ({
-      values: async () => ({}),
-    }),
-    update: () => ({
-      set: () => ({
-        where: async () => ({}),
-      }),
-    }),
-  };
-  return {
-    db: mockDb,
-    userEntities: {
-      userId: "userId",
-      entityName: "entityName",
-      entityId: "entityId",
-      data: "data",
-      createdAt: "createdAt",
-      updatedAt: "updatedAt",
-    },
-    makeId: () => "mock-id",
-  };
-});
-
 const originalKey = process.env.CURSOR_API_KEY;
 const originalAdmins = process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
 const nativeFetch = globalThis.fetch.bind(globalThis);

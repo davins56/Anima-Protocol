@@ -145,7 +145,8 @@ The repository already includes:
 
 The highest-value product loop is:
 
-<<<<<<< HEAD
+**create companion → start chat → retrieve memory → generate in-character response → persist the turn → deepen continuity**
+
 Use Node 24 before running workspace commands:
 
 ```bash
@@ -246,9 +247,6 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `PROTOCOL_UPGRADE_ADMIN_EMAILS` | API | Optional comma-separated steward emails. Defaults to `davins56@gmail.com,davins56@hotmail.com` |
 
 Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback`; Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`.
-=======
-**create companion → start chat → retrieve memory → generate in-character response → persist the turn → deepen continuity**
->>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
 
 ## Validation
 
