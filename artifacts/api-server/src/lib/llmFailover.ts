@@ -988,6 +988,10 @@ function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
   if (!isOpenRouterFreeModel(preferred.model)) {
     out.push({ ...preferred, model: OPENROUTER_FREE_MODEL });
   }
+  const freeMinimax = { ...preferred, model: "minimax/minimax-01:free" };
+  const freeGoogleJules = { ...preferred, model: "google/gemma-3-12b-it:free" };
+  if (!out.some((m) => m.model === freeMinimax.model)) out.push(freeMinimax);
+  if (!out.some((m) => m.model === freeGoogleJules.model)) out.push(freeGoogleJules);
   return out;
 }
 
