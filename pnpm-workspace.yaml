@@ -141,3 +141,22 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
+  '@babel/core': ^7.29.6
+  body-parser@2: 2.3.0
+  brace-expansion@2: 2.1.4
+  brace-expansion@5: 5.0.9
+  dompurify: 3.4.13
+  fast-uri@3: 3.1.5
+  form-data@2: 2.5.6
+  form-data@4: 4.0.6
+  glob: ^11.0.0
+  js-yaml@4: 4.3.1
+  linkify-it@5: 5.0.2
+  markdown-it@14: 14.3.0
+  nanoid@3: 3.3.18
+  pg: 8.23.0
+  postcss: ^8.5.23
+  qs@6.15.1: 6.15.2
+  react-router: ^7.18.2
+  undici: 7.29.0
+  uuid: ^11.1.1
