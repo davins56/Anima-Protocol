@@ -2,6 +2,11 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import useAnchoredFixedPosition from "@/hooks/useAnchoredFixedPosition";
 
+function zIndexFromClass(className, fallback) {
+  const match = String(className || "").match(/z-\[(\d+)\]/);
+  return match ? Number(match[1]) : fallback;
+}
+
 /**
  * Render a HUD panel (and optional dismiss backdrop) on document.body so
  * overflow-hidden chat chrome and the z-[999] tab bar cannot clip it.
@@ -37,6 +42,7 @@ export default function PortaledFixedPanel({
             <div
               data-testid={backdropTestId}
               className={`fixed inset-0 ${backdropZClass}`}
+              style={{ zIndex: zIndexFromClass(backdropZClass, 1000) }}
               onClick={onDismiss}
             />
           ) : null}
@@ -47,7 +53,11 @@ export default function PortaledFixedPanel({
             exit={motionExit}
             transition={motionTransition}
             className={`${panelZClass} ${className}`}
-            style={panelStyle ? { ...pos, ...panelStyle } : pos}
+            style={{
+              ...pos,
+              zIndex: zIndexFromClass(panelZClass, 1001),
+              ...panelStyle,
+            }}
           >
             {children}
           </motion.div>
