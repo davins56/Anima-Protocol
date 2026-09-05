@@ -35,6 +35,7 @@ export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
 export {
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 };
 
