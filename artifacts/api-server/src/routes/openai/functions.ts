@@ -7,7 +7,7 @@ import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
-import { getOpenAIClient, hasOpenAIKey } from "../../lib/openaiClient";
+import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
 import {
   editImageWithGemini,
@@ -15,6 +15,11 @@ import {
   hasGeminiImageKey,
   isFreeImageFallbackEnabled,
 } from "../../lib/geminiImage";
+import {
+  editImageWithOpenRouter,
+  generateImageWithOpenRouter,
+  missingImageProviderError,
+} from "../../lib/openrouterImage";
 import { logger } from "../../lib/logger";
 import { buildInBrowserCodespaceSystemPrompt } from "../../lib/codespaceAgentPrompt";
 
@@ -1401,6 +1406,17 @@ export function mapImageEditError(err: unknown): {
     };
   }
 
+  // Preserve an already-classified missing-provider / auth failure so the
+  // client can show the actionable "not configured" copy instead of a generic
+  // toast.
+  if (rawCode === "auth_error" && rawMessage && !/sk-[A-Za-z0-9_\-*]+/.test(rawMessage)) {
+    return {
+      status: 503,
+      code: "auth_error",
+      error: rawMessage,
+    };
+  }
+
   // Invalid / missing OpenAI API key — never echo the key material OpenAI
   // includes in the raw 401 message (e.g. "Incorrect API key provided: sk-…").
   if (
@@ -1440,11 +1456,11 @@ export function shouldFallbackToFreeImage(code: string): boolean {
 
 async function generateImageDataUrl(prompt: string): Promise<{
   image: string;
-  provider: "openai" | "gemini";
+  provider: "openai" | "gemini" | "openrouter";
 }> {
   // Keep headroom for skin-tone hard-requirement blocks from the customiser.
   const trimmed = prompt.trim().slice(0, 2500);
-  let geminiMapped: ReturnType<typeof mapImageEditError> | null = null;
+  let lastMapped: ReturnType<typeof mapImageEditError> | null = null;
 
   // Prefer Gemini Flash Image when configured — it follows skin/hair attributes
   // more reliably for Customise Anima than gpt-image-1.
@@ -1453,60 +1469,74 @@ async function generateImageDataUrl(prompt: string): Promise<{
       const gemini = await generateImageWithGemini(trimmed);
       return { image: gemini.image, provider: gemini.provider };
     } catch (err) {
-      geminiMapped = mapImageEditError(err);
-      if (geminiMapped.code === "content_policy" || !hasOpenAIKey()) {
-        throw Object.assign(new Error(geminiMapped.error), {
-          status: geminiMapped.status,
-          code: geminiMapped.code,
+      lastMapped = mapImageEditError(err);
+      if (lastMapped.code === "content_policy") {
+        throw Object.assign(new Error(lastMapped.error), {
+          status: lastMapped.status,
+          code: lastMapped.code,
         });
       }
       logger.warn(
-        { code: geminiMapped.code },
-        "Gemini image generate failed; falling back to OpenAI gpt-image-1",
+        { code: lastMapped.code },
+        "Gemini image generate failed; falling back",
       );
     }
   }
 
-  if (!hasOpenAIKey()) {
-    throw Object.assign(
-      new Error(
-        geminiMapped?.error ||
-          "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
-      ),
-      {
-        status: geminiMapped?.status ?? 503,
-        code: geminiMapped?.code ?? "auth_error",
-      },
-    );
+  if (hasOpenAIKey()) {
+    try {
+      const result = await getOpenAIClient().images.generate({
+        model: "gpt-image-1",
+        prompt: trimmed.slice(0, 1000),
+        size: "1024x1024",
+      });
+      const b64 = result.data?.[0]?.b64_json;
+      if (!b64) {
+        throw Object.assign(new Error("No image was returned."), { status: 502 });
+      }
+      return {
+        image: `data:image/png;base64,${b64}`,
+        provider: "openai",
+      };
+    } catch (err) {
+      lastMapped = mapImageEditError(err);
+      if (lastMapped.code === "content_policy") {
+        throw Object.assign(new Error(lastMapped.error), {
+          status: lastMapped.status,
+          code: lastMapped.code,
+        });
+      }
+      logger.warn(
+        { code: lastMapped.code },
+        "OpenAI image generate failed; falling back",
+      );
+    }
   }
 
-  try {
-    const result = await getOpenAIClient().images.generate({
-      model: "gpt-image-1",
-      prompt: trimmed.slice(0, 1000),
-      size: "1024x1024",
-    });
-    const b64 = result.data?.[0]?.b64_json;
-    if (!b64) {
-      throw Object.assign(new Error("No image was returned."), { status: 502 });
-    }
-    return {
-      image: `data:image/png;base64,${b64}`,
-      provider: "openai",
-    };
-  } catch (err) {
-    if (geminiMapped) {
-      throw Object.assign(new Error(geminiMapped.error), {
-        status: geminiMapped.status,
-        code: geminiMapped.code,
+  // Production Worker binds OPENROUTER_API_KEY for chat. Use it for portraits
+  // when Gemini / OpenAI image keys are missing or those providers fail.
+  if (hasOpenRouterKey()) {
+    try {
+      const routed = await generateImageWithOpenRouter(trimmed);
+      return { image: routed.image, provider: routed.provider };
+    } catch (err) {
+      lastMapped = mapImageEditError(err);
+      throw Object.assign(new Error(lastMapped.error), {
+        status: lastMapped.status,
+        code: lastMapped.code,
       });
     }
-    const mapped = mapImageEditError(err);
-    throw Object.assign(new Error(mapped.error), {
-      status: mapped.status,
-      code: mapped.code,
+  }
+
+  if (lastMapped) {
+    throw Object.assign(new Error(lastMapped.error), {
+      status: lastMapped.status,
+      code: lastMapped.code,
     });
   }
+
+  const missing = missingImageProviderError();
+  throw missing;
 }
 
 // AI photo edit: takes a base64 image data URL plus a text prompt and returns
@@ -1559,47 +1589,68 @@ router.post("/image-edit", async (req, res) => {
       return;
     } catch (err) {
       const mapped = mapImageEditError(err);
-      if (mapped.code === "content_policy" || !hasOpenAIKey()) {
+      if (mapped.code === "content_policy") {
         res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
         return;
       }
       logger.warn(
         { code: mapped.code },
-        "Gemini image edit failed; falling back to OpenAI gpt-image-1",
+        "Gemini image edit failed; falling back",
       );
     }
   }
 
-  if (!hasOpenAIKey()) {
-    res.status(503).json({
-      error: "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
-      code: "auth_error",
-    });
-    return;
+  if (hasOpenAIKey()) {
+    try {
+      const file = await toFile(buffer, `source.${ext}`, { type: mime });
+      const result = await getOpenAIClient().images.edit({
+        model: "gpt-image-1",
+        image: file,
+        prompt: trimmed.slice(0, 1000),
+        size: "1024x1024",
+      });
+      const b64 = result.data?.[0]?.b64_json;
+      if (!b64) {
+        res.status(502).json({ error: "No image was returned." });
+        return;
+      }
+      res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
+      return;
+    } catch (err) {
+      const mapped = mapImageEditError(err);
+      if (mapped.code === "content_policy") {
+        res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+        return;
+      }
+      logger.warn(
+        { code: mapped.code },
+        "OpenAI image edit failed; falling back",
+      );
+    }
   }
 
-  try {
-    const file = await toFile(buffer, `source.${ext}`, { type: mime });
-    const result = await getOpenAIClient().images.edit({
-      model: "gpt-image-1",
-      image: file,
-      prompt: trimmed.slice(0, 1000),
-      size: "1024x1024",
-    });
-    const b64 = result.data?.[0]?.b64_json;
-    if (!b64) {
-      res.status(502).json({ error: "No image was returned." });
+  if (hasOpenRouterKey()) {
+    try {
+      const routed = await editImageWithOpenRouter(dataUrl, trimmed);
+      res.json({ image: routed.image, provider: routed.provider });
+      return;
+    } catch (err) {
+      const mapped = mapImageEditError(err);
+      res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
       return;
     }
-    res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
-  } catch (err) {
-    const mapped = mapImageEditError(err);
-    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
+
+  const missing = missingImageProviderError();
+  res.status(503).json({
+    error: missing.message,
+    code: "auth_error",
+  });
 });
 
 // AI image generation from a text prompt. Prefers Gemini Flash Image when
-// GEMINI_API_KEY is set; otherwise OpenAI gpt-image-1.
+// GEMINI_API_KEY is set; otherwise OpenAI gpt-image-1; otherwise OpenRouter
+// (the key already bound on the production Worker for chat).
 // Auth is enforced by the router-level middleware above.
 router.post("/image-generate", async (req, res) => {
   const { prompt } = req.body as { prompt?: string };

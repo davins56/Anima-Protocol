@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
+import { updateCompanionRecord } from "@/lib/listPersonalAnimas";
 import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
@@ -27,7 +28,7 @@ export default function AnimaVoicePanel({ anima, onSave }) {
     setSaving(true);
     setError("");
     try {
-      await base44.entities.Anima.update(anima.id, patch);
+      await updateCompanionRecord(anima, patch);
       if (patch.elevenlabs_voice_id !== undefined) {
         setVoiceId(patch.elevenlabs_voice_id || "");
       }

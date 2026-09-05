@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isPersonalAnimaRecord, selectPersonalAnima } from "./listPersonalAnimas";
+import {
+  companionLookHref,
+  companionStoreEntity,
+  isPersonalAnimaRecord,
+  mergePersonalCompanions,
+  selectPersonalAnima,
+} from "./listPersonalAnimas";
 
 describe("isPersonalAnimaRecord", () => {
   it("accepts explicit Anima flags and construct categories", () => {
@@ -10,12 +16,62 @@ describe("isPersonalAnimaRecord", () => {
     expect(isPersonalAnimaRecord({ category: "Anima" })).toBe(true);
   });
 
+  it("accepts companions created from the AI Companion Generator", () => {
+    expect(
+      isPersonalAnimaRecord({
+        name: "Nyx",
+        universe: "Original",
+        creation_method: "ai_prompt",
+      }),
+    ).toBe(true);
+  });
+
   it("rejects roster characters and empty rows", () => {
     expect(isPersonalAnimaRecord(null)).toBe(false);
     expect(
       isPersonalAnimaRecord({ name: "Naruto", universe: "Naruto" }),
     ).toBe(false);
     expect(isPersonalAnimaRecord({ category: "warrior" })).toBe(false);
+  });
+});
+
+describe("mergePersonalCompanions", () => {
+  it("keeps generator-created characters even when an Anima already exists", () => {
+    const merged = mergePersonalCompanions(
+      [
+        {
+          id: "anima-1",
+          name: "Serenity",
+          created_date: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      [
+        {
+          id: "char-nyx",
+          name: "Nyx",
+          creation_method: "ai_prompt",
+          created_date: "2026-09-05T00:00:00.000Z",
+        },
+        {
+          id: "char-naruto",
+          name: "Naruto",
+          universe: "Naruto",
+          created_date: "2026-09-04T00:00:00.000Z",
+        },
+      ],
+    );
+    expect(merged.map((row) => row.id)).toEqual(["char-nyx", "anima-1"]);
+    expect(companionStoreEntity(merged[0])).toBe("Character");
+    expect(companionStoreEntity(merged[1])).toBe("Anima");
+  });
+});
+
+describe("companionLookHref", () => {
+  it("deep-links the look tab for a new companion", () => {
+    expect(companionLookHref("char-nyx")).toBe(
+      "/customise-anima?anima=char-nyx&tab=look",
+    );
+    expect(companionLookHref("")).toBe("/customise-anima?tab=look");
   });
 });
 

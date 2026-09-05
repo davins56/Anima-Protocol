@@ -21,6 +21,9 @@ vi.mock("@/api/base44Client", () => ({
       Anima: {
         update: updateAnimaMock,
       },
+      Character: {
+        update: vi.fn(),
+      },
     },
   },
 }));
