@@ -23,6 +23,7 @@ describe("worker API path helpers", () => {
 
   it("times out store and healthz but not chat or SSE", () => {
     expect(shouldTimeoutApiPath("/api/store/Character")).toBe(true);
+    expect(shouldTimeoutApiPath("/api/store/ChatSession")).toBe(true);
     expect(shouldTimeoutApiPath("/api/healthz/db")).toBe(true);
     expect(shouldTimeoutApiPath("/api/store/events")).toBe(false);
     expect(shouldTimeoutApiPath("/api/chat")).toBe(false);

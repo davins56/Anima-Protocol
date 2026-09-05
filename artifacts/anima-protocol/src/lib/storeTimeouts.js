@@ -7,7 +7,8 @@
  * insert after a Worker cold start + Hyperdrive can exceed 8s even when the
  * write is healthy. Do not raise STORE_FETCH_TIMEOUT_MS for that — use the
  * targeted create budgets below (see createInitChatSession, NewSessionModal,
- * and createTherapyTopic).
+ * beginBundledStarterUpsert, and createTherapyTopic). Bundled starter upsert
+ * is fail-open so it cannot spend this create budget before the insert.
  */
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;
