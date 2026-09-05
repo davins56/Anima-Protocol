@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
@@ -16,10 +16,9 @@ import {
 } from "@/lib/loadRosterCharacters";
 import { upsertCharacters } from "@/lib/seedCharacters";
 import {
-  applyIdentityFallback,
+  beginBundledStarterUpsert,
   initSessionErrorMessage,
   isUsableSessionId,
-  remapSelectedCharacterIds,
 } from "@/lib/createInitSession";
 import { rememberCreatedSession } from "@/lib/chatSessionLoad";
 import { STORE_SESSION_CREATE_TIMEOUT_MS } from "@/lib/storeTimeouts";
@@ -44,6 +43,10 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [showStoryChooser, setShowStoryChooser] = useState(false);
   const [canonSeed, setCanonSeed] = useState(null); // { story, insertions } from the universe browser
   const [openingScene, setOpeningScene] = useState("");
+  const mountedRef = useRef(true);
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const loadData = useCallback(async ({ retrySeed = false } = {}) => {
     // Keep current roster visible while refreshing — never blank the grid.
@@ -179,42 +182,35 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     setCreating(true);
     setLoadError(null);
 
-    // Bundled starters are not in Postgres yet — upsert before chat so the
-    // session can resolve character ids from the store. Remap picker ids onto
-    // the upsert response so create never receives a leftover seed id.
+    // Bundled starters are not in Postgres yet. Persist them in the background
+    // — bulk-upsert keeps client seed ids, so Init must not await a 20s
+    // Worker/Hyperdrive cold start before ChatSession.create. Remap lands on
+    // the roster after the write settles (next Init / refresh).
     const bundledSelected = selectedCharacters.filter((c) => c._bundled);
     let selectedIds = selected;
     try {
       if (bundledSelected.length) {
-        const upserted = await upsertCharacters(
-          bundledSelected.map(({ _bundled, ...rest }) => rest),
-          {
-            skipExistingLookup: true,
-            timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS,
-          },
-        );
-        selectedIds = applyIdentityFallback(
-          remapSelectedCharacterIds(
-            selected,
-            bundledSelected,
-            upserted?.items,
-            upserted?.idMap,
-          ),
-          selected,
+        const { pending } = beginBundledStarterUpsert({
           bundledSelected,
-          upserted?.items,
-        );
-        const remappedByOldId = new Map(
-          selected.map((id, index) => [id, selectedIds[index]]),
-        );
-        setCharacters((prev) =>
-          prev.map((c) => {
-            if (!c._bundled) return c;
-            const nextId = remappedByOldId.get(c.id) || c.id;
-            return { ...c, id: nextId, _bundled: false };
-          }),
-        );
-        setUsingBundledSeed(false);
+          selectedIds: selected,
+          upsert: upsertCharacters,
+          timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS,
+          onSettled: (nextIds, upserted) => {
+            if (!upserted || !mountedRef.current) return;
+            const remappedByOldId = new Map(
+              selected.map((id, index) => [id, nextIds[index]]),
+            );
+            setCharacters((prev) =>
+              prev.map((c) => {
+                if (!c._bundled) return c;
+                const nextId = remappedByOldId.get(c.id) || c.id;
+                return { ...c, id: nextId, _bundled: false };
+              }),
+            );
+            setUsingBundledSeed(false);
+          },
+        });
+        void pending;
       }
 
       const rosterById = new Map(

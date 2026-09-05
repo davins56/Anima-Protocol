@@ -35,6 +35,17 @@ export { STORE_FETCH_TIMEOUT_MS, STORE_SESSION_CREATE_TIMEOUT_MS };
 const DEFAULT_STORE_TIMEOUT_MESSAGE =
   'The server took too long to respond. Check your connection or try again in a moment.';
 
+function createStoreAbortSignal(budget, userSignal) {
+  const timeoutSignal =
+    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+      ? AbortSignal.timeout(budget)
+      : undefined;
+  if (userSignal && timeoutSignal && typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([userSignal, timeoutSignal]);
+  }
+  return userSignal || timeoutSignal;
+}
+
 async function storeFetch(path, options = {}) {
   const token = await getToken();
   if (!token) {
@@ -57,18 +68,7 @@ async function storeFetch(path, options = {}) {
       ? timeoutMs
       : STORE_FETCH_TIMEOUT_MS;
 
-  const timeoutSignal =
-    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
-      ? AbortSignal.timeout(budget)
-      : undefined;
-  let signal = timeoutSignal;
-  if (userSignal && timeoutSignal) {
-    signal = AbortSignal.any([userSignal, timeoutSignal]);
-  } else if (userSignal) {
-    signal = userSignal;
-  }
-
-  const makeRequest = async (retryOptions = {}) => {
+  const makeRequest = async (retryOptions = {}, signal) => {
     const headers = await authHeaders(optionHeaders, retryOptions);
     return await fetch(`${STORE_BASE()}${path}`, {
       ...fetchOptions,
@@ -80,9 +80,12 @@ async function storeFetch(path, options = {}) {
 
   let res;
   try {
-    res = await makeRequest();
+    // First attempt + 401 retry share one budget. A 503 reset gets a fresh
+    // AbortSignal so a hung Hyperdrive socket cannot starve the retry.
+    const firstSignal = createStoreAbortSignal(budget, userSignal);
+    res = await makeRequest({}, firstSignal);
     if (res.status === 401) {
-      const retried = await makeRequest({ skipCache: true });
+      const retried = await makeRequest({ skipCache: true }, firstSignal);
       if (retried.status !== 401) {
         return retried;
       }
@@ -91,7 +94,7 @@ async function storeFetch(path, options = {}) {
     // Stale Worker/pg sockets surface as 503 "Database connection reset".
     // One extra attempt lets the server open a fresh connection.
     if (await isRetryableStoreReset(res)) {
-      res = await makeRequest();
+      res = await makeRequest({}, createStoreAbortSignal(budget, userSignal));
     }
     return res;
   } catch (err) {
@@ -108,12 +111,26 @@ async function isRetryableStoreReset(res) {
   if (res.status !== 503) return false;
   try {
     const json = await res.clone().json();
-    return (
-      json?.reason === 'reset' ||
-      /connection reset/i.test(String(json?.error || ''))
+    const reason = String(json?.reason || '');
+    // Schema/auth must not retry — those need a deploy or a new session.
+    if (reason === 'schema' || reason === 'auth') return false;
+    if (
+      reason === 'reset' ||
+      reason === 'unavailable' ||
+      reason === 'timeout' ||
+      reason === 'refused' ||
+      reason === 'unreachable' ||
+      reason === 'limit'
+    ) {
+      return true;
+    }
+    if (json?.dbError === true) return true;
+    return /connection reset|database unavailable|timed out|unreachable|could not be reached/i.test(
+      String(json?.error || ''),
     );
   } catch {
-    return false;
+    // Worker isolate HTML coerced to 503 — one more attempt on a fresh isolate.
+    return true;
   }
 }
 
@@ -287,25 +304,48 @@ async function blobToBase64(blob) {
   return btoa(binary);
 }
 
-async function parseUploadErrorResponse(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json?.error) return String(json.error);
-  } catch {
-    // Non-JSON (HTML 404 from an assets-only deploy, Cloudflare challenge, …)
-  }
+function messageFromUploadStatus(res, json, text) {
+  if (json?.error) return String(json.error);
   if (res.status === 401) {
     return 'Sign in to upload an image, then try again.';
   }
   if (res.status === 413) {
     return 'That image is too large. Try a smaller photo.';
   }
+  if (res.status === 503) {
+    return 'Image upload is temporarily unavailable. The database may be down — try again in a moment.';
+  }
   if (res.status === 404) {
     return 'Image upload API not found — /api/storage/uploads is not available on this host.';
   }
-  const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 160);
+  const snippet = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
   return snippet || res.statusText || `Upload failed (${res.status})`;
+}
+
+async function parseUploadErrorResponse(res) {
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Non-JSON (HTML 404 from an assets-only deploy, Cloudflare challenge, …)
+  }
+  return messageFromUploadStatus(res, json, text);
+}
+
+function uploadErrorFromResponse(res, text) {
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  const err = new Error(messageFromUploadStatus(res, json, text));
+  err.status = res.status;
+  if (typeof json?.reason === 'string') err.reason = json.reason;
+  if (typeof json?.dbError === 'boolean') err.dbError = json.dbError;
+  if (typeof json?.code === 'string') err.code = json.code;
+  return err;
 }
 
 /**
@@ -327,28 +367,33 @@ async function uploadBlob(blob) {
 
   const headers = await authHeaders();
   const dataBase64 = await blobToBase64(blob);
-  let res;
-  try {
-    res = await fetch(apiUrl('/storage/uploads'), {
-      method: 'POST',
-      headers,
-      credentials: 'same-origin',
-      body: JSON.stringify({
-        contentType: blob.type || 'image/jpeg',
-        dataBase64,
-      }),
-    });
-  } catch (err) {
-    if (err?.name === 'AbortError') throw err;
-    const netErr = new Error('Network request failed — could not reach the image upload API.');
-    netErr.code = 'network';
-    throw netErr;
+  const body = JSON.stringify({
+    contentType: blob.type || 'image/jpeg',
+    dataBase64,
+  });
+  const postOnce = async () => {
+    try {
+      return await fetch(apiUrl('/storage/uploads'), {
+        method: 'POST',
+        headers,
+        credentials: 'same-origin',
+        body,
+      });
+    } catch (err) {
+      if (err?.name === 'AbortError') throw err;
+      const netErr = new Error('Network request failed — could not reach the image upload API.');
+      netErr.code = 'network';
+      throw netErr;
+    }
+  };
+  let res = await postOnce();
+  // Same Hyperdrive stale-socket recovery as storeFetch. The server also
+  // retries the insert; this covers a Worker isolate that died before then.
+  if (await isRetryableStoreReset(res)) {
+    res = await postOnce();
   }
   if (!res.ok) {
-    const message = await parseUploadErrorResponse(res);
-    const err = new Error(message);
-    err.status = res.status;
-    throw err;
+    throw uploadErrorFromResponse(res, await res.text());
   }
   const payload = await res.json();
   if (payload?.file_url) return payload.file_url;
@@ -360,7 +405,7 @@ async function uploadBlob(blob) {
 }
 
 // Downscale a data URL to a small JPEG and upload it. Returns the served path.
-export async function uploadDataUrl(dataUrl, { maxSize = 1024, quality = 0.85 } = {}) {
+export async function uploadDataUrl(dataUrl, { maxSize = 800, quality = 0.72 } = {}) {
   const small = await downscaleDataUrl(dataUrl, maxSize, quality);
   return uploadBlob(dataUrlToBlob(small));
 }
@@ -1331,11 +1376,8 @@ async function saveProfile(patch) {
     method: 'PUT',
     body: JSON.stringify(next),
   });
-  if (res.ok) {
-    profileCache = await res.json();
-  } else {
-    profileCache = next;
-  }
+  if (!res.ok) await throwErr(res);
+  profileCache = await res.json();
   profileExpiry = Date.now() + PROFILE_TTL;
   return mergedUser(profileCache);
 }

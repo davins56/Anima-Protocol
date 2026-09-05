@@ -803,6 +803,7 @@ const AuthenticatedApp = () => {
         >
           <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageLoader />}>
+            <div className="app-shell-route flex min-h-0 min-w-0 flex-1 flex-col">
             <Routes location={location}>
               {/* Root: signed-out -> Landing, signed-in -> MainHome */}
               <Route path="/" element={<HomeGate />} />
@@ -1349,6 +1350,24 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/design-your-companion"
+                element={
+                    <CompanionGenerator />
+                }
+              />
+              <Route
+                path="/design-companion"
+                element={
+                    <CompanionGenerator />
+                }
+              />
+              <Route
+                path="/create-companion"
+                element={
+                    <CompanionGenerator />
+                }
+              />
+              <Route
                 path="/what-if"
                 element={
                     <ExtraPage name="WhatIfScenarios" />
@@ -1428,6 +1447,7 @@ const AuthenticatedApp = () => {
               />
               <Route path="*" element={<PageNotFound />} />
             </Routes>
+            </div>
             </Suspense>
           </ErrorBoundary>
         </motion.div>
@@ -1458,10 +1478,13 @@ export default function ProtocolApp() {
                   className="app-shell flex flex-col h-screen-safe"
                   style={{
                     paddingTop: "env(safe-area-inset-top, 0px)",
-                    // --safe-bottom is env(safe-area-inset-bottom) when the
-                    // keyboard is closed, and 0px while it is open so the
-                    // home indicator is not reserved above the keyboard.
-                    paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))",
+                    // Bottom inset is owned by `--tab-bar-height` on
+                    // `.app-shell-main` (56px + home indicator). Do not also
+                    // pad `--safe-bottom` here — that double-counted the
+                    // home indicator and lifted the in-flow chat composer
+                    // away from the fixed tab bar. Keyboard-open still
+                    // zeroes `--tab-bar-height` / `--safe-bottom` so the
+                    // composer sits on the visual viewport.
                   }}
                 >
                   <AuthenticatedApp />

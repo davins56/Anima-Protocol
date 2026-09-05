@@ -24,6 +24,12 @@ import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  isOpenRouterAlreadyFreeTier,
+  isOpenRouterGenericProviderError,
+  isOpenRouterZdrOrDataPolicyError,
+  OPENROUTER_FREE_PROVIDER_HINT,
+  OPENROUTER_ZDR_PRIVACY_HINT,
+  remapGenericProviderError,
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
@@ -31,6 +37,7 @@ import {
   consumeLlmStream,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
+import { llmOpenTimeoutMs, openStreamAbort } from "../lib/chatTimeouts";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -145,7 +152,6 @@ function truncate(value: unknown, max = 600): string {
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
 }
 
-const LLM_OPEN_TIMEOUT_MS = 35_000;
 const SSE_HEARTBEAT_MS = 8_000;
 
 function flushSse(res: Response) {
@@ -173,18 +179,15 @@ function startSseHeartbeat(res: Response): () => void {
   return () => clearInterval(timer);
 }
 
-function openStreamAbort(): { signal: AbortSignal; cancel: () => void } {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), LLM_OPEN_TIMEOUT_MS);
-  timer.unref?.();
-  return {
-    signal: controller.signal,
-    cancel: () => clearTimeout(timer),
-  };
-}
-
 function streamErrorMessage(err: unknown): string {
   if (err instanceof LlmStreamTimeoutError) return err.message;
+  if (isOpenRouterZdrOrDataPolicyError(err)) {
+    return OPENROUTER_ZDR_PRIVACY_HINT;
+  }
+  if (isOpenRouterGenericProviderError(err)) {
+    const remapped = err instanceof Error ? remapGenericProviderError(err) : new Error(OPENROUTER_FREE_PROVIDER_HINT);
+    return remapped.message;
+  }
   const raw = err instanceof Error ? err.message : String(err);
   if (/aborted|abort/i.test(raw)) {
     return "The companion took too long to reply. Please try again.";
@@ -1673,7 +1676,9 @@ router.post("/messages", async (req, res) => {
         fullResponse = streamed.content;
       }
     } else {
-      const open = openStreamAbort();
+      const open = openStreamAbort(
+        llmOpenTimeoutMs({ freeTierCascade: isOpenRouterAlreadyFreeTier() }),
+      );
       let completion;
       try {
         completion = await createChatStreamWithFailover({

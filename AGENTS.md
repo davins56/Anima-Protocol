@@ -57,16 +57,12 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_ALGOLIA_SEARCH_API_KEY` | Frontend — Algolia **search-only** key for the Netlify crawler widget (`div#search`). Never use the Admin or crawler `ALGOLIA_API_KEY` here. Widget stays hidden when unset. |
 | `VITE_ALGOLIA_BRANCH` | Frontend — optional override for which Algolia Netlify index to query. Defaults to Netlify `HEAD` or `main`. |
 | `OPENROUTER_API_KEY` | API chat (Venice Uncensored; free-tier fallback on HTTP 402). Alias: `ANIMA_OPENROUTER_API_KEY` / `OPEN_ROUTER_API_KEY` |
-<<<<<<< HEAD
 | `MINIMAX_API_KEY` / `ANIMA_MINIMAX_API_KEY` | API chat via MiniMax Global. Preferred over OpenRouter when configured; optional `ANIMA_MINIMAX_MODEL` and `ANIMA_MINIMAX_BASE_URL` overrides |
-| `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `openai/gpt-oss-20b:free` |
-=======
 | `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `minimax/minimax-m2.7:free` |
 | `ANIMA_LOCAL_LLM_BASE_URL` | API — public HTTPS OpenAI-compatible `…/v1` URL (Fly: `https://anima-chat-llm.fly.dev/v1`). Never localhost on the Worker |
 | `ANIMA_LOCAL_LLM_API_KEY` | API — bearer token; must match Fly `PROXY_AUTH_TOKEN` |
 | `ANIMA_LOCAL_LLM_BACKEND` | API — `ollama` (default) or `vllm` |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | API — model tag the host serves (`anima-chat`) |
->>>>>>> 27790ba75422a72d265470d50df69a7616dd5f2c
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
 | `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |
 | `CRON_SECRET` | Authorizes the hourly Vercel proactive-message cron |
@@ -165,6 +161,7 @@ Reload: `sudo nginx -s reload`
 - Cloudflare Worker `anima-protocol` must deploy from root `wrangler.jsonc` (`main` = `artifacts/api-server/src/worker.ts`). An assets-only deploy (`--assets=./dist` with no `main`) makes `/api/*` 404 on anima-protocol.com.
 - Companion store "Postgres is unreachable from this host" on anima-protocol.com means the Worker has `DATABASE_URL` but no Hyperdrive path to Postgres. Create/bind Hyperdrive (`scripts/cloudflare/hyperdrive.md`); do not put the URL in `wrangler.jsonc` vars. Hyperdrive origin must be real Postgres, not Prisma Accelerate (`db.prisma.io`).
 - www 301 to `https://anima-protocol.com/` (path dropped) is zone Redirect Rule **"Redirect www to root"** (`scripts/cloudflare/www-redirect.md`), not `vercel.json`. Fix the replacement to `https://anima-protocol.com/${1}`. Apex `/api/*` must still return JSON when the isolate throws.
+- Cloudflare Workers Builds always runs `git submodule update` during Cloning. Unused or unmapped gitlinks (duplicate `vendor/airi` + `external/airi`, or a nested `anima-work` clone with no `.gitmodules` URL) fail the deploy before `pnpm build` runs. Do not add those paths as submodules; optional local airi checkout is `scripts/vendor/clone-airi.sh`.
 
 ## Analytics Tracking — Mixpanel
 

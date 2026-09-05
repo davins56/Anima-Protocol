@@ -9,7 +9,7 @@ describe("analyzeCodeRepairInput", () => {
       diagnostics: {
         openrouterConfigured: true,
         openrouterEnv: "OPENROUTER_API_KEY",
-        openrouterModel: "minimax/minimax-m2.7:free",
+        openrouterModel: "minimax/minimax-m3:free",
         openrouterIsFreeTier: true,
       },
     });
@@ -21,6 +21,8 @@ describe("analyzeCodeRepairInput", () => {
       "Point chat at the custom Anima LLM",
     );
     expect(analysis.likelyCause).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
+    expect(analysis.likelyCause).toMatch(/already on :free models/i);
+    expect(analysis.likelyCause).not.toMatch(/Setting ANIMA_OPENROUTER_FREE=true cannot bypass/i);
     expect(analysis.guardrails.join(" ")).toMatch(/does not mutate/i);
   });
 

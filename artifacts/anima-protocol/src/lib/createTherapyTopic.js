@@ -1,4 +1,5 @@
 import { base44 } from "@/api/base44Client";
+import { isRetryableStoreWriteError } from "@/lib/storeErrorSignals";
 import {
   STORE_TOPIC_CREATE_RETRY_LIMIT,
   STORE_TOPIC_CREATE_TIMEOUT_MS,
@@ -16,11 +17,7 @@ export function therapyTopicSaveErrorMessage(err) {
 }
 
 export function isRetryableTopicCreateError(err) {
-  if (!err) return false;
-  if (err.code === "timeout") return true;
-  if (err.name === "TimeoutError" || err.name === "AbortError") return true;
-  if (err.status === 503) return true;
-  return /connection reset/i.test(String(err.message || ""));
+  return isRetryableStoreWriteError(err);
 }
 
 /**

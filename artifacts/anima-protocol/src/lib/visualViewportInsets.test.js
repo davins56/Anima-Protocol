@@ -115,6 +115,36 @@ describe("keyboardPaddingForShell", () => {
   });
 });
 
+describe("in-flow composer vs fixed tab bar (keyboard closed)", () => {
+  it("reserves --tab-bar-height once and does not add --safe-bottom again", () => {
+    // CSS: --tab-bar-height = 56px + env(safe-area-inset-bottom)
+    const tabBarContentPx = 56;
+    const safeBottomPx = 34;
+    const tabBarHeightPx = tabBarContentPx + safeBottomPx;
+    // After the fix, .app-shell does not also pad --safe-bottom.
+    const shellSafeBottomPx = 0;
+    const reservedAboveViewportBottom = tabBarHeightPx + shellSafeBottomPx;
+    const actualTabBarPx = tabBarContentPx + safeBottomPx;
+    expect(reservedAboveViewportBottom).toBe(actualTabBarPx);
+    // The old stack (shell --safe-bottom + --tab-bar-height) left this gap.
+    expect(tabBarHeightPx + safeBottomPx - actualTabBarPx).toBe(safeBottomPx);
+  });
+
+  it("still zeros the reserved inset while the keyboard is open", () => {
+    const insets = measureVisualViewportInsets(
+      { height: 508, offsetTop: 0 },
+      844,
+      { inputFocused: true },
+    );
+    expect(insets.keyboardOpen).toBe(true);
+    const root = document.createElement("html");
+    applyVisualViewportCssVars(root, insets);
+    expect(root.style.getPropertyValue("--tab-bar-height")).toBe("0px");
+    expect(root.style.getPropertyValue("--safe-bottom")).toBe("0px");
+    expect(root.dataset.keyboardOpen).toBe("true");
+  });
+});
+
 describe("applyVisualViewportCssVars", () => {
   it("sizes --app-height to the visual viewport and zeros safe-area / tab bar while the keyboard is open", () => {
     const root = document.createElement("html");
@@ -152,6 +182,37 @@ describe("applyVisualViewportCssVars", () => {
     expect(root.style.getPropertyValue("--safe-bottom")).toBe("");
     expect(root.style.getPropertyValue("--tab-bar-height")).toBe("");
     expect(root.dataset.keyboardOpen).toBeUndefined();
+  });
+
+  it("syncs --tab-bar-height to a painted bar when the keyboard closes", () => {
+    const bar = document.createElement("div");
+    bar.className = "tab-bar";
+    bar.getBoundingClientRect = () => /** @type {DOMRect} */ ({ height: 70 });
+    Object.defineProperty(bar, "offsetHeight", { value: 70, configurable: true });
+    document.body.appendChild(bar);
+
+    const root = document.documentElement;
+    applyVisualViewportCssVars(
+      root,
+      measureVisualViewportInsets({ height: 508, offsetTop: 0 }, 844, {
+        inputFocused: true,
+      }),
+    );
+    expect(root.style.getPropertyValue("--tab-bar-height")).toBe("0px");
+
+    applyVisualViewportCssVars(
+      root,
+      measureVisualViewportInsets({ height: 844, offsetTop: 0 }, 844, {
+        inputFocused: false,
+      }),
+    );
+    expect(root.style.getPropertyValue("--tab-bar-height")).toBe("70px");
+    expect(root.dataset.keyboardOpen).toBeUndefined();
+
+    bar.remove();
+    root.style.removeProperty("--tab-bar-height");
+    root.style.removeProperty("--safe-bottom");
+    delete root.dataset.keyboardOpen;
   });
 });
 

@@ -3,6 +3,7 @@ import {
   avatarUrlFromUploadResult,
   characterCreatePayload,
   formatAvatarUploadError,
+  formatImageUploadError,
   uploadCharacterAvatar,
 } from "./characterAvatarUpload";
 
@@ -72,5 +73,10 @@ describe("characterAvatarUpload", () => {
       /HEIC/i,
     );
     expect(formatAvatarUploadError(new Error("not found"))).toMatch(/not available/i);
+    expect(
+      formatImageUploadError(new Error("Database connection reset"), {
+        noun: "image",
+      }),
+    ).toMatch(/dropped the upload connection|try again/i);
   });
 });

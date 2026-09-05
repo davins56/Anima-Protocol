@@ -77,7 +77,10 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
     // viewport (`--app-height`); iOS keyboard avoidance lives in
     // visualViewportInsets.js — do not add 100vh, keyboard padding, or extra
     // safe-area-inset-bottom here.
-    <div className="border-t border-primary/20 bg-black/60 backdrop-blur-md p-3 sm:p-4 space-y-2">
+    <div
+      data-testid="chat-input"
+      className="border-t border-primary/20 bg-black/60 backdrop-blur-md p-3 sm:p-4 space-y-2"
+    >
       {isLoading && (
         <div className="flex items-center gap-2 mb-2 text-primary/50">
           <Zap className="w-2.5 h-2.5 animate-pulse" />

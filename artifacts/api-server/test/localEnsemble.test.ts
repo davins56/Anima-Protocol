@@ -11,6 +11,19 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
+    OPENROUTER_FREE_M3_MODEL: "minimax/minimax-m3:free",
+    OPENROUTER_FREE_M27_MODEL: "minimax/minimax-m2.7:free",
+    OPENROUTER_FREE_GEMMA4_26B_MODEL: "google/gemma-4-26b-a4b-it:free",
+    OPENROUTER_FREE_GEMMA4_31B_MODEL: "google/gemma-4-31b-it:free",
+    MINIMAX_FREE_MODEL: "minimax/minimax-m3:free",
+    JULES_FREE_MODEL: "google/gemma-4-26b-a4b-it:free",
+    OPENROUTER_FREE_MODEL_CANDIDATES: [
+      "minimax/minimax-m2.7:free",
+      "minimax/minimax-m3:free",
+      "google/gemma-4-26b-a4b-it:free",
+      "google/gemma-4-31b-it:free",
+    ],
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
@@ -56,6 +69,8 @@ vi.mock("../src/lib/openaiClient", () => {
     getLocalLlmClient: () => client,
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
     localLlmMaxRetries: () => 2,
+    openRouterMaxRetries: () => 2,
+    openRouterCascadeMaxRetries: (remaining: number) => (remaining > 0 ? 0 : 2),
     resetLlmClientsForTests: () => {},
   };
 });

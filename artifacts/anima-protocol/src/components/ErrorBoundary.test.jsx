@@ -83,7 +83,7 @@ function advancePastAutoHeal() {
 }
 
 describe("ErrorBoundary", () => {
-  it("shows the on-brand recovery panel when a child throws", () => {
+  it("shows the on-brand recovery panel with error details when a child throws", () => {
     act(() => {
       root.render(
         <ErrorBoundary resetKey="/a">
@@ -102,6 +102,8 @@ describe("ErrorBoundary", () => {
 
     // Recovery panel content is shown instead of a blank tree.
     expect(container.textContent).toContain("Something went wrong");
+    expect(container.textContent).toContain("Error Details");
+    expect(container.textContent).toContain("kaboom");
     const buttons = [...container.querySelectorAll("button")];
     expect(buttons.some((b) => /reload/i.test(b.textContent))).toBe(true);
     expect(buttons.some((b) => /self-repair/i.test(b.textContent))).toBe(true);

@@ -36,13 +36,20 @@ describe("viewport shell contract", () => {
     expect(css).toContain(".app-shell {");
     expect(css).toContain(".app-shell-main {");
     expect(css).toContain(".app-page-fill {");
-    const mainBlock = css.slice(css.indexOf(".app-shell-main {"), css.indexOf(".app-page-fill {"));
+    const mainBlock = css.slice(css.indexOf(".app-shell-main {"), css.indexOf(".app-shell-route {"));
+    expect(mainBlock).toMatch(/display:\s*flex/);
+    expect(mainBlock).toMatch(/flex-direction:\s*column/);
+    expect(mainBlock).toMatch(/flex:\s*1 1 0%/);
     expect(mainBlock).toMatch(/min-height:\s*0/);
     expect(mainBlock).toMatch(/overflow-y:\s*auto/);
     expect(mainBlock).toMatch(/overflow-x:\s*hidden/);
+    expect(css).toContain(".app-shell-route {");
     const fillBlock = css.slice(css.indexOf(".app-page-fill {"));
-    expect(fillBlock).toMatch(/overflow:\s*hidden/);
-    expect(fillBlock).toMatch(/min-height:\s*0/);
+    const fillOnly = fillBlock.slice(0, fillBlock.indexOf("}"));
+    expect(fillOnly).toMatch(/overflow:\s*hidden/);
+    expect(fillOnly).toMatch(/min-height:\s*0/);
+    expect(fillOnly).toMatch(/flex:\s*1 1 0%/);
+    expect(fillOnly).not.toMatch(/height:\s*100%/);
   });
 
   it("keeps h-screen-safe on the dvh / --app-height stack, not a lone 100vh", () => {
@@ -67,6 +74,7 @@ describe("viewport shell contract", () => {
     expect(shell).toContain("useViewportHeight()");
     expect(shell).toContain('className="app-shell flex flex-col h-screen-safe"');
     expect(shell).toContain("app-shell-main");
+    expect(shell).toContain("app-shell-route");
     expect(shell).toContain("flex-1 min-h-0 flex flex-col");
     expect(shell).toMatch(/showChrome && !isHomeFloor/);
     expect(shell).toContain("var(--tab-bar-height, 0px)");
@@ -147,6 +155,111 @@ describe("representative page scroll contract", () => {
     expect(chat).toContain("data-keyboard-open");
     expect(chat).not.toMatch(/height:\s*"100dvh"/);
     expect(chat).toContain('height: "var(--app-height, 100dvh)"');
+  });
+
+  it("keeps the in-flow chat composer flush above the tab bar when the keyboard is closed", () => {
+    const shell = readSrc("ProtocolApp.jsx");
+    const chat = readPage("Chat");
+    const css = readSrc("index.css");
+
+    // `--tab-bar-height` already includes the home indicator. Reserving that
+    // once on `.app-shell-main` is enough for the fixed tab bar.
+    expect(css).toMatch(
+      /--tab-bar-height:\s*calc\(56px \+ env\(safe-area-inset-bottom/,
+    );
+    expect(shell).toContain("var(--tab-bar-height, 0px)");
+    expect(shell).toMatch(/showChrome && !isHomeFloor/);
+
+    // A second `--safe-bottom` pad on `.app-shell` lifted the composer and
+    // left a black gap (home-indicator tall) above the tab bar.
+    const shellOpen = shell.slice(shell.indexOf("app-shell flex flex-col"));
+    const shellStyle = shellOpen.slice(0, shellOpen.indexOf("</div>"));
+    expect(shellStyle).toContain("paddingTop");
+    expect(shellStyle).not.toMatch(/paddingBottom:\s*"var\(--safe-bottom/);
+    expect(css).toMatch(/do not add `--safe-bottom` here/i);
+
+    // Composer is in-flow; ProtocolApp owns the tab bar. Extra tab-bar /
+    // safe-area padding on Chat was the other half of the double-count.
+    expect(chat).toContain('data-testid="chat-composer"');
+    expect(chat).toContain('paddingBottom: "0"');
+    expect(chat).not.toMatch(/<BottomTabBar/);
+    expect(chat).not.toMatch(
+      /paddingBottom:\s*['"]var\(--tab-bar-height/,
+    );
+    expect(chat).toContain(
+      'bottom: "calc(var(--tab-bar-height, 56px) + 0.5rem)"',
+    );
+    expect(chat).not.toContain('bottom: "5.5rem"');
+    // height: 100% on the Chat column fights the padded flex parent and
+    // extends the composer under the reserved tab-bar pad.
+    expect(chat).not.toMatch(/height:\s*"100%"/);
+    expect(chat).not.toMatch(/flex flex-col h-full overflow-hidden/);
+    expect(chat).toMatch(/flex flex-col flex-1 min-h-0 overflow-hidden/);
+  });
+
+  it("keeps ChatInput above the tab bar when lg+ Memory Recall is showing", () => {
+    const chat = readPage("Chat");
+    const css = readSrc("index.css");
+    const tabBar = readSrc("components/layout/BottomTabBar.jsx");
+    const input = readSrc("components/chat/ChatInput.jsx");
+
+    // This is the confirmed iPad viewport: Memory Recall paints, the tab
+    // bar paints, and ChatInput must stay in the padded column — not
+    // under HOME / CHAT / BOARD / MAP / MORE.
+    expect(chat).toMatch(/hidden lg:block[\s\S]*MemoryRecallPanel/);
+    expect(tabBar).not.toMatch(/\blg:hidden\b/);
+    expect(css).not.toMatch(
+      /@media\s*\(\s*min-width:\s*1024px\s*\)[\s\S]{0,240}--tab-bar-height:\s*0px/,
+    );
+    expect(css).toContain("Do not zero this");
+
+    // Extras (Speak / chips / Memory Recall) can scroll; the text box is
+    // a sibling under them so a tall lg stack cannot push it into the bar.
+    expect(chat).toContain('data-testid="chat-composer-extras"');
+    expect(chat).toContain('data-testid="chat-input-slot"');
+    expect(input).toContain('data-testid="chat-input"');
+    const extrasIdx = chat.indexOf('data-testid="chat-composer-extras"');
+    const composer = chat.slice(extrasIdx);
+    const memoryIdx = composer.indexOf("<MemoryRecallPanel");
+    const slotIdx = composer.indexOf('data-testid="chat-input-slot"');
+    const inputIdx = composer.indexOf("<ChatInput\n");
+    expect(extrasIdx).toBeGreaterThan(-1);
+    expect(memoryIdx).toBeGreaterThan(-1);
+    expect(slotIdx).toBeGreaterThan(memoryIdx);
+    expect(inputIdx).toBeGreaterThan(slotIdx);
+
+    // Whole-composer flex-shrink-0 was the overflow that hid ChatInput.
+    const composerAttr = chat.indexOf('data-testid="chat-composer"');
+    const composerTagStart = chat.lastIndexOf("<div", composerAttr);
+    const composerTag = chat.slice(composerTagStart, chat.indexOf(">", composerAttr));
+    expect(composerTag).toContain('data-testid="chat-composer"');
+    expect(composerTag).not.toContain("flex-shrink-0");
+    expect(composerTag).toContain("min-h-0");
+  });
+
+  it("keeps reserved --tab-bar-height in sync with the painted tab bar", () => {
+    const css = readSrc("index.css");
+    const tabBar = readSrc("components/layout/BottomTabBar.jsx");
+    const chat = readPage("Chat");
+
+    // The bar is fixed at every width — no lg:hidden. Zeroing the CSS
+    // variable at ≥1024px was the iPad bug (Memory Recall visible, ChatInput
+    // under HOME / CHAT / BOARD / MAP / MORE).
+    expect(tabBar).toContain("fixed-bottom-chrome");
+    expect(tabBar).toContain("fixed bottom-0");
+    expect(tabBar).not.toMatch(/\blg:hidden\b/);
+    expect(tabBar).toContain("syncReservedTabBarHeight");
+    expect(tabBar).toContain('data-testid="bottom-tab-bar"');
+    expect(css).not.toMatch(
+      /@media\s*\(\s*min-width:\s*1024px\s*\)[\s\S]{0,240}--tab-bar-height:\s*0px/,
+    );
+    expect(css).toContain("Do not zero this");
+    expect(css).toContain("at a desktop breakpoint");
+
+    // Chat stays in-flow and does not mount a second tab bar.
+    expect(chat).toContain('data-testid="chat-composer"');
+    expect(chat).not.toMatch(/<BottomTabBar/);
+    expect(chat).not.toContain("components/layout/BottomTabBar");
   });
 
   it("does not leave overlay chrome on a leftover 100dvh", () => {
@@ -245,5 +358,16 @@ describe("edge-to-edge fill contract (iOS 26 / notched iPhone)", () => {
     expect(tabBar).toContain(
       'paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))"',
     );
+  });
+
+  it("does not double-count the home indicator under in-flow bottom chrome", () => {
+    // `--tab-bar-height` = 56px + safe-area. The shell must not also apply
+    // `--safe-bottom`, or the chat composer sits a home-indicator-height
+    // above the tab bar when the keyboard is closed.
+    const css = readSrc("index.css");
+    expect(css).toMatch(
+      /--tab-bar-height:\s*calc\(56px \+ env\(safe-area-inset-bottom/,
+    );
+    expect(css).toContain("Do not also pad `.app-shell` with");
   });
 });

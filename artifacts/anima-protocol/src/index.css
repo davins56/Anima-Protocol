@@ -185,15 +185,20 @@
    * fallback is the closest CSS-only equivalent.
    */
   --app-height-max: 100lvh;
-  /* Tab bar height for mobile padding: 56px + safe-area-inset-bottom */
+  /*
+   * Space reserved for the fixed tab bar. Includes the home indicator
+   * because BottomTabBar is `position: fixed; bottom: 0` with its own
+   * `--safe-bottom` padding. Do not also pad `.app-shell` with
+   * `--safe-bottom` — that double-counts the inset and lifts in-flow
+   * chrome (chat composer) away from the tab bar.
+   *
+   * The bar is painted at every width (no `lg:hidden`), including iPad
+   * landscape ≥1024px where Memory Recall also appears. Do not zero this
+   * at a desktop breakpoint — that was the composer sitting under HOME /
+   * CHAT / BOARD / MAP / MORE. JS overwrites with the painted height
+   * when measurable, and zeroes it while `html[data-keyboard-open]`.
+   */
   --tab-bar-height: calc(56px + env(safe-area-inset-bottom, 0px));
-}
-
-/* On desktop (lg+), no tab bar padding needed */
-@media (min-width: 1024px) {
-  :root {
-    --tab-bar-height: 0px;
-  }
 }
 
 .safe-top { padding-top: env(safe-area-inset-top, 0px); }
@@ -283,6 +288,9 @@ html[data-keyboard-open] .fixed-bottom-chrome {
    * Landscape on a notched iPhone insets the display horizontally. Without
    * these the shell either clips under the notch or leaves an unpainted
    * gutter; `.app-viewport-backdrop` keeps the gutter itself painted.
+   * Bottom: do not add `--safe-bottom` here. `.app-shell-main` already
+   * reserves `--tab-bar-height` (bar + home indicator) for the fixed tab
+   * bar; a second safe-area pad opens a black gap above the tab bar.
    */
   padding-left: var(--safe-left, env(safe-area-inset-left, 0px));
   padding-right: var(--safe-right, env(safe-area-inset-right, 0px));
@@ -294,18 +302,44 @@ html[data-keyboard-open] .fixed-bottom-chrome {
  * Pages that manage their own column (Chat) use `.app-page-fill`.
  */
 .app-shell-main {
-  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  /*
+   * Basis 0% so the column sizes from leftover shell space (the content
+   * box *after* `--tab-bar-height` padding), not from Chat's min-content.
+   * A content-sized column on iPad is ~viewport tall once Memory Recall
+   * is showing, so ChatInput sits under the fixed HOME / CHAT / BOARD /
+   * MAP / MORE bar until the user scrolls the reserved pad.
+   */
+  flex: 1 1 0%;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Fill the shell and clip; the page must provide an inner overflow-y-auto. */
-.app-page-fill {
-  flex: 1 1 auto;
+/*
+ * Flex child of `.app-shell-main` that owns the matched route. Keeps
+ * `.app-page-fill` (Chat) in the padded content box even when Suspense
+ * or a boundary would otherwise break the flex chain.
+ */
+.app-shell-route {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
   min-height: 0;
-  height: 100%;
+  min-width: 0;
+}
+
+/*
+ * Fill the shell's *content* box and clip. Use flex-basis 0% instead of
+ * `height: 100%`: `.app-shell-main` already pads `--tab-bar-height`, and a
+ * 100% flex-basis resolves against the border box so Chat extends under
+ * the reserved pad (composer clipped by the fixed tab bar).
+ */
+.app-page-fill {
+  flex: 1 1 0%;
+  min-height: 0;
   overflow: hidden;
 }
 

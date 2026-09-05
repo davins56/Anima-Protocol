@@ -34,8 +34,10 @@ import {
   isLoopbackUnreachableRuntime,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
+  OPENROUTER_FREE_MODEL_CANDIDATES,
   OPENROUTER_VENICE_UNCENSORED,
   MINIMAX_DEFAULT_MODEL,
+  openRouterCascadeMaxRetries,
   openRouterKeyFingerprint,
   summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
@@ -311,19 +313,26 @@ function localUsable(): boolean {
  * OpenRouter is used when no custom LLM is configured (and a key is present),
  * or after local only when ANIMA_OPENROUTER_FALLBACK=true. Custom mode
  * (`ANIMA_LLM_PROVIDER=custom`) never includes OpenRouter.
+ *
+ * MiniMax Global sits after OpenRouter so exhausted :free hops (provider
+ * 400/429/5xx) can fall through to the direct MiniMax API when a key is set.
+ * `ANIMA_LLM_PROVIDER=minimax` keeps MiniMax-only.
  */
 export function getProviderChain(): LlmProviderId[] {
   const chain: LlmProviderId[] = [];
   if (!preferMinimaxOnly() && localUsable()) chain.push("local");
-  if (hasMinimaxKey() && (preferMinimaxOnly() || !preferCustomLlmOnly())) {
+  if (preferMinimaxOnly() && hasMinimaxKey()) {
     chain.push("minimax");
+    return chain;
   }
   const openRouterAllowed =
     hasOpenRouterKey() &&
-    !hasMinimaxKey() &&
     !preferCustomLlmOnly() &&
     (chain.length === 0 || allowOpenRouterFallback());
   if (openRouterAllowed) chain.push("openrouter");
+  if (hasMinimaxKey() && !preferCustomLlmOnly()) {
+    chain.push("minimax");
+  }
   return chain;
 }
 
@@ -331,6 +340,11 @@ export function getProviderChain(): LlmProviderId[] {
  * OpenRouter may cover a down custom-LLM host, but auth / model / app errors
  * from that host must surface. Silently skipping them burns OpenRouter quota
  * and looks like the custom LLM was never tried.
+ *
+ * OpenRouter → MiniMax on hoppable provider blips (400/429/5xx) and on
+ * OpenRouter ZDR / data-policy / guardrail exclusion (those bind only the
+ * OpenRouter account; MiniMax Global is not affected). Daily/minute free
+ * caps still stop the chain — another provider cannot raise that quota.
  */
 function shouldTryNextProvider(
   provider: LlmProviderId,
@@ -339,6 +353,12 @@ function shouldTryNextProvider(
 ): boolean {
   if (!hasNext) return false;
   if (provider === "local" && !isProviderConnectionError(err)) return false;
+  if (provider === "openrouter") {
+    if (isOpenRouterZdrOrDataPolicyError(err)) return true;
+    if (isOpenRouterAccountPolicyError(err)) return false;
+    const model = attemptedOpenRouterModel(err) || OPENROUTER_FREE_MODEL;
+    return shouldTryNextOpenRouterFreeModel(err, model);
+  }
   return true;
 }
 
@@ -431,8 +451,38 @@ const OPENROUTER_CREDITS_HINT =
 
 const OPENROUTER_FREE_DAILY_HINT =
   "Today's free OpenRouter messages are used up. " +
-  "Add $10 at https://openrouter.ai/settings/credits to unlock 1000 requests/day and paid Venice Uncensored. " +
+  "Add $10 at https://openrouter.ai/settings/credits to unlock 1000 requests/day and paid models. " +
   "The free daily limit resets at midnight UTC.";
+
+const OPENROUTER_FREE_MINUTE_HINT =
+  "OpenRouter's free model per-minute limit is temporarily throttling chat. " +
+  "Wait a minute and retry, or add credits at https://openrouter.ai/settings/credits for higher limits.";
+
+/**
+ * Used when chat is already on a :free model (ANIMA_OPENROUTER_FREE or an
+ * explicit :free override). Never mentions Venice credits or setting
+ * ANIMA_OPENROUTER_FREE — that advice is wrong and was the production toast.
+ * Exported so SSE / tests can remap the raw OpenRouter wrapper.
+ */
+export const OPENROUTER_FREE_PROVIDER_HINT =
+  `The OpenRouter free-tier model is temporarily unavailable ` +
+  `(provider rejection, rate limit, or gateway error on ${OPENROUTER_FREE_MODEL} or a :free fallback). ` +
+  `Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models.`;
+
+export const MINIMAX_DIRECT_FAIL_HINT =
+  "MiniMax Global (api.minimax.io) also failed after OpenRouter free-tier hops. " +
+  "Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY and ANIMA_MINIMAX_MODEL, then retry, " +
+  "or add OpenRouter credits at https://openrouter.ai/settings/credits.";
+
+/**
+ * User-facing copy when OpenRouter excludes every endpoint for ZDR / data
+ * policy / guardrails and no later provider (MiniMax, local) answered.
+ * Never include the raw multi-line OpenRouter dump ("0 endpoints out of…").
+ */
+export const OPENROUTER_ZDR_PRIVACY_HINT =
+  "OpenRouter blocked this model because of your account's Zero Data Retention (ZDR) settings. " +
+  "Allow the model (or turn off ZDR) at https://openrouter.ai/settings/privacy. " +
+  "OpenRouter ZDR does not apply to MiniMax Global — set MINIMAX_API_KEY to keep chatting without changing OpenRouter privacy.";
 
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
@@ -560,6 +610,132 @@ export function isOpenRouterFreeMinuteLimitError(err: unknown): boolean {
     hay.includes("free-models-per-min") ||
     hay.includes("free model requests per minute")
   );
+}
+
+function httpStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" && Number.isFinite(status) ? status : undefined;
+}
+
+/**
+ * Transient OpenRouter gateway / transport failures that are worth retrying
+ * on the same model before hopping to another :free candidate.
+ */
+export function isOpenRouterTransientGatewayError(err: unknown): boolean {
+  if (isProviderConnectionError(err)) return true;
+  const status = httpStatus(err);
+  return status === 502 || status === 503 || status === 504;
+}
+
+/** True when chat is already routed to a :free OpenRouter model. */
+export function isOpenRouterAlreadyFreeTier(model?: string): boolean {
+  if (preferOpenRouterFreeTier() || openRouterCreditFallback) return true;
+  if (model && isOpenRouterFreeModel(model)) return true;
+  return isOpenRouterFreeModel(resolveOpenRouterModel("standard").model);
+}
+
+/**
+ * Full error text (no 120-char summarizeError slice) so late phrases like
+ * "ZDR violation" still match the production OpenRouter toast.
+ */
+function errorTextHaystack(err: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current === "string") {
+      parts.push(current);
+      break;
+    }
+    if (typeof current !== "object") {
+      parts.push(String(current));
+      break;
+    }
+    const e = current as { message?: unknown; code?: unknown; type?: unknown; cause?: unknown };
+    if (e.message != null) parts.push(String(e.message));
+    if (e.code != null) parts.push(String(e.code));
+    if (e.type != null) parts.push(String(e.type));
+    current = e.cause;
+  }
+  return parts.join(" ").toLowerCase();
+}
+
+/**
+ * OpenRouter account privacy / guardrail exclusion. Hopping other :free
+ * slugs cannot fix this; MiniMax Global is not bound by it.
+ * Detects the production toast: "ZDR violation", "guardrail restrictions",
+ * "0 endpoints out of", "data policy".
+ */
+export function isOpenRouterZdrOrDataPolicyError(err: unknown): boolean {
+  const hay = errorTextHaystack(err);
+  return (
+    hay.includes("zdr") ||
+    hay.includes("zero data retention") ||
+    hay.includes("data policy") ||
+    hay.includes("data-policy") ||
+    hay.includes("guardrail restrictions") ||
+    hay.includes("guardrail restriction") ||
+    hay.includes("0 endpoints out of") ||
+    hay.includes("free model publication")
+  );
+}
+
+/**
+ * Account / privacy constraints that apply to every :free slug — hopping
+ * cannot fix them (ZDR, data-policy mismatches, daily/minute free caps).
+ */
+export function isOpenRouterAccountPolicyError(err: unknown): boolean {
+  return (
+    isOpenRouterZdrOrDataPolicyError(err) ||
+    isOpenRouterFreeDailyLimitError(err) ||
+    isOpenRouterFreeMinuteLimitError(err)
+  );
+}
+
+/**
+ * OpenRouter's opaque wrapper ("400 Provider returned error") — never show
+ * this raw string in the chat UI after hops are exhausted.
+ */
+export function isOpenRouterGenericProviderError(err: unknown): boolean {
+  return summarizeError(err).toLowerCase().includes("provider returned error");
+}
+
+/**
+ * Model-specific client / provider rejection (HTTP 400/404/422 or the
+ * generic "Provider returned error" wrapper). Another live :free slug
+ * may still complete. Account/policy errors are excluded.
+ */
+export function isOpenRouterModelSpecificClientError(err: unknown): boolean {
+  if (isOpenRouterAccountPolicyError(err)) return false;
+  const status = httpStatus(err);
+  if (status === 400 || status === 404 || status === 422) return true;
+  const hay = summarizeError(err).toLowerCase();
+  if (!hay.includes("provider returned error")) return false;
+  return status === 400 || status === 401 || status === 403 || status === undefined;
+}
+
+/**
+ * Provider 400/429/5xx on a :free slug that is NOT an account-wide policy
+ * or daily/minute cap. Another free model may still succeed.
+ */
+export function shouldTryNextOpenRouterFreeModel(err: unknown, candidateModel: string): boolean {
+  if (isOpenRouterAccountPolicyError(err)) {
+    return false;
+  }
+  if (!isOpenRouterFreeModel(candidateModel)) {
+    return isProviderQuotaError(err);
+  }
+  if (isProviderQuotaError(err)) return true;
+  if (isOpenRouterModelSpecificClientError(err)) return true;
+  return isOpenRouterTransientGatewayError(err) || isOpenRouterProviderServerError(err);
+}
+
+function isOpenRouterProviderServerError(err: unknown): boolean {
+  const status = httpStatus(err);
+  return status === 500 || status === 502 || status === 503 || status === 504;
 }
 
 /** True when the local server said the requested model isn't loaded / known. */
@@ -725,18 +901,84 @@ function customLlmSkippedSuffix(): string {
   );
 }
 
+function attemptedOpenRouterModel(err: unknown, opts: { attemptedModel?: string } = {}): string | undefined {
+  if (opts.attemptedModel) return opts.attemptedModel;
+  if (err && typeof err === "object" && "openRouterModel" in err) {
+    const model = (err as { openRouterModel?: unknown }).openRouterModel;
+    if (typeof model === "string" && model.trim()) return model;
+  }
+  return undefined;
+}
+
+function openRouterErrorDetail(err: unknown): string {
+  if (isOpenRouterGenericProviderError(err)) return "";
+  const summary = summarizeError(err).trim();
+  return summary ? `${summary}. ` : "";
+}
+
+function openRouterFailureMessage(
+  prefix: string,
+  err: unknown,
+  hint: string,
+  opts: { localConnectionFailed?: boolean } = {},
+): Error {
+  const detail = openRouterErrorDetail(err);
+  const head = detail ? `${prefix}: ${detail}${hint}` : `${prefix}. ${hint}`;
+  return new Error(
+    head +
+      localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
+      customLlmSkippedSuffix(),
+  );
+}
+
 function enrichError(
   err: unknown,
   provider: LlmProviderId = "local",
-  opts: { localConnectionFailed?: boolean } = {},
+  opts: {
+    localConnectionFailed?: boolean;
+    attemptedModel?: string;
+    openRouterHopsExhausted?: boolean;
+    openRouterZdrBlocked?: boolean;
+  } = {},
 ): Error {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
+  }
+  // ZDR / data-policy / guardrail exclusion: never surface OpenRouter's
+  // multi-line "0 endpoints out of…" dump. MiniMax is not bound by this.
+  if (
+    opts.openRouterZdrBlocked ||
+    (provider === "openrouter" && isOpenRouterZdrOrDataPolicyError(err))
+  ) {
+    return new Error(
+      OPENROUTER_ZDR_PRIVACY_HINT +
+        localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
+        customLlmSkippedSuffix(),
+    );
+  }
+  // Remap the opaque wrapper before auth/quota so "401 Provider returned
+  // error" is never mistaken for a bad OpenRouter key in the chat toast.
+  if (
+    provider === "openrouter" &&
+    isOpenRouterGenericProviderError(err) &&
+    !isOpenRouterAccountPolicyError(err)
+  ) {
+    return openRouterFailureMessage(
+      "OpenRouter free-tier provider error",
+      err,
+      OPENROUTER_FREE_PROVIDER_HINT,
+      opts,
+    );
   }
   if (isProviderAuthError(err)) {
     if (provider === "openrouter") {
       return new Error(
         `OpenRouter authentication failed: ${summarizeError(err)}. Check OPENROUTER_API_KEY on the Cloudflare Worker Secrets Store (https://openrouter.ai/keys), then redeploy.`,
+      );
+    }
+    if (provider === "minimax") {
+      return new Error(
+        `MiniMax authentication failed. Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY, then redeploy.`,
       );
     }
     return new Error(
@@ -745,25 +987,34 @@ function enrichError(
   }
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
+      const alreadyFree = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts));
       const hint = isOpenRouterFreeDailyLimitError(err)
         ? OPENROUTER_FREE_DAILY_HINT
         : isOpenRouterFreeMinuteLimitError(err)
-          ? "OpenRouter's free model per-minute limit is temporarily throttling chat. Wait a minute and retry, or add credits at https://openrouter.ai/settings/credits for higher limits."
-          : hasOpenRouterKey()
-            ? OPENROUTER_CREDITS_HINT
-            : OPENROUTER_SETUP_HINT;
-      return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` +
-          localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
-          customLlmSkippedSuffix(),
-      );
+          ? OPENROUTER_FREE_MINUTE_HINT
+          : alreadyFree
+            ? OPENROUTER_FREE_PROVIDER_HINT
+            : hasOpenRouterKey()
+              ? OPENROUTER_CREDITS_HINT
+              : OPENROUTER_SETUP_HINT;
+      const prefix = alreadyFree && !isOpenRouterFreeDailyLimitError(err)
+        ? "OpenRouter free-tier provider error"
+        : "OpenRouter credits/rate limit exhausted";
+      return openRouterFailureMessage(prefix, err, hint, opts);
     }
+  }
+  if (provider === "openrouter" && isOpenRouterProviderServerError(err)) {
+    const hint = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts))
+      ? OPENROUTER_FREE_PROVIDER_HINT
+      : "Retry shortly. If this persists, try another OpenRouter model or add credits at https://openrouter.ai/settings/credits.";
+    return openRouterFailureMessage("OpenRouter provider failed", err, hint, opts);
   }
   if (isProviderConnectionError(err)) {
     if (provider === "openrouter") {
-      return new Error(
-        `OpenRouter connection failed: ${summarizeError(err)}. Check network egress to openrouter.ai, then retry.`,
-      );
+      const hint = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts))
+        ? OPENROUTER_FREE_PROVIDER_HINT
+        : "Check network egress to openrouter.ai, then retry.";
+      return openRouterFailureMessage("OpenRouter connection failed", err, hint, opts);
     }
     const model = configuredLocalModelLabel();
     const host = summarizeLocalLlmBaseUrl().host ?? "?";
@@ -780,8 +1031,37 @@ function enrichError(
         `Create the model on that host (e.g. \`ollama create anima-chat\`) or set ANIMA_OLLAMA_MODEL_STANDARD to a model id the server actually serves. See docs/llm-deploy.md.`,
     );
   }
+  if (
+    provider === "openrouter" &&
+    isOpenRouterModelSpecificClientError(err) &&
+    !isOpenRouterAccountPolicyError(err)
+  ) {
+    return openRouterFailureMessage(
+      "OpenRouter free-tier provider error",
+      err,
+      OPENROUTER_FREE_PROVIDER_HINT,
+      opts,
+    );
+  }
+  if (provider === "minimax") {
+    if (opts.openRouterHopsExhausted) {
+      return new Error(MINIMAX_DIRECT_FAIL_HINT);
+    }
+    return new Error(
+      `MiniMax chat failed. Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY and ANIMA_MINIMAX_MODEL, then retry.`,
+    );
+  }
   const base = err instanceof Error ? err : new Error(String(err));
-  return base;
+  return remapGenericProviderError(base);
+}
+
+/** Last-line remap so the raw OpenRouter wrapper cannot leave this module. */
+export function remapGenericProviderError(err: Error): Error {
+  if (isOpenRouterZdrOrDataPolicyError(err)) {
+    return new Error(OPENROUTER_ZDR_PRIVACY_HINT);
+  }
+  if (!isOpenRouterGenericProviderError(err)) return err;
+  return new Error(OPENROUTER_FREE_PROVIDER_HINT);
 }
 
 /** Secret-free routing diagnostic for operators and the chat UI. */
@@ -858,9 +1138,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       }
     }
     if (chain.includes("minimax")) {
-      noteParts.push(
-        `MiniMax model=${minimaxModel.model} (primary cloud provider).`,
-      );
+      const minimaxRole =
+        chain[0] === "minimax"
+          ? "primary cloud provider"
+          : "fallback after OpenRouter free-tier hops";
+      noteParts.push(`MiniMax model=${minimaxModel.model} (${minimaxRole}).`);
     }
     if (chain.includes("openrouter")) {
       noteParts.push(
@@ -968,13 +1250,16 @@ async function probeOneProvider(
       if (!client) {
         return { provider: "openrouter", configured: false, ok: false };
       }
-      const { resolved: used } = await withOpenRouterCreditFallback(resolved, (m) =>
-        client.chat.completions.create({
-          model: m.model,
-          max_tokens: 16,
-          messages: [{ role: "user", content: "Reply with the single word: ok" }],
-          temperature: 0,
-        }),
+      const { resolved: used } = await withOpenRouterCreditFallback(resolved, (m, remaining) =>
+        client.chat.completions.create(
+          {
+            model: m.model,
+            max_tokens: 16,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            temperature: 0,
+          },
+          { maxRetries: openRouterCascadeMaxRetries(remaining) },
+        ),
       );
       return {
         provider: "openrouter",
@@ -1109,48 +1394,66 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
 
 function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
   const out: ResolvedModel[] = [preferred];
-  if (!isOpenRouterFreeModel(preferred.model)) {
-    out.push({ ...preferred, model: OPENROUTER_FREE_MODEL });
+  for (const model of OPENROUTER_FREE_MODEL_CANDIDATES) {
+    if (!out.some((m) => m.model === model)) {
+      out.push({ ...preferred, model });
+    }
   }
   return out;
 }
 
 /**
- * Try the preferred OpenRouter model, then the free-tier model when the
- * account has no credits (HTTP 402). A valid free key must still chat.
+ * Try the preferred OpenRouter model, then other :free candidates when the
+ * account has no credits (HTTP 402) or a free provider returns 400/429/5xx
+ * that is not ZDR / data-policy / the account-wide daily/minute cap.
+ * Intermediate hops pass remainingCandidates > 0 so the SDK skips retries
+ * (`openRouterCascadeMaxRetries`); the last candidate keeps maxRetries.
  */
 async function withOpenRouterCreditFallback<T>(
   preferred: ResolvedModel,
-  run: (resolved: ResolvedModel) => Promise<T>,
+  run: (resolved: ResolvedModel, remainingCandidates: number) => Promise<T>,
 ): Promise<{ value: T; resolved: ResolvedModel }> {
   let lastErr: unknown;
-  for (const candidate of openRouterModelCandidates(preferred)) {
+  const candidates = openRouterModelCandidates(preferred);
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const remainingCandidates = candidates.length - i - 1;
     try {
-      const value = await run(candidate);
+      const value = await run(candidate, remainingCandidates);
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      if (
-        isProviderQuotaError(err) &&
-        !isOpenRouterFreeModel(candidate.model) &&
-        !isOpenRouterFreeDailyLimitError(err) &&
-        !isOpenRouterFreeMinuteLimitError(err)
-      ) {
-        const creditFallback = isOpenRouterCreditFallbackError(err);
+      if (err && typeof err === "object") {
+        (err as { openRouterModel?: string }).openRouterModel = candidate.model;
+      }
+      const next = candidates[i + 1];
+      if (next && shouldTryNextOpenRouterFreeModel(err, candidate.model)) {
+        const creditFallback =
+          isOpenRouterCreditFallbackError(err) && !isOpenRouterFreeModel(candidate.model);
         if (creditFallback) {
           openRouterCreditFallback = true;
         }
         console.warn(
           `[llm] OpenRouter ${candidate.model} ${
-            creditFallback ? "needs credits" : "is quota/rate limited"
-          } (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}.`,
+            creditFallback
+              ? "needs credits"
+              : isOpenRouterModelSpecificClientError(err)
+                ? "rejected the request"
+                : isOpenRouterTransientGatewayError(err)
+                  ? "hit a gateway error"
+                  : "is quota/rate limited"
+          } (${summarizeError(err)}); retrying ${next.model}.`,
         );
         continue;
       }
       throw err;
     }
   }
-  throw lastErr ?? new Error(OPENROUTER_CREDITS_HINT);
+  throw lastErr ?? new Error(
+    isOpenRouterAlreadyFreeTier(preferred.model)
+      ? OPENROUTER_FREE_PROVIDER_HINT
+      : OPENROUTER_CREDITS_HINT,
+  );
 }
 
 async function runOpenRouterStream(
@@ -1162,7 +1465,7 @@ async function runOpenRouterStream(
   const preferred = resolveOpenRouterModel(req.tier);
   const { value: stream, resolved } = await withOpenRouterCreditFallback(
     preferred,
-    (m) =>
+    (m, remaining) =>
       client.chat.completions.create(
         {
           model: m.model,
@@ -1170,7 +1473,10 @@ async function runOpenRouterStream(
           messages: req.messages,
           stream: true,
         },
-        ...(req.signal ? [{ signal: req.signal }] : []),
+        {
+          ...(req.signal ? { signal: req.signal } : {}),
+          maxRetries: openRouterCascadeMaxRetries(remaining),
+        },
       ),
   );
   return {
@@ -1218,7 +1524,7 @@ async function runOpenRouterCompletion(
   const preferred = resolveOpenRouterModel(req.tier);
   const { value: completion, resolved } = await withOpenRouterCreditFallback(
     preferred,
-    (m) =>
+    (m, remaining) =>
       client.chat.completions.create(
         {
           model: m.model,
@@ -1229,7 +1535,10 @@ async function runOpenRouterCompletion(
             ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
             : {}),
         },
-        req.signal ? { signal: req.signal } : undefined,
+        {
+          ...(req.signal ? { signal: req.signal } : {}),
+          maxRetries: openRouterCascadeMaxRetries(remaining),
+        },
       ),
   );
   const content = completion.choices?.[0]?.message?.content ?? "";
@@ -1286,7 +1595,9 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
 
   let lastErr: unknown;
   let triedLocal = false;
+  let triedOpenRouter = false;
   let localConnectionFailed = false;
+  let openRouterZdrBlocked = false;
 
   for (const provider of chain) {
     try {
@@ -1316,14 +1627,18 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       }
 
       if (provider === "minimax") {
-        return await runMinimaxStream(req, triedLocal);
+        return await runMinimaxStream(req, triedLocal || triedOpenRouter);
       }
 
+      triedOpenRouter = true;
       return await runOpenRouterStream(req, triedLocal);
     } catch (err) {
       lastErr = err;
       if (provider === "local" && isProviderConnectionError(err)) {
         localConnectionFailed = true;
+      }
+      if (provider === "openrouter" && isOpenRouterZdrOrDataPolicyError(err)) {
+        openRouterZdrBlocked = true;
       }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (shouldTryNextProvider(provider, err, hasNext)) {
@@ -1334,12 +1649,16 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       }
       throw enrichError(err, provider, {
         localConnectionFailed: localConnectionFailed && provider === "openrouter",
+        openRouterHopsExhausted: provider === "minimax" && triedOpenRouter,
+        openRouterZdrBlocked,
       });
     }
   }
 
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
     localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
+    openRouterHopsExhausted: chain[chain.length - 1] === "minimax" && triedOpenRouter,
+    openRouterZdrBlocked,
   });
 }
 
@@ -1359,7 +1678,9 @@ export async function createChatCompletionWithFailover(
 
   let lastErr: unknown;
   let triedLocal = false;
+  let triedOpenRouter = false;
   let localConnectionFailed = false;
+  let openRouterZdrBlocked = false;
 
   for (const provider of chain) {
     try {
@@ -1394,14 +1715,18 @@ export async function createChatCompletionWithFailover(
       }
 
       if (provider === "minimax") {
-        return await runMinimaxCompletion(req, triedLocal);
+        return await runMinimaxCompletion(req, triedLocal || triedOpenRouter);
       }
 
+      triedOpenRouter = true;
       return await runOpenRouterCompletion(req, triedLocal);
     } catch (err) {
       lastErr = err;
       if (provider === "local" && isProviderConnectionError(err)) {
         localConnectionFailed = true;
+      }
+      if (provider === "openrouter" && isOpenRouterZdrOrDataPolicyError(err)) {
+        openRouterZdrBlocked = true;
       }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (shouldTryNextProvider(provider, err, hasNext)) {
@@ -1412,11 +1737,15 @@ export async function createChatCompletionWithFailover(
       }
       throw enrichError(err, provider, {
         localConnectionFailed: localConnectionFailed && provider === "openrouter",
+        openRouterHopsExhausted: provider === "minimax" && triedOpenRouter,
+        openRouterZdrBlocked,
       });
     }
   }
 
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
     localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
+    openRouterHopsExhausted: chain[chain.length - 1] === "minimax" && triedOpenRouter,
+    openRouterZdrBlocked,
   });
 }

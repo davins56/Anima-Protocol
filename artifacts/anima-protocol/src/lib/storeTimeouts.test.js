@@ -34,6 +34,8 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("STORE_SESSION_CREATE_TIMEOUT_MS");
     expect(client).toContain("timeoutMs: opts.timeoutMs");
     expect(client).toContain("AbortSignal.timeout");
+    expect(client).toContain("createStoreAbortSignal");
+    expect(client).toContain("isRetryableStoreReset");
     expect(topicCreate).toContain("STORE_TOPIC_CREATE_TIMEOUT_MS");
     expect(therapyPage).toContain("createTherapyTopic(");
     expect(auth).toContain("STORE_AUTH_WAIT_MS");

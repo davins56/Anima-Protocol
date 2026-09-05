@@ -6,7 +6,7 @@ import express, {
 } from "express";
 import cors from "cors";
 
-import { beginDbRequest } from "@workspace/db";
+import { runWithDbRequestScope } from "@workspace/db";
 
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
@@ -45,8 +45,7 @@ app.use(syncCloudflareRuntimeEnvMiddleware());
 // reports as "the database could not be reached". Must run before any route
 // that touches the database, including /api/healthz/db.
 app.use((_req, _res, next) => {
-  beginDbRequest();
-  next();
+  runWithDbRequestScope(next);
 });
 
 // Clerk Frontend API proxy — must be mounted before the body parsers because it
@@ -88,6 +87,21 @@ app.use(
     if (!res.headersSent) {
       const message =
         err instanceof Error ? err.message : "Internal server error";
+      const payloadTooLarge =
+        (err &&
+          typeof err === "object" &&
+          ("status" in err || "statusCode" in err || "type" in err) &&
+          ((err as { status?: number }).status === 413 ||
+            (err as { statusCode?: number }).statusCode === 413 ||
+            (err as { type?: string }).type === "entity.too.large")) ||
+        /entity too large|request entity too large/i.test(message);
+      if (payloadTooLarge) {
+        res.status(413).json({
+          error: "That image is too large. Try a smaller photo.",
+          code: "payload_too_large",
+        });
+        return;
+      }
       const dbInfo = classifyDbError(err);
       const isConfig = isUnhandledConfigError(message);
       const store = isStoreApiPath(req.path || req.originalUrl || "");
