@@ -55,6 +55,24 @@ describe("settingsChatBackground", () => {
     ).toMatch(/database|unavailable/i);
   });
 
+  it("retries a Hyperdrive connection-reset on persist", async () => {
+    const reset = Object.assign(new Error("Database connection reset"), {
+      status: 503,
+      reason: "reset",
+    });
+    const updateMe = vi
+      .fn()
+      .mockRejectedValueOnce(reset)
+      .mockResolvedValueOnce({});
+    const next = await persistChatBackgroundSettings({
+      prefs: { display_name: "Ada" },
+      fileUrl: "/api/storage/objects/uploads/bg-3",
+      updateMe,
+    });
+    expect(updateMe).toHaveBeenCalledTimes(2);
+    expect(next.chat_bg_image).toBe("/api/storage/objects/uploads/bg-3");
+  });
+
   it("does not swallow a missing file URL", async () => {
     const file = new File(["fake"], "bg.png", { type: "image/png" });
     await expect(

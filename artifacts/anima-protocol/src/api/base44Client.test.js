@@ -385,3 +385,42 @@ describe("Character.list HTML failures", () => {
     });
   });
 });
+
+describe("auth.updateMe profile persist", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+    clearStoreCache();
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("throws after a Hyperdrive reset so Settings can show the error", async () => {
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile" && options.method === "PUT") {
+        return Response.json(
+          { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+          { status: 503 },
+        );
+      }
+      if (pathname === "/api/store/profile") {
+        return Response.json({ display_name: "Ada", settings: {} });
+      }
+      return Response.json({});
+    });
+
+    await expect(
+      base44.auth.updateMe({
+        settings: { chat_bg_image: "/api/storage/objects/uploads/bg" },
+      }),
+    ).rejects.toMatchObject({
+      status: 503,
+      reason: "reset",
+      message: "Database connection reset",
+    });
+  });
+});

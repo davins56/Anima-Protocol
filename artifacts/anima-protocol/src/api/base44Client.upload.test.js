@@ -85,6 +85,29 @@ describe("UploadFile / storage uploads", () => {
     );
   });
 
+  it("retries a 503 Hyperdrive connection reset then returns file_url", async () => {
+    let posts = 0;
+    global.fetch = vi.fn(async () => {
+      posts += 1;
+      if (posts === 1) {
+        return Response.json(
+          { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+          { status: 503 },
+        );
+      }
+      return Response.json(
+        { file_url: "/api/storage/objects/uploads/retried" },
+        { status: 201 },
+      );
+    });
+    const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
+      type: "image/png",
+    });
+    const result = await base44.integrations.Core.UploadFile({ file });
+    expect(posts).toBe(2);
+    expect(result.file_url).toBe("/api/storage/objects/uploads/retried");
+  });
+
   it("explains a 503 database outage", async () => {
     global.fetch = vi.fn(async () =>
       Response.json(
