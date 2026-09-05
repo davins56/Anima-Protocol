@@ -1349,6 +1349,24 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/design-your-companion"
+                element={
+                    <CompanionGenerator />
+                }
+              />
+              <Route
+                path="/design-companion"
+                element={
+                    <CompanionGenerator />
+                }
+              />
+              <Route
+                path="/create-companion"
+                element={
+                    <CompanionGenerator />
+                }
+              />
+              <Route
                 path="/what-if"
                 element={
                     <ExtraPage name="WhatIfScenarios" />
