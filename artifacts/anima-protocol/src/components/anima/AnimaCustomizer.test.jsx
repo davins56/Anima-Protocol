@@ -56,11 +56,17 @@ describe("AnimaCustomizer leftover reference-photo look", () => {
   });
 
   it("offers Upload Photo, Upload Reference, and Generate Look when no reference is stored", () => {
-    const { container } = renderCustomizer();
+    const { container } = renderCustomizer({
+      id: "char-alyndra",
+      name: "Alyndra",
+      _storeEntity: "Character",
+    });
+    expect(container.textContent).toMatch(/No avatar yet/);
     expect(container.textContent).toMatch(/Upload Photo/);
     expect(container.textContent).toMatch(/Upload Reference/);
     expect(container.textContent).toMatch(/Generate Look/);
     expect(container.textContent).not.toMatch(/Generate from Reference/);
+    expect(container.querySelector('img[alt="Alyndra portrait"]')).toBeNull();
   });
 
   it("shows a stored reference and Generate from Reference", () => {

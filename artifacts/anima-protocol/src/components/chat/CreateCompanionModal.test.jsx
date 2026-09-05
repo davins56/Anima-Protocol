@@ -111,7 +111,8 @@ describe("CreateCompanionModal", () => {
       expect.objectContaining({
         name: "Atlas",
         archetype: "Muse",
-      })
+      }),
+      expect.objectContaining({ timeoutMs: 20000 }),
     );
   });
 

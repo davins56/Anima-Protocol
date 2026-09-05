@@ -261,3 +261,32 @@ describe("upsertCharacters", () => {
     });
   });
 });
+
+describe("shouldAutoAssignCharacterPhoto", () => {
+  it("skips generator originals so Look can open without a Wikipedia hop", async () => {
+    const { shouldAutoAssignCharacterPhoto } = await loadSeedModule();
+    expect(
+      shouldAutoAssignCharacterPhoto({
+        id: "char-alyndra",
+        name: "Alyndra",
+        creation_method: "ai_prompt",
+        avatar_url: "",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoAssignCharacterPhoto({
+        id: "seed_korra",
+        name: "Korra",
+        universe: "Legend of Korra",
+        avatar_url: "",
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoAssignCharacterPhoto({
+        id: "seed_korra",
+        name: "Korra",
+        avatar_url: "https://example.com/korra.png",
+      }),
+    ).toBe(false);
+  });
+});
