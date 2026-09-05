@@ -6,14 +6,19 @@
  * - misconfigured — missing Clerk / DATABASE_URL env on the server (503)
  * - unsigned — no session / 401 / expired token
  * - database — env is present but Postgres is unreachable
+ * - timeout — client AbortSignal.timeout / storeFetch code "timeout"
  * - empty — signed in, store ok, no personal Anima yet
  * - unknown — any other store failure
+ *
+ * A client abort is not a database verdict (PR #340). Classify it as
+ * `timeout` so the hub never shows UNKNOWN or "database unreachable".
  */
 
 export const CUSTOMISE_ANIMA_LOAD_KINDS = [
   "misconfigured",
   "unsigned",
   "database",
+  "timeout",
   "empty",
   "unknown",
 ];
@@ -75,6 +80,18 @@ export function classifyCustomiseAnimaLoadError(err) {
     return "database";
   }
 
+  // storeFetch rewrites AbortSignal.timeout to { code: "timeout" }. Do not
+  // treat that as a server Hyperdrive/Postgres verdict — those carry dbError
+  // / "Database connection timed out" and already matched above.
+  if (
+    err?.code === "timeout" ||
+    err?.name === "TimeoutError" ||
+    err?.name === "AbortError" ||
+    /took too long to respond/i.test(message)
+  ) {
+    return "timeout";
+  }
+
   return "unknown";
 }
 
@@ -105,6 +122,17 @@ export function customiseAnimaLoadCopy(kind, rawMessage = "") {
         body: rawMessage
           ? `${rawMessage}. The API has credentials, but Postgres is unreachable from this host. Retry in a moment.`
           : "The API has credentials, but Postgres is unreachable from this host. Retry in a moment.",
+        showRetry: true,
+        showForge: false,
+        showSignIn: false,
+      };
+    case "timeout":
+      return {
+        kind,
+        headline: "The companion store took too long to respond.",
+        body: rawMessage
+          ? `${rawMessage} This is a brief stall after sign-in — not a missing database or an expired session.`
+          : "The signed-in companion list did not finish in time. Retry in a moment.",
         showRetry: true,
         showForge: false,
         showSignIn: false,

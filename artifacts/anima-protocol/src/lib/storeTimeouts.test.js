@@ -6,6 +6,7 @@ import {
   BOOTSTRAP_UI_TIMEOUT_MS,
   STORE_AUTH_WAIT_MS,
   STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
   STORE_TOPIC_CREATE_RETRY_LIMIT,
@@ -41,6 +42,8 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("AbortSignal.timeout");
     expect(client).toContain("createStoreAbortSignal");
     expect(client).toContain("isRetryableStoreReset");
+    expect(client).toContain("retryOnTimeout: true");
+    expect(client).toContain("STORE_LIST_RETRY_LIMIT");
     expect(topicCreate).toContain("STORE_TOPIC_CREATE_TIMEOUT_MS");
     expect(companionCreate).toContain("STORE_COMPANION_CREATE_TIMEOUT_MS");
     expect(therapyPage).toContain("createTherapyTopic(");
@@ -57,6 +60,12 @@ describe("store fail-fast budget", () => {
     expect(STORE_TOPIC_CREATE_RETRY_LIMIT).toBe(STORE_SESSION_CREATE_RETRY_LIMIT);
     expect(STORE_COMPANION_CREATE_TIMEOUT_MS).toBe(STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(STORE_COMPANION_CREATE_RETRY_LIMIT).toBe(STORE_SESSION_CREATE_RETRY_LIMIT);
+    expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
+  });
+
+  it("retries companion list once on abort instead of raising the 8s budget", () => {
+    expect(STORE_LIST_RETRY_LIMIT).toBe(1);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
   });
 });

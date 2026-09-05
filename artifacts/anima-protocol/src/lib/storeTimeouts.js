@@ -14,6 +14,8 @@
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;
 export const BOOTSTRAP_UI_TIMEOUT_MS = 8000;
+/** Extra list/GET attempts after the first AbortSignal.timeout (queryEntity). */
+export const STORE_LIST_RETRY_LIMIT = 1;
 /** Targeted wall-clock budget for POST /api/store/ChatSession (Init / create). */
 export const STORE_SESSION_CREATE_TIMEOUT_MS = 20000;
 /** Extra create attempts after the first abort/timeout (Init only). */
