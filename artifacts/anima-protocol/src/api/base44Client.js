@@ -111,12 +111,26 @@ async function isRetryableStoreReset(res) {
   if (res.status !== 503) return false;
   try {
     const json = await res.clone().json();
-    return (
-      json?.reason === 'reset' ||
-      /connection reset/i.test(String(json?.error || ''))
+    const reason = String(json?.reason || '');
+    // Schema/auth must not retry — those need a deploy or a new session.
+    if (reason === 'schema' || reason === 'auth') return false;
+    if (
+      reason === 'reset' ||
+      reason === 'unavailable' ||
+      reason === 'timeout' ||
+      reason === 'refused' ||
+      reason === 'unreachable' ||
+      reason === 'limit'
+    ) {
+      return true;
+    }
+    if (json?.dbError === true) return true;
+    return /connection reset|database unavailable|timed out|unreachable|could not be reached/i.test(
+      String(json?.error || ''),
     );
   } catch {
-    return false;
+    // Worker isolate HTML coerced to 503 — one more attempt on a fresh isolate.
+    return true;
   }
 }
 
@@ -391,7 +405,7 @@ async function uploadBlob(blob) {
 }
 
 // Downscale a data URL to a small JPEG and upload it. Returns the served path.
-export async function uploadDataUrl(dataUrl, { maxSize = 1024, quality = 0.85 } = {}) {
+export async function uploadDataUrl(dataUrl, { maxSize = 800, quality = 0.72 } = {}) {
   const small = await downscaleDataUrl(dataUrl, maxSize, quality);
   return uploadBlob(dataUrlToBlob(small));
 }
