@@ -25,6 +25,8 @@ export const OPENROUTER_VENICE_UNCENSORED =
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
 export const OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+export const MINIMAX_FREE_MODEL = "minimax/minimax-01:free";
+export const JULES_FREE_MODEL = "google/gemma-3-12b-it:free";
 
 /** Env names checked for an OpenRouter key (first non-empty wins). */
 export const OPENROUTER_KEY_ENV_NAMES = [
