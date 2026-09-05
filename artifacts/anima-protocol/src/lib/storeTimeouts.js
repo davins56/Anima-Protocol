@@ -9,10 +9,17 @@
  * targeted create budgets below (see createInitChatSession, NewSessionModal,
  * beginBundledStarterUpsert, and createTherapyTopic). Bundled starter upsert
  * is fail-open so it cannot spend this create budget before the insert.
+ *
+ * Companion list (Customise Anima / roster GET) stays on the 8s budget so a
+ * hung socket cannot re-block Loading for 20s. Retry the list once after a
+ * client abort — the first attempt usually warms Hyperdrive — instead of
+ * raising every store call.
  */
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;
 export const BOOTSTRAP_UI_TIMEOUT_MS = 8000;
+/** Extra list/GET attempts after the first AbortSignal.timeout (queryEntity). */
+export const STORE_LIST_RETRY_LIMIT = 1;
 /** Targeted wall-clock budget for POST /api/store/ChatSession (Init / create). */
 export const STORE_SESSION_CREATE_TIMEOUT_MS = 20000;
 /** Extra create attempts after the first abort/timeout (Init only). */

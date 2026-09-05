@@ -133,6 +133,28 @@ describe("Customise Anima hub", () => {
     expect(mocks.listAnima).not.toHaveBeenCalled();
   });
 
+  it("classifies a client list timeout without calling it UNKNOWN or database", async () => {
+    mocks.listAnima.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "The server took too long to respond. Check your connection or try again in a moment.",
+        ),
+        { code: "timeout" },
+      ),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText("The companion store took too long to respond."),
+    ).toBeTruthy();
+    expect(screen.getByText(/timeout/i)).toBeTruthy();
+    expect(screen.getByText(/not a missing database/i)).toBeTruthy();
+    expect(screen.queryByText(/^unknown$/i)).toBeNull();
+    expect(screen.queryByText(/cannot reach the database/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sign in/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /Retry/i })).toBeTruthy();
+  });
+
   it("surfaces a database outage without calling it misconfigured", async () => {
     mocks.listAnima.mockRejectedValue(
       Object.assign(new Error("Database host unreachable"), { status: 503 }),
