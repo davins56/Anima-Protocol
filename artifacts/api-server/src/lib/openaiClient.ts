@@ -30,14 +30,41 @@ export const OPENROUTER_VENICE_UNCENSORED =
  * Zero-cost OpenRouter free-tier model (not uncensored-branded).
  * Must stay on a slug that still appears in GET /api/v1/models `:free`
  * *and* accepts a live completion with a valid OpenRouter key.
- * `openai/gpt-oss-20b:free` was retired (404; paid slug is openai/gpt-oss-20b).
- * `google/gemma-4-31b-it:free` is still in the catalog, but the Google
- * provider returns HTTP 401 ("Request had invalid authentication credentials").
- * MiniMax m2.7 is a live `:free` slug that actually completes. Gemma remains
- * a documented open-weight family example (`google/gemma-3-12b-it:free`).
+ * Live catalog re-check (2026-09-05): `minimax/minimax-m3:free`,
+ * `minimax/minimax-m2.7:free`, `google/gemma-4-26b-a4b-it:free`,
+ * `google/gemma-4-31b-it:free`. Retired / absent: `openai/gpt-oss-20b:free`,
+ * `google/gemma-3-12b-it:free`, `minimax/minimax-01:free`.
+ * Production OpenRouter Upstream Requests (same account, 2026-09-05):
+ * m3:free via GMICloud returned HTTP 400 Bad Request (no detailed body;
+ * model page had no downtime banner). m2.7:free returned 429 and 502 —
+ * those already hop. Do not default to m3: a 400 used to hard-fail the turn.
+ * Gemma 4 slugs are still in the catalog, but the Google provider has
+ * historically returned HTTP 401 — keep them as later hops, not default.
+ * Default is therefore m2.7:free; m3 then Gemma 4 on 400/429/5xx.
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
-export const OPENROUTER_FREE_MODEL = "minimax/minimax-m2.7:free";
+export const OPENROUTER_FREE_M27_MODEL = "minimax/minimax-m2.7:free";
+export const OPENROUTER_FREE_M3_MODEL = "minimax/minimax-m3:free";
+export const OPENROUTER_FREE_GEMMA4_26B_MODEL = "google/gemma-4-26b-a4b-it:free";
+export const OPENROUTER_FREE_GEMMA4_31B_MODEL = "google/gemma-4-31b-it:free";
+export const OPENROUTER_FREE_MODEL = OPENROUTER_FREE_M27_MODEL;
+/** Live MiniMax :free hop (retired `minimax/minimax-01:free` is gone). */
+export const MINIMAX_FREE_MODEL = OPENROUTER_FREE_M3_MODEL;
+/** Live Gemma 4 :free hop (retired `google/gemma-3-12b-it:free` is gone). */
+export const JULES_FREE_MODEL = OPENROUTER_FREE_GEMMA4_26B_MODEL;
+
+/**
+ * Ordered :free slugs to try after the preferred OpenRouter model fails
+ * with a provider blip or model-specific 400 (not ZDR / data-policy /
+ * the account-wide free-models-per-day cap). m2.7 first so a GMICloud
+ * m3 400 cannot be the first and only attempt.
+ */
+export const OPENROUTER_FREE_MODEL_CANDIDATES = [
+  OPENROUTER_FREE_MODEL,
+  OPENROUTER_FREE_M3_MODEL,
+  OPENROUTER_FREE_GEMMA4_26B_MODEL,
+  OPENROUTER_FREE_GEMMA4_31B_MODEL,
+] as const;
 
 /** MiniMax Global OpenAI-compatible base URL. */
 export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
@@ -231,6 +258,29 @@ export function localLlmMaxRetries(): number {
   const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
   if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
   return 2;
+}
+
+/**
+ * Transport-level retries for OpenRouter. Default 2 so a single provider
+ * 502/503 or dropped connection does not kill the turn. The SDK only retries
+ * connection errors and 408/409/429/5xx, and only before a stream starts.
+ * Override with ANIMA_OPENROUTER_MAX_RETRIES (0 disables).
+ */
+export function openRouterMaxRetries(): number {
+  const raw = Number(process.env.ANIMA_OPENROUTER_MAX_RETRIES);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 2;
+}
+
+/**
+ * Per-attempt SDK retries while cascading :free models.
+ * Intermediate hops use 0 so a 429/502/400 fails immediately and the next
+ * live slug can run instead of burning the shared open-abort budget on
+ * same-model retries. The last candidate keeps `openRouterMaxRetries()`.
+ */
+export function openRouterCascadeMaxRetries(remainingCandidates: number): number {
+  if (remainingCandidates > 0) return 0;
+  return openRouterMaxRetries();
 }
 
 export interface LocalLlmBaseUrlSummary {
@@ -493,7 +543,7 @@ export function getOpenRouterClient(): OpenAI | null {
     openRouterClient = new OpenAI({
       apiKey,
       baseURL,
-      maxRetries: 0,
+      maxRetries: openRouterMaxRetries(),
       defaultHeaders: {
         "HTTP-Referer": referer,
         "X-Title": title,

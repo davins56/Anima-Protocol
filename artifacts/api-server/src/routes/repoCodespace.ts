@@ -29,7 +29,19 @@ function requireUser(req: Request, res: Response, next: () => void) {
 router.use(requireUser);
 
 function getRepoRoot(): string {
-  return path.resolve(process.env.REPO_ROOT || "/app");
+  const fromEnv = process.env.REPO_ROOT?.trim();
+  if (fromEnv) return path.resolve(fromEnv);
+
+  let dir = process.cwd();
+  while (dir !== path.parse(dir).root) {
+    if (fsSync.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
 }
 
 export async function probeRepoRoot(root: string = getRepoRoot()): Promise<{
@@ -275,7 +287,7 @@ router.post("/terminal", async (req: Request, res: Response) => {
       return;
     }
 
-    // Run commands relative to REPO_ROOT
+    // Run commands relative to the detected repository workspace root
     exec(command, { cwd: getRepoRoot(), timeout: 20000 }, (error, stdout, stderr) => {
       res.json({
         stdout: stdout || "",

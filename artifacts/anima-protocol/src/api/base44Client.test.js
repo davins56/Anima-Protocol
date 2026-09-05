@@ -226,6 +226,41 @@ describe("ChatSession store wrapper", () => {
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBe(20000);
   });
+
+  it("mints a fresh create budget when retrying a 503 connection reset", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    let sessionPosts = 0;
+    const signals = [];
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        signals.push(options.signal);
+        if (sessionPosts === 1) {
+          return Response.json(
+            { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+            { status: 503 },
+          );
+        }
+        return Response.json({ id: "session-fresh", title: "Recovered" }, { status: 201 });
+      }
+      return Response.json({});
+    });
+
+    const session = await base44.entities.ChatSession.create({ title: "Recovered" });
+
+    expect(session.id).toBe("session-fresh");
+    expect(sessionPosts).toBe(2);
+    expect(timeoutSpy).toHaveBeenCalledTimes(2);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(1, STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(2, STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
 });
 
 describe("parseStoreErrorResponse", () => {
@@ -347,6 +382,45 @@ describe("Character.list HTML failures", () => {
     ).rejects.toMatchObject({
       status: 503,
       message: expect.stringMatching(/unreachable|database/i),
+    });
+  });
+});
+
+describe("auth.updateMe profile persist", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+    clearStoreCache();
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("throws after a Hyperdrive reset so Settings can show the error", async () => {
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile" && options.method === "PUT") {
+        return Response.json(
+          { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+          { status: 503 },
+        );
+      }
+      if (pathname === "/api/store/profile") {
+        return Response.json({ display_name: "Ada", settings: {} });
+      }
+      return Response.json({});
+    });
+
+    await expect(
+      base44.auth.updateMe({
+        settings: { chat_bg_image: "/api/storage/objects/uploads/bg" },
+      }),
+    ).rejects.toMatchObject({
+      status: 503,
+      reason: "reset",
+      message: "Database connection reset",
     });
   });
 });

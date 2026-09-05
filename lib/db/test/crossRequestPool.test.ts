@@ -119,6 +119,38 @@ describe("per-request client lifetime on Workers", () => {
     resetPool();
   });
 
+  it("isolates client instances across concurrent overlapping requests via AsyncLocalStorage", async () => {
+    pretendWorkerRuntime(true);
+    const { runWithDbRequestScope, getPool, resetPool } = await import(
+      "../src/client"
+    );
+    resetPool();
+
+    let clientReq1A: unknown;
+    let clientReq1B: unknown;
+    let clientReq2A: unknown;
+    let clientReq2B: unknown;
+
+    await Promise.all([
+      runWithDbRequestScope(async () => {
+        clientReq1A = getPool();
+        await new Promise((r) => setTimeout(r, 10));
+        clientReq1B = getPool();
+      }),
+      runWithDbRequestScope(async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        clientReq2A = getPool();
+        await new Promise((r) => setTimeout(r, 10));
+        clientReq2B = getPool();
+      }),
+    ]);
+
+    expect(clientReq1A).toBe(clientReq1B);
+    expect(clientReq2A).toBe(clientReq2B);
+    expect(clientReq1A).not.toBe(clientReq2A);
+    resetPool();
+  });
+
   it("keeps reusing the cached client off-Workers (Node / Vercel / tests)", async () => {
     pretendWorkerRuntime(false);
     const { beginDbRequest, getPool, resetPool } = await import(

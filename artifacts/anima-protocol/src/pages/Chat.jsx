@@ -46,7 +46,6 @@ import ChatInput from "@/components/chat/ChatInput";
 import NewSessionModal from "@/components/chat/NewSessionModal";
 import { Menu, X } from "lucide-react";
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
-import BottomTabBar from "@/components/layout/BottomTabBar";
 import { detectMood } from "@/lib/moodDetector";
 import TTSControls from "@/components/chat/TTSControls";
 import { useTTS } from "@/hooks/useTTS";
@@ -2544,7 +2543,8 @@ Return JSON:
   }, [activeSession?.id, hiddenThread.hidden.jack_in.speak_first]);
 
   return (
-    <div className="app-page-fill flex w-full overflow-hidden bg-background scanline relative" style={{ height: "100%", paddingBottom: "0" }}>      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
+    <div className="app-page-fill flex flex-col w-full overflow-hidden bg-background scanline relative" style={{ minHeight: 0, paddingBottom: "0" }}>
+      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
       {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
       <div className="hidden">
@@ -2568,7 +2568,7 @@ Return JSON:
       {/* Main Area */}
       <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
         {activeSession ? (
-          <div className="flex flex-col h-full overflow-hidden min-h-0">
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Mobile Menu Overlay */}
       {showMobileMenu && (
         <motion.div
@@ -2703,7 +2703,7 @@ Return JSON:
                 )}
               </div>
             )}
-            <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative ${presenceCast.length > 0 ? "lg:pr-56 xl:pr-64" : ""}`} data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'var(--tab-bar-height, 60px)' }}>
+            <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative ${presenceCast.length > 0 ? "lg:pr-56 xl:pr-64" : ""}`} data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch' }}>
               <GoToTopButton containerRef={scrollContainerRef} />
               <ChatWidgetsArea
                 activeSession={activeSession}
@@ -2814,25 +2814,32 @@ Return JSON:
             </div>
             {/*
               Chat composer (in-flow, not position:fixed). The shell is
-              `h-screen-safe` / `--app-height` = visualViewport.height, so this
-              row already sits above the iOS keyboard. Do not add keyboard
-              height, 100vh, or extra safe-area padding here — that was the
-              black bar covering the text box. `--tab-bar-height` and
+              `h-screen-safe` / `--app-height` = visualViewport.height while
+              the keyboard is open, and `.app-shell-main` already reserves
+              `--tab-bar-height` (bar + home indicator) when it is closed, so
+              this row sits flush above the tab bar. Do not add keyboard
+              height, 100vh, `--tab-bar-height`, or extra safe-area padding
+              here — that was the black gap above the tab bar (and the old
+              bar covering the text box). `--tab-bar-height` and
               `--safe-bottom` go to 0 while `html[data-keyboard-open]`.
-            */}
-            <div className="flex-shrink-0 border-t border-primary/10 bg-black/60 space-y-2 min-h-0 sm:pt-0 pt-3">
-              {/* Narrative Choices - Horizontal */}
-              {choices.length > 0 && activeSession.mode === "solo" && (
-                <NarrativeChoicesPanel
-                  choices={choices}
-                  loading={isLoading}
-                  onSelectChoice={handleChoiceMade}
-                  sessionId={activeSession.id}
-                />
-              )}
 
-              {/* Voice Chat & Chat Input */}
-              <div className="space-y-2">
+              lg+ Memory Recall is tall. Keep it in a scrollable extras
+              region so ChatInput stays pinned at the bottom of the padded
+              column instead of sliding under HOME / CHAT / BOARD / MAP /
+              MORE. `flex-shrink-0` on this whole stack was that overflow.
+            */}
+            <div className="flex min-h-0 flex-col border-t border-primary/10 bg-black/60 sm:pt-0 pt-3" data-testid="chat-composer">
+              <div className="min-h-0 space-y-2 overflow-y-auto" data-testid="chat-composer-extras">
+                {/* Narrative Choices - Horizontal */}
+                {choices.length > 0 && activeSession.mode === "solo" && (
+                  <NarrativeChoicesPanel
+                    choices={choices}
+                    loading={isLoading}
+                    onSelectChoice={handleChoiceMade}
+                    sessionId={activeSession.id}
+                  />
+                )}
+
                 {hiddenThread.gate.offer && !hiddenThread.hidden.jack_in.live ? (
                   <JackInOfferChip
                     entityName={hiddenThread.entity?.name}
@@ -2856,7 +2863,7 @@ Return JSON:
                     }}
                   />
                 ) : null}
-<ChatInputControls
+                <ChatInputControls
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
                   onNarratorExposition={handleNarratorExposition}
@@ -2890,6 +2897,8 @@ Return JSON:
                     />
                   </div>
                 )}
+              </div>
+              <div className="flex-shrink-0" data-testid="chat-input-slot">
                 <ChatInput
                   onSend={handleSendMessage}
                   isLoading={isLoading}
@@ -3158,7 +3167,7 @@ Return JSON:
           type="button"
           onClick={openPresenceStage}
           className="lg:hidden fixed right-3 z-40 font-mono text-[9px] tracking-[0.22em] uppercase text-primary border border-primary/40 bg-black/70 backdrop-blur-md rounded px-3 py-2 shadow-lg shadow-cyan-900/40"
-          style={{ bottom: "5.5rem" }}
+          style={{ bottom: "calc(var(--tab-bar-height, 56px) + 0.5rem)" }}
         >
           ⛶ Stage
         </button>
@@ -3176,7 +3185,6 @@ Return JSON:
         onSend={(text) => handleSendMessage(text)}
         isLoading={isLoading}
       />
-      <BottomTabBar onMenuClick={() => setShowMobileMenu(prev => !prev)} />
     </div>
   );
 }

@@ -38,7 +38,7 @@ describe("initial module graph budget", () => {
     const main = readSrc("main.jsx");
     expect(main).not.toMatch(/from\s+["']\.\/lib\/analytics["']/);
     expect(main).toMatch(/import\(\s*["']\.\/lib\/analytics["']\s*\)/);
-    expect(main).not.toMatch(/from\s+["']@vercel\/analytics\/react["']/);
+    expect(main).not.toContain("@vercel/analytics");
 
     const landing = readSrc("pages/Landing.tsx");
     expect(landing).not.toMatch(/from\s+["']@\/api\/base44Client["']/);

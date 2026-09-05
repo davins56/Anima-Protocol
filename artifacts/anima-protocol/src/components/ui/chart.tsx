@@ -199,15 +199,15 @@ const ChartTooltipContent = React.forwardRef<
         {!nestLabel ? tooltipLabel : null}
         <div className="grid gap-1.5">
           {payload
-            .filter((item) => item.type !== "none")
-            .map((item, index) => {
+            .filter((item: any) => item.type !== "none")
+            .map((item: any, index: number) => {
               const key = `${nameKey || item.name || item.dataKey || "value"}`
               const itemConfig = getPayloadConfigFromPayload(config, item, key)
-              const indicatorColor = color || item.payload.fill || item.color
+              const indicatorColor = color || item.payload?.fill || item.color
 
               return (
                 <div
-                  key={item.dataKey}
+                  key={item.dataKey || index}
                   className={cn(
                     "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                     indicator === "dot" && "items-center"
@@ -315,8 +315,8 @@ const ChartLegendContent = React.forwardRef<
         )}
       >
         {payload
-          .filter((item) => item.type !== "none")
-          .map((item) => {
+          .filter((item: any) => item?.type !== "none")
+          .map((item: any) => {
             const key = `${nameKey || item.dataKey || "value"}`
             const itemConfig = getPayloadConfigFromPayload(config, item, key)
 

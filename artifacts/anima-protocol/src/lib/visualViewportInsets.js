@@ -1,5 +1,7 @@
 // @ts-check
 
+import { syncReservedTabBarHeight } from "./tabBarLayout";
+
 /**
  * Visual-viewport measurements for mobile keyboard avoidance.
  *
@@ -127,7 +129,9 @@ export function keyboardPaddingForShell(insets, options = {}) {
 /**
  * Apply measured insets to `:root`. When the keyboard is open, zero
  * `--tab-bar-height` and `--safe-bottom` so the home indicator and tab bar
- * are not reserved *and* painted on top of the visual viewport.
+ * are not reserved *and* painted on top of the visual viewport. When it is
+ * closed, `--tab-bar-height` is synced to the painted `.tab-bar` (or the
+ * CSS fallback if the bar has not laid out yet).
  *
  * @param {HTMLElement} root
  * @param {VisualViewportInsets} insets
@@ -162,6 +166,9 @@ export function applyVisualViewportCssVars(root, insets) {
   } else {
     delete root.dataset.keyboardOpen;
     root.style.removeProperty("--safe-bottom");
-    root.style.removeProperty("--tab-bar-height");
+    // Match reservation to the painted bar (iPad / every width). Do not
+    // leave a leftover 0px from the keyboard-open path, and do not invent
+    // 0px just because a desktop media query used to zero the var.
+    syncReservedTabBarHeight(root, { keyboardOpen: false });
   }
 }
