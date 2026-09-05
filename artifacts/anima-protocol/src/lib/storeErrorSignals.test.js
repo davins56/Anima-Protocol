@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isRetryableStoreWriteError,
   isStoreDatabaseError,
   isStoreReadUnavailable,
 } from "./storeErrorSignals";
@@ -128,6 +129,30 @@ describe("isStoreReadUnavailable", () => {
   it("ignores ordinary client errors", () => {
     expect(isStoreReadUnavailable({ status: 400 })).toBe(false);
     expect(isStoreReadUnavailable({ status: 404 })).toBe(false);
+  });
+});
+
+describe("isRetryableStoreWriteError", () => {
+  it("retries timeout, abort, and 503 reset", () => {
+    expect(isRetryableStoreWriteError({ code: "timeout" })).toBe(true);
+    expect(isRetryableStoreWriteError({ name: "AbortError" })).toBe(true);
+    expect(isRetryableStoreWriteError({ name: "TimeoutError" })).toBe(true);
+    expect(isRetryableStoreWriteError({ status: 503, reason: "reset" })).toBe(true);
+    expect(
+      isRetryableStoreWriteError({ message: "Database connection reset" }),
+    ).toBe(true);
+    expect(
+      isRetryableStoreWriteError({
+        message:
+          "The server took too long to respond. Check your connection or try again in a moment.",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not retry auth failures", () => {
+    expect(isRetryableStoreWriteError({ status: 401, code: "timeout" })).toBe(false);
+    expect(isRetryableStoreWriteError({ status: 403 })).toBe(false);
+    expect(isRetryableStoreWriteError({ status: 400 })).toBe(false);
   });
 });
 

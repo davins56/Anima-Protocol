@@ -35,6 +35,17 @@ export { STORE_FETCH_TIMEOUT_MS, STORE_SESSION_CREATE_TIMEOUT_MS };
 const DEFAULT_STORE_TIMEOUT_MESSAGE =
   'The server took too long to respond. Check your connection or try again in a moment.';
 
+function createStoreAbortSignal(budget, userSignal) {
+  const timeoutSignal =
+    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+      ? AbortSignal.timeout(budget)
+      : undefined;
+  if (userSignal && timeoutSignal && typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([userSignal, timeoutSignal]);
+  }
+  return userSignal || timeoutSignal;
+}
+
 async function storeFetch(path, options = {}) {
   const token = await getToken();
   if (!token) {
@@ -57,18 +68,7 @@ async function storeFetch(path, options = {}) {
       ? timeoutMs
       : STORE_FETCH_TIMEOUT_MS;
 
-  const timeoutSignal =
-    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
-      ? AbortSignal.timeout(budget)
-      : undefined;
-  let signal = timeoutSignal;
-  if (userSignal && timeoutSignal) {
-    signal = AbortSignal.any([userSignal, timeoutSignal]);
-  } else if (userSignal) {
-    signal = userSignal;
-  }
-
-  const makeRequest = async (retryOptions = {}) => {
+  const makeRequest = async (retryOptions = {}, signal) => {
     const headers = await authHeaders(optionHeaders, retryOptions);
     return await fetch(`${STORE_BASE()}${path}`, {
       ...fetchOptions,
@@ -80,9 +80,12 @@ async function storeFetch(path, options = {}) {
 
   let res;
   try {
-    res = await makeRequest();
+    // First attempt + 401 retry share one budget. A 503 reset gets a fresh
+    // AbortSignal so a hung Hyperdrive socket cannot starve the retry.
+    const firstSignal = createStoreAbortSignal(budget, userSignal);
+    res = await makeRequest({}, firstSignal);
     if (res.status === 401) {
-      const retried = await makeRequest({ skipCache: true });
+      const retried = await makeRequest({ skipCache: true }, firstSignal);
       if (retried.status !== 401) {
         return retried;
       }
@@ -91,7 +94,7 @@ async function storeFetch(path, options = {}) {
     // Stale Worker/pg sockets surface as 503 "Database connection reset".
     // One extra attempt lets the server open a fresh connection.
     if (await isRetryableStoreReset(res)) {
-      res = await makeRequest();
+      res = await makeRequest({}, createStoreAbortSignal(budget, userSignal));
     }
     return res;
   } catch (err) {
