@@ -13,7 +13,7 @@ import {
   normalizeAppearancePrompts,
   normalizeVesselLayers,
 } from "@/lib/animaAppearance";
-import { X, Wand2, Loader, Check, Palette, Upload } from "lucide-react";
+import { X, Wand2, Loader, Check, Palette, Upload, ImagePlus } from "lucide-react";
 
 const THEME_PRESETS = [
   "#00e5e5",
@@ -37,12 +37,13 @@ export default function AnimaCustomizer({
   variant = "modal",
   showHeader = true,
 }) {
-  const fileInputRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const referenceInputRef = useRef(null);
   const [prompts, setPrompts] = useState(() =>
     normalizeAppearancePrompts(anima?.appearance_prompts),
   );
   const [generating, setGenerating] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingKind, setUploadingKind] = useState("");
   const [previewUrl, setPreviewUrl] = useState(anima?.avatar_url || "");
   // Optional photo used as likeness reference when generating a look.
   const [referenceUrl, setReferenceUrl] = useState(
@@ -108,23 +109,39 @@ export default function AnimaCustomizer({
     }
   };
 
-  const handleUploadReference = async (e) => {
-    const file = e.target.files?.[0];
+  const uploadSelectedImage = async (file, kind) => {
     if (!file) return;
-    setUploading(true);
+    setUploadingKind(kind);
     setError("");
     setSaved(false);
     try {
       const fileUrl = await uploadCharacterAvatar(file, (payload) =>
         base44.integrations.Core.UploadFile(payload),
       );
-      setReferenceUrl(fileUrl);
+      if (kind === "photo") {
+        setPreviewUrl(fileUrl);
+      } else {
+        setReferenceUrl(fileUrl);
+      }
     } catch (err) {
       setError(formatAvatarUploadError(err));
     } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setUploadingKind("");
+      if (kind === "photo" && photoInputRef.current) {
+        photoInputRef.current.value = "";
+      }
+      if (kind === "reference" && referenceInputRef.current) {
+        referenceInputRef.current.value = "";
+      }
     }
+  };
+
+  const handleUploadPhoto = async (e) => {
+    await uploadSelectedImage(e.target.files?.[0], "photo");
+  };
+
+  const handleUploadReference = async (e) => {
+    await uploadSelectedImage(e.target.files?.[0], "reference");
   };
 
   const handleSave = async () => {
@@ -206,7 +223,7 @@ export default function AnimaCustomizer({
               // Customise Anima — {anima?.name || "Your Anima"}
             </h2>
             <p className="text-[9px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-              Upload a reference · shape skin, hair, outfit & more · generate
+              Upload a photo · optional reference for generation · shape the look
             </p>
           </div>
           {onClose && (
@@ -331,7 +348,7 @@ export default function AnimaCustomizer({
             {previewUrl ? (
               <img
                 src={previewUrl}
-                alt={anima?.name || "Anima"}
+                alt={`${anima?.name || "Anima"} portrait`}
                 className={`w-full h-full object-cover transition-opacity duration-500 ${generating ? "opacity-30" : "opacity-100"}`}
               />
             ) : (
@@ -471,9 +488,34 @@ export default function AnimaCustomizer({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={generating || saving || Boolean(uploadingKind)}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner sm:col-span-2"
+              >
+                {uploadingKind === "photo" ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" /> Uploading photo...
+                  </>
+                ) : (
+                  <>
+                    <ImagePlus className="w-4 h-4" />{" "}
+                    {previewUrl ? "Change Photo" : "Upload Photo"}
+                  </>
+                )}
+              </button>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                aria-label="Upload character photo"
+                onChange={handleUploadPhoto}
+              />
+              <button
+                type="button"
                 onClick={handleGenerate}
-                disabled={generating || saving || uploading}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                disabled={generating || saving || Boolean(uploadingKind)}
+                className="w-full flex items-center justify-center gap-2 py-3 border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/45 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all"
               >
                 {generating ? (
                   <>
@@ -488,13 +530,13 @@ export default function AnimaCustomizer({
               </button>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={generating || saving || uploading}
+                onClick={() => referenceInputRef.current?.click()}
+                disabled={generating || saving || Boolean(uploadingKind)}
                 className="w-full flex items-center justify-center gap-2 py-3 border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/45 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all"
               >
-                {uploading ? (
+                {uploadingKind === "reference" ? (
                   <>
-                    <Loader className="w-4 h-4 animate-spin" /> Uploading...
+                    <Loader className="w-4 h-4 animate-spin" /> Uploading reference...
                   </>
                 ) : (
                   <>
@@ -504,10 +546,11 @@ export default function AnimaCustomizer({
                 )}
               </button>
               <input
-                ref={fileInputRef}
+                ref={referenceInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
+                aria-label="Upload look reference"
                 onChange={handleUploadReference}
               />
             </div>
@@ -540,7 +583,7 @@ export default function AnimaCustomizer({
             )}
 
             <p className="font-mono text-[8px] text-primary/20 tracking-widest text-center leading-relaxed">
-              Upload a reference photo → describe features → Generate → Apply & Save
+              Upload Photo fills the portrait. Upload Reference is a small likeness guide for Generate Look.
             </p>
           </div>
         </div>
