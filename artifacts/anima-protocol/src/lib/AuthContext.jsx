@@ -24,6 +24,7 @@ import {
   track,
 } from '@/lib/analytics';
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
+import { createCompanionRecord } from '@/lib/createCompanion';
 import {
   clearGuestPersistence,
   persistExplicitGuest,
@@ -368,7 +369,7 @@ const logout = useCallback(() => {
     };
     
     try {
-      const newAnima = await base44.entities.Anima.create(defaultSerenity);
+      const newAnima = await createCompanionRecord('Anima', defaultSerenity);
       notifyStoreChanged();
       return newAnima;
     } catch (err) {

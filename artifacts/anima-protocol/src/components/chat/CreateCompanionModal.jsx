@@ -3,6 +3,10 @@ import { useState } from "react";
 import { Sparkles, Loader2, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
+import {
+  companionCreateErrorMessage,
+  createCompanionRecord,
+} from "@/lib/createCompanion";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
 
 const ARCHETYPES = [
@@ -45,7 +49,7 @@ export default function CreateCompanionModal({ onComplete, userEmail, initialSte
         }
       }
 
-      const companion = await base44.entities.Anima.create({
+      const companion = await createCompanionRecord("Anima", {
         name: name.trim(),
         archetype,
         tagline: tagline.trim() || `Your ${archetype} companion`,
@@ -65,7 +69,7 @@ export default function CreateCompanionModal({ onComplete, userEmail, initialSte
       }, 1500);
     } catch (err) {
       console.error("Error creating companion:", err);
-      setError("Failed to create companion. Please try again.");
+      setError(companionCreateErrorMessage(err) || "Failed to create companion. Please try again.");
       setStep("details");
       setLoading(false);
     }

@@ -16,6 +16,7 @@ import {
   isBootstrapSettled,
 } from '@/lib/bootstrapState';
 import {
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from '@/lib/storeTimeouts';
@@ -30,7 +31,11 @@ import {
 const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
-export { STORE_FETCH_TIMEOUT_MS, STORE_SESSION_CREATE_TIMEOUT_MS };
+export {
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
+  STORE_FETCH_TIMEOUT_MS,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
+};
 
 const DEFAULT_STORE_TIMEOUT_MESSAGE =
   'The server took too long to respond. Check your connection or try again in a moment.';
@@ -1141,10 +1146,16 @@ function entityStore(entityName) {
     },
 
     async create(data, opts = {}) {
+      const timeoutMs =
+        typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0
+          ? opts.timeoutMs
+          : ROSTER_ENTITIES.has(entityName)
+            ? STORE_COMPANION_CREATE_TIMEOUT_MS
+            : undefined;
       const res = await storeFetch(`/${encodeURIComponent(entityName)}`, {
         method: 'POST',
         body: JSON.stringify(data || {}),
-        timeoutMs: opts.timeoutMs,
+        timeoutMs,
         timeoutMessage: opts.timeoutMessage,
       });
       if (!res.ok) await throwErr(res);
