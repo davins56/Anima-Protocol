@@ -2543,7 +2543,8 @@ Return JSON:
   }, [activeSession?.id, hiddenThread.hidden.jack_in.speak_first]);
 
   return (
-    <div className="app-page-fill flex w-full overflow-hidden bg-background scanline relative" style={{ minHeight: 0, paddingBottom: "0" }}>      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
+    <div className="app-page-fill flex flex-col w-full overflow-hidden bg-background scanline relative" style={{ minHeight: 0, paddingBottom: "0" }}>
+      <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
       {/* Desktop Sidebar — hidden to use mobile layout everywhere */}
       <div className="hidden">
@@ -2567,7 +2568,7 @@ Return JSON:
       {/* Main Area */}
       <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
         {activeSession ? (
-          <div className="flex flex-col h-full overflow-hidden min-h-0">
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Mobile Menu Overlay */}
       {showMobileMenu && (
         <motion.div
@@ -2821,20 +2822,24 @@ Return JSON:
               here — that was the black gap above the tab bar (and the old
               bar covering the text box). `--tab-bar-height` and
               `--safe-bottom` go to 0 while `html[data-keyboard-open]`.
-            */}
-            <div className="flex-shrink-0 border-t border-primary/10 bg-black/60 space-y-2 min-h-0 sm:pt-0 pt-3" data-testid="chat-composer">
-              {/* Narrative Choices - Horizontal */}
-              {choices.length > 0 && activeSession.mode === "solo" && (
-                <NarrativeChoicesPanel
-                  choices={choices}
-                  loading={isLoading}
-                  onSelectChoice={handleChoiceMade}
-                  sessionId={activeSession.id}
-                />
-              )}
 
-              {/* Voice Chat & Chat Input */}
-              <div className="space-y-2">
+              lg+ Memory Recall is tall. Keep it in a scrollable extras
+              region so ChatInput stays pinned at the bottom of the padded
+              column instead of sliding under HOME / CHAT / BOARD / MAP /
+              MORE. `flex-shrink-0` on this whole stack was that overflow.
+            */}
+            <div className="flex min-h-0 flex-col border-t border-primary/10 bg-black/60 sm:pt-0 pt-3" data-testid="chat-composer">
+              <div className="min-h-0 space-y-2 overflow-y-auto" data-testid="chat-composer-extras">
+                {/* Narrative Choices - Horizontal */}
+                {choices.length > 0 && activeSession.mode === "solo" && (
+                  <NarrativeChoicesPanel
+                    choices={choices}
+                    loading={isLoading}
+                    onSelectChoice={handleChoiceMade}
+                    sessionId={activeSession.id}
+                  />
+                )}
+
                 {hiddenThread.gate.offer && !hiddenThread.hidden.jack_in.live ? (
                   <JackInOfferChip
                     entityName={hiddenThread.entity?.name}
@@ -2858,7 +2863,7 @@ Return JSON:
                     }}
                   />
                 ) : null}
-<ChatInputControls
+                <ChatInputControls
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
                   onNarratorExposition={handleNarratorExposition}
@@ -2892,6 +2897,8 @@ Return JSON:
                     />
                   </div>
                 )}
+              </div>
+              <div className="flex-shrink-0" data-testid="chat-input-slot">
                 <ChatInput
                   onSend={handleSendMessage}
                   isLoading={isLoading}
