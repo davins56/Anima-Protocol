@@ -221,6 +221,17 @@ describe("folder and profile library", () => {
       "wheel-crown",
     ]));
     expect(stewardLib.folder).toHaveLength(30);
+    expect(stewardLib.owned_ids).toEqual(
+      expect.arrayContaining(FEATURED_RESONANCE_KEYS.map((k) => k.id)),
+    );
+    expect(stewardLib.owned_ids).toEqual(
+      expect.arrayContaining(CANON_ECHO_KEYS.map((k) => k.id)),
+    );
+    const owned = new Set(stewardLib.owned_ids);
+    expect(owned.size).toBe(ECHO_KEYS.length);
+    for (const key of ECHO_KEYS) {
+      expect(owned.has(key.id), `steward missing ${key.id}`).toBe(true);
+    }
   });
 
   it("rejects a second Star or a fifth Standard copy", () => {
