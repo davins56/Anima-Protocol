@@ -325,13 +325,12 @@ export function getProviderChain(): LlmProviderId[] {
     chain.push("minimax");
     return chain;
   }
-  const openRouterAllowed =
-    hasOpenRouterKey() &&
-    !preferCustomLlmOnly() &&
-    (chain.length === 0 || allowOpenRouterFallback());
-  if (openRouterAllowed) chain.push("openrouter");
-  if (hasMinimaxKey() && !preferCustomLlmOnly()) {
+  const allowCloud = !preferCustomLlmOnly() && (chain.length === 0 || allowOpenRouterFallback());
+  if (allowCloud && hasMinimaxKey() && !preferOpenRouterFreeTier()) {
     chain.push("minimax");
+  }
+  if (allowCloud && hasOpenRouterKey()) {
+    chain.push("openrouter");
   }
   return chain;
 }
@@ -1141,7 +1140,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       const minimaxRole =
         chain[0] === "minimax"
           ? "primary cloud provider"
-          : "fallback after OpenRouter free-tier hops";
+          : "fallback after local connection failure";
       noteParts.push(`MiniMax model=${minimaxModel.model} (${minimaxRole}).`);
     }
     if (chain.includes("openrouter")) {
