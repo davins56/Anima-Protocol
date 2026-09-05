@@ -154,3 +154,75 @@ describe("applyVisualViewportCssVars", () => {
     expect(root.dataset.keyboardOpen).toBeUndefined();
   });
 });
+
+describe("filling the screen on iOS 26 / iPhone 17 Pro Max", () => {
+  // iPhone 17 Pro Max: 440 x 956 CSS px, DPR 3.
+  const SCREEN = 956;
+
+  it("keeps the shell at full height when Safari chrome merely floats over it", () => {
+    // iOS 26 floats the address/tab bar over an edge-to-edge canvas, so the
+    // visual viewport is shorter than the layout viewport with no keyboard.
+    const insets = measureVisualViewportInsets(
+      { height: 858, offsetTop: 0 },
+      SCREEN,
+      { inputFocused: false },
+    );
+
+    expect(insets.keyboardOpen).toBe(false);
+    // Sizing to 858 was the dead band at the bottom of the screen.
+    expect(insets.visibleHeight).toBe(858);
+    expect(insets.fullHeight).toBe(SCREEN);
+  });
+
+  it("ignores a pinch-zoom shrink instead of collapsing the shell", () => {
+    const insets = measureVisualViewportInsets(
+      { height: 400, offsetTop: 0, scale: 2.4 },
+      SCREEN,
+      { inputFocused: true },
+    );
+
+    expect(insets.zoomed).toBe(true);
+    // A focused field plus a shrunken viewport must not read as a keyboard
+    // while zoomed, or the tab bar and home-indicator inset vanish.
+    expect(insets.keyboardOpen).toBe(false);
+    expect(insets.fullHeight).toBe(SCREEN);
+  });
+
+  it("holds the peak height when an installed web app gets stuck short", () => {
+    // The standalone-PWA bug: after the first keyboard open every API reports
+    // ~59px less for the rest of the session and never recovers.
+    const stuck = measureVisualViewportInsets({ height: 897, offsetTop: 0 }, 897, {
+      inputFocused: false,
+      maxHeight: SCREEN,
+    });
+
+    expect(stuck.fullHeight).toBe(SCREEN);
+    expect(stuck.stuck).toBe(true);
+  });
+
+  it("still collapses to the visible height for a real keyboard", () => {
+    const insets = measureVisualViewportInsets({ height: 508, offsetTop: 0 }, SCREEN, {
+      inputFocused: true,
+      maxHeight: SCREEN,
+    });
+
+    expect(insets.keyboardOpen).toBe(true);
+    expect(insets.fullHeight).toBe(508);
+    // The backdrop must stay full-screen so no unpainted band appears.
+    expect(insets.maxHeight).toBe(SCREEN);
+  });
+
+  it("publishes --app-height-max for the edge-to-edge backdrop", () => {
+    const root = document.createElement("html");
+    applyVisualViewportCssVars(
+      root,
+      measureVisualViewportInsets({ height: 508, offsetTop: 0 }, SCREEN, {
+        inputFocused: true,
+        maxHeight: SCREEN,
+      }),
+    );
+
+    expect(root.style.getPropertyValue("--app-height")).toBe("508px");
+    expect(root.style.getPropertyValue("--app-height-max")).toBe(`${SCREEN}px`);
+  });
+});
