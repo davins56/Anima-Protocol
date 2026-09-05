@@ -69,6 +69,8 @@ vi.mock("../src/lib/openaiClient", () => {
     getLocalLlmClient: () => client,
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
     localLlmMaxRetries: () => 2,
+    openRouterMaxRetries: () => 2,
+    openRouterCascadeMaxRetries: (remaining: number) => (remaining > 0 ? 0 : 2),
     resetLlmClientsForTests: () => {},
   };
 });

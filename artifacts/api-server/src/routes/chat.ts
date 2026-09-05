@@ -24,6 +24,7 @@ import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  isOpenRouterAlreadyFreeTier,
   isOpenRouterGenericProviderError,
   OPENROUTER_FREE_PROVIDER_HINT,
   remapGenericProviderError,
@@ -34,6 +35,7 @@ import {
   consumeLlmStream,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
+import { llmOpenTimeoutMs, openStreamAbort } from "../lib/chatTimeouts";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -148,7 +150,6 @@ function truncate(value: unknown, max = 600): string {
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
 }
 
-const LLM_OPEN_TIMEOUT_MS = 35_000;
 const SSE_HEARTBEAT_MS = 8_000;
 
 function flushSse(res: Response) {
@@ -174,16 +175,6 @@ function startSseHeartbeat(res: Response): () => void {
   }, SSE_HEARTBEAT_MS);
   timer.unref?.();
   return () => clearInterval(timer);
-}
-
-function openStreamAbort(): { signal: AbortSignal; cancel: () => void } {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), LLM_OPEN_TIMEOUT_MS);
-  timer.unref?.();
-  return {
-    signal: controller.signal,
-    cancel: () => clearTimeout(timer),
-  };
 }
 
 function streamErrorMessage(err: unknown): string {
@@ -1680,7 +1671,9 @@ router.post("/messages", async (req, res) => {
         fullResponse = streamed.content;
       }
     } else {
-      const open = openStreamAbort();
+      const open = openStreamAbort(
+        llmOpenTimeoutMs({ freeTierCascade: isOpenRouterAlreadyFreeTier() }),
+      );
       let completion;
       try {
         completion = await createChatStreamWithFailover({
