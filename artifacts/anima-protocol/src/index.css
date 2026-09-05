@@ -185,7 +185,14 @@
    * fallback is the closest CSS-only equivalent.
    */
   --app-height-max: 100lvh;
-  /* Tab bar height for mobile padding: 56px + safe-area-inset-bottom */
+  /*
+   * Space reserved for the fixed tab bar. Includes the home indicator
+   * because BottomTabBar is `position: fixed; bottom: 0` with its own
+   * `--safe-bottom` padding. Do not also pad `.app-shell` with
+   * `--safe-bottom` — that double-counts the inset and lifts in-flow
+   * chrome (chat composer) away from the tab bar. JS zeroes this while
+   * `html[data-keyboard-open]`.
+   */
   --tab-bar-height: calc(56px + env(safe-area-inset-bottom, 0px));
 }
 
@@ -283,6 +290,9 @@ html[data-keyboard-open] .fixed-bottom-chrome {
    * Landscape on a notched iPhone insets the display horizontally. Without
    * these the shell either clips under the notch or leaves an unpainted
    * gutter; `.app-viewport-backdrop` keeps the gutter itself painted.
+   * Bottom: do not add `--safe-bottom` here. `.app-shell-main` already
+   * reserves `--tab-bar-height` (bar + home indicator) for the fixed tab
+   * bar; a second safe-area pad opens a black gap above the tab bar.
    */
   padding-left: var(--safe-left, env(safe-area-inset-left, 0px));
   padding-right: var(--safe-right, env(safe-area-inset-right, 0px));
