@@ -77,6 +77,8 @@ vi.mock("../src/lib/openaiClient", () => {
     isCloudFlagshipLlmHost: () => false,
     logLocalLlmClientInitOnce: () => {},
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
+    openRouterMaxRetries: () => 2,
+    openRouterCascadeMaxRetries: (remaining: number) => (remaining > 0 ? 0 : 2),
     resetLlmClientsForTests: () => {},
   };
 });

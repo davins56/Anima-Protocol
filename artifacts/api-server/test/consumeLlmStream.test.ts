@@ -97,4 +97,43 @@ describe("consumeLlmStream", () => {
       }),
     ).rejects.toBeInstanceOf(LlmStreamTimeoutError);
   });
+
+  it("does not trip first-chunk when reasoning arrives and content follows after the stall window", async () => {
+    async function* reasoningThenContent() {
+      yield {
+        choices: [{ delta: { reasoning: "plan the reply" } }],
+      };
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      yield {
+        choices: [{ delta: { content: "Hi" } }],
+      };
+    }
+
+    const result = await consumeLlmStream(reasoningThenContent(), {
+      firstChunkMs: 80,
+      stallMs: 20,
+      totalMs: 200,
+    });
+    expect(result.content).toBe("Hi");
+    expect(result.timedOut).toBe(false);
+  });
+
+  it("keeps the first-chunk window after reasoning-only activity instead of the short stall", async () => {
+    async function* reasoningThenHang() {
+      yield {
+        choices: [{ delta: { reasoning: "still thinking" } }],
+      };
+      await new Promise(() => {});
+    }
+
+    const started = Date.now();
+    await expect(
+      consumeLlmStream(reasoningThenHang(), {
+        firstChunkMs: 70,
+        stallMs: 20,
+        totalMs: 200,
+      }),
+    ).rejects.toBeInstanceOf(LlmStreamTimeoutError);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(60);
+  });
 });

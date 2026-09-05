@@ -269,6 +269,17 @@ export function openRouterMaxRetries(): number {
   return 2;
 }
 
+/**
+ * Per-attempt SDK retries while cascading :free models.
+ * Intermediate hops use 0 so a 429/502/400 fails immediately and the next
+ * live slug can run instead of burning the shared open-abort budget on
+ * same-model retries. The last candidate keeps `openRouterMaxRetries()`.
+ */
+export function openRouterCascadeMaxRetries(remainingCandidates: number): number {
+  if (remainingCandidates > 0) return 0;
+  return openRouterMaxRetries();
+}
+
 export interface LocalLlmBaseUrlSummary {
   configured: boolean;
   host: string | null;

@@ -5,15 +5,26 @@
  * models that never emit `content`) keeps the SSE response open. The Chat UI
  * then stays on "Processing..." until the platform kills the function.
  *
- * - Any chunk resets the stall timer (including reasoning-only deltas).
+ * - Any chunk resets the activity timer (including reasoning-only deltas).
+ * - The short stall budget applies only after visible content has arrived.
+ *   Reasoning-only prefixes keep the first-chunk window so MiniMax :free
+ *   thinking tokens do not trip "took too long" before the reply starts.
  * - If we already have visible text and the stream stalls, treat that as the
  *   end of the reply instead of hanging forever.
- * - If nothing usable arrives before the deadline, throw.
+ * - If nothing usable arrives before the first-chunk deadline, throw.
  */
 
-export const LLM_STREAM_FIRST_CHUNK_MS = 35_000;
-export const LLM_STREAM_STALL_MS = 15_000;
-export const LLM_STREAM_TOTAL_MS = 50_000;
+import {
+  LLM_STREAM_FIRST_CHUNK_MS,
+  LLM_STREAM_STALL_MS,
+  LLM_STREAM_TOTAL_MS,
+} from "./chatTimeouts";
+
+export {
+  LLM_STREAM_FIRST_CHUNK_MS,
+  LLM_STREAM_STALL_MS,
+  LLM_STREAM_TOTAL_MS,
+};
 
 export interface ChatStreamChunk {
   choices?: Array<{
@@ -93,7 +104,7 @@ export async function consumeLlmStream(
   const nextWithDeadline = async (): Promise<WaitResult> => {
     const elapsed = Date.now() - started;
     const sinceActivity = Date.now() - lastActivity;
-    const stallBudget = content || sawReasoning ? stallMs : firstChunkMs;
+    const stallBudget = content.trim() ? stallMs : firstChunkMs;
     const wait = Math.max(
       1,
       Math.min(stallBudget - sinceActivity, totalMs - elapsed),
@@ -115,7 +126,7 @@ export async function consumeLlmStream(
     while (true) {
       const elapsed = Date.now() - started;
       const sinceActivity = Date.now() - lastActivity;
-      const stallBudget = content || sawReasoning ? stallMs : firstChunkMs;
+      const stallBudget = content.trim() ? stallMs : firstChunkMs;
       if (elapsed >= totalMs || sinceActivity >= stallBudget) {
         if (content.trim()) return { content, timedOut: true };
         throw timeoutError(content);
