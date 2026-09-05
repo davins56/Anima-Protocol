@@ -6,6 +6,7 @@ import {
   setAuthTokenGetter,
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from "./base44Client";
 import {
@@ -102,7 +103,51 @@ describe("ChatSession store wrapper", () => {
       code: "timeout",
     });
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
+    expect(timeoutSpy).toHaveBeenCalledTimes(STORE_LIST_RETRY_LIMIT + 1);
+    expect(global.fetch).toHaveBeenCalledTimes(STORE_LIST_RETRY_LIMIT + 1);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+    expect(STORE_LIST_RETRY_LIMIT).toBe(1);
+  });
+
+  it("retries a list GET after a client timeout and succeeds", async () => {
+    clearStoreCache();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      return new AbortController().signal;
+    });
+    let listGets = 0;
+    global.fetch = vi.fn(async () => {
+      listGets += 1;
+      if (listGets === 1) {
+        throw Object.assign(new Error("The operation was aborted"), {
+          name: "TimeoutError",
+        });
+      }
+      return Response.json([{ id: "check-1", note: "warm" }]);
+    });
+
+    await expect(base44.entities.CheckIn.list()).resolves.toEqual([
+      { id: "check-1", note: "warm" },
+    ]);
+    expect(listGets).toBe(2);
+  });
+
+  it("does not retry a write after a client timeout", async () => {
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      return new AbortController().signal;
+    });
+    let creates = 0;
+    global.fetch = vi.fn(async () => {
+      creates += 1;
+      throw abortErr;
+    });
+
+    await expect(base44.entities.CheckIn.create({ note: "x" })).rejects.toMatchObject({
+      code: "timeout",
+    });
+    expect(creates).toBe(1);
   });
 
   it("retries ChatSession.create after a database connection reset", async () => {
