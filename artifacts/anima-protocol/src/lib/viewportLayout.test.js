@@ -149,6 +149,41 @@ describe("representative page scroll contract", () => {
     expect(chat).toContain('height: "var(--app-height, 100dvh)"');
   });
 
+  it("keeps the in-flow chat composer flush above the tab bar when the keyboard is closed", () => {
+    const shell = readSrc("ProtocolApp.jsx");
+    const chat = readPage("Chat");
+    const css = readSrc("index.css");
+
+    // `--tab-bar-height` already includes the home indicator. Reserving that
+    // once on `.app-shell-main` is enough for the fixed tab bar.
+    expect(css).toMatch(
+      /--tab-bar-height:\s*calc\(56px \+ env\(safe-area-inset-bottom/,
+    );
+    expect(shell).toContain("var(--tab-bar-height, 0px)");
+    expect(shell).toMatch(/showChrome && !isHomeFloor/);
+
+    // A second `--safe-bottom` pad on `.app-shell` lifted the composer and
+    // left a black gap (home-indicator tall) above the tab bar.
+    const shellOpen = shell.slice(shell.indexOf("app-shell flex flex-col"));
+    const shellStyle = shellOpen.slice(0, shellOpen.indexOf("</div>"));
+    expect(shellStyle).toContain("paddingTop");
+    expect(shellStyle).not.toMatch(/paddingBottom:\s*"var\(--safe-bottom/);
+    expect(css).toMatch(/Do not add `--safe-bottom` here/);
+
+    // Composer is in-flow; ProtocolApp owns the tab bar. Extra tab-bar /
+    // safe-area padding on Chat was the other half of the double-count.
+    expect(chat).toContain('data-testid="chat-composer"');
+    expect(chat).toContain('paddingBottom: "0"');
+    expect(chat).not.toMatch(/<BottomTabBar/);
+    expect(chat).not.toMatch(
+      /paddingBottom:\s*['"]var\(--tab-bar-height/,
+    );
+    expect(chat).toContain(
+      'bottom: "calc(var(--tab-bar-height, 56px) + 0.5rem)"',
+    );
+    expect(chat).not.toContain('bottom: "5.5rem"');
+  });
+
   it("does not leave overlay chrome on a leftover 100dvh", () => {
     const sidebar = readSrc("components/layout/Sidebar.jsx");
     const lore = readSrc("components/lore/LoreBrowserPanel.jsx");
@@ -244,6 +279,18 @@ describe("edge-to-edge fill contract (iOS 26 / notched iPhone)", () => {
     const tabBar = readSrc("components/layout/BottomTabBar.jsx");
     expect(tabBar).toContain(
       'paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))"',
+    );
+  });
+
+  it("does not double-count the home indicator under in-flow bottom chrome", () => {
+    // `--tab-bar-height` = 56px + safe-area. The shell must not also apply
+    // `--safe-bottom`, or the chat composer sits a home-indicator-height
+    // above the tab bar when the keyboard is closed.
+    const css = readSrc("index.css");
+    const tabBarBlock = css.slice(css.indexOf("--tab-bar-height:"));
+    expect(tabBarBlock).toMatch(/env\(safe-area-inset-bottom/);
+    expect(css).toMatch(
+      /Do not also pad `\.app-shell` with\s+`--safe-bottom`/,
     );
   });
 });
