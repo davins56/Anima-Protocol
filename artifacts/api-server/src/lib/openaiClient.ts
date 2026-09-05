@@ -40,7 +40,8 @@ export const OPENROUTER_VENICE_UNCENSORED =
  * those already hop. Do not default to m3: a 400 used to hard-fail the turn.
  * Gemma 4 slugs are still in the catalog, but the Google provider has
  * historically returned HTTP 401 — keep them as later hops, not default.
- * Default is therefore m2.7:free; m3 then Gemma 4 on 400/429/5xx.
+ * A provider 401 on Gemma 26B hops to Gemma 31B (not an OpenRouter key 401).
+ * Default is therefore m2.7:free; m3 then Gemma 4 on 400/401/429/5xx.
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
 export const OPENROUTER_FREE_M27_MODEL = "minimax/minimax-m2.7:free";

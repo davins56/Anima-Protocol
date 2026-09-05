@@ -618,24 +618,49 @@ export function isOpenRouterAccountPolicyError(err: unknown): boolean {
 }
 
 /**
- * Model-specific client / provider rejection (HTTP 400/404/422 or the
- * generic "Provider returned error" wrapper). Another live :free slug
- * may still complete. Account/policy errors are excluded.
+ * OpenRouter account-key failures. Hopping to another :free slug cannot
+ * fix a bad OPENROUTER_API_KEY. Distinct from an upstream provider 401
+ * (Gemma 4 / Google historically returns "invalid authentication credentials").
+ */
+export function isOpenRouterAccountAuthError(err: unknown): boolean {
+  const hay = summarizeError(err).toLowerCase();
+  const code =
+    err && typeof err === "object"
+      ? errorCodeLower(err as { code?: unknown; type?: unknown })
+      : "";
+  return (
+    code.includes("invalid_api_key") ||
+    hay.includes("invalid api key") ||
+    hay.includes("incorrect api key") ||
+    hay.includes("user not found")
+  );
+}
+
+/**
+ * Model-specific client / provider rejection. Another live :free slug may
+ * still complete. Includes HTTP 400/404/422 (production GMICloud m3 400s
+ * have an empty body, so we cannot require a "Provider returned error"
+ * substring), plus upstream provider 401/403. Account-key / policy errors
+ * are excluded — those apply to every slug.
  */
 export function isOpenRouterModelSpecificClientError(err: unknown): boolean {
-  if (isOpenRouterAccountPolicyError(err)) return false;
+  if (isOpenRouterAccountPolicyError(err) || isOpenRouterAccountAuthError(err)) {
+    return false;
+  }
   const status = httpStatus(err);
   if (status === 400 || status === 404 || status === 422) return true;
+  // Upstream provider auth (not our OpenRouter key) — Gemma 4 / Google 401.
+  if (status === 401 || status === 403) return true;
   const hay = summarizeError(err).toLowerCase();
   return hay.includes("provider returned error") && (status === 400 || status === undefined);
 }
 
 /**
- * Provider 400/429/5xx on a :free slug that is NOT an account-wide policy
- * or daily/minute cap. Another free model may still succeed.
+ * Provider 400/401/429/5xx on a :free slug that is NOT an account-wide
+ * policy, key, or daily/minute cap. Another free model may still succeed.
  */
 export function shouldTryNextOpenRouterFreeModel(err: unknown, candidateModel: string): boolean {
-  if (isOpenRouterAccountPolicyError(err)) {
+  if (isOpenRouterAccountPolicyError(err) || isOpenRouterAccountAuthError(err)) {
     return false;
   }
   if (!isOpenRouterFreeModel(candidateModel)) {
@@ -1225,8 +1250,9 @@ function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
 
 /**
  * Try the preferred OpenRouter model, then other :free candidates when the
- * account has no credits (HTTP 402) or a free provider returns 400/429/5xx
- * that is not ZDR / data-policy / the account-wide daily/minute cap.
+ * account has no credits (HTTP 402) or a free provider returns
+ * 400/401/429/5xx that is not ZDR / data-policy / a bad OpenRouter key /
+ * the account-wide daily/minute cap.
  * Same-model 502/503/connection retries are the OpenRouter client's
  * maxRetries (default 2).
  */

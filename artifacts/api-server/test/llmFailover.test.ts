@@ -289,6 +289,7 @@ import {
   isProviderConnectionError,
   isProviderQuotaError,
   isOpenRouterAlreadyFreeTier,
+  isOpenRouterAccountAuthError,
   isOpenRouterAccountPolicyError,
   isOpenRouterCreditFallback,
   isOpenRouterFreeDailyLimitError,
@@ -482,6 +483,32 @@ describe("isOpenRouterModelSpecificClientError", () => {
         message: "No endpoints found matching your data policy (Free model publication)",
       }),
     ).toBe(false);
+    expect(
+      isOpenRouterModelSpecificClientError({
+        status: 401,
+        message: "Request had invalid authentication credentials",
+      }),
+    ).toBe(true);
+    expect(
+      isOpenRouterModelSpecificClientError({
+        status: 401,
+        message: "Invalid API key",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("isOpenRouterAccountAuthError", () => {
+  it("detects an OpenRouter key failure, not an upstream provider 401", () => {
+    expect(
+      isOpenRouterAccountAuthError({ status: 401, message: "Invalid API key" }),
+    ).toBe(true);
+    expect(
+      isOpenRouterAccountAuthError({
+        status: 401,
+        message: "Request had invalid authentication credentials",
+      }),
+    ).toBe(false);
   });
 });
 
@@ -542,6 +569,18 @@ describe("shouldTryNextOpenRouterFreeModel", () => {
       shouldTryNextOpenRouterFreeModel(
         { status: 400, message: "This organization requires zero data retention" },
         "minimax/minimax-m2.7:free",
+      ),
+    ).toBe(false);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 401, message: "Request had invalid authentication credentials" },
+        "google/gemma-4-26b-a4b-it:free",
+      ),
+    ).toBe(true);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 401, message: "Invalid API key" },
+        "google/gemma-4-26b-a4b-it:free",
       ),
     ).toBe(false);
   });
@@ -1254,7 +1293,7 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
   });
 
-  it("failovers from m3:free HTTP 400 to the next live :free slug", async () => {
+  it("failovers from m2.7:free HTTP 400 to the next live :free slug", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
@@ -1279,6 +1318,44 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
     expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
+  });
+
+  it("failovers past a Gemma 4 provider 401 to the next live :free slug", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("400 Provider returned error"), { status: 400 }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error("400 Provider returned error"), { status: 400 }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Request had invalid authentication credentials"), {
+          status: 401,
+        }),
+      )
+      .mockResolvedValueOnce(fakeStream("gemma31"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe("google/gemma-4-31b-it:free");
+    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "minimax/minimax-m2.7:free",
+      "minimax/minimax-m3:free",
+      "google/gemma-4-26b-a4b-it:free",
+      "google/gemma-4-31b-it:free",
+    ]);
   });
 
   it("does not hop free models on a data-policy HTTP 400", async () => {
