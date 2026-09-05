@@ -79,16 +79,14 @@ function rosterEntity(entityName) {
  * Drop inline data-URL portraits before POST. A multi-MB avatar_url on
  * /api/store/Character is what used to blow the 8s client abort on Workers.
  */
-export async function persistCompanionAvatarUrl(
-  url,
-  persist = uploadDataUrl,
-) {
+export async function persistCompanionAvatarUrl(url, persist) {
   const trimmed = typeof url === "string" ? url.trim() : "";
   if (!trimmed) return "";
   if (!trimmed.startsWith("data:")) return trimmed;
-  if (typeof persist !== "function") return "";
+  const upload = typeof persist === "function" ? persist : uploadDataUrl;
+  if (typeof upload !== "function") return "";
   try {
-    return await persist(trimmed);
+    return await upload(trimmed);
   } catch {
     return "";
   }
@@ -105,7 +103,7 @@ export async function createCompanionRecord(
   {
     create,
     list,
-    persistAvatar = uploadDataUrl,
+    persistAvatar,
     timeoutMs = STORE_COMPANION_CREATE_TIMEOUT_MS,
     retryLimit = STORE_COMPANION_CREATE_RETRY_LIMIT,
   } = {},
