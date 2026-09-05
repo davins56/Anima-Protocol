@@ -168,7 +168,7 @@ describe("representative page scroll contract", () => {
     const shellStyle = shellOpen.slice(0, shellOpen.indexOf("</div>"));
     expect(shellStyle).toContain("paddingTop");
     expect(shellStyle).not.toMatch(/paddingBottom:\s*"var\(--safe-bottom/);
-    expect(css).toMatch(/Do not add `--safe-bottom` here/);
+    expect(css).toMatch(/do not add `--safe-bottom` here/i);
 
     // Composer is in-flow; ProtocolApp owns the tab bar. Extra tab-bar /
     // safe-area padding on Chat was the other half of the double-count.
@@ -287,10 +287,9 @@ describe("edge-to-edge fill contract (iOS 26 / notched iPhone)", () => {
     // `--safe-bottom`, or the chat composer sits a home-indicator-height
     // above the tab bar when the keyboard is closed.
     const css = readSrc("index.css");
-    const tabBarBlock = css.slice(css.indexOf("--tab-bar-height:"));
-    expect(tabBarBlock).toMatch(/env\(safe-area-inset-bottom/);
     expect(css).toMatch(
-      /Do not also pad `\.app-shell` with\s+`--safe-bottom`/,
+      /--tab-bar-height:\s*calc\(56px \+ env\(safe-area-inset-bottom/,
     );
+    expect(css).toContain("Do not also pad `.app-shell` with");
   });
 });
