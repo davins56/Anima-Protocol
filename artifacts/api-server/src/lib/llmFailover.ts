@@ -30,6 +30,8 @@ import {
   hasOpenRouterKey,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
+  MINIMAX_FREE_MODEL,
+  JULES_FREE_MODEL,
   OPENROUTER_VENICE_UNCENSORED,
   openRouterKeyFingerprint,
   summarizeLocalLlmBaseUrl,
@@ -985,13 +987,12 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
 
 function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
   const out: ResolvedModel[] = [preferred];
-  if (!isOpenRouterFreeModel(preferred.model)) {
-    out.push({ ...preferred, model: OPENROUTER_FREE_MODEL });
+  const freeModels = [OPENROUTER_FREE_MODEL, MINIMAX_FREE_MODEL, JULES_FREE_MODEL];
+  for (const model of freeModels) {
+    if (!out.some((m) => m.model === model)) {
+      out.push({ ...preferred, model });
+    }
   }
-  const freeMinimax = { ...preferred, model: "minimax/minimax-01:free" };
-  const freeGoogleJules = { ...preferred, model: "google/gemma-3-12b-it:free" };
-  if (!out.some((m) => m.model === freeMinimax.model)) out.push(freeMinimax);
-  if (!out.some((m) => m.model === freeGoogleJules.model)) out.push(freeGoogleJules);
   return out;
 }
 

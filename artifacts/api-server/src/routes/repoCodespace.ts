@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
 import { exec } from "child_process";
 import { createRateLimit } from "../lib/rateLimit";
@@ -22,13 +23,26 @@ function requireUser(req: Request, res: Response, next: () => void) {
 
 router.use(requireUser);
 
-const REPO_ROOT = "/app";
+function getRepoRoot(): string {
+  let dir = process.cwd();
+  while (dir !== path.parse(dir).root) {
+    if (fsSync.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
 
-// Helper to validate and resolve paths
+// Helper to validate and resolve paths cleanly without prefix vulnerabilities
 function resolveRepoPath(userPath: string): string {
+  const repoRoot = getRepoRoot();
   const normalized = path.normalize(userPath);
-  const resolved = path.resolve(REPO_ROOT, normalized);
-  if (!resolved.startsWith(REPO_ROOT)) {
+  const resolved = path.resolve(repoRoot, normalized);
+  const relative = path.relative(repoRoot, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("Path traversal detected.");
   }
   return resolved;
@@ -85,7 +99,8 @@ async function crawl(dir: string, base: string = ""): Promise<{ path: string; is
 
 router.get("/files", async (req: Request, res: Response) => {
   try {
-    const files = await crawl(REPO_ROOT);
+    const repoRoot = getRepoRoot();
+    const files = await crawl(repoRoot);
     res.json({ files });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -147,8 +162,9 @@ router.post("/terminal", async (req: Request, res: Response) => {
       return;
     }
 
-    // Run commands relative to REPO_ROOT
-    exec(command, { cwd: REPO_ROOT, timeout: 20000 }, (error, stdout, stderr) => {
+    const repoRoot = getRepoRoot();
+    // Run commands relative to repoRoot
+    exec(command, { cwd: repoRoot, timeout: 20000 }, (error, stdout, stderr) => {
       res.json({
         stdout: stdout || "",
         stderr: stderr || "",
