@@ -34,11 +34,13 @@ export const OPENROUTER_VENICE_UNCENSORED =
  * `minimax/minimax-m2.7:free`, `google/gemma-4-26b-a4b-it:free`,
  * `google/gemma-4-31b-it:free`. Retired / absent: `openai/gpt-oss-20b:free`,
  * `google/gemma-3-12b-it:free`, `minimax/minimax-01:free`.
- * Production after PR #351: m3:free returns HTTP 400
- * ("Provider returned error") on normal chat/completions streaming.
+ * Production OpenRouter Upstream Requests (same account, 2026-09-05):
+ * m3:free via GMICloud returned HTTP 400 Bad Request (no detailed body;
+ * model page had no downtime banner). m2.7:free returned 429 and 502 —
+ * those already hop. Do not default to m3: a 400 used to hard-fail the turn.
  * Gemma 4 slugs are still in the catalog, but the Google provider has
  * historically returned HTTP 401 — keep them as later hops, not default.
- * Default is therefore m2.7:free again; m3 then Gemma 4 on 400/429/5xx.
+ * Default is therefore m2.7:free; m3 then Gemma 4 on 400/429/5xx.
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
 export const OPENROUTER_FREE_M27_MODEL = "minimax/minimax-m2.7:free";
@@ -54,7 +56,8 @@ export const JULES_FREE_MODEL = OPENROUTER_FREE_GEMMA4_26B_MODEL;
 /**
  * Ordered :free slugs to try after the preferred OpenRouter model fails
  * with a provider blip or model-specific 400 (not ZDR / data-policy /
- * the account-wide free-models-per-day cap). Healthier slugs first.
+ * the account-wide free-models-per-day cap). m2.7 first so a GMICloud
+ * m3 400 cannot be the first and only attempt.
  */
 export const OPENROUTER_FREE_MODEL_CANDIDATES = [
   OPENROUTER_FREE_MODEL,
