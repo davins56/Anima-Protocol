@@ -1,6 +1,6 @@
 // @ts-check
 import { useState } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
@@ -13,10 +13,10 @@ const ARCHETYPES = [
 ];
 
 /**
- * @param {{ onComplete: (companion: any) => void, userEmail?: string }} props
+ * @param {{ onComplete: (companion: any) => void, userEmail?: string, initialStep?: string, onClose?: () => void }} props
  */
-export default function CreateCompanionModal({ onComplete, userEmail }) {
-  const [step, setStep] = useState("welcome"); // welcome, details, loading, done
+export default function CreateCompanionModal({ onComplete, userEmail, initialStep = "welcome", onClose }) {
+  const [step, setStep] = useState(initialStep); // welcome, details, loading, done
   const [name, setName] = useState("");
   const [archetype, setArchetype] = useState("Muse");
   const [tagline, setTagline] = useState("");
@@ -35,11 +35,21 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
     setError("");
 
     try {
+      let resolvedEmail = userEmail;
+      if (!resolvedEmail) {
+        try {
+          const me = await base44.auth.me();
+          resolvedEmail = me?.email;
+        } catch {
+          /* ignore auth lookup failure */
+        }
+      }
+
       const companion = await base44.entities.Anima.create({
         name: name.trim(),
         archetype,
         tagline: tagline.trim() || `Your ${archetype} companion`,
-        assigned_user: userEmail,
+        assigned_user: resolvedEmail || undefined,
         avatar_url: avatarUrl.trim(),
         personality: `You are ${name}, a ${archetype.toLowerCase()} companion. ${tagline || "You provide guidance and support."}`,
         speaking_style: "Warm, thoughtful, and personable",
@@ -71,8 +81,17 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         <motion.div
           initial={{ scale: 0.9, y: 20 }}
           animate={{ scale: 1, y: 0 }}
-          className="w-full max-w-2xl bg-background border border-primary/30 rounded-xl p-8 text-center space-y-6"
+          className="relative w-full max-w-2xl bg-background border border-primary/30 rounded-xl p-8 text-center space-y-6"
         >
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 text-primary/40 hover:text-primary transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
           <div className="flex justify-center">
             <div className="relative">
               <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 animate-pulse" />
@@ -114,8 +133,17 @@ export default function CreateCompanionModal({ onComplete, userEmail }) {
         <motion.div
           initial={{ scale: 0.9, y: 20 }}
           animate={{ scale: 1, y: 0 }}
-          className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-background border border-primary/30 rounded-xl p-8 space-y-6"
+          className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-background border border-primary/30 rounded-xl p-8 space-y-6"
         >
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 text-primary/40 hover:text-primary transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
           <h2 className="text-2xl font-mono text-primary glow-text tracking-widest uppercase">
             Design Your Companion
           </h2>
