@@ -129,9 +129,14 @@ function decodeName(bytes, utf8) {
   return new TextDecoder("latin1").decode(bytes);
 }
 
+// Default uncompressed budget matches Import / Pull archive ceiling (50MB).
+// Callers that pass limits.maxZipBytes override this; the default exists so a
+// leftover unpack site cannot reject a valid 50MB Import zip.
+export const DEFAULT_MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
+
 // Unpack a zip ArrayBuffer into { path, bytes }[] (files only; dirs skipped).
 export async function unzipToEntries(buffer, {
-  maxUncompressedBytes = 8 * 1024 * 1024,
+  maxUncompressedBytes = DEFAULT_MAX_UNCOMPRESSED_BYTES,
   skipPath,
 } = {}) {
   if (!buffer || !(buffer instanceof ArrayBuffer) && !ArrayBuffer.isView(buffer)) {

@@ -22,6 +22,7 @@ describe("ImportRepoModal", () => {
     expect(screen.getByText(/Import Repository/i)).toBeTruthy();
     expect(screen.getByText(/Choose folder/i)).toBeTruthy();
     expect(screen.getByText(/Choose \.zip/i)).toBeTruthy();
+    expect(screen.getByText(/up to 50MB/i)).toBeTruthy();
   });
 
   it("Pull defaults toward davins56/Anima-Protocol on main", () => {
@@ -57,12 +58,12 @@ describe("ImportRepoModal", () => {
       <ImportRepoModal
         open
         busy={false}
-        error="Zip is larger than 8MB."
+        error="Zip is larger than 50MB."
         onClose={vi.fn()}
         onPickFolder={vi.fn()}
         onPickZip={vi.fn()}
       />,
     );
-    expect(screen.getByText("Zip is larger than 8MB.")).toBeTruthy();
+    expect(screen.getByText("Zip is larger than 50MB.")).toBeTruthy();
   });
 });
