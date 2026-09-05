@@ -33,6 +33,32 @@ export async function updateCompanionRecord(row, patch) {
   return base44.entities[entity].update(row.id, patch);
 }
 
+/**
+ * Load a companion from Anima or Character. Generator-created rows live in
+ * Character, so Anima-only lookups show "not found" after the picker selects
+ * them.
+ */
+export async function loadCompanionRecord(id, preferredEntity) {
+  if (!id) return null;
+  const first = preferredEntity === "Character" ? "Character" : "Anima";
+  const second = first === "Character" ? "Anima" : "Character";
+  for (const entity of [first, second]) {
+    const rows = await base44.entities[entity]
+      .list("-created_date", 100)
+      .catch(() => []);
+    const found = (rows || []).find((row) => row && row.id === id);
+    if (found) return tagCompanionRow(found, entity);
+  }
+  return null;
+}
+
+/** Strip picker-only flags so they are not written back to the store. */
+export function companionPersistPatch(form) {
+  if (!form || typeof form !== "object") return {};
+  const { _storeEntity, _isAnima, _bundled, ...rest } = form;
+  return rest;
+}
+
 function createdMs(row) {
   const raw = row?.created_date || row?.createdAt || row?.updated_date || 0;
   const ms = new Date(raw).getTime();
