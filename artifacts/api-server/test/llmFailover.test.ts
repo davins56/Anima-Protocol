@@ -22,14 +22,13 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_FREE_GEMMA4_26B_MODEL: "google/gemma-4-26b-a4b-it:free",
     OPENROUTER_FREE_GEMMA4_31B_MODEL: "google/gemma-4-31b-it:free",
     MINIMAX_FREE_MODEL: "minimax/minimax-m3:free",
-    JULES_FREE_MODEL: "google/gemma-4-26b-a4b-it:free",
     OPENROUTER_FREE_MODEL_CANDIDATES: [
       "minimax/minimax-m2.7:free",
       "minimax/minimax-m3:free",
       "google/gemma-4-26b-a4b-it:free",
       "google/gemma-4-31b-it:free",
     ],
-    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.7",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
@@ -846,7 +845,19 @@ describe("getProviderChain", () => {
     expect(getProviderChain()).toEqual([]);
   });
 
-  it("puts MiniMax after OpenRouter when both cloud keys are set", () => {
+  it("puts MiniMax before OpenRouter when both cloud keys are set", () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    expect(getProviderChain()).toEqual(["minimax", "openrouter"]);
+  });
+
+  it("omits MiniMax when ANIMA_OPENROUTER_FREE=true even if MINIMAX_API_KEY is set", () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
@@ -854,7 +865,8 @@ describe("getProviderChain", () => {
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.MINIMAX_API_KEY = "minimax-test";
-    expect(getProviderChain()).toEqual(["openrouter", "minimax"]);
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    expect(getProviderChain()).toEqual(["openrouter"]);
   });
 
   it("uses MiniMax alone when only MINIMAX_API_KEY is set", () => {
@@ -1517,20 +1529,18 @@ describe("createChatStreamWithFailover", () => {
     ]);
   });
 
-  it("falls through to MiniMax Global after OpenRouter free hops exhaust on provider 400", async () => {
+  it("falls through to OpenRouter when MiniMax fails on provider 400", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
+    delete process.env.ANIMA_OPENROUTER_FREE;
     createMock
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockResolvedValueOnce(fakeStream("minimax-direct"));
+      .mockRejectedValueOnce(Object.assign(new Error("400 MiniMax error"), { status: 400 }))
+      .mockResolvedValueOnce(fakeStream("openrouter-free"));
 
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -1539,28 +1549,26 @@ describe("createChatStreamWithFailover", () => {
       messages: [{ role: "user", content: "hello" }],
     });
 
-    expect(result.provider).toBe("minimax");
-    expect(result.brand).toBe("minimax");
-    expect(result.failedOver).toBe(true);
-    expect(result.model).toBe("MiniMax-M2.5");
-    expect(createMock).toHaveBeenCalledTimes(5);
+    expect(result.provider).toBe("openrouter");
+    expect(result.brand).toBe("openrouter");
+    expect(result.failedOver).toBe(false);
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "MiniMax-M2.7",
       "minimax/minimax-m2.7:free",
-      "minimax/minimax-m3:free",
-      "google/gemma-4-26b-a4b-it:free",
-      "google/gemma-4-31b-it:free",
-      "MiniMax-M2.5",
     ]);
   });
 
-  it("surfaces a MiniMax operator hint when OpenRouter hops and MiniMax both fail", async () => {
+  it("surfaces an error hint when MiniMax and OpenRouter both fail", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
+    delete process.env.ANIMA_OPENROUTER_FREE;
     createMock.mockRejectedValue(
       Object.assign(new Error("400 Provider returned error"), { status: 400 }),
     );
@@ -1572,62 +1580,27 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       });
-      throw new Error("expected MiniMax fallback to reject");
+      throw new Error("expected both providers to reject");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      expect(message).toBe(MINIMAX_DIRECT_FAIL_HINT);
+      expect(message).toContain(OPENROUTER_FREE_PROVIDER_HINT);
       expect(message).not.toMatch(/Provider returned error/i);
     }
     expect(createMock).toHaveBeenCalledTimes(5);
   });
 
-  it("does not fall through to MiniMax on free-models-per-day", async () => {
+  it("falls through to OpenRouter when MiniMax fails on HTTP 402", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(
-        new Error(
-          "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
-        ),
-        { status: 429 },
-      ),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected daily cap to reject without MiniMax");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
-      expect(message).not.toMatch(/Provider returned error/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-  });
-
-  it("falls through to MiniMax on OpenRouter ZDR without hopping :free slugs", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
+    delete process.env.ANIMA_OPENROUTER_FREE;
     createMock
-      .mockRejectedValueOnce(
-        Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
-      )
-      .mockResolvedValueOnce(fakeStream("minimax-direct"));
+      .mockRejectedValueOnce(Object.assign(new Error("402 Payment required"), { status: 402 }))
+      .mockResolvedValueOnce(fakeStream("openrouter-free"));
 
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -1636,14 +1609,14 @@ describe("createChatStreamWithFailover", () => {
       messages: [{ role: "user", content: "hello" }],
     });
 
-    expect(result.provider).toBe("minimax");
-    expect(result.brand).toBe("minimax");
-    expect(result.failedOver).toBe(true);
-    expect(result.model).toBe("MiniMax-M2.5");
+    expect(result.provider).toBe("openrouter");
+    expect(result.brand).toBe("openrouter");
+    expect(result.failedOver).toBe(false);
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "MiniMax-M2.7",
       "minimax/minimax-m2.7:free",
-      "MiniMax-M2.5",
     ]);
   });
 
@@ -1715,19 +1688,20 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
   });
 
-  it("remaps to the ZDR privacy hint when MiniMax also fails after OpenRouter ZDR", async () => {
+  it("remaps to the ZDR privacy hint when OpenRouter ZDR fails", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
+    delete process.env.ANIMA_OPENROUTER_FREE;
     createMock
+      .mockRejectedValueOnce(Object.assign(new Error("MiniMax unavailable"), { status: 503 }))
       .mockRejectedValueOnce(
         Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
-      )
-      .mockRejectedValueOnce(Object.assign(new Error("MiniMax unavailable"), { status: 503 }));
+      );
 
     try {
       await createChatStreamWithFailover({
@@ -1736,17 +1710,16 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       });
-      throw new Error("expected ZDR then MiniMax failure to reject");
+      throw new Error("expected MiniMax then ZDR failure to reject");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       expect(message).toContain(OPENROUTER_ZDR_PRIVACY_HINT);
-      expect(message).not.toBe(MINIMAX_DIRECT_FAIL_HINT);
       expect(message).not.toMatch(/0 endpoints out of/i);
     }
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "MiniMax-M2.7",
       "minimax/minimax-m2.7:free",
-      "MiniMax-M2.5",
     ]);
   });
 
@@ -2110,20 +2083,18 @@ describe("createChatCompletionWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(4);
   });
 
-  it("falls through to MiniMax Global on completion after OpenRouter 400 hops", async () => {
+  it("falls through to OpenRouter on completion when MiniMax fails", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
+    delete process.env.ANIMA_OPENROUTER_FREE;
     createMock
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockRejectedValueOnce(Object.assign(new Error("400 Provider returned error"), { status: 400 }))
-      .mockResolvedValueOnce(fakeCompletion("minimax reply"));
+      .mockRejectedValueOnce(Object.assign(new Error("400 MiniMax error"), { status: 400 }))
+      .mockResolvedValueOnce(fakeCompletion("openrouter reply"));
 
     const result = await createChatCompletionWithFailover({
       tier: "standard",
@@ -2131,40 +2102,13 @@ describe("createChatCompletionWithFailover", () => {
       messages: [{ role: "user", content: "hello" }],
     });
 
-    expect(result.provider).toBe("minimax");
-    expect(result.content).toBe("minimax reply");
-    expect(result.failedOver).toBe(true);
-    expect(createMock).toHaveBeenCalledTimes(5);
-    expect(createMock.mock.calls[4][0].model).toBe("MiniMax-M2.5");
-  });
-
-  it("falls through to MiniMax on completion after OpenRouter ZDR without hopping :free slugs", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
-      )
-      .mockResolvedValueOnce(fakeCompletion("minimax reply"));
-
-    const result = await createChatCompletionWithFailover({
-      tier: "standard",
-      maxTokens: 1024,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("minimax");
-    expect(result.content).toBe("minimax reply");
-    expect(result.failedOver).toBe(true);
+    expect(result.provider).toBe("openrouter");
+    expect(result.content).toBe("openrouter reply");
+    expect(result.failedOver).toBe(false);
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "MiniMax-M2.7",
       "minimax/minimax-m2.7:free",
-      "MiniMax-M2.5",
     ]);
   });
 });
