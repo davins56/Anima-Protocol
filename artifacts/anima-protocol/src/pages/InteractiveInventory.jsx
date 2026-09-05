@@ -4,6 +4,9 @@ import { useParams } from "react-router-dom";
 import { Package, Zap, TrendingUp, BookOpen, Loader } from "lucide-react";
 import { motion } from "framer-motion";
 import InventoryManager from "@/components/inventory/InventoryManager";
+import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import { INVENTORY_LIST_LIMIT } from "@/lib/inventory";
+import useStewardInventoryGrant from "@/hooks/useStewardInventoryGrant";
 
 export default function InteractiveInventory() {
   const { sessionId, characterId } = useParams();
@@ -13,34 +16,42 @@ export default function InteractiveInventory() {
   const [items, setItems] = useState([]);
   const [showNarrativeLog, setShowNarrativeLog] = useState(false);
   const [narrativeEvents, setNarrativeEvents] = useState([]);
+  const grantCharacterId = characterId || character?.id;
+  const { granting, done: grantDone } = useStewardInventoryGrant(grantCharacterId);
 
   useEffect(() => {
     loadData();
-  }, [sessionId, characterId]);
+  }, [sessionId, characterId, grantDone]);
 
   const loadData = async () => {
     setLoading(true);
     try {
       // Load session and character
-      const [sessions, chars] = await Promise.all([
+      const [sessions, roster] = await Promise.all([
         base44.entities.ChatSession.list("-updated_date", 1),
-        base44.entities.Character.list("-created_date", 100),
+        loadRosterCharacters({
+          retrySeed: false,
+          allowBundledFallback: false,
+          waitBootstrap: true,
+        }),
       ]);
 
+      const chars = [...(roster.animaAsChars || []), ...(roster.rawCharacters || [])];
       const activeSession = sessions[0];
-      const activeChar = activeSession?.character_id
-        ? chars.find(c => c.id === activeSession.character_id)
+      const requestedId = characterId || activeSession?.character_id;
+      const activeChar = requestedId
+        ? chars.find(c => c.id === requestedId) || chars[0]
         : chars[0];
 
       setSession(activeSession);
       setCharacter(activeChar);
 
-      // Load items for this character
-      if (activeChar?.id) {
+      // Load items for this character after any steward grant has settled.
+      if (activeChar?.id && grantDone) {
         const invItems = await base44.entities.Inventory.filter(
           { character_id: activeChar.id },
           "-created_date",
-          100
+          INVENTORY_LIST_LIMIT
         );
         setItems(invItems || []);
       }
@@ -78,7 +89,7 @@ export default function InteractiveInventory() {
         const updatedItems = await base44.entities.Inventory.filter(
           { character_id: character.id },
           "-created_date",
-          100
+          INVENTORY_LIST_LIMIT
         );
         setItems(updatedItems || []);
       }
@@ -87,7 +98,7 @@ export default function InteractiveInventory() {
     }
   };
 
-  if (loading) {
+  if (loading || granting) {
     return (
       <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
         <div className="text-center">

@@ -23,7 +23,14 @@ import {
   coveredSourceFamilies,
   energyFragmentLoreBlock,
   cyberspaceBattlePromptBlock,
+  starterOwnedIds,
+  catalogOwnedIds,
+  defaultFragmentLibrary,
+  normalizeFragmentLibrary,
+  storedFragmentLibraryIsFull,
 } from "./index.js";
+import { isEchoLibrarySteward } from "../echoKeys/steward.js";
+// Import steward directly — the echoKeys barrel loads the 800-key Codex.
 
 describe("battle chip research account", () => {
   it("documents the PET / folder / custom loop", () => {
@@ -189,5 +196,57 @@ describe("draw and lore", () => {
       return activeChar;
     };
     expect(boom).toThrow(/before initialization/);
+  });
+});
+
+describe("fragment library ownership", () => {
+  it("starts operators with the Folder handful, not the full catalog", () => {
+    const lib = defaultFragmentLibrary();
+    expect(lib.granted_full_library).toBe(false);
+    expect(lib.owned_ids).toEqual(starterOwnedIds());
+    expect(lib.owned_ids.length).toBeGreaterThan(8);
+    expect(lib.owned_ids.length).toBeLessThan(ENERGY_FRAGMENTS.length);
+    expect(lib.folder).toHaveLength(FOLDER_RULES.size);
+    expect(lib.owned_ids).not.toContain("hub-chorus");
+  });
+
+  it("grants every catalog id only when the steward flag is set", () => {
+    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(true);
+    expect(isEchoLibrarySteward({ username: "davins56" })).toBe(true);
+    expect(isEchoLibrarySteward({ role: "admin" })).toBe(false);
+    expect(isEchoLibrarySteward({ email: "seeker@example.com" })).toBe(false);
+
+    const steward = defaultFragmentLibrary({}, { grantFullLibrary: true });
+    expect(steward.granted_full_library).toBe(true);
+    expect(steward.owned_ids).toEqual(catalogOwnedIds());
+    expect(steward.owned_ids).toHaveLength(ENERGY_FRAGMENTS.length);
+    expect(steward.owned_ids).toEqual(expect.arrayContaining(["pulse-emitter", "hub-chorus"]));
+    expect(steward.folder).toHaveLength(FOLDER_RULES.size);
+  });
+
+  it("does not expand a non-steward starter handful", () => {
+    const stale = normalizeFragmentLibrary({
+      granted_full_library: false,
+      owned_ids: starterOwnedIds(),
+    });
+    expect(stale.granted_full_library).toBe(false);
+    expect(stale.owned_ids).toEqual(starterOwnedIds());
+    const granted = normalizeFragmentLibrary(
+      { granted_full_library: false, owned_ids: starterOwnedIds() },
+      { grantFullLibrary: true },
+    );
+    expect(granted.granted_full_library).toBe(true);
+    expect(granted.owned_ids).toHaveLength(ENERGY_FRAGMENTS.length);
+    expect(granted.folder).toHaveLength(FOLDER_RULES.size);
+  });
+
+  it("treats a starter handful as not yet the full library", () => {
+    expect(storedFragmentLibraryIsFull({ granted_full_library: false, owned_ids: starterOwnedIds() }, ENERGY_FRAGMENTS.length)).toBe(false);
+    expect(
+      storedFragmentLibraryIsFull(
+        { granted_full_library: true, owned_ids: ENERGY_FRAGMENTS.map((f) => f.id) },
+        ENERGY_FRAGMENTS.length,
+      ),
+    ).toBe(true);
   });
 });
