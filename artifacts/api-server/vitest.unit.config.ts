@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: [
+      "test/clerkDiagnostics.test.ts",
       "test/imageUploads.test.ts",
       // Was "test/llmEnsemble.test.ts" — no such file, so vitest silently ran
       // nothing for the ensemble path.
