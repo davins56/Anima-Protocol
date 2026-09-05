@@ -187,4 +187,22 @@ describe("Customise Anima hub", () => {
     expect(screen.getByText(/Serenity · Portrait/)).toBeTruthy();
     expect(screen.queryByText(/API is misconfigured/i)).toBeNull();
   });
+
+  it("lists a Companion Generator character so her look can be drafted", async () => {
+    mocks.listAnima.mockResolvedValue([
+      { id: "anima-1", name: "Serenity", assigned_user: "operator@example.com" },
+    ]);
+    mocks.listCharacter.mockResolvedValue([
+      {
+        id: "char-nyx",
+        name: "Nyx",
+        creation_method: "ai_prompt",
+        created_date: "2026-09-05T00:00:00.000Z",
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Nyx")).toBeTruthy();
+    expect(screen.getByText("Serenity")).toBeTruthy();
+  });
 });

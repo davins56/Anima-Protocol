@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import CreateCompanionModal from "./CreateCompanionModal";
+import { companionLookHref } from "@/lib/listPersonalAnimas";
 
 export default function WelcomeScreen({ onNewSession, mode }) {
   const { isAuthenticated } = useAuth();
@@ -202,6 +203,9 @@ Make it feel alive, personal, and slightly different every time — reference th
             setAnimaName(companion.name);
             if (companion.avatar_url) setAnimaAvatar(companion.avatar_url);
             if (companion.tagline) setAnimaTagline(companion.tagline);
+            if (companion?.id) {
+              navigate(companionLookHref(companion.id));
+            }
           }}
           userEmail={userEmail}
         />

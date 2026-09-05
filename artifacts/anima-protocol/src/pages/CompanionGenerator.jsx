@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
+import { companionLookHref } from "@/lib/listPersonalAnimas";
 import { track } from "@/lib/analytics";
 import { Wand2, Copy, Check, AlertCircle, Loader, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,6 +10,7 @@ import { toast } from "sonner";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
 
 export default function CompanionGenerator() {
+  const navigate = useNavigate();
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [companion, setCompanion] = useState(null);
@@ -163,7 +166,12 @@ export default function CompanionGenerator() {
 
       setCompanion(null);
       setPrompt("");
-      toast.success(`✨ ${companion.name} has been created! Start a new chat session to meet them.`);
+      toast.success(
+        `✨ ${companion.name} has been created. Opening Customise Anima so you can draft her look.`,
+      );
+      if (newChar?.id) {
+        navigate(companionLookHref(newChar.id));
+      }
     } catch (err) {
       setError(err.message || "Failed to create companion");
     } finally {

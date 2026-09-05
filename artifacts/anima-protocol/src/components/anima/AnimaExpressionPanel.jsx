@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { updateCompanionRecord } from "@/lib/listPersonalAnimas";
 import { Check, Loader, Save, Swords } from "lucide-react";
 import {
   EXPRESSION_IDS,
@@ -54,7 +54,7 @@ export default function AnimaExpressionPanel({ anima, onSave }) {
     setError("");
     try {
       const patch = { expression_spectrum: normalizeSpectrum(spectrum) };
-      await base44.entities.Anima.update(anima.id, patch);
+      await updateCompanionRecord(anima, patch);
       onSave?.(patch);
       setSaved(true);
     } catch (err) {

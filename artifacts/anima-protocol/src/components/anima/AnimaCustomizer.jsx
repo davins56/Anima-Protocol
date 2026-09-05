@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { base44, uploadDataUrl } from "@/api/base44Client";
+import { updateCompanionRecord } from "@/lib/listPersonalAnimas";
 import {
   formatAvatarUploadError,
   uploadCharacterAvatar,
@@ -98,7 +99,8 @@ export default function AnimaCustomizer({
           : err?.code === "rate_limit"
             ? "The image service is busy right now. Please try again shortly."
             : err?.code === "auth_error"
-              ? "Image generation is temporarily unavailable. You can still upload a reference photo below."
+              ? err?.message ||
+                "Image generation is not configured on this server. You can still upload a reference photo below."
               : err?.message || "Failed to generate appearance. You can still upload a reference photo.";
       setError(msg);
     } finally {
@@ -157,7 +159,7 @@ export default function AnimaCustomizer({
           vessel_layers: layers,
         },
       };
-      await base44.entities.Anima.update(anima.id, patch);
+      await updateCompanionRecord(anima, patch);
       setPreviewUrl(avatar_url);
       setReferenceUrl(look_reference_url || "");
       setSaved(true);
