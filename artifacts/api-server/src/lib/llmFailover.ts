@@ -446,7 +446,7 @@ const OPENROUTER_FREE_MINUTE_HINT =
  */
 const OPENROUTER_FREE_PROVIDER_HINT =
   `The OpenRouter free-tier model is temporarily unavailable ` +
-  `(provider rate limit or gateway error on ${OPENROUTER_FREE_MODEL} or a :free fallback). ` +
+  `(provider rejection, rate limit, or gateway error on ${OPENROUTER_FREE_MODEL} or a :free fallback). ` +
   `Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models.`;
 
 const CONNECTION_CODE_RE =
@@ -601,17 +601,48 @@ export function isOpenRouterAlreadyFreeTier(model?: string): boolean {
 }
 
 /**
- * Provider 429/5xx on a :free slug that is NOT the account-wide daily cap.
- * Another free model may still succeed.
+ * Account / privacy constraints that apply to every :free slug — hopping
+ * cannot fix them (ZDR, data-policy mismatches, daily/minute free caps).
+ */
+export function isOpenRouterAccountPolicyError(err: unknown): boolean {
+  const hay = summarizeError(err).toLowerCase();
+  return (
+    hay.includes("zdr") ||
+    hay.includes("zero data retention") ||
+    hay.includes("data policy") ||
+    hay.includes("data-policy") ||
+    hay.includes("free model publication") ||
+    isOpenRouterFreeDailyLimitError(err) ||
+    isOpenRouterFreeMinuteLimitError(err)
+  );
+}
+
+/**
+ * Model-specific client / provider rejection (HTTP 400/404/422 or the
+ * generic "Provider returned error" wrapper). Another live :free slug
+ * may still complete. Account/policy errors are excluded.
+ */
+export function isOpenRouterModelSpecificClientError(err: unknown): boolean {
+  if (isOpenRouterAccountPolicyError(err)) return false;
+  const status = httpStatus(err);
+  if (status === 400 || status === 404 || status === 422) return true;
+  const hay = summarizeError(err).toLowerCase();
+  return hay.includes("provider returned error") && (status === 400 || status === undefined);
+}
+
+/**
+ * Provider 400/429/5xx on a :free slug that is NOT an account-wide policy
+ * or daily/minute cap. Another free model may still succeed.
  */
 export function shouldTryNextOpenRouterFreeModel(err: unknown, candidateModel: string): boolean {
-  if (isOpenRouterFreeDailyLimitError(err) || isOpenRouterFreeMinuteLimitError(err)) {
+  if (isOpenRouterAccountPolicyError(err)) {
     return false;
   }
   if (!isOpenRouterFreeModel(candidateModel)) {
     return isProviderQuotaError(err);
   }
   if (isProviderQuotaError(err)) return true;
+  if (isOpenRouterModelSpecificClientError(err)) return true;
   return isOpenRouterTransientGatewayError(err) || isOpenRouterProviderServerError(err);
 }
 
@@ -1194,9 +1225,10 @@ function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
 
 /**
  * Try the preferred OpenRouter model, then other :free candidates when the
- * account has no credits (HTTP 402) or a free provider returns 429/5xx that
- * is not the account-wide daily/minute cap. Same-model 502/503/connection
- * retries are the OpenRouter client's maxRetries (default 2).
+ * account has no credits (HTTP 402) or a free provider returns 400/429/5xx
+ * that is not ZDR / data-policy / the account-wide daily/minute cap.
+ * Same-model 502/503/connection retries are the OpenRouter client's
+ * maxRetries (default 2).
  */
 async function withOpenRouterCreditFallback<T>(
   preferred: ResolvedModel,
@@ -1225,9 +1257,11 @@ async function withOpenRouterCreditFallback<T>(
           `[llm] OpenRouter ${candidate.model} ${
             creditFallback
               ? "needs credits"
-              : isOpenRouterTransientGatewayError(err)
-                ? "hit a gateway error"
-                : "is quota/rate limited"
+              : isOpenRouterModelSpecificClientError(err)
+                ? "rejected the request"
+                : isOpenRouterTransientGatewayError(err)
+                  ? "hit a gateway error"
+                  : "is quota/rate limited"
           } (${summarizeError(err)}); retrying ${next.model}.`,
         );
         continue;
