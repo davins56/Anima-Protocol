@@ -13,6 +13,13 @@ import {
   secretFreeErrorSignal,
 } from "../lib/dbErrors";
 import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
+import {
+  buildClerkKeyReport,
+  clerkDiagnosticStatus,
+  probeClerkInstance,
+  summarizeClerkProbe,
+} from "../lib/clerkDiagnostics";
 
 const router: IRouter = Router();
 
@@ -68,6 +75,57 @@ router.get("/healthz/llm", async (req, res) => {
     res.status(503).json({
       ...routing,
       probeOk: false,
+      probeError: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+/**
+ * Public Clerk configuration probe (no secrets — key tails, hostnames, and
+ * JWKS `kid`s only).
+ *
+ * `/healthz/env` reports only presence booleans, which cannot tell "the Clerk
+ * secrets are set" apart from "the Clerk secrets belong to a different
+ * instance than the publishable key". The latter is the silent failure that
+ * reads as "the app doesn't register my login": Clerk signs the user in
+ * against the real Frontend API, then `getAuth(req)` yields no userId and
+ * every authenticated route 401s — including all of /api/chat/*, which is why
+ * the companions stop responding.
+ *
+ * Add `?probe=1` to prove instance identity by intersecting the JWKS key ids
+ * from the Backend API (derived from CLERK_SECRET_KEY) and the Frontend API
+ * (derived from CLERK_PUBLISHABLE_KEY). Disjoint sets = mismatched keys.
+ */
+router.get("/healthz/clerk", async (req, res) => {
+  const report = buildClerkKeyReport(req);
+  const wantProbe =
+    req.query.probe === "1" ||
+    req.query.probe === "true" ||
+    req.query.probe === "yes";
+
+  if (!wantProbe) {
+    const { status, httpStatus } = clerkDiagnosticStatus(report);
+    res.status(httpStatus).json({ status, ...report });
+    return;
+  }
+
+  try {
+    const probe = await probeClerkInstance(
+      report,
+      readRuntimeEnv("CLERK_SECRET_KEY"),
+    );
+    const { status, httpStatus } = clerkDiagnosticStatus(report, probe);
+    res.status(httpStatus).json({
+      status,
+      ...report,
+      probe,
+      summary: summarizeClerkProbe(report, probe),
+    });
+  } catch (err) {
+    const { status, httpStatus } = clerkDiagnosticStatus(report);
+    res.status(httpStatus === 200 ? 503 : httpStatus).json({
+      status,
+      ...report,
       probeError: err instanceof Error ? err.message : String(err),
     });
   }
