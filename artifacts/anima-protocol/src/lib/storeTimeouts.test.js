@@ -11,6 +11,8 @@ import {
   STORE_SESSION_CREATE_TIMEOUT_MS,
   STORE_TOPIC_CREATE_RETRY_LIMIT,
   STORE_TOPIC_CREATE_TIMEOUT_MS,
+  STORE_COMPANION_CREATE_RETRY_LIMIT,
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
 } from "./storeTimeouts";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -29,10 +31,13 @@ describe("store fail-fast budget", () => {
     const state = readFileSync(join(srcRoot, "lib/bootstrapState.js"), "utf8");
 
     const topicCreate = readFileSync(join(srcRoot, "lib/createTherapyTopic.js"), "utf8");
+    const companionCreate = readFileSync(join(srcRoot, "lib/createCompanion.js"), "utf8");
     const therapyPage = readFileSync(join(srcRoot, "pages/Therapy.jsx"), "utf8");
+    const generator = readFileSync(join(srcRoot, "pages/CompanionGenerator.jsx"), "utf8");
 
     expect(client).toContain("STORE_FETCH_TIMEOUT_MS");
     expect(client).toContain("STORE_SESSION_CREATE_TIMEOUT_MS");
+    expect(client).toContain("STORE_COMPANION_CREATE_TIMEOUT_MS");
     expect(client).toContain("timeoutMs: opts.timeoutMs");
     expect(client).toContain("AbortSignal.timeout");
     expect(client).toContain("createStoreAbortSignal");
@@ -40,17 +45,21 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("retryOnTimeout: true");
     expect(client).toContain("STORE_LIST_RETRY_LIMIT");
     expect(topicCreate).toContain("STORE_TOPIC_CREATE_TIMEOUT_MS");
+    expect(companionCreate).toContain("STORE_COMPANION_CREATE_TIMEOUT_MS");
     expect(therapyPage).toContain("createTherapyTopic(");
+    expect(generator).toContain("createCompanionRecord(");
     expect(auth).toContain("STORE_AUTH_WAIT_MS");
     expect(bootstrap).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
     expect(state).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
   });
 
-  it("documents a longer targeted budget for Init and TherapyTopic create", () => {
+  it("documents a longer targeted budget for Init, TherapyTopic, and companion create", () => {
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBe(20000);
     expect(STORE_SESSION_CREATE_RETRY_LIMIT).toBe(1);
     expect(STORE_TOPIC_CREATE_TIMEOUT_MS).toBe(STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(STORE_TOPIC_CREATE_RETRY_LIMIT).toBe(STORE_SESSION_CREATE_RETRY_LIMIT);
+    expect(STORE_COMPANION_CREATE_TIMEOUT_MS).toBe(STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(STORE_COMPANION_CREATE_RETRY_LIMIT).toBe(STORE_SESSION_CREATE_RETRY_LIMIT);
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
   });
 

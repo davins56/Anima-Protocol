@@ -546,6 +546,19 @@ export function photoNeedsLookup(url) {
   return url.includes("static.wikia.nocookie.net");
 }
 
+/**
+ * Wikipedia auto-lookup is for franchise roster cards. Companion Generator
+ * originals (`ai_prompt`) are drafted on Customise Anima Look — kicking off
+ * a multi-hop wiki search right after create contended the Worker and made
+ * Look fail to open for companions with no photo.
+ */
+export function shouldAutoAssignCharacterPhoto(character) {
+  if (!character?.id) return false;
+  if (!photoNeedsLookup(character.avatar_url)) return false;
+  const method = String(character.creation_method || "").toLowerCase();
+  return method !== "ai_prompt";
+}
+
 // Auto-find a web photo for one character and persist it.
 // Returns the URL on success, or null for a definitive no-match.
 // THROWS on transient lookup failures (network/server) — callers that batch

@@ -40,6 +40,7 @@ vi.mock("@/lib/seedCharacters", () => ({
   getStarterRoster: () => [],
   photoNeedsLookup: () => false,
   retryStarterSeed: vi.fn(),
+  shouldAutoAssignCharacterPhoto: () => false,
 }));
 
 vi.mock("@/components/voice/VoicePicker", () => ({

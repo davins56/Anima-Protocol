@@ -12,6 +12,10 @@ import {
   formatAvatarUploadError,
   uploadCharacterAvatar,
 } from "@/lib/characterAvatarUpload";
+import {
+  companionCreateErrorMessage,
+  createCompanionRecord,
+} from "@/lib/createCompanion";
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
@@ -263,16 +267,21 @@ Return JSON with a single "${field}" string field.`,
   const handleSave = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    if (editingAnima) {
-      await base44.entities.Anima.update(editingAnima.id, form);
-    } else {
-      await base44.entities.Anima.create(form);
+    try {
+      if (editingAnima) {
+        await base44.entities.Anima.update(editingAnima.id, form);
+      } else {
+        await createCompanionRecord("Anima", form);
+      }
+      await loadAnimas();
+      setShowForm(false);
+      setEditingAnima(null);
+      setForm(defaultForm);
+    } catch (err) {
+      toast.error(companionCreateErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
-    await loadAnimas();
-    setShowForm(false);
-    setEditingAnima(null);
-    setForm(defaultForm);
-    setSaving(false);
   };
 
   const handleAvatarUpload = async (e) => {

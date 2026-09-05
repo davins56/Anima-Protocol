@@ -16,6 +16,7 @@ import {
   isBootstrapSettled,
 } from '@/lib/bootstrapState';
 import {
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
   STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
@@ -32,8 +33,8 @@ const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
 export {
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
-  STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 };
 
@@ -1167,10 +1168,16 @@ function entityStore(entityName) {
     },
 
     async create(data, opts = {}) {
+      const timeoutMs =
+        typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0
+          ? opts.timeoutMs
+          : ROSTER_ENTITIES.has(entityName)
+            ? STORE_COMPANION_CREATE_TIMEOUT_MS
+            : undefined;
       const res = await storeFetch(`/${encodeURIComponent(entityName)}`, {
         method: 'POST',
         body: JSON.stringify(data || {}),
-        timeoutMs: opts.timeoutMs,
+        timeoutMs,
         timeoutMessage: opts.timeoutMessage,
       });
       if (!res.ok) await throwErr(res);
