@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  JULES_FREE_MODEL,
+  MINIMAX_FREE_MODEL,
+  OPENROUTER_FREE_GEMMA4_26B_MODEL,
+  OPENROUTER_FREE_GEMMA4_31B_MODEL,
   OPENROUTER_FREE_M27_MODEL,
   OPENROUTER_FREE_M3_MODEL,
   OPENROUTER_FREE_MODEL,
@@ -23,19 +27,26 @@ describe("OpenRouter catalog defaults", () => {
     expect(OPENROUTER_VENICE_UNCENSORED).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
-    expect(OPENROUTER_FREE_MODEL).toBe("minimax/minimax-m3:free");
-    expect(OPENROUTER_FREE_MODEL).toBe(OPENROUTER_FREE_M3_MODEL);
+    expect(OPENROUTER_FREE_MODEL).toBe("minimax/minimax-m2.7:free");
+    expect(OPENROUTER_FREE_MODEL).toBe(OPENROUTER_FREE_M27_MODEL);
     expect(OPENROUTER_FREE_MODEL.endsWith(":free")).toBe(true);
     expect(OPENROUTER_FREE_MODEL).not.toBe("openai/gpt-oss-20b:free");
     expect(OPENROUTER_FREE_MODEL).not.toBe("google/gemma-4-31b-it:free");
-    expect(OPENROUTER_FREE_MODEL).not.toBe(OPENROUTER_FREE_M27_MODEL);
-    expect(OPENROUTER_FREE_M27_MODEL).toBe("minimax/minimax-m2.7:free");
+    expect(OPENROUTER_FREE_MODEL).not.toBe(OPENROUTER_FREE_M3_MODEL);
+    expect(OPENROUTER_FREE_M3_MODEL).toBe("minimax/minimax-m3:free");
+    expect(OPENROUTER_FREE_GEMMA4_26B_MODEL).toBe("google/gemma-4-26b-a4b-it:free");
+    expect(OPENROUTER_FREE_GEMMA4_31B_MODEL).toBe("google/gemma-4-31b-it:free");
+    expect(MINIMAX_FREE_MODEL).toBe(OPENROUTER_FREE_M3_MODEL);
+    expect(JULES_FREE_MODEL).toBe(OPENROUTER_FREE_GEMMA4_26B_MODEL);
     expect(OPENROUTER_FREE_MODEL_CANDIDATES).toEqual([
-      "minimax/minimax-m3:free",
-      "google/gemma-3-12b-it:free",
-      "minimax/minimax-01:free",
       "minimax/minimax-m2.7:free",
+      "minimax/minimax-m3:free",
+      "google/gemma-4-26b-a4b-it:free",
+      "google/gemma-4-31b-it:free",
     ]);
+    expect(OPENROUTER_FREE_MODEL_CANDIDATES).not.toContain("google/gemma-3-12b-it:free");
+    expect(OPENROUTER_FREE_MODEL_CANDIDATES).not.toContain("minimax/minimax-01:free");
+    expect(OPENROUTER_FREE_MODEL_CANDIDATES.every((slug) => slug.endsWith(":free"))).toBe(true);
   });
 });
 

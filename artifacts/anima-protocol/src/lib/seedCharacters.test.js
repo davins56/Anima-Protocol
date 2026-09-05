@@ -239,4 +239,25 @@ describe("upsertCharacters", () => {
       { timeoutMs: 20000 },
     );
   });
+
+  it("preserves a store timeout code when bulk-upsert aborts", async () => {
+    characterBulkUpsert.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "The server took too long to respond. Check your connection or try again in a moment.",
+        ),
+        { code: "timeout" },
+      ),
+    );
+    const { upsertCharacters } = await loadSeedModule();
+    await expect(
+      upsertCharacters(
+        [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+        { skipExistingLookup: true },
+      ),
+    ).rejects.toMatchObject({
+      code: "timeout",
+      message: /took too long to respond/,
+    });
+  });
 });

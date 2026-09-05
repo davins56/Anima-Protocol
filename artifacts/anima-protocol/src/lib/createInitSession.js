@@ -1,4 +1,5 @@
 import { base44 } from "@/api/base44Client";
+import { isRetryableStoreWriteError } from "@/lib/storeErrorSignals";
 import { STORE_SESSION_CREATE_RETRY_LIMIT } from "@/lib/storeTimeouts";
 import { isTherapySession, therapyOpeningMessage } from "@/lib/therapyManuals";
 
@@ -13,7 +14,10 @@ export const INIT_SESSION_TIMEOUT_MESSAGE =
 export function isStoreTimeoutError(err) {
   if (!err) return false;
   if (err.code === "timeout") return true;
-  return err.name === "TimeoutError" || err.name === "AbortError";
+  if (err.name === "TimeoutError" || err.name === "AbortError") return true;
+  // upsertCharacters used to wrap storeFetch timeouts as a plain Error and
+  // drop `code`, so Init showed DEFAULT_STORE_TIMEOUT_MESSAGE verbatim.
+  return /took too long to respond/i.test(String(err.message || ""));
 }
 
 export const INIT_SESSION_MISSING_ID_MESSAGE =
@@ -258,11 +262,68 @@ export function buildInitSessionPayload({
 }
 
 /**
- * Await ChatSession.create for Init. On abort/timeout, retry once, then throw
- * INIT_SESSION_TIMEOUT_MESSAGE (not the generic connection toast).
- *
- * Opening narrator/therapy rows persist via /messages/replace in the
- * background so that write cannot block navigation onto /chat/:id.
+ * Persist bundled starters without blocking Init. Bulk-upsert keeps client
+ * seed ids, so ChatSession.create can proceed immediately with picker ids.
+ * Remapped store ids are applied only after the upsert settles (next Init /
+ * roster refresh) — a Worker cold start must not consume the create budget.
+ */
+export function remappedInitCharacterIds(selectedIds, bundledSelected, upserted) {
+  if (!upserted) return selectedIds;
+  return applyIdentityFallback(
+    remapSelectedCharacterIds(
+      selectedIds,
+      bundledSelected,
+      upserted?.items,
+      upserted?.idMap,
+    ),
+    selectedIds,
+    bundledSelected,
+    upserted?.items,
+  );
+}
+
+export function beginBundledStarterUpsert({
+  bundledSelected,
+  selectedIds,
+  upsert,
+  timeoutMs,
+  onSettled,
+} = {}) {
+  const ids = Array.isArray(selectedIds) ? selectedIds : [];
+  const bundled = Array.isArray(bundledSelected) ? bundledSelected : [];
+  if (!bundled.length || typeof upsert !== "function") {
+    return { selectedIds: ids, pending: Promise.resolve(null) };
+  }
+  const rows = bundled.map(({ _bundled, ...rest }) => rest);
+  const pending = Promise.resolve()
+    .then(() =>
+      upsert(rows, {
+        skipExistingLookup: true,
+        ...(timeoutMs != null ? { timeoutMs } : {}),
+      }),
+    )
+    .then((upserted) => {
+      if (!upserted) {
+        onSettled?.(ids, null);
+        return null;
+      }
+      const nextIds = remappedInitCharacterIds(ids, bundled, upserted);
+      onSettled?.(nextIds, upserted);
+      return { selectedIds: nextIds, upserted };
+    })
+    .catch((err) => {
+      console.warn("[Anima] Starter upsert did not block Init:", err);
+      onSettled?.(ids, null);
+      return null;
+    });
+  return { selectedIds: ids, pending };
+}
+
+/**
+ * Await ChatSession.create for Init. On abort/timeout/503 reset, retry once,
+ * then throw INIT_SESSION_TIMEOUT_MESSAGE for timeouts (not the generic
+ * storeFetch toast). Opening narrator/therapy rows persist via
+ * /messages/replace in the background so that write cannot block navigation.
  */
 export async function createInitChatSession(
   payload,
@@ -291,7 +352,7 @@ export async function createInitChatSession(
       return session;
     } catch (err) {
       lastErr = err;
-      const canRetry = isStoreTimeoutError(err) && i < attempts - 1;
+      const canRetry = isRetryableStoreWriteError(err) && i < attempts - 1;
       if (canRetry) continue;
       if (isStoreTimeoutError(err)) {
         const timeoutErr = new Error(INIT_SESSION_TIMEOUT_MESSAGE);
@@ -302,8 +363,11 @@ export async function createInitChatSession(
       throw err;
     }
   }
-  const timeoutErr = new Error(INIT_SESSION_TIMEOUT_MESSAGE);
-  timeoutErr.code = "timeout";
-  timeoutErr.cause = lastErr;
-  throw timeoutErr;
+  if (isStoreTimeoutError(lastErr)) {
+    const timeoutErr = new Error(INIT_SESSION_TIMEOUT_MESSAGE);
+    timeoutErr.code = "timeout";
+    timeoutErr.cause = lastErr;
+    throw timeoutErr;
+  }
+  throw lastErr;
 }

@@ -749,7 +749,13 @@ async function bulkUpsertCharactersBatched(chars, { timeoutMs } = {}) {
           (err?.status === 500
             ? "Server error while saving characters. Try again in a moment."
             : "Failed to add characters");
-        throw new Error(detail);
+        if (err instanceof Error && err.message === detail) throw err;
+        const wrapped = new Error(detail);
+        wrapped.cause = err;
+        if (err?.code) wrapped.code = err.code;
+        if (err?.status) wrapped.status = err.status;
+        if (err?.reason) wrapped.reason = err.reason;
+        throw wrapped;
       }
       for (const char of batch) {
         try {
