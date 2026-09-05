@@ -290,15 +290,8 @@ async function blobToBase64(blob) {
   return btoa(binary);
 }
 
-async function parseUploadErrorResponse(res) {
-  const text = await res.text();
-  let json = null;
-  try {
-    json = JSON.parse(text);
-    if (json?.error) return String(json.error);
-  } catch {
-    // Non-JSON (HTML 404 from an assets-only deploy, Cloudflare challenge, …)
-  }
+function messageFromUploadStatus(res, json, text) {
+  if (json?.error) return String(json.error);
   if (res.status === 401) {
     return 'Sign in to upload an image, then try again.';
   }
@@ -311,8 +304,34 @@ async function parseUploadErrorResponse(res) {
   if (res.status === 404) {
     return 'Image upload API not found — /api/storage/uploads is not available on this host.';
   }
-  const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 160);
+  const snippet = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
   return snippet || res.statusText || `Upload failed (${res.status})`;
+}
+
+async function parseUploadErrorResponse(res) {
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Non-JSON (HTML 404 from an assets-only deploy, Cloudflare challenge, …)
+  }
+  return messageFromUploadStatus(res, json, text);
+}
+
+function uploadErrorFromResponse(res, text) {
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  const err = new Error(messageFromUploadStatus(res, json, text));
+  err.status = res.status;
+  if (typeof json?.reason === 'string') err.reason = json.reason;
+  if (typeof json?.dbError === 'boolean') err.dbError = json.dbError;
+  if (typeof json?.code === 'string') err.code = json.code;
+  return err;
 }
 
 /**
@@ -334,28 +353,33 @@ async function uploadBlob(blob) {
 
   const headers = await authHeaders();
   const dataBase64 = await blobToBase64(blob);
-  let res;
-  try {
-    res = await fetch(apiUrl('/storage/uploads'), {
-      method: 'POST',
-      headers,
-      credentials: 'same-origin',
-      body: JSON.stringify({
-        contentType: blob.type || 'image/jpeg',
-        dataBase64,
-      }),
-    });
-  } catch (err) {
-    if (err?.name === 'AbortError') throw err;
-    const netErr = new Error('Network request failed — could not reach the image upload API.');
-    netErr.code = 'network';
-    throw netErr;
+  const body = JSON.stringify({
+    contentType: blob.type || 'image/jpeg',
+    dataBase64,
+  });
+  const postOnce = async () => {
+    try {
+      return await fetch(apiUrl('/storage/uploads'), {
+        method: 'POST',
+        headers,
+        credentials: 'same-origin',
+        body,
+      });
+    } catch (err) {
+      if (err?.name === 'AbortError') throw err;
+      const netErr = new Error('Network request failed — could not reach the image upload API.');
+      netErr.code = 'network';
+      throw netErr;
+    }
+  };
+  let res = await postOnce();
+  // Same Hyperdrive stale-socket recovery as storeFetch. The server also
+  // retries the insert; this covers a Worker isolate that died before then.
+  if (await isRetryableStoreReset(res)) {
+    res = await postOnce();
   }
   if (!res.ok) {
-    const message = await parseUploadErrorResponse(res);
-    const err = new Error(message);
-    err.status = res.status;
-    throw err;
+    throw uploadErrorFromResponse(res, await res.text());
   }
   const payload = await res.json();
   if (payload?.file_url) return payload.file_url;
@@ -1338,11 +1362,8 @@ async function saveProfile(patch) {
     method: 'PUT',
     body: JSON.stringify(next),
   });
-  if (res.ok) {
-    profileCache = await res.json();
-  } else {
-    profileCache = next;
-  }
+  if (!res.ok) await throwErr(res);
+  profileCache = await res.json();
   profileExpiry = Date.now() + PROFILE_TTL;
   return mergedUser(profileCache);
 }

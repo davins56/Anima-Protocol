@@ -8,6 +8,7 @@ const uploadFileMock = vi.hoisted(() => vi.fn());
 const updateMeMock = vi.hoisted(() => vi.fn());
 const meMock = vi.hoisted(() => vi.fn());
 const listMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -18,6 +19,10 @@ vi.mock("react-router-dom", async () => {
     Link: ({ children }) => <a>{children}</a>,
   };
 });
+
+vi.mock("sonner", () => ({
+  toast: { error: toastErrorMock, success: vi.fn() },
+}));
 
 vi.mock("@/lib/AuthContext", () => ({
   useAuth: () => ({
@@ -113,6 +118,7 @@ describe("Settings custom chat background upload", () => {
     updateMeMock.mockReset();
     meMock.mockReset();
     listMock.mockReset();
+    toastErrorMock.mockReset();
     meMock.mockResolvedValue({
       email: "operator@example.com",
       settings: { chat_bg_theme: "default", chat_bg_image: "" },
@@ -185,5 +191,43 @@ describe("Settings custom chat background upload", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/sign in/i);
     expect(container.textContent).not.toMatch(/Uploading\.\.\./);
     expect(updateMeMock).not.toHaveBeenCalled();
+    expect(toastErrorMock).toHaveBeenCalled();
+  });
+
+  it("toasts a Hyperdrive reset instead of leaving Uploading stuck", async () => {
+    uploadFileMock.mockRejectedValue(
+      Object.assign(new Error("Database connection reset"), {
+        status: 503,
+        reason: "reset",
+      }),
+    );
+    const { container } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await openCustomBackground(container);
+
+    const input = container.querySelector('input[type="file"][accept="image/*"]');
+    const file = new File(["fake"], "wallpaper.png", { type: "image/png" });
+
+    await act(async () => {
+      Object.defineProperty(input, "files", {
+        configurable: true,
+        value: [file],
+      });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(
+      /dropped the upload connection|try again/i,
+    );
+    expect(container.textContent).not.toMatch(/Uploading\.\.\./);
+    expect(toastErrorMock).toHaveBeenCalled();
+    expect(String(toastErrorMock.mock.calls[0][0])).toMatch(
+      /dropped the upload connection|try again/i,
+    );
   });
 });
