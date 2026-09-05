@@ -1,41 +1,75 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
-const geminiCompletionMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
   const client = {
     chat: { completions: { create: (...args: unknown[]) => createMock(...args) } },
   };
   return {
+    OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
+    OPENROUTER_VENICE_UNCENSORED:
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
+    MINIMAX_FREE_MODEL: "minimax/minimax-01:free",
+    JULES_FREE_MODEL: "google/gemma-3-12b-it:free",
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
-    hasXaiKey: () => Boolean(process.env.XAI_API_KEY?.trim()),
-    hasGeminiKey: () =>
-      Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
-    hasKimiKey: () =>
-      Boolean(process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()),
-    getOpenAIClient: () => client,
-    getXaiClient: () => (process.env.XAI_API_KEY?.trim() ? client : null),
-    getGeminiClient: () =>
-      process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()
-        ? client
-        : null,
-    getKimiClient: () =>
-      process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim()
-        ? client
-        : null,
-    normalizeApiKey: (raw: string | undefined) => {
-      if (!raw) return null;
-      return raw.trim() || null;
+    hasOpenRouterKey: () =>
+      Boolean(
+        process.env.OPENROUTER_API_KEY?.trim() ||
+          process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+          process.env.OPEN_ROUTER_API_KEY?.trim(),
+      ),
+    hasMinimaxKey: () => false,
+    getOpenRouterApiKey: () =>
+      process.env.OPENROUTER_API_KEY?.trim() ||
+      process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+      process.env.OPEN_ROUTER_API_KEY?.trim() ||
+      null,
+    getOpenRouterApiKeySource: () =>
+      process.env.OPENROUTER_API_KEY?.trim()
+        ? "OPENROUTER_API_KEY"
+        : process.env.ANIMA_OPENROUTER_API_KEY?.trim()
+          ? "ANIMA_OPENROUTER_API_KEY"
+          : process.env.OPEN_ROUTER_API_KEY?.trim()
+            ? "OPEN_ROUTER_API_KEY"
+            : null,
+    openRouterKeyFingerprint: () => {
+      const key =
+        process.env.OPENROUTER_API_KEY?.trim() ||
+        process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+        process.env.OPEN_ROUTER_API_KEY?.trim();
+      return key && key.length >= 8 ? key.slice(-4) : null;
     },
+    getOpenRouterClient: () =>
+      process.env.OPENROUTER_API_KEY?.trim() ||
+      process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||
+      process.env.OPEN_ROUTER_API_KEY?.trim()
+        ? client
+        : null,
+    getOpenAIClient: () => client,
+    getLocalLlmClient: () => client,
+    getMinimaxClient: () => null,
+    getMinimaxApiKeySource: () => null,
+    hasLocalLlm: () => Boolean(process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()),
+    localLlmBaseUrl: () => process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || null,
+    summarizeLocalLlmBaseUrl: () => ({
+      configured: Boolean(process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim()),
+      host: "localhost",
+      hasV1Path: true,
+      isHttps: false,
+      isLocalhost: true,
+      isCloudFlagship: false,
+      isLoopbackMisconfigured: false,
+    }),
+    isLoopbackUnreachableRuntime: () => false,
+    isCloudFlagshipLlmHost: () => false,
+    logLocalLlmClientInitOnce: () => {},
+    normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
     resetLlmClientsForTests: () => {},
   };
 });
-
-vi.mock("../src/lib/geminiNative", () => ({
-  createGeminiChatStream: vi.fn(),
-  createGeminiChatCompletion: (...args: unknown[]) => geminiCompletionMock(...args),
-}));
 
 import {
   chunkTextAsStream,
@@ -43,7 +77,7 @@ import {
   getEnsembleMinds,
   isEnsembleMode,
 } from "../src/lib/llmEnsemble";
-import { resetLlmFailoverStateForTests } from "../src/lib/llmFailover";
+import { resetOpenRouterCreditFallbackForTests } from "../src/lib/llmFailover";
 
 function fakeCompletion(content: string) {
   return { choices: [{ message: { content } }] };
@@ -54,53 +88,40 @@ describe("llmEnsemble", () => {
 
   beforeEach(() => {
     process.env = { ...SAVED };
-    process.env.KIMI_API_KEY = "kimi-test";
-    process.env.GEMINI_API_KEY = "gemini-test";
-    process.env.XAI_API_KEY = "xai-test";
     process.env.OPENAI_API_KEY = "sk-test";
-    process.env.ANIMA_LLM_PROVIDER = "anima";
-    delete process.env.ANIMA_DISABLE_OPENAI;
-    delete process.env.ANIMA_DISABLE_XAI;
-    delete process.env.ANIMA_LLM_ENSEMBLE;
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_LLM_ENSEMBLE = "true";
     process.env.ANIMA_ENSEMBLE_MIND_TIMEOUT_MS = "5000";
-    resetLlmFailoverStateForTests();
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_DISABLE_OPENAI;
+    delete process.env.MINIMAX_API_KEY;
+    delete process.env.ANIMA_MINIMAX_API_KEY;
+    resetOpenRouterCreditFallbackForTests();
     createMock.mockReset();
-    geminiCompletionMock.mockReset();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
-    resetLlmFailoverStateForTests();
+    resetOpenRouterCreditFallbackForTests();
   });
 
   it("lists available minds for ensemble", () => {
-    expect(getEnsembleMinds("standard")).toEqual([
-      "kimi",
-      "gemini",
-      "xai",
-      "openai",
-    ]);
+    expect(getEnsembleMinds("standard")).toEqual(["local", "openrouter"]);
     expect(isEnsembleMode()).toBe(true);
   });
 
   it("gathers parallel drafts and synthesizes a combined reply", async () => {
     createMock
-      // Kimi draft
-      .mockResolvedValueOnce(fakeCompletion("Kimi draft about longing."))
-      // Grok draft
-      .mockResolvedValueOnce(fakeCompletion("Grok draft with wit."))
-      // OpenAI draft
-      .mockResolvedValueOnce(fakeCompletion("ChatGPT draft with clarity."))
-      // Kimi synthesis
+      .mockResolvedValueOnce(fakeCompletion("Local draft about longing."))
+      .mockResolvedValueOnce(fakeCompletion("OpenRouter draft with warmth."))
       .mockResolvedValueOnce(fakeCompletion("Combined in-character reply."));
-    geminiCompletionMock.mockResolvedValueOnce(
-      fakeCompletion("Gemini draft with warmth."),
-    );
 
     const progress: string[] = [];
     const result = await createEnsembleChatReply({
       tier: "standard",
-      model: "gpt-4o",
+      model: "anima-chat",
       maxTokens: 800,
       messages: [
         { role: "system", content: "You are Serenity." },
@@ -112,60 +133,46 @@ describe("llmEnsemble", () => {
     expect(result.combined).toBe(true);
     expect(result.brand).toBe("anima");
     expect(result.content).toBe("Combined in-character reply.");
-    expect(result.minds.sort()).toEqual(
-      ["gemini", "kimi", "openai", "xai"].sort(),
-    );
-    expect(result.drafts).toHaveLength(4);
+    expect(result.minds.sort()).toEqual(["local", "openrouter"].sort());
+    expect(result.drafts).toHaveLength(2);
     expect(progress).toContain("gathering");
     expect(progress).toContain("combining");
     expect(progress).toContain("streaming");
   });
 
   it("uses a single successful mind without synthesis", async () => {
-    process.env.ANIMA_DISABLE_XAI = "true";
     process.env.ANIMA_DISABLE_OPENAI = "true";
-    delete process.env.GEMINI_API_KEY;
-    createMock.mockResolvedValueOnce(fakeCompletion("Only Kimi answered."));
+    createMock.mockResolvedValueOnce(fakeCompletion("Only OpenRouter answered."));
 
     const result = await createEnsembleChatReply({
       tier: "standard",
-      model: "gpt-4o",
+      model: "anima-chat",
       maxTokens: 800,
       messages: [{ role: "user", content: "hi" }],
     });
 
     expect(result.combined).toBe(false);
-    expect(result.provider).toBe("kimi");
-    expect(result.content).toBe("Only Kimi answered.");
-    expect(result.minds).toEqual(["kimi"]);
-    // No synthesis call
+    expect(result.provider).toBe("openrouter");
+    expect(result.content).toBe("Only OpenRouter answered.");
+    expect(result.minds).toEqual(["openrouter"]);
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("still returns a draft when some minds fail", async () => {
     createMock
-      .mockRejectedValueOnce({ status: 429, message: "kimi quota" })
-      .mockResolvedValueOnce(fakeCompletion("Grok survived."))
-      .mockRejectedValueOnce({ status: 401, message: "openai dead" })
-      // synthesis with Grok (only survivor — pickSynthesizer prefers kimi/gemini first,
-      // so with only grok draft, synthesizer is xai)
-      .mockResolvedValueOnce(fakeCompletion("Final from Grok synthesis."));
-    geminiCompletionMock.mockRejectedValueOnce({
-      status: 429,
-      message: "gemini quota",
-    });
+      .mockRejectedValueOnce({ status: 429, message: "local quota" })
+      .mockResolvedValueOnce(fakeCompletion("OpenRouter survived."));
 
     const result = await createEnsembleChatReply({
       tier: "standard",
-      model: "gpt-4o",
+      model: "anima-chat",
       maxTokens: 800,
       messages: [{ role: "user", content: "hello" }],
     });
 
-    // Only one draft succeeded → no synthesis path
     expect(result.combined).toBe(false);
-    expect(result.provider).toBe("xai");
-    expect(result.content).toBe("Grok survived.");
+    expect(result.provider).toBe("openrouter");
+    expect(result.content).toBe("OpenRouter survived.");
   });
 
   it("chunks combined text for streaming", async () => {

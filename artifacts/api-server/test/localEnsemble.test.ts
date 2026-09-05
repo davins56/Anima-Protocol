@@ -11,6 +11,9 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
+    MINIMAX_FREE_MODEL: "minimax/minimax-01:free",
+    JULES_FREE_MODEL: "google/gemma-3-12b-it:free",
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
