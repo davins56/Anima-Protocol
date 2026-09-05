@@ -41,8 +41,11 @@ describe("viewport shell contract", () => {
     expect(mainBlock).toMatch(/overflow-y:\s*auto/);
     expect(mainBlock).toMatch(/overflow-x:\s*hidden/);
     const fillBlock = css.slice(css.indexOf(".app-page-fill {"));
-    expect(fillBlock).toMatch(/overflow:\s*hidden/);
-    expect(fillBlock).toMatch(/min-height:\s*0/);
+    const fillOnly = fillBlock.slice(0, fillBlock.indexOf("}"));
+    expect(fillOnly).toMatch(/overflow:\s*hidden/);
+    expect(fillOnly).toMatch(/min-height:\s*0/);
+    expect(fillOnly).toMatch(/flex:\s*1 1 0%/);
+    expect(fillOnly).not.toMatch(/height:\s*100%/);
   });
 
   it("keeps h-screen-safe on the dvh / --app-height stack, not a lone 100vh", () => {
@@ -182,6 +185,34 @@ describe("representative page scroll contract", () => {
       'bottom: "calc(var(--tab-bar-height, 56px) + 0.5rem)"',
     );
     expect(chat).not.toContain('bottom: "5.5rem"');
+    // height: 100% on the Chat column fights the padded flex parent and
+    // extends the composer under the reserved tab-bar pad.
+    expect(chat).not.toMatch(/height:\s*"100%"/);
+  });
+
+  it("keeps reserved --tab-bar-height in sync with the painted tab bar", () => {
+    const css = readSrc("index.css");
+    const tabBar = readSrc("components/layout/BottomTabBar.jsx");
+    const chat = readPage("Chat");
+
+    // The bar is fixed at every width — no lg:hidden. Zeroing the CSS
+    // variable at ≥1024px was the iPad bug (Memory Recall visible, ChatInput
+    // under HOME / CHAT / BOARD / MAP / MORE).
+    expect(tabBar).toContain("fixed-bottom-chrome");
+    expect(tabBar).toContain("fixed bottom-0");
+    expect(tabBar).not.toMatch(/\blg:hidden\b/);
+    expect(tabBar).toContain("syncReservedTabBarHeight");
+    expect(tabBar).toContain('data-testid="bottom-tab-bar"');
+    expect(css).not.toMatch(
+      /@media\s*\(\s*min-width:\s*1024px\s*\)[\s\S]{0,240}--tab-bar-height:\s*0px/,
+    );
+    expect(css).toContain("Do not zero this");
+    expect(css).toContain("at a desktop breakpoint");
+
+    // Chat stays in-flow and does not mount a second tab bar.
+    expect(chat).toContain('data-testid="chat-composer"');
+    expect(chat).not.toMatch(/<BottomTabBar/);
+    expect(chat).not.toContain("components/layout/BottomTabBar");
   });
 
   it("does not leave overlay chrome on a leftover 100dvh", () => {
