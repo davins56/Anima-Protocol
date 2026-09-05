@@ -88,7 +88,14 @@ vi.mock("@/api/base44Client", () => {
     },
   };
 
-  const base44 = { auth: { me: async () => state.me }, entities, messages };
+  const base44 = {
+    auth: {
+      me: async () => state.me,
+      updateMe: async (payload) => ({ ...state.me, ...payload }),
+    },
+    entities,
+    messages,
+  };
 
   return {
     base44,
