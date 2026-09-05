@@ -15,16 +15,30 @@ import { authHeaders } from '@/api/authBridge';
  * @param {string} name
  * @param {string} [universe]
  */
+export const CHARACTER_PHOTO_LOOKUP_TIMEOUT_MS = 8000;
+
 export async function findCharacterPhoto(name, universe) {
   if (!name) return null;
   const params = new URLSearchParams({ name });
   if (universe) params.set("universe", universe);
-  const res = await fetch(`${apiUrl('/character-image')}?${params.toString()}`, {
-    headers: await authHeaders(),
-  });
-  if (!res.ok) {
+  const signal =
+    typeof AbortSignal !== "undefined" && AbortSignal.timeout
+      ? AbortSignal.timeout(CHARACTER_PHOTO_LOOKUP_TIMEOUT_MS)
+      : undefined;
+  let res;
+  try {
+    res = await fetch(`${apiUrl("/character-image")}?${params.toString()}`, {
+      headers: await authHeaders(),
+      signal,
+    });
+  } catch (err) {
+    if (err?.name === "AbortError" || err?.name === "TimeoutError") return null;
+    throw err;
+  }
+  if (res.status === 401 || res.status === 403) {
     throw new Error(`character-image lookup failed: ${res.status}`);
   }
-  const data = await res.json();
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => ({}));
   return data?.url || null;
 }
