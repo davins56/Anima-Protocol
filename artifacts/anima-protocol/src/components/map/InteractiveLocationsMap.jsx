@@ -2,6 +2,59 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { X, MapPin, BookOpen, Calendar } from "lucide-react";
 
+const DEFAULT_MAP_LOCATIONS = [
+  {
+    id: "default-republic-city",
+    name: "Republic City",
+    description: "Modern capital of technology, bending sport, politics, and Team Avatar's daily orbit.",
+    importance: "critical",
+    x: 25,
+    y: 35,
+    color: "#F87171",
+    isDefault: true,
+  },
+  {
+    id: "default-avengers-tower",
+    name: "Avengers Tower",
+    description: "High-tech center of Earth's Mightiest Heroes in New York City.",
+    importance: "high",
+    x: 65,
+    y: 30,
+    color: "#FBBF24",
+    isDefault: true,
+  },
+  {
+    id: "default-wakanda",
+    name: "Wakanda Capital",
+    description: "Advanced technological sanctuary hidden in East Africa.",
+    importance: "high",
+    x: 75,
+    y: 60,
+    color: "#FBBF24",
+    isDefault: true,
+  },
+  {
+    id: "default-gda-headquarters",
+    name: "Global Defense Agency",
+    description: "Cecil Stedman's high-security subterranean command citadel.",
+    importance: "medium",
+    x: 35,
+    y: 75,
+    color: "#34D399",
+    isDefault: true,
+  },
+  {
+    id: "default-inner-sanctum",
+    name: "Anima Sanctum",
+    description: "A symbolic sanctuary for Animas, guardians, memories, and personal resonance.",
+    importance: "critical",
+    x: 50,
+    y: 50,
+    color: "#F87171",
+    isDefault: true,
+  },
+];
+
 export default function InteractiveLocationsMap({ sessionId }) {
   const [locations, setLocations] = useState([]);
   const [loreEntries, setLoreEntries] = useState([]);
@@ -16,29 +69,79 @@ export default function InteractiveLocationsMap({ sessionId }) {
   const loadData = async () => {
     setLoading(true);
     const query = sessionId ? { session_id: sessionId } : {};
-    
-    const [locationLore, allSessions] = await Promise.all([
-      base44.entities.WorldState.filter({ ...query, category: "location", is_active: true }, "-created_date", 100),
-      base44.entities.ChatSession.list("-created_date", 100)
-    ]);
 
-    setLoreEntries(locationLore || []);
-    setSessions(allSessions || []);
-    
-    // Convert location lore to map points
-    const locPoints = (locationLore || []).map((loc, idx) => ({
-      id: loc.id,
-      name: loc.subject,
-      description: loc.fact,
-      importance: loc.importance,
-      sessionId: loc.session_id,
-      x: 20 + ((idx % 5) * 18),
-      y: 20 + (Math.floor(idx / 5) * 25),
-      color: importanceColor(loc.importance)
-    }));
-    
-    setLocations(locPoints);
-    setLoading(false);
+    try {
+      const [locationLore, entityLocations, allSessions] = await Promise.all([
+        base44.entities.WorldState.filter({ ...query, category: "location", is_active: true }, "-created_date", 100).catch(() => []),
+        base44.entities.Location.list("-created_date", 100).catch(() => []),
+        base44.entities.ChatSession.list("-created_date", 100).catch(() => [])
+      ]);
+
+      setLoreEntries(locationLore || []);
+      setSessions(allSessions || []);
+
+      const locPoints = [];
+      const seenIds = new Set();
+
+      // Convert location lore from WorldState
+      (locationLore || []).forEach((loc, idx) => {
+        if (!loc || !loc.id) return;
+        seenIds.add(loc.id);
+        locPoints.push({
+          id: loc.id,
+          name: loc.subject || "Unknown Location",
+          description: loc.fact || "",
+          importance: loc.importance || "medium",
+          sessionId: loc.session_id,
+          x: 15 + ((idx % 6) * 14),
+          y: 20 + (Math.floor(idx / 6) * 18),
+          color: importanceColor(loc.importance)
+        });
+      });
+
+      // Convert Location entity records
+      (entityLocations || []).forEach((loc, idx) => {
+        if (!loc || !loc.id || seenIds.has(loc.id)) return;
+        seenIds.add(loc.id);
+
+        let x = 20 + ((idx % 5) * 16);
+        let y = 25 + (Math.floor(idx / 5) * 20);
+
+        if (typeof loc.x_coord === "number") {
+          x = loc.x_coord > 10 ? loc.x_coord : loc.x_coord * 10;
+        }
+        if (typeof loc.y_coord === "number") {
+          y = loc.y_coord > 10 ? loc.y_coord : loc.y_coord * 10;
+        }
+
+        // Keep coordinates within bounds
+        x = Math.max(10, Math.min(90, x));
+        y = Math.max(10, Math.min(90, y));
+
+        locPoints.push({
+          id: loc.id,
+          name: loc.name || "Discovered Site",
+          description: loc.description || "",
+          importance: loc.significance || "medium",
+          sessionId: loc.session_id,
+          x,
+          y,
+          color: loc.color_hex || importanceColor(loc.significance)
+        });
+      });
+
+      // If no locations were found in DB, use default starter map locations
+      if (locPoints.length === 0) {
+        setLocations(DEFAULT_MAP_LOCATIONS);
+      } else {
+        setLocations(locPoints);
+      }
+    } catch (err) {
+      console.error("Error loading map data:", err);
+      setLocations(DEFAULT_MAP_LOCATIONS);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const importanceColor = (importance) => {
@@ -59,7 +162,9 @@ export default function InteractiveLocationsMap({ sessionId }) {
     return sessions.find(s => s.id === sid)?.title || "Unknown Session";
   };
 
-  const selectedLore = selectedLocation ? getLocationLore(selectedLocation) : null;
+  const selectedLore = selectedLocation
+    ? loreEntries.find(e => e.id === selectedLocation) || locations.find(l => l.id === selectedLocation)
+    : null;
 
   return (
     <div className="space-y-4">
@@ -156,16 +261,18 @@ export default function InteractiveLocationsMap({ sessionId }) {
             <MapPin className="w-4 h-4 text-primary/60 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <h3 className="font-mono text-sm text-primary tracking-wider uppercase">
-                {selectedLore.subject}
+                {selectedLore.subject || selectedLore.name}
               </h3>
               <p className="text-[9px] font-mono text-primary/50 mt-0.5">
-                {getSessionTitle(selectedLore.session_id)}
+                {selectedLore.session_id || selectedLore.sessionId
+                  ? getSessionTitle(selectedLore.session_id || selectedLore.sessionId)
+                  : "Starter Location"}
               </p>
             </div>
           </div>
 
           <div className="text-[10px] font-mono text-primary/70 leading-relaxed border-l-2 border-primary/20 pl-2 py-1">
-            {selectedLore.fact}
+            {selectedLore.fact || selectedLore.description}
           </div>
 
           {/* Metadata */}
