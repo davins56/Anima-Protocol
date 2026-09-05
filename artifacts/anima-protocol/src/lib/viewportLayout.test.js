@@ -191,3 +191,59 @@ describe("representative page scroll contract", () => {
     expect(loader).not.toContain("h-screen-safe");
   });
 });
+
+describe("edge-to-edge fill contract (iOS 26 / notched iPhone)", () => {
+  const css = readSrc("index.css");
+  const shell = readSrc("ProtocolApp.jsx");
+  const html = readFileSync(join(srcRoot, "..", "index.html"), "utf8");
+
+  it("declares viewport-fit=cover so safe-area insets resolve at all", () => {
+    // env(safe-area-inset-*) stays 0 without this, so every inset below is a
+    // no-op and the notch/home-indicator handling silently does nothing.
+    expect(html).toMatch(/viewport-fit=cover/);
+  });
+
+  it("paints the root element, not just body", () => {
+    // iOS 26 floats Safari chrome over the canvas; the strip behind it is
+    // painted from the root element.
+    const htmlBlock = css.slice(css.indexOf("  html {"), css.indexOf("  html, body, #root"));
+    expect(htmlBlock).toMatch(/background-color:\s*hsl\(var\(--background\)\)/);
+  });
+
+  it("exposes a full-screen backdrop sized by --app-height-max", () => {
+    expect(css).toContain(".app-viewport-backdrop {");
+    const backdrop = css.slice(css.indexOf(".app-viewport-backdrop {"));
+    const block = backdrop.slice(0, backdrop.indexOf("}"));
+    expect(block).toMatch(/position:\s*fixed/);
+    expect(block).toMatch(/height:\s*var\(--app-height-max,\s*100lvh\)/);
+    expect(block).toMatch(/background-color:\s*hsl\(var\(--background\)\)/);
+    // Decorative only — it must never intercept taps.
+    expect(block).toMatch(/pointer-events:\s*none/);
+
+    // And it has to actually be rendered, behind the interactive shell.
+    expect(shell).toContain('className="app-viewport-backdrop"');
+    expect(shell).toMatch(/app-viewport-backdrop[\s\S]{0,120}aria-hidden/);
+  });
+
+  it("gives --app-height-max a CSS-only fallback before JS measures", () => {
+    expect(css).toMatch(/--app-height-max:\s*100lvh/);
+  });
+
+  it("insets the shell horizontally for landscape notches", () => {
+    const block = css.slice(css.indexOf(".app-shell {"));
+    const shellBlock = block.slice(0, block.indexOf("}"));
+    expect(shellBlock).toMatch(
+      /padding-left:\s*var\(--safe-left,\s*env\(safe-area-inset-left,\s*0px\)\)/,
+    );
+    expect(shellBlock).toMatch(
+      /padding-right:\s*var\(--safe-right,\s*env\(safe-area-inset-right,\s*0px\)\)/,
+    );
+  });
+
+  it("keeps the fixed tab bar clear of the home indicator", () => {
+    const tabBar = readSrc("components/layout/BottomTabBar.jsx");
+    expect(tabBar).toContain(
+      'paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))"',
+    );
+  });
+});

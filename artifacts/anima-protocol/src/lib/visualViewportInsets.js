@@ -13,6 +13,13 @@
 export const KEYBOARD_OPEN_THRESHOLD_PX = 80;
 
 /**
+ * `visualViewport.scale` above this counts as pinch-zoom. Zooming shrinks
+ * `visualViewport.height` exactly like the keyboard does, so without this guard
+ * the shell collapses to the zoomed region and the UI stops filling the screen.
+ */
+export const ZOOM_SCALE_EPSILON = 1.01;
+
+/**
  * @param {EventTarget | Element | null | undefined} el
  * @returns {el is HTMLElement}
  */
@@ -31,9 +38,13 @@ export function isEditableTarget(el) {
 /**
  * @typedef {{
  *   visibleHeight: number,
+ *   fullHeight: number,
+ *   maxHeight: number,
  *   offsetTop: number,
  *   keyboardInset: number,
  *   keyboardOpen: boolean,
+ *   zoomed: boolean,
+ *   stuck: boolean,
  * }} VisualViewportInsets
  */
 
@@ -41,9 +52,9 @@ export function isEditableTarget(el) {
  * Measure how much of the layout viewport is occluded below the visual
  * viewport (the virtual keyboard on iOS/Android).
  *
- * @param {{ height?: number, offsetTop?: number } | null | undefined} visualViewport
+ * @param {{ height?: number, offsetTop?: number, scale?: number } | null | undefined} visualViewport
  * @param {number} innerHeight  `window.innerHeight` (layout viewport)
- * @param {{ inputFocused?: boolean }} [options]
+ * @param {{ inputFocused?: boolean, maxHeight?: number }} [options]
  * @returns {VisualViewportInsets}
  */
 export function measureVisualViewportInsets(visualViewport, innerHeight, options = {}) {
@@ -62,13 +73,41 @@ export function measureVisualViewportInsets(visualViewport, innerHeight, options
   const keyboardInset = Math.max(0, layoutHeight - visibleHeight - offsetTop);
   const inputFocused = options.inputFocused === true;
 
+  const scale =
+    visualViewport && Number.isFinite(visualViewport.scale) ? visualViewport.scale : 1;
+  const zoomed = scale > ZOOM_SCALE_EPSILON;
+
+  // Pinch-zoom also shrinks visualViewport. Require a focused field so we do
+  // not hide the tab bar or drop the home-indicator inset while zooming.
+  const keyboardOpen =
+    inputFocused && !zoomed && keyboardInset > KEYBOARD_OPEN_THRESHOLD_PX;
+
+  // Largest height this viewport has ever reported. iOS 26 Safari floats its
+  // address/tab bar over an edge-to-edge canvas, and an installed web app can
+  // get *stuck* reporting the post-keyboard height for the rest of the session
+  // (e.g. 956 -> 897 on an iPhone Pro Max). Both cases leave a dead band at the
+  // bottom of a shell sized from `visualViewport.height`, so remember the peak.
+  const observedMax = Math.max(
+    Number.isFinite(options.maxHeight) ? Number(options.maxHeight) : 0,
+    layoutHeight,
+    // A zoomed visual viewport is smaller than the layout viewport by
+    // definition; never let it raise or lower the recorded peak.
+    zoomed ? 0 : visibleHeight,
+  );
+
   return {
     visibleHeight,
+    // Height the shell should occupy: the keyboard genuinely steals space, but
+    // browser chrome that merely floats over the page must not shrink the UI.
+    fullHeight: keyboardOpen ? visibleHeight : observedMax,
+    maxHeight: observedMax,
     offsetTop,
     keyboardInset,
-    // Pinch-zoom also shrinks visualViewport. Require a focused field so we
-    // do not hide the tab bar or drop the home-indicator inset while zooming.
-    keyboardOpen: inputFocused && keyboardInset > KEYBOARD_OPEN_THRESHOLD_PX,
+    keyboardOpen,
+    zoomed,
+    // The viewport is reporting short with no keyboard and no zoom to explain
+    // it — the WebKit "stuck viewport" state a reflow can heal.
+    stuck: !keyboardOpen && !zoomed && observedMax - layoutHeight > 4,
   };
 }
 
@@ -94,8 +133,21 @@ export function keyboardPaddingForShell(insets, options = {}) {
  * @param {VisualViewportInsets} insets
  */
 export function applyVisualViewportCssVars(root, insets) {
-  root.style.setProperty("--app-height", `${insets.visibleHeight}px`);
-  root.style.setProperty("--vh", `${insets.visibleHeight * 0.01}px`);
+  // `fullHeight` equals `visibleHeight` while the keyboard is open, and the
+  // peak (edge-to-edge) height otherwise, so floating iOS 26 browser chrome
+  // and the stuck-viewport bug can no longer shrink the shell.
+  const appHeight = Number.isFinite(insets.fullHeight)
+    ? insets.fullHeight
+    : insets.visibleHeight;
+
+  root.style.setProperty("--app-height", `${appHeight}px`);
+  root.style.setProperty("--vh", `${appHeight * 0.01}px`);
+  // Always the full screen height, even mid-keyboard — for the backdrop layer
+  // that must stay painted behind translucent browser chrome.
+  root.style.setProperty(
+    "--app-height-max",
+    `${Number.isFinite(insets.maxHeight) ? insets.maxHeight : appHeight}px`,
+  );
   root.style.setProperty(
     "--keyboard-inset",
     `${insets.keyboardOpen ? insets.keyboardInset : 0}px`,
