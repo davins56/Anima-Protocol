@@ -6,8 +6,22 @@
  */
 
 import { isEchoLibrarySteward } from "../echoKeys/steward.js";
-import { isPersonalAnimaRecord } from "../listPersonalAnimas.js";
 import { ATTAINABLE_ITEMS, INVENTORY_LIST_LIMIT } from "./catalog.js";
+
+/**
+ * Same rule as listPersonalAnimas.isPersonalAnimaRecord, kept local so this
+ * module stays free of the API client.
+ * @param {unknown} row
+ */
+function isPersonalAnimaRecord(row) {
+  if (!row || typeof row !== "object") return false;
+  const rec = /** @type {{ _isAnima?: unknown, category?: unknown, creation_method?: unknown }} */ (row);
+  if (rec._isAnima === true) return true;
+  const category = String(rec.category || "").toLowerCase();
+  if (category === "anima-construct" || category === "anima") return true;
+  const method = String(rec.creation_method || "").toLowerCase();
+  return method === "ai_prompt";
+}
 
 /**
  * @param {unknown} user
