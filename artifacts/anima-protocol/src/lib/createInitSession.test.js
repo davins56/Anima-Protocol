@@ -8,6 +8,7 @@ import {
   applyIdentityFallback,
   buildInitSessionPayload,
   characterUpsertIdMap,
+  beginBundledStarterUpsert,
   createdSessionId,
   createInitChatSession,
   initSessionErrorMessage,
@@ -15,6 +16,7 @@ import {
   isUsableSessionId,
   matchCharacterByIdentity,
   remapSelectedCharacterIds,
+  remappedInitCharacterIds,
   requireCreatedSession,
 } from "./createInitSession";
 
@@ -86,6 +88,20 @@ describe("createInitChatSession", () => {
     expect(session).toEqual({ id: "sess-1", title: "T'Challa" });
   });
 
+  it("retries a stripped generic store toast then surfaces the Init timeout", async () => {
+    const timeout = new Error(
+      "The server took too long to respond. Check your connection or try again in a moment.",
+    );
+    const create = vi.fn().mockRejectedValue(timeout);
+
+    await expect(createInitChatSession({ title: "T'Challa" }, { create })).rejects.toMatchObject({
+      message: INIT_SESSION_TIMEOUT_MESSAGE,
+      code: "timeout",
+    });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(initSessionErrorMessage(timeout)).toBe(INIT_SESSION_TIMEOUT_MESSAGE);
+  });
+
   it("retries once on abort then surfaces a specific Init error", async () => {
     const timeout = Object.assign(new Error("The server took too long to respond."), {
       code: "timeout",
@@ -143,6 +159,44 @@ describe("createInitChatSession", () => {
     const create = vi.fn().mockRejectedValue(new Error("schema is missing"));
     await expect(createInitChatSession({ title: "X" }, { create })).rejects.toThrow(
       /schema is missing/,
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries once on a 503 connection reset then succeeds", async () => {
+    const reset = Object.assign(new Error("Database connection reset"), {
+      status: 503,
+      reason: "reset",
+    });
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(reset)
+      .mockResolvedValueOnce({ id: "sess-reset" });
+
+    const session = await createInitChatSession({ title: "T'Challa" }, { create });
+
+    expect(session).toEqual({ id: "sess-reset" });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces the 503 after the reset retry is exhausted", async () => {
+    const reset = Object.assign(new Error("Database connection reset"), {
+      status: 503,
+      reason: "reset",
+    });
+    const create = vi.fn().mockRejectedValue(reset);
+    await expect(createInitChatSession({ title: "X" }, { create })).rejects.toMatchObject({
+      status: 503,
+      reason: "reset",
+    });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a 401 auth failure", async () => {
+    const auth = Object.assign(new Error("Not signed in"), { status: 401 });
+    const create = vi.fn().mockRejectedValue(auth);
+    await expect(createInitChatSession({ title: "X" }, { create })).rejects.toThrow(
+      /Not signed in/,
     );
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -298,16 +352,70 @@ describe("Chat Init wiring", () => {
     );
     expect(modal).toContain("isUsableSessionId(session?.id)");
     expect(modal).toContain("timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS");
-    expect(modal).toContain("applyIdentityFallback(");
+    expect(modal).toContain("beginBundledStarterUpsert(");
+    expect(modal).toContain("void pending");
     expect(modal).not.toContain("Could not match the selected starter");
   });
 });
 
+describe("beginBundledStarterUpsert", () => {
+  it("returns picker ids immediately and remaps only after upsert settles", async () => {
+    const upsert = vi.fn().mockResolvedValue({
+      items: [{ id: "char_store_9", name: "Serenity", universe: "Protocol" }],
+      idMap: { "seed_protocol-serenity": "char_store_9" },
+    });
+    const onSettled = vi.fn();
+    const bundled = [
+      { id: "seed_protocol-serenity", name: "Serenity", universe: "Protocol", _bundled: true },
+    ];
+
+    const { selectedIds, pending } = beginBundledStarterUpsert({
+      bundledSelected: bundled,
+      selectedIds: ["seed_protocol-serenity"],
+      upsert,
+      timeoutMs: 20000,
+      onSettled,
+    });
+
+    expect(selectedIds).toEqual(["seed_protocol-serenity"]);
+    const settled = await pending;
+    expect(upsert).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "seed_protocol-serenity", name: "Serenity" })],
+      { skipExistingLookup: true, timeoutMs: 20000 },
+    );
+    expect(settled.selectedIds).toEqual(["char_store_9"]);
+    expect(onSettled).toHaveBeenCalledWith(["char_store_9"], expect.any(Object));
+  });
+
+  it("swallows a store timeout so Init can create with seed ids", async () => {
+    const timeout = Object.assign(
+      new Error("The server took too long to respond. Check your connection or try again in a moment."),
+      { code: "timeout" },
+    );
+    const upsert = vi.fn().mockRejectedValue(timeout);
+    const { selectedIds, pending } = beginBundledStarterUpsert({
+      bundledSelected: [{ id: "seed_a", name: "Tony", universe: "MCU", _bundled: true }],
+      selectedIds: ["seed_a"],
+      upsert,
+    });
+
+    expect(selectedIds).toEqual(["seed_a"]);
+    await expect(pending).resolves.toBeNull();
+    expect(remappedInitCharacterIds(["seed_a"], [], null)).toEqual(["seed_a"]);
+  });
+});
+
 describe("isStoreTimeoutError", () => {
-  it("recognizes abort, TimeoutError, and code=timeout", () => {
+  it("recognizes abort, TimeoutError, code=timeout, and the generic store toast", () => {
     expect(isStoreTimeoutError({ code: "timeout" })).toBe(true);
     expect(isStoreTimeoutError({ name: "TimeoutError" })).toBe(true);
     expect(isStoreTimeoutError({ name: "AbortError" })).toBe(true);
+    expect(
+      isStoreTimeoutError({
+        message:
+          "The server took too long to respond. Check your connection or try again in a moment.",
+      }),
+    ).toBe(true);
     expect(isStoreTimeoutError({ message: "nope" })).toBe(false);
   });
 });

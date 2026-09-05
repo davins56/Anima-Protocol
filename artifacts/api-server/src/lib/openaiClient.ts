@@ -30,31 +30,40 @@ export const OPENROUTER_VENICE_UNCENSORED =
  * Zero-cost OpenRouter free-tier model (not uncensored-branded).
  * Must stay on a slug that still appears in GET /api/v1/models `:free`
  * *and* accepts a live completion with a valid OpenRouter key.
- * `openai/gpt-oss-20b:free` was retired (404; paid slug is openai/gpt-oss-20b).
- * `google/gemma-4-31b-it:free` is still in the catalog, but the Google
- * provider returns HTTP 401 ("Request had invalid authentication credentials").
- * MiniMax m2.7 (`minimax/minimax-m2.7:free`) is still in the catalog, but
- * the production OpenRouter activity log for this account (2026-09-05)
- * showed repeated provider 429 / 502 on that slug and no Venice traffic.
- * Default is therefore m3:free; Gemma is the next hop; m2.7 is last.
+ * Live catalog re-check (2026-09-05): `minimax/minimax-m3:free`,
+ * `minimax/minimax-m2.7:free`, `google/gemma-4-26b-a4b-it:free`,
+ * `google/gemma-4-31b-it:free`. Retired / absent: `openai/gpt-oss-20b:free`,
+ * `google/gemma-3-12b-it:free`, `minimax/minimax-01:free`.
+ * Production OpenRouter Upstream Requests (same account, 2026-09-05):
+ * m3:free via GMICloud returned HTTP 400 Bad Request (no detailed body;
+ * model page had no downtime banner). m2.7:free returned 429 and 502 —
+ * those already hop. Do not default to m3: a 400 used to hard-fail the turn.
+ * Gemma 4 slugs are still in the catalog, but the Google provider has
+ * historically returned HTTP 401 — keep them as later hops, not default.
+ * Default is therefore m2.7:free; m3 then Gemma 4 on 400/429/5xx.
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
 export const OPENROUTER_FREE_M27_MODEL = "minimax/minimax-m2.7:free";
 export const OPENROUTER_FREE_M3_MODEL = "minimax/minimax-m3:free";
-export const OPENROUTER_FREE_MODEL = OPENROUTER_FREE_M3_MODEL;
-export const MINIMAX_FREE_MODEL = "minimax/minimax-01:free";
-export const JULES_FREE_MODEL = "google/gemma-3-12b-it:free";
+export const OPENROUTER_FREE_GEMMA4_26B_MODEL = "google/gemma-4-26b-a4b-it:free";
+export const OPENROUTER_FREE_GEMMA4_31B_MODEL = "google/gemma-4-31b-it:free";
+export const OPENROUTER_FREE_MODEL = OPENROUTER_FREE_M27_MODEL;
+/** Live MiniMax :free hop (retired `minimax/minimax-01:free` is gone). */
+export const MINIMAX_FREE_MODEL = OPENROUTER_FREE_M3_MODEL;
+/** Live Gemma 4 :free hop (retired `google/gemma-3-12b-it:free` is gone). */
+export const JULES_FREE_MODEL = OPENROUTER_FREE_GEMMA4_26B_MODEL;
 
 /**
  * Ordered :free slugs to try after the preferred OpenRouter model fails
- * with a provider blip (not the account-wide free-models-per-day cap).
- * Healthier slugs first; m2.7 last because it is chronically 429/502.
+ * with a provider blip or model-specific 400 (not ZDR / data-policy /
+ * the account-wide free-models-per-day cap). m2.7 first so a GMICloud
+ * m3 400 cannot be the first and only attempt.
  */
 export const OPENROUTER_FREE_MODEL_CANDIDATES = [
   OPENROUTER_FREE_MODEL,
-  JULES_FREE_MODEL,
-  MINIMAX_FREE_MODEL,
-  OPENROUTER_FREE_M27_MODEL,
+  OPENROUTER_FREE_M3_MODEL,
+  OPENROUTER_FREE_GEMMA4_26B_MODEL,
+  OPENROUTER_FREE_GEMMA4_31B_MODEL,
 ] as const;
 
 /** MiniMax Global OpenAI-compatible base URL. */

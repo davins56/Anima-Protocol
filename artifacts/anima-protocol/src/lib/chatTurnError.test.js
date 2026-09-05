@@ -20,4 +20,16 @@ describe("chatTurnErrorMessage", () => {
   it("falls back when the failure has no message", () => {
     expect(chatTurnErrorMessage(null)).toBe("The companion could not reply. Please try again.");
   });
+
+  it("remaps OpenRouter's raw provider-400 wrapper", () => {
+    expect(chatTurnErrorMessage(new Error("400 Provider returned error"))).toMatch(
+      /free-tier model is temporarily unavailable/i,
+    );
+    expect(chatTurnErrorMessage(new Error("400 provider returned error"))).not.toMatch(
+      /Provider returned error/i,
+    );
+    expect(chatTurnErrorMessage(new Error("Provider returned error"))).toMatch(
+      /openrouter\.ai\/settings\/credits/i,
+    );
+  });
 });

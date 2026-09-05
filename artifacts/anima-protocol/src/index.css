@@ -190,17 +190,15 @@
    * because BottomTabBar is `position: fixed; bottom: 0` with its own
    * `--safe-bottom` padding. Do not also pad `.app-shell` with
    * `--safe-bottom` — that double-counts the inset and lifts in-flow
-   * chrome (chat composer) away from the tab bar. JS zeroes this while
-   * `html[data-keyboard-open]`.
+   * chrome (chat composer) away from the tab bar.
+   *
+   * The bar is painted at every width (no `lg:hidden`), including iPad
+   * landscape ≥1024px where Memory Recall also appears. Do not zero this
+   * at a desktop breakpoint — that was the composer sitting under HOME /
+   * CHAT / BOARD / MAP / MORE. JS overwrites with the painted height
+   * when measurable, and zeroes it while `html[data-keyboard-open]`.
    */
   --tab-bar-height: calc(56px + env(safe-area-inset-bottom, 0px));
-}
-
-/* On desktop (lg+), no tab bar padding needed */
-@media (min-width: 1024px) {
-  :root {
-    --tab-bar-height: 0px;
-  }
 }
 
 .safe-top { padding-top: env(safe-area-inset-top, 0px); }
@@ -311,11 +309,15 @@ html[data-keyboard-open] .fixed-bottom-chrome {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Fill the shell and clip; the page must provide an inner overflow-y-auto. */
+/*
+ * Fill the shell's *content* box and clip. Use flex-basis 0% instead of
+ * `height: 100%`: `.app-shell-main` already pads `--tab-bar-height`, and a
+ * 100% flex-basis resolves against the border box so Chat extends under
+ * the reserved pad (composer clipped by the fixed tab bar).
+ */
 .app-page-fill {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-height: 0;
-  height: 100%;
   overflow: hidden;
 }
 

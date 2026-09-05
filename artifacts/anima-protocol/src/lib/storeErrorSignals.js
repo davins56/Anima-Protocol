@@ -101,3 +101,19 @@ export function isStoreReadUnavailable(err) {
   // those need a sign-in prompt, not a fake roster.
   return Number.isFinite(status) && status >= 500;
 }
+
+/**
+ * Writes that should get one extra attempt: client abort/timeout, 503 reset,
+ * and transient Hyperdrive connection errors. Auth failures must not retry.
+ */
+export function isRetryableStoreWriteError(err) {
+  if (!err || typeof err !== "object") return false;
+  const status = Number(err.status);
+  if (status === 401 || status === 403) return false;
+  if (CLIENT_FAULT_CODES.has(normalise(err.code))) return true;
+  if (err.name === "TimeoutError" || err.name === "AbortError") return true;
+  if (normalise(err.reason) === "reset") return true;
+  if (status === 503) return true;
+  const message = String(err.message || "");
+  return /connection reset/i.test(message) || /took too long to respond/i.test(message);
+}
