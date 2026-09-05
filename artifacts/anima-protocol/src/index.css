@@ -133,6 +133,13 @@
     height: 100%;
     height: 100dvh;
     height: var(--app-height, 100dvh);
+    /*
+     * iOS 26 Safari renders the page edge-to-edge and floats its address/tab
+     * bar over the canvas. The strip behind that chrome is painted from the
+     * root element, so an unpainted `html` reads as the UI not filling the
+     * screen. Paint it explicitly rather than relying on body propagation.
+     */
+    background-color: hsl(var(--background));
   }
   html, body, #root {
     max-height: 100%;
@@ -172,6 +179,12 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+  /*
+   * Full screen height including any area behind translucent browser chrome.
+   * `useViewportHeight` overwrites this with the measured peak; the `100lvh`
+   * fallback is the closest CSS-only equivalent.
+   */
+  --app-height-max: 100lvh;
   /* Tab bar height for mobile padding: 56px + safe-area-inset-bottom */
   --tab-bar-height: calc(56px + env(safe-area-inset-bottom, 0px));
 }
@@ -219,6 +232,24 @@ html[data-keyboard-open] .fixed-bottom-chrome {
 }
 
 /*
+ * Edge-to-edge backdrop. Spans the whole display — including the region behind
+ * iOS 26's floating Safari chrome — so the app never shows an unpainted band
+ * even when the interactive shell is inset to stay reachable. Non-interactive
+ * and behind everything, so it cannot swallow taps.
+ */
+.app-viewport-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  height: 100lvh;
+  height: var(--app-height-max, 100lvh);
+  background-color: hsl(var(--background));
+  pointer-events: none;
+}
+
+/*
  * Center a flex column only while it fits the scrollport; fall back to start
  * so the first heading/control stays reachable when content overflows.
  */
@@ -248,6 +279,13 @@ html[data-keyboard-open] .fixed-bottom-chrome {
   height: 100%;
   max-height: 100%;
   overflow: hidden;
+  /*
+   * Landscape on a notched iPhone insets the display horizontally. Without
+   * these the shell either clips under the notch or leaves an unpainted
+   * gutter; `.app-viewport-backdrop` keeps the gutter itself painted.
+   */
+  padding-left: var(--safe-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-right, env(safe-area-inset-right, 0px));
 }
 
 /*
