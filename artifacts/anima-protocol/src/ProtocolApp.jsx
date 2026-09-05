@@ -803,6 +803,7 @@ const AuthenticatedApp = () => {
         >
           <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageLoader />}>
+            <div className="app-shell-route flex min-h-0 min-w-0 flex-1 flex-col">
             <Routes location={location}>
               {/* Root: signed-out -> Landing, signed-in -> MainHome */}
               <Route path="/" element={<HomeGate />} />
@@ -1446,6 +1447,7 @@ const AuthenticatedApp = () => {
               />
               <Route path="*" element={<PageNotFound />} />
             </Routes>
+            </div>
             </Suspense>
           </ErrorBoundary>
         </motion.div>
