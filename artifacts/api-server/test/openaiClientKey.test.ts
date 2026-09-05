@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  OPENROUTER_FREE_M27_MODEL,
+  OPENROUTER_FREE_M3_MODEL,
   OPENROUTER_FREE_MODEL,
+  OPENROUTER_FREE_MODEL_CANDIDATES,
   OPENROUTER_VENICE_UNCENSORED,
   getOpenRouterApiKey,
   getOpenRouterApiKeySource,
+  getOpenRouterClient,
   hasOpenRouterKey,
   normalizeApiKey,
   openRouterKeyFingerprint,
+  openRouterMaxRetries,
   resetLlmClientsForTests,
   getMinimaxApiKey,
   getMinimaxApiKeySource,
@@ -18,10 +23,46 @@ describe("OpenRouter catalog defaults", () => {
     expect(OPENROUTER_VENICE_UNCENSORED).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
-    expect(OPENROUTER_FREE_MODEL).toBe("minimax/minimax-m2.7:free");
+    expect(OPENROUTER_FREE_MODEL).toBe("minimax/minimax-m3:free");
+    expect(OPENROUTER_FREE_MODEL).toBe(OPENROUTER_FREE_M3_MODEL);
     expect(OPENROUTER_FREE_MODEL.endsWith(":free")).toBe(true);
     expect(OPENROUTER_FREE_MODEL).not.toBe("openai/gpt-oss-20b:free");
     expect(OPENROUTER_FREE_MODEL).not.toBe("google/gemma-4-31b-it:free");
+    expect(OPENROUTER_FREE_MODEL).not.toBe(OPENROUTER_FREE_M27_MODEL);
+    expect(OPENROUTER_FREE_M27_MODEL).toBe("minimax/minimax-m2.7:free");
+    expect(OPENROUTER_FREE_MODEL_CANDIDATES).toEqual([
+      "minimax/minimax-m3:free",
+      "google/gemma-3-12b-it:free",
+      "minimax/minimax-01:free",
+      "minimax/minimax-m2.7:free",
+    ]);
+  });
+});
+
+describe("openRouterMaxRetries", () => {
+  const SAVED = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmClientsForTests();
+  });
+
+  it("defaults to 2 so a single OpenRouter 502 does not kill the turn", () => {
+    delete process.env.ANIMA_OPENROUTER_MAX_RETRIES;
+    expect(openRouterMaxRetries()).toBe(2);
+  });
+
+  it("honors ANIMA_OPENROUTER_MAX_RETRIES", () => {
+    process.env.ANIMA_OPENROUTER_MAX_RETRIES = "0";
+    expect(openRouterMaxRetries()).toBe(0);
+  });
+
+  it("configures the OpenRouter SDK client with those retries", () => {
+    delete process.env.ANIMA_OPENROUTER_MAX_RETRIES;
+    process.env.OPENROUTER_API_KEY = "sk-or-v1-retry-test-zzzz";
+    const client = getOpenRouterClient();
+    expect(client).toBeTruthy();
+    expect(client?.maxRetries).toBe(2);
   });
 });
 

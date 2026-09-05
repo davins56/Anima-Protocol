@@ -10,9 +10,17 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
+    OPENROUTER_FREE_MODEL: "minimax/minimax-m3:free",
+    OPENROUTER_FREE_M3_MODEL: "minimax/minimax-m3:free",
+    OPENROUTER_FREE_M27_MODEL: "minimax/minimax-m2.7:free",
     MINIMAX_FREE_MODEL: "minimax/minimax-01:free",
     JULES_FREE_MODEL: "google/gemma-3-12b-it:free",
+    OPENROUTER_FREE_MODEL_CANDIDATES: [
+      "minimax/minimax-m3:free",
+      "google/gemma-3-12b-it:free",
+      "minimax/minimax-01:free",
+      "minimax/minimax-m2.7:free",
+    ],
     MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
