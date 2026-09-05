@@ -1,7 +1,10 @@
 import { inflateRawSync } from "node:zlib";
 
+// Matches client IMPORT_LIMITS / PULL_LIMITS archive ceiling (50MB).
+// Pull downloads from GitHub on the Worker; this is not a user zip POST, so
+// Cloudflare's ~100MB incoming request-body cap is not the constraint.
 export const GITHUB_ARCHIVE_LIMITS = {
-  maxZipBytes: 32 * 1024 * 1024,
+  maxZipBytes: 50 * 1024 * 1024,
   maxFileBytes: 512 * 1024,
   maxFiles: 400,
   maxTotalBytes: 3 * 1024 * 1024,
