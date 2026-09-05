@@ -26,7 +26,9 @@ import {
   createChatStreamWithFailover,
   isOpenRouterAlreadyFreeTier,
   isOpenRouterGenericProviderError,
+  isOpenRouterZdrOrDataPolicyError,
   OPENROUTER_FREE_PROVIDER_HINT,
+  OPENROUTER_ZDR_PRIVACY_HINT,
   remapGenericProviderError,
   type LlmBrand,
   type LlmProviderId,
@@ -179,6 +181,9 @@ function startSseHeartbeat(res: Response): () => void {
 
 function streamErrorMessage(err: unknown): string {
   if (err instanceof LlmStreamTimeoutError) return err.message;
+  if (isOpenRouterZdrOrDataPolicyError(err)) {
+    return OPENROUTER_ZDR_PRIVACY_HINT;
+  }
   if (isOpenRouterGenericProviderError(err)) {
     const remapped = err instanceof Error ? remapGenericProviderError(err) : new Error(OPENROUTER_FREE_PROVIDER_HINT);
     return remapped.message;
