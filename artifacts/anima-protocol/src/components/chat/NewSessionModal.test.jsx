@@ -374,7 +374,7 @@ describe("NewSessionModal", () => {
     });
   });
 
-  it("upserts a bundled starter without listing the full roster first", async () => {
+  it("starts a bundled starter upsert without blocking Init", async () => {
     loadRosterCharactersMock.mockResolvedValue({
       characters: [
         {
@@ -423,7 +423,7 @@ describe("NewSessionModal", () => {
     });
   });
 
-  it("remaps a bundled seed id to the store id returned by upsert", async () => {
+  it("creates immediately with seed ids while a remapping upsert runs in the background", async () => {
     loadRosterCharactersMock.mockResolvedValue({
       characters: [
         {
@@ -456,13 +456,14 @@ describe("NewSessionModal", () => {
 
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
-      character_id: "char_store_9",
+      character_id: "seed_protocol-serenity",
       character: expect.objectContaining({
-        id: "char_store_9",
+        id: "seed_protocol-serenity",
         name: "Serenity",
       }),
       opening_scene: undefined,
     });
+    expect(upsertCharactersMock).toHaveBeenCalled();
     expect(overlay.textContent).toContain("Init");
     expect(buttonByText(overlay, "Init")?.disabled).toBe(false);
 
@@ -472,7 +473,90 @@ describe("NewSessionModal", () => {
     });
   });
 
-  it("remaps bundled seed ids for group Init before onCreate", async () => {
+  it("does not wait for a hung starter upsert before ChatSession.create", async () => {
+    loadRosterCharactersMock.mockResolvedValue({
+      characters: [
+        {
+          id: "seed_protocol-serenity",
+          name: "Serenity",
+          universe: "Protocol",
+          category: "companion",
+          _bundled: true,
+        },
+      ],
+      usingBundledSeed: true,
+    });
+    upsertCharactersMock.mockImplementation(() => new Promise(() => {}));
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
+    const { container, root, overlay } = renderModal({ onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(overlay.textContent).not.toContain("The server took too long to respond");
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("does not surface a starter upsert timeout on Init", async () => {
+    loadRosterCharactersMock.mockResolvedValue({
+      characters: [
+        {
+          id: "seed_protocol-serenity",
+          name: "Serenity",
+          universe: "Protocol",
+          category: "companion",
+          _bundled: true,
+        },
+      ],
+      usingBundledSeed: true,
+    });
+    upsertCharactersMock.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "The server took too long to respond. Check your connection or try again in a moment.",
+        ),
+        { code: "timeout" },
+      ),
+    );
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
+    const { container, root, overlay } = renderModal({ onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(overlay, "Serenity"));
+    await click(buttonByText(overlay, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(overlay.textContent).not.toContain("The server took too long to respond");
+    expect(overlay.textContent).not.toContain("Starting the session timed out");
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("starts group Init with seed ids while upsert remaps in the background", async () => {
     loadRosterCharactersMock.mockResolvedValue({
       characters: [
         {
@@ -518,11 +602,10 @@ describe("NewSessionModal", () => {
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "group",
-        group_character_ids: ["pg_tony", "pg_steve"],
+        group_character_ids: ["seed_tony", "seed_steve"],
       }),
     );
-    expect(onCreate.mock.calls[0][0].group_character_ids).not.toContain("seed_tony");
-    expect(onCreate.mock.calls[0][0].group_character_ids).not.toContain("seed_steve");
+    expect(upsertCharactersMock).toHaveBeenCalled();
 
     act(() => {
       root.unmount();
@@ -530,7 +613,7 @@ describe("NewSessionModal", () => {
     });
   });
 
-  it("falls back to universe+name when remap is stale instead of throwing", async () => {
+  it("still inits when a stale upsert remap would have thrown", async () => {
     loadRosterCharactersMock.mockResolvedValue({
       characters: [
         {
@@ -568,9 +651,9 @@ describe("NewSessionModal", () => {
     );
     expect(onCreate).toHaveBeenCalledWith({
       mode: "solo",
-      character_id: "char_store_9",
+      character_id: "seed_protocol-serenity",
       character: expect.objectContaining({
-        id: "char_store_9",
+        id: "seed_protocol-serenity",
         name: "Serenity",
       }),
       opening_scene: undefined,
