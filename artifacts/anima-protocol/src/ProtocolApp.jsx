@@ -1448,6 +1448,12 @@ export default function ProtocolApp() {
               <ConfirmProvider>
                 <InAppBrowserWarning />
                 <TapTargetValidator />
+                {/*
+                  Paints the full display, including behind iOS 26 Safari's
+                  floating chrome, so no unpainted band can appear below the
+                  interactive shell. Purely decorative.
+                */}
+                <div className="app-viewport-backdrop" aria-hidden="true" />
                 <div
                   className="app-shell flex flex-col h-screen-safe"
                   style={{
