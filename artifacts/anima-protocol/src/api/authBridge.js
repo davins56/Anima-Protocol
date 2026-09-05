@@ -1,4 +1,5 @@
 // Shared Clerk token/header bridge for non-React API clients.
+import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 let tokenGetter = null;
 
 export function setAuthTokenGetter(fn) {
@@ -31,7 +32,7 @@ export async function getToken(options = {}) {
   }
 }
 
-export async function waitForStoreAuth(timeoutMs = 15000) {
+export async function waitForStoreAuth(timeoutMs = STORE_AUTH_WAIT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const token = await getToken();

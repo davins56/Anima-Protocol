@@ -14,11 +14,23 @@ export type EvolutionDelta = {
   voidBias?: number;
 };
 
-function nextMilestone(current: number): number | null {
-  for (const m of MILESTONES) {
-    if (current < m) return m;
-  }
-  return null;
+/**
+ * Lowest unapplied milestone at or below the current counts.
+ * Exact equality used to miss a milestone forever when a retry/batch jumped past it.
+ */
+export function qualifyingEvolutionMilestone(params: {
+  conversationCount: number;
+  significantExperienceCount?: number;
+  alreadyMilestone?: number;
+}): number | null {
+  const experienceCount = Number(params.significantExperienceCount) || 0;
+  const already = Number(params.alreadyMilestone) || 0;
+  return (
+    (MILESTONES as readonly number[]).find(
+      (m) =>
+        (params.conversationCount >= m || experienceCount >= m) && m > already,
+    ) ?? null
+  );
 }
 
 function truncate(value: string, max = 900): string {
@@ -112,11 +124,17 @@ export async function maybeTriggerMilestoneEvolution(params: {
   conversationCount: number;
   historySummary: string;
   isVoidTurn?: boolean;
+  significantExperienceCount?: number;
+  alreadyMilestone?: number;
 }) {
-  // Trigger only when we *reach* the milestone threshold.
-  // Example: when conversationCount becomes 50, trigger once.
-  const targetMilestone = params.conversationCount;
-  if (!MILESTONES.includes(targetMilestone as any)) return null;
+  // Trigger when conversationCount OR significant experiences hit a milestone.
+  const experienceCount = Number(params.significantExperienceCount) || 0;
+  const targetMilestone = qualifyingEvolutionMilestone({
+    conversationCount: params.conversationCount,
+    significantExperienceCount: experienceCount,
+    alreadyMilestone: params.alreadyMilestone,
+  });
+  if (targetMilestone == null) return null;
 
 
   const evolutionPrompt = `You are evolving an Anima companion personality over time.
@@ -135,6 +153,9 @@ HARD RULES:
 INPUTS:
 [CONVERSATION_COUNT]
 ${params.conversationCount}
+
+[SIGNIFICANT_EXPERIENCES]
+${experienceCount}
 
 [RECENT_HISTORY_SUMMARY]
 ${truncate(params.historySummary, 1400)}

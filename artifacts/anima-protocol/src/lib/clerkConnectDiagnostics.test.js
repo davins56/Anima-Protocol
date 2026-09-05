@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLERK_FAILURE_HINT,
+  CLERK_ORIGIN_INVALID_HINT,
+  CLERK_ORIGIN_MISMATCH_ON_PRODUCTION_HINT,
   CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -100,7 +102,7 @@ describe('probeClerkConnectivity', () => {
     const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
 
     expect(hints).toContain(
-      'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+      'Clerk host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, then redeploy without cache.',
     );
     expect(hints).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalledWith(
@@ -109,7 +111,53 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
-it('does not emit a false-positive stall hint when probes succeed', async () => {
+  it('explains origin_invalid instead of dumping the Clerk FAPI message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+          });
+        }
+        if (String(url).includes('/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: 'origin_invalid',
+                  long_message:
+                    'The Request HTTP Origin header must be equal to or a subdomain of the requesting URL.',
+                },
+              ],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
+    expect(hints).toEqual([CLERK_ORIGIN_MISMATCH_ON_PRODUCTION_HINT]);
+  });
+
+  it('does not probe Clerk FAPI from an unauthorized browser origin', async () => {
+    vi.stubGlobal('window', {
+      location: {
+        hostname: 'anima-protocol-abc.vercel.app',
+        origin: 'https://anima-protocol-abc.vercel.app',
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
+    expect(hints).toEqual([CLERK_ORIGIN_INVALID_HINT]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not emit a false-positive stall hint when probes succeed', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {
@@ -127,139 +175,6 @@ it('does not emit a false-positive stall hint when probes succeed', async () => 
     expect(CLERK_FAILURE_HINT).toMatch(/failed to initialize/);
   });
 
-  it('surfaces custom-domain 400 with Clerk error codes instead of blaming DNS only', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url) => {
-        if (String(url).endsWith('/api/healthz')) {
-          return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
-        }
-        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
-          return new Response(
-            JSON.stringify({
-              errors: [{ code: 'invalid_request', message: 'bad request' }],
-            }),
-            { status: 400 },
-          );
-        }
-        return new Response('', { status: 200 });
-      }),
-    );
-
-    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
-    expect(hints).toHaveLength(1);
-    expect(hints[0]).toContain('failed (400)');
-    expect(hints[0]).toContain('invalid_request');
-    expect(hints[0]).not.toMatch(/Confirm clerk\.anima-protocol\.com DNS in Clerk/);
-  });
-
-  it('surfaces Clerk custom domain subdomain allowlist failures', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url) => {
-        if (String(url).endsWith('/api/healthz')) {
-          return new Response(JSON.stringify({ status: 'ok' }), {
-            status: 200,
-          });
-        }
-        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
-          return new Response(
-            JSON.stringify({
-              errors: [
-                {
-                  code: 'subdomain_not_allowed',
-                  message: 'Subdomain not allowed',
-                },
-              ],
-            }),
-            { status: 403 },
-          );
-        }
-        return new Response('', { status: 200 });
-      }),
-    );
-
-    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
-
-    expect(hints).toEqual([
-      'Clerk is rejecting www.anima-protocol.com for the custom login domain. In Clerk Dashboard → Domains, add www.anima-protocol.com to the allowed subdomains for clerk.anima-protocol.com, then hard-refresh sign-in.',
-    ]);
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining(
-        '/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=6.12.1',
-      ),
-      expect.anything(),
-    );
-  });
-
-  it('surfaces custom-domain host_invalid with Domains guidance', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url) => {
-        if (String(url).endsWith('/api/healthz')) {
-          return new Response(JSON.stringify({ status: 'ok' }), {
-            status: 200,
-          });
-        }
-        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
-          return new Response(
-            JSON.stringify({
-              errors: [
-                {
-                  code: 'host_invalid',
-                  message: 'Invalid host',
-                  long_message:
-                    'We were unable to attribute this request to an instance running on Clerk.',
-                },
-              ],
-            }),
-            { status: 400 },
-          );
-        }
-        return new Response('', { status: 200 });
-      }),
-    );
-
-    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
-
-    expect(hints).toEqual([
-      'Clerk custom domain host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key for clerk.anima-protocol.com, and that domain is verified in Clerk → Domains.',
-    ]);
-  });
-
-  it('includes Clerk error detail for generic custom-domain failures', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url) => {
-        if (String(url).endsWith('/api/healthz')) {
-          return new Response(JSON.stringify({ status: 'ok' }), {
-            status: 200,
-          });
-        }
-        if (String(url).includes('clerk.anima-protocol.com/v1/environment')) {
-          return new Response(
-            JSON.stringify({
-              errors: [
-                {
-                  code: 'something_else',
-                  message: 'Bad request',
-                  long_message: 'Custom domain is not fully provisioned.',
-                },
-              ],
-            }),
-            { status: 400 },
-          );
-        }
-        return new Response('', { status: 200 });
-      }),
-    );
-
-    const hints = await probeClerkConnectivity(CUSTOM_DOMAIN_KEY);
-
-    expect(hints).toEqual([
-      'Clerk custom domain failed (400) at https://clerk.anima-protocol.com: Custom domain is not fully provisioned. Clerk error: something_else. Confirm clerk.anima-protocol.com is verified in Clerk → Domains and DNS CNAMEs to frontend-api.clerk.services.',
-    ]);
-  });
 });
 
 describe('isClerkProxyHealthy', () => {

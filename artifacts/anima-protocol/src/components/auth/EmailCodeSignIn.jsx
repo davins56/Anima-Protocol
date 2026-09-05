@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useClerk, useSignIn, useUser } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/lib/AuthContext";
 import {
   clerkErrorMessage,
   hasEmailCodeFactor,
@@ -12,26 +13,27 @@ import {
   startGitHubOAuthSignIn,
 } from "@/lib/emailCodeSignIn";
 import { clerkOAuthCompletePath } from "@/lib/clerkOAuthPaths";
+import { buildInstantGuestIdentity } from "@/lib/authBootPolicy";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /**
  * Custom sign-in that forces email OTP (not magic link) and uses
- * Clerk Future `signIn.sso()` for GitHub OAuth. Avoids the prebuilt
- * Continue → email_link hang when the verification email is opened on
- * another device.
+ * Clerk Future `signIn.sso()` for GitHub OAuth. Instant Sandbox / Guest
+ * Access is opt-in only — Clerk failures stay on this form.
  */
 export default function EmailCodeSignIn() {
   const { signIn, fetchStatus } = useSignIn();
   const { isLoaded: userLoaded, isSignedIn } = useUser();
   const clerk = useClerk();
   const navigate = useNavigate();
+  const { loginAsLocalUser, isSignedInUser, isGuest } = useAuth();
 
   const [step, setStep] = useState("identifier"); // 'identifier' | 'code'
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend' | 'signout'
+  const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend' | 'signout' | 'guest'
   const [maskedEmail, setMaskedEmail] = useState("");
   const onPreviewHost = isPreviewSignInHost();
 
@@ -39,10 +41,12 @@ export default function EmailCodeSignIn() {
 
   // Single-session Clerk instances reject a second sign-in. Send signed-in
   // users into the app instead of leaving them stuck on this form.
+  // Leftover Instant Sandbox storage is not a signed-in session.
   useEffect(() => {
-    if (!userLoaded || !isSignedIn) return;
-    navigate(basePath || "/", { replace: true });
-  }, [userLoaded, isSignedIn, navigate]);
+    if ((userLoaded && isSignedIn) || isSignedInUser || isGuest) {
+      navigate(basePath || "/", { replace: true });
+    }
+  }, [userLoaded, isSignedIn, isSignedInUser, isGuest, navigate]);
 
   const resumeExistingSession = async (err) => {
     try {
@@ -85,7 +89,7 @@ export default function EmailCodeSignIn() {
   ) : null;
 
   const finishSignIn = async () => {
-    if (signIn.status !== "complete") {
+    if (signIn?.status !== "complete") {
       setError("Sign-in is not complete yet. Try the code again, or use GitHub.");
       return;
     }
@@ -114,6 +118,20 @@ export default function EmailCodeSignIn() {
     });
   };
 
+  // Guest is opt-in only. Do not pass the email-form `value` here — that used
+  // to auto-enter a blank local user on Clerk load/network errors.
+  const handleInstantGuest = () => {
+    setError(null);
+    setBusy("guest");
+    const identity = buildInstantGuestIdentity(identifier);
+    if (typeof loginAsLocalUser === "function") {
+      loginAsLocalUser(identity);
+      navigate(basePath || "/", { replace: true });
+    } else {
+      navigate(basePath || "/", { replace: true });
+    }
+  };
+
   const handleIdentifierSubmit = async (event) => {
     event.preventDefault();
     setError(null);
@@ -127,7 +145,9 @@ export default function EmailCodeSignIn() {
       return;
     }
     if (!signIn || typeof signIn.create !== "function") {
-      setError("Sign-in is still loading. Wait a moment and try again.");
+      setError(
+        "Sign-in is still loading. Wait a moment and try again, use GitHub, or tap Instant Sandbox / Guest Access.",
+      );
       return;
     }
     setBusy("email");
@@ -139,12 +159,11 @@ export default function EmailCodeSignIn() {
           await resumeExistingSession(createError);
           return;
         }
-        setError(
-          clerkErrorMessage(createError, {
-            humanizeIdentifierFormat: true,
-            context: "identifier",
-          }) || "Couldn't start sign-in.",
-        );
+        const msg = clerkErrorMessage(createError, {
+          humanizeIdentifierFormat: true,
+          context: "identifier",
+        });
+        setError(msg || "Couldn't start sign-in.");
         return;
       }
 
@@ -177,12 +196,11 @@ export default function EmailCodeSignIn() {
         await resumeExistingSession(err);
         return;
       }
-      setError(
-        clerkErrorMessage(err, {
-          humanizeIdentifierFormat: stage === "create",
-          context: "identifier",
-        }) || "Couldn't start sign-in.",
-      );
+      const msg = clerkErrorMessage(err, {
+        humanizeIdentifierFormat: stage === "create",
+        context: "identifier",
+      });
+      setError(msg || "Couldn't start sign-in.");
     } finally {
       setBusy(null);
     }
@@ -255,10 +273,9 @@ export default function EmailCodeSignIn() {
       }
       if (!signIn) {
         setError("Sign-in is still loading. Wait a moment and try GitHub again.");
+        setBusy(null);
         return;
       }
-      // Clerk React v6 Future API: use signIn.sso(). Calling
-      // clerk.authenticateWithRedirect throws "is not a function".
       await startGitHubOAuthSignIn(signIn, basePath, clerk);
     } catch (err) {
       if (isAlreadySignedInError(err)) {
@@ -292,11 +309,11 @@ export default function EmailCodeSignIn() {
   const inputClass =
     "mt-1 w-full rounded border border-cyan-400/30 bg-[#0c1420] px-3 py-2 text-cyan-100 outline-none focus:border-cyan-400/60";
   const primaryBtnClass =
-    "w-full rounded border border-cyan-400/50 bg-cyan-400/15 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:opacity-50";
+    "w-full rounded border border-cyan-400/50 bg-cyan-400/15 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:opacity-50 transition-colors";
   const secondaryBtnClass =
-    "w-full rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50";
+    "w-full rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors";
 
-  if (userLoaded && isSignedIn) {
+  if ((userLoaded && isSignedIn) || isSignedInUser || isGuest) {
     return (
       <div className={cardClass}>
         {previewBanner}
@@ -304,7 +321,7 @@ export default function EmailCodeSignIn() {
           You're already signed in
         </h1>
         <p className="mt-1 text-sm text-cyan-400/60">
-          This browser already has an Anima Protocol session. Continue into the
+          This browser already has an active Anima Protocol session. Continue into the
           app, or sign out if you meant to switch accounts.
         </p>
         <button
@@ -392,10 +409,10 @@ export default function EmailCodeSignIn() {
     <div className={cardClass}>
       {previewBanner}
       <h1 className="text-xl font-semibold tracking-wide text-cyan-200">
-        Re-enter the Protocol
+        I already live here
       </h1>
       <p className="mt-1 text-sm text-cyan-400/60">
-        Sign in to resonate with your companions
+        Sign in to come home to them
       </p>
 
       <button
@@ -432,12 +449,23 @@ export default function EmailCodeSignIn() {
           </p>
         ) : null}
         <button type="submit" className={primaryBtnClass} disabled={loading}>
-          {busy === "email" ? "Sending code…" : "Continue"}
+          {busy === "email" ? "Entering…" : "Continue"}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-xs text-cyan-400/45">
-        We email a one-time code — not a magic link — so login can finish here.
+      <div className="mt-4 pt-3 border-t border-cyan-400/15">
+        <button
+          type="button"
+          className="w-full text-xs text-cyan-300/80 hover:text-cyan-200 py-1.5 px-2 rounded border border-cyan-400/20 hover:border-cyan-400/40 bg-cyan-950/30 transition-colors"
+          onClick={handleInstantGuest}
+          disabled={loading}
+        >
+          Instant Sandbox / Guest Access →
+        </button>
+      </div>
+
+      <p className="mt-3 text-center text-[11px] text-cyan-400/40">
+        Passwordless sign-in with instant session resonance
       </p>
     </div>
   );

@@ -1,12 +1,29 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  OPENROUTER_FREE_MODEL,
+  OPENROUTER_VENICE_UNCENSORED,
   getOpenRouterApiKey,
   getOpenRouterApiKeySource,
   hasOpenRouterKey,
   normalizeApiKey,
   openRouterKeyFingerprint,
   resetLlmClientsForTests,
+  getMinimaxApiKey,
+  getMinimaxApiKeySource,
+  hasMinimaxKey,
 } from "../src/lib/openaiClient";
+
+describe("OpenRouter catalog defaults", () => {
+  it("keeps Venice as the paid default and a live :free slug for zero-credit fallback", () => {
+    expect(OPENROUTER_VENICE_UNCENSORED).toBe(
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    );
+    expect(OPENROUTER_FREE_MODEL).toBe("minimax/minimax-m2.7:free");
+    expect(OPENROUTER_FREE_MODEL.endsWith(":free")).toBe(true);
+    expect(OPENROUTER_FREE_MODEL).not.toBe("openai/gpt-oss-20b:free");
+    expect(OPENROUTER_FREE_MODEL).not.toBe("google/gemma-4-31b-it:free");
+  });
+});
 
 describe("normalizeApiKey", () => {
   it("trims whitespace and surrounding quotes", () => {
@@ -58,5 +75,22 @@ describe("OpenRouter key env aliases", () => {
     process.env.OPEN_ROUTER_API_KEY = "sk-or-v1-alias-yyyy";
     expect(getOpenRouterApiKey()).toBe("sk-or-v1-canonical-xxxx");
     expect(getOpenRouterApiKeySource()).toBe("OPENROUTER_API_KEY");
+  });
+});
+
+describe("MiniMax key env aliases", () => {
+  const SAVED = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmClientsForTests();
+  });
+
+  it("reads MINIMAX_API_KEY and prefers it over the Anima alias", () => {
+    process.env.MINIMAX_API_KEY = "  minimax-primary-key  ";
+    process.env.ANIMA_MINIMAX_API_KEY = "minimax-alias-key";
+    expect(hasMinimaxKey()).toBe(true);
+    expect(getMinimaxApiKey()).toBe("minimax-primary-key");
+    expect(getMinimaxApiKeySource()).toBe("MINIMAX_API_KEY");
   });
 });

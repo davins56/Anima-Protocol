@@ -1,0 +1,110 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Production Worker "anima-protocol" (id b7f2ce9d029e46e8b75741ce999c121d)
+  // is built from the repo root: `pnpm build` then `npx wrangler deploy`.
+  // Without this file Cloudflare deploys ./dist as static assets only, so
+  // /api/healthz, /api/store, and /api/__clerk all 404.
+  "name": "anima-protocol",
+  "main": "artifacts/api-server/src/worker.ts",
+  "compatibility_date": "2026-08-17",
+  // Required by worker.ts — Express runs through cloudflare:node's httpServerHandler.
+  // populate_process_env is default after 2025-04-01; keep it explicit so
+  // dashboard secrets reach process.env. Do not commit secret values here.
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
+  "assets": {
+    // Root `pnpm build` copies artifacts/anima-protocol/dist/public → ./dist
+    // and drops Netlify `_redirects` (invalid on Workers: 200! / SPA loop).
+    // Workers Builds also passes `--assets=./dist`; keep this in sync.
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Default html_handling (auto-trailing-slash) is left unset so prerendered
+    // routes like /sign-in/ resolve to sign-in/index.html. It does not rewrite
+    // hashed /assets/*.js — those are intercepted by the Worker.
+    // SPA fallback would otherwise serve index.html for unmatched /api/* and
+    // stale hashed files under /assets/* (browser then rejects HTML as a JS
+    // module — Profile EchoKeys MIME error). Run the Worker first: /api →
+    // Express; /assets → 404 if ASSETS returns HTML. Client routes stay SPA.
+    // Hashed /assets Cache-Control: public/_headers (copied into ./dist) plus
+    // Worker withHashedAssetCache. Do not gitignore _headers — CF Assets
+    // default is max-age=0 without it.
+    "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
+  },
+  // Do not add www.anima-protocol.com routes here. Zone Redirect Rule
+  // "Redirect www to root" 301s www → https://anima-protocol.com/ (no ${1})
+  // before any Worker. www is not a custom domain on this Worker;
+  // *.anima-protocol.com/* goes to anima-protocol-worker. See
+  // scripts/cloudflare/www-redirect.md — fix the zone rule, do not assume
+  // a wrangler route exists until that replacement keeps ${1}.
+  "vars": {
+    "NODE_ENV": "production",
+    // Never invent localhost on this isolate (belt-and-suspenders with
+    // navigator.userAgent === "Cloudflare-Workers").
+    "ANIMA_RUNTIME": "worker",
+    // Safe defaults for the self-hosted Anima LLM. Do NOT put
+    // ANIMA_LOCAL_LLM_BASE_URL in vars — a committed URL would put `local`
+    // in the provider chain before Fly is live and skip OpenRouter.
+    // Bind the public URL as a Secrets Store secret (same store as Clerk).
+    "ANIMA_LOCAL_LLM_BACKEND": "ollama",
+    "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
+    // Skip Venice (402s on $0 OpenRouter accounts). Chat uses
+    // minimax/minimax-m2.7:free via preferOpenRouterFreeTier().
+    "ANIMA_OPENROUTER_FREE": "true"
+  },
+  // Secrets Store bindings — names and store_id only, never values.
+  // Dashboard-only bindings are dropped on `wrangler deploy` because this
+  // file is the source of truth. Keep CLERK_* + DATABASE_URL +
+  // OPENROUTER_API_KEY (those store entries already exist or are created
+  // in the same deploy window).
+  //
+  // Ordered follow-up for remaining LLM secrets (do not skip a step):
+  // 1. Create the secret_name in store a31e40473ef34db896b5bc1e6c1c4b86.
+  // 2. Add the matching { binding, store_id, secret_name } object below
+  //    in the SAME commit.
+  // 3. Then deploy.
+  // Adding a binding for a secret_name that does not exist yet makes
+  // `wrangler deploy` fail and blocks the Worker (the whole site).
+  // Fly names to add later, after the public HTTPS host is live:
+  //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
+  //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
+  // OPENROUTER_API_KEY is bound below (used when the local URL is unset).
+  // See deploy/ollama-fly/README.md.
+  "secrets_store_secrets": [
+    {
+      "binding": "CLERK_SECRET_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "CLERK_SECRET_KEY"
+    },
+    {
+      "binding": "CLERK_PUBLISHABLE_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "CLERK_PUBLISHABLE_KEY"
+    },
+    {
+      "binding": "DATABASE_URL",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "DATABASE_URL"
+    },
+    {
+      "binding": "OPENROUTER_API_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "OPENROUTER_API_KEY"
+    }
+  ],
+  // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against
+  // that secret from this Worker still ECONNRESET — do not treat the binding
+  // as a Worker TCP path.
+  //
+  // Hyperdrive anima-postgres (see scripts/cloudflare/hyperdrive.md).
+  // Binding name + config id only — never the origin URL or a password.
+  // Worker code reads env.HYPERDRIVE.connectionString at request time.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "bae77549623a4320b10211ca499fdb93"
+    }
+  ]
+}

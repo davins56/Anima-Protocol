@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useStoreSync } from "@/lib/useStoreSync";
+import { appearsInCheckInList } from "@/lib/sacredSpaceCheckIn";
 import { ArrowLeft, Search, Sparkles, Heart, Plus } from "lucide-react";
 
 const MOOD_COLORS = {
@@ -39,20 +41,12 @@ export default function ReflectionLog() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    loadEntries();
-  }, []);
-
   const loadEntries = async () => {
     setLoading(true);
     try {
       // No limit → fetch the full history so every reflection is logged.
       const data = await base44.entities.CheckIn.list("-created_date");
-      // Only check-ins that captured a written reflection or gratitude note
-      const withReflection = (data || []).filter(
-        (c) => (c.reflection && c.reflection.trim()) || (c.gratitude && c.gratitude.trim())
-      );
-      setEntries(withReflection);
+      setEntries((data || []).filter(appearsInCheckInList));
     } catch (err) {
       console.error("Error loading reflection log:", err);
       setEntries([]);
@@ -60,6 +54,13 @@ export default function ReflectionLog() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadEntries();
+  }, []);
+
+  // Remote / other-tab CheckIn.create (including Sacred Space) refreshes live.
+  useStoreSync(loadEntries);
 
   const filtered = entries.filter((e) => {
     if (!search.trim()) return true;
@@ -69,7 +70,9 @@ export default function ReflectionLog() {
       (e.gratitude && e.gratitude.toLowerCase().includes(q)) ||
       (e.mood && e.mood.toLowerCase().includes(q)) ||
       (e.physical_state && e.physical_state.toLowerCase().includes(q)) ||
-      (e.mode_used && e.mode_used.toLowerCase().includes(q))
+      (e.mode_used && e.mode_used.toLowerCase().includes(q)) ||
+      (e.ritual_focus && e.ritual_focus.toLowerCase().includes(q)) ||
+      (e.character_name && e.character_name.toLowerCase().includes(q))
     );
   });
 
@@ -87,7 +90,7 @@ export default function ReflectionLog() {
                 // Reflection Log
               </h1>
               <p className="text-[10px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-                {filtered.length} {filtered.length === 1 ? "reflection" : "reflections"} from daily check-ins
+                {filtered.length} {filtered.length === 1 ? "reflection" : "reflections"} from check-ins and Sacred Space
               </p>
             </div>
           </div>
@@ -151,6 +154,16 @@ export default function ReflectionLog() {
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {entry.source === "sacred_space" && (
+                      <span className="px-2 py-0.5 border border-violet-400/40 bg-violet-400/10 text-[9px] font-mono tracking-[0.1em] uppercase text-violet-300">
+                        Sacred Space
+                      </span>
+                    )}
+                    {entry.source === "daily_resonance" && (
+                      <span className="px-2 py-0.5 border border-cyan-400/40 bg-cyan-400/10 text-[9px] font-mono tracking-[0.1em] uppercase text-cyan-300">
+                        Check-in
+                      </span>
+                    )}
                     {entry.mood && (
                       <span
                         className={`px-2 py-0.5 border text-[9px] font-mono tracking-[0.1em] uppercase ${
@@ -191,10 +204,12 @@ export default function ReflectionLog() {
                 )}
 
                 {/* Footer meta */}
-                {(entry.physical_state || entry.mode_used) && (
+                {(entry.physical_state || entry.mode_used || entry.ritual_focus || entry.character_name) && (
                   <div className="flex items-center gap-3 mt-3 text-[9px] font-mono text-primary/30 tracking-widest uppercase">
                     {entry.physical_state && <span>Body: {entry.physical_state}</span>}
                     {entry.mode_used && <span>Mode: {entry.mode_used}</span>}
+                    {entry.ritual_focus && <span>Focus: {entry.ritual_focus}</span>}
+                    {entry.character_name && <span>With: {entry.character_name}</span>}
                   </div>
                 )}
               </div>

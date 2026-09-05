@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildClerkProxyHeaderValues,
   buildClerkUpstreamHeaders,
+  forwardedRequestProto,
   resolveClerkUpstreamPath,
   resolveClerkUpstreamUrl,
 } from "../src/middlewares/clerkProxyFetch";
@@ -76,6 +77,36 @@ describe("clerkProxyFetch", () => {
       "sk_live_test", // pragma: allowlist secret
     );
 
+    expect(values.proxyUrl).toBe(
+      "https://www.anima-protocol.com/api/__clerk/",
+    );
+  });
+
+  it("uses the first x-forwarded-proto hop so Origin matches Clerk-Proxy-Url", () => {
+    expect(forwardedRequestProto({ "x-forwarded-proto": "https,https" })).toBe(
+      "https",
+    );
+    expect(forwardedRequestProto({ "x-forwarded-proto": "https, http" })).toBe(
+      "https",
+    );
+    expect(forwardedRequestProto({ "x-forwarded-proto": ["http"] })).toBe(
+      "http",
+    );
+
+    process.env.CLERK_PUBLISHABLE_KEY =
+      "[REDACTED]"; // pragma: allowlist secret
+
+    const values = buildClerkProxyHeaderValues(
+      {
+        headers: {
+          host: "www.anima-protocol.com",
+          "x-forwarded-proto": "https,https",
+        },
+      },
+      "sk_live_test", // pragma: allowlist secret
+    );
+
+    expect(values.origin).toBe("https://www.anima-protocol.com");
     expect(values.proxyUrl).toBe(
       "https://www.anima-protocol.com/api/__clerk/",
     );

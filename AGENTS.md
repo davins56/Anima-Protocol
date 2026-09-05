@@ -6,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`.
 
-The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server as a single self-contained `api/index.mjs` bundle (copied from `dist/vercel.mjs` by the `api-server` build; rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. Do not add `api/server.mjs` to `vercel.json` `functions` — only `api/index.mjs` is a valid Serverless Function entry. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server as a single self-contained `api/index.mjs` bundle (copied from `dist/vercel.mjs` by the `api-server` build; rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. `api/index.mjs` must stay committed: Vercel validates `vercel.json` `functions` against the repo **before** `buildCommand` runs, and a missing file fails the deploy with `functions.api/index.mjs does not match any file`. Do not add `api/server.mjs` to `vercel.json` `functions` — only `api/index.mjs` is a valid Serverless Function entry. Do not gitignore `api/`. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
 
 ### Node.js
 
@@ -57,10 +57,17 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `VITE_ALGOLIA_SEARCH_API_KEY` | Frontend — Algolia **search-only** key for the Netlify crawler widget (`div#search`). Never use the Admin or crawler `ALGOLIA_API_KEY` here. Widget stays hidden when unset. |
 | `VITE_ALGOLIA_BRANCH` | Frontend — optional override for which Algolia Netlify index to query. Defaults to Netlify `HEAD` or `main`. |
 | `OPENROUTER_API_KEY` | API chat (Venice Uncensored; free-tier fallback on HTTP 402). Alias: `ANIMA_OPENROUTER_API_KEY` / `OPEN_ROUTER_API_KEY` |
-| `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `openai/gpt-oss-20b:free` |
+| `MINIMAX_API_KEY` / `ANIMA_MINIMAX_API_KEY` | API chat via MiniMax Global. Preferred over OpenRouter when configured; optional `ANIMA_MINIMAX_MODEL` and `ANIMA_MINIMAX_BASE_URL` overrides |
+| `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `minimax/minimax-m2.7:free` |
+| `ANIMA_LOCAL_LLM_BASE_URL` | API — public HTTPS OpenAI-compatible `…/v1` URL (Fly: `https://anima-chat-llm.fly.dev/v1`). Never localhost on the Worker |
+| `ANIMA_LOCAL_LLM_API_KEY` | API — bearer token; must match Fly `PROXY_AUTH_TOKEN` |
+| `ANIMA_LOCAL_LLM_BACKEND` | API — `ollama` (default) or `vllm` |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | API — model tag the host serves (`anima-chat`) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
 | `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |
 | `CRON_SECRET` | Authorizes the hourly Vercel proactive-message cron |
+
+**Production (Cloudflare — anima-protocol.com):** the apex host is Workers + Assets, not Vercel. Root `wrangler.jsonc` sets `main` to `artifacts/api-server/src/worker.ts` with `nodejs_compat`. Workers Builds already runs `pnpm build` (copies the SPA to `./dist`) then `npx wrangler deploy --assets=./dist --name anima-protocol`. `assets.run_worker_first` sends `/api` and `/api/*` to Express so `/api/healthz`, `/api/store`, and `/api/__clerk` are not swallowed by the SPA fallback, and `/assets` / `/assets/*` to the Worker so a missing hashed file returns 404 instead of `index.html`. Keep Clerk/DB/OpenRouter keys in Cloudflare **Secrets Store** (store `a31e40473ef34db896b5bc1e6c1c4b86`) and declare the bindings in `wrangler.jsonc` `secrets_store_secrets` (`CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `DATABASE_URL`, `OPENROUTER_API_KEY`). Do **not** add `ANIMA_LOCAL_LLM_BASE_URL` or `ANIMA_LOCAL_LLM_API_KEY` bindings until those `secret_name`s exist in the store — a binding for a missing entry fails `wrangler deploy` and blocks the Worker. Ordered follow-up: create the store entry, add the matching binding in the same commit, then deploy (see `deploy/ollama-fly/README.md`). Commit binding names and `store_id` only — never secret values. A git deploy that omits `secrets_store_secrets` unbinds dashboard secrets and `/api/healthz/env` goes all-false. The Worker never invents `http://localhost:11434/v1`; `/api/healthz/llm` reports `localEndpoint.configured: false` until a public HTTPS `…/v1` URL is bound. See `deploy/ollama-fly/README.md`. A deploy without `main` is assets-only and those `/api` paths 404. **Postgres from the Worker:** keep the Secrets Store `DATABASE_URL` binding; a raw `pg` TCP Pool against that secret from Workers still ECONNRESET. The Worker uses postgres.js and a `HYPERDRIVE` binding. One dashboard step: create Hyperdrive, paste `DATABASE_URL` **into that form once** (never into git), then put only `{ binding, id }` in `wrangler.jsonc` and redeploy — see `scripts/cloudflare/hyperdrive.md`.
 
 **Production (recommended on Vercel):** set `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_PUBLISHABLE_KEY` to matching **`pk_live_` / `sk_live_`** from the **same** Clerk Production app (never put `sk_` in `VITE_CLERK_PUBLISHABLE_KEY`). This deployment uses Clerk **custom domain** (`clerk.anima-protocol.com` CNAME) — leave `VITE_CLERK_PROXY_URL` empty; the frontend detects the custom domain from the publishable key and **does not** route through `/api/__clerk` on `www.anima-protocol.com`. Verify `curl https://www.anima-protocol.com/api/healthz` and `curl https://clerk.anima-protocol.com/v1/environment` return 200 after deploy. Register OAuth redirect URLs (`…/sign-in/sso-callback`, `…/sign-up/sso-callback`) in Clerk → Paths. Redeploy **without build cache** after any env change. `/api/__clerk` proxy mode is only for hosts without a Clerk custom domain (e.g. some `*.vercel.app` previews if you enable Clerk proxy in the dashboard).
 
@@ -151,6 +158,9 @@ Reload: `sudo nginx -s reload`
 - Vite configs for frontend and mockup **require** `PORT` and `BASE_PATH` at config load time.
 - API `dev` script rebuilds on each start (`build` then `start`).
 - pnpm may warn about ignored build scripts for `@clerk/shared`; add to `onlyBuiltDependencies` in `pnpm-workspace.yaml` if Clerk misbehaves after install.
+- Cloudflare Worker `anima-protocol` must deploy from root `wrangler.jsonc` (`main` = `artifacts/api-server/src/worker.ts`). An assets-only deploy (`--assets=./dist` with no `main`) makes `/api/*` 404 on anima-protocol.com.
+- Companion store "Postgres is unreachable from this host" on anima-protocol.com means the Worker has `DATABASE_URL` but no Hyperdrive path to Postgres. Create/bind Hyperdrive (`scripts/cloudflare/hyperdrive.md`); do not put the URL in `wrangler.jsonc` vars. Hyperdrive origin must be real Postgres, not Prisma Accelerate (`db.prisma.io`).
+- www 301 to `https://anima-protocol.com/` (path dropped) is zone Redirect Rule **"Redirect www to root"** (`scripts/cloudflare/www-redirect.md`), not `vercel.json`. Fix the replacement to `https://anima-protocol.com/${1}`. Apex `/api/*` must still return JSON when the isolate throws.
 
 ## Analytics Tracking — Mixpanel
 
@@ -246,12 +256,14 @@ All new events must follow these conventions.
 | `crossover_session_started` | User starts a multi-universe group session | `character_count`, `universe_count` | `src/pages/Chat.jsx` |
 | `subscription_upgrade_started` | User starts a premium checkout (intent, not completion) | `tier`, `purchase_type`, `from_tier` | `src/pages/PremiumPlans.jsx` |
 | `net_battle_started` | User jacks into a NetBattle match | `control_mode`, `primary_expression`, `is_blend` | `src/pages/NetBattle.jsx` |
-| `net_battle_completed` | A NetBattle match ends (win or loss) | `result`, `control_mode`, `primary_expression`, `is_blend`, `chips_used` | `src/pages/NetBattle.jsx` |
+| `net_battle_completed` | A NetBattle match ends (win or loss) | `result`, `control_mode`, `primary_expression`, `is_blend`, `chips_used`, `echo_keys_used` | `src/pages/NetBattle.jsx` |
+| `echo_folder_saved` | User saves their Echo Key Folder to the profile | `folder_size`, `star_count`, `mega_count` | `src/hooks/useEchoLibrary.js` |
 | `presence_stage_opened` | User opens the full-body living presence stage in chat | `session_mode`, `character_count`, `is_crossover` | `src/pages/Chat.jsx` |
 | `protocol_upgrade_started` | Serenity launches a Cursor cloud agent to upgrade Protocol source | `scope`, `surface` | `src/lib/serenityProtocolUpgrade.js`, `src/components/chat/ProtocolUpgradeConsole.jsx` |
 | `image_generated` | Companion (onboard Serenity or a user-created Anima) creates an image in chat | `source` (`tag` / `request` / `modal`), `is_anima`, `session_mode` | `src/pages/Chat.jsx` |
-| `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
+| `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas`, `has_topic` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
 | `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
+| `echo_key_discovered` | Operator finds, synthesises, or evolves an Echo Key in story mode | `source` (`virtual` / `field` / `synthesis` / `evolution`), `site`, `tier`, `is_outdoor` | `src/components/echoKeys/EchoStoryMode.jsx`, `src/pages/NetBattle.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
 

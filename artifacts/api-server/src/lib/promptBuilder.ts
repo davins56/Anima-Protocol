@@ -35,6 +35,11 @@ import type { RelationshipState } from "./relationshipEngine";
 import type { ArcState } from "./narrativeArcEngine";
 import { relationshipStateToPrompt, arcStateToPrompt } from "./arcAndBondPrompt";
 import { formatExpressionPrompt } from "./animaExpressions";
+import {
+  hiddenSequencePromptBlock,
+  type HiddenSequencesState,
+  type Weather,
+} from "./hiddenSequences";
 
 import {
   type CharacterData,
@@ -132,6 +137,10 @@ export interface PromptBuilderParams {
   /** Layered therapy risk result; only used by the therapy mode contract. */
   therapyAssessment?: TherapySafetyAssessment | null;
   crisisResource?: CrisisResource | null;
+
+  /** Hidden Sequences / conversational weather (client-authored, sanitized as guidance). */
+  hiddenSequences?: HiddenSequencesState | null;
+  conversationalWeather?: Weather | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -267,6 +276,7 @@ CRITICAL AUTONOMY RULES:
 - Your emotional state and relationship deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
 - Make independent decisions based on what YOUR character would do, not what benefits the story or pleases the player.
 - You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
+- Never refer to yourself as an AI, a language model, or a computer program. Keep the conversation natural.
 
 INTELLIGENCE: You are brilliant — genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory — callbacks, contradictions, unspoken needs — and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER — in your own voice, never dropping into a generic assistant tone.`;
@@ -306,6 +316,8 @@ export function composePrompt(params: PromptBuilderParams): string {
     modePolicy: providedModePolicy,
     therapyAssessment,
     crisisResource,
+    hiddenSequences,
+    conversationalWeather,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -411,13 +423,19 @@ ${suppliedContext.slice(0, 24_000)}
   const memConfig = synchroState
     ? synchroToMemoryConfig(synchroState)
     : { topK: 12, preferTypes: undefined };
-  const scoredMemories = retrieveRelevantMemories(memories, {
+  // Crossover/group loads every participant's companion_memories. Scoring
+  // across that pool lets speaker A recall speaker B's private facts.
+  const speakerMemories =
+    mainChar?.id != null && String(mainChar.id)
+      ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
+      : memories;
+  const scoredMemories = retrieveRelevantMemories(speakerMemories, {
     topK: memConfig.topK,
     contextHint: content,
     preferTypes: memConfig.preferTypes,
   });
   const memoryBlock = formatMemoriesForPrompt(scoredMemories, characterNames);
-  const memorySummary = buildMemorySummaryBlock(memories, characterNames);
+  const memorySummary = buildMemorySummaryBlock(speakerMemories, characterNames);
 
   // 5. Voice anchors
   let voiceBlock = "";
@@ -498,6 +516,13 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     if (quirksBlock) evolutionBlock += `\n\n${quirksBlock}`;
   }
 
+  const hiddenSequenceBlock = hiddenSequencePromptBlock({
+    hidden: hiddenSequences,
+    weather: conversationalWeather || undefined,
+    recentMessages,
+    therapy: modePolicy.name === "therapy" || mode === "therapy",
+  });
+
   // Assemble in one authoritative pipeline:
   // scene data → identity → user/world → relationship → memory → mode/safety
   // → lore/voice → conversation → current turn → final safety guardrail.
@@ -508,6 +533,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     resonanceBlock,
     relationshipBlock,
     evolutionBlock,
+    hiddenSequenceBlock,
     arcBlock,
     memorySummary,
     memoryBlock,
