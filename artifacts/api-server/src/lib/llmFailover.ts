@@ -34,8 +34,7 @@ import {
   isLoopbackUnreachableRuntime,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
-  MINIMAX_FREE_MODEL,
-  JULES_FREE_MODEL,
+  OPENROUTER_FREE_MODEL_CANDIDATES,
   OPENROUTER_VENICE_UNCENSORED,
   MINIMAX_DEFAULT_MODEL,
   openRouterKeyFingerprint,
@@ -433,8 +432,22 @@ const OPENROUTER_CREDITS_HINT =
 
 const OPENROUTER_FREE_DAILY_HINT =
   "Today's free OpenRouter messages are used up. " +
-  "Add $10 at https://openrouter.ai/settings/credits to unlock 1000 requests/day and paid Venice Uncensored. " +
+  "Add $10 at https://openrouter.ai/settings/credits to unlock 1000 requests/day and paid models. " +
   "The free daily limit resets at midnight UTC.";
+
+const OPENROUTER_FREE_MINUTE_HINT =
+  "OpenRouter's free model per-minute limit is temporarily throttling chat. " +
+  "Wait a minute and retry, or add credits at https://openrouter.ai/settings/credits for higher limits.";
+
+/**
+ * Used when chat is already on a :free model (ANIMA_OPENROUTER_FREE or an
+ * explicit :free override). Never mentions Venice credits or setting
+ * ANIMA_OPENROUTER_FREE — that advice is wrong and was the production toast.
+ */
+const OPENROUTER_FREE_PROVIDER_HINT =
+  `The OpenRouter free-tier model is temporarily unavailable ` +
+  `(provider rate limit or gateway error on ${OPENROUTER_FREE_MODEL} or a :free fallback). ` +
+  `Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models.`;
 
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
@@ -562,6 +575,49 @@ export function isOpenRouterFreeMinuteLimitError(err: unknown): boolean {
     hay.includes("free-models-per-min") ||
     hay.includes("free model requests per minute")
   );
+}
+
+function httpStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" && Number.isFinite(status) ? status : undefined;
+}
+
+/**
+ * Transient OpenRouter gateway / transport failures that are worth retrying
+ * on the same model before hopping to another :free candidate.
+ */
+export function isOpenRouterTransientGatewayError(err: unknown): boolean {
+  if (isProviderConnectionError(err)) return true;
+  const status = httpStatus(err);
+  return status === 502 || status === 503 || status === 504;
+}
+
+/** True when chat is already routed to a :free OpenRouter model. */
+export function isOpenRouterAlreadyFreeTier(model?: string): boolean {
+  if (preferOpenRouterFreeTier() || openRouterCreditFallback) return true;
+  if (model && isOpenRouterFreeModel(model)) return true;
+  return isOpenRouterFreeModel(resolveOpenRouterModel("standard").model);
+}
+
+/**
+ * Provider 429/5xx on a :free slug that is NOT the account-wide daily cap.
+ * Another free model may still succeed.
+ */
+export function shouldTryNextOpenRouterFreeModel(err: unknown, candidateModel: string): boolean {
+  if (isOpenRouterFreeDailyLimitError(err) || isOpenRouterFreeMinuteLimitError(err)) {
+    return false;
+  }
+  if (!isOpenRouterFreeModel(candidateModel)) {
+    return isProviderQuotaError(err);
+  }
+  if (isProviderQuotaError(err)) return true;
+  return isOpenRouterTransientGatewayError(err) || isOpenRouterProviderServerError(err);
+}
+
+function isOpenRouterProviderServerError(err: unknown): boolean {
+  const status = httpStatus(err);
+  return status === 500 || status === 502 || status === 503 || status === 504;
 }
 
 /** True when the local server said the requested model isn't loaded / known. */
@@ -719,10 +775,19 @@ function customLlmSkippedSuffix(): string {
   );
 }
 
+function attemptedOpenRouterModel(err: unknown, opts: { attemptedModel?: string } = {}): string | undefined {
+  if (opts.attemptedModel) return opts.attemptedModel;
+  if (err && typeof err === "object" && "openRouterModel" in err) {
+    const model = (err as { openRouterModel?: unknown }).openRouterModel;
+    if (typeof model === "string" && model.trim()) return model;
+  }
+  return undefined;
+}
+
 function enrichError(
   err: unknown,
   provider: LlmProviderId = "local",
-  opts: { localConnectionFailed?: boolean } = {},
+  opts: { localConnectionFailed?: boolean; attemptedModel?: string } = {},
 ): Error {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
@@ -739,24 +804,43 @@ function enrichError(
   }
   if (isProviderQuotaError(err)) {
     if (provider === "openrouter") {
+      const alreadyFree = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts));
       const hint = isOpenRouterFreeDailyLimitError(err)
         ? OPENROUTER_FREE_DAILY_HINT
         : isOpenRouterFreeMinuteLimitError(err)
-          ? "OpenRouter's free model per-minute limit is temporarily throttling chat. Wait a minute and retry, or add credits at https://openrouter.ai/settings/credits for higher limits."
-          : hasOpenRouterKey()
-            ? OPENROUTER_CREDITS_HINT
-            : OPENROUTER_SETUP_HINT;
+          ? OPENROUTER_FREE_MINUTE_HINT
+          : alreadyFree
+            ? OPENROUTER_FREE_PROVIDER_HINT
+            : hasOpenRouterKey()
+              ? OPENROUTER_CREDITS_HINT
+              : OPENROUTER_SETUP_HINT;
+      const prefix = alreadyFree && !isOpenRouterFreeDailyLimitError(err)
+        ? "OpenRouter free-tier provider error"
+        : "OpenRouter credits/rate limit exhausted";
       return new Error(
-        `OpenRouter credits/rate limit exhausted: ${summarizeError(err)}. ${hint}` +
+        `${prefix}: ${summarizeError(err)}. ${hint}` +
           localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
           customLlmSkippedSuffix(),
       );
     }
   }
+  if (provider === "openrouter" && isOpenRouterProviderServerError(err)) {
+    const hint = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts))
+      ? OPENROUTER_FREE_PROVIDER_HINT
+      : "Retry shortly. If this persists, try another OpenRouter model or add credits at https://openrouter.ai/settings/credits.";
+    return new Error(
+      `OpenRouter provider failed: ${summarizeError(err)}. ${hint}` +
+        localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
+        customLlmSkippedSuffix(),
+    );
+  }
   if (isProviderConnectionError(err)) {
     if (provider === "openrouter") {
+      const hint = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts))
+        ? OPENROUTER_FREE_PROVIDER_HINT
+        : "Check network egress to openrouter.ai, then retry.";
       return new Error(
-        `OpenRouter connection failed: ${summarizeError(err)}. Check network egress to openrouter.ai, then retry.`,
+        `OpenRouter connection failed: ${summarizeError(err)}. ${hint}`,
       );
     }
     const model = configuredLocalModelLabel();
@@ -1100,8 +1184,7 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
 
 function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
   const out: ResolvedModel[] = [preferred];
-  const freeModels = [OPENROUTER_FREE_MODEL, MINIMAX_FREE_MODEL, JULES_FREE_MODEL];
-  for (const model of freeModels) {
+  for (const model of OPENROUTER_FREE_MODEL_CANDIDATES) {
     if (!out.some((m) => m.model === model)) {
       out.push({ ...preferred, model });
     }
@@ -1110,41 +1193,53 @@ function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
 }
 
 /**
- * Try the preferred OpenRouter model, then the free-tier model when the
- * account has no credits (HTTP 402). A valid free key must still chat.
+ * Try the preferred OpenRouter model, then other :free candidates when the
+ * account has no credits (HTTP 402) or a free provider returns 429/5xx that
+ * is not the account-wide daily/minute cap. Same-model 502/503/connection
+ * retries are the OpenRouter client's maxRetries (default 2).
  */
 async function withOpenRouterCreditFallback<T>(
   preferred: ResolvedModel,
   run: (resolved: ResolvedModel) => Promise<T>,
 ): Promise<{ value: T; resolved: ResolvedModel }> {
   let lastErr: unknown;
-  for (const candidate of openRouterModelCandidates(preferred)) {
+  const candidates = openRouterModelCandidates(preferred);
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
     try {
       const value = await run(candidate);
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
-      if (
-        isProviderQuotaError(err) &&
-        !isOpenRouterFreeModel(candidate.model) &&
-        !isOpenRouterFreeDailyLimitError(err) &&
-        !isOpenRouterFreeMinuteLimitError(err)
-      ) {
-        const creditFallback = isOpenRouterCreditFallbackError(err);
+      if (err && typeof err === "object") {
+        (err as { openRouterModel?: string }).openRouterModel = candidate.model;
+      }
+      const next = candidates[i + 1];
+      if (next && shouldTryNextOpenRouterFreeModel(err, candidate.model)) {
+        const creditFallback =
+          isOpenRouterCreditFallbackError(err) && !isOpenRouterFreeModel(candidate.model);
         if (creditFallback) {
           openRouterCreditFallback = true;
         }
         console.warn(
           `[llm] OpenRouter ${candidate.model} ${
-            creditFallback ? "needs credits" : "is quota/rate limited"
-          } (${summarizeError(err)}); retrying ${OPENROUTER_FREE_MODEL}.`,
+            creditFallback
+              ? "needs credits"
+              : isOpenRouterTransientGatewayError(err)
+                ? "hit a gateway error"
+                : "is quota/rate limited"
+          } (${summarizeError(err)}); retrying ${next.model}.`,
         );
         continue;
       }
       throw err;
     }
   }
-  throw lastErr ?? new Error(OPENROUTER_CREDITS_HINT);
+  throw lastErr ?? new Error(
+    isOpenRouterAlreadyFreeTier(preferred.model)
+      ? OPENROUTER_FREE_PROVIDER_HINT
+      : OPENROUTER_CREDITS_HINT,
+  );
 }
 
 async function runOpenRouterStream(
