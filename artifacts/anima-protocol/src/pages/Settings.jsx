@@ -21,6 +21,11 @@ import { repairStarterCharacters } from "@/lib/seedCharacters";
 import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
+import {
+  formatChatBackgroundUploadError,
+  persistChatBackgroundSettings,
+  uploadChatBackgroundImage,
+} from "@/lib/settingsChatBackground";
 
 const SECTION = {
   ACCOUNT: "account",
@@ -66,6 +71,7 @@ export default function Settings() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [uploadingBg, setUploadingBg] = useState(false);
+  const [bgUploadError, setBgUploadError] = useState("");
   const [showAdultGate, setShowAdultGate] = useState(false);
   const [assigningVoices, setAssigningVoices] = useState(false);
   const [voicesAssigned, setVoicesAssigned] = useState(false);
@@ -323,6 +329,34 @@ export default function Settings() {
 
   const handleLogout = () => logout();
   const setPref = (key, val) => setPrefs((p) => ({ ...p, [key]: val }));
+
+  const handleChatBackgroundFile = async (e) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    setUploadingBg(true);
+    setBgUploadError("");
+    try {
+      const fileUrl = await uploadChatBackgroundImage(
+        file,
+        (payload) => base44.integrations.Core.UploadFile(payload),
+      );
+      setPrefs((p) => ({ ...p, chat_bg_theme: "custom", chat_bg_image: fileUrl }));
+      const next = await persistChatBackgroundSettings({
+        prefs,
+        fileUrl,
+        updateMe: (data) => base44.auth.updateMe(data),
+      });
+      setPrefs(next);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setBgUploadError(formatChatBackgroundUploadError(err));
+    } finally {
+      setUploadingBg(false);
+      input.value = "";
+    }
+  };
 
   const handleAssignVoices = async () => {
     setAssigningVoices(true);
@@ -801,20 +835,19 @@ export default function Settings() {
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files[0];
-                          if (!file) return;
-                          setUploadingBg(true);
-                          const { file_url } = await base44.integrations.Core.UploadFile({ file });
-                          setPref("chat_bg_image", file_url);
-                          setUploadingBg(false);
-                        }}
+                        disabled={uploadingBg}
+                        onChange={handleChatBackgroundFile}
                       />
                       <span className="flex items-center gap-2 px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-widest uppercase transition-all">
                         <Upload className="w-3 h-3" />
                         {uploadingBg ? "Uploading..." : "Upload Image"}
                       </span>
                     </label>
+                    {bgUploadError ? (
+                      <p role="alert" className="text-[10px] font-mono text-red-400/90">
+                        {bgUploadError}
+                      </p>
+                    ) : null}
                     {prefs.chat_bg_image && (
                       <div className="relative w-full h-24 border border-primary/20 overflow-hidden">
                         <img src={prefs.chat_bg_image} alt="bg preview" className="w-full h-full object-cover" />
