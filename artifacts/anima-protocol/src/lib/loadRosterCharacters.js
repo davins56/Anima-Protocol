@@ -11,6 +11,14 @@ import {
 import { getStarterRoster, retryStarterSeed } from "@/lib/seedCharacters";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
+import {
+  isStoreDatabaseError,
+  isStoreReadUnavailable,
+} from "@/lib/storeErrorSignals";
+
+// Re-exported for existing importers; the implementation now lives in
+// storeErrorSignals.js so Characters.jsx and this loader cannot drift apart.
+export { isStoreDatabaseError, isStoreReadUnavailable };
 
 function asAnimaChars(animas) {
   return (animas || []).map((a) => ({
@@ -19,14 +27,6 @@ function asAnimaChars(animas) {
     category: a.archetype || "guardian",
     universe: "Anima",
   }));
-}
-
-/** True when /api/store failed because Postgres is down / unreachable. */
-export function isStoreDatabaseError(err) {
-  const status = err?.status;
-  if (status === 503) return true;
-  const msg = String(err?.message || "");
-  return /database|postgres|unavailable|unreachable|connection/i.test(msg);
 }
 
 /** Bundled starter roster for chat pickers (not yet confirmed in the account store). */
