@@ -9,7 +9,7 @@ describe("analyzeCodeRepairInput", () => {
       diagnostics: {
         openrouterConfigured: true,
         openrouterEnv: "OPENROUTER_API_KEY",
-        openrouterModel: "minimax/minimax-m2.7:free",
+        openrouterModel: "minimax/minimax-m3:free",
         openrouterIsFreeTier: true,
       },
     });
