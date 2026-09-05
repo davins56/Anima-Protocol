@@ -24,14 +24,10 @@ import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharacter
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
 import { characterCreatePayload } from "@/lib/characterAvatarUpload";
-
-/** True when /api/store failed because Postgres is down / unreachable. */
-function isStoreDatabaseError(err) {
-  const status = err?.status;
-  if (status === 503) return true;
-  const msg = String(err?.message || "");
-  return /database|postgres|unavailable|unreachable|connection/i.test(msg);
-}
+import {
+  isStoreDatabaseError,
+  isStoreReadUnavailable,
+} from "@/lib/storeErrorSignals";
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -116,15 +112,22 @@ export default function Characters() {
       setCharacters(data || []);
     } catch (err) {
       const message = err?.message || "Could not load characters.";
-      if (isStoreDatabaseError(err)) {
+      // Fall back for *any* failed read, but only blame the database when the
+      // server actually said so — a timeout or a Cloudflare edge page is not a
+      // database outage.
+      if (isStoreReadUnavailable(err)) {
         // seedCharacters.js (package root) seeds Supabase and is NOT read by the
         // UI. The live roster is src/lib/seedCharacters.js → /api/store → Postgres.
-        // When Postgres is down, surface that bundled roster so the list is not empty.
+        // When the store cannot be read, surface that bundled roster so the list
+        // is not empty.
         const bundled = getStarterRoster();
         setCharacters(bundled);
         setUsingBundledSeed(true);
+        const recovery = isStoreDatabaseError(err)
+          ? "not saved to your account until the database is reachable"
+          : "not saved to your account until the store can be reached again";
         setLoadError(
-          `${message}. Showing the bundled starter roster (${bundled.length}) — not saved to your account until the database is reachable.`,
+          `${message}. Showing the bundled starter roster (${bundled.length}) — ${recovery}.`,
         );
       } else {
         setLoadError(message);
