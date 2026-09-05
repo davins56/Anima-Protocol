@@ -16,15 +16,16 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
+    OPENROUTER_FREE_MODEL: "minimax/minimax-m3:free",
     OPENROUTER_FREE_M3_MODEL: "minimax/minimax-m3:free",
+    OPENROUTER_FREE_M27_MODEL: "minimax/minimax-m2.7:free",
     MINIMAX_FREE_MODEL: "minimax/minimax-01:free",
     JULES_FREE_MODEL: "google/gemma-3-12b-it:free",
     OPENROUTER_FREE_MODEL_CANDIDATES: [
-      "minimax/minimax-m2.7:free",
       "minimax/minimax-m3:free",
       "google/gemma-3-12b-it:free",
       "minimax/minimax-01:free",
+      "minimax/minimax-m2.7:free",
     ],
     MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
@@ -555,7 +556,7 @@ describe("resolveOpenRouterModel", () => {
     process.env.ANIMA_OPENROUTER_FREE = "true";
     delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
     delete process.env.ANIMA_OPENROUTER_MODEL_FAMILY;
-    expect(resolveOpenRouterModel("standard").model).toBe("minimax/minimax-m2.7:free");
+    expect(resolveOpenRouterModel("standard").model).toBe("minimax/minimax-m3:free");
   });
 
   it("can select a supported OpenRouter family by name", () => {
@@ -837,12 +838,12 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(result.model).toBe("minimax/minimax-m3:free");
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[0][0].model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
     expect(isOpenRouterCreditFallback()).toBe(true);
   });
 
@@ -866,7 +867,7 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(result.model).toBe("minimax/minimax-m3:free");
     expect(isOpenRouterCreditFallback()).toBe(false);
     expect(resolveOpenRouterModel("standard").model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
@@ -1097,14 +1098,14 @@ describe("createChatStreamWithFailover", () => {
     }
     expect(createMock).toHaveBeenCalledTimes(4);
     expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "minimax/minimax-m2.7:free",
       "minimax/minimax-m3:free",
       "google/gemma-3-12b-it:free",
       "minimax/minimax-01:free",
+      "minimax/minimax-m2.7:free",
     ]);
   });
 
-  it("failovers from m2.7:free to m3:free on a provider 429 that is not the daily cap", async () => {
+  it("failovers from m3:free to Gemma on a provider 429 that is not the daily cap", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
@@ -1115,7 +1116,7 @@ describe("createChatStreamWithFailover", () => {
       .mockRejectedValueOnce(
         Object.assign(new Error("429 Provider returned error"), { status: 429 }),
       )
-      .mockResolvedValueOnce(fakeStream("m3"));
+      .mockResolvedValueOnce(fakeStream("gemma"));
 
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -1125,13 +1126,13 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m3:free");
+    expect(result.model).toBe("google/gemma-3-12b-it:free");
     expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
+    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m3:free");
+    expect(createMock.mock.calls[1][0].model).toBe("google/gemma-3-12b-it:free");
   });
 
-  it("failovers from m2.7:free to m3:free after a provider 502", async () => {
+  it("failovers from m3:free to Gemma after a provider 502", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
@@ -1140,7 +1141,7 @@ describe("createChatStreamWithFailover", () => {
     process.env.ANIMA_OPENROUTER_FREE = "true";
     createMock
       .mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }))
-      .mockResolvedValueOnce(fakeStream("m3"));
+      .mockResolvedValueOnce(fakeStream("gemma"));
 
     const result = await createChatStreamWithFailover({
       tier: "standard",
@@ -1149,10 +1150,10 @@ describe("createChatStreamWithFailover", () => {
       messages: [{ role: "user", content: "hello" }],
     });
 
-    expect(result.model).toBe("minimax/minimax-m3:free");
+    expect(result.model).toBe("google/gemma-3-12b-it:free");
     expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
+    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m3:free");
+    expect(createMock.mock.calls[1][0].model).toBe("google/gemma-3-12b-it:free");
   });
 
   it("does not hop free models when the account-wide daily cap is already hit", async () => {
@@ -1186,7 +1187,7 @@ describe("createChatStreamWithFailover", () => {
       expect(message).not.toMatch(/Venice Uncensored/);
     }
     expect(createMock).toHaveBeenCalledTimes(1);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m3:free");
   });
 
   it("fails over to OpenRouter when local is unreachable and fallback is enabled", async () => {
@@ -1541,7 +1542,7 @@ describe("probeLlmProviders", () => {
       provider: "openrouter",
       configured: true,
       ok: true,
-      model: "minimax/minimax-m2.7:free",
+      model: "minimax/minimax-m3:free",
     });
   });
 });
