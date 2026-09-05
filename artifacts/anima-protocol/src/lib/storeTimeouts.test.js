@@ -38,6 +38,9 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("STORE_FETCH_TIMEOUT_MS");
     expect(client).toContain("STORE_SESSION_CREATE_TIMEOUT_MS");
     expect(client).toContain("STORE_COMPANION_CREATE_TIMEOUT_MS");
+    expect(client).toMatch(
+      /export \{[\s\S]*STORE_LIST_RETRY_LIMIT[\s\S]*STORE_SESSION_CREATE_TIMEOUT_MS/,
+    );
     expect(client).toContain("timeoutMs: opts.timeoutMs");
     expect(client).toContain("AbortSignal.timeout");
     expect(client).toContain("createStoreAbortSignal");
