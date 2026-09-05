@@ -32,11 +32,11 @@ export const LLM_STREAM_TOTAL_MS = 50_000;
 
 /**
  * Browser `fetch` abort for `/chat/messages`.
- * Covers a full free-tier open plus a first-chunk wait so the UI does not
- * throw a generic abort while the Worker is still working.
+ * Covers a full free-tier open plus the server consume cap so the UI does
+ * not abort while the Worker is still producing a valid reply.
  */
 export const CHAT_STREAM_TIMEOUT_MS =
-  LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS;
+  LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_TOTAL_MS;
 
 export function llmOpenTimeoutMs(opts: { freeTierCascade?: boolean } = {}): number {
   return opts.freeTierCascade ? LLM_OPEN_TIMEOUT_FREE_TIER_MS : LLM_OPEN_TIMEOUT_MS;

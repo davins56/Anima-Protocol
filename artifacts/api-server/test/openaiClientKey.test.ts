@@ -79,15 +79,25 @@ describe("openRouterMaxRetries", () => {
 
   it("skips SDK retries while more :free candidates remain", () => {
     delete process.env.ANIMA_OPENROUTER_MAX_RETRIES;
-    expect(openRouterCascadeMaxRetries(3)).toBe(0);
-    expect(openRouterCascadeMaxRetries(1)).toBe(0);
-    expect(openRouterCascadeMaxRetries(0)).toBe(2);
+    expect(openRouterCascadeMaxRetries(3, "minimax/minimax-m2.7:free")).toBe(0);
+    expect(openRouterCascadeMaxRetries(1, "minimax/minimax-m3:free")).toBe(0);
+    expect(openRouterCascadeMaxRetries(0, "google/gemma-4-31b-it:free")).toBe(2);
+  });
+
+  it("keeps SDK retries on a paid preferred model even when free fallbacks remain", () => {
+    delete process.env.ANIMA_OPENROUTER_MAX_RETRIES;
+    expect(
+      openRouterCascadeMaxRetries(
+        3,
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+      ),
+    ).toBe(2);
   });
 
   it("honors ANIMA_OPENROUTER_MAX_RETRIES on the last cascade candidate", () => {
     process.env.ANIMA_OPENROUTER_MAX_RETRIES = "0";
-    expect(openRouterCascadeMaxRetries(0)).toBe(0);
-    expect(openRouterCascadeMaxRetries(2)).toBe(0);
+    expect(openRouterCascadeMaxRetries(0, "minimax/minimax-m2.7:free")).toBe(0);
+    expect(openRouterCascadeMaxRetries(2, "minimax/minimax-m2.7:free")).toBe(0);
   });
 });
 

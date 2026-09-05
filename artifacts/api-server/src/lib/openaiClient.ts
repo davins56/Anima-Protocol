@@ -270,13 +270,21 @@ export function openRouterMaxRetries(): number {
 }
 
 /**
- * Per-attempt SDK retries while cascading :free models.
- * Intermediate hops use 0 so a 429/502/400 fails immediately and the next
- * live slug can run instead of burning the shared open-abort budget on
- * same-model retries. The last candidate keeps `openRouterMaxRetries()`.
+ * Per-attempt SDK retries while cascading OpenRouter models.
+ * Skip same-model retries only when this hop is already a `:free` slug and
+ * another candidate remains — hopping is cheaper than retrying a known-bad
+ * free provider. Paid preferred models keep `openRouterMaxRetries()` even
+ * when free fallbacks are queued (a 502 on Venice should still retry).
+ * The last candidate always keeps `openRouterMaxRetries()`.
  */
-export function openRouterCascadeMaxRetries(remainingCandidates: number): number {
-  if (remainingCandidates > 0) return 0;
+export function openRouterCascadeMaxRetries(
+  remainingCandidates: number,
+  candidateModel?: string,
+): number {
+  const candidateIsFree =
+    typeof candidateModel === "string" &&
+    candidateModel.trim().toLowerCase().endsWith(":free");
+  if (remainingCandidates > 0 && candidateIsFree) return 0;
   return openRouterMaxRetries();
 }
 

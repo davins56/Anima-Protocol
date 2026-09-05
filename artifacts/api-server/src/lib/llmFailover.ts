@@ -1175,7 +1175,7 @@ async function probeOneProvider(
             messages: [{ role: "user", content: "Reply with the single word: ok" }],
             temperature: 0,
           },
-          { maxRetries: openRouterCascadeMaxRetries(remaining) },
+          { maxRetries: openRouterCascadeMaxRetries(remaining, m.model) },
         ),
       );
       return {
@@ -1323,8 +1323,9 @@ function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
  * Try the preferred OpenRouter model, then other :free candidates when the
  * account has no credits (HTTP 402) or a free provider returns 400/429/5xx
  * that is not ZDR / data-policy / the account-wide daily/minute cap.
- * Intermediate hops pass remainingCandidates > 0 so the SDK skips retries
- * (`openRouterCascadeMaxRetries`); the last candidate keeps maxRetries.
+ * Intermediate `:free` hops pass remainingCandidates > 0 so the SDK skips
+ * retries (`openRouterCascadeMaxRetries`); paid preferred models and the
+ * last candidate keep maxRetries.
  */
 async function withOpenRouterCreditFallback<T>(
   preferred: ResolvedModel,
@@ -1392,7 +1393,7 @@ async function runOpenRouterStream(
         },
         {
           ...(req.signal ? { signal: req.signal } : {}),
-          maxRetries: openRouterCascadeMaxRetries(remaining),
+          maxRetries: openRouterCascadeMaxRetries(remaining, m.model),
         },
       ),
   );
@@ -1454,7 +1455,7 @@ async function runOpenRouterCompletion(
         },
         {
           ...(req.signal ? { signal: req.signal } : {}),
-          maxRetries: openRouterCascadeMaxRetries(remaining),
+          maxRetries: openRouterCascadeMaxRetries(remaining, m.model),
         },
       ),
   );

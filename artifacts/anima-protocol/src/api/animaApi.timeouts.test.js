@@ -9,7 +9,7 @@ const repoRoot = join(srcRoot, "../../..");
 describe("chat stream client abort", () => {
   it("stays above the Worker free-tier open budget so hops are not aborted in the browser", () => {
     const animaApi = readFileSync(join(srcRoot, "api/animaApi.js"), "utf8");
-    expect(animaApi).toContain("export const CHAT_STREAM_TIMEOUT_MS = 115_000");
+    expect(animaApi).toContain("export const CHAT_STREAM_TIMEOUT_MS = 130_000");
     expect(animaApi).toContain("setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS)");
   });
 
@@ -19,9 +19,9 @@ describe("chat stream client abort", () => {
       "utf8",
     );
     expect(serverTimeouts).toMatch(
-      /CHAT_STREAM_TIMEOUT_MS =\s*LLM_OPEN_TIMEOUT_FREE_TIER_MS \+ LLM_STREAM_FIRST_CHUNK_MS/,
+      /CHAT_STREAM_TIMEOUT_MS =\s*LLM_OPEN_TIMEOUT_FREE_TIER_MS \+ LLM_STREAM_TOTAL_MS/,
     );
     expect(serverTimeouts).toMatch(/LLM_OPEN_TIMEOUT_FREE_TIER_MS = 80_000/);
-    expect(serverTimeouts).toMatch(/LLM_STREAM_FIRST_CHUNK_MS = 35_000/);
+    expect(serverTimeouts).toMatch(/LLM_STREAM_TOTAL_MS = 50_000/);
   });
 });

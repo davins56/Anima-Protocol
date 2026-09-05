@@ -70,7 +70,10 @@ vi.mock("../src/lib/openaiClient", () => {
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
     localLlmMaxRetries: () => 2,
     openRouterMaxRetries: () => 2,
-    openRouterCascadeMaxRetries: (remaining: number) => (remaining > 0 ? 0 : 2),
+    openRouterCascadeMaxRetries: (remaining: number, candidateModel?: string) =>
+      remaining > 0 && typeof candidateModel === "string" && candidateModel.endsWith(":free")
+        ? 0
+        : 2,
     resetLlmClientsForTests: () => {},
   };
 });
