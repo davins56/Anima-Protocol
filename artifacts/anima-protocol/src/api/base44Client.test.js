@@ -7,7 +7,10 @@ import {
   STORE_FETCH_TIMEOUT_MS,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from "./base44Client";
-import { isStoreDatabaseError } from "@/lib/loadRosterCharacters";
+import {
+  isStoreDatabaseError,
+  isStoreReadUnavailable,
+} from "@/lib/loadRosterCharacters";
 
 describe("ChatSession store wrapper", () => {
   beforeEach(() => {
@@ -296,7 +299,7 @@ describe("Character.list HTML failures", () => {
     delete global.fetch;
   });
 
-  it("throws a 503 store/database error instead of Cloudflare HTML", async () => {
+  it("throws a clean store error instead of Cloudflare HTML, and does not blame the database", async () => {
     global.fetch = vi.fn(async () =>
       new Response(
         `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US">`,
@@ -315,12 +318,20 @@ describe("Character.list HTML failures", () => {
     } catch (err) {
       caught = err;
     }
+    // The upstream status is preserved now that classification no longer
+    // depends on it being rewritten to 503.
     expect(caught).toMatchObject({
-      status: 503,
-      message: expect.stringMatching(/unreachable|database/i),
+      status: 500,
+      transport: true,
+      message: expect.stringMatching(/unreachable/i),
     });
     expect(String(caught.message)).not.toMatch(/DOCTYPE|lt IE 7|no-js ie6/i);
-    expect(isStoreDatabaseError(caught)).toBe(true);
+    // A Cloudflare error page tells us nothing about Postgres, so the UI must
+    // not report a database outage...
+    expect(isStoreDatabaseError(caught)).toBe(false);
+    expect(String(caught.message)).not.toMatch(/database/i);
+    // ...but the roster is still unreadable, so the bundled fallback applies.
+    expect(isStoreReadUnavailable(caught)).toBe(true);
   });
 
   it("treats a 200 homepage HTML body (www path-dropped redirect) as a store error", async () => {

@@ -117,8 +117,11 @@ async function isRetryableStoreReset(res) {
   }
 }
 
+// Shown when the response never came from the API (Cloudflare error page,
+// www→apex redirect landing on the SPA shell, truncated body). We have no
+// server verdict in that case, so this must NOT blame the database.
 export const STORE_UNREACHABLE_MESSAGE =
-  'The companion store is unreachable. The database could not be reached — retry in a moment.';
+  'The companion store is unreachable — the server sent an unexpected response. Retry in a moment.';
 
 const STORE_API_NOT_FOUND_MESSAGE =
   'Character store API not found — the backend may not be running or /api is not proxied to it.';
@@ -138,10 +141,19 @@ export function isHtmlErrorBody(text, contentType) {
   );
 }
 
-// Parse a failed store response into a human-readable message. Non-JSON bodies
-// (Cloudflare 1101/524 HTML, www→apex homepage HTML, Express 404) must never
-// dump a raw snippet into Character library loadError.
-export async function parseStoreErrorResponse(res) {
+// Non-JSON bodies (Cloudflare 1101/524 HTML, www→apex homepage HTML, Express
+// 404) must never dump a raw snippet into Character library loadError.
+/**
+ * Read a failed store response once, keeping the API's structured verdict.
+ *
+ * `dbError` / `reason` come straight from the api-server error handler. When
+ * the body is not JSON we never reached that handler, so we mark the failure
+ * as `transport` rather than guessing at a cause.
+ *
+ * @returns {Promise<{message: string, reason?: string, code?: string,
+ *   dbError?: boolean, transport?: boolean}>}
+ */
+export async function parseStoreErrorDetail(res) {
   const text = await res.text();
   const contentType =
     typeof res.headers?.get === 'function'
@@ -149,25 +161,49 @@ export async function parseStoreErrorResponse(res) {
       : undefined;
   try {
     const json = JSON.parse(text);
-    return json.error || res.statusText || `HTTP ${res.status}`;
+    return {
+      message: json.error || res.statusText || `HTTP ${res.status}`,
+      reason: typeof json.reason === 'string' ? json.reason : undefined,
+      code: typeof json.code === 'string' ? json.code : undefined,
+      dbError: typeof json.dbError === 'boolean' ? json.dbError : undefined,
+    };
   } catch {
     if (res.status === 404 && !isHtmlErrorBody(text, contentType)) {
-      return STORE_API_NOT_FOUND_MESSAGE;
+      return { message: STORE_API_NOT_FOUND_MESSAGE, transport: true };
     }
     if (isHtmlErrorBody(text, contentType) || res.status >= 500) {
-      return STORE_UNREACHABLE_MESSAGE;
+      return { message: STORE_UNREACHABLE_MESSAGE, transport: true };
     }
     if (res.status === 404) {
-      return STORE_API_NOT_FOUND_MESSAGE;
+      return { message: STORE_API_NOT_FOUND_MESSAGE, transport: true };
     }
-    return STORE_UNREACHABLE_MESSAGE;
+    return { message: STORE_UNREACHABLE_MESSAGE, transport: true };
   }
 }
 
-function storeError(res, message) {
-  const e = new Error(message);
-  e.status =
-    message === STORE_UNREACHABLE_MESSAGE ? 503 : res.status;
+/** Message-only view of parseStoreErrorDetail. Consumes the body. */
+export async function parseStoreErrorResponse(res) {
+  return (await parseStoreErrorDetail(res)).message;
+}
+
+/**
+ * Build the Error thrown to callers, carrying the server's classification so
+ * the UI does not have to re-derive it from prose.
+ *
+ * @param {{status?: number}} res
+ * @param {string|{message: string, reason?: string, code?: string,
+ *   dbError?: boolean, transport?: boolean}} detail
+ */
+function storeError(res, detail) {
+  const info = typeof detail === 'string' ? { message: detail } : detail || {};
+  const e = new Error(info.message);
+  // A non-JSON body means the API never answered; report it as unavailable so
+  // callers keep their 5xx handling, but flag it as transport, not database.
+  e.status = info.transport && !res?.status ? 503 : (res?.status ?? 503);
+  if (info.transport) e.transport = true;
+  if (info.reason) e.reason = info.reason;
+  if (info.code) e.code = info.code;
+  if (typeof info.dbError === 'boolean') e.dbError = info.dbError;
   return e;
 }
 
@@ -846,17 +882,23 @@ async function queryEntity(entityName, opts) {
       return [];
     }
     if (!res.ok) {
-      throw storeError(res, await parseStoreErrorResponse(res));
+      throw storeError(res, await parseStoreErrorDetail(res));
     }
     const text = await res.text();
     if (isHtmlErrorBody(text, res.headers?.get?.('content-type'))) {
-      throw storeError({ status: 503 }, STORE_UNREACHABLE_MESSAGE);
+      throw storeError(
+        { status: 503 },
+        { message: STORE_UNREACHABLE_MESSAGE, transport: true },
+      );
     }
     let data;
     try {
       data = JSON.parse(text);
     } catch {
-      throw storeError({ status: 503 }, STORE_UNREACHABLE_MESSAGE);
+      throw storeError(
+        { status: 503 },
+        { message: STORE_UNREACHABLE_MESSAGE, transport: true },
+      );
     }
     // Don't cache an empty roster while bootstrap may still be seeding — pages
     // that fetched too early would otherwise keep [] for the TTL window.
@@ -892,7 +934,7 @@ async function throwErr(res) {
       'Session not recognized by the server — sign out, sign back in, and try again.',
     );
   }
-  throw storeError(res, await parseStoreErrorResponse(res));
+  throw storeError(res, await parseStoreErrorDetail(res));
 }
 
 // Read a session's messages, ascending (chronological) seq. With no limit this

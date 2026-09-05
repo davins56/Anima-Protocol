@@ -97,8 +97,15 @@ app.use(
         res.status(503).json({
           error: dbInfo.isDbError
             ? dbInfo.safeMessage
-            : "The companion store is unreachable.",
-          reason: dbInfo.isDbError ? dbInfo.reason : "unavailable",
+            : "The companion store is temporarily unavailable.",
+          // Report the real verdict. Previously a non-database failure on a
+          // store path was sent as reason 'unavailable' -- a DbErrorReason --
+          // so the UI told users the database was down whenever any store
+          // route threw. dbError is the explicit signal clients read; reason
+          // stays for older clients and is now honest ('internal' when the
+          // database was not involved).
+          dbError: dbInfo.isDbError,
+          reason: dbInfo.reason,
           code: dbInfo.code ?? (store ? "store_unavailable" : "database_unavailable"),
         });
         return;
