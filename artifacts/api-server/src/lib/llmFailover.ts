@@ -313,19 +313,26 @@ function localUsable(): boolean {
  * OpenRouter is used when no custom LLM is configured (and a key is present),
  * or after local only when ANIMA_OPENROUTER_FALLBACK=true. Custom mode
  * (`ANIMA_LLM_PROVIDER=custom`) never includes OpenRouter.
+ *
+ * MiniMax Global sits after OpenRouter so exhausted :free hops (provider
+ * 400/429/5xx) can fall through to the direct MiniMax API when a key is set.
+ * `ANIMA_LLM_PROVIDER=minimax` keeps MiniMax-only.
  */
 export function getProviderChain(): LlmProviderId[] {
   const chain: LlmProviderId[] = [];
   if (!preferMinimaxOnly() && localUsable()) chain.push("local");
-  if (hasMinimaxKey() && (preferMinimaxOnly() || !preferCustomLlmOnly())) {
+  if (preferMinimaxOnly() && hasMinimaxKey()) {
     chain.push("minimax");
+    return chain;
   }
   const openRouterAllowed =
     hasOpenRouterKey() &&
-    !hasMinimaxKey() &&
     !preferCustomLlmOnly() &&
     (chain.length === 0 || allowOpenRouterFallback());
   if (openRouterAllowed) chain.push("openrouter");
+  if (hasMinimaxKey() && !preferCustomLlmOnly()) {
+    chain.push("minimax");
+  }
   return chain;
 }
 
@@ -333,6 +340,9 @@ export function getProviderChain(): LlmProviderId[] {
  * OpenRouter may cover a down custom-LLM host, but auth / model / app errors
  * from that host must surface. Silently skipping them burns OpenRouter quota
  * and looks like the custom LLM was never tried.
+ *
+ * OpenRouter → MiniMax only on hoppable provider blips (400/429/5xx), never
+ * on ZDR / data-policy / free daily-minute account errors.
  */
 function shouldTryNextProvider(
   provider: LlmProviderId,
@@ -341,6 +351,11 @@ function shouldTryNextProvider(
 ): boolean {
   if (!hasNext) return false;
   if (provider === "local" && !isProviderConnectionError(err)) return false;
+  if (provider === "openrouter") {
+    if (isOpenRouterAccountPolicyError(err)) return false;
+    const model = attemptedOpenRouterModel(err) || OPENROUTER_FREE_MODEL;
+    return shouldTryNextOpenRouterFreeModel(err, model);
+  }
   return true;
 }
 
@@ -444,11 +459,17 @@ const OPENROUTER_FREE_MINUTE_HINT =
  * Used when chat is already on a :free model (ANIMA_OPENROUTER_FREE or an
  * explicit :free override). Never mentions Venice credits or setting
  * ANIMA_OPENROUTER_FREE — that advice is wrong and was the production toast.
+ * Exported so SSE / tests can remap the raw OpenRouter wrapper.
  */
-const OPENROUTER_FREE_PROVIDER_HINT =
+export const OPENROUTER_FREE_PROVIDER_HINT =
   `The OpenRouter free-tier model is temporarily unavailable ` +
   `(provider rejection, rate limit, or gateway error on ${OPENROUTER_FREE_MODEL} or a :free fallback). ` +
   `Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models.`;
+
+export const MINIMAX_DIRECT_FAIL_HINT =
+  "MiniMax Global (api.minimax.io) also failed after OpenRouter free-tier hops. " +
+  "Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY and ANIMA_MINIMAX_MODEL, then retry, " +
+  "or add OpenRouter credits at https://openrouter.ai/settings/credits.";
 
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
@@ -619,6 +640,14 @@ export function isOpenRouterAccountPolicyError(err: unknown): boolean {
 }
 
 /**
+ * OpenRouter's opaque wrapper ("400 Provider returned error") — never show
+ * this raw string in the chat UI after hops are exhausted.
+ */
+export function isOpenRouterGenericProviderError(err: unknown): boolean {
+  return summarizeError(err).toLowerCase().includes("provider returned error");
+}
+
+/**
  * Model-specific client / provider rejection (HTTP 400/404/422 or the
  * generic "Provider returned error" wrapper). Another live :free slug
  * may still complete. Account/policy errors are excluded.
@@ -628,7 +657,8 @@ export function isOpenRouterModelSpecificClientError(err: unknown): boolean {
   const status = httpStatus(err);
   if (status === 400 || status === 404 || status === 422) return true;
   const hay = summarizeError(err).toLowerCase();
-  return hay.includes("provider returned error") && (status === 400 || status === undefined);
+  if (!hay.includes("provider returned error")) return false;
+  return status === 400 || status === 401 || status === 403 || status === undefined;
 }
 
 /**
@@ -816,18 +846,62 @@ function attemptedOpenRouterModel(err: unknown, opts: { attemptedModel?: string 
   return undefined;
 }
 
+function openRouterErrorDetail(err: unknown): string {
+  if (isOpenRouterGenericProviderError(err)) return "";
+  const summary = summarizeError(err).trim();
+  return summary ? `${summary}. ` : "";
+}
+
+function openRouterFailureMessage(
+  prefix: string,
+  err: unknown,
+  hint: string,
+  opts: { localConnectionFailed?: boolean } = {},
+): Error {
+  const detail = openRouterErrorDetail(err);
+  const head = detail ? `${prefix}: ${detail}${hint}` : `${prefix}. ${hint}`;
+  return new Error(
+    head +
+      localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
+      customLlmSkippedSuffix(),
+  );
+}
+
 function enrichError(
   err: unknown,
   provider: LlmProviderId = "local",
-  opts: { localConnectionFailed?: boolean; attemptedModel?: string } = {},
+  opts: {
+    localConnectionFailed?: boolean;
+    attemptedModel?: string;
+    openRouterHopsExhausted?: boolean;
+  } = {},
 ): Error {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
+  }
+  // Remap the opaque wrapper before auth/quota so "401 Provider returned
+  // error" is never mistaken for a bad OpenRouter key in the chat toast.
+  if (
+    provider === "openrouter" &&
+    isOpenRouterGenericProviderError(err) &&
+    !isOpenRouterAccountPolicyError(err)
+  ) {
+    return openRouterFailureMessage(
+      "OpenRouter free-tier provider error",
+      err,
+      OPENROUTER_FREE_PROVIDER_HINT,
+      opts,
+    );
   }
   if (isProviderAuthError(err)) {
     if (provider === "openrouter") {
       return new Error(
         `OpenRouter authentication failed: ${summarizeError(err)}. Check OPENROUTER_API_KEY on the Cloudflare Worker Secrets Store (https://openrouter.ai/keys), then redeploy.`,
+      );
+    }
+    if (provider === "minimax") {
+      return new Error(
+        `MiniMax authentication failed. Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY, then redeploy.`,
       );
     }
     return new Error(
@@ -849,31 +923,21 @@ function enrichError(
       const prefix = alreadyFree && !isOpenRouterFreeDailyLimitError(err)
         ? "OpenRouter free-tier provider error"
         : "OpenRouter credits/rate limit exhausted";
-      return new Error(
-        `${prefix}: ${summarizeError(err)}. ${hint}` +
-          localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
-          customLlmSkippedSuffix(),
-      );
+      return openRouterFailureMessage(prefix, err, hint, opts);
     }
   }
   if (provider === "openrouter" && isOpenRouterProviderServerError(err)) {
     const hint = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts))
       ? OPENROUTER_FREE_PROVIDER_HINT
       : "Retry shortly. If this persists, try another OpenRouter model or add credits at https://openrouter.ai/settings/credits.";
-    return new Error(
-      `OpenRouter provider failed: ${summarizeError(err)}. ${hint}` +
-        localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
-        customLlmSkippedSuffix(),
-    );
+    return openRouterFailureMessage("OpenRouter provider failed", err, hint, opts);
   }
   if (isProviderConnectionError(err)) {
     if (provider === "openrouter") {
       const hint = isOpenRouterAlreadyFreeTier(attemptedOpenRouterModel(err, opts))
         ? OPENROUTER_FREE_PROVIDER_HINT
         : "Check network egress to openrouter.ai, then retry.";
-      return new Error(
-        `OpenRouter connection failed: ${summarizeError(err)}. ${hint}`,
-      );
+      return openRouterFailureMessage("OpenRouter connection failed", err, hint, opts);
     }
     const model = configuredLocalModelLabel();
     const host = summarizeLocalLlmBaseUrl().host ?? "?";
@@ -890,8 +954,34 @@ function enrichError(
         `Create the model on that host (e.g. \`ollama create anima-chat\`) or set ANIMA_OLLAMA_MODEL_STANDARD to a model id the server actually serves. See docs/llm-deploy.md.`,
     );
   }
+  if (
+    provider === "openrouter" &&
+    isOpenRouterModelSpecificClientError(err) &&
+    !isOpenRouterAccountPolicyError(err)
+  ) {
+    return openRouterFailureMessage(
+      "OpenRouter free-tier provider error",
+      err,
+      OPENROUTER_FREE_PROVIDER_HINT,
+      opts,
+    );
+  }
+  if (provider === "minimax") {
+    if (opts.openRouterHopsExhausted) {
+      return new Error(MINIMAX_DIRECT_FAIL_HINT);
+    }
+    return new Error(
+      `MiniMax chat failed. Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY and ANIMA_MINIMAX_MODEL, then retry.`,
+    );
+  }
   const base = err instanceof Error ? err : new Error(String(err));
-  return base;
+  return remapGenericProviderError(base);
+}
+
+/** Last-line remap so the raw OpenRouter wrapper cannot leave this module. */
+export function remapGenericProviderError(err: Error): Error {
+  if (!isOpenRouterGenericProviderError(err)) return err;
+  return new Error(OPENROUTER_FREE_PROVIDER_HINT);
 }
 
 /** Secret-free routing diagnostic for operators and the chat UI. */
@@ -965,9 +1055,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       }
     }
     if (chain.includes("minimax")) {
-      noteParts.push(
-        `MiniMax model=${minimaxModel.model} (primary cloud provider).`,
-      );
+      const minimaxRole =
+        chain[0] === "minimax"
+          ? "primary cloud provider"
+          : "fallback after OpenRouter free-tier hops";
+      noteParts.push(`MiniMax model=${minimaxModel.model} (${minimaxRole}).`);
     }
     if (chain.includes("openrouter")) {
       noteParts.push(
@@ -1420,6 +1512,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
 
   let lastErr: unknown;
   let triedLocal = false;
+  let triedOpenRouter = false;
   let localConnectionFailed = false;
 
   for (const provider of chain) {
@@ -1450,9 +1543,10 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       }
 
       if (provider === "minimax") {
-        return await runMinimaxStream(req, triedLocal);
+        return await runMinimaxStream(req, triedLocal || triedOpenRouter);
       }
 
+      triedOpenRouter = true;
       return await runOpenRouterStream(req, triedLocal);
     } catch (err) {
       lastErr = err;
@@ -1468,12 +1562,14 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       }
       throw enrichError(err, provider, {
         localConnectionFailed: localConnectionFailed && provider === "openrouter",
+        openRouterHopsExhausted: provider === "minimax" && triedOpenRouter,
       });
     }
   }
 
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
     localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
+    openRouterHopsExhausted: chain[chain.length - 1] === "minimax" && triedOpenRouter,
   });
 }
 
@@ -1493,6 +1589,7 @@ export async function createChatCompletionWithFailover(
 
   let lastErr: unknown;
   let triedLocal = false;
+  let triedOpenRouter = false;
   let localConnectionFailed = false;
 
   for (const provider of chain) {
@@ -1528,9 +1625,10 @@ export async function createChatCompletionWithFailover(
       }
 
       if (provider === "minimax") {
-        return await runMinimaxCompletion(req, triedLocal);
+        return await runMinimaxCompletion(req, triedLocal || triedOpenRouter);
       }
 
+      triedOpenRouter = true;
       return await runOpenRouterCompletion(req, triedLocal);
     } catch (err) {
       lastErr = err;
@@ -1546,11 +1644,13 @@ export async function createChatCompletionWithFailover(
       }
       throw enrichError(err, provider, {
         localConnectionFailed: localConnectionFailed && provider === "openrouter",
+        openRouterHopsExhausted: provider === "minimax" && triedOpenRouter,
       });
     }
   }
 
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
     localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
+    openRouterHopsExhausted: chain[chain.length - 1] === "minimax" && triedOpenRouter,
   });
 }
