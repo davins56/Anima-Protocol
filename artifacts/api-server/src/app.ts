@@ -6,7 +6,7 @@ import express, {
 } from "express";
 import cors from "cors";
 
-import { beginDbRequest } from "@workspace/db";
+import { runWithDbRequestScope } from "@workspace/db";
 
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
@@ -45,8 +45,7 @@ app.use(syncCloudflareRuntimeEnvMiddleware());
 // reports as "the database could not be reached". Must run before any route
 // that touches the database, including /api/healthz/db.
 app.use((_req, _res, next) => {
-  beginDbRequest();
-  next();
+  runWithDbRequestScope(next);
 });
 
 // Clerk Frontend API proxy — must be mounted before the body parsers because it
