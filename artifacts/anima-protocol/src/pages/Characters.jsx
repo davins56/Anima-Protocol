@@ -10,6 +10,7 @@ import {
   getStarterRoster,
   photoNeedsLookup,
   retryStarterSeed,
+  shouldAutoAssignCharacterPhoto,
 } from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
@@ -246,7 +247,7 @@ export default function Characters() {
       } else {
         const created = await createCompanionRecord("Character", finalForm);
         // No photo provided? Auto-search one in the background.
-        if (created && !finalForm.avatar_url) {
+        if (created && shouldAutoAssignCharacterPhoto(created)) {
           autoAssignCharacterPhoto(created)
             .then(() => loadCharacters())
             .catch(() => {});

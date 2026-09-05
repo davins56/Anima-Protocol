@@ -1,5 +1,17 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { titleMatchesName } from "../src/routes/characterImage";
+import {
+  CHARACTER_IMAGE_LOOKUP_BUDGET_MS,
+  titleMatchesName,
+  WIKI_FETCH_TIMEOUT_MS,
+} from "../src/routes/characterImage";
+
+const src = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../src/routes/characterImage.ts"),
+  "utf8",
+);
 
 describe("titleMatchesName", () => {
   it("accepts a title that shares a distinctive name token", () => {
@@ -26,5 +38,16 @@ describe("titleMatchesName", () => {
 
   it("falls back to accepting when the name has no distinctive tokens", () => {
     expect(titleMatchesName("Anything", "Ed")).toBe(true);
+  });
+});
+
+describe("character-image Worker budget", () => {
+  it("caps each Wikipedia hop and fail-opens to url: null", () => {
+    expect(WIKI_FETCH_TIMEOUT_MS).toBe(2500);
+    expect(CHARACTER_IMAGE_LOOKUP_BUDGET_MS).toBe(6000);
+    expect(src).toContain("AbortSignal.timeout(WIKI_FETCH_TIMEOUT_MS)");
+    expect(src).toContain("CHARACTER_IMAGE_LOOKUP_BUDGET_MS");
+    expect(src).toContain("res.json({ url: null })");
+    expect(src).not.toContain('res.status(502).json({ error:');
   });
 });
