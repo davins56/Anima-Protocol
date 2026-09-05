@@ -17,6 +17,7 @@ import {
 } from '@/lib/bootstrapState';
 import {
   STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from '@/lib/storeTimeouts';
 import {
@@ -30,7 +31,11 @@ import {
 const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
-export { STORE_FETCH_TIMEOUT_MS, STORE_SESSION_CREATE_TIMEOUT_MS };
+export {
+  STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
+};
 
 const DEFAULT_STORE_TIMEOUT_MESSAGE =
   'The server took too long to respond. Check your connection or try again in a moment.';
@@ -44,6 +49,16 @@ function createStoreAbortSignal(budget, userSignal) {
     return AbortSignal.any([userSignal, timeoutSignal]);
   }
   return userSignal || timeoutSignal;
+}
+
+function isStoreAbortError(err) {
+  return err?.name === 'AbortError' || err?.name === 'TimeoutError';
+}
+
+function storeTimeoutError(timeoutMessage) {
+  const timeoutErr = new Error(timeoutMessage || DEFAULT_STORE_TIMEOUT_MESSAGE);
+  timeoutErr.code = 'timeout';
+  return timeoutErr;
 }
 
 async function storeFetch(path, options = {}) {
@@ -61,6 +76,7 @@ async function storeFetch(path, options = {}) {
     timeoutMessage,
     signal: userSignal,
     headers: optionHeaders,
+    retryOnTimeout = false,
     ...fetchOptions
   } = options;
   const budget =
@@ -78,12 +94,11 @@ async function storeFetch(path, options = {}) {
     });
   };
 
-  let res;
-  try {
+  const runOnce = async () => {
     // First attempt + 401 retry share one budget. A 503 reset gets a fresh
     // AbortSignal so a hung Hyperdrive socket cannot starve the retry.
     const firstSignal = createStoreAbortSignal(budget, userSignal);
-    res = await makeRequest({}, firstSignal);
+    let res = await makeRequest({}, firstSignal);
     if (res.status === 401) {
       const retried = await makeRequest({ skipCache: true }, firstSignal);
       if (retried.status !== 401) {
@@ -97,14 +112,24 @@ async function storeFetch(path, options = {}) {
       res = await makeRequest({}, createStoreAbortSignal(budget, userSignal));
     }
     return res;
-  } catch (err) {
-    if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
-      const timeoutErr = new Error(timeoutMessage || DEFAULT_STORE_TIMEOUT_MESSAGE);
-      timeoutErr.code = 'timeout';
-      throw timeoutErr;
+  };
+
+  // List/GET can retry a client abort once (fresh 8s budget). Writes stay
+  // fail-fast unless the caller opted into a longer create budget.
+  const attempts = retryOnTimeout ? STORE_LIST_RETRY_LIMIT + 1 : 1;
+  let lastAbort;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await runOnce();
+    } catch (err) {
+      if (!isStoreAbortError(err)) throw err;
+      lastAbort = err;
+      if (userSignal?.aborted || i === attempts - 1) {
+        throw storeTimeoutError(timeoutMessage);
+      }
     }
-    throw err;
   }
+  throw lastAbort || storeTimeoutError(timeoutMessage);
 }
 
 async function isRetryableStoreReset(res) {
@@ -913,6 +938,7 @@ async function queryEntity(entityName, opts) {
     if (!token) return [];
     const res = await storeFetch(
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
+      { retryOnTimeout: true },
     );
     // Never cache auth failures as an empty roster — that made bootstrap/repair
     // think seeding succeeded when the store was never reachable. After bootstrap
