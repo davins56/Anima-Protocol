@@ -67,6 +67,13 @@ export function formatImageUploadError(err, { noun = "image" } = {}) {
     return "Image upload is not available on this host. Try again after the API is reachable.";
   }
   if (
+    err?.reason === "reset" ||
+    /connection reset/i.test(msg)
+  ) {
+    return "The database dropped the upload connection. Try again in a moment.";
+  }
+  if (
+    err?.dbError === true ||
     /database|503|unavailable|could not be reached|hyperdrive|schema is missing/i.test(
       msg,
     )
