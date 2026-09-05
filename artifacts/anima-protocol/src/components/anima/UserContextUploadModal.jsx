@@ -4,6 +4,11 @@ import { motion } from 'framer-motion';
 import { base44 } from '@/api/base44Client';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
 import { readPhotoAsDataUrl } from '@/lib/avatarPhoto';
+import {
+  formatUserContextUploadError,
+  uploadUserContextStorageFile,
+  userContextNeedsStorageUpload,
+} from '@/lib/userContextUpload';
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 
@@ -91,17 +96,22 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         }
       }
 
-      // Upload file first
-      let uploadRes;
-      try {
-        uploadRes = await base44.integrations.Core.UploadFile({ file: fileToUpload });
-      } catch (uploadErr) {
-        setError('Failed to upload file. Please try again.');
-        setUploading(false);
-        return;
+      // Images go through Postgres-backed /api/storage/uploads. Text documents
+      // skip that path — UploadFile only accepts images and would fail every
+      // .txt/.md/.pdf pick before the UserContext row is created.
+      let fileUrl = '';
+      if (userContextNeedsStorageUpload(isImage)) {
+        try {
+          fileUrl = await uploadUserContextStorageFile(
+            fileToUpload,
+            (payload) => base44.integrations.Core.UploadFile(payload),
+          );
+        } catch (uploadErr) {
+          setError(formatUserContextUploadError(uploadErr));
+          setUploading(false);
+          return;
+        }
       }
-
-      const fileUrl = uploadRes.file_url;
 
       // For plain-text files, also read as text to send to backend. PDFs and
       // images are handled by the backend from the uploaded file instead.
@@ -144,7 +154,8 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
       onClose();
     } catch (err) {
       console.error('Upload failed:', err);
-      setError('Upload failed. Please check the file and try again.');
+      setError(formatUserContextUploadError(err) || 'Upload failed. Please check the file and try again.');
+    } finally {
       setUploading(false);
     }
   };
