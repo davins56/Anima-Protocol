@@ -219,17 +219,20 @@ describe("representative page scroll contract", () => {
     expect(chat).toContain('data-testid="chat-input-slot"');
     expect(input).toContain('data-testid="chat-input"');
     const extrasIdx = chat.indexOf('data-testid="chat-composer-extras"');
-    const memoryIdx = chat.indexOf("MemoryRecallPanel");
-    const slotIdx = chat.indexOf('data-testid="chat-input-slot"');
-    const inputIdx = chat.indexOf("<ChatInput");
+    const composer = chat.slice(extrasIdx);
+    const memoryIdx = composer.indexOf("<MemoryRecallPanel");
+    const slotIdx = composer.indexOf('data-testid="chat-input-slot"');
+    const inputIdx = composer.indexOf("<ChatInput\n");
     expect(extrasIdx).toBeGreaterThan(-1);
-    expect(memoryIdx).toBeGreaterThan(extrasIdx);
+    expect(memoryIdx).toBeGreaterThan(-1);
     expect(slotIdx).toBeGreaterThan(memoryIdx);
     expect(inputIdx).toBeGreaterThan(slotIdx);
 
     // Whole-composer flex-shrink-0 was the overflow that hid ChatInput.
-    const composerOpen = chat.slice(chat.indexOf('data-testid="chat-composer"'));
-    const composerTag = composerOpen.slice(0, composerOpen.indexOf(">"));
+    const composerAttr = chat.indexOf('data-testid="chat-composer"');
+    const composerTagStart = chat.lastIndexOf("<div", composerAttr);
+    const composerTag = chat.slice(composerTagStart, chat.indexOf(">", composerAttr));
+    expect(composerTag).toContain('data-testid="chat-composer"');
     expect(composerTag).not.toContain("flex-shrink-0");
     expect(composerTag).toContain("min-h-0");
   });
