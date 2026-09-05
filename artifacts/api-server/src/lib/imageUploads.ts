@@ -11,7 +11,8 @@ import { eq } from "drizzle-orm";
 import { db, uploadedImages, ensureSchemaOnce } from "@workspace/db";
 
 export const UPLOADS_PATH_PREFIX = "/objects/uploads/";
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MiB decoded
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MiB decoded
+export const MAX_UPLOAD_ERROR = "Image is too large (max 4 MB after compression)";
 
 export type StoredImage = {
   id: string;
@@ -61,7 +62,7 @@ export function parseImagePayload(
     const byteSize = Buffer.byteLength(dataBase64, "base64");
     if (byteSize <= 0) throw new Error("Empty image payload");
     if (byteSize > MAX_UPLOAD_BYTES) {
-      throw new Error("Image is too large (max 4 MB after compression)");
+      throw new Error(MAX_UPLOAD_ERROR);
     }
     return { contentType, dataBase64, byteSize };
   }
@@ -79,9 +80,24 @@ export function parseImagePayload(
   const byteSize = Buffer.byteLength(dataBase64, "base64");
   if (byteSize <= 0) throw new Error("Empty image payload");
   if (byteSize > MAX_UPLOAD_BYTES) {
-    throw new Error("Image is too large (max 4 MB after compression)");
+    throw new Error(MAX_UPLOAD_ERROR);
   }
   return { contentType, dataBase64, byteSize };
+}
+
+/** Map storeUploadedImage / parse failures onto HTTP status codes. */
+export function httpStatusForUploadError(error: unknown): number {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (/too large/i.test(message)) return 413;
+  if (
+    message.includes("Only image") ||
+    message.includes("Invalid") ||
+    message.includes("Missing") ||
+    message.includes("Empty")
+  ) {
+    return 400;
+  }
+  return 500;
 }
 
 export async function storeUploadedImage(

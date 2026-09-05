@@ -292,8 +292,9 @@ async function blobToBase64(blob) {
 
 async function parseUploadErrorResponse(res) {
   const text = await res.text();
+  let json = null;
   try {
-    const json = JSON.parse(text);
+    json = JSON.parse(text);
     if (json?.error) return String(json.error);
   } catch {
     // Non-JSON (HTML 404 from an assets-only deploy, Cloudflare challenge, …)
@@ -303,6 +304,9 @@ async function parseUploadErrorResponse(res) {
   }
   if (res.status === 413) {
     return 'That image is too large. Try a smaller photo.';
+  }
+  if (res.status === 503) {
+    return 'Image upload is temporarily unavailable. The database may be down — try again in a moment.';
   }
   if (res.status === 404) {
     return 'Image upload API not found — /api/storage/uploads is not available on this host.';
