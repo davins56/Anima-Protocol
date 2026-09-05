@@ -7,6 +7,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const uploadFileMock = vi.hoisted(() => vi.fn());
 const generateImageMock = vi.hoisted(() => vi.fn());
 const updateAnimaMock = vi.hoisted(() => vi.fn());
+const updateCharacterMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/base44Client", () => ({
   uploadDataUrl: vi.fn(async (url) => url),
@@ -22,7 +23,7 @@ vi.mock("@/api/base44Client", () => ({
         update: updateAnimaMock,
       },
       Character: {
-        update: vi.fn(),
+        update: updateCharacterMock,
       },
     },
   },
@@ -47,14 +48,16 @@ describe("AnimaCustomizer leftover reference-photo look", () => {
     uploadFileMock.mockReset();
     generateImageMock.mockReset();
     updateAnimaMock.mockReset();
+    updateCharacterMock.mockReset();
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
   });
 
-  it("offers Upload Reference and Generate Look when no reference is stored", () => {
+  it("offers Upload Photo, Upload Reference, and Generate Look when no reference is stored", () => {
     const { container } = renderCustomizer();
+    expect(container.textContent).toMatch(/Upload Photo/);
     expect(container.textContent).toMatch(/Upload Reference/);
     expect(container.textContent).toMatch(/Generate Look/);
     expect(container.textContent).not.toMatch(/Generate from Reference/);
@@ -88,7 +91,7 @@ describe("AnimaCustomizer leftover reference-photo look", () => {
       file_url: "/api/storage/objects/refs/uploaded.png",
     });
     const { container } = renderCustomizer();
-    const input = container.querySelector('input[type="file"]');
+    const input = container.querySelector('input[aria-label="Upload look reference"]');
     const file = new File(["fake"], "face.png", { type: "image/png" });
 
     await act(async () => {
@@ -105,6 +108,55 @@ describe("AnimaCustomizer leftover reference-photo look", () => {
     expect(container.querySelector('img[alt="Look reference"]')?.getAttribute("src")).toBe(
       "/api/storage/objects/refs/uploaded.png",
     );
+    expect(container.querySelector('img[alt="Serenity portrait"]')).toBeNull();
     expect(container.textContent).toMatch(/Generate from Reference/);
+  });
+
+  it("uploads a character photo that fills the portrait box", async () => {
+    uploadFileMock.mockResolvedValue({
+      file_url: "/api/storage/objects/uploads/aelindra.png",
+    });
+    const { container } = renderCustomizer({
+      id: "char-aelindra",
+      name: "Aelindra",
+      _storeEntity: "Character",
+    });
+    const input = container.querySelector('input[aria-label="Upload character photo"]');
+    const file = new File(["portrait"], "aelindra.png", { type: "image/png" });
+
+    await act(async () => {
+      Object.defineProperty(input, "files", {
+        configurable: true,
+        value: [file],
+      });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const portrait = container.querySelector('img[alt="Aelindra portrait"]');
+    expect(portrait?.getAttribute("src")).toBe(
+      "/api/storage/objects/uploads/aelindra.png",
+    );
+    expect(portrait?.className).toMatch(/object-cover/);
+    expect(portrait?.className).toMatch(/w-full/);
+    expect(portrait?.className).toMatch(/h-full/);
+    expect(container.querySelector('img[alt="Look reference"]')).toBeNull();
+    expect(container.textContent).toMatch(/Change Photo/);
+
+    const save = [...container.querySelectorAll("button")].find((b) =>
+      /Apply & Save/i.test(b.textContent || ""),
+    );
+    expect(save).toBeTruthy();
+    await act(async () => {
+      save.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(updateCharacterMock).toHaveBeenCalled();
+    expect(updateAnimaMock).not.toHaveBeenCalled();
+    const [, patch] = updateCharacterMock.mock.calls[0];
+    expect(patch.avatar_url).toBe("/api/storage/objects/uploads/aelindra.png");
   });
 });
