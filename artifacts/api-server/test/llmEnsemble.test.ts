@@ -16,14 +16,13 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_FREE_GEMMA4_26B_MODEL: "google/gemma-4-26b-a4b-it:free",
     OPENROUTER_FREE_GEMMA4_31B_MODEL: "google/gemma-4-31b-it:free",
     MINIMAX_FREE_MODEL: "minimax/minimax-m3:free",
-    JULES_FREE_MODEL: "google/gemma-4-26b-a4b-it:free",
     OPENROUTER_FREE_MODEL_CANDIDATES: [
       "minimax/minimax-m2.7:free",
       "minimax/minimax-m3:free",
       "google/gemma-4-26b-a4b-it:free",
       "google/gemma-4-31b-it:free",
     ],
-    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.7",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
