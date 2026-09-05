@@ -16,9 +16,17 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
+    OPENROUTER_FREE_MODEL: "minimax/minimax-m3:free",
+    OPENROUTER_FREE_M3_MODEL: "minimax/minimax-m3:free",
+    OPENROUTER_FREE_M27_MODEL: "minimax/minimax-m2.7:free",
     MINIMAX_FREE_MODEL: "minimax/minimax-01:free",
     JULES_FREE_MODEL: "google/gemma-3-12b-it:free",
+    OPENROUTER_FREE_MODEL_CANDIDATES: [
+      "minimax/minimax-m3:free",
+      "google/gemma-3-12b-it:free",
+      "minimax/minimax-01:free",
+      "minimax/minimax-m2.7:free",
+    ],
     MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
@@ -278,10 +286,13 @@ import {
   isProviderAuthError,
   isProviderConnectionError,
   isProviderQuotaError,
+  isOpenRouterAlreadyFreeTier,
   isOpenRouterCreditFallback,
   isOpenRouterFreeDailyLimitError,
   isOpenRouterFreeMinuteLimitError,
+  isOpenRouterTransientGatewayError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
+  shouldTryNextOpenRouterFreeModel,
   preferCustomLlmOnly,
   probeLlmProviders,
   resetOpenRouterCreditFallbackForTests,
@@ -393,6 +404,98 @@ describe("isOpenRouterFreeDailyLimitError", () => {
   });
 });
 
+describe("isOpenRouterTransientGatewayError", () => {
+  it("detects 502/503/504 and connection failures, not provider 429", () => {
+    expect(isOpenRouterTransientGatewayError({ status: 502, message: "Bad Gateway" })).toBe(true);
+    expect(isOpenRouterTransientGatewayError({ status: 503, message: "Unavailable" })).toBe(true);
+    expect(isOpenRouterTransientGatewayError({ status: 504, message: "Timeout" })).toBe(true);
+    expect(
+      isOpenRouterTransientGatewayError(
+        Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
+      ),
+    ).toBe(true);
+    expect(isOpenRouterTransientGatewayError({ status: 429, message: "Provider returned error" })).toBe(
+      false,
+    );
+    expect(isOpenRouterTransientGatewayError({ status: 402, message: "Insufficient credits" })).toBe(
+      false,
+    );
+  });
+});
+
+describe("shouldTryNextOpenRouterFreeModel", () => {
+  it("failovers a free model on provider 429/5xx but not the daily cap", () => {
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 429, message: "429 Provider returned error" },
+        "minimax/minimax-m2.7:free",
+      ),
+    ).toBe(true);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 502, message: "Bad Gateway" },
+        "minimax/minimax-m2.7:free",
+      ),
+    ).toBe(true);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        {
+          status: 429,
+          message: "Rate limit exceeded: free-models-per-day. Add 10 credits.",
+        },
+        "minimax/minimax-m2.7:free",
+      ),
+    ).toBe(false);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 429, message: "Rate limit exceeded: free-models-per-min." },
+        "minimax/minimax-m2.7:free",
+      ),
+    ).toBe(false);
+  });
+
+  it("still failovers a paid model on credit/quota errors", () => {
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 402, message: "Insufficient credits" },
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+      ),
+    ).toBe(true);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 429, message: "Rate limit reached" },
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+      ),
+    ).toBe(true);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 502, message: "Bad Gateway" },
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isOpenRouterAlreadyFreeTier", () => {
+  const SAVED = { ...process.env };
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetOpenRouterCreditFallbackForTests();
+  });
+
+  it("is true when ANIMA_OPENROUTER_FREE is set or the model is already :free", () => {
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    expect(isOpenRouterAlreadyFreeTier("minimax/minimax-m2.7:free")).toBe(true);
+    expect(
+      isOpenRouterAlreadyFreeTier("cognitivecomputations/dolphin-mistral-24b-venice-edition"),
+    ).toBe(false);
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    expect(
+      isOpenRouterAlreadyFreeTier("cognitivecomputations/dolphin-mistral-24b-venice-edition"),
+    ).toBe(true);
+  });
+});
+
 describe("isOpenRouterFreeMinuteLimitError", () => {
   it("detects OpenRouter's free-models-per-min 429 separately from daily caps", () => {
     expect(
@@ -453,7 +556,7 @@ describe("resolveOpenRouterModel", () => {
     process.env.ANIMA_OPENROUTER_FREE = "true";
     delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
     delete process.env.ANIMA_OPENROUTER_MODEL_FAMILY;
-    expect(resolveOpenRouterModel("standard").model).toBe("minimax/minimax-m2.7:free");
+    expect(resolveOpenRouterModel("standard").model).toBe("minimax/minimax-m3:free");
   });
 
   it("can select a supported OpenRouter family by name", () => {
@@ -735,12 +838,12 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(result.model).toBe("minimax/minimax-m3:free");
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[0][0].model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
     expect(isOpenRouterCreditFallback()).toBe(true);
   });
 
@@ -764,7 +867,7 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(result.model).toBe("minimax/minimax-m3:free");
     expect(isOpenRouterCreditFallback()).toBe(false);
     expect(resolveOpenRouterModel("standard").model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
@@ -932,7 +1035,7 @@ describe("createChatStreamWithFailover", () => {
     }
   });
 
-  it("does not tell the operator to set OPENROUTER_API_KEY when a 402 happens on the free model", async () => {
+  it("does not blame Venice credits when a 402 happens on the free model", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
@@ -956,10 +1059,135 @@ describe("createChatStreamWithFailover", () => {
       throw new Error("expected OpenRouter 402 to reject");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/Your OPENROUTER_API_KEY is configured/);
+      expect(message).toMatch(/OpenRouter free-tier provider error/i);
+      expect(message).toMatch(/free-tier model is temporarily unavailable/i);
       expect(message).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
       expect(message).not.toMatch(/Set OPENROUTER_API_KEY/);
+      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE=true/);
+      expect(message).not.toMatch(/Venice Uncensored/);
+      expect(message).not.toMatch(/no credits for Venice/i);
     }
+  });
+
+  it("does not mention Venice credits when free-tier chat gets a provider 429", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock.mockRejectedValue(
+      Object.assign(new Error("HTTP 429 - 429 Provider returned error"), { status: 429 }),
+    );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected OpenRouter free-tier 429 to reject");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/OpenRouter free-tier provider error/i);
+      expect(message).toMatch(/Provider returned error/);
+      expect(message).not.toMatch(/Venice Uncensored/);
+      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE=true/);
+      expect(message).not.toMatch(/no credits for Venice/i);
+    }
+    expect(createMock).toHaveBeenCalledTimes(4);
+    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "minimax/minimax-m3:free",
+      "google/gemma-3-12b-it:free",
+      "minimax/minimax-01:free",
+      "minimax/minimax-m2.7:free",
+    ]);
+  });
+
+  it("failovers from m3:free to Gemma on a provider 429 that is not the daily cap", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("429 Provider returned error"), { status: 429 }),
+      )
+      .mockResolvedValueOnce(fakeStream("gemma"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe("google/gemma-3-12b-it:free");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m3:free");
+    expect(createMock.mock.calls[1][0].model).toBe("google/gemma-3-12b-it:free");
+  });
+
+  it("failovers from m3:free to Gemma after a provider 502", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }))
+      .mockResolvedValueOnce(fakeStream("gemma"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.model).toBe("google/gemma-3-12b-it:free");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m3:free");
+    expect(createMock.mock.calls[1][0].model).toBe("google/gemma-3-12b-it:free");
+  });
+
+  it("does not hop free models when the account-wide daily cap is already hit", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
+        ),
+        { status: 429 },
+      ),
+    );
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected OpenRouter daily limit to reject");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
+      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE=true/);
+      expect(message).not.toMatch(/Venice Uncensored/);
+    }
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m3:free");
   });
 
   it("fails over to OpenRouter when local is unreachable and fallback is enabled", async () => {
@@ -1314,7 +1542,7 @@ describe("probeLlmProviders", () => {
       provider: "openrouter",
       configured: true,
       ok: true,
-      model: "minimax/minimax-m2.7:free",
+      model: "minimax/minimax-m3:free",
     });
   });
 });

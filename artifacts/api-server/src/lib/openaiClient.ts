@@ -33,13 +33,29 @@ export const OPENROUTER_VENICE_UNCENSORED =
  * `openai/gpt-oss-20b:free` was retired (404; paid slug is openai/gpt-oss-20b).
  * `google/gemma-4-31b-it:free` is still in the catalog, but the Google
  * provider returns HTTP 401 ("Request had invalid authentication credentials").
- * MiniMax m2.7 is a live `:free` slug that actually completes. Gemma remains
- * a documented open-weight family example (`google/gemma-3-12b-it:free`).
+ * MiniMax m2.7 (`minimax/minimax-m2.7:free`) is still in the catalog, but
+ * the production OpenRouter activity log for this account (2026-09-05)
+ * showed repeated provider 429 / 502 on that slug and no Venice traffic.
+ * Default is therefore m3:free; Gemma is the next hop; m2.7 is last.
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
-export const OPENROUTER_FREE_MODEL = "minimax/minimax-m2.7:free";
+export const OPENROUTER_FREE_M27_MODEL = "minimax/minimax-m2.7:free";
+export const OPENROUTER_FREE_M3_MODEL = "minimax/minimax-m3:free";
+export const OPENROUTER_FREE_MODEL = OPENROUTER_FREE_M3_MODEL;
 export const MINIMAX_FREE_MODEL = "minimax/minimax-01:free";
 export const JULES_FREE_MODEL = "google/gemma-3-12b-it:free";
+
+/**
+ * Ordered :free slugs to try after the preferred OpenRouter model fails
+ * with a provider blip (not the account-wide free-models-per-day cap).
+ * Healthier slugs first; m2.7 last because it is chronically 429/502.
+ */
+export const OPENROUTER_FREE_MODEL_CANDIDATES = [
+  OPENROUTER_FREE_MODEL,
+  JULES_FREE_MODEL,
+  MINIMAX_FREE_MODEL,
+  OPENROUTER_FREE_M27_MODEL,
+] as const;
 
 /** MiniMax Global OpenAI-compatible base URL. */
 export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
@@ -228,6 +244,18 @@ export function isCloudFlagshipLlmHost(host: string | null | undefined): boolean
  */
 export function localLlmMaxRetries(): number {
   const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 2;
+}
+
+/**
+ * Transport-level retries for OpenRouter. Default 2 so a single provider
+ * 502/503 or dropped connection does not kill the turn. The SDK only retries
+ * connection errors and 408/409/429/5xx, and only before a stream starts.
+ * Override with ANIMA_OPENROUTER_MAX_RETRIES (0 disables).
+ */
+export function openRouterMaxRetries(): number {
+  const raw = Number(process.env.ANIMA_OPENROUTER_MAX_RETRIES);
   if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
   return 2;
 }
@@ -492,7 +520,7 @@ export function getOpenRouterClient(): OpenAI | null {
     openRouterClient = new OpenAI({
       apiKey,
       baseURL,
-      maxRetries: 0,
+      maxRetries: openRouterMaxRetries(),
       defaultHeaders: {
         "HTTP-Referer": referer,
         "X-Title": title,
