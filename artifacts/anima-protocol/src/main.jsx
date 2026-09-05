@@ -1,13 +1,9 @@
 // @ts-check
-import React, { lazy, Suspense } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.full.jsx";
 import { registerSW } from "virtual:pwa-register";
 import "./index.css";
-
-const VercelAnalytics = lazy(() =>
-  import("@vercel/analytics/react").then((mod) => ({ default: mod.Analytics })),
-);
 
 // Mixpanel + Algolia stay off the HTML entry chunk. Consent still gates
 // tracking inside analytics.js after this loads.
@@ -32,8 +28,5 @@ if (!rootElement) {
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <App />
-    <Suspense fallback={null}>
-      <VercelAnalytics />
-    </Suspense>
   </React.StrictMode>
 );
