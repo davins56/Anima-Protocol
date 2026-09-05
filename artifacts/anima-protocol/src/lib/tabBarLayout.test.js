@@ -104,6 +104,19 @@ describe("syncReservedTabBarHeight", () => {
     expect(root.style.getPropertyValue("--tab-bar-height")).toBe("");
   });
 
+  it("never writes 0px while a painted tab bar is visible (lg / iPad included)", () => {
+    const root = document.createElement("html");
+    applyReservedTabBarHeight(root, {
+      present: true,
+      visible: true,
+      height: 52,
+    });
+    const reserved = root.style.getPropertyValue("--tab-bar-height");
+    expect(reserved).not.toBe("0px");
+    expect(reserved).not.toBe("");
+    expect(Number.parseFloat(reserved)).toBeGreaterThan(0);
+  });
+
   it("prefers a .tab-bar under the root over the document", () => {
     const root = document.createElement("div");
     const bar = document.createElement("div");

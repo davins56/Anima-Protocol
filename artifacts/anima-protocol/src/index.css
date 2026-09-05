@@ -302,11 +302,33 @@ html[data-keyboard-open] .fixed-bottom-chrome {
  * Pages that manage their own column (Chat) use `.app-page-fill`.
  */
 .app-shell-main {
-  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  /*
+   * Basis 0% so the column sizes from leftover shell space (the content
+   * box *after* `--tab-bar-height` padding), not from Chat's min-content.
+   * A content-sized column on iPad is ~viewport tall once Memory Recall
+   * is showing, so ChatInput sits under the fixed HOME / CHAT / BOARD /
+   * MAP / MORE bar until the user scrolls the reserved pad.
+   */
+  flex: 1 1 0%;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Flex child of `.app-shell-main` that owns the matched route. Keeps
+ * `.app-page-fill` (Chat) in the padded content box even when Suspense
+ * or a boundary would otherwise break the flex chain.
+ */
+.app-shell-route {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
 }
 
 /*
