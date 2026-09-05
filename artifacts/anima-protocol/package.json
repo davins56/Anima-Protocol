@@ -107,8 +107,5 @@
     "workbox-window": "^7.4.1",
     "wouter": "^3.3.5",
     "zod": "catalog:"
-  },
-  "resolutions": {
-    "glob": "^11.0.0"
   }
 }
