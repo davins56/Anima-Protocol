@@ -15,6 +15,7 @@ const SAVED = { ...process.env };
 
 function clearLocalLlmEnv() {
   delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+  delete process.env.ANIMA_LOCAL_LLM_BACKEND;
   delete process.env.VLLM_BASE_URL;
   delete process.env.OLLAMA_BASE_URL;
   delete process.env.ANIMA_RUNTIME;
@@ -129,6 +130,15 @@ describe("localLlmBaseUrl runtime matrix", () => {
     expect(summary.isLocalhost).toBe(true);
     expect(summary.isLoopbackMisconfigured).toBe(false);
     expect(summary.hasV1Path).toBe(true);
+  });
+
+  it("plain Node + vLLM backend → vLLM localhost default", () => {
+    clearLocalLlmEnv();
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "vllm";
+
+    expect(localLlmBaseUrl()).toBe("http://localhost:8000/v1");
+    expect(hasLocalLlm()).toBe(true);
+    expect(summarizeLocalLlmBaseUrl().host).toBe("localhost");
   });
 
   it("explicit public HTTPS URL is used as-is on every runtime", () => {

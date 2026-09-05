@@ -691,6 +691,14 @@ function requireLocalClient(): OpenAI {
 }
 
 function configuredLocalModelLabel(): string {
+  const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
+  if (backend === "vllm") {
+    return (
+      process.env.ANIMA_VLLM_MODEL_STANDARD?.trim() ||
+      process.env.ANIMA_VLLM_MODEL?.trim() ||
+      resolveLocalModel("standard").model
+    );
+  }
   return (
     process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
     process.env.ANIMA_VLLM_MODEL?.trim() ||
@@ -781,9 +789,12 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   const localSummary = summarizeLocalLlmBaseUrl();
   const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase() || "ollama";
   const localModel =
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
-    process.env.ANIMA_VLLM_MODEL?.trim() ||
-    resolveLocalModel(tier).model;
+    backend === "vllm"
+      ? process.env.ANIMA_VLLM_MODEL_STANDARD?.trim() ||
+        process.env.ANIMA_VLLM_MODEL?.trim() ||
+        resolveLocalModel(tier).model
+      : process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
+        resolveLocalModel(tier).model;
   const openRouterModel = resolveOpenRouterModel(tier);
   const minimaxModel = resolveMinimaxModel(tier);
   const chain = getProviderChain();
