@@ -159,6 +159,8 @@ describe("ChatToolbar Online actions panel", () => {
     expect(panel.parentElement).toBe(document.body);
     expect(backdrop.className).toContain("z-[1000]");
     expect(panel.className).toContain("z-[1001]");
+    expect(backdrop.style.zIndex).toBe("1000");
+    expect(panel.style.zIndex).toBe("1001");
     expect(panel.style.position).toBe("fixed");
     expect(panel.textContent).toContain("Inventory");
     expect(panel.textContent).toContain("Mental Line");
