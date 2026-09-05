@@ -1,8 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  listAnima: vi.fn(),
+  listCharacter: vi.fn(),
+}));
+
+vi.mock("@/api/base44Client", () => ({
+  base44: {
+    entities: {
+      Anima: { list: mocks.listAnima },
+      Character: { list: mocks.listCharacter },
+    },
+  },
+}));
+
 import {
   companionLookHref,
+  companionPersistPatch,
   companionStoreEntity,
   isPersonalAnimaRecord,
+  loadCompanionRecord,
   mergePersonalCompanions,
   selectPersonalAnima,
 } from "./listPersonalAnimas";
@@ -91,5 +108,39 @@ describe("selectPersonalAnima", () => {
     expect(selectPersonalAnima(rows, null, { email: "nobody@example.com" })?.id).toBe(
       "anima-1",
     );
+  });
+});
+
+describe("loadCompanionRecord", () => {
+  beforeEach(() => {
+    mocks.listAnima.mockReset().mockResolvedValue([]);
+    mocks.listCharacter.mockReset().mockResolvedValue([]);
+  });
+
+  it("falls back to Character when Anima.list does not have the companion", async () => {
+    mocks.listCharacter.mockResolvedValue([
+      { id: "char-aelindra", name: "Aelindra", creation_method: "ai_prompt" },
+    ]);
+
+    const row = await loadCompanionRecord("char-aelindra", "Anima");
+    expect(row?.name).toBe("Aelindra");
+    expect(companionStoreEntity(row)).toBe("Character");
+  });
+});
+
+describe("companionPersistPatch", () => {
+  it("drops picker-only flags before a store write", () => {
+    expect(
+      companionPersistPatch({
+        name: "Aelindra",
+        avatar_url: "https://example.com/a.png",
+        _storeEntity: "Character",
+        _isAnima: true,
+        _bundled: true,
+      }),
+    ).toEqual({
+      name: "Aelindra",
+      avatar_url: "https://example.com/a.png",
+    });
   });
 });
