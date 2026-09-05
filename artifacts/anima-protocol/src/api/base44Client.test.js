@@ -5,9 +5,9 @@ import {
   clearStoreCache,
   setAuthTokenGetter,
   STORE_FETCH_TIMEOUT_MS,
-  STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from "./base44Client";
+import { STORE_LIST_RETRY_LIMIT } from "@/lib/storeTimeouts";
 import {
   isStoreDatabaseError,
   isStoreReadUnavailable,
@@ -101,11 +101,13 @@ describe("ChatSession store wrapper", () => {
     await expect(base44.entities.CheckIn.list()).rejects.toMatchObject({
       code: "timeout",
     });
-    expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
-    expect(timeoutSpy).toHaveBeenCalledTimes(STORE_LIST_RETRY_LIMIT + 1);
-    expect(global.fetch).toHaveBeenCalledTimes(STORE_LIST_RETRY_LIMIT + 1);
-    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
     expect(STORE_LIST_RETRY_LIMIT).toBe(1);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
+    // First abort + one list retry. Hardcoded so a missing re-export cannot
+    // turn this into toHaveBeenCalledTimes(NaN).
+    expect(timeoutSpy).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
   });
 
   it("retries a list GET after a client timeout and succeeds", async () => {
