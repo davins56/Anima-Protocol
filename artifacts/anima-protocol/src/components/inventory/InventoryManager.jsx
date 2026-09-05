@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import InventoryItemCard from "./InventoryItemCard";
 import InventoryItemForm from "./InventoryItemForm";
 import { deleteWithUndo } from "@/lib/undoableDelete";
+import { INVENTORY_LIST_LIMIT } from "@/lib/inventory";
+import useStewardInventoryGrant from "@/hooks/useStewardInventoryGrant";
 
 const ITEM_TYPES = ["all", "gear", "consumable", "weapon", "armor", "artifact", "misc"];
 const SLOTS = ["none", "head", "chest", "hands", "feet", "weapon", "offhand", "accessory"];
@@ -20,12 +22,13 @@ export default function InventoryManager({ characterId, sessionId, onItemsChange
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
+  const { granting, done: grantDone } = useStewardInventoryGrant(characterId);
 
   useEffect(() => {
-    if (characterId) {
+    if (characterId && grantDone) {
       loadItems();
     }
-  }, [characterId]);
+  }, [characterId, grantDone]);
 
   const loadItems = async () => {
     setLoading(true);
@@ -33,7 +36,7 @@ export default function InventoryManager({ characterId, sessionId, onItemsChange
       const data = await base44.entities.Inventory.filter(
         { character_id: characterId },
         "-created_date",
-        100
+        INVENTORY_LIST_LIMIT
       );
       setItems(data || []);
       onItemsChange?.(data || []);
@@ -237,7 +240,7 @@ export default function InventoryManager({ characterId, sessionId, onItemsChange
 
       {/* Items grid */}
       <div className="space-y-2">
-        {loading ? (
+        {loading || granting ? (
           <div className="flex items-center justify-center py-12">
             <Loader className="w-6 h-6 text-primary/50 animate-spin" />
           </div>
