@@ -6,6 +6,8 @@ import express, {
 } from "express";
 import cors from "cors";
 
+import { beginDbRequest } from "@workspace/db";
+
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -34,6 +36,18 @@ app.set("trust proxy", 1);
 // may snapshot or reset process.env after fetch() mirroring; Clerk/DB readers
 // then see empty keys and 503 "API is misconfigured".
 app.use(syncCloudflareRuntimeEnvMiddleware());
+
+// Open a new database request scope. Cloudflare Workers bind every socket to
+// the request context that created it, so a Postgres client cached at module
+// scope cannot be reused — or closed — by a later request. Without this, the
+// second request on a warm isolate fails with "Cannot perform I/O on behalf of
+// a different request" (or hangs until the 20s Worker timeout), which the UI
+// reports as "the database could not be reached". Must run before any route
+// that touches the database, including /api/healthz/db.
+app.use((_req, _res, next) => {
+  beginDbRequest();
+  next();
+});
 
 // Clerk Frontend API proxy — must be mounted before the body parsers because it
 // streams raw request bytes. It self-guards and is only active in production /

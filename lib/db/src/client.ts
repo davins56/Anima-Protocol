@@ -7,6 +7,7 @@ import {
   createNodePool,
   createPostgresJsSql,
   getDbDriver,
+  isCloudflareWorkerRuntime,
   postgresJsQueryable,
   type SqlQueryable,
 } from "./driver";
@@ -68,6 +69,34 @@ let nodePoolInstance: pg.Pool | null = null;
 let postgresJsSql: Sql | null = null;
 /** Driver + connection string the live client was built with. */
 let poolConnectionKey: string | null = null;
+/**
+ * Request epoch the live client was built in. Cloudflare Workers bind every
+ * I/O object (sockets included) to the request context that created it, so a
+ * client may never be reused — or torn down — from a later request.
+ * See https://developers.cloudflare.com/workers/observability/errors/
+ */
+let poolRequestEpoch: number | null = null;
+let currentRequestEpoch = 0;
+
+/**
+ * Open a new database request scope. Called once per HTTP request so a cached
+ * client is never carried across Worker request contexts.
+ *
+ * Concurrency is safe: bumping the epoch only drops the module-level
+ * reference. An in-flight query already holds its own reference and keeps
+ * running on the client it started with.
+ */
+export function beginDbRequest(): void {
+  currentRequestEpoch += 1;
+}
+
+/** Test helper — the epoch the cached client was created in. */
+export function dbRequestEpochForTests(): {
+  current: number;
+  pool: number | null;
+} {
+  return { current: currentRequestEpoch, pool: poolRequestEpoch };
+}
 
 export const DATABASE_URL_ENV_NAMES = [
   "DATABASE_URL",
@@ -117,6 +146,21 @@ const TRANSIENT_DB_CODES = new Set([
 const TRANSIENT_DB_MESSAGE =
   /ECONNRESET|EPIPE|UND_ERR_SOCKET|write CONNECT_|CONNECT_TIMEOUT|CONNECT_ERROR|CONNECTION_ENDED|CONNECTION_DESTROYED|CONNECTION_CLOSED|Connection terminated|Connection ended unexpectedly|Network connection lost|server closed the connection|Client has encountered a connection error|Cannot use a pool after calling end|pool is ended|Client has already been released|timeout expired|connection timeout|ConnectTimeout|SocketTimeout|aborted due to timeout/i;
 
+/**
+ * Cloudflare Workers reject any use of an I/O object created in a different
+ * request context. A cached Postgres client that leaks across requests fails
+ * with this, and it is recoverable: drop the cached client and retry on a
+ * fresh one. Matched separately so it also forces a cache discard.
+ */
+const CROSS_REQUEST_IO_MESSAGE =
+  /Cannot perform I\/O on behalf of a different request/i;
+
+/** True for the Workers cross-request I/O violation described above. */
+export function isCrossRequestIoError(err: unknown): boolean {
+  const { message } = collectDbErrorSignals(err);
+  return CROSS_REQUEST_IO_MESSAGE.test(message);
+}
+
 /** Walk Error.cause so drizzle "Failed query" wrappers still expose ECONNRESET. */
 function collectDbErrorSignals(err: unknown): { message: string; codes: string[] } {
   const messages: string[] = [];
@@ -148,11 +192,12 @@ function collectDbErrorSignals(err: unknown): { message: string; codes: string[]
 export function isTransientDbError(err: unknown): boolean {
   const { message, codes } = collectDbErrorSignals(err);
   if (codes.some((code) => TRANSIENT_DB_CODES.has(code))) return true;
+  if (CROSS_REQUEST_IO_MESSAGE.test(message)) return true;
   return TRANSIENT_DB_MESSAGE.test(message);
 }
 
-/** Drop cached clients so the next checkout opens a fresh socket. */
-export function resetPool(): void {
+/** Detach cached clients without touching their sockets. */
+function detachCachedClients(): { oldPool: pg.Pool | null; oldSql: Sql | null } {
   const oldPool = nodePoolInstance;
   const oldSql = postgresJsSql;
   queryableInstance = null;
@@ -160,12 +205,42 @@ export function resetPool(): void {
   nodePoolInstance = null;
   postgresJsSql = null;
   poolConnectionKey = null;
+  poolRequestEpoch = null;
+  return { oldPool, oldSql };
+}
+
+/**
+ * Drop cached clients so the next checkout opens a fresh socket.
+ *
+ * On Cloudflare Workers the client is NOT closed. Calling end() reaches into
+ * a socket owned by the request that created it, which throws "Cannot perform
+ * I/O on behalf of a different request" (or hangs until the Worker request
+ * timeout). The runtime already reclaims those sockets when the owning
+ * request finishes, and Hyperdrive returns the upstream connection to its
+ * own pool, so detaching is both sufficient and the only safe option.
+ *
+ * On Node (local dev, Vercel, tests) end() still runs — there the process is
+ * long-lived and leaked pools would exhaust Postgres connections.
+ */
+export function resetPool(): void {
+  const { oldPool, oldSql } = detachCachedClients();
+  if (isCloudflareWorkerRuntime()) return;
+
+  // Never let a teardown failure escape into the caller's query path.
   if (oldPool) {
-    oldPool.removeAllListeners("error");
-    void oldPool.end().catch(() => undefined);
+    try {
+      oldPool.removeAllListeners("error");
+      void oldPool.end().catch(() => undefined);
+    } catch {
+      /* already ended or owned elsewhere */
+    }
   }
   if (oldSql) {
-    void oldSql.end({ timeout: 1 }).catch(() => undefined);
+    try {
+      void oldSql.end({ timeout: 1 }).catch(() => undefined);
+    } catch {
+      /* already ended or owned elsewhere */
+    }
   }
 }
 
@@ -205,6 +280,7 @@ function attachPoolGuards(pool: pg.Pool): void {
     dbInstance = null;
     nodePoolInstance = null;
     poolConnectionKey = null;
+    poolRequestEpoch = null;
   });
 }
 
@@ -217,7 +293,15 @@ export function getPool(): SqlQueryable {
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
   const driverKey = `${getDbDriver()}:${connectionString}`;
-  if (queryableInstance && poolConnectionKey === driverKey) {
+
+  // On Workers a client is only reusable inside the request that created it.
+  // Hyperdrive also hands out a fresh connection string per request, so the
+  // key check alone would usually miss anyway — the epoch check makes the
+  // per-request lifetime explicit instead of incidental.
+  const sameRequest =
+    !isCloudflareWorkerRuntime() || poolRequestEpoch === currentRequestEpoch;
+
+  if (queryableInstance && poolConnectionKey === driverKey && sameRequest) {
     return queryableInstance;
   }
   if (queryableInstance) resetPool();
@@ -228,6 +312,7 @@ export function getPool(): SqlQueryable {
     queryableInstance = postgresJsQueryable(sql);
     dbInstance = drizzlePostgresJs(sql, { schema }) as unknown as Db;
     poolConnectionKey = driverKey;
+    poolRequestEpoch = currentRequestEpoch;
     return queryableInstance;
   }
   // Vercel Fluid / local Node: tiny node-pg pool, fail fast on a dead DB.
@@ -237,11 +322,14 @@ export function getPool(): SqlQueryable {
   queryableInstance = pool;
   dbInstance = drizzle(pool, { schema });
   poolConnectionKey = driverKey;
+  poolRequestEpoch = currentRequestEpoch;
   return queryableInstance;
 }
 
 function getDb(): Db {
-  if (dbInstance) return dbInstance;
+  // Always route through getPool() so the connection-key and request-epoch
+  // checks run. Returning a cached dbInstance directly would hand back a
+  // drizzle client bound to a previous Worker request's socket.
   getPool();
   if (!dbInstance) {
     throw new Error("Failed to initialize database client");
