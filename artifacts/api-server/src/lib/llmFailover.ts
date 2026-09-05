@@ -37,6 +37,7 @@ import {
   OPENROUTER_FREE_MODEL_CANDIDATES,
   OPENROUTER_VENICE_UNCENSORED,
   MINIMAX_DEFAULT_MODEL,
+  openRouterCascadeMaxRetries,
   openRouterKeyFingerprint,
   summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
@@ -1074,13 +1075,16 @@ async function probeOneProvider(
       if (!client) {
         return { provider: "openrouter", configured: false, ok: false };
       }
-      const { resolved: used } = await withOpenRouterCreditFallback(resolved, (m) =>
-        client.chat.completions.create({
-          model: m.model,
-          max_tokens: 16,
-          messages: [{ role: "user", content: "Reply with the single word: ok" }],
-          temperature: 0,
-        }),
+      const { resolved: used } = await withOpenRouterCreditFallback(resolved, (m, remaining) =>
+        client.chat.completions.create(
+          {
+            model: m.model,
+            max_tokens: 16,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            temperature: 0,
+          },
+          { maxRetries: openRouterCascadeMaxRetries(remaining) },
+        ),
       );
       return {
         provider: "openrouter",
@@ -1227,19 +1231,20 @@ function openRouterModelCandidates(preferred: ResolvedModel): ResolvedModel[] {
  * Try the preferred OpenRouter model, then other :free candidates when the
  * account has no credits (HTTP 402) or a free provider returns 400/429/5xx
  * that is not ZDR / data-policy / the account-wide daily/minute cap.
- * Same-model 502/503/connection retries are the OpenRouter client's
- * maxRetries (default 2).
+ * Intermediate hops pass remainingCandidates > 0 so the SDK skips retries
+ * (`openRouterCascadeMaxRetries`); the last candidate keeps maxRetries.
  */
 async function withOpenRouterCreditFallback<T>(
   preferred: ResolvedModel,
-  run: (resolved: ResolvedModel) => Promise<T>,
+  run: (resolved: ResolvedModel, remainingCandidates: number) => Promise<T>,
 ): Promise<{ value: T; resolved: ResolvedModel }> {
   let lastErr: unknown;
   const candidates = openRouterModelCandidates(preferred);
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
+    const remainingCandidates = candidates.length - i - 1;
     try {
-      const value = await run(candidate);
+      const value = await run(candidate, remainingCandidates);
       return { value, resolved: candidate };
     } catch (err) {
       lastErr = err;
@@ -1285,7 +1290,7 @@ async function runOpenRouterStream(
   const preferred = resolveOpenRouterModel(req.tier);
   const { value: stream, resolved } = await withOpenRouterCreditFallback(
     preferred,
-    (m) =>
+    (m, remaining) =>
       client.chat.completions.create(
         {
           model: m.model,
@@ -1293,7 +1298,10 @@ async function runOpenRouterStream(
           messages: req.messages,
           stream: true,
         },
-        ...(req.signal ? [{ signal: req.signal }] : []),
+        {
+          ...(req.signal ? { signal: req.signal } : {}),
+          maxRetries: openRouterCascadeMaxRetries(remaining),
+        },
       ),
   );
   return {
@@ -1341,7 +1349,7 @@ async function runOpenRouterCompletion(
   const preferred = resolveOpenRouterModel(req.tier);
   const { value: completion, resolved } = await withOpenRouterCreditFallback(
     preferred,
-    (m) =>
+    (m, remaining) =>
       client.chat.completions.create(
         {
           model: m.model,
@@ -1352,7 +1360,10 @@ async function runOpenRouterCompletion(
             ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
             : {}),
         },
-        req.signal ? { signal: req.signal } : undefined,
+        {
+          ...(req.signal ? { signal: req.signal } : {}),
+          maxRetries: openRouterCascadeMaxRetries(remaining),
+        },
       ),
   );
   const content = completion.choices?.[0]?.message?.content ?? "";
