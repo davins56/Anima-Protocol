@@ -24,7 +24,13 @@ import {
   track,
 } from '@/lib/analytics';
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
-import { retryStarterSeed } from '@/lib/seedCharacters';
+import {
+  clearGuestPersistence,
+  persistExplicitGuest,
+  readExplicitGuestChosen,
+  readPersistedGuest,
+  resolveAuthBoot,
+} from '@/lib/authBootPolicy';
 import {
   disableProactivePush,
   getProactiveMessagePreferences,
@@ -46,25 +52,59 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [isLoadingPublicSettings] = useState(false);
   const [appPublicSettings] = useState(null);
+  // Guest is never restored from leftover localStorage on first paint.
+  // Instant Sandbox only applies after an explicit this-session Guest tap,
+  // and only when Clerk has loaded without a real session.
+  const [localUser, setLocalUser] = useState(null);
 
-  // Make the Clerk session token available to the non-React data layer so
-  // every entity/profile request can identify the user (in dev and prod).
+  const loginAsLocalUser = useCallback((customIdentity) => {
+    const fallbackId = 'user_' + Math.random().toString(36).substring(2, 10);
+    const identity = persistExplicitGuest({
+      id: customIdentity?.id || fallbackId,
+      email: customIdentity?.email || 'seeker@anima-protocol.com',
+      full_name: customIdentity?.full_name || customIdentity?.name || 'Seeker',
+      display_name: customIdentity?.display_name || customIdentity?.name || 'Seeker',
+      role: 'User',
+      selected_mode: 'companion',
+    });
+    setLocalUser(identity);
+    setUser(identity);
+    base44.auth.syncIdentity(identity);
+    bootstrapUserData(identity.id).catch((err) =>
+      console.warn('[Anima] Bootstrap failed:', err)
+    );
+    identifyUser(identity.id);
+  }, []);
+
+  // Make session token available to non-React data layer
   useEffect(() => {
-    if (!isSignedIn) {
-      clearAuthTokenGetter();
+    if (isSignedIn) {
+      setAuthTokenGetter(async () => {
+        try {
+          const token = await getToken();
+          if (token) return token;
+          return await getToken({ skipCache: true });
+        } catch (err) {
+          console.warn("[Anima] Clerk getToken failed:", err);
+          return null;
+        }
+      });
       return;
     }
-    setAuthTokenGetter(async () => {
-      try {
-        const token = await getToken();
-        if (token) return token;
-        return await getToken({ skipCache: true });
-      } catch (err) {
-        console.warn("[Anima] Clerk getToken failed:", err);
-        return null;
-      }
-    });
-  }, [getToken, isSignedIn]);
+    if (localUser) {
+      setAuthTokenGetter(async () => `local_${localUser.id}`);
+      return;
+    }
+    clearAuthTokenGetter();
+  }, [getToken, isSignedIn, localUser]);
+
+  // Sync localUser into base44 if not signed in with Clerk
+  useEffect(() => {
+    if (!isSignedIn && localUser) {
+      base44.auth.syncIdentity(localUser);
+      setUser(localUser);
+    }
+  }, [isSignedIn, localUser]);
 
   // Retry starter seeding once the session token is live, independent of whether
   // profile load succeeds — an empty roster after bootstrap usually means seeding
@@ -78,6 +118,7 @@ export const AuthProvider = ({ children }) => {
         if (cancelled) return;
         const chars = await base44.entities.Character.list('-created_date', 5);
         if (!chars?.length) {
+          const { retryStarterSeed } = await import('@/lib/seedCharacters');
           await retryStarterSeed();
           notifyStoreChanged();
         }
@@ -124,6 +165,29 @@ export const AuthProvider = ({ children }) => {
       cancelled = true;
     };
   }, [isLoaded, isSignedIn, user?.id]);
+
+  // After Clerk reports its session, drop leftover guest storage if a real
+  // account is present. Restore guest only when this tab explicitly chose it.
+  useEffect(() => {
+    if (!isLoaded) return;
+    const boot = resolveAuthBoot({
+      clerkLoaded: true,
+      clerkSignedIn: !!isSignedIn,
+      clerkUser: clerkUser ? { id: clerkUser.id } : null,
+      persistedGuest: readPersistedGuest(),
+      explicitGuestChosen: readExplicitGuestChosen(),
+    });
+    if (boot.mode === 'signed-in') {
+      clearGuestPersistence();
+      setLocalUser(null);
+      return;
+    }
+    if (boot.mode === 'guest') {
+      setLocalUser(boot.identity);
+      return;
+    }
+    setLocalUser(null);
+  }, [isLoaded, isSignedIn, clerkUser?.id]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -184,6 +248,9 @@ export const AuthProvider = ({ children }) => {
           }
         }
       })();
+    } else if (localUser) {
+      // Explicit Instant Sandbox — keep the guest identity. Do not clear
+      // the token getter; the other effect owns local_* for guests.
     } else {
       clearAuthTokenGetter();
       base44.auth.clearSession();
@@ -193,9 +260,12 @@ export const AuthProvider = ({ children }) => {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, clerkUser?.id]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, localUser]);
 
-  const isAuthenticated = !!isSignedIn;
+  const isSignedInUser = !!isSignedIn && !!clerkUser;
+  const isGuest = !!localUser && !isSignedInUser;
+  const isAuthenticated = isSignedInUser || isGuest;
+  // Always wait for Clerk. Leftover guest localStorage must not skip login.
   const isLoadingAuth = !isLoaded;
   const [authStalled, setAuthStalled] = useState(false);
 
@@ -239,8 +309,15 @@ const logout = useCallback(() => {
         );
       }
 
+      setLocalUser(null);
       setUser(null);
       setAuthError(null);
+
+      try {
+        clearGuestPersistence();
+      } catch (e) {
+        console.warn('Storage remove warning:', e);
+      }
 
       if (typeof signOut === 'function') {
         await signOut({ redirectUrl: '/' }).catch((err) =>
@@ -291,7 +368,7 @@ const logout = useCallback(() => {
     };
     
     try {
-      const newAnima = await base44.entities.Character.create(defaultSerenity);
+      const newAnima = await base44.entities.Anima.create(defaultSerenity);
       notifyStoreChanged();
       return newAnima;
     } catch (err) {
@@ -303,9 +380,13 @@ const logout = useCallback(() => {
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: isSignedInUser ? user : user || localUser,
         setUser,
+        localUser,
+        loginAsLocalUser,
         isAuthenticated,
+        isSignedInUser,
+        isGuest,
         setIsAuthenticated: () => {},
         isLoadingAuth,
         authStalled,

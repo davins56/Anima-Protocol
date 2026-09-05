@@ -1,12 +1,12 @@
 /**
  * Display labels for the chat LLM backend returned by the API.
- * Primary: self-hosted Anima LLM. Optional: OpenRouter (Venice Uncensored /
- * free open-weight models). Flagship BYOK (Gemini/Groq/ChatGPT/…) is not used.
+ * Primary: self-hosted Anima LLM, then MiniMax. OpenRouter remains optional.
  */
 
 /** @param {string | null | undefined} provider */
 export function llmProviderShortLabel(provider) {
   if (provider === "anima" || provider === "local") return "Anima";
+  if (provider === "minimax") return "MiniMax";
   if (provider === "openrouter") return "Venice";
   return null;
 }
@@ -18,6 +18,7 @@ export function llmProviderShortLabel(provider) {
  */
 export function llmDisplayLabel(provider, brand) {
   if (brand === "anima") return "Anima";
+  if (brand === "minimax" || provider === "minimax") return "MiniMax";
   if (brand === "openrouter" || provider === "openrouter") return "Venice";
   return llmProviderShortLabel(provider);
 }
@@ -30,6 +31,9 @@ export function llmProviderTitle(provider) {
   if (provider === "openrouter") {
     return "Last reply from Venice Uncensored via OpenRouter";
   }
+  if (provider === "minimax") {
+    return "Last reply from MiniMax";
+  }
   return "Last reply LLM";
 }
 
@@ -41,6 +45,9 @@ export function llmProviderTitle(provider) {
 export function llmDisplayTitle(provider, brand) {
   if (brand === "anima") {
     return "Anima LLM — open weights, self-hosted (never switches to a flagship provider)";
+  }
+  if (brand === "minimax" || provider === "minimax") {
+    return "MiniMax cloud chat";
   }
   if (brand === "openrouter" || provider === "openrouter") {
     return "Venice Uncensored (Dolphin Mistral 24B) via OpenRouter — open-weight uncensored chat";
@@ -56,6 +63,9 @@ export function llmProviderBadgeClass(provider) {
   if (provider === "openrouter") {
     return "border-amber-400/50 text-amber-200/90 bg-amber-400/10";
   }
+  if (provider === "minimax") {
+    return "border-cyan-400/50 text-cyan-200/90 bg-cyan-400/10";
+  }
   return "border-primary/30 text-primary/50";
 }
 
@@ -65,12 +75,19 @@ export function llmProviderBadgeClass(provider) {
  */
 export function llmDisplayBadgeClass(provider, brand) {
   if (brand === "anima") return llmProviderBadgeClass("anima");
+  if (brand === "minimax") return llmProviderBadgeClass("minimax");
   if (brand === "openrouter") return llmProviderBadgeClass("openrouter");
   return llmProviderBadgeClass(provider);
 }
 
 /** Chat backends shown in Settings. */
 export const CONFIGURED_LLM_PROVIDERS = [
+  {
+    id: "minimax",
+    label: "MiniMax",
+    env: "MINIMAX_API_KEY",
+    note: "Preferred cloud chat provider when configured. Defaults to MiniMax-M2.5 via the MiniMax Global OpenAI-compatible API.",
+  },
   {
     id: "local",
     label: "Anima LLM",

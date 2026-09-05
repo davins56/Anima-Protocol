@@ -8,6 +8,13 @@ import AmbientSoundControl from "@/components/meditation/AmbientSoundControl";
 import MeditationRitual from "@/components/meditation/MeditationRitual";
 import ChakraVisualizer from "@/components/meditation/ChakraVisualizer";
 import SacredSpaceSession from "@/components/meditation/SacredSpaceSession";
+import {
+  AFFIRMATION_ADD_FAILED,
+  AFFIRMATION_LOAD_FAILED,
+  affirmationErrorMessage,
+  createUserAffirmation,
+  loadAndSeedAffirmations,
+} from "@/lib/affirmationStore";
 
 const CATEGORY_CONFIG = {
   abundance: { label: "Abundance", glyph: "✦", color: "#FBBF24", gradient: "from-yellow-500/20 to-amber-500/10" },
@@ -54,6 +61,9 @@ export default function Meditation() {
   const [user, setUser] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [activeCharSession, setActiveCharSession] = useState(null);
+  const [storeError, setStoreError] = useState("");
+  const [addError, setAddError] = useState("");
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     init();
@@ -61,50 +71,51 @@ export default function Meditation() {
 
   const init = async () => {
     setLoading(true);
+    setStoreError("");
     try {
       const me = await base44.auth.me();
       setUser(me);
 
-      const [userAffirms, animas, chars] = await Promise.all([
-        base44.entities.Affirmation.filter({ user_email: me.email, is_active: true }),
-        base44.entities.Anima.list("-created_date", 10),
-        base44.entities.Character.list("-created_date", 100),
+      const [allAffirms, animas, chars] = await Promise.all([
+        loadAndSeedAffirmations({
+          user: me,
+          filter: (query) => base44.entities.Affirmation.filter(query),
+          create: (row) => base44.entities.Affirmation.create(row),
+          defaults: DEFAULT_AFFIRMATIONS,
+        }),
+        base44.entities.Anima.list("-created_date", 10).catch(() => []),
+        base44.entities.Character.list("-created_date", 100).catch(() => []),
       ]);
       setCharacters(chars || []);
-
-      // Seed defaults if user has none
-      let allAffirms = userAffirms || [];
-      if (allAffirms.length === 0) {
-        const created = await Promise.all(
-          DEFAULT_AFFIRMATIONS.map(a =>
-            base44.entities.Affirmation.create({ ...a, user_email: me.email, is_default: true, is_active: true })
-          )
-        );
-        allAffirms = created;
-      }
-
-      setAffirmations(allAffirms);
+      setAffirmations(allAffirms || []);
 
       const userAnima = animas?.find(a => a.assigned_user === me.email) || animas?.[0] || null;
       setAnima(userAnima);
     } catch (err) {
-      console.error(err);
+      setStoreError(affirmationErrorMessage(err, AFFIRMATION_LOAD_FAILED));
     } finally {
       setLoading(false);
     }
   };
 
   const handleAddAffirmation = async () => {
-    if (!newText.trim() || !user) return;
-    const created = await base44.entities.Affirmation.create({
-      text: newText.trim(),
-      category: newCategory,
-      user_email: user.email,
-      is_active: true,
-    });
-    setAffirmations(prev => [...prev, created]);
-    setNewText("");
-    setShowAddForm(false);
+    setAddError("");
+    setAdding(true);
+    try {
+      const created = await createUserAffirmation({
+        user,
+        text: newText,
+        category: newCategory,
+        create: (row) => base44.entities.Affirmation.create(row),
+      });
+      setAffirmations(prev => [...prev, created]);
+      setNewText("");
+      setShowAddForm(false);
+    } catch (err) {
+      setAddError(affirmationErrorMessage(err, AFFIRMATION_ADD_FAILED));
+    } finally {
+      setAdding(false);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -130,7 +141,7 @@ export default function Meditation() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col pb-20" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}>
+    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto" style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}>
 
       {/* Ambient aura glow */}
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -187,6 +198,16 @@ export default function Meditation() {
           {/* AFFIRMATIONS TAB */}
           {activeTab === "affirm" && (
             <motion.div key="affirm" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+
+              {storeError && (
+                <p
+                  role="alert"
+                  className="font-mono text-[10px] leading-relaxed px-3 py-2 border"
+                  style={{ borderColor: "rgba(248,113,113,0.35)", color: "#FCA5A5", background: "rgba(127,29,29,0.2)" }}
+                >
+                  {storeError}
+                </p>
+              )}
 
               {/* Player */}
               <AffirmationPlayer affirmations={filtered} anima={anima} />
@@ -279,17 +300,26 @@ export default function Meditation() {
                       </button>
                     ))}
                   </div>
+                  {addError && (
+                    <p
+                      role="alert"
+                      className="font-mono text-[10px] leading-relaxed"
+                      style={{ color: "#FCA5A5" }}
+                    >
+                      {addError}
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={handleAddAffirmation}
-                      disabled={!newText.trim()}
+                      disabled={!newText.trim() || adding}
                       className="px-4 py-2 font-mono text-[9px] tracking-widest uppercase transition-all disabled:opacity-30"
                       style={{ background: "rgba(124,58,237,0.3)", border: "1px solid rgba(139,92,246,0.5)", color: "#C084FC" }}
                     >
-                      ✦ Add
+                      {adding ? "Saving…" : "✦ Add"}
                     </button>
                     <button
-                      onClick={() => setShowAddForm(false)}
+                      onClick={() => { setShowAddForm(false); setAddError(""); }}
                       className="px-4 py-2 font-mono text-[9px] tracking-widest uppercase transition-all"
                       style={{ border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.3)" }}
                     >
@@ -299,7 +329,7 @@ export default function Meditation() {
                 </div>
               ) : (
                 <button
-                  onClick={() => setShowAddForm(true)}
+                  onClick={() => { setShowAddForm(true); setAddError(""); }}
                   className="w-full flex items-center justify-center gap-2 py-3 border font-mono text-[9px] tracking-widest uppercase transition-all"
                   style={{ borderColor: "rgba(139,92,246,0.2)", color: "rgba(167,139,250,0.5)", background: "rgba(124,58,237,0.04)" }}
                 >

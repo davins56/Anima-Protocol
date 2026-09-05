@@ -1,19 +1,18 @@
 // @ts-check
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { Analytics } from "@vercel/analytics/react";
 import App from "./App.full.jsx";
-import { initAnalytics } from "./lib/analytics";
-import { initAlgoliaNetlifySearch } from "./lib/algoliaNetlify";
 import { registerSW } from "virtual:pwa-register";
 import "./index.css";
 
-// Initialize Mixpanel once at startup. Tracking stays opted-out until the user
-// accepts in ConsentBanner; init itself sends nothing.
-initAnalytics();
-
-// Algolia Netlify crawler widget. No-op until VITE_ALGOLIA_SEARCH_API_KEY is set.
-initAlgoliaNetlifySearch();
+// Mixpanel + Algolia stay off the HTML entry chunk. Consent still gates
+// tracking inside analytics.js after this loads.
+void import("./lib/analytics").then((mod) => {
+  mod.initAnalytics();
+});
+void import("./lib/algoliaNetlify").then((mod) => {
+  mod.initAlgoliaNetlifySearch();
+});
 
 // Register the auto-updating service worker (no-op in dev, where the plugin
 // ships a stub). With registerType "autoUpdate", a new deploy is detected,
@@ -29,6 +28,5 @@ if (!rootElement) {
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <App />
-    <Analytics />
   </React.StrictMode>
 );

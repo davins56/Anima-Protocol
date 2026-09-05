@@ -122,6 +122,39 @@
   * {
     border-color: hsl(var(--border));
   }
+  /*
+   * PWA viewport lock. Mobile browsers treat `100vh` as the *large* viewport
+   * (address bar hidden), so a height-locked shell with no inner scroller
+   * clips the last rows behind chrome. Size html/body/#root to the visible
+   * viewport (`100dvh`, then JS `--app-height`) and keep document scroll
+   * off — `.app-shell-main` (or a page's own overflow-y-auto) is the scroller.
+   */
+  html {
+    height: 100%;
+    height: 100dvh;
+    height: var(--app-height, 100dvh);
+    /*
+     * iOS 26 Safari renders the page edge-to-edge and floats its address/tab
+     * bar over the canvas. The strip behind that chrome is painted from the
+     * root element, so an unpainted `html` reads as the UI not filling the
+     * screen. Paint it explicitly rather than relying on body propagation.
+     */
+    background-color: hsl(var(--background));
+  }
+  html, body, #root {
+    max-height: 100%;
+    max-height: 100dvh;
+    max-height: var(--app-height, 100dvh);
+    overflow: hidden;
+  }
+  body, #root {
+    height: 100%;
+    min-height: 0;
+  }
+  #root {
+    display: flex;
+    flex-direction: column;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
@@ -146,6 +179,12 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+  /*
+   * Full screen height including any area behind translucent browser chrome.
+   * `useViewportHeight` overwrites this with the measured peak; the `100lvh`
+   * fallback is the closest CSS-only equivalent.
+   */
+  --app-height-max: 100lvh;
   /* Tab bar height for mobile padding: 56px + safe-area-inset-bottom */
   --tab-bar-height: calc(56px + env(safe-area-inset-bottom, 0px));
 }
@@ -158,15 +197,67 @@
 }
 
 .safe-top { padding-top: env(safe-area-inset-top, 0px); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
-.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px); }
+.safe-bottom { padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px)); }
+.pb-safe { padding-bottom: max(var(--safe-bottom, env(safe-area-inset-bottom, 0px)), 0px); }
 
 /*
  * Visible-viewport height utilities.
  * Layered fallback: legacy `vh` -> modern dynamic `dvh` -> JS-measured
  * `--app-height` (set by useViewportHeight) which wins for pixel-accurate
  * iOS/Android sizing so mobile browser chrome never clips the bottom UI.
+ *
+ * When the virtual keyboard is open, `--app-height` equals visualViewport
+ * height. Do not also add the keyboard inset as padding on `.h-screen-safe`
+ * — that double-count was the black bar covering the chat composer.
+ * `html[data-keyboard-open]` hides `.fixed-bottom-chrome` because iOS Safari
+ * pins `position: fixed; bottom: 0` to the visual viewport and the black
+ * tab bar would sit on top of the text box.
  */
+
+html[data-keyboard-open] .fixed-bottom-chrome {
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
+/*
+ * Full-viewport overlays must follow `--app-height` (visualViewport when the
+ * keyboard is open). A leftover `100dvh` is taller than the locked html/body
+ * and gets clipped. Do not add extra keyboard padding on the chat composer.
+ */
+.h-app-viewport {
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+}
+
+/*
+ * Edge-to-edge backdrop. Spans the whole display — including the region behind
+ * iOS 26's floating Safari chrome — so the app never shows an unpainted band
+ * even when the interactive shell is inset to stay reachable. Non-interactive
+ * and behind everything, so it cannot swallow taps.
+ */
+.app-viewport-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  height: 100lvh;
+  height: var(--app-height-max, 100lvh);
+  background-color: hsl(var(--background));
+  pointer-events: none;
+}
+
+/*
+ * Center a flex column only while it fits the scrollport; fall back to start
+ * so the first heading/control stays reachable when content overflows.
+ */
+.justify-safe-center {
+  justify-content: flex-start;
+  justify-content: safe center;
+}
+
 .h-screen-safe {
   height: 100vh;
   height: 100dvh;
@@ -181,6 +272,41 @@
   max-height: 100vh;
   max-height: 100dvh;
   max-height: var(--app-height, 100dvh);
+}
+
+/* Root app chrome: fills the locked viewport, never becomes a second document. */
+.app-shell {
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  /*
+   * Landscape on a notched iPhone insets the display horizontally. Without
+   * these the shell either clips under the notch or leaves an unpainted
+   * gutter; `.app-viewport-backdrop` keeps the gutter itself painted.
+   */
+  padding-left: var(--safe-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-right, env(safe-area-inset-right, 0px));
+}
+
+/*
+ * Default route scroller — sits between the in-flow header and the reserved
+ * tab-bar padding. Pages that grow taller than this region scroll here.
+ * Pages that manage their own column (Chat) use `.app-page-fill`.
+ */
+.app-shell-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fill the shell and clip; the page must provide an inner overflow-y-auto. */
+.app-page-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Mobile page content padding — adds space for bottom tab bar on small screens */

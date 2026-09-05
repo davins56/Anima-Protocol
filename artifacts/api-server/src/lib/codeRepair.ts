@@ -1,3 +1,5 @@
+import { OPENROUTER_FREE_MODEL } from "./openaiClient";
+
 export type CodeRepairCategory =
   | "openrouter_quota"
   | "openrouter_key"
@@ -79,7 +81,7 @@ function classify(input: CodeRepairInput): CodeRepairCategory {
 
 function openRouterQuotaRepair(input: CodeRepairInput): CodeRepairAnalysis {
   const env = input.diagnostics?.openrouterEnv || "OPENROUTER_API_KEY";
-  const model = input.diagnostics?.openrouterModel || "openai/gpt-oss-20b:free";
+  const model = input.diagnostics?.openrouterModel || OPENROUTER_FREE_MODEL;
   const localConfigured = Boolean(input.diagnostics?.localConfigured);
   const localHost = input.diagnostics?.localHost || null;
   const customOnly = Boolean(input.diagnostics?.customOnly);

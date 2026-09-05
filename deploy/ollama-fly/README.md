@@ -1,113 +1,142 @@
-# Deploy the Anima chat LLM as an always-on public host (Fly.io)
+# Fly.io Ollama host (`anima-chat-llm`)
 
-The rest of `scripts/llm/` gets you a working `anima-chat` model on your own
-laptop. This directory does the same build, but as a small **always-on**
-service with a public HTTPS URL — the piece Vercel production actually needs,
-since it can't reach `localhost` or a laptop that's asleep.
+Public HTTPS OpenAI-compatible API for the branded `anima-chat` model
+(`qwen2.5:3b`, ~2 GB, CPU-friendly). The Cloudflare Worker at
+`anima-protocol.com` cannot reach `localhost` (isolate fetch is rejected with
+Cloudflare error 1003). This app is the intended `ANIMA_LOCAL_LLM_BASE_URL`.
 
-What this deploys: Ollama serving the same Qwen2.5 3B `anima-chat` model
-(baked into the image at build time — no persistent volume, no cold-start
-pull), fronted by [Caddy](https://caddyserver.com/) enforcing a bearer-token
-check on every request except the health-check path. **Do not remove that
-proxy** — Ollama itself has no authentication, so an unguarded public URL
-lets anyone run inference on your bill, or call `/api/pull` / `/api/delete`
-to overwrite or wipe the model.
+Chat still uses only a self-hosted Anima LLM or OpenRouter. This host is not
+Gemini, Groq, or OpenAI flagship.
 
-This is the CPU/laptop-tier model (~2GB, good enough for real chats, not a
-match for a fine-tuned GPU model). For the GPU-tier Ministral 3 8B path, see
-`scripts/llm/docker-compose.vllm.yml` and host it the same way (any Docker
-host with a public HTTPS URL works — Fly GPU Machines, RunPod, etc.).
+## What you get
+
+- Ollama on loopback `:11434`
+- Caddy on `:8080` requiring `Authorization: Bearer <PROXY_AUTH_TOKEN>` on every `/v1/*` request (401 otherwise)
+- `/healthz` — static `ok` (no Ollama / model call) so Fly checks pass during the first-boot pull
+- Volume at `/root/.ollama` so weights survive restarts
+- One machine kept running (`auto_stop_machines = "off"`, `min_machines_running = 1`)
+
+The api-server sends the same header the OpenAI SDK uses:
+`Authorization: Bearer <ANIMA_LOCAL_LLM_API_KEY>`. That value must equal
+`PROXY_AUTH_TOKEN`. Never bake a token into the image or commit one.
+
+## Scale-to-zero tradeoff
+
+This `fly.toml` does **not** stop machines when idle. Interactive chat needs a
+warm Ollama process; a cold start (machine boot + load `anima-chat` on CPU)
+often exceeds the Worker's first-turn budget, so chat looks like it "never
+starts."
+
+If you switch to `auto_stop_machines = "stop"` or `"suspend"` to save money,
+keep `min_machines_running = 0` only if you accept that the first message after
+idle may time out. Do not change that without measuring a real chat turn.
 
 ## Prerequisites
 
-- A [Fly.io](https://fly.io) account and the `flyctl` CLI (`brew install
-  flyctl`, or see <https://fly.io/docs/flyctl/install/>) — this is a paid
-  service; a 2GB CPU machine kept always-on costs a few dollars a month.
-- `fly auth login`
+- [flyctl](https://fly.io/docs/flyctl/install/) logged in (`fly auth login`)
+- Commands run from the **repository root** (the Dockerfile copies
+  `scripts/llm/Modelfile.anima-chat`)
 
-## Deploy
-
-```bash
-cd deploy/ollama-fly
-
-# First run only: creates the app + fly.toml app name, picks a region.
-# Say "no" to any Postgres/Redis/volume prompts — none are needed.
-fly launch --no-deploy
-
-# Generate a secret and store it as a Fly secret (never put it in fly.toml).
-fly secrets set PROXY_AUTH_TOKEN=$(openssl rand -hex 32)
-
-# Builds the image (bakes the model in) and deploys it.
-fly deploy
-```
-
-The build step runs `ollama pull qwen2.5:3b` + `ollama create anima-chat`
-inside the image, so it takes a few minutes the first time — that's expected.
-
-## Verify it's actually working
+## Operator steps
 
 ```bash
-# Unauthenticated → 401 (proves the endpoint isn't wide open)
-curl -sS -o /dev/null -w '%{http_code}\n' https://<app-name>.fly.dev/v1/models
+# 1. Create the app without deploying (skip if anima-chat-llm already exists)
+fly launch --no-deploy --config deploy/ollama-fly/fly.toml
+# or: fly apps create anima-chat-llm
 
-# Authenticated → the model list
-curl -sS https://<app-name>.fly.dev/v1/models \
-  -H "Authorization: Bearer $PROXY_AUTH_TOKEN"
+# 2. Persistent volume for Ollama weights (~2 GB model + headroom)
+fly volumes create ollama_data --size 20 --app anima-chat-llm --yes
 
-# A real chat completion
-curl -sS https://<app-name>.fly.dev/v1/chat/completions \
-  -H "Authorization: Bearer $PROXY_AUTH_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"anima-chat","messages":[{"role":"user","content":"Who are you?"}]}'
+# 3. Bearer token — generate locally, do not commit
+PROXY_AUTH_TOKEN="$(openssl rand -hex 32)"
+fly secrets set PROXY_AUTH_TOKEN="${PROXY_AUTH_TOKEN}" -a anima-chat-llm
+# keep the value for the Worker secret ANIMA_LOCAL_LLM_API_KEY
+
+# 4. Deploy (repo root = Docker context)
+fly deploy --config deploy/ollama-fly/fly.toml --dockerfile deploy/ollama-fly/Dockerfile
 ```
 
-If `curl https://<app-name>.fly.dev/healthz` doesn't return `ok`, check `fly
-logs` and `fly status` before touching Vercel — no point debugging the
-client side of a backend that isn't up yet.
-
-## Wire it into Vercel production
-
-Set these on the Vercel project (Production environment), matching
-`PROXY_AUTH_TOKEN` from above, then redeploy without build cache:
+First boot pulls `qwen2.5:3b` and runs `ollama create anima-chat`. `/healthz`
+stays up so Fly does not kill the machine during the pull. Watch progress:
 
 ```bash
-ANIMA_LOCAL_LLM_BACKEND=ollama
-ANIMA_LOCAL_LLM_BASE_URL=https://<app-name>.fly.dev/v1
-ANIMA_LOCAL_LLM_API_KEY=<same value as PROXY_AUTH_TOKEN>
-ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
-ANIMA_OLLAMA_MODEL_LIGHT=anima-chat
-ANIMA_OLLAMA_MODEL_HEAVY=anima-chat
+fly logs -a anima-chat-llm
 ```
 
-`ANIMA_LOCAL_LLM_API_KEY` is what the api-server's OpenAI-compatible client
-sends as `Authorization: Bearer …` on every request — it must exactly match
-`PROXY_AUTH_TOKEN`, or Caddy will reject it with **401**. Chat /
-`/api/healthz/llm?probe=1` then report `errorKind: "auth"` — regenerate the
-Fly secret and copy it into Vercel, then redeploy.
-
-If the bearer is correct but you still see an empty-body **403**, the proxy
-is reaching Ollama with the public `Host` header — Ollama only accepts
-loopback Host. The Caddyfile rewrites `Host` to `127.0.0.1:11434` and strips
-`Authorization` before proxying; redeploy this app (`fly deploy`) if an older
-image is still live. See `../../docs/custom-llm.md`.
-
-Confirm from the app side:
+## Smoke test
 
 ```bash
-curl -s 'https://<your-vercel-domain>/api/healthz/llm?probe=1' | jq '{preferred,probeOk,localEndpoint}'
-# expect: preferred=local, probeOk=true, localEndpoint.configured=true
+# Replace TOKEN with the PROXY_AUTH_TOKEN you set. Do not log it to tickets.
+curl -sS https://anima-chat-llm.fly.dev/v1/chat/completions \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"anima-chat","messages":[{"role":"user","content":"Reply with the single word: ok"}],"max_tokens":16}'
 ```
 
-## Updating the model later
+Expect HTTP 200 and a completion. Without the header, or with the wrong token:
 
-Edit `Modelfile.anima-chat` (keep it in sync with
-`../../scripts/llm/Modelfile.anima-chat`, the source of truth for the system
-prompt), then `fly deploy` again — the image rebuild re-runs the bake step.
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://anima-chat-llm.fly.dev/v1/chat/completions
+# 401
+```
 
-## Cost / idle note
+## App-side env (Cloudflare Worker, not Vercel)
 
-`auto_stop_machines = false` in `fly.toml` keeps one machine running
-continuously so chat never eats a cold-start delay — that's also what costs
-money 24/7. If idle-cost matters more than latency, flip it to `true` (Fly
-will stop the machine when idle and restart it on the next request, adding
-roughly 10-30s to that first turn).
+**Do not add LLM bindings to `wrangler.jsonc` until the Secrets Store
+entries exist.** Cloudflare Workers Builds auto-deploys `main`. A
+`secrets_store_secrets` object whose `secret_name` is missing from store
+`a31e40473ef34db896b5bc1e6c1c4b86` makes `wrangler deploy` fail and takes
+down the Worker (the whole site). Ordered runbook:
+
+1. Create the `secret_name` in that store (values only in the dashboard).
+2. Add the matching `{ binding, store_id, secret_name }` in `wrangler.jsonc`
+   in the **same** commit.
+3. Then deploy.
+
+Today `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `DATABASE_URL`, and
+`OPENROUTER_API_KEY` are bound. Fly names below are the follow-up, after
+the public HTTPS host is live. Dashboard-only secrets are still dropped
+on the next git deploy unless they are declared — that is why step 2
+exists, and why it must come after step 1.
+
+| Name | Where | Value |
+|------|--------|--------|
+| `ANIMA_RUNTIME` | `wrangler.jsonc` `vars` (already committed) | `worker` (never invent localhost) |
+| `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` (already committed) | `ollama` |
+| `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` (already committed) | `anima-chat` |
+| `ANIMA_OPENROUTER_FREE` | `wrangler.jsonc` `vars` (already committed) | `true` (skip Venice; use `minimax/minimax-m2.7:free`) |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store, **then** a binding (not in git yet) | `https://anima-chat-llm.fly.dev/v1` |
+| `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store, **then** a binding (not in git yet) | same as `PROXY_AUTH_TOKEN` |
+| `OPENROUTER_API_KEY` | Secrets Store + `wrangler.jsonc` binding (name only) | OpenRouter key (used when local URL is unset) |
+
+Until `ANIMA_LOCAL_LLM_BASE_URL` is a public HTTPS `…/v1` URL, the Worker
+reports `localEndpoint.configured: false` and uses OpenRouter when a key is
+bound. An explicit `http://localhost:11434/v1` on the Worker is treated as
+misconfigured (not attempted).
+
+Verify after the Worker redeploy:
+
+```bash
+curl -sS https://anima-protocol.com/api/healthz/llm
+curl -sS https://anima-protocol.com/api/healthz/llm?probe=1
+```
+
+`localEndpoint.host` should be `anima-chat-llm.fly.dev`, `isLocalhost` false,
+`isHttps` true, `hasV1Path` true. `chain` should include `local`.
+
+## Performance
+
+Ollama on Fly **CPU** with a 3B model is slow for long replies. That is
+expected. Upgrade path: a Fly GPU machine, or a larger CPU/`performance-*`
+VM, still serving `anima-chat` (or a fine-tuned tag) behind the same proxy.
+Do not point `ANIMA_LOCAL_LLM_BASE_URL` at OpenAI, Groq, or Gemini.
+
+## Files
+
+| File | Role |
+|------|------|
+| `Dockerfile` | `ollama/ollama` + Caddy + Modelfile + entrypoint |
+| `entrypoint.sh` | serve → proxy → background `anima-chat` bootstrap |
+| `Caddyfile` | Bearer on `/v1/*`, static `/healthz` |
+| `fly.toml` | app `anima-chat-llm`, volume, warm machine, HTTP check |

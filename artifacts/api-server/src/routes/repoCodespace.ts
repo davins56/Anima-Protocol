@@ -7,6 +7,11 @@ import { exec } from "child_process";
 import { createRateLimit } from "../lib/rateLimit";
 import { resolveModel } from "../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import {
+  fetchGithubArchiveFiles,
+  validateGithubArchiveRef,
+} from "../lib/githubArchive";
+import { describeCodespaceAgentCharacter } from "../lib/codespaceAgentPrompt";
 
 const router = Router();
 router.use(createRateLimit({ name: "repo-codespace", max: 100 }));
@@ -24,6 +29,9 @@ function requireUser(req: Request, res: Response, next: () => void) {
 router.use(requireUser);
 
 function getRepoRoot(): string {
+  const fromEnv = process.env.REPO_ROOT?.trim();
+  if (fromEnv) return path.resolve(fromEnv);
+
   let dir = process.cwd();
   while (dir !== path.parse(dir).root) {
     if (fsSync.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
@@ -36,17 +44,23 @@ function getRepoRoot(): string {
   return process.cwd();
 }
 
-// Helper to validate and resolve paths cleanly without prefix vulnerabilities
-function resolveRepoPath(userPath: string): string {
-  const repoRoot = getRepoRoot();
-  const normalized = path.normalize(userPath);
-  const resolved = path.resolve(repoRoot, normalized);
-  const relative = path.relative(repoRoot, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error("Path traversal detected.");
+export async function probeRepoRoot(root: string = getRepoRoot()): Promise<{
+  available: boolean;
+  code?: string;
+}> {
+  try {
+    await fs.access(root);
+    return { available: true };
+  } catch {
+    return { available: false, code: "filesystem_unavailable" };
   }
-  return resolved;
 }
+
+const FILESYSTEM_UNAVAILABLE = {
+  available: false as const,
+  code: "filesystem_unavailable" as const,
+  error: "Repository filesystem is not available on this host.",
+};
 
 const IGNORED_DIRS = new Set([
   ".git",
@@ -66,6 +80,81 @@ const IGNORED_FILES = new Set([
   "yarn.lock",
   "tsconfig.tsbuildinfo",
 ]);
+
+function isForbiddenPath(relPath: string): boolean {
+  if (!relPath || relPath === ".") return false;
+  const normalized = relPath.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+
+  for (const segment of segments) {
+    if (!segment) continue;
+    // Disallow dotfiles / dotfolders (e.g. .env, .git, .replit, etc.)
+    if (segment.startsWith(".")) {
+      return true;
+    }
+    // Disallow node_modules
+    if (segment === "node_modules") {
+      return true;
+    }
+  }
+
+  const fileName = segments[segments.length - 1];
+  if (IGNORED_FILES.has(fileName)) {
+    return true;
+  }
+
+  return false;
+}
+
+// Helper to validate and resolve paths securely
+export function resolveRepoPath(userPath: string): string {
+  if (!userPath || typeof userPath !== "string") {
+    throw new Error("Invalid path.");
+  }
+
+  const rootResolved = getRepoRoot();
+  let canonicalRoot: string;
+  try {
+    canonicalRoot = fsSync.realpathSync(rootResolved);
+  } catch {
+    canonicalRoot = rootResolved;
+  }
+
+  const normalized = path.normalize(userPath);
+  const resolved = path.resolve(rootResolved, normalized);
+
+  // Boundary check on non-canonical resolved path against rootResolved
+  const rawRootWithSep = rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep;
+  if (resolved !== rootResolved && !resolved.startsWith(rawRootWithSep)) {
+    throw new Error("Path traversal detected.");
+  }
+
+  // Check symlinks / realpath against canonicalRoot
+  let targetToVerify = resolved;
+  if (!fsSync.existsSync(resolved)) {
+    targetToVerify = path.dirname(resolved);
+  }
+
+  let canonicalTarget: string;
+  try {
+    canonicalTarget = fsSync.realpathSync(targetToVerify);
+  } catch {
+    throw new Error("Path traversal detected.");
+  }
+
+  const canonicalRootWithSep = canonicalRoot.endsWith(path.sep) ? canonicalRoot : canonicalRoot + path.sep;
+  if (canonicalTarget !== canonicalRoot && !canonicalTarget.startsWith(canonicalRootWithSep)) {
+    throw new Error("Path traversal detected.");
+  }
+
+  // Check sensitive / forbidden path patterns
+  const relPath = path.relative(rootResolved, resolved);
+  if (isForbiddenPath(relPath)) {
+    throw new Error("Access to sensitive path forbidden.");
+  }
+
+  return resolved;
+}
 
 async function crawl(dir: string, base: string = ""): Promise<{ path: string; isDirectory: boolean }[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -97,13 +186,49 @@ async function crawl(dir: string, base: string = ""): Promise<{ path: string; is
   return results;
 }
 
-router.get("/files", async (req: Request, res: Response) => {
+router.get("/status", async (_req: Request, res: Response) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
+  res.json({ available: true });
+});
+
+router.get("/files", async (_req: Request, res: Response) => {
+  const status = await probeRepoRoot();
+  if (!status.available) {
+    res.status(503).json(FILESYSTEM_UNAVAILABLE);
+    return;
+  }
   try {
-    const repoRoot = getRepoRoot();
-    const files = await crawl(repoRoot);
-    res.json({ files });
+    const files = await crawl(getRepoRoot());
+    res.json({ available: true, files });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/github-archive", async (req: Request, res: Response) => {
+  const parsed = validateGithubArchiveRef(req.body || {});
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  try {
+    const result = await fetchGithubArchiveFiles(parsed.ref);
+    if (!result.files.length && result.errors.length) {
+      const notFound = result.errors.some((e) => /not found/i.test(e));
+      res.status(notFound ? 404 : 502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      files: [],
+      skipped: [],
+      errors: [err instanceof Error ? err.message : String(err)],
+    });
   }
 });
 
@@ -162,9 +287,8 @@ router.post("/terminal", async (req: Request, res: Response) => {
       return;
     }
 
-    const repoRoot = getRepoRoot();
-    // Run commands relative to repoRoot
-    exec(command, { cwd: repoRoot, timeout: 20000 }, (error, stdout, stderr) => {
+    // Run commands relative to the detected repository workspace root
+    exec(command, { cwd: getRepoRoot(), timeout: 20000 }, (error, stdout, stderr) => {
       res.json({
         stdout: stdout || "",
         stderr: stderr || "",
@@ -185,14 +309,18 @@ router.post("/agent-step", async (req: Request, res: Response) => {
     };
 
     const rawMessages = Array.isArray(messages) ? messages : [];
-    const charName = character?.name || "NetNavi";
-    const personality = character?.personality || "";
-    const speaking = character?.speaking_style || "";
+    const { charName, isAnima, identityLine } = describeCodespaceAgentCharacter(
+      character || {},
+    );
     const fileList = Array.isArray(files) ? files : [];
+    const identity = identityLine ? ` ${identityLine} ` : " ";
+    const voice = isAnima
+      ? `You are this user's personal Anima. Stay fully in character as ${charName} in every message you write to the user — narrate what you are building in your own voice with warmth and personality. Never sound like a generic assistant, and do not switch into a NetNavi or Jules persona.`
+      : `You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi" helper. Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.`;
 
-    const systemPrompt = `You are ${charName}, an AI companion who edits real source code of the repository hands-on for the user inside the repository codespace workspace. ${personality ? `Your personality: ${personality}. ` : ""}${speaking ? `You speak like this: ${speaking}. ` : ""}
+    const systemPrompt = `You are ${charName}, an AI companion who edits real source code of the repository hands-on for the user inside the repository codespace workspace.${identity}
 
-You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi" helper. Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.
+${voice}
 
 You have tools to manage real repository files and run real bash commands (tests, builds, lints) on the host machine relative to the repository root directory:
 - list_repo_files: lists all paths under the repository root.

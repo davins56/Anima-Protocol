@@ -1,5 +1,10 @@
 import { Component, Fragment } from "react";
 import { track } from "@/lib/analytics";
+import {
+  hasAttemptedStaleChunkRecovery,
+  isStaleChunkError,
+  recoverStaleChunk,
+} from "@/lib/staleChunkRecovery";
 
 // A render-phase error in any child unmounts the whole React tree by default,
 // leaving the user staring at a blank screen (reads as a hard "crash"). This
@@ -66,6 +71,14 @@ class ErrorBoundary extends Component {
     console.error("[ErrorBoundary] caught render error:", error, errorInfo);
     this.report("Error Boundary Triggered", error, errorInfo);
 
+    // HTML-as-JS MIME (stale hashed chunk) cannot remount-heal. One
+    // cache-clear + hard-reload per tab session; a second MIME failure falls
+    // through to the recovery panel instead of looping.
+    if (isStaleChunkError(error) && !hasAttemptedStaleChunkRecovery()) {
+      void recoverStaleChunk();
+      return;
+    }
+
     // First crash: attempt one silent in-place self-repair. If it throws again
     // the attempt counter blocks a retry loop and the manual panel takes over.
     if (this.state.attempts < 1) {
@@ -116,40 +129,48 @@ class ErrorBoundary extends Component {
   }
 
   handleSelfRepair = async () => {
-  this.clearHealTimer();
+    this.clearHealTimer();
 
-  try {
-    // Try to cleanly sign out from both auth systems
-    if (typeof window !== "undefined") {
-      // Clerk
-      if (window.Clerk && typeof window.Clerk.signOut === "function") {
-        await window.Clerk.signOut();
-      }
-
-      // base44
-      if (window.base44?.auth?.logout) {
-        await window.base44.auth.logout();
-      }
+    if (
+      isStaleChunkError(this.state.error) &&
+      !hasAttemptedStaleChunkRecovery()
+    ) {
+      await recoverStaleChunk();
+      return;
     }
 
-    // Clear storage
     try {
-      localStorage.clear();
-      sessionStorage.clear();
-    } catch {}
+      // Try to cleanly sign out from both auth systems
+      if (typeof window !== "undefined") {
+        // Clerk
+        if (window.Clerk && typeof window.Clerk.signOut === "function") {
+          await window.Clerk.signOut();
+        }
 
-    // Remount the app
-    this.setState((s) => ({
-      hasError: false,
-      error: null,
-      attempts: s.attempts + 1,
-      recoverKey: s.recoverKey + 1,
-    }));
-  } catch (err) {
-    console.error("[ErrorBoundary] Self-repair failed, forcing reload:", err);
-    window.location.reload();
-  }
-};
+        // base44
+        if (window.base44?.auth?.logout) {
+          await window.base44.auth.logout();
+        }
+      }
+
+      // Clear storage
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch {}
+
+      // Remount the app
+      this.setState((s) => ({
+        hasError: false,
+        error: null,
+        attempts: s.attempts + 1,
+        recoverKey: s.recoverKey + 1,
+      }));
+    } catch (err) {
+      console.error("[ErrorBoundary] Self-repair failed, forcing reload:", err);
+      window.location.reload();
+    }
+  };
 
   handleReload = () => {
     window.location.reload();
@@ -190,27 +211,27 @@ class ErrorBoundary extends Component {
             reload if it persists.
           </p>
           {this.state.error && (
-  <div className="mt-4 p-3 border border-red-400/30 bg-red-950/30 rounded text-left">
-    <p className="font-mono text-[10px] text-red-400 mb-1 tracking-widest uppercase">
-      Error Details
-    </p>
-    <p className="font-mono text-[11px] text-red-300 break-words">
-      {this.state.error.message || String(this.state.error)}
-    </p>
+            <div className="my-4 p-3 border border-red-400/30 bg-red-950/30 rounded text-left">
+              <p className="font-mono text-[10px] text-red-400 mb-1 tracking-widest uppercase">
+                Error Details
+              </p>
+              <p className="font-mono text-[11px] text-red-300 break-words">
+                {this.state.error.message || String(this.state.error)}
+              </p>
 
-    {this.state.error.stack && (
-      <details className="mt-2">
-        <summary className="font-mono text-[9px] text-red-400/70 cursor-pointer hover:text-red-400">
-          Show stack trace
-        </summary>
-        <pre className="mt-1 text-[9px] text-red-400/70 overflow-auto max-h-32 whitespace-pre-wrap">
-          {this.state.error.stack.split('\n').slice(0, 8).join('\n')}
-        </pre>
-      </details>
-    )}
-  </div>
-)}
-          <div className="flex items-center justify-center gap-2">
+              {this.state.error.stack && (
+                <details className="mt-2">
+                  <summary className="font-mono text-[9px] text-red-400/70 cursor-pointer hover:text-red-400 select-none">
+                    Show stack trace
+                  </summary>
+                  <pre className="mt-1 text-[9px] text-red-400/70 overflow-auto max-h-32 whitespace-pre-wrap font-mono">
+                    {this.state.error.stack.split('\n').slice(0, 8).join('\n')}
+                  </pre>
+                </details>
+              )}
+            </div>
+          )}
+          <div className="flex items-center justify-center gap-2 mt-4">
             <button
               type="button"
               onClick={this.handleSelfRepair}

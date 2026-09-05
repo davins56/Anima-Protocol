@@ -12,7 +12,9 @@ import {
   asObject,
   sessionIdEq,
   migrateSessionMessages,
+  migrateSessionsMessages,
   ensureSchemaOnce,
+  withTransientDbRetry,
   type MsgData,
 } from "@workspace/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
@@ -57,7 +59,7 @@ async function ensureSchemaMiddleware(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const result = await ensureSchemaOnce();
+    const result = await withTransientDbRetry(() => ensureSchemaOnce());
     if (!result.ok) {
       logger.error(
         {
@@ -264,13 +266,15 @@ async function sortFieldIsMixed(
   field: string,
 ): Promise<boolean> {
   const key = fieldKey(field);
-  const [row] = await db
-    .select({
-      hasNumber: sql<boolean>`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) = 'number')`,
-      hasOther: sql<boolean>`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) in ('string', 'boolean', 'object', 'array'))`,
-    })
-    .from(userEntities)
-    .where(whereClause);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({
+        hasNumber: sql<boolean>`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) = 'number')`,
+        hasOther: sql<boolean>`bool_or(jsonb_typeof(${userEntities.data} -> ${key}) in ('string', 'boolean', 'object', 'array'))`,
+      })
+      .from(userEntities)
+      .where(whereClause),
+  );
   return Boolean(row?.hasNumber && row?.hasOther);
 }
 
@@ -314,10 +318,12 @@ async function countEntities(
   search: Record<string, unknown> | undefined,
 ): Promise<number> {
   const whereClause = buildWhereClause(userId, entityName, filters, search);
-  const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(userEntities)
-    .where(whereClause);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userEntities)
+      .where(whereClause),
+  );
   return row?.count ?? 0;
 }
 
@@ -341,10 +347,9 @@ async function listEntities(
     // This path is for pathological data only — in practice a field is
     // consistently typed.
     if (await sortFieldIsMixed(whereClause, field)) {
-      const mixedRows = await db
-        .select()
-        .from(userEntities)
-        .where(whereClause);
+      const mixedRows = await withTransientDbRetry(() =>
+        db.select().from(userEntities).where(whereClause),
+      );
       const data = mixedRows.map((r) => r.data as Record<string, unknown>);
       data.sort(compareByField(field, desc));
       const end = cap === undefined ? undefined : off + cap;
@@ -363,7 +368,7 @@ async function listEntities(
     q = q.offset(off);
   }
 
-  const rows = await q;
+  const rows = await withTransientDbRetry(() => q);
   return rows.map((r) => r.data as Record<string, unknown>);
 }
 
@@ -373,17 +378,19 @@ async function upsertEntity(
   entityId: string,
   data: Record<string, unknown>,
 ): Promise<void> {
-  await db
-    .insert(userEntities)
-    .values({ userId, entityName, entityId, data: stripUndefined(data) })
-    .onConflictDoUpdate({
-      target: [
-        userEntities.userId,
-        userEntities.entityName,
-        userEntities.entityId,
-      ],
-      set: { data: stripUndefined(data), updatedAt: new Date() },
-    });
+  await withTransientDbRetry(() =>
+    db
+      .insert(userEntities)
+      .values({ userId, entityName, entityId, data: stripUndefined(data) })
+      .onConflictDoUpdate({
+        target: [
+          userEntities.userId,
+          userEntities.entityName,
+          userEntities.entityId,
+        ],
+        set: { data: stripUndefined(data), updatedAt: new Date() },
+      }),
+  );
 }
 
 // node-postgres JSON serialization rejects `undefined` property values; strip
@@ -870,9 +877,7 @@ router.post("/messages/by-sessions", async (req, res) => {
     return;
   }
 
-  for (const sid of ids) {
-    await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
-  }
+  await db.transaction((tx) => migrateSessionsMessages(tx, userId, ids));
 
   const rows = await db
     .select()
@@ -913,9 +918,7 @@ router.post("/messages/counts", async (req, res) => {
     return;
   }
 
-  for (const sid of ids) {
-    await db.transaction((tx) => migrateSessionMessages(tx, userId, sid));
-  }
+  await db.transaction((tx) => migrateSessionsMessages(tx, userId, ids));
 
   const rows = await db
     .select({
@@ -1099,7 +1102,8 @@ router.post("/:entity/bulk-upsert", async (req, res) => {
   );
 
   try {
-    const upserted = await db.transaction(async (tx) => {
+    const upserted = await withTransientDbRetry(() =>
+      db.transaction(async (tx) => {
       const existingRows = await tx
         .select()
         .from(userEntities)
@@ -1146,7 +1150,8 @@ router.post("/:entity/bulk-upsert", async (req, res) => {
         records.push(record);
       }
       return records;
-    });
+    }),
+    );
 
     res.json({ count: upserted.length, items: upserted });
   } catch (err) {
@@ -1233,17 +1238,19 @@ router.get("/:entity", async (req, res) => {
 router.get("/:entity/:id", async (req, res) => {
   const userId = getUserId(req);
   const { entity, id } = req.params;
-  const [row] = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, entity),
-        eq(userEntities.entityId, id),
-      ),
-    )
-    .limit(1);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, entity),
+          eq(userEntities.entityId, id),
+        ),
+      )
+      .limit(1),
+  );
   res.json(row ? (row.data as Record<string, unknown>) : null);
 });
 
@@ -1305,11 +1312,14 @@ router.post("/:entity", async (req, res) => {
 
   const id = makeId();
   const now = new Date().toISOString();
+  // `id` must win over a client body. Spreading `data` after `id` used to
+  // store entityId=generated while data.id was null/undefined — POST returned
+  // no id, and ChatSession.filter({ id }) could not find the row.
   const record = {
-    id,
     created_date: now,
     updated_date: now,
     ...data,
+    id,
   };
   await upsertEntity(userId, entity, id, record);
   res.status(201).json(record);
@@ -1321,17 +1331,19 @@ router.put("/:entity/:id", async (req, res) => {
   const { entity, id } = req.params;
   const data = (req.body ?? {}) as Record<string, unknown>;
 
-  const [existing] = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, entity),
-        eq(userEntities.entityId, id),
-      ),
-    )
-    .limit(1);
+  const [existing] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, entity),
+          eq(userEntities.entityId, id),
+        ),
+      )
+      .limit(1),
+  );
 
   const now = new Date().toISOString();
   let record: Record<string, unknown>;

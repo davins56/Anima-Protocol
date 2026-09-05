@@ -4,18 +4,41 @@ import {
   ensureSchemaOnce,
   getPool,
   inspectSchema,
+  withTransientDbRetry,
 } from "@workspace/db";
-import { classifyDbError, databaseTargetHint } from "../lib/dbErrors";
+import { runtimeEnvPresence } from "../lib/cloudflareEnv";
+import {
+  classifyDbError,
+  databaseTargetHint,
+  secretFreeErrorSignal,
+} from "../lib/dbErrors";
 import { getLlmRoutingStatus, probeLlmProviders } from "../lib/llmFailover";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
+import {
+  buildClerkKeyReport,
+  clerkDiagnosticStatus,
+  probeClerkInstance,
+  summarizeClerkProbe,
+} from "../lib/clerkDiagnostics";
 
 const router: IRouter = Router();
 
-if (!process.env.DATABASE_URL) throw new Error("Missing DATABASE_URL");
-if (!process.env.CLERK_SECRET_KEY) throw new Error("Missing CLERK_SECRET_KEY");
+// Do not throw on missing DATABASE_URL / CLERK_SECRET_KEY at import time.
+// Cloudflare Workers instantiate this module before secrets are copied from
+// env bindings into process.env; /healthz must stay loadable without them.
+// Routes that actually talk to Postgres (below) still fail at request time.
 
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
   res.json(data);
+});
+
+/**
+ * Presence-only env probe. Never returns secret values — only whether the
+ * isolate can see DATABASE_URL / Clerk keys after request-time remirror.
+ */
+router.get("/healthz/env", (_req, res) => {
+  res.json(runtimeEnvPresence());
 });
 
 /**
@@ -58,6 +81,57 @@ router.get("/healthz/llm", async (req, res) => {
 });
 
 /**
+ * Public Clerk configuration probe (no secrets — key tails, hostnames, and
+ * JWKS `kid`s only).
+ *
+ * `/healthz/env` reports only presence booleans, which cannot tell "the Clerk
+ * secrets are set" apart from "the Clerk secrets belong to a different
+ * instance than the publishable key". The latter is the silent failure that
+ * reads as "the app doesn't register my login": Clerk signs the user in
+ * against the real Frontend API, then `getAuth(req)` yields no userId and
+ * every authenticated route 401s — including all of /api/chat/*, which is why
+ * the companions stop responding.
+ *
+ * Add `?probe=1` to prove instance identity by intersecting the JWKS key ids
+ * from the Backend API (derived from CLERK_SECRET_KEY) and the Frontend API
+ * (derived from CLERK_PUBLISHABLE_KEY). Disjoint sets = mismatched keys.
+ */
+router.get("/healthz/clerk", async (req, res) => {
+  const report = buildClerkKeyReport(req);
+  const wantProbe =
+    req.query.probe === "1" ||
+    req.query.probe === "true" ||
+    req.query.probe === "yes";
+
+  if (!wantProbe) {
+    const { status, httpStatus } = clerkDiagnosticStatus(report);
+    res.status(httpStatus).json({ status, ...report });
+    return;
+  }
+
+  try {
+    const probe = await probeClerkInstance(
+      report,
+      readRuntimeEnv("CLERK_SECRET_KEY"),
+    );
+    const { status, httpStatus } = clerkDiagnosticStatus(report, probe);
+    res.status(httpStatus).json({
+      status,
+      ...report,
+      probe,
+      summary: summarizeClerkProbe(report, probe),
+    });
+  } catch (err) {
+    const { status, httpStatus } = clerkDiagnosticStatus(report);
+    res.status(httpStatus === 200 ? 503 : httpStatus).json({
+      status,
+      ...report,
+      probeError: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+/**
  * Readiness probe that actually opens a Postgres connection.
  * Public (no Clerk) so operators can diagnose "Internal server error" on
  * /api/store/* without a session — /healthz alone only checks env presence.
@@ -70,7 +144,9 @@ router.get("/healthz/llm", async (req, res) => {
 router.get("/healthz/db", async (_req, res) => {
   const target = databaseTargetHint();
   try {
-    const result = await getPool().query("select 1::int as ok");
+    const result = await withTransientDbRetry(() =>
+      getPool().query("select 1::int as ok"),
+    );
     let schema: Awaited<ReturnType<typeof inspectSchema>> | undefined;
     try {
       schema = await inspectSchema();
@@ -80,7 +156,12 @@ router.get("/healthz/db", async (_req, res) => {
         status: "error",
         db: true,
         ok: result.rows?.[0]?.ok === 1,
-        schema: { ok: false, error: info.safeMessage, code: info.code },
+        schema: {
+          ok: false,
+          error: info.safeMessage,
+          reason: info.reason,
+          code: info.code,
+        },
         target,
       });
       return;
@@ -91,6 +172,9 @@ router.get("/healthz/db", async (_req, res) => {
       status: healthy ? "ok" : "error",
       db: true,
       ok: result.rows?.[0]?.ok === 1,
+      ...(healthy
+        ? {}
+        : { reason: "schema" as const, code: "schema_missing" }),
       schema: {
         ok: schema.ok,
         missingTables: schema.missingTables,
@@ -100,12 +184,17 @@ router.get("/healthz/db", async (_req, res) => {
       target,
     });
   } catch (err) {
+    // This catch only wraps getPool().query — any throw is a DB/Hyperdrive
+    // failure, even when classifyDbError cannot name the driver code.
     const info = classifyDbError(err);
+    const signal = secretFreeErrorSignal(err);
     res.status(503).json({
       status: "error",
       db: false,
-      error: info.safeMessage,
-      code: info.code,
+      error: info.isDbError ? info.safeMessage : "Database unavailable",
+      reason: info.isDbError ? info.reason : "unavailable",
+      code: info.code || signal.code || "unavailable",
+      signal: signal.signal,
       target,
     });
   }
@@ -134,6 +223,7 @@ router.get("/healthz/schema", async (_req, res) => {
     res.status(503).json({
       status: "error",
       error: info.safeMessage,
+      reason: info.reason,
       code: info.code,
       target,
     });
@@ -154,6 +244,7 @@ router.post("/healthz/schema", async (_req, res) => {
     res.status(503).json({
       status: "error",
       error: info.safeMessage,
+      reason: info.reason,
       code: info.code,
       target,
     });

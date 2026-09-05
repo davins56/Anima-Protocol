@@ -16,7 +16,8 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    OPENROUTER_FREE_MODEL: "openai/gpt-oss-20b:free",
+    OPENROUTER_FREE_MODEL: "minimax/minimax-m2.7:free",
+    MINIMAX_DEFAULT_MODEL: "MiniMax-M2.5",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(
@@ -56,17 +57,56 @@ vi.mock("../src/lib/openaiClient", () => {
       }
       return openRouterClient;
     },
+    hasMinimaxKey: () =>
+      Boolean(process.env.MINIMAX_API_KEY?.trim() || process.env.ANIMA_MINIMAX_API_KEY?.trim()),
+    getMinimaxApiKeySource: () =>
+      process.env.MINIMAX_API_KEY?.trim()
+        ? "MINIMAX_API_KEY"
+        : process.env.ANIMA_MINIMAX_API_KEY?.trim()
+          ? "ANIMA_MINIMAX_API_KEY"
+          : null,
+    getMinimaxClient: () => {
+      if (!(process.env.MINIMAX_API_KEY?.trim() || process.env.ANIMA_MINIMAX_API_KEY?.trim())) {
+        return null;
+      }
+      return openRouterClient;
+    },
+    isLoopbackUnreachableRuntime: () =>
+      Boolean(
+        process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES,
+      ),
     localLlmBaseUrl: () => {
       const explicit =
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
         process.env.VLLM_BASE_URL?.trim();
-      if (explicit) return explicit.replace(/\/$/, "");
+      if (explicit) {
+        if (
+          (process.env.ANIMA_RUNTIME === "worker" ||
+            process.env.VERCEL ||
+            process.env.VERCEL_ENV ||
+            process.env.CF_PAGES) &&
+          /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
+        ) {
+          return null;
+        }
+        return explicit.replace(/\/$/, "");
+      }
       const ollama = process.env.OLLAMA_BASE_URL?.trim();
       if (ollama) {
         const root = ollama.replace(/\/$/, "");
         return root.endsWith("/v1") ? root : `${root}/v1`;
       }
-      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      if (
+        process.env.ANIMA_RUNTIME === "worker" ||
+        process.env.VERCEL ||
+        process.env.VERCEL_ENV ||
+        process.env.CF_PAGES
+      ) {
+        return null;
+      }
       return "http://localhost:11434/v1";
     },
     hasLocalLlm: () => {
@@ -74,8 +114,25 @@ vi.mock("../src/lib/openaiClient", () => {
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
         process.env.VLLM_BASE_URL?.trim() ||
         process.env.OLLAMA_BASE_URL?.trim();
+      if (
+        explicit &&
+        (process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES) &&
+        /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
+      ) {
+        return false;
+      }
       if (explicit) return true;
-      if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
+      if (
+        process.env.ANIMA_RUNTIME === "worker" ||
+        process.env.VERCEL ||
+        process.env.VERCEL_ENV ||
+        process.env.CF_PAGES
+      ) {
+        return false;
+      }
       return true;
     },
     isCloudFlagshipLlmHost: (host: string | null | undefined) => {
@@ -100,8 +157,42 @@ vi.mock("../src/lib/openaiClient", () => {
           base = root.endsWith("/v1") ? root : `${root}/v1`;
         }
       }
-      if (!base && !(process.env.VERCEL || process.env.VERCEL_ENV)) {
+      const noLoopback = Boolean(
+        process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES,
+      );
+      const explicitLoopback = Boolean(
+        explicit && /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit),
+      );
+      const loopbackRejected = noLoopback && explicitLoopback;
+      if (!base && !noLoopback) {
         base = "http://localhost:11434/v1";
+      }
+      if (loopbackRejected) {
+        try {
+          const url = new URL(explicit.replace(/\/$/, ""));
+          return {
+            configured: false,
+            host: url.hostname,
+            hasV1Path: true,
+            isHttps: url.protocol === "https:",
+            isLocalhost: true,
+            isCloudFlagship: false,
+            isLoopbackMisconfigured: true,
+          };
+        } catch {
+          return {
+            configured: false,
+            host: "localhost",
+            hasV1Path: true,
+            isHttps: false,
+            isLocalhost: true,
+            isCloudFlagship: false,
+            isLoopbackMisconfigured: true,
+          };
+        }
       }
       if (!base) {
         return {
@@ -111,6 +202,7 @@ vi.mock("../src/lib/openaiClient", () => {
           isHttps: false,
           isLocalhost: false,
           isCloudFlagship: false,
+          isLoopbackMisconfigured: false,
         };
       }
       try {
@@ -129,6 +221,7 @@ vi.mock("../src/lib/openaiClient", () => {
           isHttps: url.protocol === "https:",
           isLocalhost: host === "localhost" || host === "127.0.0.1" || host === "::1",
           isCloudFlagship,
+          isLoopbackMisconfigured: false,
         };
       } catch {
         return {
@@ -138,6 +231,7 @@ vi.mock("../src/lib/openaiClient", () => {
           isHttps: /^https:/i.test(base),
           isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
           isCloudFlagship: /api\.openai\.com|api\.groq\.com/i.test(base),
+          isLoopbackMisconfigured: false,
         };
       }
     },
@@ -148,8 +242,21 @@ vi.mock("../src/lib/openaiClient", () => {
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
         process.env.VLLM_BASE_URL?.trim() ||
         process.env.OLLAMA_BASE_URL?.trim();
+      const noLoopback = Boolean(
+        process.env.ANIMA_RUNTIME === "worker" ||
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.CF_PAGES,
+      );
+      if (
+        explicit &&
+        noLoopback &&
+        /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
+      ) {
+        return null;
+      }
       if (explicit) return client;
-      if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+      if (noLoopback) return null;
       return client;
     },
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
@@ -344,7 +451,7 @@ describe("resolveOpenRouterModel", () => {
     process.env.ANIMA_OPENROUTER_FREE = "true";
     delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
     delete process.env.ANIMA_OPENROUTER_MODEL_FAMILY;
-    expect(resolveOpenRouterModel("standard").model).toBe("openai/gpt-oss-20b:free");
+    expect(resolveOpenRouterModel("standard").model).toBe("minimax/minimax-m2.7:free");
   });
 
   it("can select a supported OpenRouter family by name", () => {
@@ -626,12 +733,12 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("openai/gpt-oss-20b:free");
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[0][0].model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     );
-    expect(createMock.mock.calls[1][0].model).toBe("openai/gpt-oss-20b:free");
+    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m2.7:free");
     expect(isOpenRouterCreditFallback()).toBe(true);
   });
 
@@ -655,7 +762,7 @@ describe("createChatStreamWithFailover", () => {
     });
 
     expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("openai/gpt-oss-20b:free");
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
     expect(isOpenRouterCreditFallback()).toBe(false);
     expect(resolveOpenRouterModel("standard").model).toBe(
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
@@ -1149,10 +1256,11 @@ describe("probeLlmProviders", () => {
     delete process.env.OPEN_ROUTER_API_KEY;
     process.env.VERCEL = "1";
     const probes = await probeLlmProviders();
-    expect(probes).toHaveLength(2);
+    expect(probes).toHaveLength(3);
     expect(probes[0]).toMatchObject({ provider: "local", configured: false, ok: false });
-    expect(probes[1]).toMatchObject({ provider: "openrouter", configured: false, ok: false });
-    expect(probes[1].message).toMatch(/OPENROUTER_API_KEY/i);
+    expect(probes[1]).toMatchObject({ provider: "minimax", configured: false, ok: false });
+    expect(probes[2]).toMatchObject({ provider: "openrouter", configured: false, ok: false });
+    expect(probes[2].message).toMatch(/OPENROUTER_API_KEY/i);
   });
 
   it("probes the local endpoint with a tiny completion", async () => {
@@ -1204,7 +1312,7 @@ describe("probeLlmProviders", () => {
       provider: "openrouter",
       configured: true,
       ok: true,
-      model: "openai/gpt-oss-20b:free",
+      model: "minimax/minimax-m2.7:free",
     });
   });
 });
