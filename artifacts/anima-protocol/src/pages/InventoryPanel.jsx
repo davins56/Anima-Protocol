@@ -7,6 +7,9 @@ import { ChevronLeft, Filter, Loader, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import InventoryGrid from "@/components/inventory/InventoryGrid";
 import { motion } from "framer-motion";
+import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import { INVENTORY_LIST_LIMIT } from "@/lib/inventory";
+import useStewardInventoryGrant from "@/hooks/useStewardInventoryGrant";
 
 const ITEM_TYPES = ["all", "gear", "weapon", "armor", "consumable", "artifact", "misc"];
 const RARITIES = ["all", "common", "uncommon", "rare", "legendary"];
@@ -25,21 +28,27 @@ export default function InventoryPanel() {
   const [rarityFilter, setRarityFilter] = useState("all");
   const [selectedItem, setSelectedItem] = useState(null);
   const [stats, setStats] = useState({ total: 0, equipped: 0, byRarity: {} });
+  const { granting, done: grantDone, added: grantAdded } = useStewardInventoryGrant(selectedChar);
 
   useEffect(() => {
     loadCharacters();
   }, []);
 
   useEffect(() => {
-    if (selectedChar) {
+    if (selectedChar && grantDone) {
       loadInventory();
     }
-  }, [selectedChar]);
+  }, [selectedChar, grantDone]);
 
   const loadCharacters = async () => {
     try {
-      const chars = await base44.entities.Character.list("-created_date", 100);
-      setCharacters(chars || []);
+      const roster = await loadRosterCharacters({
+        retrySeed: false,
+        allowBundledFallback: false,
+        waitBootstrap: true,
+      });
+      const chars = [...(roster.animaAsChars || []), ...(roster.rawCharacters || [])];
+      setCharacters(chars);
       if (!selectedChar && chars?.length > 0) {
         setSelectedChar(chars[0].id);
       }
@@ -54,7 +63,7 @@ export default function InventoryPanel() {
       const data = await base44.entities.Inventory.filter(
         { character_id: selectedChar },
         "-created_date",
-        200
+        INVENTORY_LIST_LIMIT
       );
       setItems(data || []);
       calculateStats(data || []);
@@ -131,6 +140,7 @@ export default function InventoryPanel() {
             </h1>
             <p className="text-[9px] sm:text-[10px] font-mono text-primary/40 tracking-widest">
               Items & Artifacts Discovered
+              {grantAdded > 0 ? ` · steward catalog +${grantAdded}` : ""}
             </p>
           </div>
         </div>
@@ -226,7 +236,7 @@ export default function InventoryPanel() {
 
       {/* Inventory Grid */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        {loading ? (
+        {loading || granting ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <Loader className="w-6 h-6 text-primary/60 animate-spin mx-auto mb-3" />
