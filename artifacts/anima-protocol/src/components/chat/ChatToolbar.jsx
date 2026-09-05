@@ -1,7 +1,6 @@
 import { Package, Brain, History, Sliders, GitBranch, Download, Upload, Menu, BookOpen, ChevronDown, X, Zap, Settings, MessageSquare, Wrench, Sparkles, Waves, ScanSearch } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import CharacterQuickChat from "./CharacterQuickChat";
 import SessionToolsDropdown from "./SessionToolsDropdown";
 import TTSControls from "./TTSControls";
@@ -12,8 +11,8 @@ import StoryDocumentUpload from "./StoryDocumentUpload";
 import CodeRepairConsole from "./CodeRepairConsole";
 import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
 import DeviceScanConsole from "./DeviceScanConsole";
+import PortaledFixedPanel from "./PortaledFixedPanel";
 import { useAuth } from "@/lib/AuthContext";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function ChatToolbar({
   activeSession,
@@ -50,8 +49,21 @@ export default function ChatToolbar({
   const [showCodeRepair, setShowCodeRepair] = useState(false);
   const [showProtocolUpgrade, setShowProtocolUpgrade] = useState(false);
   const [showDeviceScan, setShowDeviceScan] = useState(false);
+  const onlineButtonRef = useRef(null);
   const activeChar = (characters || []).find((c) => c.id === activeSession?.character_id);
   const chattingWithAnima = Boolean(activeChar?._isAnima) && activeSession?.mode === "solo";
+
+  useEffect(() => {
+    if (!showActionsPanel) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowActionsPanel(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showActionsPanel]);
 
   return (
     <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
@@ -83,6 +95,10 @@ export default function ChatToolbar({
           )}
           {/* Online / Actions button */}
           <button
+            ref={onlineButtonRef}
+            type="button"
+            aria-expanded={showActionsPanel}
+            aria-haspopup="menu"
             onClick={() => setShowActionsPanel(!showActionsPanel)}
             className={`flex items-center gap-1.5 px-3 py-1.5 border font-mono text-[9px] tracking-widest uppercase transition-all ${
               showActionsPanel
@@ -97,23 +113,15 @@ export default function ChatToolbar({
         </div>
       </div>
 
-      {/* Overlay actions panel */}
-      <AnimatePresence>
-        {showActionsPanel && (
-          <>
-            {/* Backdrop to close */}
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setShowActionsPanel(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-              className="absolute top-full right-0 z-50 w-64 border border-primary/20 bg-black/95 backdrop-blur-md shadow-2xl shadow-black/80 overflow-y-auto"
-              style={{ maxHeight: "70vh" }}
-            >
+      <PortaledFixedPanel
+        open={showActionsPanel}
+        onDismiss={() => setShowActionsPanel(false)}
+        anchorRef={onlineButtonRef}
+        align="right"
+        className="w-64 border border-primary/20 bg-black/95 backdrop-blur-md shadow-2xl shadow-black/80 overflow-y-auto"
+        panelTestId="chat-online-actions-panel"
+        backdropTestId="chat-online-actions-backdrop"
+      >
               <div className="flex flex-col">
 
                 {/* Navigation */}
@@ -318,10 +326,7 @@ export default function ChatToolbar({
                   </div>
                 </div>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      </PortaledFixedPanel>
 
       {/* Document upload panel */}
       {showDocUpload && (
