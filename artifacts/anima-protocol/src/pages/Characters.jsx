@@ -25,6 +25,10 @@ import CharacterBioSheet from "@/components/character/CharacterBioSheet";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
 import { characterCreatePayload } from "@/lib/characterAvatarUpload";
 import {
+  companionCreateErrorMessage,
+  createCompanionRecord,
+} from "@/lib/createCompanion";
+import {
   isStoreDatabaseError,
   isStoreReadUnavailable,
 } from "@/lib/storeErrorSignals";
@@ -240,7 +244,7 @@ export default function Characters() {
       if (editingChar) {
         await base44.entities.Character.update(editingChar.id, finalForm);
       } else {
-        const created = await base44.entities.Character.create(finalForm);
+        const created = await createCompanionRecord("Character", finalForm);
         // No photo provided? Auto-search one in the background.
         if (created && !finalForm.avatar_url) {
           autoAssignCharacterPhoto(created)
@@ -254,7 +258,7 @@ export default function Characters() {
       setForm(defaultForm);
     } catch (err) {
       console.error('Error saving character:', err);
-      const message = err?.message || "Could not save this character.";
+      const message = companionCreateErrorMessage(err) || "Could not save this character.";
       setSaveError(message);
       toast.error(message);
     } finally {

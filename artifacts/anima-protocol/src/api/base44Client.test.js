@@ -4,6 +4,7 @@ import {
   clearAuthTokenGetter,
   clearStoreCache,
   setAuthTokenGetter,
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from "./base44Client";
@@ -260,6 +261,50 @@ describe("ChatSession store wrapper", () => {
     expect(timeoutSpy).toHaveBeenNthCalledWith(2, STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(signals[0]).not.toBe(signals[1]);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+});
+
+describe("Character / Anima store create budget", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("uses the companion create budget for Character.create", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json({ id: "char-alyndra", name: "Alyndra" }, { status: 201 }),
+    );
+
+    const created = await base44.entities.Character.create({ name: "Alyndra" });
+
+    expect(created.id).toBe("char-alyndra");
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_COMPANION_CREATE_TIMEOUT_MS);
+    expect(STORE_COMPANION_CREATE_TIMEOUT_MS).toBe(20000);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("uses the companion create budget for Anima.create", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json({ id: "anima-1", name: "Alyndra" }, { status: 201 }),
+    );
+
+    await base44.entities.Anima.create({ name: "Alyndra" });
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_COMPANION_CREATE_TIMEOUT_MS);
   });
 });
 

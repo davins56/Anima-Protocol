@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
 import { companionLookHref } from "@/lib/listPersonalAnimas";
+import {
+  companionCreateErrorMessage,
+  createCompanionRecord,
+} from "@/lib/createCompanion";
 import { track } from "@/lib/analytics";
 import { Wand2, Copy, Check, AlertCircle, Loader, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -133,7 +137,7 @@ export default function CompanionGenerator() {
     try {
       const avatar_url =
         typeof companion.avatar_url === "string" ? companion.avatar_url.trim() : "";
-      const newChar = await base44.entities.Character.create({
+      const newChar = await createCompanionRecord("Character", {
         name: companion.name.trim(),
         universe: companion.universe || "",
         personality: companion.personality || "",
@@ -173,7 +177,7 @@ export default function CompanionGenerator() {
         navigate(companionLookHref(newChar.id));
       }
     } catch (err) {
-      setError(err.message || "Failed to create companion");
+      setError(companionCreateErrorMessage(err) || "Failed to create companion");
     } finally {
       setCreating(false);
     }
