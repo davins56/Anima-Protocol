@@ -3,6 +3,7 @@ import {
   formatImageUploadError,
   uploadCharacterAvatar,
 } from "./characterAvatarUpload";
+import { isRetryableStoreWriteError } from "./storeErrorSignals";
 
 /**
  * Upload a Settings custom chat-background image through the same
@@ -30,11 +31,20 @@ export async function persistChatBackgroundSettings({
     chat_bg_theme: "custom",
     chat_bg_image: fileUrl,
   };
-  await updateMe({
-    settings: next,
-    display_name: next.display_name,
-  });
-  return next;
+  let lastErr;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await updateMe({
+        settings: next,
+        display_name: next.display_name,
+      });
+      return next;
+    } catch (err) {
+      lastErr = err;
+      if (attempt === 2 || !isRetryableStoreWriteError(err)) throw err;
+    }
+  }
+  throw lastErr;
 }
 
 export function formatChatBackgroundUploadError(err) {

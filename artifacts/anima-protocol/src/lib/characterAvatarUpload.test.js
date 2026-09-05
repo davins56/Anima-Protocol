@@ -77,6 +77,6 @@ describe("characterAvatarUpload", () => {
       formatImageUploadError(new Error("Database connection reset"), {
         noun: "image",
       }),
-    ).toMatch(/database|unavailable/i);
+    ).toMatch(/dropped the upload connection|try again/i);
   });
 });

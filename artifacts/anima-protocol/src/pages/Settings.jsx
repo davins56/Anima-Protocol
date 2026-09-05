@@ -21,6 +21,7 @@ import { repairStarterCharacters } from "@/lib/seedCharacters";
 import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
+import { toast } from "sonner";
 import {
   formatChatBackgroundUploadError,
   persistChatBackgroundSettings,
@@ -124,9 +125,13 @@ export default function Settings() {
   };
 
   const handleSave = async () => {
-    await base44.auth.updateMe({ settings: prefs, display_name: prefs.display_name });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await base44.auth.updateMe({ settings: prefs, display_name: prefs.display_name });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      toast.error(err?.message || "Couldn't save settings. Try again.");
+    }
   };
 
   const handleClearSessions = async () => {
@@ -351,7 +356,9 @@ export default function Settings() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      setBgUploadError(formatChatBackgroundUploadError(err));
+      const message = formatChatBackgroundUploadError(err);
+      setBgUploadError(message);
+      toast.error(message);
     } finally {
       setUploadingBg(false);
       input.value = "";
