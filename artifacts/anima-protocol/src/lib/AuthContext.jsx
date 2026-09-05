@@ -197,7 +197,13 @@ export const AuthProvider = ({ children }) => {
       const identity = {
         id: clerkUser.id,
         email: clerkUser.primaryEmailAddress?.emailAddress || '',
+        username: clerkUser.username || '',
         full_name: clerkUser.fullName || clerkUser.username || 'Seeker',
+        github: clerkUser.username || '',
+        externalAccounts: (clerkUser.externalAccounts || []).map((acc) => ({
+          provider: acc.provider,
+          username: acc.username,
+        })),
       };
       base44.auth.syncIdentity(identity);
 
