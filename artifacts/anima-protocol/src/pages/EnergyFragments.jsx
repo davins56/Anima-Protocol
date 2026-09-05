@@ -2,10 +2,12 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import FragmentLibrary from "@/components/energyFragments/FragmentLibrary";
+import useEnergyFragmentLibrary from "@/hooks/useEnergyFragmentLibrary";
 import { ENERGY_FRAGMENTS, BN1_CHIP_FAMILIES } from "@/lib/energyFragments";
 
 export default function EnergyFragments() {
   const navigate = useNavigate();
+  const { library } = useEnergyFragmentLibrary();
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline pb-[var(--tab-bar-height,64px)]">
@@ -17,7 +19,7 @@ export default function EnergyFragments() {
           <div>
             <h1 className="font-mono text-sm text-primary tracking-[0.25em] uppercase">Energy Fragments</h1>
             <p className="font-mono text-[9px] tracking-[0.3em] text-primary/40 uppercase">
-              // {ENERGY_FRAGMENTS.length} battle data · {BN1_CHIP_FAMILIES.length} chip families accounted
+              // {library.owned_ids?.length || 0}/{ENERGY_FRAGMENTS.length} owned · {BN1_CHIP_FAMILIES.length} chip families accounted
             </p>
           </div>
         </div>
@@ -33,9 +35,12 @@ export default function EnergyFragments() {
           Standard / Mega / Giga caps, elemental cycle, Program Advances. Energy Fragments are new
           battle data — variations of those families plus original programs. When a fragment is
           slotted, the weapon arrives as an ethereal construct: glass-steel, afterimage, no mass.
-          The research catalog stays here. Playable <button type="button" onClick={() => navigate("/echo-keys")} className="underline text-primary/80 hover:text-primary">Echo Keys</button> are crystallized harmonic instructions — found, synthesised, or evolved in Story mode, not granted as a full 800-key dump.
+          Operators start with a Folder handful. The Protocol steward holds the full library on this
+          profile — the 30-slot Folder stays a Folder. Playable combat gear is still{" "}
+          <button type="button" onClick={() => navigate("/echo-keys")} className="underline text-primary/80 hover:text-primary">Echo Keys</button>
+          {" "}(crystallized harmonic instructions; Array capped at 30).
         </p>
-        <FragmentLibrary />
+        <FragmentLibrary library={library} />
       </motion.div>
     </div>
   );
