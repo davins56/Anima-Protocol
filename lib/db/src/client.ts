@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { drizzle as drizzlePostgresJs } from "drizzle-orm/postgres-js";
 import pg from "pg";
@@ -63,6 +64,17 @@ export function resolveDbConfig(url: string): {
   return { connectionString, ssl };
 }
 
+export interface DbRequestContext {
+  epoch: number;
+  queryableInstance: SqlQueryable | null;
+  dbInstance: Db | null;
+  postgresJsSql: Sql | null;
+  nodePoolInstance: pg.Pool | null;
+  poolConnectionKey: string | null;
+}
+
+const dbRequestContextStorage = new AsyncLocalStorage<DbRequestContext>();
+
 let queryableInstance: SqlQueryable | null = null;
 let dbInstance: Db | null = null;
 let nodePoolInstance: pg.Pool | null = null;
@@ -76,18 +88,41 @@ let poolConnectionKey: string | null = null;
  * See https://developers.cloudflare.com/workers/observability/errors/
  */
 let poolRequestEpoch: number | null = null;
+let globalRequestEpochCounter = 0;
 let currentRequestEpoch = 0;
 
 /**
- * Open a new database request scope. Called once per HTTP request so a cached
- * client is never carried across Worker request contexts.
- *
- * Concurrency is safe: bumping the epoch only drops the module-level
- * reference. An in-flight query already holds its own reference and keeps
- * running on the client it started with.
+ * Open a new database request scope using AsyncLocalStorage so concurrent
+ * requests on Cloudflare Workers never overwrite or reuse each other's DB client.
  */
-export function beginDbRequest(): void {
-  currentRequestEpoch += 1;
+export function runWithDbRequestScope<T>(fn: () => T): T {
+  globalRequestEpochCounter += 1;
+  currentRequestEpoch = globalRequestEpochCounter;
+  const ctx: DbRequestContext = {
+    epoch: globalRequestEpochCounter,
+    queryableInstance: null,
+    dbInstance: null,
+    postgresJsSql: null,
+    nodePoolInstance: null,
+    poolConnectionKey: null,
+  };
+  return dbRequestContextStorage.run(ctx, fn);
+}
+
+/**
+ * Open a new database request scope. Called once per HTTP request so a cached
+ * client is never carried across Worker request contexts. If a callback is
+ * provided, it runs inside AsyncLocalStorage.
+ */
+export function beginDbRequest(): number;
+export function beginDbRequest<T>(fn: () => T): T;
+export function beginDbRequest<T>(fn?: () => T): number | T {
+  if (fn) {
+    return runWithDbRequestScope(fn);
+  }
+  globalRequestEpochCounter += 1;
+  currentRequestEpoch = globalRequestEpochCounter;
+  return currentRequestEpoch;
 }
 
 /** Test helper — the epoch the cached client was created in. */
@@ -95,6 +130,13 @@ export function dbRequestEpochForTests(): {
   current: number;
   pool: number | null;
 } {
+  const store = dbRequestContextStorage.getStore();
+  if (store) {
+    return {
+      current: store.epoch,
+      pool: store.queryableInstance ? store.epoch : null,
+    };
+  }
   return { current: currentRequestEpoch, pool: poolRequestEpoch };
 }
 
@@ -223,6 +265,14 @@ function detachCachedClients(): { oldPool: pg.Pool | null; oldSql: Sql | null } 
  * long-lived and leaked pools would exhaust Postgres connections.
  */
 export function resetPool(): void {
+  const store = dbRequestContextStorage.getStore();
+  if (store) {
+    store.queryableInstance = null;
+    store.dbInstance = null;
+    store.postgresJsSql = null;
+    store.nodePoolInstance = null;
+    store.poolConnectionKey = null;
+  }
   const { oldPool, oldSql } = detachCachedClients();
   if (isCloudflareWorkerRuntime()) return;
 
@@ -293,6 +343,28 @@ export function getPool(): SqlQueryable {
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
   const driverKey = `${getDbDriver()}:${connectionString}`;
+  const store = dbRequestContextStorage.getStore();
+
+  if (isCloudflareWorkerRuntime() && store) {
+    if (store.queryableInstance && store.poolConnectionKey === driverKey) {
+      return store.queryableInstance;
+    }
+    if (getDbDriver() === "postgres-js") {
+      const sql = createPostgresJsSql(rawUrl, connectionString, ssl);
+      store.postgresJsSql = sql;
+      store.queryableInstance = postgresJsQueryable(sql);
+      store.dbInstance = drizzlePostgresJs(sql, { schema }) as unknown as Db;
+      store.poolConnectionKey = driverKey;
+      return store.queryableInstance;
+    }
+    const pool = createNodePool(connectionString, ssl);
+    store.nodePoolInstance = pool;
+    attachPoolGuards(pool);
+    store.queryableInstance = pool;
+    store.dbInstance = drizzle(pool, { schema });
+    store.poolConnectionKey = driverKey;
+    return store.queryableInstance;
+  }
 
   // On Workers a client is only reusable inside the request that created it.
   // Hyperdrive also hands out a fresh connection string per request, so the
@@ -331,6 +403,10 @@ function getDb(): Db {
   // checks run. Returning a cached dbInstance directly would hand back a
   // drizzle client bound to a previous Worker request's socket.
   getPool();
+  const store = dbRequestContextStorage.getStore();
+  if (isCloudflareWorkerRuntime() && store?.dbInstance) {
+    return store.dbInstance;
+  }
   if (!dbInstance) {
     throw new Error("Failed to initialize database client");
   }
