@@ -1,4 +1,4 @@
-import { Zap, Users, LogIn, Heart, Pencil } from "lucide-react";
+import { Zap, Users, LogIn, Heart, Pencil, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
@@ -17,57 +17,61 @@ export default function WelcomeScreen({ onNewSession, mode }) {
   const [showCreateCompanion, setShowCreateCompanion] = useState(false);
   const [companionCreated, setCompanionCreated] = useState(false);
   const [dynamicGreeting, setDynamicGreeting] = useState("");
+  const [modalInitialStep, setModalInitialStep] = useState("welcome");
 
   useEffect(() => {
-    Promise.all([
-      base44.auth.me(),
-      base44.entities.Anima.list("-created_date", 100),
-    ]).then(([me, animas]) => {
+    let active = true;
+
+    base44.auth.me().then((me) => {
+      if (!active) return;
       if (me?.full_name) {
         const firstName = me.full_name.split(" ")[0];
         setUserName(firstName);
       }
-      
       if (me?.email) {
         setUserEmail(me.email);
       }
-      
+    }).catch(() => {});
+
+    base44.entities.Anima.list("-created_date", 100).then((animas) => {
+      if (!active) return;
       if (animas && animas.length > 0) {
-        // Find the anima assigned to this user (by email or user preference)
-        let userAnima = animas.find(a => a.assigned_user === me?.email);
-        
-        // If no assigned anima, use the first one
-        if (!userAnima) {
-          userAnima = animas[0];
-        }
-        
+        let userAnima = animas.find(a => a.assigned_user === userEmail);
+        if (!userAnima) userAnima = animas[0];
+
         if (userAnima) {
           setAnimaName(userAnima.name || "Anima");
           if (userAnima.avatar_url) setAnimaAvatar(userAnima.avatar_url);
           if (userAnima.tagline) setAnimaTagline(userAnima.tagline);
           if (userAnima.theme_color) setAnimaThemeColor(userAnima.theme_color);
 
-          // Generate dynamic greeting
           const name = userAnima.name || "Anima";
           const personality = userAnima.personality || "";
           const tagline = userAnima.tagline || "";
-          const userName = me?.full_name?.split(" ")[0] || "";
           base44.integrations.Core.InvokeLLM({
             prompt: `You are ${name}, an AI companion. ${personality ? `Personality: ${personality}.` : ""} ${tagline ? `Your essence: ${tagline}.` : ""}
 Generate a SHORT, unique welcome message (2-3 sentences max) for ${userName || "the user"} who just opened the app. 
 Make it feel alive, personal, and slightly different every time — reference the time of day, a sense of mystery, or something poetic. Stay fully in character. No greetings like "Hello" — start with something unexpected and evocative.`,
           }).then(result => {
-            if (result) setDynamicGreeting(result);
+            if (active && result) setDynamicGreeting(result);
           }).catch(() => {});
         }
-      } else if (isAuthenticated && !companionCreated) {
-        // First login - prompt to create companion
+      } else if (!companionCreated) {
+        setModalInitialStep("welcome");
         setShowCreateCompanion(true);
       }
     }).catch((err) => {
-      console.error("Error loading user/anima data:", err);
+      console.error("Error loading anima data:", err);
+      if (active && !companionCreated) {
+        setModalInitialStep("welcome");
+        setShowCreateCompanion(true);
+      }
     });
-  }, [isAuthenticated, companionCreated]);
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, companionCreated, userEmail, userName]);
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-8 text-center relative overflow-hidden overflow-y-auto" style={{ paddingBottom: "calc(var(--tab-bar-height, 0px) + 1.5rem)" }}>
@@ -143,15 +147,27 @@ Make it feel alive, personal, and slightly different every time — reference th
             Login
           </button>
         ) : (
-          <button
-            onClick={onNewSession}
-            className="px-6 sm:px-8 py-2.5 sm:py-3 transition-all font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase hud-corner"
-            style={{ backgroundColor: `${animaThemeColor}1a`, borderColor: `${animaThemeColor}80`, borderWidth: "1px", color: animaThemeColor, boxShadow: `0 0 15px ${animaThemeColor}40` }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = `${animaThemeColor}33`}
-            onMouseLeave={(e) => e.target.style.backgroundColor = `${animaThemeColor}1a`}
-          >
-            + Initialize Session
-          </button>
+          <>
+            <button
+              onClick={onNewSession}
+              className="px-6 sm:px-8 py-2.5 sm:py-3 transition-all font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase hud-corner"
+              style={{ backgroundColor: `${animaThemeColor}1a`, borderColor: `${animaThemeColor}80`, borderWidth: "1px", color: animaThemeColor, boxShadow: `0 0 15px ${animaThemeColor}40` }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = `${animaThemeColor}33`}
+              onMouseLeave={(e) => e.target.style.backgroundColor = `${animaThemeColor}1a`}
+            >
+              + Initialize Session
+            </button>
+            <button
+              onClick={() => {
+                setModalInitialStep("details");
+                setShowCreateCompanion(true);
+              }}
+              className="px-6 sm:px-8 py-2.5 sm:py-3 transition-all font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase hud-corner flex items-center gap-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 glow-border"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Design Companion
+            </button>
+          </>
         )}
       </div>
 
@@ -178,6 +194,8 @@ Make it feel alive, personal, and slightly different every time — reference th
 
       {showCreateCompanion && (
         <CreateCompanionModal
+          initialStep={modalInitialStep}
+          onClose={() => setShowCreateCompanion(false)}
           onComplete={(companion) => {
             setCompanionCreated(true);
             setShowCreateCompanion(false);
