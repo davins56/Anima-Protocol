@@ -183,6 +183,37 @@ describe("applyVisualViewportCssVars", () => {
     expect(root.style.getPropertyValue("--tab-bar-height")).toBe("");
     expect(root.dataset.keyboardOpen).toBeUndefined();
   });
+
+  it("syncs --tab-bar-height to a painted bar when the keyboard closes", () => {
+    const bar = document.createElement("div");
+    bar.className = "tab-bar";
+    bar.getBoundingClientRect = () => /** @type {DOMRect} */ ({ height: 70 });
+    Object.defineProperty(bar, "offsetHeight", { value: 70, configurable: true });
+    document.body.appendChild(bar);
+
+    const root = document.documentElement;
+    applyVisualViewportCssVars(
+      root,
+      measureVisualViewportInsets({ height: 508, offsetTop: 0 }, 844, {
+        inputFocused: true,
+      }),
+    );
+    expect(root.style.getPropertyValue("--tab-bar-height")).toBe("0px");
+
+    applyVisualViewportCssVars(
+      root,
+      measureVisualViewportInsets({ height: 844, offsetTop: 0 }, 844, {
+        inputFocused: false,
+      }),
+    );
+    expect(root.style.getPropertyValue("--tab-bar-height")).toBe("70px");
+    expect(root.dataset.keyboardOpen).toBeUndefined();
+
+    bar.remove();
+    root.style.removeProperty("--tab-bar-height");
+    root.style.removeProperty("--safe-bottom");
+    delete root.dataset.keyboardOpen;
+  });
 });
 
 describe("filling the screen on iOS 26 / iPhone 17 Pro Max", () => {
