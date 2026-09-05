@@ -15,6 +15,7 @@ import {
   hasOpenRouterKey,
   normalizeApiKey,
   openRouterKeyFingerprint,
+  openRouterCascadeMaxRetries,
   openRouterMaxRetries,
   resetLlmClientsForTests,
   getMinimaxApiKey,
@@ -74,6 +75,19 @@ describe("openRouterMaxRetries", () => {
     const client = getOpenRouterClient();
     expect(client).toBeTruthy();
     expect(client?.maxRetries).toBe(2);
+  });
+
+  it("skips SDK retries while more :free candidates remain", () => {
+    delete process.env.ANIMA_OPENROUTER_MAX_RETRIES;
+    expect(openRouterCascadeMaxRetries(3)).toBe(0);
+    expect(openRouterCascadeMaxRetries(1)).toBe(0);
+    expect(openRouterCascadeMaxRetries(0)).toBe(2);
+  });
+
+  it("honors ANIMA_OPENROUTER_MAX_RETRIES on the last cascade candidate", () => {
+    process.env.ANIMA_OPENROUTER_MAX_RETRIES = "0";
+    expect(openRouterCascadeMaxRetries(0)).toBe(0);
+    expect(openRouterCascadeMaxRetries(2)).toBe(0);
   });
 });
 

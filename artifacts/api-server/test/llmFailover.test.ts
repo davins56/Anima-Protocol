@@ -273,6 +273,17 @@ vi.mock("../src/lib/openaiClient", () => {
     },
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
     localLlmMaxRetries: () => 2,
+    openRouterMaxRetries: () => {
+      const raw = Number(process.env.ANIMA_OPENROUTER_MAX_RETRIES);
+      if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+      return 2;
+    },
+    openRouterCascadeMaxRetries: (remaining: number) => {
+      if (remaining > 0) return 0;
+      const raw = Number(process.env.ANIMA_OPENROUTER_MAX_RETRIES);
+      if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+      return 2;
+    },
     resetLlmClientsForTests: () => {},
   };
 });
@@ -1279,6 +1290,37 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
     expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
+  });
+
+  it("skips SDK retries on intermediate :free hops so a cascade can finish under the open budget", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("400 Provider returned error"), { status: 400 }),
+      )
+      .mockResolvedValueOnce(fakeStream("gemma"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.model).toBe("google/gemma-4-26b-a4b-it:free");
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
+    expect(createMock.mock.calls[2][0].model).toBe("google/gemma-4-26b-a4b-it:free");
+    expect(createMock.mock.calls[0][1]).toMatchObject({ maxRetries: 0 });
+    expect(createMock.mock.calls[1][1]).toMatchObject({ maxRetries: 0 });
+    expect(createMock.mock.calls[2][1]).toMatchObject({ maxRetries: 2 });
   });
 
   it("does not hop free models on a data-policy HTTP 400", async () => {
