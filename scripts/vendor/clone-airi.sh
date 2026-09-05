@@ -12,16 +12,13 @@ URL="https://github.com/moeru-ai/airi.git"
 REF="${AIRI_REF:-cc791fab954fbcfbef0bcb8d49ff75514f549c74}"
 
 remote_is_airi() {
-  local remote
+  local remote normalized
   remote="$(git -C "$1" remote get-url origin 2>/dev/null || true)"
-  case "$remote" in
-    https://github.com/moeru-ai/airi.git | https://github.com/moeru-ai/airi)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  # Accept public HTTPS or credential-rewritten remotes; compare host + path only.
+  normalized="${remote#*://}"
+  normalized="${normalized#*@}"
+  normalized="${normalized%%.git}"
+  [ "$normalized" = "github.com/moeru-ai/airi" ]
 }
 
 head_is_ref() {
