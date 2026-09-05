@@ -32,4 +32,15 @@ describe("chatTurnErrorMessage", () => {
       /openrouter\.ai\/settings\/credits/i,
     );
   });
+
+  it("remaps OpenRouter's raw ZDR / guardrail dump to a privacy hint", () => {
+    const dump =
+      "404 0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons): ZDR violation (account settings): 1 endpoint excluded; configurable at https://openrouter.ai/settings/privacy";
+    const message = chatTurnErrorMessage(new Error(dump));
+    expect(message).toMatch(/Zero Data Retention/i);
+    expect(message).toContain("https://openrouter.ai/settings/privacy");
+    expect(message).not.toMatch(/0 endpoints out of/i);
+    expect(message).not.toMatch(/ZDR violation/i);
+    expect(message).not.toMatch(/guardrail restrictions/i);
+  });
 });

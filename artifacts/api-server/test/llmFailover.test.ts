@@ -307,9 +307,11 @@ import {
   isOpenRouterGenericProviderError,
   isOpenRouterModelSpecificClientError,
   isOpenRouterTransientGatewayError,
+  isOpenRouterZdrOrDataPolicyError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
   MINIMAX_DIRECT_FAIL_HINT,
   OPENROUTER_FREE_PROVIDER_HINT,
+  OPENROUTER_ZDR_PRIVACY_HINT,
   shouldTryNextOpenRouterFreeModel,
   preferCustomLlmOnly,
   probeLlmProviders,
@@ -442,6 +444,43 @@ describe("isOpenRouterTransientGatewayError", () => {
   });
 });
 
+const OPENROUTER_ZDR_PRODUCTION_TOAST =
+  "404 0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons): ZDR violation (account settings): 1 endpoint excluded; configurable at https://openrouter.ai/settings/privacy";
+
+describe("isOpenRouterZdrOrDataPolicyError", () => {
+  it("detects the production ZDR / guardrail / data-policy toast", () => {
+    expect(
+      isOpenRouterZdrOrDataPolicyError({
+        status: 404,
+        message: OPENROUTER_ZDR_PRODUCTION_TOAST,
+      }),
+    ).toBe(true);
+    expect(isOpenRouterZdrOrDataPolicyError({ message: "ZDR violation (account settings)" })).toBe(
+      true,
+    );
+    expect(isOpenRouterZdrOrDataPolicyError({ message: "matching your guardrail restrictions" })).toBe(
+      true,
+    );
+    expect(isOpenRouterZdrOrDataPolicyError({ message: "0 endpoints out of 1 requested are available" })).toBe(
+      true,
+    );
+    expect(
+      isOpenRouterZdrOrDataPolicyError({
+        message: "No endpoints found matching your data policy (Free model publication)",
+      }),
+    ).toBe(true);
+    expect(isOpenRouterZdrOrDataPolicyError({ status: 400, message: "400 Provider returned error" })).toBe(
+      false,
+    );
+    expect(
+      isOpenRouterZdrOrDataPolicyError({
+        status: 429,
+        message: "Rate limit exceeded: free-models-per-day. Add 10 credits.",
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("isOpenRouterAccountPolicyError", () => {
   it("detects ZDR / data-policy / free daily-minute caps", () => {
     expect(
@@ -454,6 +493,12 @@ describe("isOpenRouterAccountPolicyError", () => {
       isOpenRouterAccountPolicyError({
         status: 400,
         message: "This request requires ZDR endpoints only",
+      }),
+    ).toBe(true);
+    expect(
+      isOpenRouterAccountPolicyError({
+        status: 404,
+        message: OPENROUTER_ZDR_PRODUCTION_TOAST,
       }),
     ).toBe(true);
     expect(
@@ -534,6 +579,16 @@ describe("remapGenericProviderError", () => {
       "context length exceeded",
     );
   });
+
+  it("replaces the raw ZDR dump with the privacy hint", () => {
+    const remapped = remapGenericProviderError(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST));
+    expect(remapped.message).toBe(OPENROUTER_ZDR_PRIVACY_HINT);
+    expect(remapped.message).toMatch(/Zero Data Retention/i);
+    expect(remapped.message).toContain("https://openrouter.ai/settings/privacy");
+    expect(remapped.message).not.toMatch(/0 endpoints out of/i);
+    expect(remapped.message).not.toMatch(/ZDR violation/i);
+    expect(remapped.message).not.toMatch(/guardrail restrictions/i);
+  });
 });
 
 describe("shouldTryNextOpenRouterFreeModel", () => {
@@ -592,6 +647,12 @@ describe("shouldTryNextOpenRouterFreeModel", () => {
     expect(
       shouldTryNextOpenRouterFreeModel(
         { status: 400, message: "This organization requires zero data retention" },
+        "minimax/minimax-m2.7:free",
+      ),
+    ).toBe(false);
+    expect(
+      shouldTryNextOpenRouterFreeModel(
+        { status: 404, message: OPENROUTER_ZDR_PRODUCTION_TOAST },
         "minimax/minimax-m2.7:free",
       ),
     ).toBe(false);
@@ -1554,7 +1615,7 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
   });
 
-  it("does not fall through to MiniMax on a ZDR / data-policy 400", async () => {
+  it("falls through to MiniMax on OpenRouter ZDR without hopping :free slugs", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
@@ -1562,21 +1623,60 @@ describe("createChatStreamWithFailover", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.MINIMAX_API_KEY = "minimax-test";
     process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
+      )
+      .mockResolvedValueOnce(fakeStream("minimax-direct"));
+
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("minimax");
+    expect(result.brand).toBe("minimax");
+    expect(result.failedOver).toBe(true);
+    expect(result.model).toBe("MiniMax-M2.5");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "minimax/minimax-m2.7:free",
+      "MiniMax-M2.5",
+    ]);
+  });
+
+  it("remaps OpenRouter ZDR to the privacy hint when MiniMax is not configured", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.MINIMAX_API_KEY;
+    delete process.env.ANIMA_MINIMAX_API_KEY;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
     createMock.mockRejectedValue(
-      Object.assign(
-        new Error("This request requires ZDR endpoints only"),
-        { status: 400 },
-      ),
+      Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
     );
 
-    await expect(
-      createChatStreamWithFailover({
+    try {
+      await createChatStreamWithFailover({
         tier: "standard",
         model: "anima-chat",
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
-      }),
-    ).rejects.toThrow(/ZDR|zero data retention/i);
+      });
+      throw new Error("expected OpenRouter ZDR to reject without MiniMax");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toContain(OPENROUTER_ZDR_PRIVACY_HINT);
+      expect(message).toMatch(/Zero Data Retention/i);
+      expect(message).toContain("https://openrouter.ai/settings/privacy");
+      expect(message).not.toMatch(/0 endpoints out of/i);
+      expect(message).not.toMatch(/ZDR violation/i);
+      expect(message).not.toMatch(/guardrail restrictions/i);
+    }
     expect(createMock).toHaveBeenCalledTimes(1);
     expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
   });
@@ -1585,6 +1685,8 @@ describe("createChatStreamWithFailover", () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
+    delete process.env.MINIMAX_API_KEY;
+    delete process.env.ANIMA_MINIMAX_API_KEY;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.ANIMA_OPENROUTER_FREE = "true";
@@ -1595,16 +1697,57 @@ describe("createChatStreamWithFailover", () => {
       ),
     );
 
-    await expect(
-      createChatStreamWithFailover({
+    try {
+      await createChatStreamWithFailover({
         tier: "standard",
         model: "anima-chat",
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
-      }),
-    ).rejects.toThrow(/data policy/i);
+      });
+      throw new Error("expected data-policy 400 to reject without hopping");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toContain(OPENROUTER_ZDR_PRIVACY_HINT);
+      expect(message).not.toMatch(/0 endpoints out of/i);
+      expect(message).not.toMatch(/Free model publication/i);
+    }
     expect(createMock).toHaveBeenCalledTimes(1);
     expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
+  });
+
+  it("remaps to the ZDR privacy hint when MiniMax also fails after OpenRouter ZDR", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
+      )
+      .mockRejectedValueOnce(Object.assign(new Error("MiniMax unavailable"), { status: 503 }));
+
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hello" }],
+      });
+      throw new Error("expected ZDR then MiniMax failure to reject");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toContain(OPENROUTER_ZDR_PRIVACY_HINT);
+      expect(message).not.toBe(MINIMAX_DIRECT_FAIL_HINT);
+      expect(message).not.toMatch(/0 endpoints out of/i);
+    }
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "minimax/minimax-m2.7:free",
+      "MiniMax-M2.5",
+    ]);
   });
 
   it("does not hop free models when the account-wide daily cap is already hit", async () => {
@@ -1993,6 +2136,36 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.failedOver).toBe(true);
     expect(createMock).toHaveBeenCalledTimes(5);
     expect(createMock.mock.calls[4][0].model).toBe("MiniMax-M2.5");
+  });
+
+  it("falls through to MiniMax on completion after OpenRouter ZDR without hopping :free slugs", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
+      )
+      .mockResolvedValueOnce(fakeCompletion("minimax reply"));
+
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.provider).toBe("minimax");
+    expect(result.content).toBe("minimax reply");
+    expect(result.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
+      "minimax/minimax-m2.7:free",
+      "MiniMax-M2.5",
+    ]);
   });
 });
 

@@ -24,6 +24,12 @@ vi.mock("../src/lib/llmFailover", () => ({
     brand: "anima",
     failedOver: false,
   })),
+  isOpenRouterAlreadyFreeTier: () => false,
+  isOpenRouterGenericProviderError: () => false,
+  isOpenRouterZdrOrDataPolicyError: () => false,
+  OPENROUTER_FREE_PROVIDER_HINT: "OpenRouter free-tier hint",
+  OPENROUTER_ZDR_PRIVACY_HINT: "OpenRouter ZDR privacy hint",
+  remapGenericProviderError: (err: Error) => err,
 }));
 
 vi.mock("../src/lib/modelRouter", () => ({

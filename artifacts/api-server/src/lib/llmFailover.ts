@@ -341,8 +341,10 @@ export function getProviderChain(): LlmProviderId[] {
  * from that host must surface. Silently skipping them burns OpenRouter quota
  * and looks like the custom LLM was never tried.
  *
- * OpenRouter → MiniMax only on hoppable provider blips (400/429/5xx), never
- * on ZDR / data-policy / free daily-minute account errors.
+ * OpenRouter → MiniMax on hoppable provider blips (400/429/5xx) and on
+ * OpenRouter ZDR / data-policy / guardrail exclusion (those bind only the
+ * OpenRouter account; MiniMax Global is not affected). Daily/minute free
+ * caps still stop the chain — another provider cannot raise that quota.
  */
 function shouldTryNextProvider(
   provider: LlmProviderId,
@@ -352,6 +354,7 @@ function shouldTryNextProvider(
   if (!hasNext) return false;
   if (provider === "local" && !isProviderConnectionError(err)) return false;
   if (provider === "openrouter") {
+    if (isOpenRouterZdrOrDataPolicyError(err)) return true;
     if (isOpenRouterAccountPolicyError(err)) return false;
     const model = attemptedOpenRouterModel(err) || OPENROUTER_FREE_MODEL;
     return shouldTryNextOpenRouterFreeModel(err, model);
@@ -470,6 +473,16 @@ export const MINIMAX_DIRECT_FAIL_HINT =
   "MiniMax Global (api.minimax.io) also failed after OpenRouter free-tier hops. " +
   "Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY and ANIMA_MINIMAX_MODEL, then retry, " +
   "or add OpenRouter credits at https://openrouter.ai/settings/credits.";
+
+/**
+ * User-facing copy when OpenRouter excludes every endpoint for ZDR / data
+ * policy / guardrails and no later provider (MiniMax, local) answered.
+ * Never include the raw multi-line OpenRouter dump ("0 endpoints out of…").
+ */
+export const OPENROUTER_ZDR_PRIVACY_HINT =
+  "OpenRouter blocked this model because of your account's Zero Data Retention (ZDR) settings. " +
+  "Allow the model (or turn off ZDR) at https://openrouter.ai/settings/privacy. " +
+  "OpenRouter ZDR does not apply to MiniMax Global — set MINIMAX_API_KEY to keep chatting without changing OpenRouter privacy.";
 
 const CONNECTION_CODE_RE =
   /^(ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|EPIPE|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT)$/i;
@@ -623,17 +636,60 @@ export function isOpenRouterAlreadyFreeTier(model?: string): boolean {
 }
 
 /**
- * Account / privacy constraints that apply to every :free slug — hopping
- * cannot fix them (ZDR, data-policy mismatches, daily/minute free caps).
+ * Full error text (no 120-char summarizeError slice) so late phrases like
+ * "ZDR violation" still match the production OpenRouter toast.
  */
-export function isOpenRouterAccountPolicyError(err: unknown): boolean {
-  const hay = summarizeError(err).toLowerCase();
+function errorTextHaystack(err: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current === "string") {
+      parts.push(current);
+      break;
+    }
+    if (typeof current !== "object") {
+      parts.push(String(current));
+      break;
+    }
+    const e = current as { message?: unknown; code?: unknown; type?: unknown; cause?: unknown };
+    if (e.message != null) parts.push(String(e.message));
+    if (e.code != null) parts.push(String(e.code));
+    if (e.type != null) parts.push(String(e.type));
+    current = e.cause;
+  }
+  return parts.join(" ").toLowerCase();
+}
+
+/**
+ * OpenRouter account privacy / guardrail exclusion. Hopping other :free
+ * slugs cannot fix this; MiniMax Global is not bound by it.
+ * Detects the production toast: "ZDR violation", "guardrail restrictions",
+ * "0 endpoints out of", "data policy".
+ */
+export function isOpenRouterZdrOrDataPolicyError(err: unknown): boolean {
+  const hay = errorTextHaystack(err);
   return (
     hay.includes("zdr") ||
     hay.includes("zero data retention") ||
     hay.includes("data policy") ||
     hay.includes("data-policy") ||
-    hay.includes("free model publication") ||
+    hay.includes("guardrail restrictions") ||
+    hay.includes("guardrail restriction") ||
+    hay.includes("0 endpoints out of") ||
+    hay.includes("free model publication")
+  );
+}
+
+/**
+ * Account / privacy constraints that apply to every :free slug — hopping
+ * cannot fix them (ZDR, data-policy mismatches, daily/minute free caps).
+ */
+export function isOpenRouterAccountPolicyError(err: unknown): boolean {
+  return (
+    isOpenRouterZdrOrDataPolicyError(err) ||
     isOpenRouterFreeDailyLimitError(err) ||
     isOpenRouterFreeMinuteLimitError(err)
   );
@@ -874,10 +930,23 @@ function enrichError(
     localConnectionFailed?: boolean;
     attemptedModel?: string;
     openRouterHopsExhausted?: boolean;
+    openRouterZdrBlocked?: boolean;
   } = {},
 ): Error {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
+  }
+  // ZDR / data-policy / guardrail exclusion: never surface OpenRouter's
+  // multi-line "0 endpoints out of…" dump. MiniMax is not bound by this.
+  if (
+    opts.openRouterZdrBlocked ||
+    (provider === "openrouter" && isOpenRouterZdrOrDataPolicyError(err))
+  ) {
+    return new Error(
+      OPENROUTER_ZDR_PRIVACY_HINT +
+        localHostDownSuffix(Boolean(opts.localConnectionFailed)) +
+        customLlmSkippedSuffix(),
+    );
   }
   // Remap the opaque wrapper before auth/quota so "401 Provider returned
   // error" is never mistaken for a bad OpenRouter key in the chat toast.
@@ -980,6 +1049,9 @@ function enrichError(
 
 /** Last-line remap so the raw OpenRouter wrapper cannot leave this module. */
 export function remapGenericProviderError(err: Error): Error {
+  if (isOpenRouterZdrOrDataPolicyError(err)) {
+    return new Error(OPENROUTER_ZDR_PRIVACY_HINT);
+  }
   if (!isOpenRouterGenericProviderError(err)) return err;
   return new Error(OPENROUTER_FREE_PROVIDER_HINT);
 }
@@ -1514,6 +1586,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
   let triedLocal = false;
   let triedOpenRouter = false;
   let localConnectionFailed = false;
+  let openRouterZdrBlocked = false;
 
   for (const provider of chain) {
     try {
@@ -1553,6 +1626,9 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       if (provider === "local" && isProviderConnectionError(err)) {
         localConnectionFailed = true;
       }
+      if (provider === "openrouter" && isOpenRouterZdrOrDataPolicyError(err)) {
+        openRouterZdrBlocked = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (shouldTryNextProvider(provider, err, hasNext)) {
         console.warn(
@@ -1563,6 +1639,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       throw enrichError(err, provider, {
         localConnectionFailed: localConnectionFailed && provider === "openrouter",
         openRouterHopsExhausted: provider === "minimax" && triedOpenRouter,
+        openRouterZdrBlocked,
       });
     }
   }
@@ -1570,6 +1647,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
     localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
     openRouterHopsExhausted: chain[chain.length - 1] === "minimax" && triedOpenRouter,
+    openRouterZdrBlocked,
   });
 }
 
@@ -1591,6 +1669,7 @@ export async function createChatCompletionWithFailover(
   let triedLocal = false;
   let triedOpenRouter = false;
   let localConnectionFailed = false;
+  let openRouterZdrBlocked = false;
 
   for (const provider of chain) {
     try {
@@ -1635,6 +1714,9 @@ export async function createChatCompletionWithFailover(
       if (provider === "local" && isProviderConnectionError(err)) {
         localConnectionFailed = true;
       }
+      if (provider === "openrouter" && isOpenRouterZdrOrDataPolicyError(err)) {
+        openRouterZdrBlocked = true;
+      }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
       if (shouldTryNextProvider(provider, err, hasNext)) {
         console.warn(
@@ -1645,6 +1727,7 @@ export async function createChatCompletionWithFailover(
       throw enrichError(err, provider, {
         localConnectionFailed: localConnectionFailed && provider === "openrouter",
         openRouterHopsExhausted: provider === "minimax" && triedOpenRouter,
+        openRouterZdrBlocked,
       });
     }
   }
@@ -1652,5 +1735,6 @@ export async function createChatCompletionWithFailover(
   throw enrichError(lastErr ?? noProviderConfiguredError(), chain[chain.length - 1] ?? "local", {
     localConnectionFailed: localConnectionFailed && chain[chain.length - 1] === "openrouter",
     openRouterHopsExhausted: chain[chain.length - 1] === "minimax" && triedOpenRouter,
+    openRouterZdrBlocked,
   });
 }
