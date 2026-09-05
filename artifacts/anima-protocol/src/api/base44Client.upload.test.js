@@ -73,6 +73,33 @@ describe("UploadFile / storage uploads", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it("explains a Worker 413 without leaving the caller empty-handed", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response("Request Entity Too Large", { status: 413 }),
+    );
+    const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
+      type: "image/png",
+    });
+    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+      /too large/i,
+    );
+  });
+
+  it("explains a 503 database outage", async () => {
+    global.fetch = vi.fn(async () =>
+      Response.json(
+        { error: "Database host unreachable", reason: "unreachable" },
+        { status: 503 },
+      ),
+    );
+    const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
+      type: "image/png",
+    });
+    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+      /database|unreachable|unavailable/i,
+    );
+  });
+
   it("explains a missing Worker upload route (HTML 404)", async () => {
     global.fetch = vi.fn(async () =>
       new Response("<!doctype html><title>Not Found</title>", {

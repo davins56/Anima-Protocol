@@ -43,13 +43,22 @@ export function characterCreatePayload(form) {
   };
 }
 
-export function formatAvatarUploadError(err) {
+function articleFor(noun) {
+  return /^[aeiou]/i.test(String(noun || "")) ? "an" : "a";
+}
+
+/**
+ * Map upload/storage failures to a short user-visible sentence.
+ * Used by Settings chat backgrounds, avatar pickers, and document uploads.
+ */
+export function formatImageUploadError(err, { noun = "image" } = {}) {
   const msg = String(err?.message || err || "");
+  const label = String(noun || "image");
   if (/unauthorized|sign in|not signed|401/i.test(msg)) {
-    return "Sign in to upload an avatar, then try again.";
+    return `Sign in to upload ${articleFor(label)} ${label}, then try again.`;
   }
   if (/too large|413/i.test(msg)) {
-    return "That image is too large. Try a smaller photo.";
+    return `That ${label} is too large. Try a smaller photo.`;
   }
   if (/heic|heif/i.test(msg)) {
     return "This photo format (HEIC) isn't supported here. Choose a JPEG or PNG.";
@@ -57,5 +66,16 @@ export function formatAvatarUploadError(err) {
   if (/not found|404/i.test(msg)) {
     return "Image upload is not available on this host. Try again after the API is reachable.";
   }
-  return msg || "Avatar upload failed. Try another image.";
+  if (
+    /database|503|unavailable|could not be reached|hyperdrive|schema is missing/i.test(
+      msg,
+    )
+  ) {
+    return "Image upload is temporarily unavailable. The database may be down — try again in a moment.";
+  }
+  return msg || `${label.charAt(0).toUpperCase()}${label.slice(1)} upload failed. Try another image.`;
+}
+
+export function formatAvatarUploadError(err) {
+  return formatImageUploadError(err, { noun: "avatar" });
 }

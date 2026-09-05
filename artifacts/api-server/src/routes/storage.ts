@@ -3,8 +3,10 @@ import { Readable } from "stream";
 import { getAuth } from "@clerk/express";
 import { rateLimit } from "../lib/rateLimit";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
+import { classifyDbError } from "../lib/dbErrors";
 import {
   getUploadedImage,
+  httpStatusForUploadError,
   isDbUploadObjectPath,
   objectPathForUploadId,
   storeUploadedImage,
@@ -40,15 +42,18 @@ router.post("/storage/uploads", async (req: Request, res: Response) => {
       file_url: `/api/storage${stored.objectPath}`,
     });
   } catch (error) {
+    const dbInfo = classifyDbError(error);
+    if (dbInfo.isDbError) {
+      console.error("Error storing uploaded image:", error);
+      res.status(503).json({
+        error: dbInfo.safeMessage,
+        reason: dbInfo.reason,
+        code: dbInfo.code ?? "database_unavailable",
+      });
+      return;
+    }
     const message = error instanceof Error ? error.message : "Upload failed";
-    const status =
-      message.includes("Only image") ||
-      message.includes("Invalid") ||
-      message.includes("Missing") ||
-      message.includes("Empty") ||
-      message.includes("too large")
-        ? 400
-        : 500;
+    const status = httpStatusForUploadError(error);
     if (status >= 500) {
       console.error("Error storing uploaded image:", error);
     }
