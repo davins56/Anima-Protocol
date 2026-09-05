@@ -50,8 +50,6 @@ export const OPENROUTER_FREE_GEMMA4_31B_MODEL = "google/gemma-4-31b-it:free";
 export const OPENROUTER_FREE_MODEL = OPENROUTER_FREE_M27_MODEL;
 /** Live MiniMax :free hop (retired `minimax/minimax-01:free` is gone). */
 export const MINIMAX_FREE_MODEL = OPENROUTER_FREE_M3_MODEL;
-/** Live Gemma 4 :free hop (retired `google/gemma-3-12b-it:free` is gone). */
-export const JULES_FREE_MODEL = OPENROUTER_FREE_GEMMA4_26B_MODEL;
 
 /**
  * Ordered :free slugs to try after the preferred OpenRouter model fails
@@ -70,7 +68,7 @@ export const OPENROUTER_FREE_MODEL_CANDIDATES = [
 export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 
 /** Default MiniMax chat model. Override with ANIMA_MINIMAX_MODEL. */
-export const MINIMAX_DEFAULT_MODEL = "MiniMax-M2.5";
+export const MINIMAX_DEFAULT_MODEL = "MiniMax-M2.7";
 
 /** Env names checked for a MiniMax key (first non-empty wins). */
 export const MINIMAX_KEY_ENV_NAMES = [
@@ -234,6 +232,10 @@ const CLOUD_FLAGSHIP_LLM_HOSTS = new Set([
   "api.x.ai",
   "api.moonshot.ai",
   "api.moonshot.cn",
+  "api.minimax.io",
+  "minimax.io",
+  "openrouter.ai",
+  "api.openrouter.ai",
 ]);
 
 /** True when hostname is a known closed cloud chat API (not a self-hosted Anima LLM). */

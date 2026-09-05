@@ -86,7 +86,7 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "minimax",
     label: "MiniMax",
     env: "MINIMAX_API_KEY",
-    note: "Preferred cloud chat provider when configured. Defaults to MiniMax-M2.5 via the MiniMax Global OpenAI-compatible API.",
+    note: "Preferred cloud chat provider when configured. Defaults to MiniMax-M2.7 via the MiniMax Global OpenAI-compatible API.",
   },
   {
     id: "local",
