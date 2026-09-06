@@ -314,9 +314,10 @@ function localUsable(): boolean {
  * or after local only when ANIMA_OPENROUTER_FALLBACK=true. Custom mode
  * (`ANIMA_LLM_PROVIDER=custom`) never includes OpenRouter.
  *
- * MiniMax Global sits after OpenRouter so exhausted :free hops (provider
- * 400/429/5xx) can fall through to the direct MiniMax API when a key is set.
- * `ANIMA_LLM_PROVIDER=minimax` keeps MiniMax-only.
+ * When ANIMA_OPENROUTER_FREE is on and a MiniMax key is set, MiniMax Global
+ * sits after OpenRouter so exhausted :free hops (provider 400/429/5xx) can
+ * fall through to the direct MiniMax API. With free tiers off, MiniMax stays
+ * ahead of OpenRouter. `ANIMA_LLM_PROVIDER=minimax` keeps MiniMax-only.
  */
 export function getProviderChain(): LlmProviderId[] {
   const chain: LlmProviderId[] = [];
@@ -326,11 +327,15 @@ export function getProviderChain(): LlmProviderId[] {
     return chain;
   }
   const allowCloud = !preferCustomLlmOnly() && (chain.length === 0 || allowOpenRouterFallback());
-  if (allowCloud && hasMinimaxKey() && !preferOpenRouterFreeTier()) {
+  const preferFree = preferOpenRouterFreeTier();
+  if (allowCloud && hasMinimaxKey() && !preferFree) {
     chain.push("minimax");
   }
   if (allowCloud && hasOpenRouterKey()) {
     chain.push("openrouter");
+  }
+  if (allowCloud && hasMinimaxKey() && preferFree) {
+    chain.push("minimax");
   }
   return chain;
 }
@@ -1137,18 +1142,27 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       }
     }
     if (chain.includes("minimax")) {
+      const openrouterBeforeMinimax =
+        chain.includes("openrouter") &&
+        chain.indexOf("openrouter") < chain.indexOf("minimax");
       const minimaxRole =
         chain[0] === "minimax"
           ? "primary cloud provider"
-          : "fallback after local connection failure";
+          : openrouterBeforeMinimax
+            ? "fallback after OpenRouter free-tier hops"
+            : "fallback after local connection failure";
       noteParts.push(`MiniMax model=${minimaxModel.model} (${minimaxRole}).`);
     }
     if (chain.includes("openrouter")) {
+      const openRouterRole =
+        chain[0] === "local"
+          ? " (fallback after local connection failure)."
+          : chain[0] === "minimax"
+            ? " (fallback after MiniMax)."
+            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset or unusable).";
       noteParts.push(
         `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` +
-          (chain[0] === "local"
-            ? " (fallback after local connection failure)."
-            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset or unusable).") +
+          openRouterRole +
           (openRouterCreditFallback ? " Paid model needed credits; using free-tier." : ""),
       );
     }

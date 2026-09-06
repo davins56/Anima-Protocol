@@ -17,6 +17,9 @@ function clearLlmEnv() {
   delete process.env.OPEN_ROUTER_API_KEY;
   delete process.env.ANIMA_LLM_PROVIDER;
   delete process.env.ANIMA_OPENROUTER_FALLBACK;
+  delete process.env.ANIMA_OPENROUTER_FREE;
+  delete process.env.MINIMAX_API_KEY;
+  delete process.env.ANIMA_MINIMAX_API_KEY;
 }
 
 afterEach(() => {
@@ -52,6 +55,21 @@ describe("getLlmRoutingStatus on serverless / Worker", () => {
     expect(status.openrouter.configured).toBe(true);
     expect(getProviderChain()).toEqual(["openrouter"]);
     expect(status.chain).not.toContain("local");
+  });
+
+  it("includes MiniMax after OpenRouter when ANIMA_OPENROUTER_FREE=true and MINIMAX_API_KEY is set", () => {
+    clearLlmEnv();
+    process.env.ANIMA_RUNTIME = "worker";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-zzzz";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("ok");
+    expect(status.preferred).toBe("openrouter");
+    expect(status.chain).toEqual(["openrouter", "minimax"]);
+    expect(status.minimax.configured).toBe(true);
+    expect(status.note).toMatch(/fallback after OpenRouter free-tier hops/i);
+    expect(getProviderChain()).toEqual(["openrouter", "minimax"]);
   });
 
   it("keeps localhost default on plain Node so local-dev Ollama still works", () => {
