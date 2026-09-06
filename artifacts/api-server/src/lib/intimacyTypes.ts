@@ -1,41 +1,53 @@
+export type IntimacyPace = "slow" | "build" | "intense";
+export type IntimacyPhase = "closed" | "tension" | "contact" | "peak" | "aftercare";
+
 export interface IntimacyAnatomy {
-  genitals?: string;
-  preferences?: string[];
+  chest?: string;
+  lowerBody?: string;
+  erogenousZones?: string[];
+  notes?: string;
   [key: string]: unknown;
 }
 
 export interface IntimacyProfile {
-  id?: string;
   userId: string;
   characterId: string;
-  intimacyEnabled: boolean;
-  preferredPace: "slow" | "normal" | "fast";
-  safeword: string;
-  aftercareStyle: string;
+  heat: number;
+  bondErotic: number;
   powerAxis: number;
+  preferredPace: IntimacyPace;
+  anatomy: IntimacyAnatomy;
   kinks: string[];
   limits: string[];
   softLimits: string[];
-  anatomy?: IntimacyAnatomy;
+  safeword: string;
+  aftercareStyle: string;
   lastSceneAt?: string;
-  heat: number;
+  sceneCount: number;
+  intimacyEnabled: boolean;
+  updatedAt?: string;
 }
 
 export interface IntimacyScene {
-  id?: string;
+  id: string;
   conversationId: string;
   characterId: string;
   userId: string;
+  phase: IntimacyPhase;
+  location?: string;
+  clothingState?: Record<string, string>;
+  focusMap?: Record<string, number>;
+  actsLog?: Array<{ act: string; timestamp?: string; at?: string }>;
+  heatPeak: number;
   endedReason?: string;
-  created_at?: string;
-  updated_at?: string;
-  [key: string]: unknown;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface IntimacyTurnResult {
-  blockIntimacy: boolean;
+  blockIntimacy?: boolean;
   events: string[];
-  phase: "closed" | "tension" | "contact" | "peak" | "aftercare";
+  phase: IntimacyPhase;
   heat: number;
   profile: IntimacyProfile;
   scene?: IntimacyScene;
