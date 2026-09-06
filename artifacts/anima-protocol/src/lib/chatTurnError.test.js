@@ -43,4 +43,25 @@ describe("chatTurnErrorMessage", () => {
     expect(message).not.toMatch(/ZDR violation/i);
     expect(message).not.toMatch(/guardrail restrictions/i);
   });
+
+  it("remaps raw generic HTTP 400 and backend request failure errors to user-friendly messages", () => {
+    expect(chatTurnErrorMessage(new Error("backend request failed with error 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+    expect(chatTurnErrorMessage(new Error("Request failed with status code 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+    expect(chatTurnErrorMessage(new Error("API error: 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+    expect(chatTurnErrorMessage(new Error("HTTP 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+  });
+
+  it("remaps generic HTTP status codes to polite error messages", () => {
+    expect(chatTurnErrorMessage(new Error("API error: 500"))).toBe(
+      "The companion service encountered an issue. Please try again in a moment.",
+    );
+  });
 });
