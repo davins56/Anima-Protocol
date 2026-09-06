@@ -71,7 +71,10 @@ export const animaApi = {
         }),
       }
     );
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || err.message || res.statusText || `API error: ${res.status}`);
+    }
     yield* readSseJsonStream(res.body);
   },
 
@@ -159,7 +162,7 @@ export const animaApi = {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(err.error || `API error: ${res.status}`);
+          throw new Error(err.error || err.message || res.statusText || `API error: ${res.status}`);
         }
         yield* readSseJsonStream(res.body);
       } catch (err) {
