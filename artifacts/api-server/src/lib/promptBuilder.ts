@@ -62,6 +62,8 @@ import {
   type CrisisResource,
   type TherapySafetyAssessment,
 } from "./therapySafety";
+import type { IntimacyProfile, IntimacyScene, IntimacyTurnResult } from "./intimacyTypes";
+import { getIntimacyPromptGuidance } from "./intimacyPrompt";
 
 // Re-export sub-module types for consumers
 export type { CompanionMemoryRecord, CharacterData, ResonanceState, SynchroState };
@@ -141,6 +143,11 @@ export interface PromptBuilderParams {
   /** Hidden Sequences / conversational weather (client-authored, sanitized as guidance). */
   hiddenSequences?: HiddenSequencesState | null;
   conversationalWeather?: Weather | null;
+
+  /** Intimacy profile, scene, and turn evaluation result */
+  intimacyProfile?: IntimacyProfile | null;
+  intimacyScene?: IntimacyScene | null;
+  intimacyTurnResult?: IntimacyTurnResult | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -523,6 +530,15 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     therapy: modePolicy.name === "therapy" || mode === "therapy",
   });
 
+  let intimacyBlock = "";
+  if (params.intimacyProfile) {
+    intimacyBlock = getIntimacyPromptGuidance(
+      params.intimacyProfile,
+      params.intimacyScene || undefined,
+      params.intimacyTurnResult || undefined,
+    );
+  }
+
   // Assemble in one authoritative pipeline:
   // scene data → identity → user/world → relationship → memory → mode/safety
   // → lore/voice → conversation → current turn → final safety guardrail.
@@ -540,6 +556,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     sharedBlock,
     authoritativeModeBlock,
     careSafetyBlock,
+    intimacyBlock,
     voiceBlock,
     crossoverBlock,
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",

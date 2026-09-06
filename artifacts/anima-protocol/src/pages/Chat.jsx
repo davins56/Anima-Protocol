@@ -150,6 +150,7 @@ import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
 import ChatToolbar from "@/components/chat/ChatToolbar";
 import ChatToolbarSection from "@/components/chat/ChatToolbarSection";
 import ChatWidgetsArea from "@/components/chat/ChatWidgetsArea";
+import IntimacyDock from "@/components/intimacy/IntimacyDock";
 import ExportArchiveModal from "@/components/chat/ExportArchiveModal";
 import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
 import NarrativeDivergencePanel from "@/components/narrative/NarrativeDivergencePanel";
@@ -2631,7 +2632,10 @@ Return JSON:
               onOpenStage={presenceCast.length > 0 ? openPresenceStage : undefined}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
-              <ResonanceField value={resonance.value} label={resonance.label} />
+              <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
+                <ResonanceField value={resonance.value} label={resonance.label} />
+                <IntimacyDock characterId={activeSession.character_id} conversationId={activeSession.id} />
+              </div>
             )}
             {isTherapySession(
               activeSession,
