@@ -87,7 +87,7 @@ describe("AnimaLLM Client", () => {
   });
 
   it("builds messages with default system prompt when missing", () => {
-    const client = new AnimaLLM({ baseUrl: serverUrl });
+    const client = new AnimaLLM({ baseUrl: serverUrl, apiKey: "test-token" });
     const msgs = client.buildMessages({ prompt: "Hello there" });
 
     expect(msgs).toHaveLength(2);
@@ -96,7 +96,7 @@ describe("AnimaLLM Client", () => {
   });
 
   it("respects custom system prompt and message array", () => {
-    const client = new AnimaLLM({ baseUrl: serverUrl });
+    const client = new AnimaLLM({ baseUrl: serverUrl, apiKey: "test-token" });
     const msgs = client.buildMessages({
       messages: [{ role: "user", content: "How are you?" }],
       systemPrompt: "You are a friendly robot.",
@@ -108,7 +108,11 @@ describe("AnimaLLM Client", () => {
   });
 
   it("generates a non-streaming response via AnimaLLM.generateResponse", async () => {
-    const client = new AnimaLLM({ baseUrl: serverUrl, defaultTier: "standard" });
+    const client = new AnimaLLM({
+      baseUrl: serverUrl,
+      apiKey: "test-token",
+      defaultTier: "standard",
+    });
     const res = await client.generateResponse({ prompt: "Who are you?" });
 
     expect(res.content).toBe("I am Anima, your digital companion.");
@@ -118,7 +122,11 @@ describe("AnimaLLM Client", () => {
   });
 
   it("streams an AI response via AnimaLLM.streamResponse", async () => {
-    const client = new AnimaLLM({ baseUrl: serverUrl, defaultTier: "standard" });
+    const client = new AnimaLLM({
+      baseUrl: serverUrl,
+      apiKey: "test-token",
+      defaultTier: "standard",
+    });
     const streamResult = await client.streamResponse({ prompt: "Tell me a secret" });
 
     expect(streamResult.tier).toBe("standard");
@@ -137,7 +145,7 @@ describe("AnimaLLM Client", () => {
   it("works with generateAnimaResponse convenience wrapper", async () => {
     const res = await generateAnimaResponse(
       { prompt: "Testing convenience helper" },
-      { baseUrl: serverUrl },
+      { baseUrl: serverUrl, apiKey: "test-token" },
     );
 
     expect(res.content).toBe("I am Anima, your digital companion.");
@@ -146,7 +154,7 @@ describe("AnimaLLM Client", () => {
   it("works with streamAnimaResponse convenience wrapper", async () => {
     const result = await streamAnimaResponse(
       { prompt: "Testing stream helper" },
-      { baseUrl: serverUrl },
+      { baseUrl: serverUrl, apiKey: "test-token" },
     );
 
     let content = "";
