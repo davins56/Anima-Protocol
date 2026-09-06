@@ -79,6 +79,8 @@ describe("registry", () => {
       "mistral",
       "gemma",
       "deepseek",
+      "minimax",
+      "google",
     ]);
     const models = listOpenWeightChatModels();
     expect(models.map((model) => model.family)).toEqual(OPEN_WEIGHT_MODEL_FAMILIES);
