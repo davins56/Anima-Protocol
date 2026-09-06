@@ -72,6 +72,21 @@ describe("getLlmRoutingStatus on serverless / Worker", () => {
     expect(getProviderChain()).toEqual(["openrouter", "minimax"]);
   });
 
+  it("prefers MiniMax-only when ANIMA_LLM_PROVIDER=minimax even with free OpenRouter", () => {
+    clearLlmEnv();
+    process.env.ANIMA_RUNTIME = "worker";
+    process.env.OPENROUTER_API_KEY = "sk-or-test-key-zzzz";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_LLM_PROVIDER = "minimax";
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("ok");
+    expect(status.preferred).toBe("minimax");
+    expect(status.chain).toEqual(["minimax"]);
+    expect(status.minimax.configured).toBe(true);
+    expect(getProviderChain()).toEqual(["minimax"]);
+  });
+
   it("keeps localhost default on plain Node so local-dev Ollama still works", () => {
     clearLlmEnv();
     const status = getLlmRoutingStatus();

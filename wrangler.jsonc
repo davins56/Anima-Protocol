@@ -52,7 +52,13 @@
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
     // Skip Venice (402s on $0 OpenRouter accounts). Chat uses
     // minimax/minimax-m2.7:free, then m3 / Gemma 4 on provider 400/429/5xx.
-    "ANIMA_OPENROUTER_FREE": "true"
+    "ANIMA_OPENROUTER_FREE": "true",
+    // Force MiniMax Global chat (needs classic Worker secret MINIMAX_API_KEY).
+    // Dashboard-only vars are dropped on `wrangler deploy` — this committed
+    // var is the durable pin. Remove the key or set it to "" later to restore
+    // OpenRouter-first free chain with MiniMax fallback
+    // (ANIMA_OPENROUTER_FREE=true + MiniMax key).
+    "ANIMA_LLM_PROVIDER": "minimax"
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
@@ -71,6 +77,12 @@
   //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
   //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
   // OPENROUTER_API_KEY is bound below (used when the local URL is unset).
+  // MINIMAX_API_KEY stays a classic Worker secret (`wrangler secret put
+  // MINIMAX_API_KEY` or dashboard Settings → Variables and Secrets). That
+  // binding already works in production (`minimax.configured: true`). Do not
+  // add it to secrets_store_secrets until secret_name MINIMAX_API_KEY exists
+  // in store a31e40473ef34db896b5bc1e6c1c4b86 — a missing store entry fails
+  // wrangler deploy and blocks the Worker.
   // See deploy/ollama-fly/README.md.
   "secrets_store_secrets": [
     {
