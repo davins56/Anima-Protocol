@@ -24,6 +24,7 @@ import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
+import IntimacyEditor from "@/components/intimacy/IntimacyEditor";
 import { characterCreatePayload } from "@/lib/characterAvatarUpload";
 import {
   companionCreateErrorMessage,
@@ -674,6 +675,16 @@ export default function Characters() {
                   </>
                 )}
               </button>
+
+              {/* Intimacy Settings */}
+              {editingChar?.id && (
+                <div className="pt-4 border-t border-primary/20">
+                  <IntimacyEditor
+                    characterId={editingChar.id}
+                    characterName={form.name}
+                  />
+                </div>
+              )}
               </div>
             </div>
 
