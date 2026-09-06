@@ -119,6 +119,8 @@ describe("Cloudflare wrangler config", () => {
     const bound = new Set(bindings.map((row) => row.binding));
     expect(bound.has("ANIMA_LOCAL_LLM_BASE_URL")).toBe(false);
     expect(bound.has("ANIMA_LOCAL_LLM_API_KEY")).toBe(false);
+    expect(bound.has("MINIMAX_API_KEY")).toBe(false);
+    expect(bound.has("ANIMA_MINIMAX_API_KEY")).toBe(false);
     expect(bound.has("OPENROUTER_API_KEY")).toBe(true);
     const source = readFileSync(
       path.join(repoRoot, "wrangler.jsonc"),
@@ -131,6 +133,8 @@ describe("Cloudflare wrangler config", () => {
     expect(source).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/);
     expect(source).toMatch(/ANIMA_LOCAL_LLM_API_KEY/);
     expect(source).toMatch(/OPENROUTER_API_KEY/);
+    expect(source).toMatch(/MINIMAX_API_KEY stays a classic Worker secret/);
+    expect(source).toMatch(/"ANIMA_LLM_PROVIDER": "minimax"/);
   });
 
   it("does not embed secrets in the committed Worker config", () => {
@@ -140,14 +144,17 @@ describe("Cloudflare wrangler config", () => {
     expect(vars.ANIMA_LOCAL_LLM_BACKEND).toBe("ollama");
     expect(vars.ANIMA_OLLAMA_MODEL_STANDARD).toBe("anima-chat");
     expect(vars.ANIMA_OPENROUTER_FREE).toBe("true");
+    expect(vars.ANIMA_LLM_PROVIDER).toBe("minimax");
     // Public Fly URL stays out of committed vars so a missing Fly host
     // cannot put `local` in the provider chain. Bind it only after the
     // Secrets Store entry exists (see wrangler.jsonc runbook).
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_BASE_URL");
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_API_KEY");
     expect(vars).not.toHaveProperty("OPENROUTER_API_KEY");
+    expect(vars).not.toHaveProperty("MINIMAX_API_KEY");
     expect(Object.keys(vars).sort()).toEqual(
       [
+        "ANIMA_LLM_PROVIDER",
         "ANIMA_LOCAL_LLM_BACKEND",
         "ANIMA_OLLAMA_MODEL_STANDARD",
         "ANIMA_OPENROUTER_FREE",
