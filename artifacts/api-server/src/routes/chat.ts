@@ -113,6 +113,18 @@ import {
   shouldCrystallize,
   crystallizeResonanceMemory,
 } from "../lib/resonanceMemories";
+import {
+  loadIntimacyProfile,
+  saveIntimacyProfile,
+  loadIntimacyScene,
+  saveIntimacyScene,
+} from "../lib/intimacyStore";
+import { evaluateTurn, decayHeat } from "../lib/intimacyEngine";
+import type {
+  IntimacyProfile,
+  IntimacyScene,
+  IntimacyTurnResult,
+} from "../lib/intimacyTypes";
 
 const router = Router();
 
@@ -1538,6 +1550,31 @@ router.post("/messages", async (req, res) => {
     modePolicy.name === "therapy"
       ? assessTherapySafety({ content, recentMessages })
       : null;
+
+  let intimacyProfile: IntimacyProfile | null = null;
+  let intimacyScene: IntimacyScene | null = null;
+  let intimacyResult: IntimacyTurnResult | null = null;
+
+  if (activeCharacterId && adultActive && !therapyActive) {
+    let profile = await loadIntimacyProfile(userId, activeCharacterId);
+    if (profile.lastSceneAt) {
+      const idle = (Date.now() - Date.parse(profile.lastSceneAt)) / 60000;
+      if (idle >= 8) {
+        profile = decayHeat(profile, idle);
+      }
+    }
+    const scene = await loadIntimacyScene(userId, sessionId, activeCharacterId);
+    intimacyResult = evaluateTurn({
+      profile,
+      scene,
+      content,
+      adultEnabled: adultActive,
+      therapyMode: therapyActive,
+    });
+    intimacyProfile = intimacyResult?.profile || null;
+    intimacyScene = intimacyResult?.scene || null;
+  }
+
   const prompt = telemetry.measureSync("prompt_build_ms", () =>
     composePrompt({
       clientContext: body.system_prompt,
@@ -1561,6 +1598,9 @@ router.post("/messages", async (req, res) => {
       ),
       hiddenSequences: (body.metadata?.hidden_sequences as any) || null,
       conversationalWeather: (body.metadata?.conversational_weather as any) || null,
+      intimacyProfile,
+      intimacyScene,
+      intimacyTurnResult: intimacyResult,
     }),
   );
 
@@ -1824,6 +1864,14 @@ router.post("/messages", async (req, res) => {
       }
     }
     if (persistenceOwner !== "server" || !shouldPersist) return;
+
+    // Save intimacy profile and scene updates if intimacy engine ran
+    if (intimacyProfile) {
+      void saveIntimacyProfile(intimacyProfile).catch((e) => logger.warn({ error: e }, "Failed to save intimacy profile"));
+    }
+    if (intimacyScene) {
+      void saveIntimacyScene(intimacyScene).catch((e) => logger.warn({ error: e }, "Failed to save intimacy scene"));
+    }
 
     // Relationship/evolution is derived state. Message + memory durability is
     // committed first; failures here are observable and can be rebuilt without
