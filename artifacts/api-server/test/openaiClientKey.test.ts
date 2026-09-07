@@ -20,6 +20,9 @@ import {
   getMinimaxApiKey,
   getMinimaxApiKeySource,
   hasMinimaxKey,
+  getDeepshiApiKey,
+  getDeepshiApiKeySource,
+  hasDeepshiKey,
 } from "../src/lib/openaiClient";
 
 describe("OpenRouter catalog defaults", () => {
@@ -156,5 +159,22 @@ describe("MiniMax key env aliases", () => {
     expect(hasMinimaxKey()).toBe(true);
     expect(getMinimaxApiKey()).toBe("minimax-primary-key");
     expect(getMinimaxApiKeySource()).toBe("MINIMAX_API_KEY");
+  });
+});
+
+describe("Deepshi key env aliases", () => {
+  const SAVED = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmClientsForTests();
+  });
+
+  it("reads DEEPSHI_API_KEY and prefers it over the Anima alias", () => {
+    process.env.DEEPSHI_API_KEY = "  sk-bf-primary  ";
+    process.env.ANIMA_DEEPSHI_API_KEY = "sk-bf-alias";
+    expect(hasDeepshiKey()).toBe(true);
+    expect(getDeepshiApiKey()).toBe("sk-bf-primary");
+    expect(getDeepshiApiKeySource()).toBe("DEEPSHI_API_KEY");
   });
 });
