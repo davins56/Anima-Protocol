@@ -33,8 +33,8 @@ export default function ConsentBanner() {
     <div
       role="dialog"
       aria-label="Analytics consent"
-      className="fixed inset-x-0 bottom-0 z-[100] border-t border-primary/30 bg-[#090912]/95 backdrop-blur-sm shadow-[0_-4px_30px_rgba(34,211,238,0.12)]"
-      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      className="fixed-bottom-chrome fixed inset-x-0 bottom-0 z-[100] border-t border-primary/30 bg-[#090912]/95 backdrop-blur-sm shadow-[0_-4px_30px_rgba(34,211,238,0.12)]"
+      style={{ paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))" }}
     >
       <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
         <p className="font-mono text-[11px] leading-relaxed text-primary/70 flex-1">

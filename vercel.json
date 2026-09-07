@@ -21,9 +21,20 @@
   "redirects": [
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "anima-protocol.com" }],
-      "destination": "https://www.anima-protocol.com/:path*",
+      "has": [{ "type": "host", "value": "www.anima-protocol.com" }],
+      "destination": "https://anima-protocol.com/:path*",
       "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ],
   "rewrites": [

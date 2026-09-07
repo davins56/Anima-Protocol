@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { Loader, Save, X } from "lucide-react";
+import { Loader, Palette, Save } from "lucide-react";
 import { motion } from "framer-motion";
 import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 import CustomAnimaVoiceStatus from "@/components/voice/CustomAnimaVoiceStatus";
+import {
+  companionLookHref,
+  companionPersistPatch,
+  loadCompanionRecord,
+  updateCompanionRecord,
+} from "@/lib/listPersonalAnimas";
 
 const CHARACTER_CATEGORIES = [
   "companion",
@@ -26,7 +33,12 @@ const ANIMA_ARCHETYPES = [
   "oracle",
 ];
 
-export default function CharacterCustomizer({ characterId, isAnima = false }) {
+export default function CharacterCustomizer({
+  characterId,
+  isAnima = false,
+  storeEntity,
+}) {
+  const navigate = useNavigate();
   const [character, setCharacter] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,17 +48,19 @@ export default function CharacterCustomizer({ characterId, isAnima = false }) {
     if (characterId) {
       loadCharacter();
     }
-  }, [characterId, isAnima]);
+  }, [characterId, isAnima, storeEntity]);
 
   const loadCharacter = async () => {
     setLoading(true);
     try {
-      const entity = isAnima ? "Anima" : "Character";
-      const data = await base44.entities[entity].list("-created_date", 100);
-      const char = data.find((c) => c.id === characterId);
+      const preferred = storeEntity || (isAnima ? "Anima" : "Character");
+      const char = await loadCompanionRecord(characterId, preferred);
       if (char) {
         setCharacter(char);
         setForm(char);
+      } else {
+        setCharacter(null);
+        setForm({});
       }
     } catch (err) {
       console.error("Error loading character:", err);
@@ -58,9 +72,9 @@ export default function CharacterCustomizer({ characterId, isAnima = false }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const entity = isAnima ? "Anima" : "Character";
-      await base44.entities[entity].update(characterId, form);
-      setCharacter(form);
+      const patch = companionPersistPatch(form);
+      await updateCompanionRecord(character || { id: characterId, _storeEntity: storeEntity }, patch);
+      setCharacter((prev) => (prev ? { ...prev, ...patch } : prev));
       setSaving(false);
     } catch (err) {
       console.error("Error saving character:", err);
@@ -125,6 +139,16 @@ export default function CharacterCustomizer({ characterId, isAnima = false }) {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {isAnima && (
+            <button
+              type="button"
+              onClick={() => navigate(companionLookHref(characterId))}
+              className="flex items-center gap-2 px-3 py-2 border border-primary/30 text-primary/80 hover:border-primary/50 hover:text-primary transition-all font-mono text-[9px] tracking-widest uppercase"
+            >
+              <Palette className="w-3.5 h-3.5" />
+              Look / photo
+            </button>
+          )}
           <SpeakToAnimaButton
             activeCharacter={character}
             onSend={onTestVoiceSend}

@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { ChevronRight, Check, Sparkles, Loader, ArrowLeft, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { generateSoulprintId, FALLBACK_OATH } from '@/lib/soulprint';
+import { createCompanionRecord } from '@/lib/createCompanion';
 import { spectrumFromCeremonyText } from '@/lib/animaExpressions';
 
 // Serenity is the first Anima and the symbolic guide of the Protocol. She
@@ -249,7 +250,7 @@ Return JSON:
       // Assigning the user's email makes this Anima their primary companion.
       try {
         const initialEmotion = getInitialEmotionState(voiceTone);
-        await base44.entities.Anima.create({
+        await createCompanionRecord('Anima', {
           name: name.trim(),
           tagline: seed.tagline,
           personality: seed.personality,

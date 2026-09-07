@@ -55,6 +55,8 @@ export function SerenityFigure({
   anchored = false,
   quality = RENDERER_QUALITY.medium,
   expression = 0,
+  layers,
+  sequences,
 }) {
   const group = useSmoothPanel(anchored ? 1 : col, anchored ? 1 : row);
 
@@ -69,6 +71,8 @@ export function SerenityFigure({
         showLattice={quality.tesseracts >= 1 || quality.vesselHd}
         expression={expression}
         breathing
+        layers={layers}
+        sequences={sequences}
       />
     </group>
   );

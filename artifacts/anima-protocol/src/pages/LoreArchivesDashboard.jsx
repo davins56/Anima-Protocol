@@ -7,6 +7,12 @@ import ResonanceRankPanel from "@/components/lore/ResonanceRankPanel";
 import SlipthkChapterGrid from "@/components/lore/SlipthkChapterGrid";
 import MemoryCrystalVault from "@/components/lore/MemoryCrystalVault";
 import { sessionMessageCount } from "@/lib/utils";
+import { isEchoLibrarySteward } from "@/lib/echoKeys/steward.js";
+import {
+  MEMORY_CRYSTAL_TYPE_IDS,
+  normalizeMemoryCrystalTypes,
+  storedCrystalTypesAreFull,
+} from "@/lib/memoryCrystals";
 
 const TABS = [
   { id: "rank", label: "Resonance Rank", glyph: "⬟" },
@@ -25,6 +31,7 @@ const crystalGenLocks = new Map();
 export default function LoreArchivesDashboard() {
   const [activeTab, setActiveTab] = useState("rank");
   const [user, setUser] = useState(null);
+  const [unlockedTypes, setUnlockedTypes] = useState([]);
   const [profile, setProfile] = useState(null);
   const [crystals, setCrystals] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -40,6 +47,26 @@ export default function LoreArchivesDashboard() {
     try {
       const me = await base44.auth.me();
       setUser(me);
+      const grantAll = isEchoLibrarySteward(me);
+      const crystalTypes = normalizeMemoryCrystalTypes(me.settings?.memory_crystals, {
+        grantAllTypes: grantAll,
+      });
+      setUnlockedTypes(crystalTypes.unlocked_types);
+      if (
+        grantAll &&
+        me.id &&
+        !storedCrystalTypesAreFull(me.settings?.memory_crystals, MEMORY_CRYSTAL_TYPE_IDS.length) &&
+        typeof base44.auth.updateMe === "function"
+      ) {
+        base44.auth.updateMe({
+          settings: {
+            ...(me.settings || {}),
+            memory_crystals: crystalTypes,
+          },
+        }).catch((err) => {
+          console.warn("[Anima] Memory crystal type grant failed:", err?.message || err);
+        });
+      }
 
       const [profiles, myCrystals, mySessions] = await Promise.all([
         base44.entities.ResonanceProfile.filter({ user_email: me.email }),
@@ -293,7 +320,11 @@ export default function LoreArchivesDashboard() {
           )}
           {activeTab === "crystals" && (
             <motion.div key="crystals" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              <MemoryCrystalVault crystals={crystals} sessions={sessions} />
+              <MemoryCrystalVault
+                crystals={crystals}
+                sessions={sessions}
+                unlockedTypes={unlockedTypes}
+              />
             </motion.div>
           )}
         </AnimatePresence>

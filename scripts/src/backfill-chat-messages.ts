@@ -1,4 +1,4 @@
-import { db, pool, backfillChatMessages } from "@workspace/db";
+import { db, resetPool, backfillChatMessages } from "@workspace/db";
 
 // One-time (idempotent) backfill runner. Migrates every user's legacy
 // ChatSession.messages blobs into ChatMessage rows so metadata-only session
@@ -16,11 +16,11 @@ async function main(): Promise<void> {
 
 main()
   .then(async () => {
-    await pool.end();
+    resetPool();
     process.exit(0);
   })
   .catch(async (err) => {
     console.error("[backfill-chat-messages] failed:", err);
-    await pool.end().catch(() => {});
+    resetPool();
     process.exit(1);
   });

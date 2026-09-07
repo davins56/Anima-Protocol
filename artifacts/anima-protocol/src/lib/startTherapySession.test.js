@@ -57,5 +57,22 @@ describe("startTherapySession", () => {
     expect(payload.messages[0].character_name).toBe("Lumen");
     expect(payload.messages[0].content).toMatch(/therapy mode/i);
     expect(payload.messages[0].content).toMatch(/988/);
+    expect(payload.therapy_topic).toBeUndefined();
+  });
+
+  it("opens a topic-focused session when the user added a subject", async () => {
+    await startTherapySession({
+      anima: { id: "anima-9", name: "Lumen" },
+      topic: "  Work burnout  ",
+      topicId: "topic-3",
+      topicNotes: "empty after 6pm",
+    });
+    const payload = base44.entities.ChatSession.create.mock.calls[0][0];
+    expect(payload.title).toBe("Therapy · Work burnout");
+    expect(payload.therapy_topic).toBe("Work burnout");
+    expect(payload.therapy_topic_id).toBe("topic-3");
+    expect(payload.therapy_topic_notes).toBe("empty after 6pm");
+    expect(payload.messages[0].content).toContain("Work burnout");
+    expect(payload.messages[0].content).toMatch(/go deeper/i);
   });
 });

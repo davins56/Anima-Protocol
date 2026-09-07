@@ -69,6 +69,32 @@ describe("appendAmbientMessage", () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
+  it("does not append the bubble onto a different open session", async () => {
+    const stored = {
+      id: "msg-ambient-2",
+      role: "assistant",
+      content: "sideline from A",
+    };
+    const appendMessage = vi.fn(async () => stored);
+    const other = {
+      id: "sess-other",
+      messages: [{ id: "keep", content: "thread B" }],
+    };
+    const setActiveSession = vi.fn((updater) => updater(other));
+
+    await appendAmbientMessage({
+      appendMessage,
+      sessionId: "sess-1",
+      message: { role: "assistant", content: "sideline from A" },
+      setActiveSession,
+    });
+
+    expect(setActiveSession).toHaveBeenCalledTimes(1);
+    const next = setActiveSession.mock.results[0].value;
+    expect(next).toBe(other);
+    expect(next.messages).toEqual([{ id: "keep", content: "thread B" }]);
+  });
+
   it("requires sessionId and appendMessage", async () => {
     await expect(
       appendAmbientMessage({

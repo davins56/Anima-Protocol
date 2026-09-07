@@ -428,7 +428,7 @@ async function main(): Promise<void> {
       "⚠ Production still needs provider consoles to allowlist the callback above.",
     );
     console.log(
-      "  Manual check: open www.anima-protocol.com/sign-in and try each button.",
+      "  Manual check: open anima-protocol.com/sign-in and try each button.",
     );
     console.log(
       "  Google Error 400 redirect_uri_mismatch → fix Google Cloud redirect URI.",

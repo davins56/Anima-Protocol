@@ -16,6 +16,12 @@ import {
   isBootstrapSettled,
 } from '@/lib/bootstrapState';
 import {
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
+  STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
+} from '@/lib/storeTimeouts';
+import {
   authHeaders,
   clearAuthTokenGetter,
   getToken,
@@ -26,8 +32,36 @@ import {
 const STORE_BASE = () => apiUrl('/store');
 
 export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
+export {
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
+  STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
+};
 
-const STORE_FETCH_TIMEOUT_MS = 15000;
+const DEFAULT_STORE_TIMEOUT_MESSAGE =
+  'The server took too long to respond. Check your connection or try again in a moment.';
+
+function createStoreAbortSignal(budget, userSignal) {
+  const timeoutSignal =
+    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+      ? AbortSignal.timeout(budget)
+      : undefined;
+  if (userSignal && timeoutSignal && typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([userSignal, timeoutSignal]);
+  }
+  return userSignal || timeoutSignal;
+}
+
+function isStoreAbortError(err) {
+  return err?.name === 'AbortError' || err?.name === 'TimeoutError';
+}
+
+function storeTimeoutError(timeoutMessage) {
+  const timeoutErr = new Error(timeoutMessage || DEFAULT_STORE_TIMEOUT_MESSAGE);
+  timeoutErr.code = 'timeout';
+  return timeoutErr;
+}
 
 async function storeFetch(path, options = {}) {
   const token = await getToken();
@@ -39,71 +73,181 @@ async function storeFetch(path, options = {}) {
     throw err;
   }
 
-  const timeoutSignal =
-    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
-      ? AbortSignal.timeout(STORE_FETCH_TIMEOUT_MS)
-      : undefined;
-  const userSignal = options.signal;
-  let signal = timeoutSignal;
-  if (userSignal && timeoutSignal) {
-    signal = AbortSignal.any([userSignal, timeoutSignal]);
-  } else if (userSignal) {
-    signal = userSignal;
-  }
+  const {
+    timeoutMs,
+    timeoutMessage,
+    signal: userSignal,
+    headers: optionHeaders,
+    retryOnTimeout = false,
+    ...fetchOptions
+  } = options;
+  const budget =
+    typeof timeoutMs === 'number' && timeoutMs > 0
+      ? timeoutMs
+      : STORE_FETCH_TIMEOUT_MS;
 
-  const makeRequest = async (retryOptions = {}) => {
-    const headers = await authHeaders(options.headers, retryOptions);
+  const makeRequest = async (retryOptions = {}, signal) => {
+    const headers = await authHeaders(optionHeaders, retryOptions);
     return await fetch(`${STORE_BASE()}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers,
       credentials: 'same-origin',
       signal,
     });
   };
 
-  let res;
-  try {
-    res = await makeRequest();
+  const runOnce = async () => {
+    // First attempt + 401 retry share one budget. A 503 reset gets a fresh
+    // AbortSignal so a hung Hyperdrive socket cannot starve the retry.
+    const firstSignal = createStoreAbortSignal(budget, userSignal);
+    let res = await makeRequest({}, firstSignal);
     if (res.status === 401) {
-      const retried = await makeRequest({ skipCache: true });
+      const retried = await makeRequest({ skipCache: true }, firstSignal);
       if (retried.status !== 401) {
         return retried;
       }
       res = retried;
     }
-    return res;
-  } catch (err) {
-    if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
-      const timeoutErr = new Error(
-        'The server took too long to respond. Check your connection or try again in a moment.',
-      );
-      timeoutErr.code = 'timeout';
-      throw timeoutErr;
+    // Stale Worker/pg sockets surface as 503 "Database connection reset".
+    // One extra attempt lets the server open a fresh connection.
+    if (await isRetryableStoreReset(res)) {
+      res = await makeRequest({}, createStoreAbortSignal(budget, userSignal));
     }
-    throw err;
+    return res;
+  };
+
+  // List/GET can retry a client abort once (fresh 8s budget). Writes stay
+  // fail-fast unless the caller opted into a longer create budget.
+  const attempts = retryOnTimeout ? STORE_LIST_RETRY_LIMIT + 1 : 1;
+  let lastAbort;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await runOnce();
+    } catch (err) {
+      if (!isStoreAbortError(err)) throw err;
+      lastAbort = err;
+      if (userSignal?.aborted || i === attempts - 1) {
+        throw storeTimeoutError(timeoutMessage);
+      }
+    }
+  }
+  throw lastAbort || storeTimeoutError(timeoutMessage);
+}
+
+async function isRetryableStoreReset(res) {
+  if (res.status !== 503) return false;
+  try {
+    const json = await res.clone().json();
+    const reason = String(json?.reason || '');
+    // Schema/auth must not retry — those need a deploy or a new session.
+    if (reason === 'schema' || reason === 'auth') return false;
+    if (
+      reason === 'reset' ||
+      reason === 'unavailable' ||
+      reason === 'timeout' ||
+      reason === 'refused' ||
+      reason === 'unreachable' ||
+      reason === 'limit'
+    ) {
+      return true;
+    }
+    if (json?.dbError === true) return true;
+    return /connection reset|database unavailable|timed out|unreachable|could not be reached/i.test(
+      String(json?.error || ''),
+    );
+  } catch {
+    // Worker isolate HTML coerced to 503 — one more attempt on a fresh isolate.
+    return true;
   }
 }
 
-// Parse a failed store response into a human-readable message. Non-JSON bodies
-// (e.g. an HTML 404 from a frontend-only deploy) must not surface as a blank
-// error string in the UI.
-async function parseStoreErrorResponse(res) {
+// Shown when the response never came from the API (Cloudflare error page,
+// www→apex redirect landing on the SPA shell, truncated body). We have no
+// server verdict in that case, so this must NOT blame the database.
+export const STORE_UNREACHABLE_MESSAGE =
+  'The companion store is unreachable — the server sent an unexpected response. Retry in a moment.';
+
+const STORE_API_NOT_FOUND_MESSAGE =
+  'Character store API not found — the backend may not be running or /api is not proxied to it.';
+
+/** Cloudflare error/challenge/301 pages and SPA HTML — never show this in the UI. */
+export function isHtmlErrorBody(text, contentType) {
+  const ct = String(contentType || '').toLowerCase();
+  if (ct.includes('text/html')) return true;
+  const raw = String(text || '').replace(/^\uFEFF/, '');
+  const head = raw.trimStart().slice(0, 400);
+  return (
+    /<!DOCTYPE\s+html/i.test(head) ||
+    /^<html[\s>]/i.test(head) ||
+    /<!--\[if\s+lt\s+IE/i.test(head) ||
+    /<center>\s*cloudflare\s*<\/center>/i.test(raw) ||
+    /301\s+Moved\s+Permanently/i.test(head)
+  );
+}
+
+// Non-JSON bodies (Cloudflare 1101/524 HTML, www→apex homepage HTML, Express
+// 404) must never dump a raw snippet into Character library loadError.
+/**
+ * Read a failed store response once, keeping the API's structured verdict.
+ *
+ * `dbError` / `reason` come straight from the api-server error handler. When
+ * the body is not JSON we never reached that handler, so we mark the failure
+ * as `transport` rather than guessing at a cause.
+ *
+ * @returns {Promise<{message: string, reason?: string, code?: string,
+ *   dbError?: boolean, transport?: boolean}>}
+ */
+export async function parseStoreErrorDetail(res) {
   const text = await res.text();
+  const contentType =
+    typeof res.headers?.get === 'function'
+      ? res.headers.get('content-type')
+      : undefined;
   try {
     const json = JSON.parse(text);
-    return json.error || res.statusText || `HTTP ${res.status}`;
+    return {
+      message: json.error || res.statusText || `HTTP ${res.status}`,
+      reason: typeof json.reason === 'string' ? json.reason : undefined,
+      code: typeof json.code === 'string' ? json.code : undefined,
+      dbError: typeof json.dbError === 'boolean' ? json.dbError : undefined,
+    };
   } catch {
-    if (res.status === 404) {
-      return 'Character store API not found — the backend may not be running or /api is not proxied to it.';
+    if (res.status === 404 && !isHtmlErrorBody(text, contentType)) {
+      return { message: STORE_API_NOT_FOUND_MESSAGE, transport: true };
     }
-    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 120);
-    return snippet || res.statusText || `HTTP ${res.status}`;
+    if (isHtmlErrorBody(text, contentType) || res.status >= 500) {
+      return { message: STORE_UNREACHABLE_MESSAGE, transport: true };
+    }
+    if (res.status === 404) {
+      return { message: STORE_API_NOT_FOUND_MESSAGE, transport: true };
+    }
+    return { message: STORE_UNREACHABLE_MESSAGE, transport: true };
   }
 }
 
-function storeError(res, message) {
-  const e = new Error(message);
-  e.status = res.status;
+/** Message-only view of parseStoreErrorDetail. Consumes the body. */
+export async function parseStoreErrorResponse(res) {
+  return (await parseStoreErrorDetail(res)).message;
+}
+
+/**
+ * Build the Error thrown to callers, carrying the server's classification so
+ * the UI does not have to re-derive it from prose.
+ *
+ * @param {{status?: number}} res
+ * @param {string|{message: string, reason?: string, code?: string,
+ *   dbError?: boolean, transport?: boolean}} detail
+ */
+function storeError(res, detail) {
+  const info = typeof detail === 'string' ? { message: detail } : detail || {};
+  const e = new Error(info.message);
+  // A non-JSON body means the API never answered; report it as unavailable so
+  // callers keep their 5xx handling, but flag it as transport, not database.
+  e.status = info.transport && !res?.status ? 503 : (res?.status ?? 503);
+  if (info.transport) e.transport = true;
+  if (info.reason) e.reason = info.reason;
+  if (info.code) e.code = info.code;
+  if (typeof info.dbError === 'boolean') e.dbError = info.dbError;
   return e;
 }
 
@@ -187,26 +331,96 @@ async function blobToBase64(blob) {
   return btoa(binary);
 }
 
+function messageFromUploadStatus(res, json, text) {
+  if (json?.error) return String(json.error);
+  if (res.status === 401) {
+    return 'Sign in to upload an image, then try again.';
+  }
+  if (res.status === 413) {
+    return 'That image is too large. Try a smaller photo.';
+  }
+  if (res.status === 503) {
+    return 'Image upload is temporarily unavailable. The database may be down — try again in a moment.';
+  }
+  if (res.status === 404) {
+    return 'Image upload API not found — /api/storage/uploads is not available on this host.';
+  }
+  const snippet = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  return snippet || res.statusText || `Upload failed (${res.status})`;
+}
+
+async function parseUploadErrorResponse(res) {
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Non-JSON (HTML 404 from an assets-only deploy, Cloudflare challenge, …)
+  }
+  return messageFromUploadStatus(res, json, text);
+}
+
+function uploadErrorFromResponse(res, text) {
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  const err = new Error(messageFromUploadStatus(res, json, text));
+  err.status = res.status;
+  if (typeof json?.reason === 'string') err.reason = json.reason;
+  if (typeof json?.dbError === 'boolean') err.dbError = json.dbError;
+  if (typeof json?.code === 'string') err.code = json.code;
+  return err;
+}
+
 /**
  * Upload an image blob and return the served object path.
  *
  * Uses the Postgres-backed POST /api/storage/uploads endpoint so avatar upload
- * works on Vercel (the legacy Replit GCS sidecar is unavailable there).
+ * works on Cloudflare Workers / Vercel (the legacy Replit GCS sidecar is
+ * unavailable there). Requires a signed-in Clerk session.
  */
 async function uploadBlob(blob) {
+  const token = await getToken();
+  if (!token) {
+    const err = new Error(
+      'Sign in to upload an image, then try again.',
+    );
+    err.status = 401;
+    throw err;
+  }
+
   const headers = await authHeaders();
   const dataBase64 = await blobToBase64(blob);
-  const res = await fetch(apiUrl('/storage/uploads'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      contentType: blob.type || 'image/jpeg',
-      dataBase64,
-    }),
+  const body = JSON.stringify({
+    contentType: blob.type || 'image/jpeg',
+    dataBase64,
   });
+  const postOnce = async () => {
+    try {
+      return await fetch(apiUrl('/storage/uploads'), {
+        method: 'POST',
+        headers,
+        credentials: 'same-origin',
+        body,
+      });
+    } catch (err) {
+      if (err?.name === 'AbortError') throw err;
+      const netErr = new Error('Network request failed — could not reach the image upload API.');
+      netErr.code = 'network';
+      throw netErr;
+    }
+  };
+  let res = await postOnce();
+  // Same Hyperdrive stale-socket recovery as storeFetch. The server also
+  // retries the insert; this covers a Worker isolate that died before then.
+  if (await isRetryableStoreReset(res)) {
+    res = await postOnce();
+  }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText || `Upload failed (${res.status})`);
+    throw uploadErrorFromResponse(res, await res.text());
   }
   const payload = await res.json();
   if (payload?.file_url) return payload.file_url;
@@ -218,7 +432,7 @@ async function uploadBlob(blob) {
 }
 
 // Downscale a data URL to a small JPEG and upload it. Returns the served path.
-export async function uploadDataUrl(dataUrl, { maxSize = 1024, quality = 0.85 } = {}) {
+export async function uploadDataUrl(dataUrl, { maxSize = 800, quality = 0.72 } = {}) {
   const small = await downscaleDataUrl(dataUrl, maxSize, quality);
   return uploadBlob(dataUrlToBlob(small));
 }
@@ -726,6 +940,7 @@ async function queryEntity(entityName, opts) {
     if (!token) return [];
     const res = await storeFetch(
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
+      { retryOnTimeout: true },
     );
     // Never cache auth failures as an empty roster — that made bootstrap/repair
     // think seeding succeeded when the store was never reachable. After bootstrap
@@ -740,9 +955,24 @@ async function queryEntity(entityName, opts) {
       return [];
     }
     if (!res.ok) {
-      throw storeError(res, await parseStoreErrorResponse(res));
+      throw storeError(res, await parseStoreErrorDetail(res));
     }
-    const data = await res.json();
+    const text = await res.text();
+    if (isHtmlErrorBody(text, res.headers?.get?.('content-type'))) {
+      throw storeError(
+        { status: 503 },
+        { message: STORE_UNREACHABLE_MESSAGE, transport: true },
+      );
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw storeError(
+        { status: 503 },
+        { message: STORE_UNREACHABLE_MESSAGE, transport: true },
+      );
+    }
     // Don't cache an empty roster while bootstrap may still be seeding — pages
     // that fetched too early would otherwise keep [] for the TTL window.
     const skipEmptyRosterCache =
@@ -777,7 +1007,7 @@ async function throwErr(res) {
       'Session not recognized by the server — sign out, sign back in, and try again.',
     );
   }
-  throw storeError(res, await parseStoreErrorResponse(res));
+  throw storeError(res, await parseStoreErrorDetail(res));
 }
 
 // Read a session's messages, ascending (chronological) seq. With no limit this
@@ -924,7 +1154,7 @@ function entityStore(entityName) {
       return countEntity(entityName, { filters, search });
     },
 
-    async get(id) {
+    async get(id, opts) {
       const token = await getToken();
       if (!token) return null;
       const res = await storeFetch(
@@ -938,10 +1168,18 @@ function entityStore(entityName) {
       return res.json();
     },
 
-    async create(data) {
+    async create(data, opts = {}) {
+      const timeoutMs =
+        typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0
+          ? opts.timeoutMs
+          : ROSTER_ENTITIES.has(entityName)
+            ? STORE_COMPANION_CREATE_TIMEOUT_MS
+            : undefined;
       const res = await storeFetch(`/${encodeURIComponent(entityName)}`, {
         method: 'POST',
         body: JSON.stringify(data || {}),
+        timeoutMs,
+        timeoutMessage: opts.timeoutMessage,
       });
       if (!res.ok) await throwErr(res);
       bumpVersion(entityName);
@@ -959,12 +1197,13 @@ function entityStore(entityName) {
     },
 
     // Upsert many records with client-provided ids (starter seed/repair).
-    async bulkUpsert(dataArray) {
+    async bulkUpsert(dataArray, opts = {}) {
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/bulk-upsert`,
         {
           method: 'POST',
           body: JSON.stringify({ items: dataArray || [] }),
+          timeoutMs: opts.timeoutMs,
         },
       );
       if (!res.ok) await throwErr(res);
@@ -1001,7 +1240,13 @@ function entityStore(entityName) {
     // optional sort string, numeric limit and { offset } for SQL-side paging.
     async filter(filters = {}, sort, limit, opts) {
       const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
-      return queryEntity(entityName, { filters, sort, limit, offset });
+      return queryEntity(entityName, {
+        filters,
+        sort,
+        limit,
+        offset,
+        _bootstrapInternal: opts?._bootstrapInternal,
+      });
     },
   };
 
@@ -1018,6 +1263,29 @@ function entityStore(entityName) {
   if (entityName === 'ChatSession') {
     return {
       ...base,
+      async create(data) {
+        const hasMessages =
+          data && Object.prototype.hasOwnProperty.call(data, 'messages');
+        const messages = hasMessages ? data.messages : undefined;
+        const rest = hasMessages
+          ? (() => {
+              const { messages: _omit, ...sessionFields } = data;
+              return sessionFields;
+            })()
+          : data || {};
+        // New sessions store chat rows separately. Never POST a nested
+        // messages array, and skip /messages/replace when there is nothing
+        // to persist — empty replace was a second 8s-budget write on Init.
+        const session = await base.create(
+          { ...rest, messages_migrated: rest.messages_migrated ?? true },
+          { timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS },
+        );
+        if (Array.isArray(messages) && messages.length > 0) {
+          const savedMessages = await replaceMessages(session.id, messages);
+          return { ...session, messages: savedMessages };
+        }
+        return { ...session, messages: Array.isArray(messages) ? [] : session.messages };
+      },
       async list(sortOrFilters, limit, opts) {
         const sessions = await base.list(sortOrFilters, limit, opts);
         if (opts && opts.withMessages === false) return sessions;
@@ -1029,8 +1297,10 @@ function entityStore(entityName) {
         if (opts && opts.withMessages === false) return sessions;
         return hydrateMany(sessions);
       },
-      async get(id) {
-        return hydrateOne(await base.get(id));
+      async get(id, opts) {
+        const session = await base.get(id, opts);
+        if (opts && opts.withMessages === false) return session;
+        return hydrateOne(session);
       },
       async update(id, data) {
         if (data && Object.prototype.hasOwnProperty.call(data, 'messages')) {
@@ -1140,11 +1410,8 @@ async function saveProfile(patch) {
     method: 'PUT',
     body: JSON.stringify(next),
   });
-  if (res.ok) {
-    profileCache = await res.json();
-  } else {
-    profileCache = next;
-  }
+  if (!res.ok) await throwErr(res);
+  profileCache = await res.json();
   profileExpiry = Date.now() + PROFILE_TTL;
   return mergedUser(profileCache);
 }
@@ -1294,7 +1561,13 @@ export const base44 = {
       },
 
       UploadFile: async ({ file } = {}) => {
-        if (!file) return { file_url: null, url: null };
+        if (!file) {
+          throw new Error('No image selected.');
+        }
+        const type = String(file.type || '');
+        if (type && !type.startsWith('image/') && type !== 'application/octet-stream') {
+          throw new Error('That file is not an image. Choose a JPEG, PNG, or WebP photo.');
+        }
         const dataUrl = await readFileAsDataUrl(file);
         const file_url = await uploadDataUrl(dataUrl);
         return { file_url, url: file_url };
@@ -1329,7 +1602,7 @@ export const base44 = {
               const err = await res
                 .json()
                 .catch(() => ({ error: res.statusText }));
-              throw new Error(err.error || res.statusText);
+              throw new Error(err.error || err.message || res.statusText || `Request failed with status ${res.status}`);
             }
             const json = await res.json();
             return json.result;

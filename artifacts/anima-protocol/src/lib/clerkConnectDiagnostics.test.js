@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLERK_FAILURE_HINT,
+  CLERK_ORIGIN_INVALID_HINT,
+  CLERK_ORIGIN_MISMATCH_ON_PRODUCTION_HINT,
   CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -100,7 +102,7 @@ describe('probeClerkConnectivity', () => {
     const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
 
     expect(hints).toContain(
-      'Clerk proxy host is not recognized, so all sign-in and sign-up links will fail. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, Clerk Dashboard Proxy URL is https://www.anima-protocol.com/api/__clerk, then redeploy without cache.',
+      'Clerk host is not recognized. Confirm Vercel Production CLERK_PUBLISHABLE_KEY and VITE_CLERK_PUBLISHABLE_KEY are the matching Clerk Production pk_live_* key, then redeploy without cache.',
     );
     expect(hints).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalledWith(
@@ -109,7 +111,53 @@ describe('probeClerkConnectivity', () => {
     );
   });
 
-it('does not emit a false-positive stall hint when probes succeed', async () => {
+  it('explains origin_invalid instead of dumping the Clerk FAPI message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('/api/healthz')) {
+          return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+          });
+        }
+        if (String(url).includes('/v1/environment')) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: 'origin_invalid',
+                  long_message:
+                    'The Request HTTP Origin header must be equal to or a subdomain of the requesting URL.',
+                },
+              ],
+            }),
+            { status: 400 },
+          );
+        }
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
+    expect(hints).toEqual([CLERK_ORIGIN_MISMATCH_ON_PRODUCTION_HINT]);
+  });
+
+  it('does not probe Clerk FAPI from an unauthorized browser origin', async () => {
+    vi.stubGlobal('window', {
+      location: {
+        hostname: 'anima-protocol-abc.vercel.app',
+        origin: 'https://anima-protocol-abc.vercel.app',
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const hints = await probeClerkConnectivity(PROXY_LIVE_KEY);
+    expect(hints).toEqual([CLERK_ORIGIN_INVALID_HINT]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not emit a false-positive stall hint when probes succeed', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {

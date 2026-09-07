@@ -14,7 +14,10 @@ export default function ConsolePane({ logs, onClear }) {
   const endRef = useRef(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
+    const el = endRef.current;
+    if (typeof el?.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "end" });
+    }
   }, [logs]);
 
   return (

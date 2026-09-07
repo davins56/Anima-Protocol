@@ -1,18 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
+import { MEMORY_CRYSTAL_TYPES, MILESTONE_CONFIG } from "@/lib/memoryCrystals";
 
-const MILESTONE_CONFIG = {
-  first_contact: { label: "First Contact", glyph: "◦", color: "#34D399" },
-  deep_resonance: { label: "Deep Resonance", glyph: "⬟", color: "#A78BFA" },
-  revelation: { label: "Revelation", glyph: "◈", color: "#60A5FA" },
-  emotional_peak: { label: "Emotional Peak", glyph: "✦", color: "#F472B6" },
-  lore_unlock: { label: "Lore Unlock", glyph: "⟡", color: "#FBBF24" },
-  relationship_milestone: { label: "Bond Formed", glyph: "◉", color: "#FB923C" },
-  shadow_confrontation: { label: "Shadow Work", glyph: "⬡", color: "#F87171" },
-};
-
-export default function MemoryCrystalVault({ crystals, sessions }) {
+export default function MemoryCrystalVault({ crystals, sessions, unlockedTypes = [] }) {
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("all");
 
@@ -23,6 +14,10 @@ export default function MemoryCrystalVault({ crystals, sessions }) {
     : crystals.filter(c => c.milestone_type === filter);
 
   const typesPresent = [...new Set(crystals.map(c => c.milestone_type))];
+  const unlocked = [...new Set([...(unlockedTypes || []), ...typesPresent])];
+  const typeButtons = unlocked.length
+    ? MEMORY_CRYSTAL_TYPES.filter((t) => unlocked.includes(t.id))
+    : MEMORY_CRYSTAL_TYPES.filter((t) => typesPresent.includes(t.id));
 
   const totalXP = crystals.reduce((sum, c) => sum + (c.resonance_xp_awarded || 0), 0);
 
@@ -49,10 +44,10 @@ export default function MemoryCrystalVault({ crystals, sessions }) {
         </div>
         <div className="text-right">
           <p className="font-mono text-2xl font-bold" style={{ color: "#60A5FA" }}>
-            {typesPresent.length}
+            {unlocked.length || typesPresent.length}
           </p>
           <p className="font-mono text-[9px] tracking-widest uppercase" style={{ color: "rgba(167,139,250,0.5)" }}>
-            Milestone Types
+            {unlockedTypes?.length ? "Types Unlocked" : "Milestone Types"}
           </p>
         </div>
       </div>
@@ -70,7 +65,8 @@ export default function MemoryCrystalVault({ crystals, sessions }) {
         >
           All ({crystals.length})
         </button>
-        {typesPresent.map(type => {
+        {typeButtons.map((typeRow) => {
+          const type = typeRow.id;
           const cfg = MILESTONE_CONFIG[type];
           if (!cfg) return null;
           const count = crystals.filter(c => c.milestone_type === type).length;
@@ -99,7 +95,10 @@ export default function MemoryCrystalVault({ crystals, sessions }) {
             No memory crystals yet
           </p>
           <p className="font-mono text-[9px]" style={{ color: "rgba(255,255,255,0.15)" }}>
-            Crystals form from significant conversations. Begin a session to create your first echo.
+            Crystals form from significant conversations — types mark what can crystallize, they are not minted here.
+            {unlockedTypes?.length
+              ? " Attainable milestone types are unlocked on this profile."
+              : " Begin a session to create your first echo."}
           </p>
           <Link to="/" className="inline-block mt-2 font-mono text-[9px] tracking-widest uppercase px-4 py-2 border transition-all hover:bg-violet-500/10"
             style={{ borderColor: "rgba(139,92,246,0.25)", color: "rgba(167,139,250,0.6)" }}>

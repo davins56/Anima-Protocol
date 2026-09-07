@@ -200,7 +200,14 @@ function ChipCard({ chip, selected, dimmed, onClick }) {
 
 const AnimaVessel4D = lazy(() => import("@/components/anima/AnimaVessel4D"));
 
-export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }) {
+export default function NetBattleArena({
+  state,
+  dispatch,
+  onJackOut,
+  onRematch,
+  vesselLayers,
+  sequences,
+}) {
   const aura = mixedAuraColor(state.player.spectrum);
   const blend = expressionBlendLabel(state.player.spectrum);
   const dominant = dominantExpression(state.player.spectrum);
@@ -376,6 +383,8 @@ export default function NetBattleArena({ state, dispatch, onJackOut, onRematch }
                   state={state}
                   models={models}
                   onPanelClick={onPanelClick}
+                  vesselLayers={vesselLayers}
+                  sequences={sequences}
                 />
               </div>
             </Suspense>

@@ -21,6 +21,7 @@ export const ENTITY_LABELS = {
   ResonanceProfile: "resonance profile",
   UserContext: "context entry",
   KnowledgeGraph: "knowledge graph",
+  TherapyTopic: "therapy topic",
 };
 
 export const humanizeEntityName = (name) =>

@@ -1,3 +1,5 @@
+import { OPENROUTER_FREE_MODEL } from "./openaiClient";
+
 export type CodeRepairCategory =
   | "openrouter_quota"
   | "openrouter_key"
@@ -79,7 +81,7 @@ function classify(input: CodeRepairInput): CodeRepairCategory {
 
 function openRouterQuotaRepair(input: CodeRepairInput): CodeRepairAnalysis {
   const env = input.diagnostics?.openrouterEnv || "OPENROUTER_API_KEY";
-  const model = input.diagnostics?.openrouterModel || "openai/gpt-oss-20b:free";
+  const model = input.diagnostics?.openrouterModel || OPENROUTER_FREE_MODEL;
   const localConfigured = Boolean(input.diagnostics?.localConfigured);
   const localHost = input.diagnostics?.localHost || null;
   const customOnly = Boolean(input.diagnostics?.customOnly);
@@ -91,7 +93,9 @@ function openRouterQuotaRepair(input: CodeRepairInput): CodeRepairAnalysis {
       : "Chat used OpenRouter because the self-hosted custom Anima LLM is not configured, and that OpenRouter account has hit its free daily cap.",
     likelyCause: localConfigured
       ? `A custom LLM host (${localHost ?? "configured"}) is set, but this turn still reached OpenRouter and hit a quota/rate-limit response. Prefer the custom LLM: leave ANIMA_OPENROUTER_FALLBACK unset unless you explicitly want OpenRouter after a connection failure.`
-      : "ANIMA_LOCAL_LLM_BASE_URL is unset on this deployment, so chat skipped the custom LLM and used OpenRouter. Setting ANIMA_OPENROUTER_FREE=true cannot bypass OpenRouter's free-models-per-day limit.",
+      : input.diagnostics?.openrouterIsFreeTier
+        ? "ANIMA_LOCAL_LLM_BASE_URL is unset on this deployment, so chat skipped the custom LLM and used OpenRouter's free-tier models. A provider 429/5xx or the account-wide free daily cap cannot be fixed by changing ANIMA_OPENROUTER_FREE — chat is already on :free models."
+        : "ANIMA_LOCAL_LLM_BASE_URL is unset on this deployment, so chat skipped the custom LLM and used OpenRouter. Setting ANIMA_OPENROUTER_FREE=true cannot bypass OpenRouter's free-models-per-day limit.",
     canAutoApply: false,
     repairSteps: [
       {

@@ -6,6 +6,10 @@ import useFaceTexture from "@/hooks/useFaceTexture";
 import TesseractLattice from "@/components/battle/TesseractLattice";
 import { wPhaseScale } from "@/lib/tesseract4d";
 import { RENDERER_QUALITY } from "@/lib/rendererQuality";
+import {
+  applyAscendedArtifacts,
+  vesselRenderPlan,
+} from "@/lib/hiddenSequences";
 
 function CrystalMaterial({
   color,
@@ -272,6 +276,7 @@ function ProceduralBody({
   hairCount,
   wingLayers,
   showLattice,
+  plan,
 }) {
   const core = useRef(null);
   const torso = useRef(null);
@@ -292,7 +297,13 @@ function ProceduralBody({
     <>
       <mesh position={[0, 1.38, 0]}>
         <sphereGeometry args={[0.165, headSeg, Math.max(14, Math.floor(headSeg * 0.75))]} />
-        <CrystalMaterial color="#1c1917" hd={false} emissiveIntensity={0.08} roughness={0.45} />
+        <CrystalMaterial
+          color={plan?.skinTone || "#3f2a22"}
+          hd={false}
+          emissiveIntensity={0.06 + (plan?.wetLight || 0.7) * 0.08}
+          roughness={0.22}
+          metalness={0.18}
+        />
       </mesh>
 
       {faceMap && (
@@ -315,11 +326,18 @@ function ProceduralBody({
         </>
       )}
 
-      <HairVolume color="#f1f5f9" count={hairCount} />
+      {plan?.showHair !== false && (
+        <HairVolume color={plan?.hairColor || "#f8fafc"} count={hairCount} />
+      )}
 
       <mesh position={[0, 1.2, 0]}>
         <capsuleGeometry args={[0.055, 0.08, 6, bodySeg]} />
-        <CrystalMaterial color="#292524" hd={false} emissiveIntensity={0.05} roughness={0.5} />
+        <CrystalMaterial
+          color={plan?.skinTone || "#3f2a22"}
+          hd={false}
+          emissiveIntensity={0.05}
+          roughness={0.28}
+        />
       </mesh>
 
       <group ref={torso}>
@@ -371,16 +389,43 @@ function ProceduralBody({
         </mesh>
       </group>
 
-      <mesh ref={core} position={[0, 0.82, 0]} scale={0.13}>
-        <icosahedronGeometry args={[1, hd ? 1 : 0]} />
-        <Emissive color={accent} emissiveIntensity={1.6 + expression * 0.6} metalness={0.45} />
-      </mesh>
+      {plan?.showCore !== false && (
+        <mesh ref={core} position={[0, 0.82, 0]} scale={0.13 + (plan?.coreBoost || 0) * 0.03}>
+          <icosahedronGeometry args={[1, hd ? 1 : 0]} />
+          <Emissive
+            color={plan?.coreBoost ? "#d8b4fe" : accent}
+            emissiveIntensity={1.6 + expression * 0.6 + (plan?.coreBoost || 0) * 0.9}
+            metalness={0.45}
+          />
+        </mesh>
+      )}
+      {plan?.showMarkings !== false && plan?.marking && (
+        <mesh position={[-0.07, 0.96, 0.16]} rotation={[0, 0, 0.08]}>
+          <planeGeometry args={[0.07, 0.07]} />
+          <meshBasicMaterial
+            color={plan.markingInk || "#0a0a0a"}
+            transparent
+            opacity={0.88}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
 
       {[-1, 1].map((side) => (
         <group key={`arm-${side}`} position={[side * 0.22, 1.02, 0]}>
+          {plan?.showGold !== false && (
+            <mesh position={[side * 0.05, -0.02, 0]} rotation={[1.2, 0, side * 0.35]}>
+              <torusGeometry args={[0.055, 0.01, 8, 24]} />
+              <Emissive
+                color={gold}
+                emissiveIntensity={1.1 + (plan?.goldBoost || 0) * 0.6}
+                metalness={0.8}
+              />
+            </mesh>
+          )}
           <mesh position={[side * 0.06, -0.12, 0]} rotation={[0.15, 0, side * 0.35]}>
             <capsuleGeometry args={[0.045, 0.22, 6, hd ? 12 : 8]} />
-            <CrystalMaterial color={color} hd={hd} transmission={0.15} emissiveIntensity={0.3} />
+            <CrystalMaterial color={plan?.skinTone || color} hd={hd} transmission={0.15} emissiveIntensity={0.3} />
           </mesh>
           <mesh position={[side * 0.12, -0.38, 0.02]} rotation={[0.35, 0, side * 0.15]}>
             <capsuleGeometry args={[0.038, 0.2, 6, hd ? 12 : 8]} />
@@ -410,34 +455,38 @@ function ProceduralBody({
         </group>
       ))}
 
-      <mesh position={[0, 0.55, 0.08]} rotation={[-0.15, 0, 0]} scale={[0.55, 0.7, 0.12]}>
-        <planeGeometry args={[1, 1.2]} />
-        <meshPhysicalMaterial
-          color="#e0e7ff"
-          emissive={accent}
-          emissiveIntensity={0.15}
-          transparent
-          opacity={0.28}
-          side={THREE.DoubleSide}
-          roughness={0.4}
-          transmission={hd ? 0.4 : 0}
-          thickness={0.2}
-          toneMapped={false}
-        />
-      </mesh>
+      {plan?.showCloth !== false && (
+        <mesh position={[0, 0.55, 0.08]} rotation={[-0.15, 0, 0]} scale={[0.55, 0.7, 0.12]}>
+          <planeGeometry args={[1, 1.2]} />
+          <meshPhysicalMaterial
+            color="#e0e7ff"
+            emissive={accent}
+            emissiveIntensity={0.15 + (plan?.clothBoost || 0) * 0.2}
+            transparent
+            opacity={plan?.clothOpacity ?? 0.28}
+            side={THREE.DoubleSide}
+            roughness={0.4}
+            transmission={hd ? 0.4 + (plan?.clothBoost || 0) * 0.15 : 0}
+            thickness={0.2}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
 
       <mesh position={[0, 0.95, 0.12]} rotation={[0.1, 0, 0]}>
         <torusGeometry args={[0.17, 0.008, 8, 32]} />
         <Emissive color={gold} emissiveIntensity={1.1} metalness={0.7} />
       </mesh>
 
-      <VesselWings
-        color={color}
-        accent={accent}
-        hd={hd}
-        layers={wingLayers}
-        expression={expression}
-      />
+      {plan?.showWings !== false && (
+        <VesselWings
+          color={plan?.wingBoost ? "#c4b5fd" : color}
+          accent={plan?.wingBoost ? "#fbcfe8" : accent}
+          hd={hd}
+          layers={wingLayers + (plan?.wingBoost || 0)}
+          expression={expression + (plan?.wingBoost || 0) * 0.2}
+        />
+      )}
 
       {showLattice && (
         <TesseractLattice
@@ -467,6 +516,8 @@ export default function AnimaVesselMesh({
   gltfUrl,
   expression = 0,
   breathing = true,
+  layers,
+  sequences,
 }) {
   const root = useRef(null);
   const halo = useRef(null);
@@ -482,6 +533,10 @@ export default function AnimaVesselMesh({
   const wingLayers = quality.vesselFacets ?? (hd ? 5 : 3);
   const hairCount = quality.vesselHair ?? (hd ? 16 : 10);
   const breathOn = breathing && (quality.vesselBreath !== false);
+  const plan = useMemo(() => {
+    const applied = applyAscendedArtifacts(layers || model?.vessel_layers, sequences || model?.sequences);
+    return vesselRenderPlan(applied, quality);
+  }, [layers, sequences, model?.vessel_layers, model?.sequences, quality]);
 
   const color = model?.color || "#67e8f9";
   const accent = model?.accent || "#c4b5fd";
@@ -517,10 +572,16 @@ export default function AnimaVesselMesh({
       <pointLight color={accent} intensity={hd ? 1.1 : 0.45} distance={4.5} position={[0.5, 1.3, 0.6]} />
       <pointLight color={gold} intensity={0.35} distance={3} position={[-0.4, 1.1, 0.3]} />
 
-      <mesh ref={halo} position={[0, 1.62, -0.02]}>
-        <torusGeometry args={[0.2, hd ? 0.014 : 0.016, hd ? 16 : 10, hd ? 64 : 32]} />
-        <Emissive color={gold} emissiveIntensity={1.6} metalness={0.6} />
-      </mesh>
+      {plan.showHalo !== false && (
+        <mesh ref={halo} position={[0, 1.62, -0.02]}>
+          <torusGeometry args={[0.2, hd ? 0.014 : 0.016, hd ? 16 : 10, hd ? 64 : 32]} />
+          <Emissive
+            color={plan.haloBoost ? "#a78bfa" : gold}
+            emissiveIntensity={1.6 + plan.haloBoost * 0.7}
+            metalness={0.6}
+          />
+        </mesh>
+      )}
 
       {resolvedGltf ? (
         <Suspense
@@ -537,7 +598,8 @@ export default function AnimaVesselMesh({
               breathScale={breathOn ? 1 : 0}
               hairCount={hairCount}
               wingLayers={wingLayers}
-              showLattice={hd || showLattice}
+              showLattice={(hd || showLattice) && plan.showLattice}
+              plan={plan}
             />
           }
         >
@@ -551,13 +613,15 @@ export default function AnimaVesselMesh({
               position={[0, 0.9, 0]}
             />
           )}
-          <VesselWings
-            color={color}
-            accent={accent}
-            hd={hd}
-            layers={wingLayers}
-            expression={expr}
-          />
+          {plan.showWings !== false && (
+            <VesselWings
+              color={plan.wingBoost ? "#c4b5fd" : color}
+              accent={plan.wingBoost ? "#fbcfe8" : accent}
+              hd={hd}
+              layers={wingLayers + plan.wingBoost}
+              expression={expr + plan.wingBoost * 0.2}
+            />
+          )}
         </Suspense>
       ) : (
         <ProceduralBody
@@ -572,7 +636,8 @@ export default function AnimaVesselMesh({
           breathScale={breathOn ? 1 : 0}
           hairCount={hairCount}
           wingLayers={wingLayers}
-          showLattice={hd || showLattice}
+          showLattice={(hd || showLattice) && plan.showLattice}
+          plan={plan}
         />
       )}
     </group>

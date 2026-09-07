@@ -115,9 +115,9 @@ export default function InteractiveGraphVisualization() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
-      {/* Graph Canvas */}
-      <div className="flex-1 border-r border-primary/20 overflow-hidden relative">
+    <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden bg-background">
+      {/* Graph Canvas — bounded on narrow screens so details stay reachable. */}
+      <div className="relative w-full shrink-0 min-h-[min(50dvh,360px)] h-[min(50dvh,360px)] lg:h-auto lg:flex-1 lg:min-h-0 lg:min-w-0 border-b lg:border-b-0 lg:border-r border-primary/20 overflow-hidden">
         <svg
           ref={svgRef}
           width="100%"
@@ -178,7 +178,7 @@ export default function InteractiveGraphVisualization() {
             initial={{ opacity: 0, x: 400 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 400 }}
-            className="w-96 border-l border-primary/20 bg-black/60 overflow-y-auto flex flex-col"
+            className="w-full lg:w-96 shrink-0 lg:h-full lg:max-h-none border-t lg:border-t-0 lg:border-l border-primary/20 bg-black/60 overflow-y-auto flex flex-col"
           >
             <NodeDetailsPanel node={nodeDetails} onClose={() => setNodeDetails(null)} />
           </motion.div>

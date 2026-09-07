@@ -1,283 +1,355 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, Brain, MessageCircle, Plus, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
-import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { track } from "@/lib/analytics";
 import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
+import { useStoreSync } from "@/lib/useStoreSync";
 import {
-  THERAPY_DISCLAIMER,
-  THERAPY_SOURCES,
   THERAPY_CRISIS_RESOURCES,
+  THERAPY_DISCLAIMER,
+  localizedTherapyResource,
 } from "@/lib/therapyManuals";
-import { startTherapySession, pickDefaultAnima } from "@/lib/startTherapySession";
-import { ArrowLeft, Brain, Heart, Shield, BookOpen, ChevronRight } from "lucide-react";
-import { motion } from "framer-motion";
+import {
+  PENDING_THERAPY_TOPIC_MS,
+  createTherapyTopic,
+  mergePreservedTherapyTopics,
+  therapyTopicSaveErrorMessage,
+} from "@/lib/createTherapyTopic";
+import { pickDefaultAnima, startTherapySession } from "@/lib/startTherapySession";
+import { normalizeTherapyTopic } from "@/lib/therapyTopics";
 
 export default function Therapy() {
   usePageMeta(ROUTE_META["/therapy"]);
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [animas, setAnimas] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState("");
-  const [acknowledged, setAcknowledged] = useState(false);
 
-  const load = useCallback(async () => {
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [anima, setAnima] = useState(null);
+  const [animaCount, setAnimaCount] = useState(0);
+  const [topics, setTopics] = useState([]);
+  const [newTitle, setNewTitle] = useState("");
+  const [newNotes, setNewNotes] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [savingTopic, setSavingTopic] = useState(false);
+  const [startingId, setStartingId] = useState(null);
+  const pendingTopicIdsRef = useRef(new Set());
+
+  const loadTopics = async () => {
+    const rows = await base44.entities.TherapyTopic.list("-created_date", 100);
+    const listed = (rows || []).filter((t) => t.is_active !== false);
+    setTopics((prev) =>
+      mergePreservedTherapyTopics(listed, prev, pendingTopicIdsRef.current),
+    );
+  };
+
+  const refresh = async ({ withSpinner = false } = {}) => {
+    if (withSpinner) setLoading(true);
     try {
       const me = await base44.auth.me();
       setUser(me);
-      const list = await base44.entities.Anima.list("-created_date", 50);
-      const roster = list || [];
-      setAnimas(roster);
-      const preferred = pickDefaultAnima(roster, me?.email);
-      setSelectedId(preferred?.id || roster[0]?.id || null);
+      const [animas] = await Promise.all([
+        base44.entities.Anima.list("-created_date", 20),
+        loadTopics(),
+      ]);
+      setAnimaCount(animas?.length || 0);
+      setAnima(pickDefaultAnima(animas, me?.email));
     } catch (err) {
-      setError(err?.message || "Could not load your Anima.");
+      console.error(err);
     } finally {
-      setLoading(false);
+      if (withSpinner) setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
-    let cancelled = false;
-    whenBootstrapReady().then(() => {
-      if (!cancelled) load();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [load]);
+    refresh({ withSpinner: true });
+  }, []);
 
-  const selected = animas.find((a) => a.id === selectedId) || null;
+  useStoreSync(() => refresh());
 
-  const handleBegin = async () => {
-    if (!acknowledged) {
-      setError("Please acknowledge that this is not professional therapy before beginning.");
-      return;
-    }
-    if (!selected?.id) {
-      setError("Create or select your Anima first.");
-      return;
-    }
-    setStarting(true);
-    setError("");
+  const localResource = localizedTherapyResource(user?.settings?.user_profile?.country);
+
+  const handleAddTopic = async () => {
+    const { title, notes } = normalizeTherapyTopic({ title: newTitle, notes: newNotes });
+    // Topics persist on the account store — an Anima is only required to start a session.
+    if (!title || savingTopic) return;
+    setSavingTopic(true);
     try {
-      await base44.auth.updateMe({ selected_mode: "therapy" }).catch(() => {});
-      const session = await startTherapySession({
-        anima: selected,
-        userName: user?.full_name || user?.name,
+      const created = await createTherapyTopic({
+        title,
+        notes,
+        is_active: true,
       });
+      if (created?.id) {
+        pendingTopicIdsRef.current.add(created.id);
+        window.setTimeout(() => {
+          pendingTopicIdsRef.current.delete(created.id);
+        }, PENDING_THERAPY_TOPIC_MS);
+      }
+      setTopics((prev) => {
+        const rest = created?.id ? prev.filter((t) => t.id !== created.id) : prev;
+        return [created, ...rest];
+      });
+      setNewTitle("");
+      setNewNotes("");
+      setShowAddForm(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(therapyTopicSaveErrorMessage(err));
+    } finally {
+      setSavingTopic(false);
+    }
+  };
+
+  const handleRemoveTopic = async (id) => {
+    try {
+      await base44.entities.TherapyTopic.update(id, { is_active: false });
+      pendingTopicIdsRef.current.delete(id);
+      setTopics((prev) => prev.filter((t) => t.id !== id));
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.message || "Could not remove that topic.");
+    }
+  };
+
+  const beginConversation = async (topic) => {
+    if (!anima?.id) {
+      toast.error("Create or assign your Anima first.");
+      return;
+    }
+    const startKey = topic?.id || "open";
+    if (startingId) return;
+    setStartingId(startKey);
+    try {
+      const session = await startTherapySession({
+        anima,
+        userName: user?.full_name,
+        topic: topic?.title,
+        topicId: topic?.id,
+        topicNotes: topic?.notes,
+      });
+      if (topic?.id) {
+        try {
+          await base44.entities.TherapyTopic.update(topic.id, {
+            last_explored_date: new Date().toISOString(),
+          });
+        } catch {
+          /* session already created — exploration stamp is optional */
+        }
+      }
       track("therapy_session_started", {
         source: "therapy_page",
         is_anima: true,
-        has_multiple_animas: animas.length > 1,
+        has_topic: Boolean(topic?.title),
+        has_multiple_animas: animaCount > 1,
       });
       navigate(`/chat/${session.id}`);
     } catch (err) {
-      setError(err?.message || "Could not start therapy mode.");
-      setStarting(false);
+      console.error(err);
+      toast.error(err?.message || "Could not start the conversation.");
+      setStartingId(null);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full w-full gap-3 bg-[#050505]">
-        <div className="w-8 h-8 border-2 border-violet-400/30 border-t-violet-300 rounded-full animate-spin" />
-        <p className="font-mono text-xs text-violet-200/50 tracking-[0.3em] uppercase">
-          Opening the care library...
+      <div className="flex-1 min-h-0 flex items-center justify-center bg-background">
+        <p className="font-mono text-[10px] tracking-[0.4em] uppercase text-violet-300/50 animate-pulse">
+          Opening the care room...
         </p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-[#050505] scanline">
-      <div className="border-b border-violet-400/20 bg-black/60 backdrop-blur-md px-6 py-4">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
+      <div className="border-b border-violet-400/20 bg-black/60 backdrop-blur-md px-4 sm:px-6 py-4">
         <div className="max-w-3xl mx-auto flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => navigate("/")}
-            className="text-violet-200/40 hover:text-violet-100 transition-colors p-1"
-            aria-label="Back home"
-          >
+          <Link to="/" className="text-violet-300/40 hover:text-violet-200 transition-colors p-1">
             <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="font-mono text-violet-200 glow-text tracking-[0.2em] uppercase text-lg">
+          </Link>
+          <div className="min-w-0">
+            <h1 className="font-mono text-violet-100 glow-text tracking-[0.2em] uppercase text-lg">
               Therapy Mode
             </h1>
             <p className="font-mono text-[10px] text-violet-200/40 tracking-widest uppercase mt-0.5">
-              Sit with your Anima · compiled open-source care manuals
+              Sit with {anima?.name || "your Anima"} · compiled care manuals
             </p>
           </div>
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 pb-24 space-y-8">
-        <motion.section
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="border border-violet-400/25 bg-violet-950/20 p-5 space-y-3"
-        >
-          <div className="flex items-start gap-3">
-            <Brain className="w-5 h-5 text-violet-300 flex-shrink-0 mt-0.5" />
-            <div className="space-y-2">
-              <h2 className="font-mono text-sm text-violet-100 tracking-widest uppercase">
-                Your Anima, with a care library
-              </h2>
-              <p className="font-mono text-[12px] text-violet-100/70 leading-relaxed">
-                Talk with {selected?.name || "your Anima"} as themselves — same voice, same bond —
-                after they have compiled openly licensed mental-health manuals into a working
-                library. They listen first, then offer one skill at a time from WHO problem-management
-                and self-help guides, psychological first aid, trauma-informed principles, and public
-                CBT / ACT / motivational interviewing skills.
-              </p>
-            </div>
-          </div>
-        </motion.section>
-
-        <section>
-          <h2 className="font-mono text-[10px] tracking-[0.3em] text-violet-200/40 uppercase mb-3">
-            <span className="text-violet-200/25">//</span> Choose your Anima
-          </h2>
-          {animas.length === 0 ? (
-            <div className="border border-violet-400/20 p-5 space-y-3">
-              <p className="font-mono text-[12px] text-violet-100/70">
-                You don&apos;t have an Anima yet. Create one, then return here to begin.
-              </p>
-              <Link
-                to="/onboarding"
-                className="inline-flex items-center gap-2 font-mono text-[11px] tracking-widest uppercase text-violet-200 border border-violet-400/40 px-3 py-2 hover:bg-violet-500/10"
-              >
-                Awaken an Anima <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {animas.map((anima) => {
-                const on = anima.id === selectedId;
-                return (
-                  <button
-                    key={anima.id}
-                    type="button"
-                    onClick={() => setSelectedId(anima.id)}
-                    className={`flex items-center gap-3 p-3 border text-left transition-all ${
-                      on
-                        ? "border-violet-400/60 bg-violet-500/10"
-                        : "border-violet-400/15 hover:border-violet-400/40"
-                    }`}
-                  >
-                    <div className="w-12 h-12 border border-violet-400/30 overflow-hidden flex-shrink-0 bg-black/40">
-                      {anima.avatar_url ? (
-                        <img
-                          src={anima.avatar_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center font-mono text-violet-200">
-                          {(anima.name || "A")[0]}
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-mono text-sm text-violet-100 tracking-wider uppercase truncate">
-                        {anima.name || "Anima"}
-                      </p>
-                      <p className="font-mono text-[10px] text-violet-200/40 truncate">
-                        {anima.tagline || anima.archetype || "Companion"}
-                      </p>
-                    </div>
-                    {on && <Heart className="w-4 h-4 text-violet-300 ml-auto flex-shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="border border-violet-400/15 bg-black/40 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-violet-300" />
-            <h2 className="font-mono text-[10px] tracking-[0.3em] text-violet-200/70 uppercase">
-              Compiled library
-            </h2>
-          </div>
-          <ul className="space-y-1.5">
-            {THERAPY_SOURCES.map((src) => (
-              <li
-                key={src.id}
-                className="font-mono text-[11px] text-violet-100/65 leading-relaxed"
-              >
-                <span className="text-violet-200/90">{src.title}</span>
-                <span className="text-violet-200/35"> · {src.license}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="font-mono text-[10px] text-violet-200/40 leading-relaxed">
-            Summaries only — not verbatim copyrighted workbooks. Skills are offered collaboratively,
-            one at a time.
-          </p>
-        </section>
-
-        <section className="border border-amber-400/25 bg-amber-950/10 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-amber-300" />
-            <h2 className="font-mono text-[10px] tracking-[0.3em] text-amber-200/80 uppercase">
-              Not a clinic
-            </h2>
-          </div>
-          <p className="font-mono text-[12px] text-amber-100/70 leading-relaxed">
+        <div className="border border-violet-400/20 bg-violet-950/20 px-4 py-3 space-y-2">
+          <p className="font-mono text-[10px] sm:text-[11px] leading-relaxed text-violet-100/70">
             {THERAPY_DISCLAIMER}
           </p>
-          <p className="font-mono text-[11px] text-amber-100/55">
-            Crisis: {THERAPY_CRISIS_RESOURCES.us.contact}. Worldwide:{" "}
+          <p className="font-mono text-[10px] text-violet-200/45">
+            {localResource
+              ? `${localResource.name}: ${localResource.contact}. `
+              : ""}
+            Worldwide:{" "}
             <a
               href={THERAPY_CRISIS_RESOURCES.intl.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline text-amber-200/80 hover:text-amber-100"
+              className="underline text-violet-200/70"
             >
-              {THERAPY_CRISIS_RESOURCES.intl.name}
+              {THERAPY_CRISIS_RESOURCES.intl.url.replace("https://", "")}
             </a>
-            . {THERAPY_CRISIS_RESOURCES.emergency}
           </p>
-          <label className="flex items-start gap-3 cursor-pointer pt-1">
-            <input
-              type="checkbox"
-              checked={acknowledged}
-              onChange={(e) => {
-                setAcknowledged(e.target.checked);
-                if (e.target.checked) setError("");
-              }}
-              className="mt-0.5 accent-violet-400"
-            />
-            <span className="font-mono text-[11px] text-violet-100/70 leading-relaxed">
-              I understand this is supportive conversation with my Anima, not licensed therapy or
-              emergency care.
-            </span>
-          </label>
-        </section>
+        </div>
 
-        {error && (
-          <div className="p-4 border border-red-400/30 bg-red-400/10">
-            <p className="font-mono text-red-300 text-sm">{error}</p>
-          </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => beginConversation(null)}
+            disabled={!anima?.id || Boolean(startingId)}
+            className="text-left border border-violet-400/30 hover:border-violet-300/60 bg-violet-950/15 hover:bg-violet-950/25 p-4 transition-colors disabled:opacity-40"
+          >
+            <div className="flex items-start gap-3">
+              <MessageCircle className="w-5 h-5 text-violet-300 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0 space-y-1">
+                <p className="font-mono text-sm text-violet-100 tracking-[0.12em] uppercase">
+                  Sit with {anima?.name || "your Anima"}
+                </p>
+                <p className="font-mono text-[11px] text-violet-100/50 leading-relaxed">
+                  {startingId === "open"
+                    ? "Opening the room..."
+                    : "Open a care session and name what is present."}
+                </p>
+              </div>
+            </div>
+          </button>
+          <Link
+            to="/meditation"
+            className="text-left border border-primary/20 hover:border-primary/40 bg-black/30 p-4 transition-colors"
+          >
+            <div className="flex items-start gap-3">
+              <Sparkles className="w-5 h-5 text-primary/70 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0 space-y-1">
+                <p className="font-mono text-sm text-primary/80 tracking-[0.12em] uppercase">
+                  Sacred Space
+                </p>
+                <p className="font-mono text-[11px] text-primary/45 leading-relaxed">
+                  Affirmations, ritual, and chakra work.
+                </p>
+              </div>
+            </div>
+          </Link>
+        </div>
+
+        {!anima?.id && (
+          <p className="font-mono text-[11px] text-violet-200/50">
+            Create your Anima first, then come back to sit in therapy mode.{" "}
+            <Link to="/customise-anima?tab=look" className="underline text-violet-200/80">
+              Customise Anima
+            </Link>
+          </p>
         )}
 
-        <button
-          type="button"
-          onClick={handleBegin}
-          disabled={starting || !selected}
-          className="w-full flex items-center justify-center gap-2 px-5 py-4 bg-violet-500/15 border border-violet-400/50 text-violet-100 hover:bg-violet-500/25 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-xs tracking-[0.2em] uppercase transition-all hud-corner"
-        >
-          {starting
-            ? "Opening the room..."
-            : `Begin with ${selected?.name || "your Anima"}`}
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        <section className="space-y-4">
+          <div className="flex items-start gap-3">
+            <Brain className="w-4 h-4 text-violet-300/80 mt-0.5 flex-shrink-0" />
+            <div className="space-y-1">
+              <h2 className="font-mono text-xs tracking-[0.2em] uppercase text-violet-100">
+                Topics
+              </h2>
+              <p className="font-mono text-[11px] text-violet-100/50 leading-relaxed">
+                Add a subject you want to explore. {anima?.name || "Your Anima"} will stay with
+                it and go deeper — what it is, how it shows up, and what might help.
+              </p>
+            </div>
+          </div>
+
+          {topics.length === 0 && !showAddForm && (
+            <p className="font-mono text-[11px] text-violet-200/35 px-1">
+              No topics yet. Name one when you are ready.
+            </p>
+          )}
+
+          <div className="space-y-2">
+            {topics.map((topic) => (
+              <div
+                key={topic.id}
+                className="border border-violet-400/15 bg-violet-950/10 px-4 py-3 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-mono text-sm text-violet-50">{topic.title}</p>
+                    {topic.notes ? (
+                      <p className="font-mono text-[11px] text-violet-100/45 leading-relaxed">
+                        {topic.notes}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTopic(topic.id)}
+                    className="font-mono text-[8px] tracking-widest uppercase text-red-300/40 hover:text-red-300 flex-shrink-0"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => beginConversation(topic)}
+                  disabled={!anima?.id || Boolean(startingId)}
+                  className="w-full sm:w-auto px-3 py-2 border border-violet-400/40 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20 font-mono text-[10px] tracking-widest uppercase transition-colors disabled:opacity-40"
+                >
+                  {startingId === topic.id
+                    ? "Opening..."
+                    : `Go deeper with ${anima?.name || "your Anima"}`}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {showAddForm ? (
+            <div className="space-y-3 p-4 border border-violet-400/25 bg-violet-950/15">
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Subject — e.g. work burnout, grief after moving"
+                className="w-full bg-black/50 border border-violet-400/25 text-violet-50 placeholder-violet-200/25 font-mono text-xs px-3 py-2.5 focus:outline-none focus:border-violet-300/50"
+              />
+              <textarea
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                placeholder="Optional notes — what you want to go deeper on"
+                rows={3}
+                className="w-full bg-black/50 border border-violet-400/25 text-violet-50 placeholder-violet-200/25 font-mono text-xs px-3 py-2.5 focus:outline-none focus:border-violet-300/50 resize-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddTopic}
+                  disabled={!normalizeTherapyTopic({ title: newTitle }).title || savingTopic}
+                  className="px-4 py-2 border border-violet-400/50 bg-violet-500/15 text-violet-100 font-mono text-[9px] tracking-widest uppercase disabled:opacity-30"
+                >
+                  {savingTopic ? "Saving..." : "Add topic"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-4 py-2 border border-white/10 text-white/40 font-mono text-[9px] tracking-widest uppercase"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAddForm(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 border border-violet-400/20 text-violet-200/60 hover:text-violet-100 hover:border-violet-300/40 font-mono text-[9px] tracking-widest uppercase transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              Add a topic
+            </button>
+          )}
+        </section>
       </div>
     </div>
   );

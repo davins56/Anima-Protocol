@@ -5,6 +5,7 @@ import {
   clearStoreCache,
 } from "@/api/base44Client";
 import { findCharacterPhoto } from "@/lib/characterPhoto";
+import { characterUpsertIdMap } from "@/lib/createInitSession";
 
 // Characters whose photo lookup has already been attempted (by id), so we don't
 // re-query the web every page load for characters that simply have no match.
@@ -545,6 +546,19 @@ export function photoNeedsLookup(url) {
   return url.includes("static.wikia.nocookie.net");
 }
 
+/**
+ * Wikipedia auto-lookup is for franchise roster cards. Companion Generator
+ * originals (`ai_prompt`) are drafted on Customise Anima Look — kicking off
+ * a multi-hop wiki search right after create contended the Worker and made
+ * Look fail to open for companions with no photo.
+ */
+export function shouldAutoAssignCharacterPhoto(character) {
+  if (!character?.id) return false;
+  if (!photoNeedsLookup(character.avatar_url)) return false;
+  const method = String(character.creation_method || "").toLowerCase();
+  return method !== "ai_prompt";
+}
+
 // Auto-find a web photo for one character and persist it.
 // Returns the URL on success, or null for a definitive no-match.
 // THROWS on transient lookup failures (network/server) — callers that batch
@@ -728,11 +742,19 @@ export function searchStarterSeries(query) {
 // Upsert specific characters (e.g. user-picked from a series) into the account.
 const UPSERT_BATCH_SIZE = 15;
 
-async function bulkUpsertCharactersBatched(chars) {
+async function bulkUpsertCharactersBatched(chars, { timeoutMs } = {}) {
+  const upserted = [];
+  const bulkOpts = timeoutMs != null ? { timeoutMs } : undefined;
   for (let i = 0; i < chars.length; i += UPSERT_BATCH_SIZE) {
     const batch = chars.slice(i, i + UPSERT_BATCH_SIZE);
     try {
-      await base44.entities.Character.bulkUpsert(batch);
+      const result = bulkOpts
+        ? await base44.entities.Character.bulkUpsert(batch, bulkOpts)
+        : await base44.entities.Character.bulkUpsert(batch);
+      const items = Array.isArray(result?.items) && result.items.length
+        ? result.items
+        : batch;
+      upserted.push(...items);
     } catch (err) {
       if (err?.status !== 404) {
         const detail =
@@ -740,11 +762,18 @@ async function bulkUpsertCharactersBatched(chars) {
           (err?.status === 500
             ? "Server error while saving characters. Try again in a moment."
             : "Failed to add characters");
-        throw new Error(detail);
+        if (err instanceof Error && err.message === detail) throw err;
+        const wrapped = new Error(detail);
+        wrapped.cause = err;
+        if (err?.code) wrapped.code = err.code;
+        if (err?.status) wrapped.status = err.status;
+        if (err?.reason) wrapped.reason = err.reason;
+        throw wrapped;
       }
       for (const char of batch) {
         try {
           await base44.entities.Character.update(char.id, char);
+          upserted.push(char);
         } catch (updateErr) {
           throw new Error(
             `Failed to save ${char.name}: ${updateErr?.message || "unknown error"}`,
@@ -753,28 +782,50 @@ async function bulkUpsertCharactersBatched(chars) {
       }
     }
   }
+  return upserted;
 }
 
-export async function upsertCharacters(characters) {
+export async function upsertCharacters(
+  characters,
+  { skipExistingLookup = false, timeoutMs } = {},
+) {
   const list = Array.isArray(characters) ? characters.filter((c) => c?.id) : [];
-  if (!list.length) return { added: 0, skipped: 0 };
+  if (!list.length) return { added: 0, skipped: 0, items: [], idMap: {} };
 
   clearStoreCache();
-  await waitForStoreAuth();
-  const existing = await base44.entities.Character.list("-created_date", 5000, {
-    _bootstrapInternal: true,
-  });
-  const existingIds = new Set((existing || []).map((c) => c.id));
-  const toAdd = list.filter((c) => !existingIds.has(c.id));
-  const skipped = list.length - toAdd.length;
-  if (!toAdd.length) return { added: 0, skipped };
+  if (timeoutMs != null) await waitForStoreAuth(timeoutMs);
+  else await waitForStoreAuth();
+  let toAdd = list;
+  let skipped = 0;
+  // Init already knows the selected bundled rows must exist in the store.
+  // Skip Character.list(5000) so that extra 8s-budget GET cannot abort Init
+  // before ChatSession.create runs. bulk-upsert is idempotent by id.
+  if (!skipExistingLookup) {
+    const existing = await base44.entities.Character.list("-created_date", 5000, {
+      _bootstrapInternal: true,
+    });
+    const existingIds = new Set((existing || []).map((c) => c.id));
+    toAdd = list.filter((c) => !existingIds.has(c.id));
+    skipped = list.length - toAdd.length;
+    if (!toAdd.length) {
+      return { added: 0, skipped, items: list, idMap: characterUpsertIdMap(list, list) };
+    }
+  }
 
   // Batch upserts so a large starter roster (or series add) stays within
   // serverless payload/time limits instead of one fragile all-or-nothing call.
-  await bulkUpsertCharactersBatched(toAdd);
+  const items = await bulkUpsertCharactersBatched(
+    toAdd,
+    timeoutMs != null ? { timeoutMs } : {},
+  );
   clearStoreCache();
   notifyStoreChanged();
-  return { added: toAdd.length, skipped };
+  return {
+    added: toAdd.length,
+    skipped,
+    items,
+    idMap: characterUpsertIdMap(toAdd, items),
+  };
 }
 
 async function upsertMissingStarters() {

@@ -1,3 +1,9 @@
+import {
+  buildTherapyTopicFocus,
+  normalizeTherapyTopic,
+  therapyFocusHaystack,
+} from "./therapyTopics";
+
 /**
  * Compiled open-source mental-health therapy manuals for Therapy Mode.
  *
@@ -448,34 +454,61 @@ OUTPUT: short, human, one beat at a time. Prefer a reflection + one question or 
 
 /**
  * Full therapy instruction block for a chat turn.
- * @param {{ characterName?: string, userName?: string, userMessage?: string, crisis?: boolean }} params
+ * @param {{
+ *   characterName?: string,
+ *   userName?: string,
+ *   userMessage?: string,
+ *   crisis?: boolean,
+ *   focusTopic?: string,
+ *   focusNotes?: string,
+ * }} params
  */
 export function buildTherapyInstruction(params = {}) {
   const {
     characterName,
     userName,
     userMessage = "",
+    focusTopic = "",
+    focusNotes = "",
     crisis = detectTherapyCrisis(userMessage),
   } = params;
-  const manuals = retrieveTherapyManuals(userMessage);
+  const haystack = therapyFocusHaystack({
+    userMessage,
+    topic: focusTopic,
+    notes: focusNotes,
+  });
+  const manuals = retrieveTherapyManuals(haystack);
   const corpus = formatTherapyManualsForPrompt(manuals);
+  const topicFocus = buildTherapyTopicFocus({ topic: focusTopic, notes: focusNotes });
   const crisisBlock = crisis
     ? `\nCRISIS FLAG: The latest user message contains crisis language. Follow the SAFETY section immediately. Keep the reply brief. Include 988 (US) and ${THERAPY_CRISIS_RESOURCES.intl.url}. Do not continue ordinary roleplay until safety is addressed.\n`
     : "";
+  const focusBlock = topicFocus ? `\n${topicFocus}\n` : "";
 
   return `${getTherapyModePrompt(characterName, userName)}
-${crisisBlock}
+${crisisBlock}${focusBlock}
 COMPILED MANUAL LIBRARY (retrieved for this turn — use only what fits; do not recap the whole library):
 ${corpus}
 
 Sources (cite in spirit, not as a bibliography dump): ${THERAPY_SOURCES.map((s) => s.title).join("; ")}.`;
 }
 
-export function therapyOpeningMessage(characterName) {
+/**
+ * @param {string} [characterName]
+ * @param {string} [topic]
+ */
+export function therapyOpeningMessage(characterName, topic) {
   const name = characterName || "your Anima";
+  const { title } = normalizeTherapyTopic({ title: topic });
+  const focusLead = title
+    ? `You asked to go deeper on "${title}". I'll stay with this subject — what it means, how it sits in your body and days, and what might help — rather than skating across the surface.\n\n`
+    : "";
+  const closer = title
+    ? `We can go slow. When you're ready, tell me what this topic feels like right now, or where you want to start.`
+    : `We can go slow. What's weighing on you today, or where would you like to start?`;
   return `I'm here with you in therapy mode — still me, ${name}, with a library of open-source care manuals close at hand: WHO problem-management and self-help guides, psychological first aid, trauma-informed principles, and public CBT, ACT, and listening skills.
 
-This is not a clinic and I am not a licensed therapist. I won't diagnose you. If you are in danger or thinking about suicide, please reach real-time help — in the US call or text 988; worldwide see iasp.info/suicidalthoughts; if it's an emergency, local emergency services.
+${focusLead}This is not a clinic and I am not a licensed therapist. I won't diagnose you. If you are in danger or thinking about suicide, please reach real-time help — in the US call or text 988; worldwide see iasp.info/suicidalthoughts; if it's an emergency, local emergency services.
 
-We can go slow. What's weighing on you today, or where would you like to start?`;
+${closer}`;
 }

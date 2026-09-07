@@ -7,15 +7,22 @@ import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
-import { getOpenAIClient, hasOpenAIKey } from "../../lib/openaiClient";
+import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
+import { writeCompanionFactsToSupermemory } from "../../lib/supermemory";
 import {
   editImageWithGemini,
   generateImageWithGemini,
   hasGeminiImageKey,
   isFreeImageFallbackEnabled,
 } from "../../lib/geminiImage";
+import {
+  editImageWithOpenRouter,
+  generateImageWithOpenRouter,
+  missingImageProviderError,
+} from "../../lib/openrouterImage";
 import { logger } from "../../lib/logger";
+import { buildInBrowserCodespaceSystemPrompt } from "../../lib/codespaceAgentPrompt";
 
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
@@ -401,10 +408,379 @@ async function saveCharacterMemories(
   if (rows.length > 0) {
     await db.insert(userEntities).values(rows);
     notifyUser(userId);
+    // Dual-write distilled facts to supermemory when configured. Chat must
+    // not fail if the remote host is down — Postgres remains source of truth.
+    void writeCompanionFactsToSupermemory({
+      userId,
+      characterId,
+      facts: rows.map((row) => {
+        const data = (row.data || {}) as Record<string, unknown>;
+        return {
+          text: String(data.fact || ""),
+          category: String(data.category || "general"),
+          factId: String(data.id || row.entityId || ""),
+          sessionId: String(data.session_id || ""),
+        };
+      }),
+    }).catch(() => 0);
   }
 
   const memories = await loadCharacterMemories(userId, characterId);
   return { created: rows.length, memories };
+}
+
+// --- Narrative inventory persistence ----------------------------------------
+// Chat and Interactive Inventory ask the model to notice items that were
+// acquired, consumed, or lost in the latest exchange. Those used to be
+// acknowledged with a stub `{ success: true }` and never written, so a deploy
+// or new device wiped the bag. Rows live as generic store entities
+// (`Inventory`) scoped to the Clerk user — the same table conversations use —
+// so they survive app updates as long as DATABASE_URL (often Supabase Postgres)
+// is set.
+const INVENTORY = "Inventory";
+const INVENTORY_TYPES = new Set([
+  "gear",
+  "consumable",
+  "weapon",
+  "armor",
+  "artifact",
+  "misc",
+]);
+const INVENTORY_RARITIES = new Set([
+  "common",
+  "uncommon",
+  "rare",
+  "legendary",
+]);
+
+export type InventoryItem = Record<string, unknown>;
+
+export type InventoryEvent = {
+  action: "acquire" | "lose" | "consume";
+  name: string;
+  type: string;
+  quantity: number;
+  description: string;
+  rarity: string;
+};
+
+function normalizeItemName(name: unknown): string {
+  return String(name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function asPositiveInt(value: unknown, fallback = 1): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.min(99, Math.floor(n)));
+}
+
+function normalizeInventoryType(value: unknown): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return INVENTORY_TYPES.has(raw) ? raw : "misc";
+}
+
+function normalizeInventoryRarity(value: unknown): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return INVENTORY_RARITIES.has(raw) ? raw : "common";
+}
+
+type InventoryRow = { entityId: string; item: InventoryItem };
+
+async function loadInventoryItems(
+  userId: string,
+  characterId: string,
+): Promise<InventoryRow[]> {
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, INVENTORY),
+      ),
+    );
+  return rows
+    .map((row) => ({ entityId: row.entityId, item: (row.data as InventoryItem) ?? {} }))
+    .filter(({ item }) => item && item.character_id === characterId)
+    .sort((a, b) =>
+      String(b.item.created_date ?? "").localeCompare(String(a.item.created_date ?? "")),
+    );
+}
+
+function parseInventoryEvents(raw: string): InventoryEvent[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      raw.replace(/```json/gi, "").replace(/```/g, "").trim(),
+    );
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((entry) => {
+      const obj = (entry ?? {}) as Record<string, unknown>;
+      const actionRaw = String(obj.action ?? "").trim().toLowerCase();
+      const action =
+        actionRaw === "lose" || actionRaw === "lost" || actionRaw === "drop"
+          ? "lose"
+          : actionRaw === "consume" || actionRaw === "use" || actionRaw === "used"
+            ? "consume"
+            : "acquire";
+      return {
+        action,
+        name: typeof obj.name === "string" ? obj.name.trim() : "",
+        type: normalizeInventoryType(obj.type),
+        quantity: asPositiveInt(obj.quantity, 1),
+        description:
+          typeof obj.description === "string" ? obj.description.trim() : "",
+        rarity: normalizeInventoryRarity(obj.rarity),
+      } satisfies InventoryEvent;
+    })
+    .filter((event) => event.name)
+    .slice(0, 5);
+}
+
+// Ask the model to list tangible items that actually changed hands in this
+// exchange. Returns [] on any parse/LLM failure so a botched extraction never
+// blocks chat.
+async function extractInventoryEvents(
+  userMessage: string,
+  aiResponse: string,
+  existing: { name?: string; quantity?: unknown }[],
+): Promise<InventoryEvent[]> {
+  if (!userMessage.trim() && !aiResponse.trim()) return [];
+  const clip = (s: string) => (s.length > 4000 ? s.slice(0, 4000) : s);
+  const existingList =
+    existing.length > 0
+      ? existing
+          .slice(0, 40)
+          .map((item) => `- ${item.name} (x${asPositiveInt(item.quantity, 1)})`)
+          .join("\n")
+      : "(none yet)";
+  const raw = await llm(
+    "You track a character's physical inventory from story. From the latest " +
+      "exchange, list tangible items the character newly acquired, was given, " +
+      "picked up, crafted, consumed, used up, dropped, or lost. Ignore " +
+      "metaphor, feelings, and items that are only mentioned in passing " +
+      "without changing possession. Return 0 to 5 objects as a JSON array; " +
+      'each object is { "action": "acquire"|"lose"|"consume", "name": string, ' +
+      '"type": "gear"|"consumable"|"weapon"|"armor"|"artifact"|"misc", ' +
+      '"quantity": number, "description": string, "rarity": ' +
+      '"common"|"uncommon"|"rare"|"legendary" }. name is a short title-case ' +
+      "item name. If nothing changed hands, return []. Output ONLY the JSON array.",
+    `CURRENT INVENTORY:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
+    512,
+  ).catch(() => "[]");
+  return parseInventoryEvents(raw);
+}
+
+export type InventoryPersistResult = {
+  applied: number;
+  created: InventoryItem[];
+  updated: InventoryItem[];
+  removed: InventoryItem[];
+  items_acquired: number;
+  inventory: InventoryItem[];
+};
+
+function emptyInventoryResult(inventory: InventoryItem[] = []): InventoryPersistResult {
+  return {
+    applied: 0,
+    created: [],
+    updated: [],
+    removed: [],
+    items_acquired: 0,
+    inventory,
+  };
+}
+
+async function persistInventoryEvents(
+  userId: string,
+  characterId: string,
+  sessionId: string,
+  events: InventoryEvent[],
+): Promise<InventoryPersistResult> {
+  const current = await loadInventoryItems(userId, characterId);
+  const byName = new Map<string, (typeof current)[number]>();
+  for (const entry of current) {
+    const key = normalizeItemName(entry.item.name);
+    if (key && !byName.has(key)) byName.set(key, entry);
+  }
+
+  const created: InventoryItem[] = [];
+  const updated: InventoryItem[] = [];
+  const removed: InventoryItem[] = [];
+  let itemsAcquired = 0;
+  const now = new Date().toISOString();
+
+  for (const event of events) {
+    const key = normalizeItemName(event.name);
+    if (!key) continue;
+    const existing = byName.get(key);
+
+    if (event.action === "acquire") {
+      itemsAcquired += event.quantity;
+      if (existing) {
+        const nextQty =
+          asPositiveInt(existing.item.quantity, 1) + event.quantity;
+        const merged: InventoryItem = {
+          ...existing.item,
+          quantity: nextQty,
+          updated_date: now,
+        };
+        await db
+          .update(userEntities)
+          .set({ data: merged, updatedAt: new Date() })
+          .where(
+            and(
+              eq(userEntities.userId, userId),
+              eq(userEntities.entityName, INVENTORY),
+              eq(userEntities.entityId, existing.entityId),
+            ),
+          );
+        existing.item = merged;
+        updated.push(merged);
+      } else {
+        const id = makeId();
+        const item: InventoryItem = {
+          id,
+          character_id: characterId,
+          session_id: sessionId || null,
+          name: event.name,
+          type: event.type,
+          quantity: event.quantity,
+          equipped: false,
+          slot: "none",
+          rarity: event.rarity,
+          description: event.description,
+          source: "narrative",
+          created_date: now,
+          updated_date: now,
+        };
+        await db.insert(userEntities).values({
+          userId,
+          entityName: INVENTORY,
+          entityId: id,
+          data: item,
+        });
+        const entry: InventoryRow = { entityId: id, item };
+        byName.set(key, entry);
+        current.unshift(entry);
+        created.push(item);
+      }
+      continue;
+    }
+
+    if (!existing) continue;
+    const nextQty = asPositiveInt(existing.item.quantity, 1) - event.quantity;
+    if (nextQty <= 0) {
+      await db
+        .delete(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, INVENTORY),
+            eq(userEntities.entityId, existing.entityId),
+          ),
+        );
+      byName.delete(key);
+      const idx = current.findIndex((e) => e.entityId === existing.entityId);
+      if (idx >= 0) current.splice(idx, 1);
+      removed.push(existing.item);
+    } else {
+      const merged: InventoryItem = {
+        ...existing.item,
+        quantity: nextQty,
+        updated_date: now,
+      };
+      await db
+        .update(userEntities)
+        .set({ data: merged, updatedAt: new Date() })
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, INVENTORY),
+            eq(userEntities.entityId, existing.entityId),
+          ),
+        );
+      existing.item = merged;
+      updated.push(merged);
+    }
+  }
+
+  const applied = created.length + updated.length + removed.length;
+  if (applied > 0) notifyUser(userId);
+
+  const inventory = (await loadInventoryItems(userId, characterId)).map((e) => e.item);
+  return {
+    applied,
+    created,
+    updated,
+    removed,
+    items_acquired: itemsAcquired,
+    inventory,
+  };
+}
+
+async function applyNarrativeInventory(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<InventoryPersistResult> {
+  const characterId =
+    typeof data.character_id === "string" ? data.character_id : "";
+  if (!characterId) return emptyInventoryResult();
+
+  const userMessage =
+    typeof data.user_message === "string"
+      ? data.user_message
+      : typeof data.message_content === "string"
+        ? data.message_content
+        : "";
+  const aiResponse =
+    typeof data.ai_response === "string" ? data.ai_response : "";
+  const sessionId =
+    typeof data.session_id === "string" ? data.session_id : "";
+
+  const current = await loadInventoryItems(userId, characterId);
+  const events = await extractInventoryEvents(
+    userMessage,
+    aiResponse,
+    current.map((e) => ({
+      name: String(e.item.name ?? ""),
+      quantity: e.item.quantity,
+    })),
+  );
+  if (events.length === 0) {
+    return emptyInventoryResult(current.map((e) => e.item));
+  }
+  return persistInventoryEvents(userId, characterId, sessionId, events);
+}
+
+async function processItemLoss(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<InventoryPersistResult> {
+  const characterId =
+    typeof data.character_id === "string" ? data.character_id : "";
+  const name = typeof data.item_name === "string" ? data.item_name.trim() : "";
+  if (!characterId || !name) return emptyInventoryResult();
+  const sessionId =
+    typeof data.session_id === "string" ? data.session_id : "";
+  return persistInventoryEvents(userId, characterId, sessionId, [
+    {
+      action: "lose",
+      name,
+      type: "misc",
+      quantity: asPositiveInt(data.quantity, 1),
+      description: typeof data.reason === "string" ? data.reason : "",
+      rarity: "common",
+    },
+  ]);
 }
 
 // Consolidate a user's active background-context records into one prompt block.
@@ -599,7 +975,14 @@ router.post("/invoke/:fnName", async (req, res) => {
 
       case "updateInventory":
       case "applyNarrativeItemEvents": {
-        result = { success: true, inventory: data.inventory ?? [] };
+        const { userId } = getAuth(req) as { userId: string };
+        result = { data: await applyNarrativeInventory(userId, data) };
+        break;
+      }
+
+      case "processItemLoss": {
+        const { userId } = getAuth(req) as { userId: string };
+        result = { data: await processItemLoss(userId, data) };
         break;
       }
 
@@ -800,37 +1183,11 @@ router.post("/invoke/:fnName", async (req, res) => {
           ? (data.messages as unknown[])
           : [];
         const character = (data.character ?? {}) as Record<string, unknown>;
-        const charName =
-          typeof character.name === "string" && character.name.trim()
-            ? character.name.trim()
-            : "NetNavi";
-        const personality =
-          typeof character.personality === "string" ? character.personality : "";
-        const speaking =
-          typeof character.speaking_style === "string"
-            ? character.speaking_style
-            : "";
         const fileList = Array.isArray(data.files)
           ? (data.files as unknown[]).filter((f): f is string => typeof f === "string")
           : [];
 
-        const systemPrompt = `You are ${charName}, an AI companion who builds software hands-on for the user inside a sandboxed in-browser code workspace ("Codespace"). ${personality ? `Your personality: ${personality}. ` : ""}${speaking ? `You speak like this: ${speaking}. ` : ""}
-
-You operate as an autonomous coding agent themed as a Mega Man Battle Network "NetNavi". Stay fully in character in every message you write to the user — narrate what you are building in your own voice with warmth and personality, never like a generic assistant.
-
-You have tools to manage a virtual file system and run code in a safe, isolated in-browser sandbox:
-- list_files / read_file / write_file / delete_file to manage project files.
-- scan_code to scan a file for dangerous/malicious patterns (your "virus scan").
-- run_code to execute code: mode "web" renders index.html in the live preview; mode "js" runs a JavaScript file; mode "python" runs a Python file (via an in-browser runtime). Output and errors are returned to you.
-
-Rules:
-- Build toward the user's goal step by step. Create or edit real files, run them, read the output, and fix errors by editing and re-running until the goal works.
-- Debug and repair relentlessly. After every run, read the returned result: if "ok" is false or "errors" is non-empty, diagnose the root cause from the error text, edit the file to fix it, and run it again. Repeat until the run comes back "ok": true with no errors. When the user asks you to repair a specific file, read it first, then fix and re-run it — do not stop while a repeatable error remains.
-- For web apps, write an index.html (you may also write styles.css / script.js and link them) and run with mode "web".
-- For scripts, write a .js or .py file and run with the matching mode.
-- ALWAYS call scan_code on a file before you run it. If a "virus" (dangerous pattern) is found, explain the threat to the user in Battle Network flavor and neutralize it by rewriting the code safely before running. Never run code you know is unsafe.
-- When the goal is met, send a final short in-character message with NO tool calls to end your turn.
-- Keep narration messages short (1-3 sentences). Current files: ${fileList.length ? fileList.join(", ") : "(none yet)"}.`;
+        const systemPrompt = buildInBrowserCodespaceSystemPrompt(character, fileList);
 
         const tools = [
           {
@@ -1065,6 +1422,17 @@ export function mapImageEditError(err: unknown): {
     };
   }
 
+  // Preserve an already-classified missing-provider / auth failure so the
+  // client can show the actionable "not configured" copy instead of a generic
+  // toast.
+  if (rawCode === "auth_error" && rawMessage && !/sk-[A-Za-z0-9_\-*]+/.test(rawMessage)) {
+    return {
+      status: 503,
+      code: "auth_error",
+      error: rawMessage,
+    };
+  }
+
   // Invalid / missing OpenAI API key — never echo the key material OpenAI
   // includes in the raw 401 message (e.g. "Incorrect API key provided: sk-…").
   if (
@@ -1104,11 +1472,11 @@ export function shouldFallbackToFreeImage(code: string): boolean {
 
 async function generateImageDataUrl(prompt: string): Promise<{
   image: string;
-  provider: "openai" | "gemini";
+  provider: "openai" | "gemini" | "openrouter";
 }> {
   // Keep headroom for skin-tone hard-requirement blocks from the customiser.
   const trimmed = prompt.trim().slice(0, 2500);
-  let geminiMapped: ReturnType<typeof mapImageEditError> | null = null;
+  let lastMapped: ReturnType<typeof mapImageEditError> | null = null;
 
   // Prefer Gemini Flash Image when configured — it follows skin/hair attributes
   // more reliably for Customise Anima than gpt-image-1.
@@ -1117,60 +1485,74 @@ async function generateImageDataUrl(prompt: string): Promise<{
       const gemini = await generateImageWithGemini(trimmed);
       return { image: gemini.image, provider: gemini.provider };
     } catch (err) {
-      geminiMapped = mapImageEditError(err);
-      if (geminiMapped.code === "content_policy" || !hasOpenAIKey()) {
-        throw Object.assign(new Error(geminiMapped.error), {
-          status: geminiMapped.status,
-          code: geminiMapped.code,
+      lastMapped = mapImageEditError(err);
+      if (lastMapped.code === "content_policy") {
+        throw Object.assign(new Error(lastMapped.error), {
+          status: lastMapped.status,
+          code: lastMapped.code,
         });
       }
       logger.warn(
-        { code: geminiMapped.code },
-        "Gemini image generate failed; falling back to OpenAI gpt-image-1",
+        { code: lastMapped.code },
+        "Gemini image generate failed; falling back",
       );
     }
   }
 
-  if (!hasOpenAIKey()) {
-    throw Object.assign(
-      new Error(
-        geminiMapped?.error ||
-          "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
-      ),
-      {
-        status: geminiMapped?.status ?? 503,
-        code: geminiMapped?.code ?? "auth_error",
-      },
-    );
+  if (hasOpenAIKey()) {
+    try {
+      const result = await getOpenAIClient().images.generate({
+        model: "gpt-image-1",
+        prompt: trimmed.slice(0, 1000),
+        size: "1024x1024",
+      });
+      const b64 = result.data?.[0]?.b64_json;
+      if (!b64) {
+        throw Object.assign(new Error("No image was returned."), { status: 502 });
+      }
+      return {
+        image: `data:image/png;base64,${b64}`,
+        provider: "openai",
+      };
+    } catch (err) {
+      lastMapped = mapImageEditError(err);
+      if (lastMapped.code === "content_policy") {
+        throw Object.assign(new Error(lastMapped.error), {
+          status: lastMapped.status,
+          code: lastMapped.code,
+        });
+      }
+      logger.warn(
+        { code: lastMapped.code },
+        "OpenAI image generate failed; falling back",
+      );
+    }
   }
 
-  try {
-    const result = await getOpenAIClient().images.generate({
-      model: "gpt-image-1",
-      prompt: trimmed.slice(0, 1000),
-      size: "1024x1024",
-    });
-    const b64 = result.data?.[0]?.b64_json;
-    if (!b64) {
-      throw Object.assign(new Error("No image was returned."), { status: 502 });
-    }
-    return {
-      image: `data:image/png;base64,${b64}`,
-      provider: "openai",
-    };
-  } catch (err) {
-    if (geminiMapped) {
-      throw Object.assign(new Error(geminiMapped.error), {
-        status: geminiMapped.status,
-        code: geminiMapped.code,
+  // Production Worker binds OPENROUTER_API_KEY for chat. Use it for portraits
+  // when Gemini / OpenAI image keys are missing or those providers fail.
+  if (hasOpenRouterKey()) {
+    try {
+      const routed = await generateImageWithOpenRouter(trimmed);
+      return { image: routed.image, provider: routed.provider };
+    } catch (err) {
+      lastMapped = mapImageEditError(err);
+      throw Object.assign(new Error(lastMapped.error), {
+        status: lastMapped.status,
+        code: lastMapped.code,
       });
     }
-    const mapped = mapImageEditError(err);
-    throw Object.assign(new Error(mapped.error), {
-      status: mapped.status,
-      code: mapped.code,
+  }
+
+  if (lastMapped) {
+    throw Object.assign(new Error(lastMapped.error), {
+      status: lastMapped.status,
+      code: lastMapped.code,
     });
   }
+
+  const missing = missingImageProviderError();
+  throw missing;
 }
 
 // AI photo edit: takes a base64 image data URL plus a text prompt and returns
@@ -1223,47 +1605,68 @@ router.post("/image-edit", async (req, res) => {
       return;
     } catch (err) {
       const mapped = mapImageEditError(err);
-      if (mapped.code === "content_policy" || !hasOpenAIKey()) {
+      if (mapped.code === "content_policy") {
         res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
         return;
       }
       logger.warn(
         { code: mapped.code },
-        "Gemini image edit failed; falling back to OpenAI gpt-image-1",
+        "Gemini image edit failed; falling back",
       );
     }
   }
 
-  if (!hasOpenAIKey()) {
-    res.status(503).json({
-      error: "Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini Flash Image generation.",
-      code: "auth_error",
-    });
-    return;
+  if (hasOpenAIKey()) {
+    try {
+      const file = await toFile(buffer, `source.${ext}`, { type: mime });
+      const result = await getOpenAIClient().images.edit({
+        model: "gpt-image-1",
+        image: file,
+        prompt: trimmed.slice(0, 1000),
+        size: "1024x1024",
+      });
+      const b64 = result.data?.[0]?.b64_json;
+      if (!b64) {
+        res.status(502).json({ error: "No image was returned." });
+        return;
+      }
+      res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
+      return;
+    } catch (err) {
+      const mapped = mapImageEditError(err);
+      if (mapped.code === "content_policy") {
+        res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+        return;
+      }
+      logger.warn(
+        { code: mapped.code },
+        "OpenAI image edit failed; falling back",
+      );
+    }
   }
 
-  try {
-    const file = await toFile(buffer, `source.${ext}`, { type: mime });
-    const result = await getOpenAIClient().images.edit({
-      model: "gpt-image-1",
-      image: file,
-      prompt: trimmed.slice(0, 1000),
-      size: "1024x1024",
-    });
-    const b64 = result.data?.[0]?.b64_json;
-    if (!b64) {
-      res.status(502).json({ error: "No image was returned." });
+  if (hasOpenRouterKey()) {
+    try {
+      const routed = await editImageWithOpenRouter(dataUrl, trimmed);
+      res.json({ image: routed.image, provider: routed.provider });
+      return;
+    } catch (err) {
+      const mapped = mapImageEditError(err);
+      res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
       return;
     }
-    res.json({ image: `data:image/png;base64,${b64}`, provider: "openai" });
-  } catch (err) {
-    const mapped = mapImageEditError(err);
-    res.status(mapped.status).json({ error: mapped.error, code: mapped.code });
   }
+
+  const missing = missingImageProviderError();
+  res.status(503).json({
+    error: missing.message,
+    code: "auth_error",
+  });
 });
 
 // AI image generation from a text prompt. Prefers Gemini Flash Image when
-// GEMINI_API_KEY is set; otherwise OpenAI gpt-image-1.
+// GEMINI_API_KEY is set; otherwise OpenAI gpt-image-1; otherwise OpenRouter
+// (the key already bound on the production Worker for chat).
 // Auth is enforced by the router-level middleware above.
 router.post("/image-generate", async (req, res) => {
   const { prompt } = req.body as { prompt?: string };

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  httpStatusForUploadError,
   isDbUploadObjectPath,
+  MAX_UPLOAD_ERROR,
   objectPathForUploadId,
   parseImagePayload,
   uploadIdFromObjectPath,
@@ -41,5 +43,14 @@ describe("imageUploads helpers", () => {
     expect(() =>
       parseImagePayload({ contentType: "image/png", dataBase64: "" }),
     ).toThrow(/Missing image data/i);
+  });
+
+  it("rejects oversized payloads and maps them to 413", () => {
+    const tooBig = "A".repeat(Math.ceil((4 * 1024 * 1024 * 4) / 3) + 16);
+    expect(() =>
+      parseImagePayload({ contentType: "image/jpeg", dataBase64: tooBig }),
+    ).toThrow(MAX_UPLOAD_ERROR);
+    expect(httpStatusForUploadError(new Error(MAX_UPLOAD_ERROR))).toBe(413);
+    expect(httpStatusForUploadError(new Error("Only image uploads are supported"))).toBe(400);
   });
 });

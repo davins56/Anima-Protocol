@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  CLERK_GITHUB_OAUTH_CALLBACK_URL,
   clerkOAuthCallbackAbsolute,
   clerkOAuthCompletePath,
   clerkOAuthRedirectPaths,
@@ -41,5 +45,26 @@ describe('clerkOAuthPaths', () => {
   it('normalizes complete path for nested base', () => {
     expect(clerkOAuthCompletePath('/__mockup')).toBe('/__mockup');
     expect(clerkOAuthCompletePath('')).toBe('/');
+  });
+
+  it('documents the Clerk custom-domain GitHub OAuth callback', () => {
+    expect(CLERK_GITHUB_OAUTH_CALLBACK_URL).toBe(
+      'https://clerk.anima-protocol.com/v1/oauth_callback',
+    );
+  });
+
+  it('keeps HandleSSOCallback Future wiring on /sign-in/sso-callback', () => {
+    const app = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'ProtocolApp.jsx'),
+      'utf8',
+    );
+    expect(app).toMatch(/HandleSSOCallback/);
+    expect(app).toMatch(/navigateToApp=\{navigateAfterAuth\}/);
+    expect(app).toMatch(/navigateToSignIn=/);
+    expect(app).toMatch(/navigateToSignUp=/);
+    expect(app).toMatch(/session\?\.currentTask/);
+    expect(app).toMatch(/decorateUrl/);
+    expect(app).toMatch(/path="\/sign-in\/sso-callback"/);
+    expect(app).toMatch(/path="\/sign-up\/sso-callback"/);
   });
 });

@@ -5,6 +5,7 @@ export default function FragmentCard({
   code = null,
   selected = false,
   recommended = false,
+  owned = true,
   compact = false,
   onClick,
 }) {
@@ -18,7 +19,7 @@ export default function FragmentCard({
       onClick={onClick}
       className={`relative text-left border transition-all ${
         compact ? "p-2" : "p-3"
-      } ${selected ? "ring-1" : "hover:bg-white/[0.03]"}`}
+      } ${selected ? "ring-1" : "hover:bg-white/[0.03]"} ${owned ? "" : "opacity-50"}`}
       style={{
         borderColor: selected ? theme.color : recommended ? `${theme.color}66` : "rgba(34,211,238,0.18)",
         boxShadow: selected ? `0 0 18px ${theme.glow}` : recommended ? `0 0 10px ${theme.glow}` : "none",

@@ -16,7 +16,7 @@ import EtherealSummon from "./EtherealSummon";
 const ELEMENTS = ["all", "void", "ember", "tide", "volt", "grove"];
 const CLASSES = ["all", "standard", "apex", "nova"];
 
-export default function FragmentLibrary() {
+export default function FragmentLibrary({ library = null, ownedOnly = false }) {
   const [tab, setTab] = useState("library");
   const [element, setElement] = useState("all");
   const [klass, setKlass] = useState("all");
@@ -26,10 +26,15 @@ export default function FragmentLibrary() {
 
   const selected = ENERGY_FRAGMENTS.find((f) => f.id === selectedId) || ENERGY_FRAGMENTS[0];
   const familySiblings = fragmentsByFamily(selected.family);
+  const owned = useMemo(
+    () => new Set(library?.owned_ids || ENERGY_FRAGMENTS.map((f) => f.id)),
+    [library?.owned_ids],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return ENERGY_FRAGMENTS.filter((f) => {
+      if (ownedOnly && !owned.has(f.id)) return false;
       if (element !== "all" && f.element !== element) return false;
       if (klass !== "all" && f.class !== klass) return false;
       if (!q) return true;
@@ -40,7 +45,7 @@ export default function FragmentLibrary() {
         f.inspiredByFamily.includes(q)
       );
     });
-  }, [element, klass, query]);
+  }, [element, klass, query, ownedOnly, owned]);
 
   const sourceFamily = [...BN1_CHIP_FAMILIES, ...LATER_CHIP_FAMILIES].find(
     (f) => FAMILY_TO_FRAGMENT[f.id] === selected.family || f.id === selected.inspiredByFamily,
@@ -97,7 +102,8 @@ export default function FragmentLibrary() {
           </div>
 
           <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-primary/35">
-            {filtered.length} fragments · weapons summon as ethereal constructs
+            {filtered.length} listed · {owned.size} on this profile · weapons summon as ethereal constructs
+            {library?.granted_full_library ? " · full library granted" : ""}
           </p>
 
           <div className="grid lg:grid-cols-[1fr_minmax(260px,320px)] gap-4">
@@ -107,6 +113,7 @@ export default function FragmentLibrary() {
                   key={f.id}
                   fragment={f}
                   compact
+                  owned={owned.has(f.id)}
                   selected={f.id === selectedId}
                   onClick={() => {
                     setSelectedId(f.id);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { updateCompanionRecord } from "@/lib/listPersonalAnimas";
 import { Check, Loader, Save } from "lucide-react";
 
 const ANIMA_ARCHETYPES = [
@@ -77,7 +77,7 @@ export default function AnimaPersonalityPanel({ anima, onSave }) {
         speaking_style: form.speaking_style,
         status: form.status,
       };
-      await base44.entities.Anima.update(anima.id, patch);
+      await updateCompanionRecord(anima, patch);
       setSaved(true);
       onSave?.(patch);
     } catch (err) {

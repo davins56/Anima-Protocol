@@ -7,10 +7,37 @@
  * stuck on "Check your email". Prefer `email_code` so users can type an OTP.
  */
 
-import { isVercelPreviewHost } from "./clerkProxy";
-import { clerkOAuthRedirectPaths } from "./clerkOAuthPaths";
+import {
+  ANIMA_PRODUCTION_SIGN_IN_URL,
+  isClerkAuthorizedBrowserHost,
+} from "./clerkProxy";
+import {
+  CLERK_GITHUB_OAUTH_CALLBACK_URL,
+  clerkOAuthRedirectPaths,
+} from "./clerkOAuthPaths";
 
-export const PRODUCTION_SIGN_IN_URL = "https://www.anima-protocol.com/sign-in";
+export const PRODUCTION_SIGN_IN_URL = ANIMA_PRODUCTION_SIGN_IN_URL;
+
+export { CLERK_GITHUB_OAUTH_CALLBACK_URL };
+
+/** How long to wait for `signIn.sso()` before treating a missing redirect as a hang. */
+export const GITHUB_OAUTH_SSO_TIMEOUT_MS = 10_000;
+
+/**
+ * After `sso()` resolves without a status, Clerk may still assign `window.location`
+ * on the next tick. Wait this long for `pagehide` / `beforeunload` before
+ * reporting a missing redirect.
+ */
+export const GITHUB_OAUTH_NAVIGATION_GRACE_MS = 400;
+
+const INCOMPLETE_OAUTH_STATUSES = new Set([
+  "needs_identifier",
+  "needs_first_factor",
+  "needs_second_factor",
+  "needs_new_password",
+  "needs_client_trust",
+  "missing_requirements",
+]);
 
 /** @param {Array<{ strategy?: string }> | null | undefined} factors */
 export function hasEmailCodeFactor(factors) {
@@ -78,9 +105,11 @@ export function asDisplayMessage(value) {
 
 /** @param {string | null | undefined} [hostname] */
 export function isPreviewSignInHost(hostname) {
-  if (hostname) return isVercelPreviewHost(hostname);
-  if (typeof window === "undefined") return false;
-  return isVercelPreviewHost(window.location.hostname);
+  const host =
+    hostname ||
+    (typeof window !== "undefined" ? window.location.hostname : "");
+  if (!host) return false;
+  return !isClerkAuthorizedBrowserHost(host);
 }
 
 /**
@@ -306,53 +335,215 @@ export function clerkErrorMessage(
 }
 
 /**
+ * Operator-facing copy when GitHub OAuth never leaves this page.
+ * A missing GitHub OAuth App callback often looks like a hang, not a Clerk error.
+ */
+export function githubOAuthHangMessage() {
+  return (
+    `GitHub sign-in did not redirect. Use ${PRODUCTION_SIGN_IN_URL}. ` +
+    `If this keeps happening, the GitHub OAuth App must allowlist ${CLERK_GITHUB_OAUTH_CALLBACK_URL}.`
+  );
+}
+
+/** @param {unknown} status */
+export function isIncompleteOAuthSignInStatus(status) {
+  if (typeof status !== "string") return false;
+  return INCOMPLETE_OAUTH_STATUSES.has(status) || status.startsWith("needs_");
+}
+
+/**
+ * After `signIn.sso()` returns without a Clerk error, decide whether OAuth
+ * actually started a redirect, can be finalized, or is stuck mid-flow.
+ *
+ * @param {{ status?: string | null } | null | undefined} signIn
+ * @param {{ didNavigate?: boolean }} [options]
+ */
+export function interpretGitHubSsoResult(signIn, { didNavigate = false } = {}) {
+  if (didNavigate) {
+    return { ok: true, navigated: true, shouldFinalize: false };
+  }
+
+  const status = signIn?.status ?? null;
+  if (status === "complete") {
+    return { ok: true, navigated: false, shouldFinalize: true, status };
+  }
+
+  if (isIncompleteOAuthSignInStatus(status)) {
+    const detail =
+      status === "needs_second_factor"
+        ? "GitHub sign-in needs another verification step before it can finish."
+        : status === "needs_client_trust"
+          ? "GitHub sign-in needs to verify this device before it can finish."
+          : `GitHub sign-in did not finish (${status}).`;
+    const error = new Error(`${detail} ${githubOAuthHangMessage()}`);
+    error.code = "oauth_incomplete";
+    error.status = status;
+    return { ok: false, navigated: false, shouldFinalize: false, status, error };
+  }
+
+  const error = new Error(githubOAuthHangMessage());
+  error.code = "oauth_no_redirect";
+  error.status = status;
+  return { ok: false, navigated: false, shouldFinalize: false, status, error };
+}
+
+/**
+ * Race `promise` against a timeout. Clerk `sso()` has no abort signal; a late
+ * resolve is ignored here, but a late full-page redirect is still welcome.
+ *
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} timeoutMs
+ * @param {() => Error} createTimeoutError
+ * @returns {Promise<T>}
+ */
+export function withTimeout(promise, timeoutMs, createTimeoutError) {
+  let timer = 0;
+  const pending = Promise.resolve(promise);
+  pending.catch(() => {});
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(createTimeoutError()), timeoutMs);
+  });
+  return Promise.race([pending, timeout]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
+/**
+ * Wait briefly for a full-page leave after `sso()` resolves.
+ * @param {() => boolean} didNavigate
+ * @param {number} graceMs
+ */
+export function waitForPageNavigation(didNavigate, graceMs) {
+  if (typeof didNavigate === "function" && didNavigate()) {
+    return Promise.resolve(true);
+  }
+  if (!(graceMs > 0)) {
+    return Promise.resolve(typeof didNavigate === "function" ? didNavigate() : false);
+  }
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(typeof didNavigate === "function" ? didNavigate() : false);
+    }, graceMs);
+  });
+}
+
+function createGitHubOAuthTimeoutError() {
+  const error = new Error(githubOAuthHangMessage());
+  error.code = "oauth_redirect_timeout";
+  return error;
+}
+
+/**
+ * Watch for a full-page leave while `sso()` is in flight. Clerk often assigns
+ * `window.location` after the promise resolves; treat that as a successful start.
+ */
+export function watchPageNavigation(target = typeof window !== "undefined" ? window : null) {
+  let navigated = false;
+  const mark = () => {
+    navigated = true;
+  };
+  if (target?.addEventListener) {
+    target.addEventListener("pagehide", mark);
+    target.addEventListener("beforeunload", mark);
+  }
+  return {
+    didNavigate: () => navigated,
+    dispose() {
+      if (target?.removeEventListener) {
+        target.removeEventListener("pagehide", mark);
+        target.removeEventListener("beforeunload", mark);
+      }
+    },
+  };
+}
+
+/**
  * Start GitHub OAuth using Clerk's Future `signIn.sso()` API.
  *
  * `clerk.authenticateWithRedirect` is not on the LoadedClerk object in
  * @clerk/react v6 — calling it throws "authenticateWithRedirect is not a function".
  *
- * @param {{ sso?: Function, authenticateWithRedirect?: Function } | null | undefined} signIn
+ * Times out if `sso()` never navigates (hang / missing GitHub OAuth callback).
+ * After a successful return with no navigation, incomplete `needs_*` statuses
+ * become an actionable error instead of leaving the button spinning.
+ *
+ * @param {{ sso?: Function, authenticateWithRedirect?: Function, status?: string | null } | null | undefined} signIn
  * @param {string} basePath
  * @param {{ authenticateWithRedirect?: Function, client?: { signIn?: { authenticateWithRedirect?: Function } } } | null | undefined} [clerk]
+ * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean }} [options]
  */
-export async function startGitHubOAuthSignIn(signIn, basePath, clerk) {
+export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = {}) {
   const paths = clerkOAuthRedirectPaths(basePath, "sign-in");
+  const timeoutMs = options.timeoutMs ?? GITHUB_OAUTH_SSO_TIMEOUT_MS;
+  const navigationGraceMs = options.navigationGraceMs ?? GITHUB_OAUTH_NAVIGATION_GRACE_MS;
+  const watcher = options.didNavigate
+    ? { didNavigate: () => Boolean(options.didNavigate()), dispose() {} }
+    : watchPageNavigation();
 
-  if (signIn && typeof signIn.sso === "function") {
-    const { error } = await signIn.sso({
-      strategy: "oauth_github",
-      redirectCallbackUrl: paths.redirectCallbackUrl,
-      redirectUrl: paths.redirectUrl,
+  const finishOAuth = async (method) => {
+    let interpreted = interpretGitHubSsoResult(signIn, {
+      didNavigate: watcher.didNavigate(),
     });
-    if (error) {
-      throw error;
+    if (!interpreted.ok && interpreted.error?.code === "oauth_no_redirect") {
+      const navigated = await waitForPageNavigation(watcher.didNavigate, navigationGraceMs);
+      interpreted = interpretGitHubSsoResult(signIn, { didNavigate: navigated });
     }
-    return { method: "signIn.sso", ...paths };
-  }
+    if (!interpreted.ok) {
+      throw interpreted.error;
+    }
+    return { method, ...paths, ...interpreted };
+  };
 
-  // Legacy fallbacks for older clerk-js builds still exposing redirect helpers.
-  const legacy =
-    (signIn && typeof signIn.authenticateWithRedirect === "function"
-      ? signIn.authenticateWithRedirect.bind(signIn)
-      : null) ||
-    (clerk?.client?.signIn &&
-    typeof clerk.client.signIn.authenticateWithRedirect === "function"
-      ? clerk.client.signIn.authenticateWithRedirect.bind(clerk.client.signIn)
-      : null) ||
-    (clerk && typeof clerk.authenticateWithRedirect === "function"
-      ? clerk.authenticateWithRedirect.bind(clerk)
-      : null);
+  try {
+    if (signIn && typeof signIn.sso === "function") {
+      const { error } = await withTimeout(
+        signIn.sso({
+          strategy: "oauth_github",
+          redirectCallbackUrl: paths.redirectCallbackUrl,
+          redirectUrl: paths.redirectUrl,
+        }),
+        timeoutMs,
+        createGitHubOAuthTimeoutError,
+      );
+      if (error) {
+        throw error;
+      }
+      return await finishOAuth("signIn.sso");
+    }
 
-  if (legacy) {
-    await legacy({
-      strategy: "oauth_github",
-      redirectUrl: paths.redirectCallbackUrl,
-      redirectUrlComplete: paths.redirectUrl,
-    });
-    return { method: "authenticateWithRedirect", ...paths };
-  }
+      // Legacy fallbacks for older clerk-js builds still exposing redirect helpers.
+      const legacy =
+        (signIn && typeof signIn.authenticateWithRedirect === "function"
+          ? signIn.authenticateWithRedirect.bind(signIn)
+          : null) ||
+        (clerk?.client?.signIn &&
+        typeof clerk.client.signIn.authenticateWithRedirect === "function"
+          ? clerk.client.signIn.authenticateWithRedirect.bind(clerk.client.signIn)
+          : null) ||
+        (clerk && typeof clerk.authenticateWithRedirect === "function"
+          ? clerk.authenticateWithRedirect.bind(clerk)
+          : null);
 
-  throw new Error(
-    `GitHub sign-in is unavailable in this Clerk SDK build. Refresh and try again, or use an email code on ${PRODUCTION_SIGN_IN_URL}.`,
-  );
+      if (legacy) {
+        await withTimeout(
+          Promise.resolve(
+            legacy({
+              strategy: "oauth_github",
+              redirectUrl: paths.redirectCallbackUrl,
+              redirectUrlComplete: paths.redirectUrl,
+            }),
+          ),
+          timeoutMs,
+          createGitHubOAuthTimeoutError,
+        );
+        return await finishOAuth("authenticateWithRedirect");
+      }
+
+      throw new Error(
+        `GitHub sign-in is unavailable in this Clerk SDK build. Refresh and try again, or use an email code on ${PRODUCTION_SIGN_IN_URL}.`,
+      );
+    } finally {
+      watcher.dispose();
+    }
 }

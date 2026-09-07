@@ -1,4 +1,4 @@
-import { pool, migrateUserData } from "@workspace/db";
+import { resetPool, migrateUserData } from "@workspace/db";
 
 function readArg(name: string): string | undefined {
   const idx = process.argv.indexOf(name);
@@ -55,11 +55,11 @@ async function main(): Promise<void> {
 
 main()
   .then(async () => {
-    await pool.end();
+    resetPool();
     process.exit(0);
   })
   .catch(async (error) => {
     console.error("[migrate-account] failed:", error);
-    await pool.end().catch(() => {});
+    resetPool();
     process.exit(1);
   });

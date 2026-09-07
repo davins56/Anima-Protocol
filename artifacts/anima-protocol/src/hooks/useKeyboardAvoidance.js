@@ -1,41 +1,42 @@
 // @ts-check
 import { useEffect, useRef } from "react";
+import {
+  isEditableTarget,
+  measureVisualViewportInsets,
+} from "@/lib/visualViewportInsets";
 
 /**
- * Adjusts the main app container's bottom padding when the virtual keyboard
- * opens on mobile, so inputs are never obscured by the BottomTabBar or keyboard.
+ * Scrolls a focused input into view when the virtual keyboard opens.
  *
- * Uses the Visual Viewport API (supported on iOS 13+ and Android Chrome).
- * @param {{ current: HTMLElement | null }} containerRef
+ * Do **not** add keyboard height as `padding-bottom` on the app shell.
+ * `useViewportHeight` already sets `--app-height` to `visualViewport.height`,
+ * so extra padding double-counts the keyboard and paints a black bar over
+ * the chat composer on iOS Safari.
+ *
+ * @param {{ current: HTMLElement | null } | null} [_containerRef]
  */
-export function useKeyboardAvoidance(containerRef) {
+export function useKeyboardAvoidance(_containerRef) {
   const rafRef = useRef(/** @type {number | null} */ (null));
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) return; // Desktop / unsupported — no-op
+    if (!vv) return;
 
     const onResize = () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
-        const el = containerRef?.current;
-        if (!el) return;
+        const insets = measureVisualViewportInsets(vv, window.innerHeight, {
+          inputFocused: isEditableTarget(document.activeElement),
+        });
 
-        // How much the keyboard has pushed the viewport up
-        const keyboardHeight = window.innerHeight - vv.height - vv.offsetTop;
-        const kb = Math.max(0, keyboardHeight);
-
-        // Only apply if keyboard is actually visible (> 80px heuristic)
-        if (kb > 80) {
-          el.style.paddingBottom = `${kb}px`;
-          // Scroll the focused input into view
+        if (insets.keyboardOpen && !wasOpenRef.current) {
           const focused = document.activeElement;
-          if (focused && focused !== document.body) {
-            setTimeout(() => focused.scrollIntoView({ block: "nearest", behavior: "smooth" }), 100);
+          if (isEditableTarget(focused)) {
+            focused.scrollIntoView({ block: "nearest", behavior: "auto" });
           }
-        } else {
-          el.style.paddingBottom = "";
         }
+        wasOpenRef.current = insets.keyboardOpen;
       });
     };
 
@@ -47,5 +48,5 @@ export function useKeyboardAvoidance(containerRef) {
       vv.removeEventListener("scroll", onResize);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [containerRef]);
+  }, []);
 }

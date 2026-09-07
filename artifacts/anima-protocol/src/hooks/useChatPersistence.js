@@ -38,8 +38,14 @@ export function useChatPersistence() {
       const identifiedMessages = assignTurnMessageIds(messages, turnId);
       const storedMessages = [];
       try {
+        // Sequential appends keep store `seq` in turn order. Concurrent
+        // Promise.all completes in network order, so group/event/aspect
+        // bubbles can land assistant-before-user.
+        const results = [];
         for (const message of identifiedMessages) {
-          storedMessages.push(await base44.messages.append(sessionId, message));
+          const stored = await base44.messages.append(sessionId, message);
+          storedMessages.push(stored);
+          results.push(stored);
         }
         if (content) {
           await base44.entities.ChatSession.update(sessionId, {
@@ -48,7 +54,7 @@ export function useChatPersistence() {
           });
         }
         await animaApi.chat.commitTurn(turnId);
-        return storedMessages;
+        return results;
       } catch (error) {
         // The server checkpoint contains the generated reply and stable message
         // ids. Ask it to reconcile any partial client write idempotently.

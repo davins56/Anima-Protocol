@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   APPEARANCE_FEATURES,
+  VESSEL_LAYER_FIELDS,
   buildAppearanceImagePrompt,
   expandSkinToneDescriptor,
   normalizeAppearancePrompts,
+  normalizeVesselLayers,
 } from "./animaAppearance";
 
 describe("normalizeAppearancePrompts", () => {
@@ -46,6 +48,19 @@ describe("expandSkinToneDescriptor", () => {
   });
 });
 
+describe("vessel layers", () => {
+  it("exposes body, hair, cloth, and markings fields for Customise Anima Look", () => {
+    const keys = VESSEL_LAYER_FIELDS.map((f) => f.layer);
+    expect(keys).toContain("body");
+    expect(keys).toContain("hair");
+    expect(keys).toContain("cloth");
+    expect(keys).toContain("markings");
+    const layers = normalizeVesselLayers(null);
+    expect(layers.artifacts.wings).toBe(true);
+    expect(layers.markings.chest).toBe("変");
+  });
+});
+
 describe("buildAppearanceImagePrompt", () => {
   it("includes name, archetype, and set features with a skin hard requirement", () => {
     const prompt = buildAppearanceImagePrompt(
@@ -74,5 +89,17 @@ describe("buildAppearanceImagePrompt", () => {
     expect(prompt).toContain("digital art illustration");
     expect(prompt).toContain("ethereal atmospheric background");
     expect(prompt).toContain("confident and captivating expression");
+  });
+
+  it("frames the prompt for reference-photo editing", () => {
+    const prompt = buildAppearanceImagePrompt(
+      { name: "Serenity", archetype: "guardian" },
+      { hair: "silver waves", skin: "warm medium brown" },
+      { useReference: true },
+    );
+    expect(prompt).toMatch(/Transform the attached reference photo/i);
+    expect(prompt).toMatch(/Preserve the person's facial identity/i);
+    expect(prompt).toMatch(/resemble the reference person/i);
+    expect(prompt).toMatch(/HARD REQUIREMENT — SKIN TONE:/);
   });
 });

@@ -25,6 +25,10 @@ import {
 
 const router = Router();
 
+/**
+ * Auth is Clerk-only. Never accept client-controlled identity headers
+ * (x-user-id) or untyped req.userId — that would allow cross-user reads/writes.
+ */
 function requireUser(req: Request, res: Response): string | null {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -34,85 +38,98 @@ function requireUser(req: Request, res: Response): string | null {
   return userId;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+const RESONANCE_DIMS = [
+  "intimacy",
+  "powerDynamic",
+  "spiritualAttunement",
+  "primalIntensity",
+  "crossoverOpenness",
+] as const;
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
 }
 
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  return Object.keys(value).every((key) => allowed.includes(key));
-}
-
-function optionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === "string";
-}
-
-function isHomeObject(value: unknown): value is NonNullable<HomeRoom["objects"]>[number] {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "description", "placedBy"])) return false;
-  return (
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    optionalString(value.description) &&
-    optionalString(value.placedBy)
-  );
-}
-
-function isHomeRoom(value: unknown): value is HomeRoom {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "description", "objects"])) return false;
-  return (
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    typeof value.description === "string" &&
-    (value.objects === undefined || (Array.isArray(value.objects) && value.objects.every(isHomeObject)))
-  );
-}
-
-function isHomeRitual(value: unknown): value is HomeRitual {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "description", "lastPerformedAt"])) return false;
-  return (
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    optionalString(value.description) &&
-    optionalString(value.lastPerformedAt)
-  );
-}
-
-function isHomeArtifact(value: unknown): value is HomeArtifact {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "name", "memory", "createdAt"])) return false;
-  return (
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    optionalString(value.memory) &&
-    optionalString(value.createdAt)
-  );
-}
-
-function parseHomePatch(value: unknown): Partial<HomeState> | null {
-  if (!isRecord(value)) return null;
-  if (!hasOnlyKeys(value, ["rooms", "atmosphere", "lastVisitedRoomId", "rituals", "sharedArtifacts", "narrativeNotes"])) {
-    return null;
+/** Enforce the ResonanceVector contract before persistence. */
+function parseResonanceSnapshot(raw: unknown): ResonanceVector | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const out: Partial<ResonanceVector> = {};
+  for (const key of RESONANCE_DIMS) {
+    if (!isFiniteNumber(obj[key])) return null;
+    out[key] = obj[key];
   }
-  if (value.rooms !== undefined && (!Array.isArray(value.rooms) || !value.rooms.every(isHomeRoom))) return null;
-  if (value.rituals !== undefined && (!Array.isArray(value.rituals) || !value.rituals.every(isHomeRitual))) return null;
-  if (value.sharedArtifacts !== undefined && (!Array.isArray(value.sharedArtifacts) || !value.sharedArtifacts.every(isHomeArtifact))) return null;
-  if (!optionalString(value.atmosphere) || !optionalString(value.lastVisitedRoomId) || !optionalString(value.narrativeNotes)) return null;
-  return value as Partial<HomeState>;
+  // Documented ranges from resonanceState.ts
+  if (out.intimacy! < 0 || out.intimacy! > 100) return null;
+  if (out.powerDynamic! < -50 || out.powerDynamic! > 50) return null;
+  if (out.spiritualAttunement! < 0 || out.spiritualAttunement! > 100) return null;
+  if (out.primalIntensity! < 0 || out.primalIntensity! > 100) return null;
+  if (out.crossoverOpenness! < 0 || out.crossoverOpenness! > 100) return null;
+  return out as ResonanceVector;
 }
 
-function parseResonanceVector(value: unknown): ResonanceVector | null {
-  if (!isRecord(value)) return null;
-  const ranges: Record<keyof ResonanceVector, readonly [number, number]> = {
-    intimacy: [0, 100],
-    powerDynamic: [-50, 50],
-    spiritualAttunement: [0, 100],
-    primalIntensity: [0, 100],
-    crossoverOpenness: [0, 100],
-  };
-  if (!hasOnlyKeys(value, Object.keys(ranges))) return null;
-  for (const [key, [min, max]] of Object.entries(ranges) as Array<[keyof ResonanceVector, readonly [number, number]]>) {
-    const dimension = value[key];
-    if (typeof dimension !== "number" || !Number.isFinite(dimension) || dimension < min || dimension > max) return null;
+/** Accept only known HomeState keys; reject malformed nested arrays. */
+function parseHomeStatePatch(raw: unknown): Partial<HomeState> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const body = raw as Record<string, unknown>;
+  const patch: Partial<HomeState> = {};
+
+  if ("atmosphere" in body) {
+    if (typeof body.atmosphere !== "string") return null;
+    patch.atmosphere = body.atmosphere;
   }
-  return value as unknown as ResonanceVector;
+  if ("lastVisitedRoomId" in body) {
+    if (typeof body.lastVisitedRoomId !== "string") return null;
+    patch.lastVisitedRoomId = body.lastVisitedRoomId;
+  }
+  if ("narrativeNotes" in body) {
+    if (typeof body.narrativeNotes !== "string") return null;
+    patch.narrativeNotes = body.narrativeNotes;
+  }
+  if ("rooms" in body) {
+    if (!Array.isArray(body.rooms)) return null;
+    for (const room of body.rooms) {
+      if (!room || typeof room !== "object") return null;
+      const r = room as Record<string, unknown>;
+      if (typeof r.id !== "string" || typeof r.name !== "string") return null;
+      if (r.description != null && typeof r.description !== "string") return null;
+      if (r.objects != null && !Array.isArray(r.objects)) return null;
+    }
+    patch.rooms = body.rooms as HomeState["rooms"];
+  }
+  if ("rituals" in body) {
+    if (!Array.isArray(body.rituals)) return null;
+    for (const ritual of body.rituals) {
+      if (!ritual || typeof ritual !== "object") return null;
+      const r = ritual as Record<string, unknown>;
+      if (typeof r.id !== "string" || typeof r.name !== "string") return null;
+    }
+    patch.rituals = body.rituals as HomeState["rituals"];
+  }
+  if ("sharedArtifacts" in body) {
+    if (!Array.isArray(body.sharedArtifacts)) return null;
+    for (const art of body.sharedArtifacts) {
+      if (!art || typeof art !== "object") return null;
+      const a = art as Record<string, unknown>;
+      if (typeof a.id !== "string" || typeof a.name !== "string") return null;
+    }
+    patch.sharedArtifacts = body.sharedArtifacts as HomeState["sharedArtifacts"];
+  }
+
+  // Reject unknown top-level keys so clients cannot inject arbitrary JSONB.
+  const allowed = new Set([
+    "atmosphere",
+    "lastVisitedRoomId",
+    "narrativeNotes",
+    "rooms",
+    "rituals",
+    "sharedArtifacts",
+  ]);
+  for (const key of Object.keys(body)) {
+    if (!allowed.has(key)) return null;
+  }
+
+  return patch;
 }
 
 // ---------- Timeline ----------
@@ -162,21 +179,38 @@ router.post("/resonance-memories/:animaId", async (req, res) => {
   if (!userId) return;
   const animaId = String(req.params.animaId);
   const body = req.body ?? {};
-  const resonanceSnapshot = parseResonanceVector(body.resonanceSnapshot);
-  if (!body.title || !body.body || !resonanceSnapshot) {
-    res.status(400).json({ error: "title, body, and valid resonanceSnapshot required" });
+  if (!body.title || !body.body || body.resonanceSnapshot == null) {
+    res.status(400).json({ error: "title, body, resonanceSnapshot required" });
     return;
   }
+  const resonanceSnapshot = parseResonanceSnapshot(body.resonanceSnapshot);
+  if (!resonanceSnapshot) {
+    res.status(400).json({
+      error:
+        "resonanceSnapshot must be a ResonanceVector with five finite dimensions " +
+        "(intimacy 0-100, powerDynamic -50..50, spiritualAttunement 0-100, " +
+        "primalIntensity 0-100, crossoverOpenness 0-100)",
+    });
+    return;
+  }
+  const tags = Array.isArray(body.tags)
+    ? body.tags.filter((t: unknown) => typeof t === "string").map(String)
+    : undefined;
+  const intensity =
+    body.intensity != null && isFiniteNumber(body.intensity)
+      ? body.intensity
+      : undefined;
   const memory = await crystallizeResonanceMemory({
     userId,
     animaId,
-    sessionId: body.sessionId,
+    sessionId: body.sessionId != null ? String(body.sessionId) : undefined,
     title: String(body.title),
     body: String(body.body),
     resonanceSnapshot,
-    emotionalTone: body.emotionalTone,
-    tags: body.tags,
-    intensity: body.intensity,
+    emotionalTone:
+      body.emotionalTone != null ? String(body.emotionalTone) : undefined,
+    tags,
+    intensity,
   });
   res.json({ memory });
 });
@@ -233,9 +267,13 @@ router.get("/home", async (req, res) => {
 router.patch("/home", async (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const patch = parseHomePatch(req.body ?? {});
+  const patch = parseHomeStatePatch(req.body ?? {});
   if (!patch) {
-    res.status(400).json({ error: "Invalid Home World patch" });
+    res.status(400).json({
+      error:
+        "Invalid HomeState patch. Allowed keys: atmosphere, lastVisitedRoomId, " +
+        "narrativeNotes, rooms, rituals, sharedArtifacts. Nested structures must match HomeState.",
+    });
     return;
   }
   const home = await updateHomeWorldState(userId, patch);

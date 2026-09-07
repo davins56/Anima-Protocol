@@ -50,6 +50,19 @@ describe("mapImageEditError", () => {
     expect(mapped.error).toBe("something broke");
   });
 
+  it("preserves an already-classified missing-provider auth_error message", () => {
+    const mapped = mapImageEditError({
+      status: 503,
+      code: "auth_error",
+      message:
+        "Image generation is not configured on this server. Bind GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY, then redeploy. You can still upload a photo.",
+    });
+    expect(mapped.status).toBe(503);
+    expect(mapped.code).toBe("auth_error");
+    expect(mapped.error).toMatch(/not configured/i);
+    expect(mapped.error).toMatch(/OPENROUTER_API_KEY/);
+  });
+
   it("maps OpenAI 401 invalid API key to auth_error without leaking key material", () => {
     const mapped = mapImageEditError({
       status: 401,

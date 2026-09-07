@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MessageSquare, ChevronDown } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import PrivateChatPanel from "./PrivateChatPanel";
+import PortaledFixedPanel from "./PortaledFixedPanel";
 
 export default function CharacterQuickChat({ characters, sessionId, mode, groupCharacterIds }) {
   const [showPicker, setShowPicker] = useState(false);
   const [privateChar, setPrivateChar] = useState(null);
+  const triggerRef = useRef(null);
 
   // For group sessions, show all group chars; for solo, show all other available chars
   const availableChars = mode === "group"
@@ -18,6 +19,8 @@ export default function CharacterQuickChat({ characters, sessionId, mode, groupC
     <>
       <div className="relative">
         <button
+          ref={triggerRef}
+          type="button"
           onClick={() => setShowPicker(p => !p)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 border border-primary/20 text-primary/30 hover:text-primary/70 hover:border-primary/40 font-mono text-[8px] tracking-widest uppercase transition-all"
           title="Private chat with a character"
@@ -27,15 +30,21 @@ export default function CharacterQuickChat({ characters, sessionId, mode, groupC
           <ChevronDown className="w-2.5 h-2.5" />
         </button>
 
-        <AnimatePresence>
-          {showPicker && (
-            <motion.div
-              initial={{ opacity: 0, y: -6, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.97 }}
-              className="absolute right-0 top-10 z-50 w-52 border bg-black/95 backdrop-blur-xl overflow-hidden"
-              style={{ borderColor: "rgba(0,255,200,0.15)" }}
-            >
+        <PortaledFixedPanel
+          open={showPicker}
+          onDismiss={() => setShowPicker(false)}
+          anchorRef={triggerRef}
+          align="right"
+          className="w-52 border bg-black/95 backdrop-blur-xl overflow-hidden"
+          panelStyle={{ borderColor: "rgba(0,255,200,0.15)" }}
+          panelTestId="character-quick-chat-menu"
+          backdropTestId="character-quick-chat-backdrop"
+          backdropZClass="z-[1002]"
+          panelZClass="z-[1003]"
+          motionInitial={{ opacity: 0, y: -6, scale: 0.97 }}
+          motionAnimate={{ opacity: 1, y: 0, scale: 1 }}
+          motionExit={{ opacity: 0, y: -6, scale: 0.97 }}
+        >
               <div className="px-3 py-2 border-b" style={{ borderColor: "rgba(0,255,200,0.08)" }}>
                 <p className="font-mono text-[8px] text-primary/40 tracking-[0.3em] uppercase">Private Channel</p>
               </div>
@@ -43,6 +52,7 @@ export default function CharacterQuickChat({ characters, sessionId, mode, groupC
                 {availableChars.map(char => (
                   <button
                     key={char.id}
+                    type="button"
                     onClick={() => { setPrivateChar(char); setShowPicker(false); }}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 border-b text-left transition-all hover:bg-primary/5"
                     style={{ borderColor: "rgba(0,255,200,0.05)" }}
@@ -64,9 +74,7 @@ export default function CharacterQuickChat({ characters, sessionId, mode, groupC
                   </button>
                 ))}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </PortaledFixedPanel>
       </div>
 
       {privateChar && (

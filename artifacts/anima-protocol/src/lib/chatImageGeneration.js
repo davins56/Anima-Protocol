@@ -6,6 +6,9 @@
 
 export const IMAGE_TAG_RE = /\[IMAGE:\s*([^\]]+)\]/gi;
 
+/** Bound so a hung image API cannot leave the chat composer disabled. */
+export const CHAT_IMAGE_TIMEOUT_MS = 45_000;
+
 const USER_IMAGE_REQUEST_RE =
   /\b(draw|paint|sketch|illustrate)\s+(me|us|a|an|the|this|that|my)\b|\bvisualize\b.{0,40}|\b(generate|create|make|send|show)\b.{0,40}\b(image|picture|pic|photo|portrait|artwork|illustration)\b|\b(image|picture|portrait) of\b/i;
 
@@ -41,6 +44,58 @@ export function stripImageTags(text) {
 
 export function userRequestedImage(userText) {
   return USER_IMAGE_REQUEST_RE.test(String(userText || ""));
+}
+
+export function withDeadline(work, ms, message = "Timed out.") {
+  let timer;
+  return Promise.race([
+    Promise.resolve().then(work),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new Error(message);
+        err.code = "timeout";
+        reject(err);
+      }, ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+function generateImageWithDeadline(generateImage, prompt) {
+  return withDeadline(
+    () => generateImage({ prompt }),
+    CHAT_IMAGE_TIMEOUT_MS,
+    "Image generation timed out.",
+  );
+}
+
+/**
+ * Keep the streamed reply on screen while an inline image is generating.
+ * Replacing the thread with the pre-stream history made the just-finished
+ * answer vanish until the image call completed.
+ */
+export function messagesWithImageProgress(messages, { streamedText, speakerName }) {
+  const kept = (messages || []).filter(
+    (message) =>
+      message?.character_name !== "__thinking__" &&
+      message?.character_name !== "__typing__" &&
+      message?.is_streaming !== true,
+  );
+  const text = String(streamedText || "").trim();
+  if (text) {
+    kept.push({
+      role: "assistant",
+      content: text,
+      character_name: speakerName || "Character",
+      timestamp: new Date().toISOString(),
+    });
+  }
+  kept.push({
+    role: "assistant",
+    content: "creating image...",
+    character_name: "__thinking__",
+    timestamp: new Date().toISOString(),
+  });
+  return kept;
 }
 
 /**
@@ -100,7 +155,12 @@ export async function resolveChatImageAttachments({
   for (const raw of prompts.slice(0, 2)) {
     const prompt = enhanceImagePrompt(raw, character);
     if (!prompt) continue;
-    const result = await generateImage({ prompt });
+    let result;
+    try {
+      result = await generateImageWithDeadline(generateImage, prompt);
+    } catch {
+      continue;
+    }
     let url = result?.url || result?.image;
     if (typeof url !== "string" || !url) continue;
     if (persistUrl && url.startsWith("data:")) {

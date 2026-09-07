@@ -1,9 +1,0 @@
-# Legacy Netlify site compatibility.
-#
-# The active frontend lives in artifacts/anima-protocol, but the historical
-# animaprotocolmain Netlify site can still be configured with this old base
-# directory. Keep this config so PR deploy checks cancel cleanly instead of
-# failing before the current monorepo Netlify configs are discovered.
-
-[build]
-  ignore = "true"

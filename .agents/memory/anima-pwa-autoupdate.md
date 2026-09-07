@@ -11,9 +11,11 @@ re-add of the app).
 
 ## Rule: precache only content-hashed assets, never HTML; disable navigateFallback
 
-`workbox.globPatterns` excludes `html`, and `workbox.navigateFallback: null`
-disables the plugin's default `index.html` fallback. The HTML document is always
-fetched from the network.
+`workbox.globPatterns` excludes `html`, `workbox.navigateFallback: null`
+disables the plugin's default `index.html` fallback, and
+`cleanupOutdatedCaches: true` drops previous precache revisions so an old SW
+cannot keep requesting dead `/assets/*-<hash>.js` files. The HTML document is
+always fetched from the network.
 
 **Why:** the build is `vite build && node scripts/prerender.mjs` — prerender
 rewrites `dist/public/index.html` (route `/`) and emits route HTML *after* vite

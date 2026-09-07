@@ -1,6 +1,15 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44, uploadDataUrl } from "@/api/base44Client";
-import { autoAssignCharacterPhoto } from "@/lib/seedCharacters";
+import {
+  autoAssignCharacterPhoto,
+  shouldAutoAssignCharacterPhoto,
+} from "@/lib/seedCharacters";
+import { companionLookHref } from "@/lib/listPersonalAnimas";
+import {
+  companionCreateErrorMessage,
+  createCompanionRecord,
+} from "@/lib/createCompanion";
 import { track } from "@/lib/analytics";
 import { Wand2, Copy, Check, AlertCircle, Loader, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,6 +17,7 @@ import { toast } from "sonner";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
 
 export default function CompanionGenerator() {
+  const navigate = useNavigate();
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [companion, setCompanion] = useState(null);
@@ -130,7 +140,7 @@ export default function CompanionGenerator() {
     try {
       const avatar_url =
         typeof companion.avatar_url === "string" ? companion.avatar_url.trim() : "";
-      const newChar = await base44.entities.Character.create({
+      const newChar = await createCompanionRecord("Character", {
         name: companion.name.trim(),
         universe: companion.universe || "",
         personality: companion.personality || "",
@@ -150,8 +160,10 @@ export default function CompanionGenerator() {
         is_default: false,
       });
 
-      // Auto-search a portrait only when the user did not set a custom one.
-      if (!avatar_url) {
+      // Franchise roster cards can Wikipedia-lookup a portrait. Generator
+      // originals go to Customise Anima Look instead — wiki search after
+      // create contended the Worker and broke Look for companions with no photo.
+      if (shouldAutoAssignCharacterPhoto({ ...newChar, avatar_url })) {
         autoAssignCharacterPhoto(newChar).catch(() => {});
       }
 
@@ -163,9 +175,14 @@ export default function CompanionGenerator() {
 
       setCompanion(null);
       setPrompt("");
-      toast.success(`✨ ${companion.name} has been created! Start a new chat session to meet them.`);
+      toast.success(
+        `✨ ${companion.name} has been created. Opening Customise Anima so you can draft her look.`,
+      );
+      if (newChar?.id) {
+        navigate(companionLookHref(newChar.id));
+      }
     } catch (err) {
-      setError(err.message || "Failed to create companion");
+      setError(companionCreateErrorMessage(err) || "Failed to create companion");
     } finally {
       setCreating(false);
     }

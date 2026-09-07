@@ -17,14 +17,31 @@ router.use("/character-image", (req, res, next) => {
 });
 
 const WIKI_HEADERS = { "User-Agent": "AnimaProtocol/1.0 (character portrait lookup)" };
+/** Cap each Wikipedia hop so a missing original (e.g. Alyndra) cannot hang the Worker. */
+export const WIKI_FETCH_TIMEOUT_MS = 2500;
+/** Whole-lookup ceiling across sequential Wikipedia hops. */
+export const CHARACTER_IMAGE_LOOKUP_BUDGET_MS = 6000;
+
+async function wikiFetch(url: string): Promise<Response | null> {
+  try {
+    const r = await fetch(url, {
+      headers: WIKI_HEADERS,
+      signal: AbortSignal.timeout(WIKI_FETCH_TIMEOUT_MS),
+    });
+    if (!r.ok) return null;
+    return r;
+  } catch {
+    return null;
+  }
+}
 
 // Find the best-matching Wikipedia article title for a free-text query.
 async function wikiSearchTitle(query: string): Promise<string | null> {
   const url =
     `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}` +
     `&srlimit=1&format=json&origin=*`;
-  const r = await fetch(url, { headers: WIKI_HEADERS });
-  if (!r.ok) return null;
+  const r = await wikiFetch(url);
+  if (!r) return null;
   const data: any = await r.json();
   return data?.query?.search?.[0]?.title || null;
 }
@@ -54,15 +71,16 @@ async function wikiImageForTitle(title: string): Promise<string | null> {
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
     title,
   )}`;
-  const r = await fetch(url, { headers: WIKI_HEADERS });
-  if (!r.ok) return null;
+  const r = await wikiFetch(url);
+  if (!r) return null;
   const data: any = await r.json();
   return data?.originalimage?.source || data?.thumbnail?.source || null;
 }
 
 // GET /api/character-image?name=...&universe=...
 // Searches the web (Wikipedia) for a representative photo of a character.
-// Returns { url } (string or null). Never throws to the client beyond 4xx/5xx.
+// Returns { url } (string or null). Auth is 401; missing name is 400;
+// lookup misses and Wikipedia failures are 200 { url: null }.
 router.get("/character-image", async (req, res) => {
   const name = String(req.query.name || "").trim();
   const universe = String(req.query.universe || "").trim();
@@ -81,7 +99,9 @@ router.get("/character-image", async (req, res) => {
 
   try {
     const tried = new Set<string>();
+    const deadline = Date.now() + CHARACTER_IMAGE_LOOKUP_BUDGET_MS;
     for (const q of queries) {
+      if (Date.now() > deadline) break;
       const title = await wikiSearchTitle(q);
       if (!title || tried.has(title)) continue;
       tried.add(title);
@@ -95,8 +115,10 @@ router.get("/character-image", async (req, res) => {
       }
     }
     res.json({ url: null });
-  } catch (e: any) {
-    res.status(502).json({ error: e?.message || "image lookup failed", url: null });
+  } catch {
+    // Missing / original names must not 502 the look hub. Treat lookup
+    // failure as "no photo" so Upload Photo / Generate Look stay available.
+    res.json({ url: null });
   }
 });
 

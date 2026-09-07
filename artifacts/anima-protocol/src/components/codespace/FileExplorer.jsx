@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FileCode2, FilePlus2, Trash2, FolderClock, RotateCcw, ChevronRight, ChevronDown } from "lucide-react";
+import { useState, useRef } from "react";
+import { FileCode2, FilePlus2, Trash2, FolderClock, RotateCcw, ChevronRight, ChevronDown, Upload, FolderInput, GitPullRequest } from "lucide-react";
 import { workspaceFiles, sessionFiles } from "@/lib/codespace/projectModel";
 
 // VS Code–style file explorer. Lists workspace files plus a ".sessions" folder
@@ -12,8 +12,12 @@ export default function FileExplorer({
   onDelete,
   onRestoreSession,
   onSaveSession,
+  onUploadFiles,
+  onImportRepo,
+  onPullRepo,
 }) {
   const [sessionsOpen, setSessionsOpen] = useState(true);
+  const uploadRef = useRef(null);
   const ws = workspaceFiles(files);
   const sessions = sessionFiles(files);
 
@@ -28,18 +32,88 @@ export default function FileExplorer({
         <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-primary/60">
           // Explorer
         </span>
-        <button
-          onClick={handleCreate}
-          title="New file"
-          className="text-primary/40 hover:text-primary transition-colors"
-        >
-          <FilePlus2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={uploadRef}
+            type="file"
+            multiple
+            className="hidden"
+            data-testid="codespace-upload-files"
+            onChange={(e) => {
+              const list = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (list.length) onUploadFiles?.(list);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => uploadRef.current?.click()}
+            title="Upload files into this project"
+            aria-label="Upload files"
+            className="text-primary/40 hover:text-primary transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onImportRepo?.()}
+            title="Import a repository (folder or zip)"
+            aria-label="Import repository"
+            className="text-primary/40 hover:text-primary transition-colors"
+          >
+            <FolderInput className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onPullRepo?.()}
+            title="Pull a GitHub repository"
+            aria-label="Pull a GitHub repo"
+            className="text-primary/40 hover:text-primary transition-colors"
+          >
+            <GitPullRequest className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleCreate}
+            title="New file"
+            aria-label="New file"
+            className="text-primary/40 hover:text-primary transition-colors"
+          >
+            <FilePlus2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
         {ws.length === 0 && (
-          <p className="px-3 py-2 font-mono text-[10px] text-primary/30">No files yet.</p>
+          <div className="px-3 py-3 space-y-2">
+            <p className="font-mono text-[10px] text-primary/30">No files yet.</p>
+            <p className="font-mono text-[10px] text-cyan-200/80 leading-relaxed">
+              Upload, Import, or Pull a repo
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => uploadRef.current?.click()}
+                className="text-left font-mono text-[9px] tracking-[0.15em] uppercase text-primary/60 hover:text-primary"
+              >
+                Upload files
+              </button>
+              <button
+                type="button"
+                onClick={() => onImportRepo?.()}
+                className="text-left font-mono text-[9px] tracking-[0.15em] uppercase text-primary/60 hover:text-primary"
+              >
+                Import folder or zip
+              </button>
+              <button
+                type="button"
+                onClick={() => onPullRepo?.()}
+                className="text-left font-mono text-[9px] tracking-[0.15em] uppercase text-primary/60 hover:text-primary"
+              >
+                Pull a GitHub repo
+              </button>
+            </div>
+          </div>
         )}
         {ws.map((f) => (
           <div

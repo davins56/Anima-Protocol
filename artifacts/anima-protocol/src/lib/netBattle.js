@@ -15,6 +15,7 @@ import {
   dominantExpression,
   getExpressionMeta,
 } from "./animaExpressions";
+import { chipsFromEchoFolder, echoResonanceChip } from "./echoKeys";
 
 export const COLS = 6;
 export const ROWS = 3;
@@ -77,27 +78,28 @@ function drawHand(folder, rng, count = HAND_SIZE) {
   };
 }
 
-function enemyForSpectrum(spectrum, rng) {
-  const dominant = dominantExpression(spectrum);
-  const viruses = {
-    angelic: { name: "Shade.Vrs", color: "#fb7185" },
-    ascended: { name: "Static.Vrs", color: "#c4b5fd" },
-    neutral: { name: "Mettaur.Vrs", color: "#f87171" },
-    descended: { name: "Halo.Vrs", color: "#fde68a" },
-    demonic: { name: "Aegis.Vrs", color: "#a5f3fc" },
-  };
-  const pick = viruses[dominant.id] || viruses.neutral;
+const VIRUS_SILHOUETTES = {
+  "Shade.Vrs": "shade",
+  "Static.Vrs": "static",
+  "Mettaur.Vrs": "mettaur",
+  "Halo.Vrs": "halo",
+  "Aegis.Vrs": "aegis",
+};
+
+const VIRUS_COLORS = {
+  "Shade.Vrs": "#fb7185",
+  "Static.Vrs": "#c4b5fd",
+  "Mettaur.Vrs": "#f87171",
+  "Halo.Vrs": "#fde68a",
+  "Aegis.Vrs": "#a5f3fc",
+};
+
+function virusUnit(name, rng, overrides = {}) {
+  const resolved = VIRUS_SILHOUETTES[name] ? name : "Halo.Vrs";
   const hpJitter = 0.9 + rng() * 0.25;
-  const silhouettes = {
-    "Shade.Vrs": "shade",
-    "Static.Vrs": "static",
-    "Mettaur.Vrs": "mettaur",
-    "Halo.Vrs": "halo",
-    "Aegis.Vrs": "aegis",
-  };
   return {
-    name: pick.name,
-    color: pick.color,
+    name: resolved,
+    color: overrides.color || VIRUS_COLORS[resolved],
     col: 4,
     row: 1,
     hp: Math.round(BASE_HP * hpJitter),
@@ -105,8 +107,44 @@ function enemyForSpectrum(spectrum, rng) {
     cooldown: 0,
     flinch: 0,
     kind: "virus",
-    silhouette: silhouettes[pick.name] || "mettaur",
+    silhouette: overrides.silhouette || VIRUS_SILHOUETTES[resolved] || "halo",
   };
+}
+
+function enemyForSpectrum(spectrum, rng) {
+  const dominant = dominantExpression(spectrum);
+  const viruses = {
+    angelic: "Shade.Vrs",
+    ascended: "Static.Vrs",
+    neutral: "Mettaur.Vrs",
+    descended: "Halo.Vrs",
+    demonic: "Aegis.Vrs",
+  };
+  return virusUnit(viruses[dominant.id] || viruses.neutral, rng);
+}
+
+/**
+ * Map a live jack-in scene entity onto an existing .Vrs figure.
+ * Never maps the companion Fallen Angel.
+ */
+export function enemyFromSceneEntity(entity, rng = createRng(1)) {
+  const name = String(entity?.name || "").trim();
+  if (!name || /fallen angel|serenity/i.test(name)) {
+    return virusUnit("Halo.Vrs", rng, entity || {});
+  }
+  return virusUnit(VIRUS_SILHOUETTES[name] ? name : "Halo.Vrs", rng, entity || {});
+}
+
+function folderForBattle(opts, spectrum) {
+  const raw = opts.echoFolder;
+  if (Array.isArray(raw) && raw.length) {
+    if (raw[0]?.kind) return raw;
+    return chipsFromEchoFolder(raw);
+  }
+  return [
+    ...folderFromSpectrum(spectrum),
+    ...supportChipsFromSpectrum(spectrum),
+  ];
 }
 
 /**
@@ -114,16 +152,14 @@ function enemyForSpectrum(spectrum, rng) {
  * @param {object} [opts.anima]
  * @param {'manual'|'auto'} [opts.controlMode]
  * @param {number} [opts.seed]
+ * @param {{ id: string, code?: string, kind?: string }[]} [opts.echoFolder] Echo Key chips or raw {id,code} slots. Falls back to expression chips.
  */
 export function createBattle(opts = {}) {
   const anima = opts.anima || {};
   const spectrum = anima.expression_spectrum;
   const stats = mixedCombatStats(spectrum);
   const rng = createRng(opts.seed ?? Date.now() % 1_000_000);
-  const folder = [
-    ...folderFromSpectrum(spectrum),
-    ...supportChipsFromSpectrum(spectrum),
-  ];
+  const folder = folderForBattle(opts, spectrum);
   const drawn = drawHand(folder, rng);
   const hp = unitHp(stats.hp);
   const buster = busterForSpectrum(spectrum);
@@ -147,7 +183,10 @@ export function createBattle(opts = {}) {
       spectrum,
       silhouette: "serenity",
     },
-    enemy: enemyForSpectrum(spectrum, rng),
+    enemy: opts.enemy
+      ? enemyFromSceneEntity(opts.enemy, rng)
+      : enemyForSpectrum(spectrum, rng),
+    fired_sequence: null,
     customGauge: 0,
     folder: drawn.folder,
     hand: drawn.hand,
@@ -338,17 +377,24 @@ export function sendWeaponsData(state) {
   const leftover = state.hand.filter((_, i) => !state.selectedCustom.includes(i));
   const folder = state.folder.concat(leftover);
   const drawn = drawHand(folder, state.rng, HAND_SIZE);
-  const names = chosen.map((c) => c.name).join(", ") || "empty slot";
+  const fused = echoResonanceChip(chosen.map((c) => c.id));
+  const payload = fused ? [fused] : chosen;
+  const names = payload.map((c) => c.name).join(", ") || "empty slot";
   let next = {
     ...state,
     phase: "fighting",
     customGauge: 0,
-    loaded: state.loaded.concat(chosen),
+    loaded: state.loaded.concat(payload),
     hand: drawn.hand,
     folder: drawn.folder,
     selectedCustom: [],
+    fired_sequence: fused
+      ? { id: fused.id, name: fused.name }
+      : state.fired_sequence || null,
   };
-  next = pushLog(next, `Weapons data sent: ${names}`);
+  next = pushLog(next, fused
+    ? `Sequence half-awake: ${fused.name}`
+    : `Weapons data sent: ${names}`);
   return next;
 }
 
@@ -540,6 +586,7 @@ export function battleSummary(state) {
     result: state.phase === "victory" ? "win" : state.phase === "defeat" ? "loss" : "ongoing",
     control_mode: state.controlMode,
     chips_used: state.chipsUsed,
+    echo_keys_used: state.chipsUsed,
     player_hp: state.player.hp,
     enemy_hp: state.enemy.hp,
     ticks: state.tick,

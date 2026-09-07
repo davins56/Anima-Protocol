@@ -223,13 +223,19 @@ function StageAura({ hue, sat }) {
         ctx.arc(p.x * width, p.y * height, p.r, 0, Math.PI * 2);
         ctx.fill();
       }
-      raf = requestAnimationFrame(tick);
+      if (typeof requestAnimationFrame === "function") {
+        raf = requestAnimationFrame(tick);
+      }
     };
-    raf = requestAnimationFrame(tick);
+    if (typeof requestAnimationFrame === "function") {
+      raf = requestAnimationFrame(tick);
+    }
 
     return () => {
       running = false;
-      cancelAnimationFrame(raf);
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(raf);
+      }
       window.removeEventListener("resize", resize);
     };
   }, [hue, sat]);

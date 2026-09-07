@@ -2,6 +2,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import {
+  STALE_CHUNK_RECOVERY_KEY,
+  recoverStaleChunk,
+} from "@/lib/staleChunkRecovery";
+
+vi.mock("@/lib/staleChunkRecovery", async () => {
+  const actual = await vi.importActual("@/lib/staleChunkRecovery");
+  return {
+    ...actual,
+    recoverStaleChunk: vi.fn(async () => {}),
+  };
+});
 
 // The ErrorBoundary is the app's only safety net against a render-phase throw
 // blanking the entire screen (App.full.jsx wraps <Routes> in it, keyed on
@@ -42,6 +54,11 @@ beforeEach(() => {
   vi.useFakeTimers();
   trackCalls.length = 0;
   trackImpl.fn = defaultTrack;
+  try {
+    sessionStorage.removeItem(STALE_CHUNK_RECOVERY_KEY);
+  } catch {
+    /* ignore */
+  }
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -66,7 +83,7 @@ function advancePastAutoHeal() {
 }
 
 describe("ErrorBoundary", () => {
-  it("shows the on-brand recovery panel when a child throws", () => {
+  it("shows the on-brand recovery panel with error details when a child throws", () => {
     act(() => {
       root.render(
         <ErrorBoundary resetKey="/a">
@@ -85,6 +102,8 @@ describe("ErrorBoundary", () => {
 
     // Recovery panel content is shown instead of a blank tree.
     expect(container.textContent).toContain("Something went wrong");
+    expect(container.textContent).toContain("Error Details");
+    expect(container.textContent).toContain("kaboom");
     const buttons = [...container.querySelectorAll("button")];
     expect(buttons.some((b) => /reload/i.test(b.textContent))).toBe(true);
     expect(buttons.some((b) => /self-repair/i.test(b.textContent))).toBe(true);
@@ -271,6 +290,48 @@ describe("ErrorBoundary", () => {
 
     expect(container.querySelector('[data-testid="ok"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Something went wrong");
+  });
+
+  it("hard-recovers MIME / stale-chunk errors instead of remounting", () => {
+    recoverStaleChunk.mockClear();
+    function ChunkBoom() {
+      throw new Error(
+        `'text/html' is not a valid JavaScript MIME type for module script 'https://anima-protocol.com/assets/EchoKeys-DsgAf3_0.js'.`,
+      );
+    }
+
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/profile">
+          <ChunkBoom />
+        </ErrorBoundary>,
+      );
+    });
+
+    expect(recoverStaleChunk).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("Something went wrong");
+  });
+
+  it("shows the recovery panel if a stale-chunk reload already ran this session", () => {
+    sessionStorage.setItem(STALE_CHUNK_RECOVERY_KEY, "1");
+    recoverStaleChunk.mockClear();
+    function ChunkBoom() {
+      throw new Error(
+        `'text/html' is not a valid JavaScript MIME type for module script 'https://anima-protocol.com/assets/EchoKeys-DsgAf3_0.js'.`,
+      );
+    }
+
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/profile">
+          <ChunkBoom />
+        </ErrorBoundary>,
+      );
+    });
+
+    expect(recoverStaleChunk).not.toHaveBeenCalled();
+    advancePastAutoHeal();
+    expect(container.textContent).toContain("Something went wrong");
   });
 
   it("reports uncaught runtime errors for diagnosis", () => {
