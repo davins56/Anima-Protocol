@@ -95,12 +95,15 @@ down the Worker (the whole site). Ordered runbook:
 3. Then deploy.
 
 Today `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `DATABASE_URL`,
-`OPENROUTER_API_KEY`, `ANIMA_LOCAL_LLM_BASE_URL`,
-`ANIMA_LOCAL_LLM_API_KEY`, and `ANIMA_LOCAL_LLM_BACKEND` are declared in
-`wrangler.jsonc`. **Create those LLM `secret_name`s in the store before
-merging this binding list** or `wrangler deploy` fails and takes the
-site down. Dashboard-only secrets are still dropped on the next git
-deploy unless they are declared.
+`OPENROUTER_API_KEY`, `ANIMA_LOCAL_LLM_BASE_URL`, and
+`ANIMA_LOCAL_LLM_API_KEY` are declared in `wrangler.jsonc`
+`secrets_store_secrets`. `ANIMA_LOCAL_LLM_BACKEND` is a committed `vars`
+value (`ollama`) — do not bind the same name in Secrets Store or
+`wrangler deploy` fails with "Bindings must have unique names".
+**Create the LLM `secret_name`s in the store before merging this
+binding list** or `wrangler deploy` fails and takes the site down.
+Dashboard-only secrets are still dropped on the next git deploy unless
+they are declared.
 
 Chat is fail-closed (`ANIMA_LLM_PROVIDER=custom`). Missing local URL
 does **not** fall through to OpenRouter. `OPENROUTER_API_KEY` may stay
@@ -110,7 +113,7 @@ bound for image / leftover paths.
 |------|--------|--------|
 | `ANIMA_RUNTIME` | `wrangler.jsonc` `vars` (already committed) | `worker` (never invent localhost) |
 | `ANIMA_LLM_PROVIDER` | `wrangler.jsonc` `vars` (already committed) | `custom` (local-only chat) |
-| `ANIMA_LOCAL_LLM_BACKEND` | `vars` + Secrets Store binding | `ollama` |
+| `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` only (not Secrets Store) | `ollama` |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` (already committed) | `anima-chat` |
 | `ANIMA_OPENROUTER_FREE` | `wrangler.jsonc` `vars` (already committed) | unused for chat; leftover |
 | `MINIMAX_API_KEY` | Classic Worker secret (`wrangler secret put MINIMAX_API_KEY` / dashboard). **Not** Secrets Store — a missing store entry fails deploy | unused for chat |

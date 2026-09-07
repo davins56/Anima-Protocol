@@ -104,7 +104,6 @@ describe("Cloudflare wrangler config", () => {
       "OPENROUTER_API_KEY",
       "ANIMA_LOCAL_LLM_BASE_URL",
       "ANIMA_LOCAL_LLM_API_KEY",
-      "ANIMA_LOCAL_LLM_BACKEND",
     ];
     expect(bindings.map((row) => row.binding).sort()).toEqual(
       [...declaredNames].sort(),
@@ -120,7 +119,7 @@ describe("Cloudflare wrangler config", () => {
     const bound = new Set(bindings.map((row) => row.binding));
     expect(bound.has("ANIMA_LOCAL_LLM_BASE_URL")).toBe(true);
     expect(bound.has("ANIMA_LOCAL_LLM_API_KEY")).toBe(true);
-    expect(bound.has("ANIMA_LOCAL_LLM_BACKEND")).toBe(true);
+    expect(bound.has("ANIMA_LOCAL_LLM_BACKEND")).toBe(false);
     expect(bound.has("MINIMAX_API_KEY")).toBe(false);
     expect(bound.has("ANIMA_MINIMAX_API_KEY")).toBe(false);
     expect(bound.has("OPENROUTER_API_KEY")).toBe(true);
@@ -134,11 +133,23 @@ describe("Cloudflare wrangler config", () => {
     expect(source).toMatch(/ORDERED RUNBOOK/);
     expect(source).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/);
     expect(source).toMatch(/ANIMA_LOCAL_LLM_API_KEY/);
-    expect(source).toMatch(/ANIMA_LOCAL_LLM_BACKEND/);
+    expect(source).toMatch(/ANIMA_LOCAL_LLM_BACKEND stays in vars only/);
     expect(source).toMatch(/OPENROUTER_API_KEY/);
     expect(source).toMatch(/MINIMAX_API_KEY stays a classic Worker secret/);
     expect(source).toMatch(/"ANIMA_LLM_PROVIDER": "custom"/);
     expect(source).not.toMatch(/"ANIMA_LLM_PROVIDER": "minimax"/);
+  });
+
+  it("does not reuse a vars name as a Secrets Store binding", () => {
+    const vars = (config.vars ?? {}) as Record<string, unknown>;
+    const bindings = (config.secrets_store_secrets ?? []) as Array<
+      Record<string, unknown>
+    >;
+    const varNames = new Set(Object.keys(vars));
+    const collisions = bindings
+      .map((row) => String(row.binding ?? ""))
+      .filter((name) => name && varNames.has(name));
+    expect(collisions).toEqual([]);
   });
 
   it("does not embed secrets in the committed Worker config", () => {
