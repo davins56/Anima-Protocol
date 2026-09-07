@@ -16,6 +16,7 @@ import {
   retrieveRelevantMemories,
   type CompanionMemoryRecord,
   type MemoryFact,
+  type MemoryType,
   type ScoredMemory,
 } from "@workspace/llm";
 import { createHash } from "node:crypto";
@@ -239,7 +240,7 @@ export async function searchMemoriesSemantically(opts: {
       local.push({
         text: hit.text,
         score: hit.score,
-        memoryType: hit.category || "factual",
+        memoryType: (hit.category || "factual") as MemoryType,
         characterId: hit.characterId || characterId || "",
       });
     }
