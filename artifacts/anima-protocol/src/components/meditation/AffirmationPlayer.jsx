@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
-import { Play, Pause, SkipForward, SkipBack, Volume2 } from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { speakNaturally } from "@/lib/naturalSpeech";
 
 const CATEGORY_COLORS = {
   abundance: "#FBBF24",
@@ -21,29 +21,24 @@ export default function AffirmationPlayer({ affirmations, anima }) {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [intervalSecs, setIntervalSecs] = useState(8);
   const timerRef = useRef(null);
-  const synthRef = useRef(window.speechSynthesis);
+  const speechRef = useRef(null);
 
   const current = affirmations[currentIdx];
   const color = current ? (CATEGORY_COLORS[current.category] || "#A78BFA") : "#A78BFA";
 
   const speakCurrent = useCallback((text) => {
     if (!text) return;
-    synthRef.current?.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.85;
-    utterance.pitch = 1.05;
-    utterance.volume = 0.9;
-    // Try to pick a pleasant voice
-    const voices = synthRef.current?.getVoices() || [];
-    const preferred = voices.find(v => v.name.includes("Samantha") || v.name.includes("Karen") || v.name.includes("Moira") || v.lang === "en-US");
-    if (preferred) utterance.voice = preferred;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    synthRef.current?.speak(utterance);
-  }, []);
+    speechRef.current?.cancel();
+    speechRef.current = speakNaturally(text, {
+      companion: anima,
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+    });
+  }, [anima]);
 
   const stopSpeaking = () => {
-    synthRef.current?.cancel();
+    speechRef.current?.cancel();
+    speechRef.current = null;
     setIsSpeaking(false);
   };
 
@@ -91,7 +86,7 @@ export default function AffirmationPlayer({ affirmations, anima }) {
   }, [isPlaying, autoAdvance, intervalSecs, affirmations.length, speakCurrent]);
 
   useEffect(() => {
-    return () => { synthRef.current?.cancel(); clearInterval(timerRef.current); };
+    return () => { speechRef.current?.cancel(); clearInterval(timerRef.current); };
   }, []);
 
   if (!current) {
@@ -159,11 +154,17 @@ export default function AffirmationPlayer({ affirmations, anima }) {
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-6">
-        <button onClick={prev} className="p-2 transition-all hover:opacity-70" style={{ color: `${color}60` }}>
+        <button
+          onClick={prev}
+          aria-label="Previous affirmation"
+          className="p-2 transition-all hover:opacity-70"
+          style={{ color: `${color}60` }}
+        >
           <SkipBack className="w-5 h-5" />
         </button>
         <button
           onClick={togglePlay}
+          aria-label={isPlaying ? "Pause affirmations" : "Play affirmations"}
           className="w-14 h-14 rounded-full border-2 flex items-center justify-center transition-all"
           style={{
             borderColor: color,
@@ -174,7 +175,12 @@ export default function AffirmationPlayer({ affirmations, anima }) {
         >
           {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
         </button>
-        <button onClick={next} className="p-2 transition-all hover:opacity-70" style={{ color: `${color}60` }}>
+        <button
+          onClick={next}
+          aria-label="Next affirmation"
+          className="p-2 transition-all hover:opacity-70"
+          style={{ color: `${color}60` }}
+        >
           <SkipForward className="w-5 h-5" />
         </button>
       </div>
