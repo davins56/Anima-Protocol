@@ -31,6 +31,9 @@ vi.mock("../src/lib/openaiClient", () => {
           process.env.OPEN_ROUTER_API_KEY?.trim(),
       ),
     hasMinimaxKey: () => false,
+    hasDeepshiKey: () => false,
+    getDeepshiClient: () => null,
+    DEEPSHI_DEFAULT_MODEL: "deepshi-3.0",
     getOpenRouterApiKey: () =>
       process.env.OPENROUTER_API_KEY?.trim() ||
       process.env.ANIMA_OPENROUTER_API_KEY?.trim() ||

@@ -14,6 +14,7 @@ describe("llmProviderLabel", () => {
     expect(llmProviderShortLabel("anima")).toBe("Anima");
     expect(llmProviderShortLabel("local")).toBe("Anima");
     expect(llmProviderShortLabel("minimax")).toBe("MiniMax");
+    expect(llmProviderShortLabel("deepshi")).toBe("Deepshi");
     expect(llmProviderShortLabel("openrouter")).toBe("Venice");
     expect(llmProviderShortLabel("kimi")).toBeNull();
     expect(llmProviderShortLabel(null)).toBeNull();
@@ -32,6 +33,7 @@ describe("llmProviderLabel", () => {
   it("lists self-hosted Anima, MiniMax, and OpenRouter Venice backends", () => {
     expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
       "minimax",
+      "deepshi",
       "local",
       "openrouter",
     ]);
