@@ -328,6 +328,7 @@ import {
   OPENROUTER_ZDR_PRIVACY_HINT,
   shouldTryNextOpenRouterFreeModel,
   preferCustomLlmOnly,
+  preferMinimaxOnly,
   probeLlmProviders,
   remapGenericProviderError,
   resetOpenRouterCreditFallbackForTests,
@@ -822,6 +823,29 @@ describe("getProviderChain", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
     expect(getProviderChain()).toEqual(["local"]);
     expect(allowOpenRouterFallback()).toBe(false);
+  });
+
+  it("includes local first when usable and ANIMA_LLM_PROVIDER is unset (Worker default)", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.MINIMAX_API_KEY;
+    delete process.env.ANIMA_MINIMAX_API_KEY;
+    expect(preferMinimaxOnly()).toBe(false);
+    expect(getProviderChain()).toEqual(["local"]);
+  });
+
+  it("skips a usable local host when ANIMA_LLM_PROVIDER=minimax and MiniMax key is absent", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_LLM_PROVIDER = "minimax";
+    delete process.env.MINIMAX_API_KEY;
+    delete process.env.ANIMA_MINIMAX_API_KEY;
+    expect(preferMinimaxOnly()).toBe(true);
+    expect(getProviderChain()).toEqual(["openrouter"]);
   });
 
   it("adds OpenRouter after local only when ANIMA_OPENROUTER_FALLBACK=true", () => {
