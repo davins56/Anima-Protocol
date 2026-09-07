@@ -164,7 +164,7 @@ export default function AffirmationPlayer({ affirmations, anima }) {
         </button>
         <button
           onClick={togglePlay}
-          aria-label={isPlaying ? "Pause affirmations" : "Play affirmations"}
+          aria-label={isPlaying ? "Pause spoken line" : "Play spoken line"}
           className="w-14 h-14 rounded-full border-2 flex items-center justify-center transition-all"
           style={{
             borderColor: color,

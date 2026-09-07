@@ -31,7 +31,7 @@ describe("AffirmationPlayer voice", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Play affirmations/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Play spoken line/i }));
 
     expect(speakNaturally).toHaveBeenCalledWith(
       "I am grounded, centered, and at peace.",
