@@ -45,42 +45,36 @@
     // navigator.userAgent === "Cloudflare-Workers").
     "ANIMA_RUNTIME": "worker",
     // Safe defaults for the self-hosted Anima LLM. Do NOT put
-    // ANIMA_LOCAL_LLM_BASE_URL in vars — a committed URL would put `local`
-    // in the provider chain before Fly is live and skip OpenRouter.
-    // Bind the public URL as a Secrets Store secret (same store as Clerk).
+    // ANIMA_LOCAL_LLM_BASE_URL in vars — bind the public HTTPS …/v1 URL
+    // as a Secrets Store secret (same store as Clerk). Chat is fail-closed
+    // to that host; MiniMax / OpenRouter keys cannot take over chat.
+    "ANIMA_LLM_PROVIDER": "custom",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
-    // Skip Venice (402s on $0 OpenRouter accounts). Chat uses
-    // minimax/minimax-m2.7:free, then m3 / Gemma 4 on provider 400/429/5xx.
+    // Unused for chat (fail-closed). Harmless leftover for image / other
+    // paths that still read OpenRouter. Optional follow-up: drop this var.
     "ANIMA_OPENROUTER_FREE": "true"
-    // Do not set ANIMA_LLM_PROVIDER=minimax here. preferMinimaxOnly() skips
-    // `local` even when ANIMA_LOCAL_LLM_BASE_URL is bound, and a missing
-    // MiniMax key then falls through to OpenRouter-only.
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
   // file is the source of truth. Keep CLERK_* + DATABASE_URL +
-  // OPENROUTER_API_KEY (those store entries already exist or are created
-  // in the same deploy window).
+  // OPENROUTER_API_KEY (image / leftover paths; unused for chat).
   //
-  // Ordered follow-up for remaining LLM secrets (do not skip a step):
-  // 1. Create the secret_name in store a31e40473ef34db896b5bc1e6c1c4b86.
-  // 2. Add the matching { binding, store_id, secret_name } object below
-  //    in the SAME commit.
-  // 3. Then deploy.
-  // Adding a binding for a secret_name that does not exist yet makes
-  // `wrangler deploy` fail and blocks the Worker (the whole site).
-  // Fly names to add later, after the public HTTPS host is live:
-  //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
-  //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
-  // OPENROUTER_API_KEY is bound below (used when the local URL is unset).
+  // ORDERED RUNBOOK — do this BEFORE merging or deploying this file:
+  // 1. In Secrets Store a31e40473ef34db896b5bc1e6c1c4b86 create these
+  //    secret_name entries if they do not already exist (values only in
+  //    the dashboard — never commit them):
+  //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
+  //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
+  //      ANIMA_LOCAL_LLM_BACKEND  = ollama
+  // 2. The { binding, store_id, secret_name } objects below must match
+  //    those names exactly.
+  // 3. Then deploy. A binding for a missing secret_name fails
+  //    `wrangler deploy` and takes the Worker (the whole site) down.
   // MINIMAX_API_KEY stays a classic Worker secret (`wrangler secret put
-  // MINIMAX_API_KEY` or dashboard Settings → Variables and Secrets). That
-  // binding already works in production (`minimax.configured: true`). Do not
-  // add it to secrets_store_secrets until secret_name MINIMAX_API_KEY exists
-  // in store a31e40473ef34db896b5bc1e6c1c4b86 — a missing store entry fails
-  // wrangler deploy and blocks the Worker.
-  // See deploy/ollama-fly/README.md.
+  // MINIMAX_API_KEY`). Do not add it to secrets_store_secrets until that
+  // secret_name exists in the store.
+  // See deploy/ollama-fly/README.md and docs/upgrade-audit.md.
   "secrets_store_secrets": [
     {
       "binding": "CLERK_SECRET_KEY",
@@ -101,6 +95,21 @@
       "binding": "OPENROUTER_API_KEY",
       "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
       "secret_name": "OPENROUTER_API_KEY"
+    },
+    {
+      "binding": "ANIMA_LOCAL_LLM_BASE_URL",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "ANIMA_LOCAL_LLM_BASE_URL"
+    },
+    {
+      "binding": "ANIMA_LOCAL_LLM_API_KEY",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
+    },
+    {
+      "binding": "ANIMA_LOCAL_LLM_BACKEND",
+      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
+      "secret_name": "ANIMA_LOCAL_LLM_BACKEND"
     }
   ],
   // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against

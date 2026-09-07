@@ -122,15 +122,12 @@ describe("llmEnsemble", () => {
   });
 
   it("lists available minds for ensemble", () => {
-    expect(getEnsembleMinds("standard")).toEqual(["local", "openrouter"]);
+    expect(getEnsembleMinds("standard")).toEqual(["local"]);
     expect(isEnsembleMode()).toBe(true);
   });
 
-  it("gathers parallel drafts and synthesizes a combined reply", async () => {
-    createMock
-      .mockResolvedValueOnce(fakeCompletion("Local draft about longing."))
-      .mockResolvedValueOnce(fakeCompletion("OpenRouter draft with warmth."))
-      .mockResolvedValueOnce(fakeCompletion("Combined in-character reply."));
+  it("uses the local mind without synthesizing a cloud draft", async () => {
+    createMock.mockResolvedValueOnce(fakeCompletion("Local draft about longing."));
 
     const progress: string[] = [];
     const result = await createEnsembleChatReply({
@@ -144,49 +141,32 @@ describe("llmEnsemble", () => {
       onProgress: (e) => progress.push(e.phase),
     });
 
-    expect(result.combined).toBe(true);
+    expect(result.combined).toBe(false);
     expect(result.brand).toBe("anima");
-    expect(result.content).toBe("Combined in-character reply.");
-    expect(result.minds.sort()).toEqual(["local", "openrouter"].sort());
-    expect(result.drafts).toHaveLength(2);
-    expect(progress).toContain("gathering");
-    expect(progress).toContain("combining");
-    expect(progress).toContain("streaming");
-  });
-
-  it("uses a single successful mind without synthesis", async () => {
-    process.env.ANIMA_DISABLE_OPENAI = "true";
-    createMock.mockResolvedValueOnce(fakeCompletion("Only OpenRouter answered."));
-
-    const result = await createEnsembleChatReply({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 800,
-      messages: [{ role: "user", content: "hi" }],
-    });
-
-    expect(result.combined).toBe(false);
-    expect(result.provider).toBe("openrouter");
-    expect(result.content).toBe("Only OpenRouter answered.");
-    expect(result.minds).toEqual(["openrouter"]);
+    expect(result.provider).toBe("local");
+    expect(result.content).toBe("Local draft about longing.");
+    expect(result.minds).toEqual(["local"]);
+    expect(result.drafts).toHaveLength(1);
     expect(createMock).toHaveBeenCalledTimes(1);
+    expect(progress).toContain("gathering");
   });
 
-  it("still returns a draft when some minds fail", async () => {
-    createMock
-      .mockRejectedValueOnce({ status: 429, message: "local quota" })
-      .mockResolvedValueOnce(fakeCompletion("OpenRouter survived."));
+  it("does not add OpenRouter as an ensemble mind", async () => {
+    process.env.ANIMA_DISABLE_OPENAI = "true";
+    expect(getEnsembleMinds("standard")).toEqual([]);
+  });
 
-    const result = await createEnsembleChatReply({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 800,
-      messages: [{ role: "user", content: "hello" }],
-    });
+  it("returns no draft when the only local mind fails", async () => {
+    createMock.mockRejectedValueOnce({ status: 429, message: "local quota" });
 
-    expect(result.combined).toBe(false);
-    expect(result.provider).toBe("openrouter");
-    expect(result.content).toBe("OpenRouter survived.");
+    await expect(
+      createEnsembleChatReply({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 800,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow();
   });
 
   it("chunks combined text for streaming", async () => {

@@ -94,16 +94,17 @@ describe("Cloudflare wrangler config", () => {
       Record<string, unknown>
     >;
     expect(Array.isArray(bindings)).toBe(true);
-    // These four exist in store a31e40473ef34db896b5bc1e6c1c4b86 today
-    // (OpenRouter is created in the same deploy window as this binding).
-    // Fly LLM names must NOT be bound until the operator creates those
-    // store entries (Fly URL / PROXY_AUTH_TOKEN). A binding for a missing
-    // secret_name fails wrangler deploy and takes down the site.
+    // Clerk/DB/OpenRouter already exist. Local LLM names must exist in
+    // store a31e40473ef34db896b5bc1e6c1c4b86 BEFORE this binding list
+    // is deployed — a missing secret_name fails wrangler deploy.
     const declaredNames = [
       "CLERK_SECRET_KEY",
       "CLERK_PUBLISHABLE_KEY",
       "DATABASE_URL",
       "OPENROUTER_API_KEY",
+      "ANIMA_LOCAL_LLM_BASE_URL",
+      "ANIMA_LOCAL_LLM_API_KEY",
+      "ANIMA_LOCAL_LLM_BACKEND",
     ];
     expect(bindings.map((row) => row.binding).sort()).toEqual(
       [...declaredNames].sort(),
@@ -117,8 +118,9 @@ describe("Cloudflare wrangler config", () => {
       });
     }
     const bound = new Set(bindings.map((row) => row.binding));
-    expect(bound.has("ANIMA_LOCAL_LLM_BASE_URL")).toBe(false);
-    expect(bound.has("ANIMA_LOCAL_LLM_API_KEY")).toBe(false);
+    expect(bound.has("ANIMA_LOCAL_LLM_BASE_URL")).toBe(true);
+    expect(bound.has("ANIMA_LOCAL_LLM_API_KEY")).toBe(true);
+    expect(bound.has("ANIMA_LOCAL_LLM_BACKEND")).toBe(true);
     expect(bound.has("MINIMAX_API_KEY")).toBe(false);
     expect(bound.has("ANIMA_MINIMAX_API_KEY")).toBe(false);
     expect(bound.has("OPENROUTER_API_KEY")).toBe(true);
@@ -127,15 +129,16 @@ describe("Cloudflare wrangler config", () => {
       "utf8",
     );
     expect(source).toMatch(
-      /Adding a binding for a secret_name that does not exist yet/,
+      /A binding for a missing secret_name fails/,
     );
-    expect(source).toMatch(/Create the secret_name in store/);
+    expect(source).toMatch(/ORDERED RUNBOOK/);
     expect(source).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/);
     expect(source).toMatch(/ANIMA_LOCAL_LLM_API_KEY/);
+    expect(source).toMatch(/ANIMA_LOCAL_LLM_BACKEND/);
     expect(source).toMatch(/OPENROUTER_API_KEY/);
     expect(source).toMatch(/MINIMAX_API_KEY stays a classic Worker secret/);
+    expect(source).toMatch(/"ANIMA_LLM_PROVIDER": "custom"/);
     expect(source).not.toMatch(/"ANIMA_LLM_PROVIDER": "minimax"/);
-    expect(source).toMatch(/Do not set ANIMA_LLM_PROVIDER=minimax/);
   });
 
   it("does not embed secrets in the committed Worker config", () => {
@@ -144,17 +147,17 @@ describe("Cloudflare wrangler config", () => {
     expect(vars.ANIMA_RUNTIME).toBe("worker");
     expect(vars.ANIMA_LOCAL_LLM_BACKEND).toBe("ollama");
     expect(vars.ANIMA_OLLAMA_MODEL_STANDARD).toBe("anima-chat");
+    expect(vars.ANIMA_LLM_PROVIDER).toBe("custom");
     expect(vars.ANIMA_OPENROUTER_FREE).toBe("true");
-    expect(vars).not.toHaveProperty("ANIMA_LLM_PROVIDER");
-    // Public Fly URL stays out of committed vars so a missing Fly host
-    // cannot put `local` in the provider chain. Bind it only after the
-    // Secrets Store entry exists (see wrangler.jsonc runbook).
+    // Public tunnel URL stays out of committed vars. Bind it only via
+    // Secrets Store (see wrangler.jsonc runbook).
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_BASE_URL");
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_API_KEY");
     expect(vars).not.toHaveProperty("OPENROUTER_API_KEY");
     expect(vars).not.toHaveProperty("MINIMAX_API_KEY");
     expect(Object.keys(vars).sort()).toEqual(
       [
+        "ANIMA_LLM_PROVIDER",
         "ANIMA_LOCAL_LLM_BACKEND",
         "ANIMA_OLLAMA_MODEL_STANDARD",
         "ANIMA_OPENROUTER_FREE",
