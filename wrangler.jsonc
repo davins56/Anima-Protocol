@@ -48,6 +48,9 @@
     // ANIMA_LOCAL_LLM_BASE_URL in vars — bind the public HTTPS …/v1 URL
     // as a Secrets Store secret (same store as Clerk). Chat is fail-closed
     // to that host; MiniMax / OpenRouter keys cannot take over chat.
+    // ANIMA_LOCAL_LLM_BACKEND stays in vars only (`ollama` is not secret).
+    // Binding the same name in secrets_store_secrets fails wrangler deploy:
+    // "Bindings must have unique names".
     "ANIMA_LLM_PROVIDER": "custom",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
@@ -66,7 +69,7 @@
   //    the dashboard — never commit them):
   //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
   //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
-  //      ANIMA_LOCAL_LLM_BACKEND  = ollama
+  //    Do NOT bind ANIMA_LOCAL_LLM_BACKEND here — it is a committed var.
   // 2. The { binding, store_id, secret_name } objects below must match
   //    those names exactly.
   // 3. Then deploy. A binding for a missing secret_name fails
@@ -105,11 +108,6 @@
       "binding": "ANIMA_LOCAL_LLM_API_KEY",
       "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
       "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
-    },
-    {
-      "binding": "ANIMA_LOCAL_LLM_BACKEND",
-      "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
-      "secret_name": "ANIMA_LOCAL_LLM_BACKEND"
     }
   ],
   // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against
