@@ -11,10 +11,16 @@ import SacredSpaceSession from "@/components/meditation/SacredSpaceSession";
 import {
   AFFIRMATION_ADD_FAILED,
   AFFIRMATION_LOAD_FAILED,
+  AFFIRMATION_LOAD_TIMEOUT,
+  AFFIRMATION_SEED_FAILED,
   affirmationErrorMessage,
+  asLocalAffirmations,
   createUserAffirmation,
-  loadAndSeedAffirmations,
+  isLocalAffirmationId,
+  loadAffirmations,
+  seedDefaultAffirmations,
 } from "@/lib/affirmationStore";
+import { BOOTSTRAP_UI_TIMEOUT_MS, withStoreTimeout } from "@/lib/storeTimeouts";
 
 const CATEGORY_CONFIG = {
   abundance: { label: "Abundance", glyph: "✦", color: "#FBBF24", gradient: "from-yellow-500/20 to-amber-500/10" },
@@ -69,30 +75,74 @@ export default function Meditation() {
     init();
   }, []);
 
+  const applyLocalDefaults = () => {
+    setAffirmations((prev) =>
+      prev.length > 0 ? prev : asLocalAffirmations(DEFAULT_AFFIRMATIONS),
+    );
+  };
+
+  const startBackgroundSeed = (me) => {
+    if (!me?.email) return;
+    void seedDefaultAffirmations({
+      user: me,
+      create: (row) => base44.entities.Affirmation.create(row),
+      defaults: DEFAULT_AFFIRMATIONS,
+    })
+      .then((rows) => {
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        setAffirmations((prev) => {
+          const extras = prev.filter((row) => !row.is_local);
+          return extras.length ? [...rows, ...extras] : rows;
+        });
+      })
+      .catch((err) => {
+        setStoreError(affirmationErrorMessage(err, AFFIRMATION_SEED_FAILED));
+      });
+  };
+
   const init = async () => {
     setLoading(true);
     setStoreError("");
     try {
-      const me = await base44.auth.me();
-      setUser(me);
+      const snapshot = await withStoreTimeout(
+        (async () => {
+          const me = await base44.auth.me();
+          setUser(me);
 
-      const [allAffirms, animas, chars] = await Promise.all([
-        loadAndSeedAffirmations({
-          user: me,
-          filter: (query) => base44.entities.Affirmation.filter(query),
-          create: (row) => base44.entities.Affirmation.create(row),
-          defaults: DEFAULT_AFFIRMATIONS,
-        }),
-        base44.entities.Anima.list("-created_date", 10).catch(() => []),
-        base44.entities.Character.list("-created_date", 100).catch(() => []),
-      ]);
+          const [existing, animas, chars] = await Promise.all([
+            loadAffirmations({
+              user: me,
+              filter: (query) => base44.entities.Affirmation.filter(query),
+            }),
+            base44.entities.Anima.list("-created_date", 10).catch(() => []),
+            base44.entities.Character.list("-created_date", 100).catch(() => []),
+          ]);
+
+          return { me, existing, animas, chars };
+        })(),
+        BOOTSTRAP_UI_TIMEOUT_MS,
+        () => {
+          const err = new Error(AFFIRMATION_LOAD_TIMEOUT);
+          err.code = "timeout";
+          return err;
+        },
+      );
+
+      const { me, existing, animas, chars } = snapshot;
       setCharacters(chars || []);
-      setAffirmations(allAffirms || []);
-
-      const userAnima = animas?.find(a => a.assigned_user === me.email) || animas?.[0] || null;
+      const userAnima =
+        animas?.find((a) => a.assigned_user === me.email) || animas?.[0] || null;
       setAnima(userAnima);
+
+      if (existing.length > 0) {
+        setAffirmations(existing);
+      } else {
+        setAffirmations(asLocalAffirmations(DEFAULT_AFFIRMATIONS));
+        startBackgroundSeed(me);
+      }
     } catch (err) {
       setStoreError(affirmationErrorMessage(err, AFFIRMATION_LOAD_FAILED));
+      applyLocalDefaults();
     } finally {
       setLoading(false);
     }
@@ -119,8 +169,13 @@ export default function Meditation() {
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.Affirmation.update(id, { is_active: false });
-    setAffirmations(prev => prev.filter(a => a.id !== id));
+    setAffirmations((prev) => prev.filter((a) => a.id !== id));
+    if (isLocalAffirmationId(id)) return;
+    try {
+      await base44.entities.Affirmation.update(id, { is_active: false });
+    } catch {
+      // Local list already updated — store may be offline.
+    }
   };
 
   const filtered = filterCategory === "all"
