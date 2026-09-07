@@ -15,6 +15,9 @@ let openRouterClientKey: string | null = null;
 let minimaxClient: OpenAI | null = null;
 let minimaxClientKey: string | null = null;
 
+let deepshiClient: OpenAI | null = null;
+let deepshiClientKey: string | null = null;
+
 /** OpenRouter OpenAI-compatible base (chat completions + models). */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -70,10 +73,22 @@ export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 /** Default MiniMax chat model. Override with ANIMA_MINIMAX_MODEL. */
 export const MINIMAX_DEFAULT_MODEL = "MiniMax-M2.7";
 
+/** Deepshi OpenAI-compatible gateway. @see https://docs.deepshi.ai */
+export const DEEPSHI_BASE_URL = "https://api.deepshi.ai/v1";
+
+/** Default Deepshi chat model. Override with ANIMA_DEEPSHI_MODEL. */
+export const DEEPSHI_DEFAULT_MODEL = "deepshi-3.0";
+
 /** Env names checked for a MiniMax key (first non-empty wins). */
 export const MINIMAX_KEY_ENV_NAMES = [
   "MINIMAX_API_KEY",
   "ANIMA_MINIMAX_API_KEY",
+] as const;
+
+/** Env names checked for a Deepshi key (first non-empty wins). */
+export const DEEPSHI_KEY_ENV_NAMES = [
+  "DEEPSHI_API_KEY",
+  "ANIMA_DEEPSHI_API_KEY",
 ] as const;
 
 /** Env names checked for an OpenRouter key (first non-empty wins). */
@@ -525,6 +540,44 @@ export function getMinimaxClient(): OpenAI | null {
   return minimaxClient;
 }
 
+/** Deepshi API key (sk-bf-…). */
+export function getDeepshiApiKey(): string | null {
+  for (const name of DEEPSHI_KEY_ENV_NAMES) {
+    const key = normalizeApiKey(process.env[name]);
+    if (key) return key;
+  }
+  return null;
+}
+
+export function hasDeepshiKey(): boolean {
+  return Boolean(getDeepshiApiKey());
+}
+
+export function getDeepshiApiKeySource(): string | null {
+  for (const name of DEEPSHI_KEY_ENV_NAMES) {
+    if (normalizeApiKey(process.env[name])) return name;
+  }
+  return null;
+}
+
+/** OpenAI-compatible Deepshi client for chat. */
+export function getDeepshiClient(): OpenAI | null {
+  const apiKey = getDeepshiApiKey();
+  if (!apiKey) return null;
+  const baseURL = (
+    process.env.ANIMA_DEEPSHI_BASE_URL?.trim() ||
+    process.env.DEEPSHI_BASE_URL?.trim() ||
+    DEEPSHI_BASE_URL
+  ).replace(/\/$/, "");
+  const cacheKey = `${baseURL}::${apiKey}`;
+  if (!deepshiClient || deepshiClientKey !== cacheKey) {
+    deepshiClient = new OpenAI({ apiKey, baseURL, maxRetries: 0 });
+    deepshiClientKey = cacheKey;
+    console.info(`[llm] deepshi client: base_url=${baseURL}`);
+  }
+  return deepshiClient;
+}
+
 /**
  * OpenAI-compatible OpenRouter client for free / uncensored open-weight chat.
  * Returns null when no OpenRouter key is configured.
@@ -569,5 +622,7 @@ export function resetLlmClientsForTests(): void {
   openRouterClientKey = null;
   minimaxClient = null;
   minimaxClientKey = null;
+  deepshiClient = null;
+  deepshiClientKey = null;
   resetLocalLlmInitLogForTests();
 }
