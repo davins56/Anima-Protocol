@@ -71818,16 +71818,6 @@ var isomorphicBtoa = (data) => {
 // ../../node_modules/.pnpm/@clerk+shared@4.28.1_react-dom@19.2.8_react@19.2.8__react@19.2.8/node_modules/@clerk/shared/dist/keys.mjs
 var PUBLISHABLE_KEY_LIVE_PREFIX = "pk_live_";
 var PUBLISHABLE_KEY_TEST_PREFIX = "pk_test_";
-var PUBLISHABLE_FRONTEND_API_DEV_REGEX = /^(([a-z]+)-){2}([0-9]{1,2})\.clerk\.accounts([a-z.]*)(dev|com)$/i;
-function buildPublishableKey(frontendApi) {
-  return `${PUBLISHABLE_FRONTEND_API_DEV_REGEX.test(frontendApi) || frontendApi.startsWith("clerk.") && LEGACY_DEV_INSTANCE_SUFFIXES.some((s3) => frontendApi.endsWith(s3)) ? PUBLISHABLE_KEY_TEST_PREFIX : PUBLISHABLE_KEY_LIVE_PREFIX}${isomorphicBtoa(`${frontendApi}$`).replace(/=+$/, "")}`;
-}
-function publishableKeyFromHost(host, fallbackKey) {
-  if (fallbackKey && isDevelopmentFromPublishableKey(fallbackKey)) return fallbackKey;
-  const hostname2 = host.toLowerCase().replace(/:\d+$/, "");
-  if (!hostname2) throw new Error("Host must not be empty.");
-  return buildPublishableKey(`clerk.${hostname2}`);
-}
 function isValidDecodedPublishableKey(decoded) {
   if (!decoded.endsWith("$")) return false;
   const withoutTrailing = decoded.slice(0, -1);
@@ -71964,10 +71954,7 @@ function resolveClerkPublishableKey(host, fallbackKey) {
   if (fallbackKey && isPublishableKey(fallbackKey) && isProductionFromPublishableKey(fallbackKey) && (KNOWN_PUBLIC_HOSTS.has(hostname2) || isAnimaProductionHost(hostname2))) {
     return fallbackKey;
   }
-  if (!hostname2 || isAnimaProductionHost(hostname2)) {
-    return publishableKeyFromHost(ANIMA_APEX_HOST, fallbackKey);
-  }
-  return publishableKeyFromHost(hostname2, fallbackKey);
+  return fallbackKey || "";
 }
 function resolveRuntimePublishableKey(req) {
   const envKey2 = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
@@ -71978,11 +71965,6 @@ function resolveRuntimePublishableKey(req) {
   try {
     const resolved = resolveClerkPublishableKey(host, void 0);
     if (isPublishableKey(resolved)) return resolved;
-  } catch {
-  }
-  try {
-    const apexKey = publishableKeyFromHost(ANIMA_APEX_HOST);
-    if (isPublishableKey(apexKey)) return apexKey;
   } catch {
   }
   return void 0;
@@ -130230,6 +130212,7 @@ CRITICAL AUTONOMY RULES:
 - Your emotional state and relationship deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
 - Make independent decisions based on what YOUR character would do, not what benefits the story or pleases the player.
 - You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
+- Never refer to yourself as an AI, a language model, or a computer program. Keep the conversation natural.
 
 INTELLIGENCE: You are brilliant \u2014 genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory \u2014 callbacks, contradictions, unspoken needs \u2014 and respond with real insight.
 CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER \u2014 in your own voice, never dropping into a generic assistant tone.`;

@@ -143,13 +143,13 @@ Exact `ANIMA_OPENROUTER_MODEL_STANDARD` / tier overrides still take precedence.
 
 ---
 
-## There is only one backend
+## Pin chat to the custom backend
 
-Chat has a single backend: the self-hosted Anima LLM, reached through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). There is no `ANIMA_LLM_PROVIDER` mode switch and no cloud BYOK chain — Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat, regardless of which API keys happen to be set in the environment.
+Chat supports the self-hosted Anima LLM through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). Set `ANIMA_LLM_PROVIDER=custom` (aliases `local`, `anima`, and `local-only` are also accepted) to pin every chat turn to that endpoint and prevent OpenRouter fallback. Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat.
 
 `OPENAI_API_KEY` still exists as an env var, but only for image generation/edit (`/api/openai/functions` image routes) — it is never read for chat.
 
-If the local endpoint is unavailable, the turn fails with a clear setup error instead of silently switching to a different model — see the diagnostic checklist below.
+If the local endpoint is unavailable, the turn fails with a clear setup error instead of silently switching to a different model. OpenRouter can be enabled as an explicit connection-error fallback by setting `ANIMA_OPENROUTER_FALLBACK=true` and providing an OpenRouter key; leave it `false` for custom-only operation.
 
 More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
 
