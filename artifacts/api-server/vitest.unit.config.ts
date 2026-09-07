@@ -18,6 +18,7 @@ export default defineConfig({
       "test/protocolUpgrade.test.ts",
       "test/repoCodespace.test.ts",
       "test/githubArchive.test.ts",
+      "test/supermemory.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
