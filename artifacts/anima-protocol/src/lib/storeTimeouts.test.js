@@ -9,10 +9,12 @@ import {
   STORE_LIST_RETRY_LIMIT,
   STORE_SESSION_CREATE_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
+  STORE_TOKEN_TIMEOUT_MS,
   STORE_TOPIC_CREATE_RETRY_LIMIT,
   STORE_TOPIC_CREATE_TIMEOUT_MS,
   STORE_COMPANION_CREATE_RETRY_LIMIT,
   STORE_COMPANION_CREATE_TIMEOUT_MS,
+  withStoreTimeout,
 } from "./storeTimeouts";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,6 +24,8 @@ describe("store fail-fast budget", () => {
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
     expect(STORE_AUTH_WAIT_MS).toBe(8000);
     expect(BOOTSTRAP_UI_TIMEOUT_MS).toBe(8000);
+    expect(STORE_TOKEN_TIMEOUT_MS).toBe(4000);
+    expect(STORE_TOKEN_TIMEOUT_MS).toBeLessThan(STORE_FETCH_TIMEOUT_MS);
   });
 
   it("wires the budget into the store client and bootstrap waits", () => {
@@ -52,8 +56,23 @@ describe("store fail-fast budget", () => {
     expect(therapyPage).toContain("createTherapyTopic(");
     expect(generator).toContain("createCompanionRecord(");
     expect(auth).toContain("STORE_AUTH_WAIT_MS");
+    expect(auth).toContain("STORE_TOKEN_TIMEOUT_MS");
+    expect(auth).toContain("withStoreTimeout");
     expect(bootstrap).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
     expect(state).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
+
+    const meditation = readFileSync(join(srcRoot, "pages/Meditation.jsx"), "utf8");
+    expect(meditation).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
+    expect(meditation).toContain("withStoreTimeout");
+    expect(meditation).toContain("loadAffirmations");
+    expect(meditation).toContain("seedDefaultAffirmations");
+    expect(meditation).not.toContain("loadAndSeedAffirmations");
+  });
+
+  it("rejects a hung promise at the wall-clock budget", async () => {
+    await expect(
+      withStoreTimeout(new Promise(() => {}), 20, "budget exceeded"),
+    ).rejects.toMatchObject({ message: "budget exceeded", code: "timeout" });
   });
 
   it("documents a longer targeted budget for Init, TherapyTopic, and companion create", () => {

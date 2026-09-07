@@ -12,6 +12,9 @@ export const AFFIRMATION_ADD_FAILED =
   "Could not add that affirmation. The store may be unavailable.";
 export const AFFIRMATION_SEED_FAILED =
   "Could not seed default affirmations. The store may be unavailable.";
+export const AFFIRMATION_LOAD_TIMEOUT =
+  "Sacred Space took too long to load. Showing default affirmations.";
+export const LOCAL_AFFIRMATION_ID_PREFIX = "local-affirmation-";
 
 /**
  * @param {unknown} err
@@ -82,19 +85,36 @@ export async function createUserAffirmation({
 }
 
 /**
+ * In-memory defaults so Sacred Space can render when the store is empty,
+ * slow, or unreachable. First paint must not wait on seed creates.
+ *
+ * @param {Array<{ text: string, category: string, id?: string }>} defaults
+ * @returns {Array<Record<string, unknown>>}
+ */
+export function asLocalAffirmations(defaults = []) {
+  return defaults.map((row, index) => ({
+    ...row,
+    id: row.id || `${LOCAL_AFFIRMATION_ID_PREFIX}${index}`,
+    is_default: true,
+    is_active: true,
+    is_local: true,
+  }));
+}
+
+export function isLocalAffirmationId(id) {
+  return String(id || "").startsWith(LOCAL_AFFIRMATION_ID_PREFIX);
+}
+
+/**
+ * Load persisted affirmations only — never creates seed rows.
+ *
  * @param {{
  *   user: { email?: string } | null,
  *   filter: (query: Record<string, unknown>) => Promise<unknown[]>,
- *   create: (row: Record<string, unknown>) => Promise<unknown>,
- *   defaults: Array<{ text: string, category: string }>,
  * }} input
+ * @returns {Promise<unknown[]>}
  */
-export async function loadAndSeedAffirmations({
-  user,
-  filter,
-  create,
-  defaults,
-}) {
+export async function loadAffirmations({ user, filter }) {
   if (!user?.email) {
     const err = new Error(AFFIRMATION_AUTH_REQUIRED);
     err.code = "auth";
@@ -111,12 +131,27 @@ export async function loadAndSeedAffirmations({
     wrapped.cause = err;
     throw wrapped;
   }
-  const rows = Array.isArray(existing) ? existing : [];
-  if (rows.length > 0) return rows;
+  return Array.isArray(existing) ? existing : [];
+}
 
+/**
+ * Persist default affirmations. Call after first paint — never block Attuning.
+ *
+ * @param {{
+ *   user: { email?: string } | null,
+ *   create: (row: Record<string, unknown>) => Promise<unknown>,
+ *   defaults: Array<{ text: string, category: string }>,
+ * }} input
+ */
+export async function seedDefaultAffirmations({ user, create, defaults }) {
+  if (!user?.email) {
+    const err = new Error(AFFIRMATION_AUTH_REQUIRED);
+    err.code = "auth";
+    throw err;
+  }
   try {
     return await Promise.all(
-      defaults.map((row) =>
+      (defaults || []).map((row) =>
         create({
           ...row,
           user_email: user.email,
@@ -133,4 +168,46 @@ export async function loadAndSeedAffirmations({
     wrapped.cause = err;
     throw wrapped;
   }
+}
+
+/**
+ * Load existing rows. When the store is empty, return in-memory defaults
+ * immediately and seed in the background unless `seedInBackground` is false.
+ *
+ * @param {{
+ *   user: { email?: string } | null,
+ *   filter: (query: Record<string, unknown>) => Promise<unknown[]>,
+ *   create: (row: Record<string, unknown>) => Promise<unknown>,
+ *   defaults: Array<{ text: string, category: string }>,
+ *   seedInBackground?: boolean,
+ *   onSeeded?: (rows: unknown[]) => void,
+ *   onSeedError?: (err: Error) => void,
+ * }} input
+ */
+export async function loadAndSeedAffirmations({
+  user,
+  filter,
+  create,
+  defaults,
+  seedInBackground = true,
+  onSeeded,
+  onSeedError,
+}) {
+  const rows = await loadAffirmations({ user, filter });
+  if (rows.length > 0) return rows;
+
+  if (!seedInBackground) {
+    return seedDefaultAffirmations({ user, create, defaults });
+  }
+
+  const local = asLocalAffirmations(defaults);
+  Promise.resolve()
+    .then(() => seedDefaultAffirmations({ user, create, defaults }))
+    .then((seeded) => {
+      onSeeded?.(seeded);
+    })
+    .catch((err) => {
+      onSeedError?.(err);
+    });
+  return local;
 }

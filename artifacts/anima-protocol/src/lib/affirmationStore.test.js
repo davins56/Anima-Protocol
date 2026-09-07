@@ -5,9 +5,13 @@ import {
   AFFIRMATION_EMPTY_TEXT,
   AFFIRMATION_LOAD_FAILED,
   AFFIRMATION_SEED_FAILED,
+  LOCAL_AFFIRMATION_ID_PREFIX,
   affirmationErrorMessage,
+  asLocalAffirmations,
   createUserAffirmation,
+  loadAffirmations,
   loadAndSeedAffirmations,
+  seedDefaultAffirmations,
   validateAddAffirmation,
 } from "./affirmationStore";
 
@@ -102,6 +106,44 @@ describe("createUserAffirmation", () => {
   });
 });
 
+describe("asLocalAffirmations", () => {
+  it("assigns local ids so first paint can render without the store", () => {
+    const rows = asLocalAffirmations([
+      { text: "I am here.", category: "healing" },
+    ]);
+    expect(rows).toEqual([
+      {
+        text: "I am here.",
+        category: "healing",
+        id: `${LOCAL_AFFIRMATION_ID_PREFIX}0`,
+        is_default: true,
+        is_active: true,
+        is_local: true,
+      },
+    ]);
+  });
+});
+
+describe("loadAffirmations", () => {
+  it("throws when auth is missing", async () => {
+    const filter = vi.fn();
+    await expect(loadAffirmations({ user: null, filter })).rejects.toThrow(
+      AFFIRMATION_AUTH_REQUIRED,
+    );
+    expect(filter).not.toHaveBeenCalled();
+  });
+
+  it("returns existing rows", async () => {
+    const existing = [{ id: "1", text: "Mine" }];
+    await expect(
+      loadAffirmations({
+        user: { email: "a@b.c" },
+        filter: vi.fn().mockResolvedValue(existing),
+      }),
+    ).resolves.toEqual(existing);
+  });
+});
+
 describe("loadAndSeedAffirmations", () => {
   const defaults = [{ text: "I am here.", category: "healing" }];
 
@@ -127,7 +169,27 @@ describe("loadAndSeedAffirmations", () => {
     ).rejects.toThrow("Database host unreachable");
   });
 
-  it("surfaces seed failures when the user has no rows", async () => {
+  it("returns in-memory defaults immediately and reports a background seed failure", async () => {
+    const filter = vi.fn().mockResolvedValue([]);
+    const create = vi.fn().mockRejectedValue(new Error("Database unavailable"));
+    const onSeedError = vi.fn();
+    await expect(
+      loadAndSeedAffirmations({
+        user: { email: "a@b.c" },
+        filter,
+        create,
+        defaults,
+        onSeedError,
+      }),
+    ).resolves.toEqual(asLocalAffirmations(defaults));
+    await vi.waitFor(() => {
+      expect(onSeedError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "Database unavailable" }),
+      );
+    });
+  });
+
+  it("surfaces blocking seed failures when seedInBackground is false", async () => {
     const filter = vi.fn().mockResolvedValue([]);
     const create = vi.fn().mockRejectedValue(new Error("Database unavailable"));
     await expect(
@@ -136,6 +198,7 @@ describe("loadAndSeedAffirmations", () => {
         filter,
         create,
         defaults,
+        seedInBackground: false,
       }),
     ).rejects.toMatchObject({ message: "Database unavailable" });
   });
@@ -167,12 +230,23 @@ describe("loadAndSeedAffirmations", () => {
 
   it("uses a seed fallback when create throws an empty error", async () => {
     await expect(
-      loadAndSeedAffirmations({
+      seedDefaultAffirmations({
         user: { email: "a@b.c" },
-        filter: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockRejectedValue(new Error("")),
         defaults,
       }),
     ).rejects.toThrow(AFFIRMATION_SEED_FAILED);
+  });
+
+  it("does not wait on a hung seed create when seeding in the background", async () => {
+    const filter = vi.fn().mockResolvedValue([]);
+    const create = vi.fn().mockReturnValue(new Promise(() => {}));
+    const result = await loadAndSeedAffirmations({
+      user: { email: "a@b.c" },
+      filter,
+      create,
+      defaults,
+    });
+    expect(result).toEqual(asLocalAffirmations(defaults));
   });
 });
