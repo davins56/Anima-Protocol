@@ -11,6 +11,7 @@ describe("app health checks", () => {
     delete process.env.OPENAI_API_KEY;
     process.env.CLERK_PUBLISHABLE_KEY = "not-a-valid-clerk-key";
     process.env.CLERK_SECRET_KEY = "not-a-valid-clerk-secret";
+    process.env.ADMIN_MIGRATION_SECRET = "test-schema-ops-secret";
 
     ({ default: app } = await import("../src/app"));
 
@@ -97,7 +98,7 @@ describe("app health checks", () => {
     }
   });
 
-  it("exposes a public schema probe that can self-heal via POST", async () => {
+  it("exposes a public GET schema inspect and requires an ops bearer for POST", async () => {
     const getRes = await fetch(`${baseUrl}/api/healthz/schema`);
     expect([200, 503]).toContain(getRes.status);
     const getBody = await getRes.json();
@@ -106,8 +107,24 @@ describe("app health checks", () => {
       target: expect.objectContaining({ configured: true }),
     });
 
+    const unauth = await fetch(`${baseUrl}/api/healthz/schema`, {
+      method: "POST",
+    });
+    expect(unauth.status).toBe(401);
+    await expect(unauth.json()).resolves.toMatchObject({
+      error: "Unauthorized",
+      code: "ops_unauthorized",
+    });
+
+    const wrong = await fetch(`${baseUrl}/api/healthz/schema`, {
+      method: "POST",
+      headers: { Authorization: "Bearer wrong-secret" },
+    });
+    expect(wrong.status).toBe(401);
+
     const postRes = await fetch(`${baseUrl}/api/healthz/schema`, {
       method: "POST",
+      headers: { Authorization: "Bearer test-schema-ops-secret" },
     });
     expect([200, 503]).toContain(postRes.status);
     const postBody = await postRes.json();

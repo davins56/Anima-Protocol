@@ -12,6 +12,7 @@ import {
   validateGithubArchiveRef,
 } from "../lib/githubArchive";
 import { describeCodespaceAgentCharacter } from "../lib/codespaceAgentPrompt";
+import { callerIsProtocolSteward } from "../lib/protocolUpgradeAuth";
 
 const router = Router();
 router.use(createRateLimit({ name: "repo-codespace", max: 100 }));
@@ -61,6 +62,26 @@ const FILESYSTEM_UNAVAILABLE = {
   code: "filesystem_unavailable" as const,
   error: "Repository filesystem is not available on this host.",
 };
+
+const TERMINAL_DISABLED = {
+  error: "Codespace terminal is disabled on this host.",
+  code: "terminal_disabled" as const,
+};
+
+const TERMINAL_FORBIDDEN = {
+  error: "Codespace terminal is restricted to Protocol stewards.",
+  code: "terminal_forbidden" as const,
+};
+
+export function isWorkerRuntime(): boolean {
+  return (process.env.ANIMA_RUNTIME || "").trim().toLowerCase() === "worker";
+}
+
+/** Explicit opt-in. Default is off so signed-in users cannot exec() the host. */
+export function isCodespaceTerminalOptedIn(): boolean {
+  const raw = (process.env.ANIMA_CODESPACE_TERMINAL || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
 
 const IGNORED_DIRS = new Set([
   ".git",
@@ -281,13 +302,39 @@ router.post("/delete-file", async (req: Request, res: Response) => {
 
 router.post("/terminal", async (req: Request, res: Response) => {
   try {
+    if (isWorkerRuntime()) {
+      res.status(503).json(FILESYSTEM_UNAVAILABLE);
+      return;
+    }
+
+    const fsStatus = await probeRepoRoot();
+    if (!fsStatus.available) {
+      res.status(503).json(FILESYSTEM_UNAVAILABLE);
+      return;
+    }
+
+    if (!isCodespaceTerminalOptedIn()) {
+      res.status(403).json(TERMINAL_DISABLED);
+      return;
+    }
+
+    const { userId, sessionClaims } = getAuth(req);
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const steward = await callerIsProtocolSteward({ userId, sessionClaims });
+    if (!steward.allowed) {
+      res.status(403).json(TERMINAL_FORBIDDEN);
+      return;
+    }
+
     const { command } = req.body as { command?: string };
     if (!command) {
       res.status(400).json({ error: "Command is required" });
       return;
     }
 
-    // Run commands relative to the detected repository workspace root
     exec(command, { cwd: getRepoRoot(), timeout: 20000 }, (error, stdout, stderr) => {
       res.json({
         stdout: stdout || "",
