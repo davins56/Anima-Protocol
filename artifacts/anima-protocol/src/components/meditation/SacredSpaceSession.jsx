@@ -37,7 +37,7 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
   } = useSacredSpaceVoice({ companion: character, enabledByDefault: true });
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollRef.current?.scrollIntoView?.({ behavior: "smooth" });
   }, [messages, loading]);
 
   useEffect(() => {

@@ -50,6 +50,7 @@ describe("SacredSpaceSession voice", () => {
     toggle.mockReset();
     invokeLLM.mockReset();
     invokeLLM.mockResolvedValue("Welcome. Breathe with me. This space is yours.");
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it("speaks companion lines through the natural voice path", async () => {
