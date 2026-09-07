@@ -83,6 +83,12 @@ For a real self-hosted deployment, see
 gets you the same `anima-chat` model behind an authenticated, always-on
 public URL, ready to plug into the Worker as `ANIMA_LOCAL_LLM_BASE_URL`.
 
+If Ollama is already running on a CPU host (no GPU / not Fly),
+[`public-v1/`](./public-v1/README.md) puts a bearer proxy and a **named**
+Cloudflare Tunnel in front of it (`https://llm.anima-protocol.com/v1`).
+That is still Ollama `anima-chat`, not vLLM. Do not commit `proxy-token` or
+`tunnel-token`.
+
 ## Lineup
 
 | Role | Model | Notes |
