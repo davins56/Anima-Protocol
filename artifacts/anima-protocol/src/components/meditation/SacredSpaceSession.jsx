@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
+import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Sparkles, X, Check } from "lucide-react";
+import { Send, Sparkles, X, Check, Volume2, VolumeX } from "lucide-react";
 
 const RITUAL_FOCUSES = [
   { id: "healing", label: "Healing", glyph: "◉", color: "#34D399" },
@@ -25,10 +26,29 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
   const [impactSaved, setImpactSaved] = useState(false);
   const [impactResult, setImpactResult] = useState(null);
   const scrollRef = useRef(null);
+  const lastSpokenRef = useRef("");
+  const {
+    isEnabled: voiceEnabled,
+    isSpeaking,
+    isSupported: voiceSupported,
+    speak,
+    stop: stopVoice,
+    toggle: toggleVoice,
+  } = useSacredSpaceVoice({ companion: character, enabledByDefault: true });
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollRef.current?.scrollIntoView?.({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (last?.role !== "assistant" || !last.content) return;
+    if (last.content === lastSpokenRef.current) return;
+    lastSpokenRef.current = last.content;
+    speak(last.content);
+  }, [messages, speak]);
+
+  useEffect(() => () => stopVoice(), [stopVoice]);
 
   const focusConfig = RITUAL_FOCUSES.find(f => f.id === ritualFocus) || RITUAL_FOCUSES[4];
 
@@ -92,6 +112,7 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
   };
 
   const handleClose = () => {
+    stopVoice();
     if (messages.length >= 4 && !impactSaved) {
       setShowReflection(true);
     } else {
@@ -186,10 +207,24 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
             )}
           </div>
         </div>
-        <button onClick={handleClose} className="p-1 transition-colors"
-          style={{ color: "rgba(255,255,255,0.3)" }}>
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {voiceSupported && (
+            <button
+              type="button"
+              onClick={toggleVoice}
+              aria-label={voiceEnabled ? "Mute Sacred Space voice" : "Unmute Sacred Space voice"}
+              title={voiceEnabled ? "Mute voice" : "Speak companion lines"}
+              className="p-1 transition-colors"
+              style={{ color: isSpeaking ? accentColor : "rgba(255,255,255,0.35)" }}
+            >
+              {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+          )}
+          <button onClick={handleClose} className="p-1 transition-colors"
+            style={{ color: "rgba(255,255,255,0.3)" }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Pre-session: choose ritual focus */}
@@ -389,6 +424,7 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
             <button
               onClick={sendMessage}
               disabled={!input.trim() || loading}
+              aria-label="Send"
               className="px-3 py-2 border transition-all disabled:opacity-30"
               style={{ borderColor: `${accentColor}40`, color: accentColor, background: `${accentColor}10` }}
             >
