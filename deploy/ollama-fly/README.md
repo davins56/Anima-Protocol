@@ -106,7 +106,7 @@ exists, and why it must come after step 1.
 | `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` (already committed) | `ollama` |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` (already committed) | `anima-chat` |
 | `ANIMA_OPENROUTER_FREE` | `wrangler.jsonc` `vars` (already committed) | `true` (skip Venice; use `minimax/minimax-m2.7:free`) |
-| `ANIMA_LLM_PROVIDER` | `wrangler.jsonc` `vars` (already committed) | `minimax` (force MiniMax Global). Remove or set empty later to restore OpenRouter-first free chain + MiniMax fallback |
+| `ANIMA_LLM_PROVIDER` | **Not** set in `wrangler.jsonc` | Do not pin `minimax` — that skips `local` even when `ANIMA_LOCAL_LLM_BASE_URL` is bound. Leave unset so a usable local host is first in the chain. |
 | `MINIMAX_API_KEY` | Classic Worker secret (`wrangler secret put MINIMAX_API_KEY` / dashboard). **Not** Secrets Store yet — a missing store entry fails deploy | MiniMax Global key (already live in production) |
 | `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store, **then** a binding (not in git yet) | `https://anima-chat-llm.fly.dev/v1` |
 | `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store, **then** a binding (not in git yet) | same as `PROXY_AUTH_TOKEN` |
