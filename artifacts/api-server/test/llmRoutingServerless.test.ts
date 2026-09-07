@@ -20,6 +20,8 @@ function clearLlmEnv() {
   delete process.env.ANIMA_OPENROUTER_FREE;
   delete process.env.MINIMAX_API_KEY;
   delete process.env.ANIMA_MINIMAX_API_KEY;
+  delete process.env.DEEPSHI_API_KEY;
+  delete process.env.ANIMA_DEEPSHI_API_KEY;
 }
 
 afterEach(() => {
