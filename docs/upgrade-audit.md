@@ -5,7 +5,7 @@
 **Production:** `https://anima-protocol.com` (Cloudflare Worker `anima-protocol`)  
 **Method:** repo read of routing, Worker config, store/schema, Codespace, TTS, auth; `gh` CI/PR history; live `curl` of `/api/healthz*`; `pnpm audit`.
 
-This is a plan, not a rewrite. Fixes belong in follow-up PRs unless called out as already shipped.
+This is a plan, not a rewrite. **P0-1 through P0-4 are implemented** in the follow-up PR (fail-closed local chat, gated `POST /api/healthz/schema`, Codespace terminal opt-in + steward, durable `ANIMA_LOCAL_LLM_*` Secrets Store bindings). Remaining P1/P2 items stay open.
 
 ---
 
