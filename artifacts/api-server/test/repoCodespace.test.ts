@@ -18,6 +18,11 @@ vi.mock("@clerk/express", () => ({
   getAuth: (req: { headers: Record<string, string | undefined> }) => ({
     userId: req.headers["x-test-user"] ?? "test-user",
   }),
+  createClerkClient: () => ({
+    users: {
+      getUser: async () => ({ emailAddresses: [] }),
+    },
+  }),
 }));
 
 import repoCodespaceRouter, { resolveRepoPath, probeRepoRoot } from "../src/routes/repoCodespace";
