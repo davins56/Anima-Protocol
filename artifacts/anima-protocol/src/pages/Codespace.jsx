@@ -31,6 +31,7 @@ import {
   summarizeImport,
 } from "@/lib/codespace/importProject";
 import { pullGithubRepo } from "@/lib/codespace/pullGithubRepo";
+import { hydrateRepoWorkspace } from "@/lib/codespace/hydrateRepoWorkspace";
 import {
   probeRepoFilesystem,
   listRepoFiles,
@@ -198,39 +199,32 @@ export default function Codespace({ isRepoMode = false }) {
       savedCompanionIdRef.current = proj.companion_id || null;
 
       if (isRepoMode) {
-        const status = await probeRepoFilesystem();
-        if (status.available) {
-          const listed = await listRepoFiles();
-          if (listed.ok) {
-            repoLiveRef.current = true;
-            setRepoLive(true);
-            setRepoUnavailable(false);
-            const sessions = sessionFiles(storedFiles);
-            const mapped = (listed.files || [])
-              .filter((f) => f && !f.isDirectory && f.path)
-              .map((f) => ({ path: f.path, content: "", loaded: false }));
-            const merged = [...mapped, ...sessions];
-            filesRef.current = merged;
-            setFiles(merged);
-            const firstWs = mapped[0];
-            const keepActive = proj.active_path
-              && mapped.some((f) => f.path === proj.active_path);
-            setActivePath(keepActive ? proj.active_path : (firstWs ? firstWs.path : ""));
-            return;
+        const hydrated = await hydrateRepoWorkspace({
+          probeRepoFilesystem,
+          listRepoFiles,
+          pullGithubRepo,
+          storedFiles,
+          activePath: proj.active_path || "",
+        });
+        repoLiveRef.current = hydrated.repoLive;
+        setRepoLive(hydrated.repoLive);
+        setRepoUnavailable(hydrated.repoUnavailable);
+        filesRef.current = hydrated.files;
+        setFiles(hydrated.files);
+        setActivePath(hydrated.activePath || "");
+        if (hydrated.mode === "github") {
+          for (const text of hydrated.pullErrors || []) {
+            if (text) console.warn("Repo Codespace GitHub pull:", text);
           }
         }
-        repoLiveRef.current = false;
-        setRepoLive(false);
-        setRepoUnavailable(true);
-      } else {
-        repoLiveRef.current = false;
-        setRepoLive(false);
-        setRepoUnavailable(false);
+        return;
       }
 
-      const pf = storedFiles.length
-        ? storedFiles
-        : (isRepoMode ? [] : newProject().files);
+      repoLiveRef.current = false;
+      setRepoLive(false);
+      setRepoUnavailable(false);
+
+      const pf = storedFiles.length ? storedFiles : newProject().files;
       filesRef.current = pf;
       setFiles(pf);
       const firstWs = workspaceFiles(pf)[0];
@@ -933,7 +927,7 @@ export default function Codespace({ isRepoMode = false }) {
           Editing the live Anima Protocol tree on this host. Writes go to /api/repo-codespace.
         </div>
       )}
-      {isRepoMode && repoUnavailable && (
+      {isRepoMode && repoUnavailable && workspaceEmpty && (
         <div
           role="status"
           className="px-3 py-2 border-b border-amber-400/25 bg-amber-500/5 font-mono text-[10px] text-amber-100/85 leading-relaxed"
@@ -949,6 +943,14 @@ export default function Codespace({ isRepoMode = false }) {
           >
             Pull Anima Protocol
           </button>
+        </div>
+      )}
+      {isRepoMode && repoUnavailable && !workspaceEmpty && (
+        <div
+          role="status"
+          className="px-3 py-1.5 border-b border-cyan-500/20 bg-cyan-500/5 font-mono text-[10px] text-cyan-200/80"
+        >
+          Virtual Anima Protocol tree (Cloudflare has no live disk). Explorer is a VS Code-like editor; writes stay in this Codespace.
         </div>
       )}
 
