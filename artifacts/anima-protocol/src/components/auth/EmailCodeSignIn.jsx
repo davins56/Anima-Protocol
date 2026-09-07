@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import {
   clerkErrorMessage,
+  githubOAuthHangMessage,
   hasEmailCodeFactor,
   isAlreadySignedInError,
   isPreviewSignInHost,
@@ -273,20 +274,21 @@ export default function EmailCodeSignIn() {
       }
       if (!signIn) {
         setError("Sign-in is still loading. Wait a moment and try GitHub again.");
-        setBusy(null);
         return;
       }
-      await startGitHubOAuthSignIn(signIn, basePath, clerk);
+      const result = await startGitHubOAuthSignIn(signIn, basePath, clerk);
+      if (result?.shouldFinalize) {
+        await finishSignIn();
+      }
     } catch (err) {
       if (isAlreadySignedInError(err)) {
         await resumeExistingSession(err);
-        setBusy(null);
         return;
       }
       setError(
-        clerkErrorMessage(err, { context: "oauth" }) ||
-          "GitHub sign-in failed. Try again.",
+        clerkErrorMessage(err, { context: "oauth" }) || githubOAuthHangMessage(),
       );
+    } finally {
       setBusy(null);
     }
   };
