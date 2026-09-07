@@ -78,7 +78,7 @@ describe("client/server budget lockstep", () => {
       join(repoRoot, "artifacts/api-server/src/routes/chat.ts"),
       "utf8",
     );
-    expect(chatRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: isOpenRouterAlreadyFreeTier() })");
+    expect(chatRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })");
     expect(chatRoute).toContain("openStreamAbort(");
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
   });
