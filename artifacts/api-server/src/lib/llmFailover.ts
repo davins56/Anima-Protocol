@@ -24,13 +24,17 @@ import {
 } from "./modelRouter";
 import {
   getLocalLlmClient,
+  getDeepshiApiKeySource,
+  getDeepshiClient,
   getMinimaxApiKeySource,
   getMinimaxClient,
   getOpenRouterApiKeySource,
   getOpenRouterClient,
+  hasDeepshiKey,
   hasMinimaxKey,
   hasLocalLlm,
   hasOpenRouterKey,
+  DEEPSHI_DEFAULT_MODEL,
   isLoopbackUnreachableRuntime,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
@@ -55,13 +59,13 @@ const CLOUD_FLAGSHIP_SETUP_HINT =
   "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. " +
   "Deploy Ollama/vLLM with the anima-chat model (see docs/llm-deploy.md), set " +
   "ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy. " +
-  "Or set MINIMAX_API_KEY for MiniMax chat, or OPENROUTER_API_KEY for OpenRouter.";
+  "Or set MINIMAX_API_KEY for MiniMax chat, DEEPSHI_API_KEY for Deepshi, or OPENROUTER_API_KEY for OpenRouter.";
 
 /** Self-hosted Anima LLM, or OpenRouter open-weight models (not flagship BYOK). */
-export type LlmProviderId = "local" | "minimax" | "openrouter";
+export type LlmProviderId = "local" | "minimax" | "deepshi" | "openrouter";
 
 /** Brand for chat replies. */
-export type LlmBrand = "anima" | "minimax" | "openrouter";
+export type LlmBrand = "anima" | "minimax" | "deepshi" | "openrouter";
 
 /** Public, secret-free snapshot of chat routing (for /api/healthz/llm). */
 export interface LlmRoutingStatus {
@@ -102,6 +106,11 @@ export interface LlmRoutingStatus {
     creditFallback: boolean;
   };
   minimax: {
+    configured: boolean;
+    model: string;
+    env: string | null;
+  };
+  deepshi: {
     configured: boolean;
     model: string;
     env: string | null;
@@ -210,6 +219,12 @@ export function preferMinimaxOnly(): boolean {
   return raw === "minimax" || raw === "minimax-only";
 }
 
+/** True when the operator explicitly selected Deepshi instead of local chat. */
+export function preferDeepshiOnly(): boolean {
+  const raw = (process.env.ANIMA_LLM_PROVIDER || "").trim().toLowerCase();
+  return raw === "deepshi" || raw === "deepshi-only";
+}
+
 /**
  * OpenRouter may follow a configured custom LLM only when explicitly enabled.
  * Default is off: a working (or misconfigured) custom LLM must not be skipped
@@ -290,6 +305,17 @@ export function resolveMinimaxModel(tier: ModelTier): ResolvedModel {
   return { tier, model, maxTokens };
 }
 
+/** Resolve Deepshi model for a tier. Default is deepshi-3.0. */
+export function resolveDeepshiModel(tier: ModelTier): ResolvedModel {
+  const model =
+    process.env[`ANIMA_DEEPSHI_MODEL_${tier.toUpperCase()}`]?.trim() ||
+    process.env.ANIMA_DEEPSHI_MODEL?.trim() ||
+    process.env.DEEPSHI_MODEL?.trim() ||
+    DEEPSHI_DEFAULT_MODEL;
+  const maxTokens = tier === "light" ? 4096 : tier === "heavy" ? 16384 : 8192;
+  return { tier, model, maxTokens };
+}
+
 /** Resolve model for local vLLM / Ollama OpenAI-compatible serving. */
 export function resolveLocalModel(tier: ModelTier): ResolvedModel {
   // Default to ollama (bootstrap anima-chat). Set ANIMA_LOCAL_LLM_BACKEND=vllm
@@ -321,15 +347,22 @@ function localUsable(): boolean {
  */
 export function getProviderChain(): LlmProviderId[] {
   const chain: LlmProviderId[] = [];
-  if (!preferMinimaxOnly() && localUsable()) chain.push("local");
+  if (!preferMinimaxOnly() && !preferDeepshiOnly() && localUsable()) chain.push("local");
   if (preferMinimaxOnly() && hasMinimaxKey()) {
     chain.push("minimax");
+    return chain;
+  }
+  if (preferDeepshiOnly() && hasDeepshiKey()) {
+    chain.push("deepshi");
     return chain;
   }
   const allowCloud = !preferCustomLlmOnly() && (chain.length === 0 || allowOpenRouterFallback());
   const preferFree = preferOpenRouterFreeTier();
   if (allowCloud && hasMinimaxKey() && !preferFree) {
     chain.push("minimax");
+  }
+  if (allowCloud && hasDeepshiKey()) {
+    chain.push("deepshi");
   }
   if (allowCloud && hasOpenRouterKey()) {
     chain.push("openrouter");
@@ -367,7 +400,10 @@ function shouldTryNextProvider(
 }
 
 function brandFor(provider: LlmProviderId): LlmBrand {
-  return provider === "openrouter" ? "openrouter" : provider === "minimax" ? "minimax" : "anima";
+  if (provider === "openrouter") return "openrouter";
+  if (provider === "minimax") return "minimax";
+  if (provider === "deepshi") return "deepshi";
+  return "anima";
 }
 
 /** Collect message / code / cause fragments without secrets (max ~200 chars). */
@@ -985,6 +1021,11 @@ function enrichError(
         `MiniMax authentication failed. Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY, then redeploy.`,
       );
     }
+    if (provider === "deepshi") {
+      return new Error(
+        `Deepshi authentication failed. Check DEEPSHI_API_KEY / ANIMA_DEEPSHI_API_KEY, then redeploy.`,
+      );
+    }
     return new Error(
       `Anima LLM authentication failed: ${summarizeError(err)}. ${LOCAL_LLM_AUTH_FIX_HINT}`,
     );
@@ -1055,6 +1096,11 @@ function enrichError(
       `MiniMax chat failed. Check MINIMAX_API_KEY / ANIMA_MINIMAX_API_KEY and ANIMA_MINIMAX_MODEL, then retry.`,
     );
   }
+  if (provider === "deepshi") {
+    return new Error(
+      `Deepshi chat failed. Check DEEPSHI_API_KEY / ANIMA_DEEPSHI_API_KEY and ANIMA_DEEPSHI_MODEL, then retry.`,
+    );
+  }
   const base = err instanceof Error ? err : new Error(String(err));
   return remapGenericProviderError(base);
 }
@@ -1081,6 +1127,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
         resolveLocalModel(tier).model;
   const openRouterModel = resolveOpenRouterModel(tier);
   const minimaxModel = resolveMinimaxModel(tier);
+  const deepshiModel = resolveDeepshiModel(tier);
   const chain = getProviderChain();
   const isFreeTier = preferOpenRouterFreeTier() || openRouterModel.model.endsWith(":free");
 
@@ -1113,10 +1160,10 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
         noLoopback
           ? "ANIMA_LOCAL_LLM_BASE_URL is unset. This serverless runtime cannot invent or reach localhost. " +
             "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
-            "or set MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
+            "or set MINIMAX_API_KEY for MiniMax, DEEPSHI_API_KEY for Deepshi, or OPENROUTER_API_KEY for OpenRouter. " +
             "See deploy/ollama-fly/README.md."
           : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
-            "or MINIMAX_API_KEY for MiniMax chat (or OPENROUTER_API_KEY for OpenRouter). " +
+            "MINIMAX_API_KEY for MiniMax, DEEPSHI_API_KEY for Deepshi, or OPENROUTER_API_KEY for OpenRouter. " +
             "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See docs/custom-llm.md.",
       );
     }
@@ -1152,6 +1199,13 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
             ? "fallback after OpenRouter free-tier hops"
             : "fallback after local connection failure";
       noteParts.push(`MiniMax model=${minimaxModel.model} (${minimaxRole}).`);
+    }
+    if (chain.includes("deepshi")) {
+      const deepshiRole =
+        chain[0] === "deepshi"
+          ? "primary cloud provider"
+          : "fallback after local / MiniMax";
+      noteParts.push(`Deepshi model=${deepshiModel.model} (${deepshiRole}).`);
     }
     if (chain.includes("openrouter")) {
       const openRouterRole =
@@ -1197,6 +1251,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       model: minimaxModel.model,
       env: getMinimaxApiKeySource(),
     },
+    deepshi: {
+      configured: hasDeepshiKey(),
+      model: deepshiModel.model,
+      env: getDeepshiApiKeySource(),
+    },
     chain,
     customOnly,
     openRouterFallback,
@@ -1240,6 +1299,50 @@ async function probeOneProvider(
       const quota = !auth && !connection && isProviderQuotaError(err);
       return {
         provider: "minimax",
+        configured: true,
+        ok: false,
+        status: Number.isFinite(status) ? status : undefined,
+        errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
+        message: summarizeError(err),
+        model: resolved.model,
+        configuredModel: resolved.model,
+        latencyMs: Date.now() - started,
+      };
+    }
+  }
+
+  if (provider === "deepshi") {
+    if (!hasDeepshiKey()) {
+      return { provider: "deepshi", configured: false, ok: false };
+    }
+    const resolved = resolveDeepshiModel(tier);
+    const started = Date.now();
+    try {
+      const client = getDeepshiClient();
+      if (!client) return { provider: "deepshi", configured: false, ok: false };
+      await client.chat.completions.create({
+        model: resolved.model,
+        max_tokens: 16,
+        messages: [{ role: "user", content: "Reply with the single word: ok" }],
+        temperature: 0,
+      });
+      return {
+        provider: "deepshi",
+        configured: true,
+        ok: true,
+        model: resolved.model,
+        configuredModel: resolved.model,
+        latencyMs: Date.now() - started,
+      };
+    } catch (err) {
+      const status = err && typeof err === "object" && "status" in err
+        ? Number((err as { status?: unknown }).status)
+        : undefined;
+      const auth = isProviderAuthError(err);
+      const connection = !auth && isProviderConnectionError(err);
+      const quota = !auth && !connection && isProviderQuotaError(err);
+      return {
+        provider: "deepshi",
         configured: true,
         ok: false,
         status: Number.isFinite(status) ? status : undefined,
@@ -1391,6 +1494,12 @@ export async function probeLlmProviders(tier: ModelTier = "standard"): Promise<L
         message: hasMinimaxKey() ? undefined : "Set MINIMAX_API_KEY for MiniMax chat.",
       },
       {
+        provider: "deepshi",
+        configured: hasDeepshiKey(),
+        ok: false,
+        message: hasDeepshiKey() ? undefined : "Set DEEPSHI_API_KEY for Deepshi chat.",
+      },
+      {
         provider: "openrouter",
         configured: hasOpenRouterKey(),
         ok: false,
@@ -1528,6 +1637,32 @@ async function runMinimaxStream(
   };
 }
 
+async function runDeepshiStream(
+  req: ChatStreamRequest,
+  failedOver: boolean,
+): Promise<ChatStreamResult> {
+  const client = getDeepshiClient();
+  if (!client) throw new Error("Set DEEPSHI_API_KEY for Deepshi chat.");
+  const resolved = resolveDeepshiModel(req.tier);
+  const stream = await client.chat.completions.create(
+    {
+      model: resolved.model,
+      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      messages: req.messages,
+      stream: true,
+    },
+    ...(req.signal ? [{ signal: req.signal }] : []),
+  );
+  return {
+    stream,
+    provider: "deepshi",
+    brand: "deepshi",
+    model: resolved.model,
+    tier: resolved.tier,
+    failedOver,
+  };
+}
+
 async function runOpenRouterCompletion(
   req: ChatCompletionRequest,
   failedOver: boolean,
@@ -1597,10 +1732,41 @@ async function runMinimaxCompletion(
   };
 }
 
+async function runDeepshiCompletion(
+  req: ChatCompletionRequest,
+  failedOver: boolean,
+): Promise<ChatCompletionResult> {
+  const client = getDeepshiClient();
+  if (!client) throw new Error("Set DEEPSHI_API_KEY for Deepshi chat.");
+  const resolved = resolveDeepshiModel(req.tier);
+  const completion = await client.chat.completions.create(
+    {
+      model: resolved.model,
+      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      messages: req.messages,
+      ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+      ...(req.tools && req.tools.length
+        ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
+        : {}),
+    },
+    req.signal ? { signal: req.signal } : undefined,
+  );
+  const content = completion.choices?.[0]?.message?.content ?? "";
+  return {
+    content: typeof content === "string" ? content : "",
+    provider: "deepshi",
+    brand: "deepshi",
+    model: resolved.model,
+    tier: resolved.tier,
+    failedOver,
+    toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
+  };
+}
+
 /** Open a streaming chat completion (local Anima LLM, then OpenRouter). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() && !hasMinimaxKey() || preferCustomLlmOnly())) {
+  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() && !hasMinimaxKey() && !hasDeepshiKey() || preferCustomLlmOnly())) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1643,6 +1809,10 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         return await runMinimaxStream(req, triedLocal || triedOpenRouter);
       }
 
+      if (provider === "deepshi") {
+        return await runDeepshiStream(req, triedLocal || triedOpenRouter);
+      }
+
       triedOpenRouter = true;
       return await runOpenRouterStream(req, triedLocal);
     } catch (err) {
@@ -1683,7 +1853,7 @@ export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() && !hasMinimaxKey() || preferCustomLlmOnly())) {
+  if (cloudFlagshipMisconfigured() && (!hasOpenRouterKey() && !hasMinimaxKey() && !hasDeepshiKey() || preferCustomLlmOnly())) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1729,6 +1899,10 @@ export async function createChatCompletionWithFailover(
 
       if (provider === "minimax") {
         return await runMinimaxCompletion(req, triedLocal || triedOpenRouter);
+      }
+
+      if (provider === "deepshi") {
+        return await runDeepshiCompletion(req, triedLocal || triedOpenRouter);
       }
 
       triedOpenRouter = true;
