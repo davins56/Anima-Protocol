@@ -333,6 +333,28 @@ describe("buildLlmChatMessages", () => {
     expect(first.at(-1)?.content).not.toBe(second.at(-1)?.content);
   });
 
+  it("still includes store history when scene text only mentions the markers mid-sentence", () => {
+    const messages = buildLlmChatMessages({
+      systemPrompt:
+        "You are Serenity. In the story so far: we fled the garden. Keep the CONVERSATION CONTEXT: intimate.",
+      recentMessages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "Hello there.", character_name: "Serenity" },
+      ],
+      content: "What now?",
+    });
+    expect(messages).toEqual([
+      {
+        role: "system",
+        content:
+          "You are Serenity. In the story so far: we fled the garden. Keep the CONVERSATION CONTEXT: intimate.",
+      },
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Hello there." },
+      { role: "user", content: "What now?" },
+    ]);
+  });
+
   it("includes store history as chat turns when the client did not send a transcript", () => {
     const messages = buildLlmChatMessages({
       systemPrompt: "You are Serenity.",
