@@ -2437,11 +2437,12 @@ describe("probeLlmProviders", () => {
     delete process.env.OPEN_ROUTER_API_KEY;
     process.env.VERCEL = "1";
     const probes = await probeLlmProviders();
-    expect(probes).toHaveLength(3);
+    expect(probes).toHaveLength(4);
     expect(probes[0]).toMatchObject({ provider: "local", configured: false, ok: false });
     expect(probes[1]).toMatchObject({ provider: "minimax", configured: false, ok: false });
-    expect(probes[2]).toMatchObject({ provider: "openrouter", configured: false, ok: false });
-    expect(probes[2].message).toMatch(/OPENROUTER_API_KEY/i);
+    expect(probes[2]).toMatchObject({ provider: "deepshi", configured: false, ok: false });
+    expect(probes[3]).toMatchObject({ provider: "openrouter", configured: false, ok: false });
+    expect(probes[3].message).toMatch(/OPENROUTER_API_KEY/i);
   });
 
   it("probes the local endpoint with a tiny completion", async () => {
