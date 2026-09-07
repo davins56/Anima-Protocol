@@ -7,6 +7,7 @@
 export function llmProviderShortLabel(provider) {
   if (provider === "anima" || provider === "local") return "Anima";
   if (provider === "minimax") return "MiniMax";
+  if (provider === "deepshi") return "Deepshi";
   if (provider === "openrouter") return "Venice";
   return null;
 }
@@ -19,6 +20,7 @@ export function llmProviderShortLabel(provider) {
 export function llmDisplayLabel(provider, brand) {
   if (brand === "anima") return "Anima";
   if (brand === "minimax" || provider === "minimax") return "MiniMax";
+  if (brand === "deepshi" || provider === "deepshi") return "Deepshi";
   if (brand === "openrouter" || provider === "openrouter") return "Venice";
   return llmProviderShortLabel(provider);
 }
@@ -34,6 +36,9 @@ export function llmProviderTitle(provider) {
   if (provider === "minimax") {
     return "Last reply from MiniMax";
   }
+  if (provider === "deepshi") {
+    return "Last reply from Deepshi";
+  }
   return "Last reply LLM";
 }
 
@@ -48,6 +53,9 @@ export function llmDisplayTitle(provider, brand) {
   }
   if (brand === "minimax" || provider === "minimax") {
     return "MiniMax cloud chat";
+  }
+  if (brand === "deepshi" || provider === "deepshi") {
+    return "Deepshi cloud chat (api.deepshi.ai)";
   }
   if (brand === "openrouter" || provider === "openrouter") {
     return "Venice Uncensored (Dolphin Mistral 24B) via OpenRouter — open-weight uncensored chat";
@@ -66,6 +74,9 @@ export function llmProviderBadgeClass(provider) {
   if (provider === "minimax") {
     return "border-cyan-400/50 text-cyan-200/90 bg-cyan-400/10";
   }
+  if (provider === "deepshi") {
+    return "border-violet-400/50 text-violet-200/90 bg-violet-400/10";
+  }
   return "border-primary/30 text-primary/50";
 }
 
@@ -76,6 +87,7 @@ export function llmProviderBadgeClass(provider) {
 export function llmDisplayBadgeClass(provider, brand) {
   if (brand === "anima") return llmProviderBadgeClass("anima");
   if (brand === "minimax") return llmProviderBadgeClass("minimax");
+  if (brand === "deepshi") return llmProviderBadgeClass("deepshi");
   if (brand === "openrouter") return llmProviderBadgeClass("openrouter");
   return llmProviderBadgeClass(provider);
 }
@@ -87,6 +99,12 @@ export const CONFIGURED_LLM_PROVIDERS = [
     label: "MiniMax",
     env: "MINIMAX_API_KEY",
     note: "Preferred cloud chat provider when configured. Defaults to MiniMax-M2.7 via the MiniMax Global OpenAI-compatible API.",
+  },
+  {
+    id: "deepshi",
+    label: "Deepshi",
+    env: "DEEPSHI_API_KEY",
+    note: "OpenAI-compatible Deepshi gateway (https://api.deepshi.ai/v1). Defaults to deepshi-3.0. Used when no local LLM is reachable, or after MiniMax when ANIMA_OPENROUTER_FALLBACK=true. Set ANIMA_LLM_PROVIDER=deepshi to pin it.",
   },
   {
     id: "local",

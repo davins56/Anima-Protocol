@@ -70,6 +70,21 @@ vi.mock("../src/lib/openaiClient", () => {
     },
     hasMinimaxKey: () =>
       Boolean(process.env.MINIMAX_API_KEY?.trim() || process.env.ANIMA_MINIMAX_API_KEY?.trim()),
+    hasDeepshiKey: () =>
+      Boolean(process.env.DEEPSHI_API_KEY?.trim() || process.env.ANIMA_DEEPSHI_API_KEY?.trim()),
+    getDeepshiApiKeySource: () =>
+      process.env.DEEPSHI_API_KEY?.trim()
+        ? "DEEPSHI_API_KEY"
+        : process.env.ANIMA_DEEPSHI_API_KEY?.trim()
+          ? "ANIMA_DEEPSHI_API_KEY"
+          : null,
+    getDeepshiClient: () => {
+      if (!(process.env.DEEPSHI_API_KEY?.trim() || process.env.ANIMA_DEEPSHI_API_KEY?.trim())) {
+        return null;
+      }
+      return openRouterClient;
+    },
+    DEEPSHI_DEFAULT_MODEL: "deepshi-3.0",
     getMinimaxApiKeySource: () =>
       process.env.MINIMAX_API_KEY?.trim()
         ? "MINIMAX_API_KEY"
@@ -796,6 +811,8 @@ describe("getProviderChain", () => {
     process.env = { ...SAVED };
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
+    delete process.env.DEEPSHI_API_KEY;
+    delete process.env.ANIMA_DEEPSHI_API_KEY;
   });
 
   it("uses the custom LLM alone when both local and OpenRouter are configured", () => {
@@ -930,6 +947,30 @@ describe("getProviderChain", () => {
     process.env.ANIMA_LLM_PROVIDER = "minimax";
     process.env.ANIMA_OPENROUTER_FREE = "true";
     expect(getProviderChain()).toEqual(["minimax"]);
+  });
+
+  it("uses Deepshi after MiniMax when both cloud keys are set", () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    delete process.env.ANIMA_LLM_PROVIDER;
+    delete process.env.ANIMA_OPENROUTER_FREE;
+    process.env.VERCEL = "1";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.DEEPSHI_API_KEY = "sk-bf-test";
+    expect(getProviderChain()).toEqual(["minimax", "deepshi"]);
+  });
+
+  it("keeps Deepshi-only when ANIMA_LLM_PROVIDER=deepshi", () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.DEEPSHI_API_KEY = "sk-bf-test";
+    process.env.ANIMA_LLM_PROVIDER = "deepshi";
+    expect(getProviderChain()).toEqual(["deepshi"]);
   });
 });
 
