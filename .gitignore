@@ -6,6 +6,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+scripts/llm/public-v1/proxy-token
+scripts/llm/public-v1/tunnel-token
 *.pem
 *.key
 *.p12
