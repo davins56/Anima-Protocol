@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   buildCompanionPrompt,
   buildGroupCompanionPrompt,
+  buildLlmChatMessages,
   composePrompt,
+  CONTINUE_USER_TURN,
 } from "../src/lib/promptBuilder";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
 import { assessTherapySafety, crisisResourceForCountry } from "../src/lib/therapySafety";
@@ -292,6 +294,68 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("Story so far:");
     expect(prompt).not.toContain("CONVERSATION CONTEXT:");
     expect(prompt).not.toContain("LATEST USER MESSAGE:");
+  });
+});
+
+describe("buildLlmChatMessages", () => {
+  it("always ends with a user turn so Ollama chat templates have something to answer", () => {
+    const messages = buildLlmChatMessages({
+      systemPrompt: "You are Serenity.",
+      content: "I missed you.",
+    });
+    expect(messages[0]).toEqual({ role: "system", content: "You are Serenity." });
+    expect(messages.at(-1)).toEqual({ role: "user", content: "I missed you." });
+  });
+
+  it("does not replay the same system-only payload when the user text changes", () => {
+    const first = buildLlmChatMessages({
+      systemPrompt: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: Hello there.",
+      recentMessages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "Hello there." },
+      ],
+      content: "What is your name?",
+    });
+    const second = buildLlmChatMessages({
+      systemPrompt: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: Hello there.",
+      recentMessages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "Hello there." },
+      ],
+      content: "Tell me a secret.",
+    });
+    expect(first.filter((message) => message.role === "user").map((message) => message.content)).toEqual([
+      "What is your name?",
+    ]);
+    expect(second.filter((message) => message.role === "user").map((message) => message.content)).toEqual([
+      "Tell me a secret.",
+    ]);
+    expect(first.at(-1)?.content).not.toBe(second.at(-1)?.content);
+  });
+
+  it("includes store history as chat turns when the client did not send a transcript", () => {
+    const messages = buildLlmChatMessages({
+      systemPrompt: "You are Serenity.",
+      recentMessages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "Hello there.", character_name: "Serenity" },
+      ],
+      content: "What now?",
+    });
+    expect(messages).toEqual([
+      { role: "system", content: "You are Serenity." },
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Hello there." },
+      { role: "user", content: "What now?" },
+    ]);
+  });
+
+  it("uses a continue placeholder when the user sent no text", () => {
+    const messages = buildLlmChatMessages({
+      systemPrompt: "You are Serenity.",
+      content: "   ",
+    });
+    expect(messages.at(-1)).toEqual({ role: "user", content: CONTINUE_USER_TURN });
   });
 });
 

@@ -159,8 +159,18 @@ export interface ChatStreamRequest {
   model: string;
   maxTokens: number;
   messages: ChatCompletionMessageParam[];
+  temperature?: number;
   /** Cancel the in-flight stream open (e.g. a caller-side timeout). */
   signal?: AbortSignal;
+}
+
+/**
+ * True only when OpenRouter is actually in the chat chain AND already on a
+ * :free model. Production is local-only (`chain: ["local"]`); the unused
+ * OpenRouter :free key must not stretch the stream-open budget to 80s.
+ */
+export function usesFreeTierOpenBudget(): boolean {
+  return getProviderChain().includes("openrouter") && isOpenRouterAlreadyFreeTier();
 }
 
 export interface ChatStreamResult {
@@ -1713,6 +1723,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
               max_tokens: m.maxTokens,
               messages: req.messages,
               stream: true,
+              ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
             },
             ...(req.signal ? [{ signal: req.signal }] : []),
           ),
