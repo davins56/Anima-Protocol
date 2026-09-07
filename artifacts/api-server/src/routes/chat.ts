@@ -49,6 +49,11 @@ import {
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
 import {
+  isSupermemoryEnabled,
+  mergeRemoteFactsIntoMemories,
+  searchCompanionFactsFromSupermemory,
+} from "../lib/supermemory";
+import {
   composePrompt,
   type CompanionMemoryRecord,
   type CharacterData,
@@ -1414,9 +1419,25 @@ router.post("/messages", async (req, res) => {
       readRecentStoreMessages(userId, sessionId, 24, {
         skipMigrate: Boolean(sessionData.messages_migrated),
       }),
-      memoriesPromise.then((rows) =>
-        attachStoredEmbeddings(userId, adaptMemories(rows)),
-      ),
+      memoriesPromise.then(async (rows) => {
+        const adapted = await attachStoredEmbeddings(
+          userId,
+          adaptMemories(rows),
+        );
+        if (!isSupermemoryEnabled() || !content.trim()) return adapted;
+        try {
+          const speakerId = hintedCharId || characterIds[0];
+          const hits = await searchCompanionFactsFromSupermemory({
+            userId,
+            characterId: speakerId,
+            query: content,
+            limit: 8,
+          });
+          return mergeRemoteFactsIntoMemories(adapted, hits, speakerId);
+        } catch {
+          return adapted;
+        }
+      }),
       hintedStatePromise,
       worldKnowledgePromise,
     ]),
