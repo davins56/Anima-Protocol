@@ -94,38 +94,43 @@ down the Worker (the whole site). Ordered runbook:
    in the **same** commit.
 3. Then deploy.
 
-Today `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `DATABASE_URL`, and
-`OPENROUTER_API_KEY` are bound. Fly names below are the follow-up, after
-the public HTTPS host is live. Dashboard-only secrets are still dropped
-on the next git deploy unless they are declared — that is why step 2
-exists, and why it must come after step 1.
+Today `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `DATABASE_URL`,
+`OPENROUTER_API_KEY`, `ANIMA_LOCAL_LLM_BASE_URL`,
+`ANIMA_LOCAL_LLM_API_KEY`, and `ANIMA_LOCAL_LLM_BACKEND` are declared in
+`wrangler.jsonc`. **Create those LLM `secret_name`s in the store before
+merging this binding list** or `wrangler deploy` fails and takes the
+site down. Dashboard-only secrets are still dropped on the next git
+deploy unless they are declared.
+
+Chat is fail-closed (`ANIMA_LLM_PROVIDER=custom`). Missing local URL
+does **not** fall through to OpenRouter. `OPENROUTER_API_KEY` may stay
+bound for image / leftover paths.
 
 | Name | Where | Value |
 |------|--------|--------|
 | `ANIMA_RUNTIME` | `wrangler.jsonc` `vars` (already committed) | `worker` (never invent localhost) |
-| `ANIMA_LOCAL_LLM_BACKEND` | `wrangler.jsonc` `vars` (already committed) | `ollama` |
+| `ANIMA_LLM_PROVIDER` | `wrangler.jsonc` `vars` (already committed) | `custom` (local-only chat) |
+| `ANIMA_LOCAL_LLM_BACKEND` | `vars` + Secrets Store binding | `ollama` |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | `wrangler.jsonc` `vars` (already committed) | `anima-chat` |
-| `ANIMA_OPENROUTER_FREE` | `wrangler.jsonc` `vars` (already committed) | `true` (skip Venice; use `minimax/minimax-m2.7:free`) |
-| `ANIMA_LLM_PROVIDER` | **Not** set in `wrangler.jsonc` | Do not pin `minimax` — that skips `local` even when `ANIMA_LOCAL_LLM_BASE_URL` is bound. Leave unset so a usable local host is first in the chain. |
-| `MINIMAX_API_KEY` | Classic Worker secret (`wrangler secret put MINIMAX_API_KEY` / dashboard). **Not** Secrets Store yet — a missing store entry fails deploy | MiniMax Global key (already live in production) |
-| `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store, **then** a binding (not in git yet) | `https://anima-chat-llm.fly.dev/v1` |
-| `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store, **then** a binding (not in git yet) | same as `PROXY_AUTH_TOKEN` |
-| `OPENROUTER_API_KEY` | Secrets Store + `wrangler.jsonc` binding (name only) | OpenRouter key (used when local URL is unset) |
+| `ANIMA_OPENROUTER_FREE` | `wrangler.jsonc` `vars` (already committed) | unused for chat; leftover |
+| `MINIMAX_API_KEY` | Classic Worker secret (`wrangler secret put MINIMAX_API_KEY` / dashboard). **Not** Secrets Store — a missing store entry fails deploy | unused for chat |
+| `ANIMA_LOCAL_LLM_BASE_URL` | Secrets Store + `wrangler.jsonc` binding (name only — never `vars`) | `https://llm.anima-protocol.com/v1` (or your public HTTPS `…/v1`) |
+| `ANIMA_LOCAL_LLM_API_KEY` | Secrets Store + `wrangler.jsonc` binding (name only) | same as host `PROXY_AUTH_TOKEN` |
+| `OPENROUTER_API_KEY` | Secrets Store + `wrangler.jsonc` binding (name only) | unused for chat; optional follow-up removal |
 
-Until `ANIMA_LOCAL_LLM_BASE_URL` is a public HTTPS `…/v1` URL, the Worker
-reports `localEndpoint.configured: false` and uses OpenRouter when a key is
-bound. An explicit `http://localhost:11434/v1` on the Worker is treated as
+An explicit `http://localhost:11434/v1` on the Worker is treated as
 misconfigured (not attempted).
 
 Verify after the Worker redeploy:
 
 ```bash
 curl -sS https://anima-protocol.com/api/healthz/llm
-curl -sS https://anima-protocol.com/api/healthz/llm?probe=1
 ```
 
-`localEndpoint.host` should be `anima-chat-llm.fly.dev`, `isLocalhost` false,
-`isHttps` true, `hasV1Path` true. `chain` should include `local`.
+Expect `preferred: "local"`, `customOnly: true`, `chain: ["local"]`,
+`localEndpoint.host` a public host (not localhost), `isHttps` true,
+`hasV1Path` true. If the local URL is missing, `status: "error"` and an
+empty chain — never `openrouter` / `minimax`.
 
 ## Performance
 
