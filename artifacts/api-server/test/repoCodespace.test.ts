@@ -204,4 +204,68 @@ describe("repoCodespace security and path resolution", () => {
       expect(json.error).toMatch(/owner|repo|invalid/i);
     });
   });
+
+  describe("POST /terminal lockdown", () => {
+    const saved = {
+      terminal: process.env.ANIMA_CODESPACE_TERMINAL,
+      runtime: process.env.ANIMA_RUNTIME,
+      stewards: process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS,
+    };
+
+    function restore() {
+      if (saved.terminal === undefined) delete process.env.ANIMA_CODESPACE_TERMINAL;
+      else process.env.ANIMA_CODESPACE_TERMINAL = saved.terminal;
+      if (saved.runtime === undefined) delete process.env.ANIMA_RUNTIME;
+      else process.env.ANIMA_RUNTIME = saved.runtime;
+      if (saved.stewards === undefined) delete process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
+      else process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = saved.stewards;
+    }
+
+    it("is disabled by default on Node hosts with a repo filesystem", async () => {
+      delete process.env.ANIMA_CODESPACE_TERMINAL;
+      delete process.env.ANIMA_RUNTIME;
+      const res = await call("POST", "/repo-codespace/terminal", { command: "echo pwned" });
+      expect(res.status).toBe(403);
+      await expect(res.json()).resolves.toMatchObject({
+        code: "terminal_disabled",
+      });
+      restore();
+    });
+
+    it("returns filesystem_unavailable on the Cloudflare Worker", async () => {
+      process.env.ANIMA_RUNTIME = "worker";
+      process.env.ANIMA_CODESPACE_TERMINAL = "1";
+      process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = "test-user";
+      const res = await call("POST", "/repo-codespace/terminal", { command: "echo pwned" });
+      expect(res.status).toBe(503);
+      await expect(res.json()).resolves.toMatchObject({
+        code: "filesystem_unavailable",
+      });
+      restore();
+    });
+
+    it("rejects a signed-in non-steward even when opted in", async () => {
+      delete process.env.ANIMA_RUNTIME;
+      process.env.ANIMA_CODESPACE_TERMINAL = "1";
+      process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = "someone-else";
+      const res = await call("POST", "/repo-codespace/terminal", { command: "echo pwned" });
+      expect(res.status).toBe(403);
+      await expect(res.json()).resolves.toMatchObject({
+        code: "terminal_forbidden",
+      });
+      restore();
+    });
+
+    it("allows an opted-in steward to run a command", async () => {
+      delete process.env.ANIMA_RUNTIME;
+      process.env.ANIMA_CODESPACE_TERMINAL = "1";
+      process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = "test-user";
+      const res = await call("POST", "/repo-codespace/terminal", { command: "echo terminal-ok" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.stdout).toMatch(/terminal-ok/);
+      expect(body.code).toBe(0);
+      restore();
+    });
+  });
 });
