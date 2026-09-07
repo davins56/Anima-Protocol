@@ -41,3 +41,11 @@ export function clerkOAuthCallbackAbsolute(origin, basePath, mode = 'sign-in') {
   const path = clerkSsoCallbackPath(basePath, mode);
   return `${origin}${path}`;
 }
+
+/**
+ * GitHub (and other) OAuth apps must allowlist Clerk's custom-domain callback,
+ * not the SPA `/sign-in/sso-callback` path. A mismatch often looks like
+ * `signIn.sso()` hanging with no redirect.
+ */
+export const CLERK_GITHUB_OAUTH_CALLBACK_URL =
+  'https://clerk.anima-protocol.com/v1/oauth_callback';
