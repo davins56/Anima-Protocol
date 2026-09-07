@@ -164,7 +164,10 @@ const BUDGET = {
 
 function clientOwnsTranscript(systemPrompt?: string): boolean {
   if (!systemPrompt) return false;
-  return /Story so far:|CONVERSATION CONTEXT:/i.test(systemPrompt);
+  // Chat.jsx / buildGroupPrompt emit these as their own (possibly indented)
+  // line. A mid-sentence mention in personality or scene text is not a
+  // transcript and must not drop store history.
+  return /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)/i.test(systemPrompt);
 }
 
 /** Instruct-style chat models (Qwen2.5 / anima-chat) require a user turn. */
