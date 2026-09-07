@@ -1,7 +1,8 @@
 // @ts-check
 import { useLocation, useNavigate } from "react-router-dom";
 import { MessageSquare, BookOpen, Globe, Grid3x3, Home, X } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { syncReservedTabBarHeight } from "@/lib/tabBarLayout";
 import { AnimatePresence, motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
@@ -34,6 +35,7 @@ const ALL_MODULES = [
   { label: "Memory Map", path: "/memory-map", icon: "🧠" },
   { label: "Inventory", path: "/inventory", icon: "🎒" },
   { label: "Energy Fragments", path: "/energy-fragments", icon: "⬡" },
+  { label: "Echo Keys", path: "/echo-keys", icon: "🔑" },
   { label: "Characters", path: "/characters", icon: "👥" },
   { label: "Customise Anima", path: "/customise-anima?tab=look", icon: "✦" },
   { label: "Check-In", path: "/check-in", icon: "✚" },
@@ -65,6 +67,33 @@ export default function BottomTabBar() {
   const [open, setOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [mostRecentSessionId, setMostRecentSessionId] = useState(null);
+  const tabBarRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const sync = () => {
+      syncReservedTabBarHeight(root, {
+        keyboardOpen: root.dataset.keyboardOpen === "true",
+      });
+    };
+    sync();
+
+    const node = tabBarRef.current;
+    if (!node || typeof ResizeObserver !== "function") {
+      return () => {
+        if (root.dataset.keyboardOpen === "true") return;
+        root.style.removeProperty("--tab-bar-height");
+      };
+    }
+
+    const observer = new ResizeObserver(sync);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      if (root.dataset.keyboardOpen === "true") return;
+      root.style.removeProperty("--tab-bar-height");
+    };
+  }, []);
 
   useEffect(() => {
     base44.entities.ChatSession.list("-updated_date", 1).then(sessions => {
@@ -204,8 +233,10 @@ export default function BottomTabBar() {
 
       {/* Bottom Tab Bar */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-[999] bg-[#090912]/95 backdrop-blur-md border-t border-primary/20 flex items-stretch"
-        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)", minHeight: "52px" }}
+        ref={tabBarRef}
+        data-testid="bottom-tab-bar"
+        className="tab-bar fixed-bottom-chrome fixed bottom-0 left-0 right-0 z-[999] bg-[#090912]/95 backdrop-blur-md border-t border-primary/20 flex items-stretch"
+        style={{ paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))", minHeight: "52px" }}
       >
         {PINNED_TABS.map(({ path, label, Icon }) => {
           const active = isTabActive(path, location.pathname);

@@ -75,6 +75,11 @@ button:hover { background: rgba(34, 211, 238, 0.12); }
   ];
 }
 
+export const CODESPACE_PROJECT_NAMES = {
+  virtual: "my-codespace",
+  repo: "anima-protocol-repo",
+};
+
 export function newProject(name = "untitled-project", companionId = null) {
   return {
     name,
@@ -83,6 +88,29 @@ export function newProject(name = "untitled-project", companionId = null) {
     active_path: "index.html",
     agent_log: [],
   };
+}
+
+// Repo Workspace starts empty so the Upload / Import / Pull CTA is visible
+// until a live REPO_ROOT tree or a GitHub pull fills it.
+export function emptyRepoProject(companionId = null) {
+  return {
+    name: CODESPACE_PROJECT_NAMES.repo,
+    companion_id: companionId,
+    files: [],
+    active_path: "",
+    agent_log: [],
+  };
+}
+
+export function pickCodespaceProject(list = [], { isRepoMode = false } = {}) {
+  const rows = Array.isArray(list) ? list : [];
+  const wanted = isRepoMode
+    ? CODESPACE_PROJECT_NAMES.repo
+    : CODESPACE_PROJECT_NAMES.virtual;
+  const named = rows.find((p) => p && p.name === wanted);
+  if (named) return named;
+  if (!isRepoMode) return rows[0] || null;
+  return null;
 }
 
 // Files visible in the explorer, excluding the sessions folder (which is shown

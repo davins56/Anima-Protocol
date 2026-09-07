@@ -27,13 +27,20 @@ export default function Insights() {
 
   const loadData = async () => {
     setLoading(true);
-    const [cis, refs] = await Promise.all([
-      base44.entities.CheckIn.list('-created_date', 100),
-      base44.entities.Reflection.list('-created_date', 100),
-    ]);
-    setCheckIns(cis || []);
-    setReflections(refs || []);
-    setLoading(false);
+    try {
+      const [cis, refs] = await Promise.all([
+        base44.entities.CheckIn.list('-created_date', 100),
+        base44.entities.Reflection.list('-created_date', 100),
+      ]);
+      setCheckIns(cis || []);
+      setReflections(refs || []);
+    } catch (err) {
+      console.warn("Failed to load insights:", err);
+      setCheckIns([]);
+      setReflections([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Prepare mood trend data

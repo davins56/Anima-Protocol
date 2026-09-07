@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { base44, uploadDataUrl } from "@/api/base44Client";
+import { updateCompanionRecord } from "@/lib/listPersonalAnimas";
+import {
+  formatAvatarUploadError,
+  uploadCharacterAvatar,
+} from "@/lib/characterAvatarUpload";
 import {
   APPEARANCE_FEATURES,
+  VESSEL_LAYER_FIELDS,
   buildAppearanceImagePrompt,
   getAppearanceSuggestions,
   normalizeAppearancePrompts,
+  normalizeVesselLayers,
 } from "@/lib/animaAppearance";
-import { X, Wand2, Loader, Check, Palette, Upload } from "lucide-react";
+import { X, Wand2, Loader, Check, Palette, Upload, ImagePlus } from "lucide-react";
 
 const THEME_PRESETS = [
   "#00e5e5",
@@ -30,14 +37,22 @@ export default function AnimaCustomizer({
   variant = "modal",
   showHeader = true,
 }) {
-  const fileInputRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const referenceInputRef = useRef(null);
   const [prompts, setPrompts] = useState(() =>
     normalizeAppearancePrompts(anima?.appearance_prompts),
   );
   const [generating, setGenerating] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingKind, setUploadingKind] = useState("");
   const [previewUrl, setPreviewUrl] = useState(anima?.avatar_url || "");
+  // Optional photo used as likeness reference when generating a look.
+  const [referenceUrl, setReferenceUrl] = useState(
+    () => anima?.look_reference_url || "",
+  );
   const [themeColor, setThemeColor] = useState(anima?.theme_color || "#00e5e5");
+  const [vesselLayers, setVesselLayers] = useState(() =>
+    normalizeVesselLayers(anima?.hidden_sequences?.vessel_layers || anima?.vessel_layers),
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [activeFeature, setActiveFeature] = useState("skin");
@@ -48,7 +63,11 @@ export default function AnimaCustomizer({
   useEffect(() => {
     setPrompts(normalizeAppearancePrompts(anima?.appearance_prompts));
     setPreviewUrl(anima?.avatar_url || "");
+    setReferenceUrl(anima?.look_reference_url || "");
     setThemeColor(anima?.theme_color || "#00e5e5");
+    setVesselLayers(
+      normalizeVesselLayers(anima?.hidden_sequences?.vessel_layers || anima?.vessel_layers),
+    );
     setSaved(false);
     setError("");
   }, [anima?.id]);
@@ -58,12 +77,16 @@ export default function AnimaCustomizer({
     setError("");
     setSaved(false);
     try {
-      const prompt = buildAppearanceImagePrompt(anima, prompts);
-      // Always generate from the feature prompts — do not image-edit the
-      // current avatar. Edit mode preserves the old complexion/hair/etc. and
-      // made Skin Colour (and other traits) appear broken.
+      const useReference = Boolean(referenceUrl);
+      const prompt = buildAppearanceImagePrompt(anima, prompts, {
+        useReference,
+      });
+      // With a reference photo, use image-edit so likeness is preserved while
+      // features (including skin) are applied. Without one, generate fresh —
+      // editing the current avatar used to lock old complexion in place.
       const result = await base44.integrations.Core.GenerateImage({
         prompt,
+        existing_image_urls: useReference ? [referenceUrl] : undefined,
       });
       if (!result?.url) {
         throw new Error("No image was returned. Try again in a moment.");
@@ -77,39 +100,48 @@ export default function AnimaCustomizer({
           : err?.code === "rate_limit"
             ? "The image service is busy right now. Please try again shortly."
             : err?.code === "auth_error"
-              ? "Image generation is temporarily unavailable. You can still upload a photo below."
-              : err?.message || "Failed to generate appearance. You can still upload a photo.";
+              ? err?.message ||
+                "Image generation is not configured on this server. You can still upload a reference photo below."
+              : err?.message || "Failed to generate appearance. You can still upload a reference photo.";
       setError(msg);
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
+  const uploadSelectedImage = async (file, kind) => {
     if (!file) return;
-    setUploading(true);
+    setUploadingKind(kind);
     setError("");
     setSaved(false);
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
-      if (!result?.file_url) {
-        throw new Error("Upload failed — try another image.");
-      }
-      setPreviewUrl(result.file_url);
-    } catch (err) {
-      const msg = String(err?.message || "");
-      if (/unauthorized|sign in|not signed|401/i.test(msg)) {
-        setError("Sign in to upload an avatar, then try again.");
-      } else if (/too large/i.test(msg)) {
-        setError("That image is too large. Try a smaller photo.");
+      const fileUrl = await uploadCharacterAvatar(file, (payload) =>
+        base44.integrations.Core.UploadFile(payload),
+      );
+      if (kind === "photo") {
+        setPreviewUrl(fileUrl);
       } else {
-        setError(msg || "Upload failed — try another image.");
+        setReferenceUrl(fileUrl);
       }
+    } catch (err) {
+      setError(formatAvatarUploadError(err));
     } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setUploadingKind("");
+      if (kind === "photo" && photoInputRef.current) {
+        photoInputRef.current.value = "";
+      }
+      if (kind === "reference" && referenceInputRef.current) {
+        referenceInputRef.current.value = "";
+      }
     }
+  };
+
+  const handleUploadPhoto = async (e) => {
+    await uploadSelectedImage(e.target.files?.[0], "photo");
+  };
+
+  const handleUploadReference = async (e) => {
+    await uploadSelectedImage(e.target.files?.[0], "reference");
   };
 
   const handleSave = async () => {
@@ -117,20 +149,36 @@ export default function AnimaCustomizer({
     setSaving(true);
     setError("");
     try {
-      let avatar_url = previewUrl;
+      let avatar_url = previewUrl || anima?.avatar_url || "";
       // Persist generated/edited portraits to object storage instead of storing
       // large base64 blobs on the Anima entity.
       if (typeof avatar_url === "string" && avatar_url.startsWith("data:")) {
         avatar_url = await uploadDataUrl(avatar_url);
       }
 
+      let look_reference_url = referenceUrl || "";
+      if (
+        typeof look_reference_url === "string" &&
+        look_reference_url.startsWith("data:")
+      ) {
+        look_reference_url = await uploadDataUrl(look_reference_url);
+      }
+
+      const layers = normalizeVesselLayers(vesselLayers);
       const patch = {
         avatar_url,
+        look_reference_url: look_reference_url || null,
         theme_color: themeColor,
         appearance_prompts: normalizeAppearancePrompts(prompts),
+        vessel_layers: layers,
+        hidden_sequences: {
+          ...(anima?.hidden_sequences || {}),
+          vessel_layers: layers,
+        },
       };
-      await base44.entities.Anima.update(anima.id, patch);
+      await updateCompanionRecord(anima, patch);
       setPreviewUrl(avatar_url);
+      setReferenceUrl(look_reference_url || "");
       setSaved(true);
       onSave?.(patch);
       if (!isPage) {
@@ -150,8 +198,16 @@ export default function AnimaCustomizer({
   );
   const hasAvatarChange =
     Boolean(previewUrl) && previewUrl !== (anima?.avatar_url || "");
+  const hasReferenceChange =
+    (referenceUrl || "") !== (anima?.look_reference_url || "");
   const hasThemeChange = themeColor !== (anima?.theme_color || "#00e5e5");
-  const hasChanges = hasAvatarChange || hasThemeChange || hasPromptChanges;
+  const hasVesselChange =
+    JSON.stringify(normalizeVesselLayers(vesselLayers)) !==
+    JSON.stringify(
+      normalizeVesselLayers(anima?.hidden_sequences?.vessel_layers || anima?.vessel_layers),
+    );
+  const hasChanges =
+    hasAvatarChange || hasThemeChange || hasPromptChanges || hasReferenceChange || hasVesselChange;
   const hasPrompts = Object.values(prompts).some((v) => v.trim());
 
   const shellClass = isPage
@@ -167,7 +223,7 @@ export default function AnimaCustomizer({
               // Customise Anima — {anima?.name || "Your Anima"}
             </h2>
             <p className="text-[9px] font-mono text-primary/30 tracking-widest uppercase mt-0.5">
-              Shape skin, hair, outfit, eyes & more · then generate a new look
+              Upload a photo · optional reference for generation · shape the look
             </p>
           </div>
           {onClose && (
@@ -292,7 +348,7 @@ export default function AnimaCustomizer({
             {previewUrl ? (
               <img
                 src={previewUrl}
-                alt={anima?.name || "Anima"}
+                alt={`${anima?.name || "Anima"} portrait`}
                 className={`w-full h-full object-cover transition-opacity duration-500 ${generating ? "opacity-30" : "opacity-100"}`}
               />
             ) : (
@@ -324,9 +380,68 @@ export default function AnimaCustomizer({
                 </p>
               </div>
             )}
+
+            {referenceUrl && (
+              <div className="absolute bottom-2 left-2 right-2 sm:right-auto flex items-end gap-2">
+                <div className="relative border border-primary/40 bg-black/80 p-1 shadow-lg">
+                  <img
+                    src={referenceUrl}
+                    alt="Look reference"
+                    className="w-14 h-14 object-cover"
+                  />
+                  <p className="absolute -top-5 left-0 font-mono text-[8px] text-primary/70 tracking-widest uppercase bg-black/80 px-1.5 py-0.5 border border-primary/25">
+                    Reference
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReferenceUrl("");
+                      setSaved(false);
+                    }}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-black border border-primary/40 text-primary/70 hover:text-primary flex items-center justify-center"
+                    aria-label="Clear reference photo"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="p-4 border-t border-primary/15 space-y-3">
+            <div className="space-y-2 border border-primary/15 bg-black/30 p-3">
+              <p className="font-mono text-[8px] text-primary/40 tracking-[0.25em] uppercase">
+                Vessel layers · same body in Presence and NetBattle
+              </p>
+              <div className="grid grid-cols-1 gap-2">
+                {VESSEL_LAYER_FIELDS.map((field) => (
+                  <label key={field.key} className="block">
+                    <span className="font-mono text-[8px] text-primary/35 tracking-widest uppercase">
+                      {field.label}
+                    </span>
+                    <input
+                      type="text"
+                      value={vesselLayers[field.layer]?.[field.field] || ""}
+                      onChange={(e) => {
+                        setVesselLayers((prev) =>
+                          normalizeVesselLayers({
+                            ...prev,
+                            [field.layer]: {
+                              ...prev[field.layer],
+                              [field.field]: e.target.value,
+                            },
+                          }),
+                        );
+                        setSaved(false);
+                      }}
+                      placeholder={field.placeholder}
+                      className="mt-1 w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-[11px] px-2 py-1.5 focus:outline-none focus:border-primary/50"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="font-mono text-[8px] text-primary/40 tracking-widest uppercase flex items-center gap-1.5">
                 <Palette className="w-3 h-3" />
@@ -373,9 +488,34 @@ export default function AnimaCustomizer({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={generating || saving || Boolean(uploadingKind)}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner sm:col-span-2"
+              >
+                {uploadingKind === "photo" ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" /> Uploading photo...
+                  </>
+                ) : (
+                  <>
+                    <ImagePlus className="w-4 h-4" />{" "}
+                    {previewUrl ? "Change Photo" : "Upload Photo"}
+                  </>
+                )}
+              </button>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                aria-label="Upload character photo"
+                onChange={handleUploadPhoto}
+              />
+              <button
+                type="button"
                 onClick={handleGenerate}
-                disabled={generating || saving || uploading}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner"
+                disabled={generating || saving || Boolean(uploadingKind)}
+                className="w-full flex items-center justify-center gap-2 py-3 border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/45 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all"
               >
                 {generating ? (
                   <>
@@ -383,32 +523,35 @@ export default function AnimaCustomizer({
                   </>
                 ) : (
                   <>
-                    <Wand2 className="w-4 h-4" /> Generate Look
+                    <Wand2 className="w-4 h-4" />{" "}
+                    {referenceUrl ? "Generate from Reference" : "Generate Look"}
                   </>
                 )}
               </button>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={generating || saving || uploading}
+                onClick={() => referenceInputRef.current?.click()}
+                disabled={generating || saving || Boolean(uploadingKind)}
                 className="w-full flex items-center justify-center gap-2 py-3 border border-primary/25 text-primary/70 hover:text-primary hover:border-primary/45 disabled:opacity-40 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all"
               >
-                {uploading ? (
+                {uploadingKind === "reference" ? (
                   <>
-                    <Loader className="w-4 h-4 animate-spin" /> Uploading...
+                    <Loader className="w-4 h-4 animate-spin" /> Uploading reference...
                   </>
                 ) : (
                   <>
-                    <Upload className="w-4 h-4" /> Upload Photo
+                    <Upload className="w-4 h-4" />{" "}
+                    {referenceUrl ? "Change Reference" : "Upload Reference"}
                   </>
                 )}
               </button>
               <input
-                ref={fileInputRef}
+                ref={referenceInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={handleUpload}
+                aria-label="Upload look reference"
+                onChange={handleUploadReference}
               />
             </div>
 
@@ -439,8 +582,8 @@ export default function AnimaCustomizer({
               </button>
             )}
 
-            <p className="font-mono text-[8px] text-primary/20 tracking-widest text-center">
-              Describe features → Generate or Upload → Apply & Save
+            <p className="font-mono text-[8px] text-primary/20 tracking-widest text-center leading-relaxed">
+              Upload Photo fills the portrait. Upload Reference is a small likeness guide for Generate Look.
             </p>
           </div>
         </div>

@@ -14,6 +14,10 @@
  */
 
 import type { RequestHandler } from "express";
+import {
+  readRuntimeEnv,
+  remirrorRuntimeEnvIntoProcess,
+} from "../lib/cloudflareEnv";
 import { handleClerkProxyRequest } from "./clerkProxyFetch";
 
 export {
@@ -27,36 +31,38 @@ export {
 } from "./clerkProxyHosts";
 
 function clerkProxyEnabled(): boolean {
-  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY?.trim() || "";
+  const publishableKey = readRuntimeEnv("CLERK_PUBLISHABLE_KEY") || "";
   if (process.env.NODE_ENV === "production") return true;
   return publishableKey.startsWith("pk_live_");
 }
 
 export function clerkProxyMiddleware(): RequestHandler {
-  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
-  if (!clerkProxyEnabled() || !secretKey) {
-    return (_req, res) => {
+  // Read keys at request time. Worker module init (and isolate reuse after a
+  // dashboard secret deploy) happens before fetch() can mirror bindings, so a
+  // boot-time closure of CLERK_SECRET_KEY would 503 forever.
+  return (req, res) => {
+    remirrorRuntimeEnvIntoProcess();
+    const secretKey = readRuntimeEnv("CLERK_SECRET_KEY");
+    if (!clerkProxyEnabled() || !secretKey) {
       res.status(503).json({
         error: "clerk_proxy_unavailable",
         message:
           "Clerk proxy is not configured. Set CLERK_SECRET_KEY (and CLERK_PUBLISHABLE_KEY) on the server.",
       });
-    };
-  }
+      return;
+    }
 
-  if (!secretKey.startsWith("sk_")) {
-    return (_req, res) => {
+    if (!secretKey.startsWith("sk_")) {
       res.status(503).json({
         error: "clerk_proxy_invalid_secret",
         message:
           "CLERK_SECRET_KEY must be a secret key (sk_live_… or sk_test_…), not a publishable key.",
       });
-    };
-  }
+      return;
+    }
 
-  // fetch-based proxy — http-proxy-middleware returns 504 on Vercel serverless
-  // when upstream Clerk is reachable via fetch but not via node-http-proxy.
-  return (req, res) => {
+    // fetch-based proxy — http-proxy-middleware returns 504 on Vercel serverless
+    // when upstream Clerk is reachable via fetch but not via node-http-proxy.
     void handleClerkProxyRequest(req, res, secretKey);
   };
 }

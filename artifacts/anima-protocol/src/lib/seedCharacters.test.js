@@ -192,3 +192,101 @@ describe("repairStarterCharacters", () => {
     await expect(repairStarterCharacters()).rejects.toThrow(/Only 0 of/);
   });
 });
+
+describe("upsertCharacters", () => {
+  it("skips Character.list when Init asks to upsert without a roster lookup", async () => {
+    const { upsertCharacters } = await loadSeedModule();
+    await upsertCharacters(
+      [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+      { skipExistingLookup: true },
+    );
+
+    expect(characterList).not.toHaveBeenCalled();
+    expect(characterBulkUpsert).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "seed_tchalla", name: "T'Challa" }),
+    ]);
+  });
+
+  it("returns upserted items so Init can remap picker ids", async () => {
+    characterBulkUpsert.mockResolvedValue({
+      count: 1,
+      items: [{ id: "char_store_1", name: "T'Challa" }],
+    });
+    const { upsertCharacters } = await loadSeedModule();
+    const result = await upsertCharacters(
+      [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+      { skipExistingLookup: true },
+    );
+
+    expect(result).toEqual({
+      added: 1,
+      skipped: 0,
+      items: [{ id: "char_store_1", name: "T'Challa" }],
+      idMap: { seed_tchalla: "char_store_1" },
+    });
+  });
+
+  it("passes Init's 20s budget into auth wait and bulkUpsert", async () => {
+    const { upsertCharacters } = await loadSeedModule();
+    await upsertCharacters(
+      [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+      { skipExistingLookup: true, timeoutMs: 20000 },
+    );
+
+    expect(waitForStoreAuth).toHaveBeenCalledWith(20000);
+    expect(characterBulkUpsert).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "seed_tchalla", name: "T'Challa" })],
+      { timeoutMs: 20000 },
+    );
+  });
+
+  it("preserves a store timeout code when bulk-upsert aborts", async () => {
+    characterBulkUpsert.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "The server took too long to respond. Check your connection or try again in a moment.",
+        ),
+        { code: "timeout" },
+      ),
+    );
+    const { upsertCharacters } = await loadSeedModule();
+    await expect(
+      upsertCharacters(
+        [{ id: "seed_tchalla", name: "T'Challa", universe: "Marvel" }],
+        { skipExistingLookup: true },
+      ),
+    ).rejects.toMatchObject({
+      code: "timeout",
+      message: /took too long to respond/,
+    });
+  });
+});
+
+describe("shouldAutoAssignCharacterPhoto", () => {
+  it("skips generator originals so Look can open without a Wikipedia hop", async () => {
+    const { shouldAutoAssignCharacterPhoto } = await loadSeedModule();
+    expect(
+      shouldAutoAssignCharacterPhoto({
+        id: "char-alyndra",
+        name: "Alyndra",
+        creation_method: "ai_prompt",
+        avatar_url: "",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoAssignCharacterPhoto({
+        id: "seed_korra",
+        name: "Korra",
+        universe: "Legend of Korra",
+        avatar_url: "",
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoAssignCharacterPhoto({
+        id: "seed_korra",
+        name: "Korra",
+        avatar_url: "https://example.com/korra.png",
+      }),
+    ).toBe(false);
+  });
+});

@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { recordDailyResonanceCheckIn } from "@/lib/dailyResonanceCheckIn";
 import { ArrowLeft, Send, Sparkles, ScrollText } from "lucide-react";
 
 const MOODS = ["joyful", "calm", "sad", "anxious", "angry", "peaceful", "hopeful", "conflicted", "neutral"];
@@ -18,39 +20,50 @@ export default function CheckIn() {
   const [gratitude, setGratitude] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
-    base44.auth.me().then((me) => {
-      if (!me) {
-        navigate("/");
-        return;
-      }
-      setUser(me);
-      setSelectedMode(me.selected_mode || "serenity");
-    });
-  }, [navigate]);
+    // Profile is only used for the greeting + mode_used. Do not gate Record
+    // Check-in on this — create is Clerk-scoped, and a rejected me() used to
+    // leave `user` null so the button silently no-op'd.
+    base44.auth.me()
+      .then((me) => {
+        if (!me) return;
+        setUser(me);
+        setSelectedMode(me.selected_mode || "serenity");
+      })
+      .catch((err) => {
+        console.error("Failed to load check-in profile:", err);
+      });
+  }, []);
 
   const handleSubmit = async () => {
-    if (!user) return;
+    if (saving) return;
     setSaving(true);
+    setSaveError("");
 
     try {
-      await base44.entities.CheckIn.create({
-        timestamp: new Date().toISOString(),
+      await recordDailyResonanceCheckIn({
         mood,
-        mood_intensity: moodIntensity,
-        physical_state: physicalState,
+        moodIntensity,
+        physicalState,
         reflection,
         gratitude,
-        mode_used: selectedMode,
+        modeUsed: selectedMode || user?.selected_mode || "serenity",
+        userEmail: user?.email,
       });
 
       setSaved(true);
       setTimeout(() => {
-        navigate("/");
+        navigate("/reflection-log");
       }, 2000);
     } catch (err) {
+      const message =
+        err?.message || "Could not save this check-in. Try again.";
       console.error("Failed to save check-in:", err);
+      setSaveError(message);
+      toast.error(message);
+    } finally {
       setSaving(false);
     }
   };
@@ -68,7 +81,7 @@ export default function CheckIn() {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-background scanline pb-8">
       {/* Header */}
       <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
@@ -99,7 +112,7 @@ export default function CheckIn() {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-6 py-12 space-y-8">
+      <div className="max-w-2xl mx-auto px-6 py-8 sm:py-12 space-y-8">
         {/* Mood Selection */}
         <div className="space-y-4">
           <p className="font-mono text-[9px] text-primary/40 tracking-[0.25em] uppercase">How are you feeling?</p>
@@ -192,6 +205,7 @@ export default function CheckIn() {
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={saving}
             className="flex items-center gap-2 px-8 py-2.5 bg-primary/10 border border-primary/50 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner glow-border"
@@ -200,6 +214,11 @@ export default function CheckIn() {
             {saving ? "Saving..." : "Record Check-in"}
           </button>
         </div>
+        {saveError ? (
+          <p role="alert" className="font-mono text-[11px] text-red-400/90 tracking-wide">
+            {saveError}
+          </p>
+        ) : null}
       </div>
     </div>
   );

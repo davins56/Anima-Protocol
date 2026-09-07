@@ -1,5 +1,4 @@
-import type pg from "pg";
-import { getPool } from "./client";
+import { getPool, withTransientDbRetry, type SqlQueryable } from "./client";
 
 /** Core relations the store / chat API require. */
 export const REQUIRED_TABLES = [
@@ -39,7 +38,50 @@ export type EnsureSchemaResult = {
   errors: string[];
 };
 
-type Queryable = Pick<pg.Pool, "query">;
+type Queryable = SqlQueryable;
+
+/** Identifiers we are willing to interpolate as `$n` scalars (never arrays). */
+const SAFE_TABLE_NAME = /^[a-z_][a-z0-9_]*$/;
+
+/**
+ * Build the information_schema lookup used by inspectSchema.
+ *
+ * Do **not** bind a JS `string[]` as `ANY($1::text[])`. postgres.js on the
+ * Worker / Hyperdrive path (`fetch_types: false`) stringifies that parameter
+ * via `Array#toString` (`"a,b,c"`). Postgres then throws `22P02` "malformed
+ * array literal", inspectSchema never returns `missingTables`, and
+ * ensureSchema cannot self-heal. Scalar `IN ($1, $2, …)` works on node-pg
+ * and postgres.js.
+ */
+export function buildPresentTablesInspectQuery(names: readonly string[]): {
+  text: string;
+  values: string[];
+} {
+  const values: string[] = [];
+  for (const name of names) {
+    if (!SAFE_TABLE_NAME.test(name)) {
+      throw new Error(`Invalid table name for schema inspect: ${name}`);
+    }
+    values.push(name);
+  }
+  if (values.length === 0) {
+    return {
+      text: `SELECT table_name
+     FROM information_schema.tables
+     WHERE false`,
+      values: [],
+    };
+  }
+  const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
+  return {
+    text: `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = current_schema()
+       AND table_type = 'BASE TABLE'
+       AND table_name IN (${placeholders})`,
+    values,
+  };
+}
 
 async function listPresentTables(
   db: Queryable,
@@ -47,14 +89,8 @@ async function listPresentTables(
 ): Promise<Set<string>> {
   // Use current_schema() so disposable test search_paths and production
   // `public` both work. Extensions still live in the global catalog.
-  const { rows } = await db.query<{ table_name: string }>(
-    `SELECT table_name
-     FROM information_schema.tables
-     WHERE table_schema = current_schema()
-       AND table_type = 'BASE TABLE'
-       AND table_name = ANY($1::text[])`,
-    [names],
-  );
+  const { text, values } = buildPresentTablesInspectQuery(names);
+  const { rows } = await db.query<{ table_name: string }>(text, values);
   return new Set(rows.map((r) => r.table_name));
 }
 
@@ -69,18 +105,43 @@ async function hasPgTrgmExtension(db: Queryable): Promise<boolean> {
 
 /** Inspect whether the production schema matches what the API expects. */
 export async function inspectSchema(
-  db: Queryable = getPool(),
+  db?: Queryable,
 ): Promise<SchemaInspection> {
-  const present = await listPresentTables(db, REQUIRED_TABLES);
-  const presentTables = REQUIRED_TABLES.filter((t) => present.has(t));
-  const missingTables = REQUIRED_TABLES.filter((t) => !present.has(t));
-  const hasPgTrgm = await hasPgTrgmExtension(db);
-  return {
-    ok: missingTables.length === 0,
-    missingTables,
-    presentTables,
-    hasPgTrgm,
+  const run = async (): Promise<SchemaInspection> => {
+    const conn = db ?? getPool();
+    const present = await listPresentTables(conn, REQUIRED_TABLES);
+    const presentTables = REQUIRED_TABLES.filter((t) => present.has(t));
+    const missingTables = REQUIRED_TABLES.filter((t) => !present.has(t));
+    const hasPgTrgm = await hasPgTrgmExtension(conn);
+    return {
+      ok: missingTables.length === 0,
+      missingTables,
+      presentTables,
+      hasPgTrgm,
+    };
   };
+  // Tests pass a dedicated pool; only retry the process-wide default.
+  return db ? run() : withTransientDbRetry(run);
+}
+
+/** When the inspect query itself throws, treat every required table as missing. */
+function assumeAllTablesMissing(): SchemaInspection {
+  return {
+    ok: false,
+    missingTables: [...REQUIRED_TABLES],
+    presentTables: [],
+    hasPgTrgm: false,
+  };
+}
+
+async function inspectSchemaOrAssumeMissing(
+  db: Queryable,
+): Promise<SchemaInspection> {
+  try {
+    return await inspectSchema(db);
+  } catch {
+    return assumeAllTablesMissing();
+  }
 }
 
 /**
@@ -93,9 +154,17 @@ export async function inspectSchema(
  * of date".
  */
 export async function ensureSchema(
-  db: Queryable = getPool(),
+  db?: Queryable,
 ): Promise<EnsureSchemaResult> {
-  const before = await inspectSchema(db);
+  if (db) return runEnsureSchema(db);
+  // Re-resolve getPool() after a reset so we do not retry on a dead client.
+  return withTransientDbRetry(() => runEnsureSchema(getPool()));
+}
+
+async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
+  // Inspect must not gate DDL. A Hyperdrive/postgres.js array-bind failure
+  // used to throw here and skip every CREATE IF NOT EXISTS.
+  const before = await inspectSchemaOrAssumeMissing(db);
   const errors: string[] = [];
   const createdTables: RequiredTable[] = [];
 
@@ -499,7 +568,7 @@ let ensureOnce: Promise<EnsureSchemaResult> | null = null;
  * a transient privilege error creating an extension).
  */
 export function ensureSchemaOnce(
-  db: Queryable = getPool(),
+  db?: Queryable,
 ): Promise<EnsureSchemaResult> {
   if (!ensureOnce) {
     ensureOnce = ensureSchema(db).then(

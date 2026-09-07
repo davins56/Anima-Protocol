@@ -35,6 +35,11 @@ import type { RelationshipState } from "./relationshipEngine";
 import type { ArcState } from "./narrativeArcEngine";
 import { relationshipStateToPrompt, arcStateToPrompt } from "./arcAndBondPrompt";
 import { formatExpressionPrompt } from "./animaExpressions";
+import {
+  hiddenSequencePromptBlock,
+  type HiddenSequencesState,
+  type Weather,
+} from "./hiddenSequences";
 
 import {
   type CharacterData,
@@ -57,6 +62,8 @@ import {
   type CrisisResource,
   type TherapySafetyAssessment,
 } from "./therapySafety";
+import type { IntimacyProfile, IntimacyScene, IntimacyTurnResult } from "./intimacyTypes";
+import { getIntimacyPromptGuidance } from "./intimacyPrompt";
 
 // Re-export sub-module types for consumers
 export type { CompanionMemoryRecord, CharacterData, ResonanceState, SynchroState };
@@ -132,6 +139,15 @@ export interface PromptBuilderParams {
   /** Layered therapy risk result; only used by the therapy mode contract. */
   therapyAssessment?: TherapySafetyAssessment | null;
   crisisResource?: CrisisResource | null;
+
+  /** Hidden Sequences / conversational weather (client-authored, sanitized as guidance). */
+  hiddenSequences?: HiddenSequencesState | null;
+  conversationalWeather?: Weather | null;
+
+  /** Intimacy profile, scene, and turn evaluation result */
+  intimacyProfile?: IntimacyProfile | null;
+  intimacyScene?: IntimacyScene | null;
+  intimacyTurnResult?: IntimacyTurnResult | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -307,6 +323,8 @@ export function composePrompt(params: PromptBuilderParams): string {
     modePolicy: providedModePolicy,
     therapyAssessment,
     crisisResource,
+    hiddenSequences,
+    conversationalWeather,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -412,13 +430,19 @@ ${suppliedContext.slice(0, 24_000)}
   const memConfig = synchroState
     ? synchroToMemoryConfig(synchroState)
     : { topK: 12, preferTypes: undefined };
-  const scoredMemories = retrieveRelevantMemories(memories, {
+  // Crossover/group loads every participant's companion_memories. Scoring
+  // across that pool lets speaker A recall speaker B's private facts.
+  const speakerMemories =
+    mainChar?.id != null && String(mainChar.id)
+      ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
+      : memories;
+  const scoredMemories = retrieveRelevantMemories(speakerMemories, {
     topK: memConfig.topK,
     contextHint: content,
     preferTypes: memConfig.preferTypes,
   });
   const memoryBlock = formatMemoriesForPrompt(scoredMemories, characterNames);
-  const memorySummary = buildMemorySummaryBlock(memories, characterNames);
+  const memorySummary = buildMemorySummaryBlock(speakerMemories, characterNames);
 
   // 5. Voice anchors
   let voiceBlock = "";
@@ -499,6 +523,22 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     if (quirksBlock) evolutionBlock += `\n\n${quirksBlock}`;
   }
 
+  const hiddenSequenceBlock = hiddenSequencePromptBlock({
+    hidden: hiddenSequences,
+    weather: conversationalWeather || undefined,
+    recentMessages,
+    therapy: modePolicy.name === "therapy" || mode === "therapy",
+  });
+
+  let intimacyBlock = "";
+  if (params.intimacyProfile) {
+    intimacyBlock = getIntimacyPromptGuidance(
+      params.intimacyProfile,
+      params.intimacyScene || undefined,
+      params.intimacyTurnResult || undefined,
+    );
+  }
+
   // Assemble in one authoritative pipeline:
   // scene data → identity → user/world → relationship → memory → mode/safety
   // → lore/voice → conversation → current turn → final safety guardrail.
@@ -509,12 +549,14 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     resonanceBlock,
     relationshipBlock,
     evolutionBlock,
+    hiddenSequenceBlock,
     arcBlock,
     memorySummary,
     memoryBlock,
     sharedBlock,
     authoritativeModeBlock,
     careSafetyBlock,
+    intimacyBlock,
     voiceBlock,
     crossoverBlock,
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",

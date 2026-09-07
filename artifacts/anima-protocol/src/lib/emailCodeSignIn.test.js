@@ -1,10 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   asSearchText,
   clerkErrorMessage,
+  CLERK_GITHUB_OAUTH_CALLBACK_URL,
+  GITHUB_OAUTH_NAVIGATION_GRACE_MS,
+  GITHUB_OAUTH_SSO_TIMEOUT_MS,
+  githubOAuthHangMessage,
   hasEmailCodeFactor,
   humanizeIdentifierError,
+  interpretGitHubSsoResult,
   isAlreadySignedInError,
+  isIncompleteOAuthSignInStatus,
+  waitForPageNavigation,
+  watchPageNavigation,
   isPatternFormatError,
   isPreviewSignInHost,
   previewSignInHint,
@@ -62,9 +70,18 @@ describe("isPatternFormatError", () => {
 });
 
 describe("isPreviewSignInHost", () => {
-  it("detects vercel preview hosts", () => {
+  it("treats any non-anima, non-local host as unauthorized for production Clerk", () => {
     expect(isPreviewSignInHost("anima-protocol-abc.vercel.app")).toBe(true);
+    expect(isPreviewSignInHost("anima-protocol.replit.app")).toBe(true);
     expect(isPreviewSignInHost("www.anima-protocol.com")).toBe(false);
+    expect(isPreviewSignInHost("anima-protocol.com")).toBe(false);
+    expect(isPreviewSignInHost("localhost")).toBe(false);
+  });
+});
+
+describe("PRODUCTION_SIGN_IN_URL", () => {
+  it("uses the apex path that Cloudflare actually serves", () => {
+    expect(PRODUCTION_SIGN_IN_URL).toBe("https://anima-protocol.com/sign-in");
   });
 });
 
@@ -193,6 +210,20 @@ describe("clerkErrorMessage", () => {
     expect(clerkErrorMessage(null)).toBeNull();
     expect(clerkErrorMessage({})).toBeNull();
   });
+
+  it("surfaces GitHub hang errors with the production URL and OAuth callback", () => {
+    const hang = new Error(githubOAuthHangMessage());
+    hang.code = "oauth_redirect_timeout";
+    expect(clerkErrorMessage(hang, { context: "oauth", previewHost: false })).toBe(
+      githubOAuthHangMessage(),
+    );
+    expect(clerkErrorMessage(hang, { context: "oauth", previewHost: false })).toContain(
+      PRODUCTION_SIGN_IN_URL,
+    );
+    expect(clerkErrorMessage(hang, { context: "oauth", previewHost: false })).toContain(
+      CLERK_GITHUB_OAUTH_CALLBACK_URL,
+    );
+  });
 });
 
 describe("isAlreadySignedInError", () => {
@@ -250,21 +281,123 @@ describe("recoverExistingClerkSession", () => {
   });
 });
 
+describe("githubOAuthHangMessage", () => {
+  it("includes the production sign-in URL and GitHub OAuth callback", () => {
+    const message = githubOAuthHangMessage();
+    expect(message).toContain(PRODUCTION_SIGN_IN_URL);
+    expect(message).toContain(CLERK_GITHUB_OAUTH_CALLBACK_URL);
+    expect(GITHUB_OAUTH_SSO_TIMEOUT_MS).toBeGreaterThanOrEqual(8000);
+    expect(GITHUB_OAUTH_SSO_TIMEOUT_MS).toBeLessThanOrEqual(12000);
+  });
+});
+
+describe("interpretGitHubSsoResult", () => {
+  it("treats navigation as success even without a status", () => {
+    expect(interpretGitHubSsoResult({ status: null }, { didNavigate: true })).toEqual({
+      ok: true,
+      navigated: true,
+      shouldFinalize: false,
+    });
+  });
+
+  it("finalizes when Clerk reports complete without a page navigation", () => {
+    expect(interpretGitHubSsoResult({ status: "complete" })).toEqual({
+      ok: true,
+      navigated: false,
+      shouldFinalize: true,
+      status: "complete",
+    });
+  });
+
+  it("surfaces incomplete needs_* statuses with the callback hint", () => {
+    expect(isIncompleteOAuthSignInStatus("needs_second_factor")).toBe(true);
+    const result = interpretGitHubSsoResult({ status: "needs_first_factor" });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("oauth_incomplete");
+    expect(result.error?.message).toContain("needs_first_factor");
+    expect(result.error?.message).toContain(CLERK_GITHUB_OAUTH_CALLBACK_URL);
+    expect(result.error?.message).toContain(PRODUCTION_SIGN_IN_URL);
+  });
+
+  it("treats a quiet return with no status as a missing redirect", () => {
+    const result = interpretGitHubSsoResult({ status: null });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("oauth_no_redirect");
+    expect(result.error?.message).toBe(githubOAuthHangMessage());
+  });
+});
+
+describe("watchPageNavigation", () => {
+  it("marks navigation on pagehide and can be disposed", () => {
+    const target = {
+      listeners: {},
+      addEventListener(type, fn) {
+        this.listeners[type] = fn;
+      },
+      removeEventListener(type) {
+        delete this.listeners[type];
+      },
+    };
+    const watcher = watchPageNavigation(target);
+    expect(watcher.didNavigate()).toBe(false);
+    target.listeners.pagehide();
+    expect(watcher.didNavigate()).toBe(true);
+    watcher.dispose();
+    expect(target.listeners.pagehide).toBeUndefined();
+  });
+
+  it("does not treat a backgrounded tab as navigation", () => {
+    const watcher = watchPageNavigation({
+      addEventListener() {},
+      removeEventListener() {},
+    });
+    expect(watcher.didNavigate()).toBe(false);
+    watcher.dispose();
+  });
+});
+
+describe("waitForPageNavigation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves immediately when navigation already started", async () => {
+    await expect(waitForPageNavigation(() => true, 400)).resolves.toBe(true);
+  });
+
+  it("waits the grace window for a late page leave", async () => {
+    vi.useFakeTimers();
+    let navigated = false;
+    const pending = waitForPageNavigation(() => navigated, 400);
+    navigated = true;
+    await vi.advanceTimersByTimeAsync(400);
+    await expect(pending).resolves.toBe(true);
+  });
+});
+
 describe("startGitHubOAuthSignIn", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("uses signIn.sso with relative Clerk paths", async () => {
     const sso = vi.fn(async () => ({ error: null }));
-    const result = await startGitHubOAuthSignIn({ sso }, "");
+    const result = await startGitHubOAuthSignIn({ sso, status: "complete" }, "");
     expect(sso).toHaveBeenCalledWith({
       strategy: "oauth_github",
       redirectCallbackUrl: "/sign-in/sso-callback",
       redirectUrl: "/",
     });
     expect(result.method).toBe("signIn.sso");
+    expect(result.shouldFinalize).toBe(true);
   });
 
   it("falls back to legacy authenticateWithRedirect on signIn", async () => {
     const authenticateWithRedirect = vi.fn(async () => {});
-    const result = await startGitHubOAuthSignIn({ authenticateWithRedirect }, "/app");
+    const result = await startGitHubOAuthSignIn(
+      { authenticateWithRedirect, status: "complete" },
+      "/app",
+    );
     expect(authenticateWithRedirect).toHaveBeenCalledWith({
       strategy: "oauth_github",
       redirectUrl: "/app/sign-in/sso-callback",
@@ -282,5 +415,74 @@ describe("startGitHubOAuthSignIn", () => {
     await expect(
       startGitHubOAuthSignIn({ sso: async () => ({ error }) }, ""),
     ).rejects.toEqual(error);
+  });
+
+  it("times out when sso never resolves or navigates", async () => {
+    vi.useFakeTimers();
+    const sso = vi.fn(() => new Promise(() => {}));
+    const pending = startGitHubOAuthSignIn({ sso }, "", null, { timeoutMs: 10_000 });
+    const assertion = expect(pending).rejects.toMatchObject({
+      code: "oauth_redirect_timeout",
+      message: githubOAuthHangMessage(),
+    });
+    await vi.advanceTimersByTimeAsync(9_999);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+  });
+
+  it("throws when sso returns without error, navigation, or a complete status", async () => {
+    await expect(
+      startGitHubOAuthSignIn({ sso: async () => ({ error: null }), status: null }, "", null, {
+        didNavigate: () => false,
+        navigationGraceMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: "oauth_no_redirect",
+      message: githubOAuthHangMessage(),
+    });
+  });
+
+  it("waits for a late Clerk redirect after sso resolves", async () => {
+    vi.useFakeTimers();
+    let navigated = false;
+    const pending = startGitHubOAuthSignIn(
+      { sso: async () => ({ error: null }), status: null },
+      "",
+      null,
+      {
+        didNavigate: () => navigated,
+        navigationGraceMs: GITHUB_OAUTH_NAVIGATION_GRACE_MS,
+      },
+    );
+    await Promise.resolve();
+    navigated = true;
+    await vi.advanceTimersByTimeAsync(GITHUB_OAUTH_NAVIGATION_GRACE_MS);
+    await expect(pending).resolves.toMatchObject({
+      method: "signIn.sso",
+      navigated: true,
+    });
+  });
+
+  it("throws an incomplete-status error instead of leaving the caller spinning", async () => {
+    await expect(
+      startGitHubOAuthSignIn(
+        { sso: async () => ({ error: null }), status: "needs_client_trust" },
+        "",
+        null,
+        { didNavigate: () => false },
+      ),
+    ).rejects.toMatchObject({
+      code: "oauth_incomplete",
+      status: "needs_client_trust",
+    });
+  });
+
+  it("does not treat a hang as an error if the page already started navigating", async () => {
+    const sso = vi.fn(async () => ({ error: null }));
+    const result = await startGitHubOAuthSignIn({ sso, status: null }, "", null, {
+      didNavigate: () => true,
+    });
+    expect(result.navigated).toBe(true);
+    expect(result.method).toBe("signIn.sso");
   });
 });

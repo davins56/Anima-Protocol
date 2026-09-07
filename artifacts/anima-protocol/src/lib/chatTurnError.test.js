@@ -20,4 +20,48 @@ describe("chatTurnErrorMessage", () => {
   it("falls back when the failure has no message", () => {
     expect(chatTurnErrorMessage(null)).toBe("The companion could not reply. Please try again.");
   });
+
+  it("remaps OpenRouter's raw provider-400 wrapper", () => {
+    expect(chatTurnErrorMessage(new Error("400 Provider returned error"))).toMatch(
+      /free-tier model is temporarily unavailable/i,
+    );
+    expect(chatTurnErrorMessage(new Error("400 provider returned error"))).not.toMatch(
+      /Provider returned error/i,
+    );
+    expect(chatTurnErrorMessage(new Error("Provider returned error"))).toMatch(
+      /openrouter\.ai\/settings\/credits/i,
+    );
+  });
+
+  it("remaps OpenRouter's raw ZDR / guardrail dump to a privacy hint", () => {
+    const dump =
+      "404 0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons): ZDR violation (account settings): 1 endpoint excluded; configurable at https://openrouter.ai/settings/privacy";
+    const message = chatTurnErrorMessage(new Error(dump));
+    expect(message).toMatch(/Zero Data Retention/i);
+    expect(message).toContain("https://openrouter.ai/settings/privacy");
+    expect(message).not.toMatch(/0 endpoints out of/i);
+    expect(message).not.toMatch(/ZDR violation/i);
+    expect(message).not.toMatch(/guardrail restrictions/i);
+  });
+
+  it("remaps raw generic HTTP 400 and backend request failure errors to user-friendly messages", () => {
+    expect(chatTurnErrorMessage(new Error("backend request failed with error 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+    expect(chatTurnErrorMessage(new Error("Request failed with status code 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+    expect(chatTurnErrorMessage(new Error("API error: 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+    expect(chatTurnErrorMessage(new Error("HTTP 400"))).toBe(
+      "The companion service encountered an issue (HTTP 400). Please try again in a moment.",
+    );
+  });
+
+  it("remaps generic HTTP status codes to polite error messages", () => {
+    expect(chatTurnErrorMessage(new Error("API error: 500"))).toBe(
+      "The companion service encountered an issue. Please try again in a moment.",
+    );
+  });
 });

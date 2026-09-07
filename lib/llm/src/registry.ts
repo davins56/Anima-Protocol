@@ -34,7 +34,7 @@
 
 export type ProviderName = "openai" | "groq" | "ollama" | "vllm" | "mock";
 export type ModelTier = "light" | "standard" | "heavy";
-export type OpenWeightModelFamily = "llama" | "qwen" | "mistral" | "gemma" | "deepseek";
+export type OpenWeightModelFamily = "llama" | "qwen" | "mistral" | "gemma" | "deepseek" | "minimax" | "google";
 
 export const PROVIDER_NAMES: ProviderName[] = [
   "openai",
@@ -50,6 +50,8 @@ export const OPEN_WEIGHT_MODEL_FAMILIES: OpenWeightModelFamily[] = [
   "mistral",
   "gemma",
   "deepseek",
+  "minimax",
+  "google",
 ];
 /**
  * Matches the api-server's actual default (llmFailover.ts `defaultProviderMode()`
@@ -142,6 +144,26 @@ const OPEN_WEIGHT_CHAT_MODELS: Record<OpenWeightModelFamily, OpenWeightChatModel
     openRouterModel: "deepseek/deepseek-r1:free",
     maxTokens: 8192,
     notes: "Reasoning-oriented open-weight family for analytical turns.",
+  },
+  minimax: {
+    family: "minimax",
+    label: "MiniMax Free",
+    aliases: ["minimax", "minimax-free", "minimax-01"],
+    ollamaModel: "minimax:free",
+    vllmModel: "minimax/minimax-01",
+    openRouterModel: "minimax/minimax-01:free",
+    maxTokens: 8192,
+    notes: "MiniMax free tier provider model.",
+  },
+  google: {
+    family: "google",
+    label: "Google Jules",
+    aliases: ["google", "jules", "google-jules", "gemma-jules"],
+    ollamaModel: "google-jules:latest",
+    vllmModel: "google/jules",
+    openRouterModel: "google/gemma-3-12b-it:free",
+    maxTokens: 8192,
+    notes: "Google Jules open weight family.",
   },
 };
 

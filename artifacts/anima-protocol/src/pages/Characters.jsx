@@ -4,12 +4,13 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { useStoreSync } from "@/lib/useStoreSync";
-import { Plus, X, Edit2, Trash2, Upload, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
+import { Plus, X, Edit2, Trash2, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
 import {
   autoAssignCharacterPhoto,
   getStarterRoster,
   photoNeedsLookup,
   retryStarterSeed,
+  shouldAutoAssignCharacterPhoto,
 } from "@/lib/seedCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
@@ -22,14 +23,17 @@ import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
-
-/** True when /api/store failed because Postgres is down / unreachable. */
-function isStoreDatabaseError(err) {
-  const status = err?.status;
-  if (status === 503) return true;
-  const msg = String(err?.message || "");
-  return /database|postgres|unavailable|unreachable|connection/i.test(msg);
-}
+import AvatarUploadField from "@/components/anima/AvatarUploadField";
+import IntimacyEditor from "@/components/intimacy/IntimacyEditor";
+import { characterCreatePayload } from "@/lib/characterAvatarUpload";
+import {
+  companionCreateErrorMessage,
+  createCompanionRecord,
+} from "@/lib/createCompanion";
+import {
+  isStoreDatabaseError,
+  isStoreReadUnavailable,
+} from "@/lib/storeErrorSignals";
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -72,6 +76,7 @@ export default function Characters() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [fetchingBio, setFetchingBio] = useState(false);
   const [longPressTimer, setLongPressTimer] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -113,15 +118,22 @@ export default function Characters() {
       setCharacters(data || []);
     } catch (err) {
       const message = err?.message || "Could not load characters.";
-      if (isStoreDatabaseError(err)) {
+      // Fall back for *any* failed read, but only blame the database when the
+      // server actually said so — a timeout or a Cloudflare edge page is not a
+      // database outage.
+      if (isStoreReadUnavailable(err)) {
         // seedCharacters.js (package root) seeds Supabase and is NOT read by the
         // UI. The live roster is src/lib/seedCharacters.js → /api/store → Postgres.
-        // When Postgres is down, surface that bundled roster so the list is not empty.
+        // When the store cannot be read, surface that bundled roster so the list
+        // is not empty.
         const bundled = getStarterRoster();
         setCharacters(bundled);
         setUsingBundledSeed(true);
+        const recovery = isStoreDatabaseError(err)
+          ? "not saved to your account until the database is reachable"
+          : "not saved to your account until the store can be reached again";
         setLoadError(
-          `${message}. Showing the bundled starter roster (${bundled.length}) — not saved to your account until the database is reachable.`,
+          `${message}. Showing the bundled starter roster (${bundled.length}) — ${recovery}.`,
         );
       } else {
         setLoadError(message);
@@ -150,6 +162,7 @@ export default function Characters() {
       setEditingChar(null);
       setForm(defaultForm);
       setShowForm(true);
+      setSaveError("");
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
@@ -170,6 +183,7 @@ export default function Characters() {
       speaking_style: char.speaking_style || "",
       elevenlabs_voice_id: char.elevenlabs_voice_id || "",
     });
+    setSaveError("");
     setShowForm(true);
   };
 
@@ -206,11 +220,12 @@ export default function Characters() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || uploadingAvatar) return;
     setSaving(true);
+    setSaveError("");
     try {
-      let finalForm = form;
-      
+      let finalForm = characterCreatePayload(form);
+
       // If creating a new character with a universe but missing
       // personality/backstory/speaking_style, scour the web for their
       // mannerisms and speech patterns to populate the gaps.
@@ -221,19 +236,19 @@ export default function Characters() {
         });
         const generatedTraits = generated?.data || generated || {};
         finalForm = {
-          ...form,
-          personality: generatedTraits.personality || form.personality,
-          backstory: generatedTraits.backstory || form.backstory,
-          speaking_style: generatedTraits.speaking_style || form.speaking_style
+          ...finalForm,
+          personality: generatedTraits.personality || finalForm.personality,
+          backstory: generatedTraits.backstory || finalForm.backstory,
+          speaking_style: generatedTraits.speaking_style || finalForm.speaking_style
         };
       }
 
       if (editingChar) {
         await base44.entities.Character.update(editingChar.id, finalForm);
       } else {
-        const created = await base44.entities.Character.create(finalForm);
+        const created = await createCompanionRecord("Character", finalForm);
         // No photo provided? Auto-search one in the background.
-        if (created && !finalForm.avatar_url) {
+        if (created && shouldAutoAssignCharacterPhoto(created)) {
           autoAssignCharacterPhoto(created)
             .then(() => loadCharacters())
             .catch(() => {});
@@ -245,6 +260,9 @@ export default function Characters() {
       setForm(defaultForm);
     } catch (err) {
       console.error('Error saving character:', err);
+      const message = companionCreateErrorMessage(err) || "Could not save this character.";
+      setSaveError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -275,26 +293,6 @@ export default function Characters() {
       setPhotoMsg({ id: char.id, text: "Lookup failed — try again" });
     } finally {
       setPhotoLoadingId(null);
-    }
-  };
-
-  const handleAvatarUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploadingAvatar(true);
-    try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      if (file_url) {
-        setForm((f) => ({ ...f, avatar_url: file_url }));
-      } else {
-        toast.error("Avatar upload failed. Try another image.");
-      }
-    } catch (err) {
-      console.error("Avatar upload failed:", err);
-      toast.error(err?.message || "Avatar upload failed. Try another image.");
-    } finally {
-      setUploadingAvatar(false);
-      e.target.value = "";
     }
   };
 
@@ -342,6 +340,8 @@ export default function Characters() {
     setShowForm(false);
     setEditingChar(null);
     setForm(defaultForm);
+    setSaveError("");
+    setUploadingAvatar(false);
   };
 
   return (
@@ -591,33 +591,15 @@ export default function Characters() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              {/* Avatar Upload */}
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 border border-primary/30 bg-primary/5 overflow-hidden flex-shrink-0">
-                  {form.avatar_url ? (
-                    <img src={form.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <span className="font-mono text-primary/20 text-2xl">{form.name[0] || "?"}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2 flex-1">
-                  <label className="block">
-                    <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
-                    <span className="flex items-center gap-2 px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-[10px] tracking-widest uppercase cursor-pointer transition-all w-fit">
-                      <Upload className="w-3 h-3" />
-                      {uploadingAvatar ? "Uploading..." : "Upload Avatar"}
-                    </span>
-                  </label>
-                  <input
-                    value={form.avatar_url}
-                    onChange={(e) => setForm((f) => ({ ...f, avatar_url: e.target.value }))}
-                    placeholder="Or paste image URL..."
-                    className="w-full bg-black/60 border border-primary/15 text-primary/70 placeholder-primary/15 font-mono text-[10px] px-3 py-2 focus:outline-none focus:border-primary/40 transition-colors"
-                  />
-                </div>
-              </div>
+              <AvatarUploadField
+                value={form.avatar_url}
+                onChange={(url) => setForm((f) => ({ ...f, avatar_url: url }))}
+                nameHint={form.name}
+                onBusyChange={setUploadingAvatar}
+              />
+              {saveError ? (
+                <p className="text-[10px] font-mono text-red-400/90">{saveError}</p>
+              ) : null}
 
               {/* Name & Universe */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -693,6 +675,16 @@ export default function Characters() {
                   </>
                 )}
               </button>
+
+              {/* Intimacy Settings */}
+              {editingChar?.id && (
+                <div className="pt-4 border-t border-primary/20">
+                  <IntimacyEditor
+                    characterId={editingChar.id}
+                    characterName={form.name}
+                  />
+                </div>
+              )}
               </div>
             </div>
 
@@ -702,7 +694,7 @@ export default function Characters() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={!form.name.trim() || saving}
+                disabled={!form.name.trim() || saving || uploadingAvatar}
                 className="px-6 py-2 bg-primary/10 border border-primary/50 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed font-mono text-xs tracking-widest uppercase transition-all hud-corner glow-border"
               >
                 {saving ? "Saving..." : editingChar ? "Update" : "Create"}

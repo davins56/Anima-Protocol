@@ -24,6 +24,12 @@ vi.mock("../src/lib/llmFailover", () => ({
     brand: "anima",
     failedOver: false,
   })),
+  isOpenRouterAlreadyFreeTier: () => false,
+  isOpenRouterGenericProviderError: () => false,
+  isOpenRouterZdrOrDataPolicyError: () => false,
+  OPENROUTER_FREE_PROVIDER_HINT: "OpenRouter free-tier hint",
+  OPENROUTER_ZDR_PRIVACY_HINT: "OpenRouter ZDR privacy hint",
+  remapGenericProviderError: (err: Error) => err,
 }));
 
 vi.mock("../src/lib/modelRouter", () => ({
@@ -47,6 +53,7 @@ import {
   chatMessages,
   chatSessions,
   chatTurns,
+  companionMemories,
   db,
   ensureSchemaOnce,
   userEntities,
@@ -131,6 +138,7 @@ afterAll(async () => {
   await db.delete(chatMessages).where(eq(chatMessages.userId, userId));
   await db.delete(chatSessions).where(eq(chatSessions.userId, userId));
   await db.delete(chatTurns).where(eq(chatTurns.userId, userId));
+  await db.delete(companionMemories).where(eq(companionMemories.userId, userId));
   await db.delete(userEntities).where(like(userEntities.userId, `${prefix}%`));
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
@@ -200,5 +208,66 @@ describe("chat lifecycle", () => {
       persistence_status: "committed",
     });
     expect(llmMocks.createChatStreamWithFailover).toHaveBeenCalledTimes(1);
+  });
+
+  it("client commit writes companion memory without duplicating chat rows", async () => {
+    const clientTurnId = `turn_${prefix}_client`;
+    const stream = await request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: clientTurnId,
+        session_id: sessionId,
+        content: "Remember the harbor light",
+        character_id: characterId,
+        character_ids: [characterId],
+        assistant_character_id: characterId,
+        mode: "solo",
+        persist: false,
+        persistence_owner: "client",
+        region: { share_region: false },
+      }),
+    });
+    expect(stream.status).toBe(200);
+    await stream.text();
+
+    const commit = await request(`/chat/turns/${clientTurnId}/commit`, {
+      method: "POST",
+      body: "{}",
+    });
+    expect(commit.status).toBe(200);
+    expect(await commit.json()).toMatchObject({ persistence_status: "committed" });
+
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(
+        and(
+          eq(companionMemories.userId, userId),
+          eq(companionMemories.characterId, characterId),
+        ),
+      )
+      .limit(1);
+    expect(memory).toBeTruthy();
+    const facts = Array.isArray(memory?.facts) ? memory.facts : [];
+    expect(
+      facts.some(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as { turn_id?: string }).turn_id === clientTurnId,
+      ),
+    ).toBe(true);
+
+    const stored = await db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+        ),
+      );
+    expect(stored.map((row) => row.entityId)).not.toContain(`${clientTurnId}:user`);
+    expect(stored.map((row) => row.entityId)).not.toContain(`${clientTurnId}:assistant`);
   });
 });

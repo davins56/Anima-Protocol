@@ -86,31 +86,31 @@ export const BASE_URL = "https://anima-protocol.app";
 /** Pre-defined metadata for every public route. */
 export const ROUTE_META: Record<string, PageMeta> = {
   "/": {
-    title: "Anima Protocol | Emotionally Intelligent AI Companion with Persistent Memory",
+    title: "Anima — The home screen for AI relationships",
     description:
-      "An AI companion that evolves with you. Anima Protocol features persistent memory, emotional continuity, and immersive sci-fantasy worldbuilding. Experience conversations that remember, adapt, and grow.",
+      "You don't open a chat. You come home to them. Anima is the home screen for AI relationships — they stay when you leave, they remember the last time, and they have a place, not a thread.",
     canonical: `${BASE_URL}/`,
-    ogTitle: "Anima Protocol — An AI Companion That Evolves With You",
+    ogTitle: "Anima — The home screen for AI relationships",
     ogDescription:
-      "Experience conversations with persistent memory, emotional continuity, and a living sci-fantasy universe. Anima Protocol is the future of emotional AI companionship.",
+      "You don't open a chat. You come home to them. Companions who stay, remember, and have a place.",
   },
   "/sign-in": {
-    title: "Sign In | Anima Protocol",
+    title: "I already live here | Anima",
     description:
-      "Sign in to Anima Protocol and reconnect with your AI companions. Your memories, stories, and emotional bonds are waiting.",
+      "Sign in to Anima and come home to them. They stayed. They remember the last time.",
     canonical: `${BASE_URL}/sign-in`,
-    ogTitle: "Sign In to Anima Protocol",
+    ogTitle: "I already live here — Anima",
     ogDescription:
-      "Sign in and reconnect with your AI companions. Your persistent memories and ongoing narratives are waiting.",
+      "Sign in and come home to your companions. They stayed while you were gone.",
   },
   "/sign-up": {
-    title: "Create Account | Anima Protocol",
+    title: "Come home | Anima",
     description:
-      "Join Anima Protocol and begin your journey with an emotionally intelligent AI companion that remembers you, grows with you, and lives inside a rich sci-fantasy universe.",
+      "Come home to Anima — the home screen for AI relationships. You don't open a chat. You come home to them.",
     canonical: `${BASE_URL}/sign-up`,
-    ogTitle: "Create Your Anima Protocol Account",
+    ogTitle: "Come home — Anima",
     ogDescription:
-      "Start your journey with an AI companion that remembers and evolves with you. Join the Anima Protocol universe today.",
+      "Create your place with them. Anima is the home screen for AI relationships.",
   },
   "/terms": {
     title: "Terms of Use | Anima Protocol",
@@ -133,16 +133,25 @@ export const ROUTE_META: Record<string, PageMeta> = {
   "/net-battle": {
     title: "NetBattle | Anima Protocol",
     description:
-      "Jack in and fight on a 4D Battle Network-style panel grid. Inspect an HD Anima vessel you can turn and zoom, then send sword chips and expression-typed energy blasts from the hand.",
+      "Jack in and fight on a 4D Battle Network-style panel grid. Invoke Echo Keys — crystallized harmonic instructions from an 8–30 slot Resonance Array.",
     canonical: `${BASE_URL}/net-battle`,
     ogTitle: "Anima Protocol — NetBattle",
     ogDescription:
-      "A Mega Man Battle Network-style 4D arena. Rotate and zoom an HD Anima vessel; five expressions, sword chips, and energy blasts from the hand.",
+      "A Battle Network-style 4D arena. Echo Keys are crystallized memories of function the Anima synchronizes with and executes.",
+  },
+  "/echo-keys": {
+    title: "Echo Keys | Anima Protocol",
+    description:
+      "Story-mode Echo Keys: find or synthesise crystallized harmonic instructions. Nature, ruins, and other coherent places — not the full Codex on day one.",
+    canonical: `${BASE_URL}/echo-keys`,
+    ogTitle: "Anima Protocol — Echo Keys",
+    ogDescription:
+      "Vault, Loadout, Story, Codex. Begin with Echo Shards. Discover Keys where resonance achieved exceptional coherence.",
   },
   "/therapy": {
     title: "Therapy Mode | Anima Protocol",
     description:
-      "Sit with your Anima in therapy mode. They work from compiled open-source mental health manuals — WHO PM+, psychological first aid, trauma-informed care, and public CBT/ACT skills. Not a licensed clinic.",
+      "Sit with your Anima in therapy mode. Add a topic and go deeper on it — they work from compiled open-source mental health manuals. Not a licensed clinic.",
     canonical: `${BASE_URL}/therapy`,
     ogTitle: "Anima Protocol — Therapy Mode",
     ogDescription:

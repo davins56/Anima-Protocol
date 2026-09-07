@@ -1,4 +1,8 @@
 import OpenAI from "openai";
+import { isCloudflareWorkerRuntime } from "@workspace/db";
+
+/** Same Worker signal as `@workspace/db` — re-exported so LLM routing stays in lockstep. */
+export { isCloudflareWorkerRuntime };
 
 let openaiClient: OpenAI | null = null;
 let openaiClientKey: string | null = null;
@@ -8,6 +12,11 @@ let localLlmClientKey: string | null = null;
 
 let openRouterClient: OpenAI | null = null;
 let openRouterClientKey: string | null = null;
+let minimaxClient: OpenAI | null = null;
+let minimaxClientKey: string | null = null;
+
+let deepshiClient: OpenAI | null = null;
+let deepshiClientKey: string | null = null;
 
 /** OpenRouter OpenAI-compatible base (chat completions + models). */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -22,9 +31,65 @@ export const OPENROUTER_VENICE_UNCENSORED =
 
 /**
  * Zero-cost OpenRouter free-tier model (not uncensored-branded).
+ * Must stay on a slug that still appears in GET /api/v1/models `:free`
+ * *and* accepts a live completion with a valid OpenRouter key.
+ * Live catalog re-check (2026-09-05): `minimax/minimax-m3:free`,
+ * `minimax/minimax-m2.7:free`, `google/gemma-4-26b-a4b-it:free`,
+ * `google/gemma-4-31b-it:free`. Retired / absent: `openai/gpt-oss-20b:free`,
+ * `google/gemma-3-12b-it:free`, `minimax/minimax-01:free`.
+ * Production OpenRouter Upstream Requests (same account, 2026-09-05):
+ * m3:free via GMICloud returned HTTP 400 Bad Request (no detailed body;
+ * model page had no downtime banner). m2.7:free returned 429 and 502 —
+ * those already hop. Do not default to m3: a 400 used to hard-fail the turn.
+ * Gemma 4 slugs are still in the catalog, but the Google provider has
+ * historically returned HTTP 401 — keep them as later hops, not default.
+ * Default is therefore m2.7:free; m3 then Gemma 4 on 400/429/5xx.
  * Set ANIMA_OPENROUTER_FREE=true or override ANIMA_OPENROUTER_MODEL_STANDARD.
  */
-export const OPENROUTER_FREE_MODEL = "openai/gpt-oss-20b:free";
+export const OPENROUTER_FREE_M27_MODEL = "minimax/minimax-m2.7:free";
+export const OPENROUTER_FREE_M3_MODEL = "minimax/minimax-m3:free";
+export const OPENROUTER_FREE_GEMMA4_26B_MODEL = "google/gemma-4-26b-a4b-it:free";
+export const OPENROUTER_FREE_GEMMA4_31B_MODEL = "google/gemma-4-31b-it:free";
+export const OPENROUTER_FREE_MODEL = OPENROUTER_FREE_M27_MODEL;
+/** Live MiniMax :free hop (retired `minimax/minimax-01:free` is gone). */
+export const MINIMAX_FREE_MODEL = OPENROUTER_FREE_M3_MODEL;
+
+/**
+ * Ordered :free slugs to try after the preferred OpenRouter model fails
+ * with a provider blip or model-specific 400 (not ZDR / data-policy /
+ * the account-wide free-models-per-day cap). m2.7 first so a GMICloud
+ * m3 400 cannot be the first and only attempt.
+ */
+export const OPENROUTER_FREE_MODEL_CANDIDATES = [
+  OPENROUTER_FREE_MODEL,
+  OPENROUTER_FREE_M3_MODEL,
+  OPENROUTER_FREE_GEMMA4_26B_MODEL,
+  OPENROUTER_FREE_GEMMA4_31B_MODEL,
+] as const;
+
+/** MiniMax Global OpenAI-compatible base URL. */
+export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
+
+/** Default MiniMax chat model. Override with ANIMA_MINIMAX_MODEL. */
+export const MINIMAX_DEFAULT_MODEL = "MiniMax-M2.7";
+
+/** Deepshi OpenAI-compatible gateway. @see https://docs.deepshi.ai */
+export const DEEPSHI_BASE_URL = "https://api.deepshi.ai/v1";
+
+/** Default Deepshi chat model. Override with ANIMA_DEEPSHI_MODEL. */
+export const DEEPSHI_DEFAULT_MODEL = "deepshi-3.0";
+
+/** Env names checked for a MiniMax key (first non-empty wins). */
+export const MINIMAX_KEY_ENV_NAMES = [
+  "MINIMAX_API_KEY",
+  "ANIMA_MINIMAX_API_KEY",
+] as const;
+
+/** Env names checked for a Deepshi key (first non-empty wins). */
+export const DEEPSHI_KEY_ENV_NAMES = [
+  "DEEPSHI_API_KEY",
+  "ANIMA_DEEPSHI_API_KEY",
+] as const;
 
 /** Env names checked for an OpenRouter key (first non-empty wins). */
 export const OPENROUTER_KEY_ENV_NAMES = [
@@ -56,33 +121,114 @@ export function hasOpenAIKey(): boolean {
   return Boolean(normalizeApiKey(process.env.OPENAI_API_KEY));
 }
 
+/** Hosts that only exist on the same machine as the process. */
+const LOOPBACK_LLM_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+
+/** ANIMA_RUNTIME values that must not invent or call loopback LLM URLs. */
+const NO_LOOPBACK_ANIMA_RUNTIMES = new Set([
+  "worker",
+  "cloudflare",
+  "cloudflare-workers",
+  "vercel",
+  "serverless",
+  "edge",
+]);
+
+/** ANIMA_RUNTIME values that keep the local-dev localhost default. */
+const LOOPBACK_OK_ANIMA_RUNTIMES = new Set(["node", "local", "dev", "docker"]);
+
+/**
+ * True on runtimes that cannot open loopback TCP (Workers isolate, Vercel,
+ * Cloudflare Pages). Local Node / Docker keep the Ollama localhost default.
+ *
+ * Detection (first match wins):
+ * - `ANIMA_RUNTIME=node|local|dev|docker` → loopback allowed (tests / VPS)
+ * - `ANIMA_RUNTIME=worker|cloudflare|vercel|serverless|edge` → no loopback
+ * - `VERCEL` / `VERCEL_ENV` / `CF_PAGES` → no loopback
+ * - `isCloudflareWorkerRuntime()` (`navigator.userAgent === "Cloudflare-Workers"`)
+ *
+ * Do not treat `NODE_ENV=production` as no-loopback: a VPS can run Node
+ * production next to Ollama on localhost.
+ */
+export function isLoopbackUnreachableRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+  globalObj: typeof globalThis = globalThis,
+): boolean {
+  const runtime = (env.ANIMA_RUNTIME || "").trim().toLowerCase();
+  if (runtime) {
+    if (LOOPBACK_OK_ANIMA_RUNTIMES.has(runtime)) return false;
+    if (NO_LOOPBACK_ANIMA_RUNTIMES.has(runtime)) return true;
+  }
+  if (env.VERCEL || env.VERCEL_ENV) return true;
+  if (env.CF_PAGES) return true;
+  return isCloudflareWorkerRuntime(globalObj);
+}
+
+/** True when hostname is loopback / unspecified (not reachable from Workers). */
+export function isLoopbackLlmHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  return LOOPBACK_LLM_HOSTS.has(h);
+}
+
+function urlLooksLoopback(raw: string): boolean {
+  try {
+    return isLoopbackLlmHost(new URL(raw).hostname);
+  } catch {
+    return /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(raw);
+  }
+}
+
+/**
+ * Operator-supplied OpenAI-compatible base URL, or null when unset.
+ * Does not invent localhost and does not apply the serverless loopback guard.
+ */
+export function readExplicitLocalLlmBaseUrl(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const direct =
+    env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || env.VLLM_BASE_URL?.trim();
+  if (direct) return direct.replace(/\/$/, "");
+  const ollama = env.OLLAMA_BASE_URL?.trim();
+  if (!ollama) return null;
+  const root = ollama.replace(/\/$/, "");
+  return root.endsWith("/v1") ? root : `${root}/v1`;
+}
+
 /**
  * Base URL for a local OpenAI-compatible server (vLLM, Ollama `/v1`, llama.cpp).
  * Prefers ANIMA_LOCAL_LLM_BASE_URL, then VLLM_BASE_URL, then Ollama's OpenAI path.
- * On Vercel, localhost is never invented — set ANIMA_LOCAL_LLM_BASE_URL to a
- * public HTTPS host.
+ * On Cloudflare Workers / Vercel / other no-loopback runtimes, localhost is
+ * never invented — set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS host.
+ * An explicit loopback URL on those runtimes is treated as unset (misconfigured)
+ * so chat does not burn a turn on CF error 1003.
  */
-export function localLlmBaseUrl(): string | null {
-  const explicit =
-    process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
-    process.env.VLLM_BASE_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
-
-  const ollama = process.env.OLLAMA_BASE_URL?.trim();
-  if (ollama) {
-    const root = ollama.replace(/\/$/, "");
-    return root.endsWith("/v1") ? root : `${root}/v1`;
+export function localLlmBaseUrl(
+  env: NodeJS.ProcessEnv = process.env,
+  globalObj: typeof globalThis = globalThis,
+): string | null {
+  const explicit = readExplicitLocalLlmBaseUrl(env);
+  if (explicit) {
+    if (isLoopbackUnreachableRuntime(env, globalObj) && urlLooksLoopback(explicit)) {
+      return null;
+    }
+    return explicit;
   }
 
-  // Never invent localhost on Vercel / serverless — operators must set a public URL.
-  if (process.env.VERCEL || process.env.VERCEL_ENV) return null;
+  if (isLoopbackUnreachableRuntime(env, globalObj)) return null;
 
-  return "http://localhost:11434/v1";
+  const backend = (env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
+  return backend === "vllm"
+    ? "http://localhost:8000/v1"
+    : "http://localhost:11434/v1";
 }
 
-/** True when a local OpenAI-compatible LLM endpoint is configured. */
-export function hasLocalLlm(): boolean {
-  return Boolean(localLlmBaseUrl());
+/** True when a usable (non-loopback-on-serverless) local LLM endpoint is set. */
+export function hasLocalLlm(
+  env: NodeJS.ProcessEnv = process.env,
+  globalObj: typeof globalThis = globalThis,
+): boolean {
+  return Boolean(localLlmBaseUrl(env, globalObj));
 }
 
 /**
@@ -101,6 +247,10 @@ const CLOUD_FLAGSHIP_LLM_HOSTS = new Set([
   "api.x.ai",
   "api.moonshot.ai",
   "api.moonshot.cn",
+  "api.minimax.io",
+  "minimax.io",
+  "openrouter.ai",
+  "api.openrouter.ai",
 ]);
 
 /** True when hostname is a known closed cloud chat API (not a self-hosted Anima LLM). */
@@ -128,10 +278,29 @@ export function localLlmMaxRetries(): number {
 }
 
 /**
- * Secret-free summary of the configured local LLM base URL for healthz / logs.
- * Returns hostname + whether the path looks OpenAI-compatible (`/v1`).
+ * Transport-level retries for OpenRouter. Default 2 so a single provider
+ * 502/503 or dropped connection does not kill the turn. The SDK only retries
+ * connection errors and 408/409/429/5xx, and only before a stream starts.
+ * Override with ANIMA_OPENROUTER_MAX_RETRIES (0 disables).
  */
-export function summarizeLocalLlmBaseUrl(): {
+export function openRouterMaxRetries(): number {
+  const raw = Number(process.env.ANIMA_OPENROUTER_MAX_RETRIES);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 2;
+}
+
+/**
+ * Per-attempt SDK retries while cascading :free models.
+ * Intermediate hops use 0 so a 429/502/400 fails immediately and the next
+ * live slug can run instead of burning the shared open-abort budget on
+ * same-model retries. The last candidate keeps `openRouterMaxRetries()`.
+ */
+export function openRouterCascadeMaxRetries(remainingCandidates: number): number {
+  if (remainingCandidates > 0) return 0;
+  return openRouterMaxRetries();
+}
+
+export interface LocalLlmBaseUrlSummary {
   configured: boolean;
   host: string | null;
   hasV1Path: boolean;
@@ -139,8 +308,19 @@ export function summarizeLocalLlmBaseUrl(): {
   isLocalhost: boolean;
   /** True when ANIMA_LOCAL_LLM_BASE_URL points at OpenAI/Groq/Gemini/etc. */
   isCloudFlagship: boolean;
-} {
-  const base = localLlmBaseUrl();
+  /**
+   * True when the operator explicitly set a loopback URL on a runtime that
+   * cannot reach loopback (Workers / Vercel). `configured` is false so the
+   * provider chain skips `local` instead of attempting the fetch.
+   */
+  isLoopbackMisconfigured: boolean;
+}
+
+function describeLocalLlmBase(
+  base: string | null,
+  configured: boolean,
+  isLoopbackMisconfigured: boolean,
+): LocalLlmBaseUrlSummary {
   if (!base) {
     return {
       configured: false,
@@ -149,37 +329,55 @@ export function summarizeLocalLlmBaseUrl(): {
       isHttps: false,
       isLocalhost: false,
       isCloudFlagship: false,
+      isLoopbackMisconfigured,
     };
   }
   try {
     const url = new URL(base);
     const host = url.hostname || null;
     const path = (url.pathname || "").replace(/\/$/, "");
-    const isLocalhost =
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host === "::1" ||
-      host === "0.0.0.0";
+    const isLocalhost = isLoopbackLlmHost(host);
     return {
-      configured: true,
+      configured,
       host,
       hasV1Path: path === "/v1" || path.endsWith("/v1"),
       isHttps: url.protocol === "https:",
       isLocalhost,
       isCloudFlagship: isCloudFlagshipLlmHost(host),
+      isLoopbackMisconfigured,
     };
   } catch {
     const hostMatch = base.match(/^https?:\/\/([^/:]+)/i);
     const host = hostMatch?.[1] ?? null;
     return {
-      configured: true,
+      configured,
       host,
       hasV1Path: /\/v1\/?$/.test(base),
       isHttps: /^https:/i.test(base),
-      isLocalhost: /localhost|127\.0\.0\.1/i.test(base),
+      isLocalhost: urlLooksLoopback(base),
       isCloudFlagship: isCloudFlagshipLlmHost(host),
+      isLoopbackMisconfigured,
     };
   }
+}
+
+/**
+ * Secret-free summary of the configured local LLM base URL for healthz / logs.
+ * Returns hostname + whether the path looks OpenAI-compatible (`/v1`).
+ * On serverless, an invented or explicit localhost URL is not `configured`.
+ */
+export function summarizeLocalLlmBaseUrl(
+  env: NodeJS.ProcessEnv = process.env,
+  globalObj: typeof globalThis = globalThis,
+): LocalLlmBaseUrlSummary {
+  const explicit = readExplicitLocalLlmBaseUrl(env);
+  const noLoopback = isLoopbackUnreachableRuntime(env, globalObj);
+  const loopbackRejected = Boolean(explicit && noLoopback && urlLooksLoopback(explicit));
+  if (loopbackRejected) {
+    return describeLocalLlmBase(explicit, false, true);
+  }
+  const base = localLlmBaseUrl(env, globalObj);
+  return describeLocalLlmBase(base, Boolean(base), false);
 }
 
 let loggedLocalLlmInit = false;
@@ -196,9 +394,20 @@ export function logLocalLlmClientInitOnce(): void {
     process.env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
     process.env.ANIMA_VLLM_MODEL?.trim() ||
     "(default from registry)";
+  if (summary.isLoopbackMisconfigured) {
+    console.error(
+      `[llm] MISCONFIGURED: ANIMA_LOCAL_LLM_BASE_URL host=${summary.host} is loopback, ` +
+        `which this serverless runtime cannot reach (Cloudflare error 1003). ` +
+        `Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), ` +
+        `e.g. https://anima-chat-llm.fly.dev/v1. See deploy/ollama-fly/README.md.`,
+    );
+    return;
+  }
   if (!summary.configured) {
     console.info(
-      "[llm] ANIMA_LOCAL_LLM_BASE_URL unset — set a public HTTPS OpenAI-compatible URL (…/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. See docs/custom-llm.md.",
+      "[llm] ANIMA_LOCAL_LLM_BASE_URL unset — this runtime will not invent localhost. " +
+        "Set a public HTTPS OpenAI-compatible URL (…/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. " +
+        "See deploy/ollama-fly/README.md.",
     );
     return;
   }
@@ -293,6 +502,82 @@ export function openRouterKeyFingerprint(): string | null {
   return key.slice(-4);
 }
 
+/** MiniMax API key, using the same OpenAI-compatible chat contract. */
+export function getMinimaxApiKey(): string | null {
+  for (const name of MINIMAX_KEY_ENV_NAMES) {
+    const key = normalizeApiKey(process.env[name]);
+    if (key) return key;
+  }
+  return null;
+}
+
+export function hasMinimaxKey(): boolean {
+  return Boolean(getMinimaxApiKey());
+}
+
+export function getMinimaxApiKeySource(): string | null {
+  for (const name of MINIMAX_KEY_ENV_NAMES) {
+    if (normalizeApiKey(process.env[name])) return name;
+  }
+  return null;
+}
+
+/** OpenAI-compatible MiniMax Global client for chat. */
+export function getMinimaxClient(): OpenAI | null {
+  const apiKey = getMinimaxApiKey();
+  if (!apiKey) return null;
+  const baseURL = (
+    process.env.ANIMA_MINIMAX_BASE_URL?.trim() ||
+    process.env.MINIMAX_BASE_URL?.trim() ||
+    MINIMAX_BASE_URL
+  ).replace(/\/$/, "");
+  const cacheKey = `${baseURL}::${apiKey}`;
+  if (!minimaxClient || minimaxClientKey !== cacheKey) {
+    minimaxClient = new OpenAI({ apiKey, baseURL, maxRetries: 0 });
+    minimaxClientKey = cacheKey;
+    console.info(`[llm] minimax client: base_url=${baseURL}`);
+  }
+  return minimaxClient;
+}
+
+/** Deepshi API key (sk-bf-…). */
+export function getDeepshiApiKey(): string | null {
+  for (const name of DEEPSHI_KEY_ENV_NAMES) {
+    const key = normalizeApiKey(process.env[name]);
+    if (key) return key;
+  }
+  return null;
+}
+
+export function hasDeepshiKey(): boolean {
+  return Boolean(getDeepshiApiKey());
+}
+
+export function getDeepshiApiKeySource(): string | null {
+  for (const name of DEEPSHI_KEY_ENV_NAMES) {
+    if (normalizeApiKey(process.env[name])) return name;
+  }
+  return null;
+}
+
+/** OpenAI-compatible Deepshi client for chat. */
+export function getDeepshiClient(): OpenAI | null {
+  const apiKey = getDeepshiApiKey();
+  if (!apiKey) return null;
+  const baseURL = (
+    process.env.ANIMA_DEEPSHI_BASE_URL?.trim() ||
+    process.env.DEEPSHI_BASE_URL?.trim() ||
+    DEEPSHI_BASE_URL
+  ).replace(/\/$/, "");
+  const cacheKey = `${baseURL}::${apiKey}`;
+  if (!deepshiClient || deepshiClientKey !== cacheKey) {
+    deepshiClient = new OpenAI({ apiKey, baseURL, maxRetries: 0 });
+    deepshiClientKey = cacheKey;
+    console.info(`[llm] deepshi client: base_url=${baseURL}`);
+  }
+  return deepshiClient;
+}
+
 /**
  * OpenAI-compatible OpenRouter client for free / uncensored open-weight chat.
  * Returns null when no OpenRouter key is configured.
@@ -313,7 +598,7 @@ export function getOpenRouterClient(): OpenAI | null {
     openRouterClient = new OpenAI({
       apiKey,
       baseURL,
-      maxRetries: 0,
+      maxRetries: openRouterMaxRetries(),
       defaultHeaders: {
         "HTTP-Referer": referer,
         "X-Title": title,
@@ -335,5 +620,9 @@ export function resetLlmClientsForTests(): void {
   localLlmClientKey = null;
   openRouterClient = null;
   openRouterClientKey = null;
+  minimaxClient = null;
+  minimaxClientKey = null;
+  deepshiClient = null;
+  deepshiClientKey = null;
   resetLocalLlmInitLogForTests();
 }

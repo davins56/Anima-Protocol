@@ -10,9 +10,11 @@ import {
 } from "./llmProviderLabel";
 
 describe("llmProviderLabel", () => {
-  it("labels Anima/local and Venice/OpenRouter", () => {
+  it("labels Anima/local, MiniMax, and Venice/OpenRouter", () => {
     expect(llmProviderShortLabel("anima")).toBe("Anima");
     expect(llmProviderShortLabel("local")).toBe("Anima");
+    expect(llmProviderShortLabel("minimax")).toBe("MiniMax");
+    expect(llmProviderShortLabel("deepshi")).toBe("Deepshi");
     expect(llmProviderShortLabel("openrouter")).toBe("Venice");
     expect(llmProviderShortLabel("kimi")).toBeNull();
     expect(llmProviderShortLabel(null)).toBeNull();
@@ -28,8 +30,10 @@ describe("llmProviderLabel", () => {
     expect(llmDisplayBadgeClass("openrouter", "openrouter")).toMatch(/amber/);
   });
 
-  it("lists self-hosted Anima and OpenRouter Venice backends", () => {
+  it("lists self-hosted Anima, MiniMax, and OpenRouter Venice backends", () => {
     expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
+      "minimax",
+      "deepshi",
       "local",
       "openrouter",
     ]);

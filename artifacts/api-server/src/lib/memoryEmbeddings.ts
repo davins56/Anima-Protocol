@@ -16,9 +16,14 @@ import {
   retrieveRelevantMemories,
   type CompanionMemoryRecord,
   type MemoryFact,
+  type MemoryType,
   type ScoredMemory,
 } from "@workspace/llm";
 import { createHash } from "node:crypto";
+import {
+  isSupermemoryEnabled,
+  searchCompanionFactsFromSupermemory,
+} from "./supermemory";
 
 export function factIdFor(text: string, explicitId?: string): string {
   if (explicitId?.trim()) return explicitId.trim();
@@ -209,10 +214,39 @@ export async function searchMemoriesSemantically(opts: {
     queryEmbedding,
   });
 
-  return scored.map((s) => ({
+  const local = scored.map((s) => ({
     text: String(s.fact.text || ""),
     score: s.score,
     memoryType: s.memoryType,
     characterId: s.characterId,
   }));
+
+  if (!isSupermemoryEnabled()) return local.slice(0, topK);
+
+  try {
+    const remote = await searchCompanionFactsFromSupermemory({
+      userId,
+      characterId,
+      query,
+      limit: topK,
+    });
+    const seen = new Set(
+      local.map((hit) => hit.text.toLowerCase().replace(/\s+/g, " ").trim()),
+    );
+    for (const hit of remote) {
+      const key = hit.text.toLowerCase().replace(/\s+/g, " ").trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      local.push({
+        text: hit.text,
+        score: hit.score,
+        memoryType: (hit.category || "factual") as MemoryType,
+        characterId: hit.characterId || characterId || "",
+      });
+    }
+  } catch {
+    // local hits are enough
+  }
+
+  return local.slice(0, topK);
 }
