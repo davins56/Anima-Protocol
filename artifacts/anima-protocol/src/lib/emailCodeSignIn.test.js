@@ -3,6 +3,7 @@ import {
   asSearchText,
   clerkErrorMessage,
   CLERK_GITHUB_OAUTH_CALLBACK_URL,
+  GITHUB_OAUTH_NAVIGATION_GRACE_MS,
   GITHUB_OAUTH_SSO_TIMEOUT_MS,
   githubOAuthHangMessage,
   hasEmailCodeFactor,
@@ -10,6 +11,7 @@ import {
   interpretGitHubSsoResult,
   isAlreadySignedInError,
   isIncompleteOAuthSignInStatus,
+  waitForPageNavigation,
   watchPageNavigation,
   isPatternFormatError,
   isPreviewSignInHost,
@@ -343,6 +345,42 @@ describe("watchPageNavigation", () => {
     watcher.dispose();
     expect(target.listeners.pagehide).toBeUndefined();
   });
+
+  it("does not treat a backgrounded tab as navigation", () => {
+    const previous = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    const watcher = watchPageNavigation({
+      addEventListener() {},
+      removeEventListener() {},
+    });
+    expect(watcher.didNavigate()).toBe(false);
+    watcher.dispose();
+    if (previous) {
+      Object.defineProperty(Document.prototype, "visibilityState", previous);
+    }
+  });
+});
+
+describe("waitForPageNavigation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves immediately when navigation already started", async () => {
+    await expect(waitForPageNavigation(() => true, 400)).resolves.toBe(true);
+  });
+
+  it("waits the grace window for a late page leave", async () => {
+    vi.useFakeTimers();
+    let navigated = false;
+    const pending = waitForPageNavigation(() => navigated, 400);
+    navigated = true;
+    await vi.advanceTimersByTimeAsync(400);
+    await expect(pending).resolves.toBe(true);
+  });
 });
 
 describe("startGitHubOAuthSignIn", () => {
@@ -404,10 +442,32 @@ describe("startGitHubOAuthSignIn", () => {
     await expect(
       startGitHubOAuthSignIn({ sso: async () => ({ error: null }), status: null }, "", null, {
         didNavigate: () => false,
+        navigationGraceMs: 0,
       }),
     ).rejects.toMatchObject({
       code: "oauth_no_redirect",
       message: githubOAuthHangMessage(),
+    });
+  });
+
+  it("waits for a late Clerk redirect after sso resolves", async () => {
+    vi.useFakeTimers();
+    let navigated = false;
+    const pending = startGitHubOAuthSignIn(
+      { sso: async () => ({ error: null }), status: null },
+      "",
+      null,
+      {
+        didNavigate: () => navigated,
+        navigationGraceMs: GITHUB_OAUTH_NAVIGATION_GRACE_MS,
+      },
+    );
+    await Promise.resolve();
+    navigated = true;
+    await vi.advanceTimersByTimeAsync(GITHUB_OAUTH_NAVIGATION_GRACE_MS);
+    await expect(pending).resolves.toMatchObject({
+      method: "signIn.sso",
+      navigated: true,
     });
   });
 
