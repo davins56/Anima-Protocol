@@ -395,6 +395,11 @@ function SignUpPage() {
     </AuthFormShell>
   );
 }
+/**
+ * Clerk Future (`@clerk/react` v6) SSO return path.
+ * `HandleSSOCallback` finishes the OAuth transfer, then `navigateToApp` uses
+ * `decorateUrl` / `session.currentTask` the same way `signIn.finalize` does.
+ */
 function SsoCallbackPage() {
   const navigate = useNavigate();
 
