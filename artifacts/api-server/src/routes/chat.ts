@@ -24,7 +24,7 @@ import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
-  isOpenRouterAlreadyFreeTier,
+  usesFreeTierOpenBudget,
   isOpenRouterGenericProviderError,
   isOpenRouterZdrOrDataPolicyError,
   OPENROUTER_FREE_PROVIDER_HINT,
@@ -55,6 +55,7 @@ import {
 } from "../lib/supermemory";
 import {
   composePrompt,
+  buildLlmChatMessages,
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
@@ -1691,7 +1692,11 @@ router.post("/messages", async (req, res) => {
 
   telemetry.startGeneration();
   try {
-    const messages = [{ role: "system" as const, content: prompt }];
+    const messages = buildLlmChatMessages({
+      systemPrompt: prompt,
+      recentMessages,
+      content,
+    });
 
     if (isLocalEnsembleEnabled()) {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
@@ -1738,7 +1743,7 @@ router.post("/messages", async (req, res) => {
       }
     } else {
       const open = openStreamAbort(
-        llmOpenTimeoutMs({ freeTierCascade: isOpenRouterAlreadyFreeTier() }),
+        llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
       );
       let completion;
       try {
@@ -1747,6 +1752,7 @@ router.post("/messages", async (req, res) => {
           model: routed.model,
           maxTokens: routed.maxTokens,
           messages,
+          temperature: 0.85,
           signal: open.signal,
         });
       } finally {

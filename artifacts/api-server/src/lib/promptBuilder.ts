@@ -167,6 +167,65 @@ function clientOwnsTranscript(systemPrompt?: string): boolean {
   return /Story so far:|CONVERSATION CONTEXT:/i.test(systemPrompt);
 }
 
+/** Instruct-style chat models (Qwen2.5 / anima-chat) require a user turn. */
+export const CONTINUE_USER_TURN = "(Continue the scene naturally.)";
+
+export type LlmChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+/**
+ * Build the OpenAI-compatible message list for a companion turn.
+ *
+ * `/chat/messages` used to send only `{ role: "system" }`. Ollama chat
+ * templates then open an assistant turn with no user message, so Qwen2.5
+ * 3B (`anima-chat`) emits the same generic greeting every send.
+ *
+ * Always end with a user turn. When the client already shipped
+ * "Story so far:", skip store history here so we do not double-prefill.
+ */
+export function buildLlmChatMessages(params: {
+  systemPrompt: string;
+  recentMessages?: MsgData[];
+  content?: string;
+  includeHistory?: boolean;
+}): LlmChatMessage[] {
+  const systemPrompt = String(params.systemPrompt || "").trim();
+  const content = String(params.content ?? "").trim();
+  const includeHistory =
+    params.includeHistory ?? !clientOwnsTranscript(systemPrompt);
+
+  const messages: LlmChatMessage[] = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+
+  if (includeHistory) {
+    for (const msg of params.recentMessages ?? []) {
+      const text = String(msg.content ?? "").trim();
+      if (!text) continue;
+      const name = String(msg.character_name || msg.characterName || "");
+      if (name === "__thinking__" || name === "__typing__") continue;
+      const role =
+        msg.role === "user" ? "user" : msg.role === "assistant" ? "assistant" : null;
+      if (!role) continue;
+      messages.push({
+        role,
+        content: text.length > 800 ? `${text.slice(0, 799)}…` : text,
+      });
+    }
+  }
+
+  const userTurn = content || CONTINUE_USER_TURN;
+  const last = messages[messages.length - 1];
+  if (!(last?.role === "user" && last.content === userTurn)) {
+    messages.push({ role: "user", content: userTurn });
+  }
+
+  return messages;
+}
+
 function truncate(value: unknown, max = 600): string {
   const text = String(value ?? "").trim().replace(/\s+/g, " ");
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
