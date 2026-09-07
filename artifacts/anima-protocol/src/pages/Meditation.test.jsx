@@ -7,7 +7,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { AFFIRMATION_AUTH_REQUIRED } from "@/lib/affirmationStore";
+import {
+  AFFIRMATION_AUTH_REQUIRED,
+  AFFIRMATION_LOAD_TIMEOUT,
+} from "@/lib/affirmationStore";
 
 const affirmationMocks = vi.hoisted(() => ({
   me: vi.fn(),
@@ -32,6 +35,11 @@ vi.mock("@/api/base44Client", () => ({
     },
   },
 }));
+
+vi.mock("@/lib/storeTimeouts", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, BOOTSTRAP_UI_TIMEOUT_MS: 50 };
+});
 
 import Meditation from "./Meditation";
 
@@ -69,11 +77,44 @@ describe("Meditation affirmations", () => {
     affirmationMocks.create.mockRejectedValue(new Error("Database unavailable"));
     renderPage();
 
+    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(screen.getByText("I am healthy, wealthy, and wise.")).toBeTruthy();
     expect((await screen.findByRole("alert")).textContent).toMatch(
       /Database unavailable/,
     );
-    expect(screen.getByText("No affirmations available.")).toBeTruthy();
-    expect(screen.getByText(/All \(0\)/)).toBeTruthy();
+    expect(screen.queryByText("No affirmations available.")).toBeNull();
+    expect(screen.getByText(/All \(12\)/)).toBeTruthy();
+    expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
+  });
+
+  it("clears Attuning when auth.me never settles and shows defaults", async () => {
+    affirmationMocks.me.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    expect(screen.getByText(/Attuning frequency/i)).toBeTruthy();
+    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      AFFIRMATION_LOAD_TIMEOUT,
+    );
+    expect(screen.getByText("I am healthy, wealthy, and wise.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Affirmations/i })).toBeTruthy();
+    expect(affirmationMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("clears Attuning when affirmation filter never settles and shows defaults", async () => {
+    affirmationMocks.filter.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    expect(screen.getByText(/Attuning frequency/i)).toBeTruthy();
+    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      AFFIRMATION_LOAD_TIMEOUT,
+    );
+    expect(screen.getByText("I am healthy, wealthy, and wise.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Ritual/i })).toBeTruthy();
+    expect(affirmationMocks.create).not.toHaveBeenCalled();
   });
 
   it("keeps the Add form open and shows why create failed", async () => {
