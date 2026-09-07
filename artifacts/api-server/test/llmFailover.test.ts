@@ -309,6 +309,7 @@ import {
   createChatStreamWithFailover,
   getLlmRoutingStatus,
   getProviderChain,
+  usesFreeTierOpenBudget,
   isAnimaCustomMode,
   isProviderAuthError,
   isProviderConnectionError,
@@ -872,6 +873,15 @@ describe("getProviderChain", () => {
     process.env.ANIMA_LLM_PROVIDER = "deepshi";
     expect(getProviderChain()).toEqual([]);
   });
+
+  it("does not use the 80s free-tier open budget for local-only chat", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(isOpenRouterAlreadyFreeTier()).toBe(true);
+    expect(usesFreeTierOpenBudget()).toBe(false);
+  });
 });
 
 describe("resolveLocalModel", () => {
@@ -1000,6 +1010,21 @@ describe("createChatStreamWithFailover", () => {
     expect(result.brand).toBe("anima");
     expect(result.failedOver).toBe(false);
     expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards sampling temperature on the local stream", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      temperature: 0.85,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      stream: true,
+      temperature: 0.85,
+    });
   });
 
   it("throws a local-only setup error when the self-hosted LLM is missing", async () => {
