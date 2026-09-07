@@ -52,13 +52,10 @@
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
     // Skip Venice (402s on $0 OpenRouter accounts). Chat uses
     // minimax/minimax-m2.7:free, then m3 / Gemma 4 on provider 400/429/5xx.
-    "ANIMA_OPENROUTER_FREE": "true",
-    // Force MiniMax Global chat (needs classic Worker secret MINIMAX_API_KEY).
-    // Dashboard-only vars are dropped on `wrangler deploy` — this committed
-    // var is the durable pin. Remove the key or set it to "" later to restore
-    // OpenRouter-first free chain with MiniMax fallback
-    // (ANIMA_OPENROUTER_FREE=true + MiniMax key).
-    "ANIMA_LLM_PROVIDER": "minimax"
+    "ANIMA_OPENROUTER_FREE": "true"
+    // Do not set ANIMA_LLM_PROVIDER=minimax here. preferMinimaxOnly() skips
+    // `local` even when ANIMA_LOCAL_LLM_BASE_URL is bound, and a missing
+    // MiniMax key then falls through to OpenRouter-only.
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
