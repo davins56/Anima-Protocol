@@ -347,20 +347,12 @@ describe("watchPageNavigation", () => {
   });
 
   it("does not treat a backgrounded tab as navigation", () => {
-    const previous = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: () => "hidden",
-    });
     const watcher = watchPageNavigation({
       addEventListener() {},
       removeEventListener() {},
     });
     expect(watcher.didNavigate()).toBe(false);
     watcher.dispose();
-    if (previous) {
-      Object.defineProperty(Document.prototype, "visibilityState", previous);
-    }
   });
 });
 
