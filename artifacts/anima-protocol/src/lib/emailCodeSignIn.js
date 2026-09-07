@@ -23,6 +23,13 @@ export { CLERK_GITHUB_OAUTH_CALLBACK_URL };
 /** How long to wait for `signIn.sso()` before treating a missing redirect as a hang. */
 export const GITHUB_OAUTH_SSO_TIMEOUT_MS = 10_000;
 
+/**
+ * After `sso()` resolves without a status, Clerk may still assign `window.location`
+ * on the next tick. Wait this long for `pagehide` / `beforeunload` before
+ * reporting a missing redirect.
+ */
+export const GITHUB_OAUTH_NAVIGATION_GRACE_MS = 400;
+
 const INCOMPLETE_OAUTH_STATUSES = new Set([
   "needs_identifier",
   "needs_first_factor",
@@ -381,6 +388,9 @@ export function interpretGitHubSsoResult(signIn, { didNavigate = false } = {}) {
 }
 
 /**
+ * Race `promise` against a timeout. Clerk `sso()` has no abort signal; a late
+ * resolve is ignored here, but a late full-page redirect is still welcome.
+ *
  * @template T
  * @param {Promise<T>} promise
  * @param {number} timeoutMs
@@ -389,11 +399,32 @@ export function interpretGitHubSsoResult(signIn, { didNavigate = false } = {}) {
  */
 export function withTimeout(promise, timeoutMs, createTimeoutError) {
   let timer = 0;
+  const pending = Promise.resolve(promise);
+  pending.catch(() => {});
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(createTimeoutError()), timeoutMs);
   });
-  return Promise.race([promise, timeout]).finally(() => {
+  return Promise.race([pending, timeout]).finally(() => {
     clearTimeout(timer);
+  });
+}
+
+/**
+ * Wait briefly for a full-page leave after `sso()` resolves.
+ * @param {() => boolean} didNavigate
+ * @param {number} graceMs
+ */
+export function waitForPageNavigation(didNavigate, graceMs) {
+  if (typeof didNavigate === "function" && didNavigate()) {
+    return Promise.resolve(true);
+  }
+  if (!(graceMs > 0)) {
+    return Promise.resolve(typeof didNavigate === "function" ? didNavigate() : false);
+  }
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(typeof didNavigate === "function" ? didNavigate() : false);
+    }, graceMs);
   });
 }
 
@@ -417,9 +448,7 @@ export function watchPageNavigation(target = typeof window !== "undefined" ? win
     target.addEventListener("beforeunload", mark);
   }
   return {
-    didNavigate: () =>
-      navigated ||
-      (typeof document !== "undefined" && document.visibilityState === "hidden"),
+    didNavigate: () => navigated,
     dispose() {
       if (target?.removeEventListener) {
         target.removeEventListener("pagehide", mark);
@@ -442,14 +471,29 @@ export function watchPageNavigation(target = typeof window !== "undefined" ? win
  * @param {{ sso?: Function, authenticateWithRedirect?: Function, status?: string | null } | null | undefined} signIn
  * @param {string} basePath
  * @param {{ authenticateWithRedirect?: Function, client?: { signIn?: { authenticateWithRedirect?: Function } } } | null | undefined} [clerk]
- * @param {{ timeoutMs?: number, didNavigate?: () => boolean }} [options]
+ * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean }} [options]
  */
 export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = {}) {
   const paths = clerkOAuthRedirectPaths(basePath, "sign-in");
   const timeoutMs = options.timeoutMs ?? GITHUB_OAUTH_SSO_TIMEOUT_MS;
+  const navigationGraceMs = options.navigationGraceMs ?? GITHUB_OAUTH_NAVIGATION_GRACE_MS;
   const watcher = options.didNavigate
     ? { didNavigate: () => Boolean(options.didNavigate()), dispose() {} }
     : watchPageNavigation();
+
+  const finishOAuth = async (method) => {
+    let interpreted = interpretGitHubSsoResult(signIn, {
+      didNavigate: watcher.didNavigate(),
+    });
+    if (!interpreted.ok && interpreted.error?.code === "oauth_no_redirect") {
+      const navigated = await waitForPageNavigation(watcher.didNavigate, navigationGraceMs);
+      interpreted = interpretGitHubSsoResult(signIn, { didNavigate: navigated });
+    }
+    if (!interpreted.ok) {
+      throw interpreted.error;
+    }
+    return { method, ...paths, ...interpreted };
+  };
 
   try {
     if (signIn && typeof signIn.sso === "function") {
@@ -465,13 +509,7 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = 
       if (error) {
         throw error;
       }
-      const interpreted = interpretGitHubSsoResult(signIn, {
-        didNavigate: watcher.didNavigate(),
-      });
-      if (!interpreted.ok) {
-        throw interpreted.error;
-      }
-      return { method: "signIn.sso", ...paths, ...interpreted };
+      return await finishOAuth("signIn.sso");
     }
 
       // Legacy fallbacks for older clerk-js builds still exposing redirect helpers.
@@ -499,13 +537,7 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = 
           timeoutMs,
           createGitHubOAuthTimeoutError,
         );
-        const interpreted = interpretGitHubSsoResult(signIn, {
-          didNavigate: watcher.didNavigate(),
-        });
-        if (!interpreted.ok) {
-          throw interpreted.error;
-        }
-        return { method: "authenticateWithRedirect", ...paths, ...interpreted };
+        return await finishOAuth("authenticateWithRedirect");
       }
 
       throw new Error(
