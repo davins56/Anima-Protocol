@@ -5,12 +5,16 @@ import {
   clerkFrontendApiBaseFromPublishableKey,
   clientIpFromHeaders,
   forwardedRequestProto,
+  isClerkHandshakeRequest,
+  isClerkSsoCallbackReferer,
+  shouldStripClerkAuthCookies,
   proxyClerkWithFetch,
   resolveClerkNpmRedirectUrl,
   resolveClerkUpstreamPath,
   resolveClerkUpstreamUrl,
   rewriteClerkProxyLocation,
   rewriteClerkProxySetCookie,
+  stripClerkAuthCookies,
   usesOfficialClerkProxyProtocol,
 } from "../src/middlewares/clerkProxyFetch";
 
@@ -274,6 +278,115 @@ describe("clerkProxyFetch", () => {
         "anima-protocol.com",
       ),
     ).toBeNull();
+    expect(
+      rewriteClerkProxySetCookie(
+        "__session=tok; Path=/; Domain=clerk.anima-protocol.com; HttpOnly; Secure; SameSite=Lax",
+        "anima-protocol.com",
+      ),
+    ).toBe("__session=tok; Path=/; HttpOnly; Secure; SameSite=Lax");
+    expect(
+      rewriteClerkProxySetCookie(
+        "__refresh_abc=tok; Path=/; Domain=clerk.anima-protocol.com; HttpOnly; Secure; SameSite=Lax",
+        "anima-protocol.com",
+      ),
+    ).toBe("__refresh_abc=tok; Path=/; HttpOnly; Secure; SameSite=Lax");
+  });
+
+  it("strips orphan Clerk session cookies on handshake FAPI calls", () => {
+    expect(
+      stripClerkAuthCookies(
+        "__session=stale; __client_uat=0; theme=dark; __client=old",
+      ),
+    ).toBe("theme=dark");
+    expect(isClerkHandshakeRequest("/v1/client/handshake?redirect_url=/")).toBe(
+      true,
+    );
+    expect(
+      isClerkHandshakeRequest(
+        "/v1/client?__clerk_handshake=abc&__clerk_api_version=2026-05-12",
+      ),
+    ).toBe(true);
+    expect(isClerkHandshakeRequest("/v1/environment")).toBe(false);
+
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          cookie: "__session=from-cname; __client_uat=0; theme=dark",
+          accept: "application/json",
+        },
+      },
+      "sk_live_test",
+      {
+        officialProxy: false,
+        authorizeUpstream: true,
+        requestUrl:
+          "/v1/client?__clerk_handshake=abc&__clerk_api_version=2026-05-12",
+      },
+    );
+    expect(headers.get("cookie")).toBe("theme=dark");
+    expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+    expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+  });
+
+  it("keeps Clerk cookies on ordinary /v1/client calls", () => {
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          cookie: "__client=keep; __session=keep",
+          accept: "application/json",
+        },
+      },
+      "sk_live_test",
+      {
+        officialProxy: false,
+        authorizeUpstream: true,
+        requestUrl: "/v1/client?__clerk_api_version=2026-05-12",
+      },
+    );
+    expect(headers.get("cookie")).toBe("__client=keep; __session=keep");
+  });
+
+  it("strips Clerk cookies on /v1/client when Referer is the SSO callback", () => {
+    expect(
+      isClerkSsoCallbackReferer(
+        "https://anima-protocol.com/sign-in/sso-callback?__clerk_handshake=abc",
+      ),
+    ).toBe(true);
+    expect(isClerkSsoCallbackReferer("https://anima-protocol.com/sign-in")).toBe(
+      false,
+    );
+    expect(
+      shouldStripClerkAuthCookies(
+        "/v1/client?__clerk_api_version=2026-05-12",
+        "https://anima-protocol.com/sign-in/sso-callback",
+      ),
+    ).toBe(true);
+
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          referer: "https://anima-protocol.com/sign-in/sso-callback?__clerk_handshake=abc",
+          cookie: "__session=from-cname; __client_uat=0; theme=dark",
+          accept: "application/json",
+        },
+      },
+      "sk_live_test",
+      {
+        officialProxy: false,
+        authorizeUpstream: true,
+        requestUrl: "/v1/client?__clerk_api_version=2026-05-12",
+      },
+    );
+    expect(headers.get("cookie")).toBe("theme=dark");
   });
 
   it("rewrites FAPI Location headers onto the same-origin proxy path", () => {
