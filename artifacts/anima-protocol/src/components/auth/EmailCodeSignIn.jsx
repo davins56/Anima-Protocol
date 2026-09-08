@@ -497,6 +497,7 @@ export default function EmailCodeSignIn() {
       <p className="mt-3 text-center text-[11px] text-cyan-400/40">
         Passwordless sign-in with instant session resonance
       </p>
+      <div id="clerk-captcha" />
     </div>
   );
 }
