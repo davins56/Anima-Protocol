@@ -11,13 +11,17 @@ bypasses Worker cookie handling and is the post-GitHub
 `authorization_invalid` path. Do not remount ClerkProvider in "direct"
 mode on production — if `/api/__clerk` is unhealthy, keep `proxyUrl` and
 show an error. Safari ITP would otherwise drop CNAME-cloaked
-`__client` cookies. The SPA expires leftover Domain=apex / Domain=.apex
-`__client_uat*` on `/sign-in` and `/sign-up` (before GitHub leaves the
-page) and again on the SSO callback page — never `__session` /
-`__client`, and never on every app boot. Clerk's CNAME
-`/v1/oauth_callback` itself Set-Cookies `__client_uat=0; Domain=anima-protocol.com`,
-so a retry without that preclear sends the leftover to the CNAME and
-Clerk returns `authorization_invalid`.
+`__client` cookies. The Worker sets `__client` with
+`Domain=anima-protocol.com` so GitHub's top-level hop to
+`clerk.anima-protocol.com/v1/oauth_callback` can authenticate (Clerk
+ProductionBrowser). Host-only `__client` is **not** sent to that CNAME
+and is the clean-attempt `authorization_invalid` path (#406 over-rewrite).
+The SPA still expires leftover Domain=apex / Domain=.apex `__client_uat*`
+on `/sign-in` and `/sign-up` (before GitHub leaves the page) and again
+on the SSO callback page — never `__session` / `__client`, and never on
+every app boot. Clerk's CNAME `/v1/oauth_callback` itself Set-Cookies
+`__client_uat=0; Domain=anima-protocol.com`. A leftover UAT on the CNAME
+hop 301s `authorization_invalid` even when `__client` is present.
 
 GitHub (and Google) do **not** callback to the SPA. They callback to Clerk.
 
@@ -74,19 +78,37 @@ Worker-originated FAPI (`/v1/*` after clerk-js loads) must still send
 the spoofable leftmost XFF hop). Do **not** attach the secret to
 `/npm/*` hops — those 307 to jsDelivr.
 
-`authorization_invalid` after **GitHub OAuth** is a different failure:
-GitHub returns to `https://clerk.anima-protocol.com/v1/oauth_callback`
-(CNAME, not this Worker). Clerk may set `__session` on
-`.anima-protocol.com` while `__client` stays on the CNAME. The SPA then
-lands on `/sign-in/sso-callback?__clerk_handshake=…` and clerk-js calls
-`/api/__clerk/v1/client…`. Forwarding that orphan `__session` without
-the matching `__client` is InvalidAuthorization. The proxy strips
-`__client` / `__session` / `__refresh` when the request is a handshake
-(`__clerk_handshake` / `/v1/client/handshake`) **or** the Referer is
-`/sign-in/sso-callback` / `/sign-up/sso-callback`. Ordinary `/v1/client`
-from `/sign-in` keeps cookies. Set-Cookie on the handshake response is
-rewritten first-party. Document redirects stay on the SPA — they are
-not remapped onto `/api/__clerk/`.
+`authorization_invalid` after **GitHub OAuth** has two CNAME causes,
+confirmed live (trace shape matches
+`{"errors":[{"code":"authorization_invalid",…}],"clerk_trace_id":…}`
+after `301 Location: /v1/oauth_callback?err_code=authorization_invalid#`
+→ `403` JSON):
+
+1. **Missing `__client` (clean attempt).** GitHub callbacks to
+   `https://clerk.anima-protocol.com/v1/oauth_callback` (CNAME, not this
+   Worker). Clerk authenticates that document with the `__client` cookie.
+   A host-only `__client` on `anima-protocol.com` is not sent. Live:
+   real `__client` + `state` + `code` (no UAT) → `303`
+   `/sign-in/sso-callback`. Same request without `__client` → 301/403
+   `authorization_invalid`. The Worker therefore Set-Cookies `__client`
+   with `Domain=anima-protocol.com`.
+2. **Leftover Domain=apex `__client_uat` (retry).** The CNAME plants
+   `__client_uat=0; Domain=anima-protocol.com`. Live: valid `__client` +
+   leftover UAT → 301/403 `authorization_invalid`. #415 preclears UAT
+   on `/sign-in` before `signIn.sso()`.
+
+After a successful callback the SPA lands on
+`/sign-in/sso-callback?__clerk_handshake=…` and clerk-js calls
+`/api/__clerk/v1/client…`. Clerk may also set `__session` on
+`.anima-protocol.com`. Forwarding that orphan `__session` without the
+matching `__client` is InvalidAuthorization. The proxy strips
+`__session` / `__refresh` / `__client_uat*` on handshake
+(`__clerk_handshake` / `/v1/client/handshake`) or when Referer is
+`/sign-in/sso-callback` / `/sign-up/sso-callback`. Proxied
+`oauth_callback` keeps `__client` and still strips UAT/session.
+Ordinary `/v1/client` from `/sign-in` keeps cookies. `__session` /
+`__refresh` / `__client_uat*` Set-Cookie stay host-only. Document
+redirects stay on the SPA — they are not remapped onto `/api/__clerk/`.
 
 Verify:
 
@@ -105,13 +127,15 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   must be forwarded, not rewritten as JSON.
 - `clerk.anima-protocol.com` stays on Clerk DNS. Do not point that hostname
   at Worker `anima-protocol`.
-- Clerk auth cookies (`__client*`, `__session*`, `__refresh*`) must be
-  **host-only** on `anima-protocol.com`. `Domain=anima-protocol.com` is also
-  sent to `clerk.anima-protocol.com`. GitHub's document callback
-  (`/v1/oauth_callback`) then returns `authorization_invalid` (301
-  `err_code=authorization_invalid` → 403 JSON). The Worker never sees that
-  request, so stripping outbound `/api/__clerk` cookies on handshake (#405)
-  cannot fix it.
+- `__client` must be `Domain=anima-protocol.com` so GitHub's document
+  callback on `clerk.anima-protocol.com/v1/oauth_callback` receives it.
+  Host-only `__client` is the clean-attempt `authorization_invalid` (301
+  `err_code` → 403 JSON). That Set-Cookie is still **first-party**: the
+  Worker writes it on `anima-protocol.com/api/__clerk` (Safari ITP). Do
+  not mint `__client` from the CNAME (ITP treats CNAME-cloaked cookies as
+  third-party). `__session` / `__refresh` / `__client_uat*` stay
+  **host-only**. The Worker never sees the CNAME document request, so
+  handshake cookie strip (#405) cannot mint `__client` for that hop.
 - **Do not Domain=apex-expire `__client` / `__session` / `__refresh`.** On
   the apex host, `Set-Cookie: name=; Domain=anima-protocol.com; Max-Age=0`
   also deletes the host-only cookie of the same name (Chrome/Safari). That
@@ -137,3 +161,24 @@ curl -s -H "Origin: https://anima-protocol.com" \
   "https://anima-protocol.com/api/__clerk/v1/client?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0"
 # expect HTTP 200 client JSON — not authorization_invalid / host_invalid
 ```
+
+## iPad Safari retest (after this Worker deploy)
+
+Safari on iPad has no Chrome DevTools. ITP will drop CNAME-cloaked
+`__client` if clerk-js talks to `clerk.anima-protocol.com` directly —
+keep `proxyUrl=/api/__clerk/`.
+
+1. Settings → Safari → Advanced → Website Data → remove
+   `anima-protocol.com` **and** `clerk.anima-protocol.com` (leftover
+   Domain=apex `__client_uat` from a failed hop will 301
+   `authorization_invalid` even with a valid `__client`).
+2. Open https://anima-protocol.com/sign-in (not www).
+3. Continue with GitHub (clean first attempt). Expect GitHub → CNAME
+   callback → `/sign-in/sso-callback` → Home. A JSON page with
+   `authorization_invalid` / `clerk_trace_id` is still the CNAME
+   callback failing.
+4. Sign out, open `/sign-in` again, Continue with GitHub (retry).
+5. Hard-refresh Home and Settings — identity stays.
+
+Do **not** change the GitHub OAuth App callback. It must stay
+`https://clerk.anima-protocol.com/v1/oauth_callback`.
