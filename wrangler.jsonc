@@ -94,6 +94,12 @@
       "secret_name": "OPENROUTER_API_KEY"
     }
   ],
+  "ai": {
+    "binding": "AI",
+    "gateway": {
+      "id": "deepseek-gateway"
+    }
+  },
   // Keep the Secrets Store DATABASE_URL binding above. A raw pg Pool against
   // that secret from this Worker still ECONNRESET — do not treat the binding
   // as a Worker TCP path.
