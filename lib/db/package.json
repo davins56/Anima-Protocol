@@ -14,7 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@clerk/backend": "^3.17.0",
+    "@clerk/backend": "^3.17.1",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.23.0",
