@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyClerkCnameResponseHeaders,
+  clerkCnameUpstreamUrl,
   cookieHeaderForClerkCnameOAuth,
   handleClerkCnameGateway,
   isClerkCnameRequestHost,
@@ -123,9 +124,47 @@ describe("clerk CNAME gateway", () => {
       "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
     );
     expect(await response.text()).toBe("");
-    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({
-      cf: { resolveOverride: CLERK_CNAME_RESOLVE_OVERRIDE },
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
+      "https://frontend-api.clerk.dev/v1/oauth_callback?code=used&state=abc",
+    );
+    expect(
+      (fetchImpl.mock.calls[0]?.[1] as { cf?: { resolveOverride?: string } })?.cf
+        ?.resolveOverride,
+    ).toBeUndefined();
+  });
+
+  it("fetches /v1/environment from shared FAPI with official proxy headers", async () => {
+    process.env.CLERK_SECRET_KEY = "sk_live_test";
+    expect(
+      clerkCnameUpstreamUrl("https://clerk.anima-protocol.com/v1/environment")
+        .toString(),
+    ).toBe("https://frontend-api.clerk.dev/v1/environment");
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ auth_config: {}, display_config: {} }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
     });
+    const response = await handleClerkCnameGateway(
+      new Request("https://clerk.anima-protocol.com/v1/environment"),
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    expect(JSON.parse(await response.text()).auth_config).toEqual({});
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
+      "https://frontend-api.clerk.dev/v1/environment",
+    );
+    const init = fetchImpl.mock.calls[0]?.[1] as {
+      headers?: Headers;
+      cf?: { resolveOverride?: string };
+    };
+    expect(init.cf?.resolveOverride).toBeUndefined();
+    expect(init.headers?.get("Clerk-Proxy-Url")).toBe(
+      "https://anima-protocol.com/api/__clerk/",
+    );
+    expect(init.headers?.get("Clerk-Secret-Key")).toBe("sk_live_test");
+    expect(init.headers?.get("X-Forwarded-Host")).toBe("anima-protocol.com");
+    delete process.env.CLERK_SECRET_KEY;
   });
 
   it("rewrites a successful Clerk 303 onto the SPA and strips planted UAT", async () => {

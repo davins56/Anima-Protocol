@@ -74,3 +74,9 @@ Workers Builds skipped or queued the `custom_domain` deploy:
 
 If the Custom Domain is already attached but `/v1/*` is HTML, the gap is
 `run_worker_first` (git), not DNS. Purge cache after that deploy.
+
+`GET /v1/environment` must not fetch `clerk.anima-protocol.com` (this
+Worker). That 522s after Custom Domain attach. The gateway proxies
+environment to `https://frontend-api.clerk.dev` with official
+`Clerk-Proxy-Url` / `Clerk-Secret-Key`. Bare `/v1/oauth_callback` still
+303s locally and never hits Clerk.
