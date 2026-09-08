@@ -96,6 +96,19 @@ export function clerkIdentityFromUser(clerkUser) {
  * }} [input]
  * @returns {boolean}
  */
+/**
+ * First-load sign-up detection. `auth.me()` without a store token returns
+ * Clerk identity and no `display_name` — that must not count as a new
+ * account or we call `updateMe()` (401) and never retry.
+ *
+ * @param {{ display_name?: string } | null | undefined} profile
+ * @param {boolean} storeReady
+ * @returns {boolean}
+ */
+export function isNewStoreAccount(profile, storeReady) {
+  return !!storeReady && !profile?.display_name;
+}
+
 export function shouldClearLocalSession({
   isSignedIn = false,
   hasLocalUser = false,
