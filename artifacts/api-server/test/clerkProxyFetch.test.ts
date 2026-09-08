@@ -17,6 +17,8 @@ import {
   shouldAuthorizeClerkUpstream,
   isClerkOAuthCallbackPath,
   clerkOAuthCallbackShouldBypassUpstream,
+  clerkOAuthCallbackShouldHideUpstreamBody,
+  clerkOAuthCallbackSignInRedirect,
   apexClerkAuthCookieExpiries,
   collectClerkAuthCookieNames,
   isClerkClientTokenCookieName,
@@ -514,6 +516,12 @@ describe("clerkProxyFetch", () => {
         "/v1/oauth_callback?code=real&state=abc",
       ),
     ).toBe(false);
+    expect(clerkOAuthCallbackShouldHideUpstreamBody(403)).toBe(true);
+    expect(clerkOAuthCallbackShouldHideUpstreamBody(401)).toBe(true);
+    expect(clerkOAuthCallbackShouldHideUpstreamBody(303)).toBe(false);
+    expect(clerkOAuthCallbackSignInRedirect("https://anima-protocol.com")).toBe(
+      "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+    );
     expect(
       rewriteClerkProxyLocation(
         "/v1/oauth_callback?err_code=authorization_invalid#",
@@ -838,6 +846,132 @@ describe("clerkProxyFetch", () => {
     ).toBe(false);
   });
 
+  it("rewrites oauth_callback 301 err_code onto /sign-in instead of /api/__clerk", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const fetchImpl = vi.fn(async () => {
+      return new Response(null, {
+        status: 301,
+        headers: {
+          location: "/v1/oauth_callback?err_code=authorization_invalid#",
+        },
+      });
+    });
+    const headers: Record<string, string> = {};
+    const cookies: string[] = [];
+    let body: Buffer | undefined;
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader(name: string, value: string) {
+        headers[name.toLowerCase()] = value;
+      },
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end(payload?: Buffer) {
+        body = payload;
+      },
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/oauth_callback?code=fake&state=abc",
+        originalUrl: "/api/__clerk/v1/oauth_callback?code=fake&state=abc",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(301);
+    expect(headers.location).toBe(
+      "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+    );
+    expect(headers.location).not.toContain("/api/__clerk");
+    expect(String(body || "")).not.toContain("authorization_invalid");
+    expect(
+      cookies.some(
+        (c) =>
+          /Domain=anima-protocol\.com/i.test(c) && /Max-Age=0/i.test(c),
+      ),
+    ).toBe(false);
+  });
+
+  it("hides oauth_callback 403 JSON even when code+state were present", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          errors: [
+            {
+              message: "Unauthorized request",
+              long_message: "You are not authorized to perform this request",
+              code: "authorization_invalid",
+            },
+          ],
+          clerk_trace_id: "a46dd8711e30378a77e2a1d46640edb6",
+        }),
+        {
+          status: 403,
+          headers: {
+            "content-type": "application/json",
+            "set-cookie":
+              "__client_uat=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax",
+          },
+        },
+      );
+    });
+    const headers: Record<string, string> = {};
+    const cookies: string[] = [];
+    let body: Buffer | undefined;
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader(name: string, value: string) {
+        headers[name.toLowerCase()] = value;
+      },
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end(payload?: Buffer) {
+        body = payload;
+      },
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/oauth_callback?code=used&state=abc",
+        originalUrl: "/api/__clerk/v1/oauth_callback?code=used&state=abc",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(303);
+    expect(headers.location).toBe(
+      "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+    );
+    expect(body).toBeUndefined();
+    expect(cookies).toEqual([]);
+  });
+
   it("does not Domain=apex-expire UAT or return JSON on HEAD/GET oauth_callback without code", async () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const fetchImpl = vi.fn(async () => {
@@ -880,6 +1014,55 @@ describe("clerkProxyFetch", () => {
       "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
     );
     expect(cookies).toEqual([]);
+  });
+
+  it("does not Domain=apex-expire UAT when handshake fails without minting", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          errors: [{ code: "invalid_handshake", message: "invalid handshake" }],
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+    const cookies: string[] = [];
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/client/handshake?__clerk_handshake=fake",
+        originalUrl: "/api/__clerk/v1/client/handshake?__clerk_handshake=fake",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          cookie: "__client_uat=1",
+          referer: "https://anima-protocol.com/sign-in/sso-callback",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(
+      cookies.some(
+        (c) =>
+          /Domain=anima-protocol\.com/i.test(c) && /Max-Age=0/i.test(c),
+      ),
+    ).toBe(false);
   });
 
   it("does not Domain=apex-expire __client_uat after handshake mints a host-only copy", async () => {

@@ -133,6 +133,9 @@ describe('clerkOAuthPaths', () => {
       /function AuthFormShell\([\s\S]*?useEffect\(\(\) => \{[\s\S]*?expireBrowserApexClerkClientUatCookies\(\);/,
     );
     expect(app).toMatch(
+      /function AuthFormShell\([\s\S]*?searchParams\.get\("clerk_error"\)/,
+    );
+    expect(app).toMatch(
       /function SsoCallbackPage\(\) \{[\s\S]*?useEffect\(\(\) => \{[\s\S]*?expireBrowserApexClerkClientUatCookies\(\);[\s\S]*?markClerkAuthReturn/,
     );
     expect(app).not.toMatch(

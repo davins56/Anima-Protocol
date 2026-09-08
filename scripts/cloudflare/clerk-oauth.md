@@ -136,16 +136,23 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   `{ code: "authorization_invalid", clerk_trace_id }` is also returned by
   **proxied** `GET /api/__clerk/v1/oauth_callback?err_code=authorization_invalid`
   (live 403). clerk-js `proxyUrl` + redirect-follow surfaces that as an
-  XHR body. The Worker must not 301 that hop onto `/api/__clerk` — send
-  `/sign-in?clerk_error=` instead — and must not fetch Clerk for
-  oauth_callback without `code`+`state` (HEAD/GET always 301/403 JSON).
+  XHR body. Live `curl -L` of `/api/__clerk/v1/oauth_callback` is
+  `301 Location: …/api/__clerk/v1/oauth_callback?err_code=` → `403` that
+  exact JSON. The Worker must not 301 that hop onto `/api/__clerk` — send
+  `/sign-in?clerk_error=` instead — must not fetch Clerk for
+  oauth_callback without `code`+`state` (HEAD/GET always 301/403 JSON),
+  and must not forward a 401/403 oauth_callback body (303 to `/sign-in`).
+  `/v1/client` (orphan session / leftover UAT / SSO Referer) is **200**,
+  not this JSON. CNAME `GET /v1/oauth_callback` 301s `err_code` even with
+  no cookies or a fake `code` — that hop alone does not prove leftover UAT.
 - **Never Domain=apex-expire `__client_uat` from the Worker.** Live
-  `HEAD /api/__clerk/v1/oauth_callback` sent
+  `HEAD /api/__clerk/v1/oauth_callback` and failed
+  `GET /v1/client/handshake` still sent
   `__client_uat=; Domain=anima-protocol.com; Max-Age=0`. #414
-  skip-when-minting does not apply on HEAD 405. On apex that Max-Age=0
-  deletes the host-only UAT (Safari/Chrome). SPA #415 still preclears
-  leftover CNAME UAT. `__session` / `__refresh` / `__client_uat*`
-  Set-Cookie stay host-only.
+  skip-when-minting does not apply when Clerk does not mint (HEAD 405,
+  handshake 400). On apex that Max-Age=0 deletes the host-only UAT
+  (Safari/Chrome). SPA #415 still preclears leftover CNAME UAT.
+  `__session` / `__refresh` / `__client_uat*` Set-Cookie stay host-only.
 - **Do not Domain=apex-expire `__client` / `__session` / `__refresh` /
   `__client_uat*` from the Worker.** On the apex host,
   `Set-Cookie: name=; Domain=anima-protocol.com; Max-Age=0` also deletes
@@ -171,21 +178,30 @@ curl -s -H "Origin: https://anima-protocol.com" \
 # expect HTTP 200 client JSON — not authorization_invalid / host_invalid
 ```
 
-## iPad Safari retest (after this Worker deploy)
+## iPad Safari retest (after #416 + this Worker deploy)
 
 Safari on iPad has no Chrome DevTools. ITP will drop CNAME-cloaked
 `__client` if clerk-js talks to `clerk.anima-protocol.com` directly —
 keep `proxyUrl=/api/__clerk/`.
 
-1. Settings → Safari → Advanced → Website Data → remove
-   `anima-protocol.com` **and** `clerk.anima-protocol.com` (leftover
-   Domain=apex `__client_uat` from a failed hop will 301
-   `authorization_invalid` even with a valid `__client`).
-2. Open https://anima-protocol.com/sign-in (not www).
+**After #416 (`Domain=apex __client`): clear Website Data before the
+first GitHub attempt.** An old **host-only** `__client` (from #406)
+is never sent to `clerk.anima-protocol.com/v1/oauth_callback` and is
+the clean-attempt `authorization_invalid` path. `/v1/client` remints
+`Domain=apex __client` on every load, but Safari can keep the host-only
+copy next to it, and a leftover Domain=apex `__client_uat` from a
+failed CNAME hop still 301s `authorization_invalid` even with a valid
+`__client`. Clearing both hosts is the reliable first attempt.
+
+1. Settings → Apps → Safari → Advanced → Website Data → remove
+   `anima-protocol.com` **and** `clerk.anima-protocol.com`.
+2. Open https://anima-protocol.com/sign-in (not www). Wait for the
+   GitHub button (clerk-js `/v1/client` must mint Domain=apex `__client`).
 3. Continue with GitHub (clean first attempt). Expect GitHub → CNAME
-   callback → `/sign-in/sso-callback` → Home. A JSON page with
-   `authorization_invalid` / `clerk_trace_id` is still the CNAME
-   callback failing.
+   callback → `/sign-in/sso-callback` → Home. After this deploy you
+   must **not** land on JSON `authorization_invalid` / `clerk_trace_id`
+   (that was proxied `/api/__clerk/v1/oauth_callback` 403). A return
+   to `/sign-in?clerk_error=` means retry GitHub after the wipe.
 4. Sign out, open `/sign-in` again, Continue with GitHub (retry).
 5. Hard-refresh Home and Settings — identity stays.
 
