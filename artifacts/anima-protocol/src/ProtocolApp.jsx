@@ -56,10 +56,12 @@ import {
   ANIMA_PRODUCTION_SIGN_IN_URL,
   isUsableClerkPublishableKey,
   isVercelPreviewHost,
+  isAnimaProductionHost,
   resolveClerkProxyUrl,
   sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
+import { destinationAfterClerkAuth } from "@/lib/clerkOAuthPaths";
 
 // Title screen is eager so cold opens paint Landing immediately (no spinner).
 import Landing from "./pages/Landing";
@@ -395,6 +397,14 @@ function SignUpPage() {
     </AuthFormShell>
   );
 }
+function applyPostAuthNavigation(next, navigate) {
+  if (next.mode === "external") {
+    window.location.href = next.href;
+    return;
+  }
+  navigate(stripBase(next.path));
+}
+
 /**
  * Clerk Future (`@clerk/react` v6) SSO return path.
  * `HandleSSOCallback` finishes the OAuth transfer, then `navigateToApp` uses
@@ -404,22 +414,14 @@ function SsoCallbackPage() {
   const navigate = useNavigate();
 
   const navigateAfterAuth = ({ session, decorateUrl }) => {
-    if (session?.currentTask) {
-      const destination = decorateUrl(`/${session.currentTask.key}`);
-      if (destination.startsWith("http")) {
-        window.location.href = destination;
-      } else {
-        navigate(stripBase(destination));
-      }
-      return;
-    }
-
-    const destination = decorateUrl(authRedirectCompleteUrl);
-    if (destination.startsWith("http")) {
-      window.location.href = destination;
-    } else {
-      navigate(stripBase(destination));
-    }
+    applyPostAuthNavigation(
+      destinationAfterClerkAuth({
+        session,
+        decorateUrl,
+        fallbackPath: authRedirectCompleteUrl,
+      }),
+      navigate,
+    );
   };
 
   return (
@@ -530,8 +532,9 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
 function ClerkProviderWithRoutes({ children }) {
   const navigate = useNavigate();
-  // Initialize to direct mode so routes mount immediately on the first paint
-  const [useProxy, setUseProxy] = useState(false);
+  // Start on the same-origin proxy when the key warrants it so a returning
+  // session is not wiped by a later ClerkProvider remount (direct → proxy).
+  const [useProxy, setUseProxy] = useState(() => Boolean(initialClerkProxyUrl));
   const [providerKey, setProviderKey] = useState(0);
 
   useEffect(() => {
@@ -540,9 +543,14 @@ function ClerkProviderWithRoutes({ children }) {
       try {
         if (!initialClerkProxyUrl) return;
         const healthy = await isClerkProxyHealthy(clerkPubKey);
-        if (!cancelled && healthy) setUseProxy(true);
+        if (cancelled || healthy) return;
+        setUseProxy(false);
+        setProviderKey((key) => key + 1);
       } catch {
-        if (!cancelled) setUseProxy(false);
+        if (!cancelled) {
+          setUseProxy(false);
+          setProviderKey((key) => key + 1);
+        }
       }
     })();
 
@@ -569,6 +577,16 @@ function ClerkProviderWithRoutes({ children }) {
       signUpUrl={`${basePath}/sign-up`}
       signInFallbackRedirectUrl={authRedirectCompleteUrl}
       signUpFallbackRedirectUrl={authRedirectCompleteUrl}
+      signInForceRedirectUrl={authRedirectCompleteUrl}
+      signUpForceRedirectUrl={authRedirectCompleteUrl}
+      {...(isAnimaProductionHost(window.location.hostname)
+        ? {
+            allowedRedirectOrigins: [
+              "https://anima-protocol.com",
+              "https://www.anima-protocol.com",
+            ],
+          }
+        : {})}
       localization={{
         signIn: {
           start: {
