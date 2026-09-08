@@ -420,7 +420,7 @@ describe("startGitHubOAuthSignIn", () => {
     expect(sso).toHaveBeenCalledWith({
       strategy: "oauth_github",
       redirectCallbackUrl: "/sign-in/sso-callback",
-      redirectUrl: "/",
+      redirectUrl: "/chat",
     });
     expect(result.method).toBe("signIn.sso");
     expect(result.shouldFinalize).toBe(true);
@@ -435,7 +435,7 @@ describe("startGitHubOAuthSignIn", () => {
     expect(authenticateWithRedirect).toHaveBeenCalledWith({
       strategy: "oauth_github",
       redirectUrl: "/app/sign-in/sso-callback",
-      redirectUrlComplete: "/app",
+      redirectUrlComplete: "/app/chat",
     });
     expect(result.method).toBe("authenticateWithRedirect");
   });

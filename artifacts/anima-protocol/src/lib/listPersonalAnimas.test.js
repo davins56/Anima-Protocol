@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   listAnima: vi.fn(),
   listCharacter: vi.fn(),
+  filterCharacter: vi.fn(),
 }));
 
 vi.mock("@/api/base44Client", () => ({
   base44: {
     entities: {
       Anima: { list: mocks.listAnima },
-      Character: { list: mocks.listCharacter },
+      Character: { list: mocks.listCharacter, filter: mocks.filterCharacter },
     },
   },
 }));
@@ -18,7 +19,9 @@ import {
   companionLookHref,
   companionPersistPatch,
   companionStoreEntity,
+  isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
+  listPersonalAnimas,
   loadCompanionRecord,
   mergePersonalCompanions,
   selectPersonalAnima,
@@ -50,9 +53,33 @@ describe("isPersonalAnimaRecord", () => {
     ).toBe(false);
     expect(isPersonalAnimaRecord({ category: "warrior" })).toBe(false);
   });
+
+  it("accepts Aelynd name variants even without ai_prompt flags", () => {
+    expect(isKnownPersonalAnimaName("Aelynd")).toBe(true);
+    expect(isKnownPersonalAnimaName("Aelyndra")).toBe(true);
+    expect(isKnownPersonalAnimaName("Aelindra")).toBe(true);
+    expect(isKnownPersonalAnimaName("Alyndra")).toBe(true);
+    expect(isPersonalAnimaRecord({ name: "Aelynd", universe: "Original" })).toBe(
+      true,
+    );
+    expect(isPersonalAnimaRecord({ name: "Aelindra" })).toBe(true);
+    expect(isPersonalAnimaRecord({ is_anima: true, name: "Nyx" })).toBe(true);
+  });
 });
 
 describe("mergePersonalCompanions", () => {
+  it("dedupes the same companion returned from list and name search", () => {
+    const merged = mergePersonalCompanions(
+      [{ id: "anima-1", name: "Serenity" }],
+      [
+        { id: "char-aelynd", name: "Aelynd" },
+        { id: "char-aelynd", name: "Aelynd" },
+        { id: "anima-1", name: "Serenity" },
+      ],
+    );
+    expect(merged.map((row) => row.id)).toEqual(["anima-1", "char-aelynd"]);
+  });
+
   it("keeps generator-created characters even when an Anima already exists", () => {
     const merged = mergePersonalCompanions(
       [
@@ -118,6 +145,7 @@ describe("loadCompanionRecord", () => {
   });
 
   it("falls back to Character when Anima.list does not have the companion", async () => {
+    mocks.filterCharacter.mockResolvedValue([]);
     mocks.listCharacter.mockResolvedValue([
       { id: "char-aelindra", name: "Aelindra", creation_method: "ai_prompt" },
     ]);
@@ -125,6 +153,48 @@ describe("loadCompanionRecord", () => {
     const row = await loadCompanionRecord("char-aelindra", "Anima");
     expect(row?.name).toBe("Aelindra");
     expect(companionStoreEntity(row)).toBe("Character");
+  });
+});
+
+describe("listPersonalAnimas", () => {
+  beforeEach(() => {
+    mocks.listAnima.mockReset().mockResolvedValue([]);
+    mocks.listCharacter.mockReset().mockResolvedValue([]);
+    mocks.filterCharacter.mockReset().mockResolvedValue([]);
+  });
+
+  it("recovers Aelynd from a name search when she is past the newest-100 roster", async () => {
+    mocks.listAnima.mockResolvedValue([
+      { id: "anima-1", name: "Serenity", created_date: "2026-01-01T00:00:00.000Z" },
+    ]);
+    mocks.listCharacter.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => ({
+        id: `seed-${i}`,
+        name: `Roster ${i}`,
+        universe: "Marvel Cinematic Universe",
+      })),
+    );
+    mocks.listCharacter.mockImplementation(async (_sort, _limit, opts) => {
+      if (opts?.search?.name === "aelynd") {
+        return [
+          {
+            id: "char-aelynd",
+            name: "Aelynd",
+            created_date: "2025-06-01T00:00:00.000Z",
+          },
+        ];
+      }
+      return Array.from({ length: 5 }, (_, i) => ({
+        id: `seed-${i}`,
+        name: `Roster ${i}`,
+        universe: "Marvel Cinematic Universe",
+      }));
+    });
+
+    const rows = await listPersonalAnimas(100);
+    expect(rows.map((row) => row.name)).toEqual(
+      expect.arrayContaining(["Serenity", "Aelynd"]),
+    );
   });
 });
 

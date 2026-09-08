@@ -20,6 +20,30 @@ const authState = vi.hoisted(() => ({
   },
 }));
 
+const clerkState = vi.hoisted(() => ({
+  isSignedIn: true,
+  user: {
+    id: "user_clerk",
+    fullName: "Operator",
+    username: "",
+    primaryEmailAddress: { emailAddress: "operator@example.com" },
+    emailAddresses: [{ emailAddress: "operator@example.com" }],
+    externalAccounts: [],
+  },
+}));
+
+function clerkUserFromAuth(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    fullName: user.full_name,
+    username: user.username || "",
+    primaryEmailAddress: user.email ? { emailAddress: user.email } : null,
+    emailAddresses: user.email ? [{ emailAddress: user.email }] : [],
+    externalAccounts: [],
+  };
+}
+
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
@@ -36,6 +60,14 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/lib/AuthContext", () => ({
   useAuth: () => authState,
+}));
+
+vi.mock("@clerk/react", () => ({
+  useUser: () => ({
+    isLoaded: true,
+    isSignedIn: clerkState.isSignedIn,
+    user: clerkState.user,
+  }),
 }));
 
 vi.mock("@/api/base44Client", () => ({
@@ -132,6 +164,8 @@ describe("Settings custom chat background upload", () => {
       full_name: "Operator",
       role: "user",
     };
+    clerkState.isSignedIn = true;
+    clerkState.user = clerkUserFromAuth(authState.user);
     meMock.mockResolvedValue({
       email: "operator@example.com",
       settings: { chat_bg_theme: "default", chat_bg_image: "" },
@@ -261,6 +295,8 @@ describe("Settings account identity after Clerk login", () => {
       full_name: "Dàvīn Smith",
       role: "admin",
     };
+    clerkState.isSignedIn = true;
+    clerkState.user = clerkUserFromAuth(authState.user);
   });
 
   afterEach(() => {
@@ -317,6 +353,7 @@ describe("Settings account identity after Clerk login", () => {
       role: "User",
       is_guest: true,
     };
+    clerkState.user = clerkUserFromAuth(authState.user);
     meMock.mockResolvedValue({
       id: "user_seeker",
       email: "seeker@anima-protocol.com",
@@ -333,9 +370,56 @@ describe("Settings account identity after Clerk login", () => {
     expect(container.textContent).toMatch(/Seeker/);
   });
 
+  it("shows Clerk useUser identity when AuthContext user is still null", async () => {
+    authState.user = null;
+    clerkState.isSignedIn = true;
+    clerkState.user = {
+      id: "user_2github",
+      fullName: "Dàvīn Smith",
+      username: "davins56",
+      primaryEmailAddress: { emailAddress: "davins56@hotmail.com" },
+      emailAddresses: [{ emailAddress: "davins56@hotmail.com" }],
+      externalAccounts: [],
+    };
+    meMock.mockResolvedValue({
+      email: "",
+      full_name: "",
+      role: "User",
+    });
+    const { container } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/davins56@hotmail\.com/);
+    expect(container.textContent).toMatch(/Dàvīn Smith/);
+  });
+
+  it("keeps Clerk identity when auth.me returns empty email and name strings", async () => {
+    meMock.mockResolvedValue({
+      email: "",
+      full_name: "",
+      display_name: "",
+      role: "User",
+      selected_mode: "companion",
+    });
+    const { container } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/davins56@hotmail\.com/);
+    expect(container.textContent).toMatch(/Dàvīn Smith/);
+    expect(container.textContent).not.toMatch(/Email—|Email —/);
+  });
+
   it("reloads auth.me when isAuthenticated becomes true", async () => {
     authState.isAuthenticated = false;
     authState.user = null;
+    clerkState.isSignedIn = false;
+    clerkState.user = null;
     meMock.mockResolvedValue({ role: "User", selected_mode: "companion" });
     const { container, root } = renderPage();
     await act(async () => {
@@ -351,6 +435,8 @@ describe("Settings account identity after Clerk login", () => {
       full_name: "Dàvīn Smith",
       role: "admin",
     };
+    clerkState.isSignedIn = true;
+    clerkState.user = clerkUserFromAuth(authState.user);
     await act(async () => {
       root.render(<Settings />);
       await Promise.resolve();

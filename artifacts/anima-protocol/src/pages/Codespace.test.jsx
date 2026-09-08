@@ -26,7 +26,10 @@ vi.mock("@/api/base44Client", () => ({
     auth: { me: mocks.me },
     entities: {
       Anima: { list: mocks.listAnima },
-      Character: { list: mocks.listCharacter },
+      Character: {
+        list: mocks.listCharacter,
+        filter: (...args) => mocks.listCharacter(...args),
+      },
       CodespaceProject: {
         list: mocks.listProject,
         create: mocks.createProject,
