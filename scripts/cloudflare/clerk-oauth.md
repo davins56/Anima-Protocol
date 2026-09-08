@@ -60,9 +60,19 @@ makes `GET /v1/client` return `host_invalid`.
 
 Worker-originated FAPI (`/v1/*` after clerk-js loads) must still send
 `Clerk-Secret-Key` and `X-Forwarded-For` (from `CF-Connecting-IP`, not
-the spoofable leftmost XFF hop). Missing those is Clerk
-`authorization_invalid` / InvalidAuthorization. Do **not** attach the
-secret to `/npm/*` hops — those 307 to jsDelivr.
+the spoofable leftmost XFF hop). Do **not** attach the secret to
+`/npm/*` hops — those 307 to jsDelivr.
+
+`authorization_invalid` after **GitHub OAuth** is a different failure:
+GitHub returns to `https://clerk.anima-protocol.com/v1/oauth_callback`
+(CNAME, not this Worker). Clerk may set `__session` on
+`.anima-protocol.com` while `__client` stays on the CNAME. The SPA then
+lands on `/sign-in/sso-callback?__clerk_handshake=…` and clerk-js calls
+`/api/__clerk/v1/client…`. Forwarding that orphan `__session` without
+the matching `__client` is InvalidAuthorization. Handshake requests
+strip `__client` / `__session` / `__refresh` cookies so the handshake
+JWT is the only credential; Set-Cookie on the response is rewritten
+first-party.
 
 Verify:
 

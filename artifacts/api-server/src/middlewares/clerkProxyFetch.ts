@@ -122,7 +122,7 @@ export function rewriteClerkProxySetCookie(
   if (isClerkOwnedHostname(cookieDomain)) {
     // Session cookies must become first-party. Drop Cloudflare bot cookies
     // minted for Clerk's CNAME target — they are not used by clerk-js.
-    if (/^__(?:client|session)/i.test(raw.trim())) {
+    if (/^__(?:client|session|refresh)/i.test(raw.trim())) {
       return raw.replace(/;\s*Domain=[^;]*/i, "");
     }
     return null;
@@ -146,6 +146,52 @@ export function isClerkFrontendApiPath(pathname: string): boolean {
 export function isClerkNpmAssetPath(pathname: string): boolean {
   const path = (pathname || "/").split("?")[0] || "/";
   return path === "/npm" || path.startsWith("/npm/");
+}
+
+/** Clerk cookies that identify a client/session. */
+export function isClerkAuthCookieName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return (
+    n.startsWith("__client") ||
+    n.startsWith("__session") ||
+    n.startsWith("__refresh")
+  );
+}
+
+/**
+ * After GitHub, oauth_callback runs on clerk.anima-protocol.com and may set
+ * `__session` on `.anima-protocol.com` while `__client` stays on the CNAME.
+ * The SPA then calls `/api/__clerk` with that orphan session cookie. Clerk
+ * returns authorization_invalid. Handshake tokens are single-use and must
+ * not share the request with a mismatched client/session pair.
+ */
+export function stripClerkAuthCookies(cookieHeader: string): string {
+  return cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => {
+      if (!part) return false;
+      const name = part.split("=", 1)[0] || "";
+      return !isClerkAuthCookieName(name);
+    })
+    .join("; ");
+}
+
+export function isClerkHandshakeRequest(requestUrl: string | undefined): boolean {
+  if (!requestUrl) return false;
+  try {
+    const url = new URL(requestUrl, "https://anima-protocol.com");
+    const path = (url.pathname || "/").split("?")[0] || "/";
+    if (path === "/v1/client/handshake" || path.startsWith("/v1/client/handshake/")) {
+      return true;
+    }
+    return (
+      url.searchParams.has("__clerk_handshake") ||
+      url.searchParams.has("__clerk_handshake_nonce")
+    );
+  } catch {
+    return /__clerk_handshake/.test(requestUrl);
+  }
 }
 
 export function isHttpRedirectStatus(status: number): boolean {
@@ -279,6 +325,8 @@ export type ClerkUpstreamHeaderOptions = {
    * jsDelivr and must not receive the secret.
    */
   authorizeUpstream?: boolean;
+  /** Upstream path+query — used to detect OAuth handshake consumption. */
+  requestUrl?: string;
 };
 
 export function buildClerkUpstreamHeaders(
@@ -323,6 +371,15 @@ export function buildClerkUpstreamHeaders(
   const clientIp = clientIpFromHeaders(req.headers);
   if (clientIp) {
     headers.set("X-Forwarded-For", clientIp);
+  }
+
+  if (isClerkHandshakeRequest(options.requestUrl)) {
+    const cookie = headers.get("cookie");
+    if (cookie) {
+      const stripped = stripClerkAuthCookies(cookie);
+      if (stripped) headers.set("cookie", stripped);
+      else headers.delete("cookie");
+    }
   }
 
   return headers;
@@ -429,6 +486,7 @@ export async function proxyClerkWithFetch(
   const headers = buildClerkUpstreamHeaders(req, secretKey, {
     officialProxy,
     authorizeUpstream,
+    requestUrl: upstreamPath,
   });
   const npmHeaders = authorizeUpstream
     ? buildClerkUpstreamHeaders(req, secretKey, {
