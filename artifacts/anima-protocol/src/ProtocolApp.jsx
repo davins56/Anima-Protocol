@@ -48,6 +48,7 @@ import { prefetchHotRoutes } from "@/lib/prefetchHotRoutes";
 import { base44 } from "@/api/base44Client";
 import {
   CLERK_FAILURE_HINT,
+  CLERK_PROXY_REQUIRED_HINT,
   CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -424,6 +425,7 @@ function SsoCallbackPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    expireBrowserApexClerkClientUatCookies();
     markClerkAuthReturn();
   }, []);
 
@@ -574,8 +576,10 @@ function ClerkProviderWithRoutes({ children }) {
   // session is not wiped by a later ClerkProvider remount (direct → proxy).
   const [useProxy, setUseProxy] = useState(() => Boolean(initialClerkProxyUrl));
   const [providerKey, setProviderKey] = useState(0);
+  const [proxyRequiredFailed, setProxyRequiredFailed] = useState(false);
 
   useEffect(() => {
+    expireBrowserApexClerkClientUatCookies();
     let cancelled = false;
     (async () => {
       try {
@@ -589,16 +593,24 @@ function ClerkProviderWithRoutes({ children }) {
         ) {
           return;
         }
-        if (!shouldAllowDirectClerkFallback(clerkPubKey)) return;
         const healthy = await isClerkProxyHealthy(clerkPubKey);
         if (cancelled || healthy) return;
+        if (!shouldAllowDirectClerkFallback(clerkPubKey)) {
+          // Production: keep proxyUrl and surface an error. Remounting
+          // without proxyUrl sends GitHub return to clerk.anima-protocol.com.
+          setProxyRequiredFailed(true);
+          return;
+        }
         setUseProxy(false);
         setProviderKey((key) => key + 1);
       } catch {
-        if (!cancelled && shouldAllowDirectClerkFallback(clerkPubKey)) {
-          setUseProxy(false);
-          setProviderKey((key) => key + 1);
+        if (cancelled) return;
+        if (!shouldAllowDirectClerkFallback(clerkPubKey)) {
+          setProxyRequiredFailed(true);
+          return;
         }
+        setUseProxy(false);
+        setProviderKey((key) => key + 1);
       }
     })();
 
@@ -656,6 +668,11 @@ function ClerkProviderWithRoutes({ children }) {
       routerReplace={(to) => navigate(stripBase(to), { replace: true })}
     >
       <ClerkStallRecovery useProxy={useProxy} onToggleProxy={handleToggleProxy} />
+      {proxyRequiredFailed ? (
+        <div className="px-4 pt-4">
+          <ClerkDiagnosticsBanner hints={[CLERK_PROXY_REQUIRED_HINT]} />
+        </div>
+      ) : null}
       <ClerkQueryClientCacheInvalidator />
       {children}
     </ClerkProvider>

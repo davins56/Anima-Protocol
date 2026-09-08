@@ -3,6 +3,7 @@ import {
   CLERK_FAILURE_HINT,
   CLERK_ORIGIN_INVALID_HINT,
   CLERK_ORIGIN_MISMATCH_ON_PRODUCTION_HINT,
+  CLERK_PROXY_REQUIRED_HINT,
   CLERK_STALL_HINT,
   isClerkProxyHealthy,
   probeClerkConnectivity,
@@ -204,6 +205,23 @@ describe('isClerkProxyHealthy', () => {
     );
 
     await expect(isClerkProxyHealthy(PROXY_LIVE_KEY)).resolves.toBe(false);
+  });
+
+  it('documents that production must keep proxyUrl instead of remounting direct', () => {
+    expect(CLERK_PROXY_REQUIRED_HINT).toMatch(/\/api\/__clerk/);
+    expect(CLERK_PROXY_REQUIRED_HINT).toMatch(/clerk\.anima-protocol\.com/);
+  });
+
+  it('returns true when /v1/environment is 200', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        expect(String(url)).toContain('/api/__clerk/v1/environment');
+        return new Response(JSON.stringify({}), { status: 200 });
+      }),
+    );
+
+    await expect(isClerkProxyHealthy(PROXY_LIVE_KEY)).resolves.toBe(true);
   });
 
   it('returns true when proxy is not used', async () => {

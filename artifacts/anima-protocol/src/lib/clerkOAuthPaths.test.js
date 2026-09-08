@@ -129,5 +129,10 @@ describe('clerkOAuthPaths', () => {
     expect(app).toMatch(/mustUseSameOriginClerkProxy/);
     expect(app).toMatch(/shouldAllowDirectClerkFallback/);
     expect(app).toMatch(/lockSameOriginClerkProxy/);
+    expect(app).toMatch(/expireBrowserApexClerkClientUatCookies\(\)/);
+    expect(app).toMatch(/CLERK_PROXY_REQUIRED_HINT/);
+    expect(app).toMatch(/proxyRequiredFailed/);
+    expect(app).toMatch(/setProxyRequiredFailed\(true\)/);
+    expect(app).toMatch(/lockSameOriginClerkProxy && !nextUseProxy\) return/);
   });
 });
