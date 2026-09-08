@@ -9,6 +9,8 @@ import {
   clerkOAuthRedirectPaths,
   clerkSsoCallbackPath,
   destinationAfterClerkAuth,
+  hasClerkHandshakeQuery,
+  hasPendingClerkHandshake,
   joinBasePath,
   resolvePostAuthNavigation,
 } from './clerkOAuthPaths';
@@ -76,6 +78,31 @@ describe('clerkOAuthPaths', () => {
         origin: 'https://anima-protocol.com',
       }),
     ).toEqual({ mode: 'in-app', path: '/' });
+    expect(
+      resolvePostAuthNavigation(
+        'https://clerk.anima-protocol.com/?__clerk_handshake=tok',
+        {
+          fallbackPath: '/',
+          origin: 'https://anima-protocol.com',
+        },
+      ),
+    ).toEqual({ mode: 'in-app', path: '/?__clerk_handshake=tok' });
+  });
+
+  it('detects Clerk handshake query and SSO callback paths', () => {
+    expect(
+      hasClerkHandshakeQuery({ search: '?__clerk_handshake=1' }),
+    ).toBe(true);
+    expect(hasClerkHandshakeQuery({ search: '' })).toBe(false);
+    expect(
+      hasPendingClerkHandshake({
+        pathname: '/sign-in/sso-callback',
+        search: '',
+      }),
+    ).toBe(true);
+    expect(
+      hasPendingClerkHandshake({ pathname: '/', search: '' }),
+    ).toBe(false);
   });
 
   it('documents the Clerk custom-domain GitHub OAuth callback', () => {

@@ -20,6 +20,12 @@ import {
   recoverExistingClerkSession,
   startGitHubOAuthSignIn,
 } from "./emailCodeSignIn";
+import {
+  CLERK_AUTH_RETURN_KEY,
+  GUEST_CHOSEN_SESSION_KEY,
+  LOCAL_AUTH_STORAGE_KEY,
+  readClerkAuthReturn,
+} from "./authBootPolicy";
 
 describe("hasEmailCodeFactor", () => {
   it("returns true when email_code is offered", () => {
@@ -378,6 +384,22 @@ describe("waitForPageNavigation", () => {
 describe("startGitHubOAuthSignIn", () => {
   afterEach(() => {
     vi.useRealTimers();
+    sessionStorage.removeItem(CLERK_AUTH_RETURN_KEY);
+    sessionStorage.removeItem(GUEST_CHOSEN_SESSION_KEY);
+    localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+  });
+
+  it("marks Clerk return and clears leftover guest before GitHub redirect", async () => {
+    sessionStorage.setItem(GUEST_CHOSEN_SESSION_KEY, "1");
+    localStorage.setItem(
+      LOCAL_AUTH_STORAGE_KEY,
+      JSON.stringify({ id: "user_seeker", is_guest: true }),
+    );
+    const sso = vi.fn(async () => ({ error: null }));
+    await startGitHubOAuthSignIn({ sso, status: "complete" }, "");
+    expect(readClerkAuthReturn()).toBe(true);
+    expect(sessionStorage.getItem(GUEST_CHOSEN_SESSION_KEY)).toBeNull();
+    expect(localStorage.getItem(LOCAL_AUTH_STORAGE_KEY)).toBeNull();
   });
 
   it("uses signIn.sso with relative Clerk paths", async () => {
