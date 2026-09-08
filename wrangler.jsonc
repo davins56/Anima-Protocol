@@ -49,6 +49,12 @@
       "/v1/*"
     ]
   },
+  // Apex + clerk MUST both stay here as custom_domain. wrangler deploy
+  // treats this list as the source of truth and deletes dashboard Custom
+  // Domains that are missing — including their proxied A/AAAA. #421 listed
+  // only clerk; #422/#425 then dropped apex DNS (no A/AAAA; www still
+  // resolved and 301'd to an unresolvable apex). See
+  // scripts/cloudflare/www-redirect.md.
   // GitHub's top-level hop lands on clerk.anima-protocol.com.
   // A zone *route* (`pattern/*` + zone_name) does NOT receive traffic while
   // that hostname is a grey-cloud CNAME to Clerk — live after #420: still
@@ -64,6 +70,10 @@
   // scripts/cloudflare/www-redirect.md — fix the zone rule, do not assume
   // a wrangler www route exists until that replacement keeps ${1}.
   "routes": [
+    {
+      "pattern": "anima-protocol.com",
+      "custom_domain": true
+    },
     {
       "pattern": "clerk.anima-protocol.com",
       "custom_domain": true
