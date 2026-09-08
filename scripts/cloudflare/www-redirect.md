@@ -5,6 +5,46 @@ zone Redirect Rule is fixed. `vercel.json` already has a path-preserving
 redirect (`https://anima-protocol.com/:path*`). Apex is Workers + Assets.
 www never hits that Vercel rule.
 
+## Apex Custom Domain (must stay in `wrangler.jsonc` `routes`)
+
+Worker `anima-protocol` is the origin for **`anima-protocol.com`**. That
+hostname **MUST** stay in root `wrangler.jsonc` `routes` as
+`{ "pattern": "anima-protocol.com", "custom_domain": true }` **alongside**
+`clerk.anima-protocol.com`. Do **not** list only clerk.
+
+`wrangler deploy` treats `routes` as the source of truth. A deploy that
+omits apex deletes the dashboard Custom Domain and its proxied A/AAAA —
+public DNS then has no apex records (DoH SOA only). That is the #421 →
+#422/#425 outage: deploy logs showed only
+`clerk.anima-protocol.com (custom domain)`; www still resolved and 301'd
+to an unresolvable apex.
+
+Do **not** add `www.anima-protocol.com` as a Custom Domain. The zone
+Redirect Rule owns www → apex.
+
+After merge + Workers Build on main, the deploy log must list **both**:
+
+```
+anima-protocol.com (custom domain)
+clerk.anima-protocol.com (custom domain)
+```
+
+Verify:
+
+```bash
+# DoH — apex must have A (and usually AAAA), not SOA-only
+curl -sS 'https://cloudflare-dns.com/dns-query?name=anima-protocol.com&type=A' \
+  -H 'accept: application/dns-json'
+
+# Apex serves the SPA
+curl -sS -D- -o /tmp/apex.html https://anima-protocol.com/
+# expect HTTP/2 200 and <!DOCTYPE html> (Vite SPA)
+
+# www still 301s to apex (zone rule; path may be dropped until ${1} is fixed)
+curl -sSI https://www.anima-protocol.com/
+# expect 301 Location: https://anima-protocol.com/  (or /${1} after the fix)
+```
+
 ## Live zone rule (do not put secrets here)
 
 Cloudflare zone **Redirect Rules**, one active rule, name
