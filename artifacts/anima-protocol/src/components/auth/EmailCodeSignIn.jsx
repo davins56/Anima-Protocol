@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useClerk, useSignIn, useUser } from "@clerk/react";
+import { useAuth as useClerkAuth, useClerk, useSignIn, useUser } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -23,6 +23,7 @@ import {
   markClerkAuthReturn,
   readClerkAuthReturn,
 } from "@/lib/authBootPolicy";
+import { waitForClerkSessionToken } from "@/lib/clerkSessionReady";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -34,6 +35,7 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 export default function EmailCodeSignIn() {
   const { signIn, fetchStatus } = useSignIn();
   const { isLoaded: userLoaded, isSignedIn } = useUser();
+  const { getToken } = useClerkAuth();
   const clerk = useClerk();
   const navigate = useNavigate();
   const { loginAsLocalUser, isSignedInUser, isGuest, suppressGuestHome } = useAuth();
@@ -50,10 +52,10 @@ export default function EmailCodeSignIn() {
   const loading = fetchStatus === "fetching" || Boolean(busy);
 
   // Single-session Clerk instances reject a second sign-in. Send signed-in
-  // users into the app instead of leaving them stuck on this form.
-  // Leftover Instant Sandbox must not bounce a GitHub/email return to Home.
+  // users into the app only after a session JWT exists — isSignedIn alone
+  // paints empty Home after email OTP / GitHub return.
   useEffect(() => {
-    if ((userLoaded && isSignedIn) || isSignedInUser) {
+    if (isSignedInUser) {
       navigate(basePath || "/", { replace: true });
       return;
     }
@@ -73,6 +75,7 @@ export default function EmailCodeSignIn() {
     try {
       const sessionId = await recoverExistingClerkSession(clerk, err);
       if (sessionId) {
+        await waitForClerkSessionToken((options) => getToken(options));
         navigate(basePath || "/", { replace: true });
         return true;
       }
@@ -116,12 +119,13 @@ export default function EmailCodeSignIn() {
     }
     markClerkAuthReturn();
     await signIn.finalize({
-      navigate: ({ session, decorateUrl }) => {
+      navigate: async ({ session, decorateUrl }) => {
         const next = destinationAfterClerkAuth({
           session,
           decorateUrl,
           fallbackPath: clerkOAuthCompletePath(basePath),
         });
+        await waitForClerkSessionToken((options) => getToken(options));
         if (next.mode === "external") {
           window.location.href = next.href;
           return;

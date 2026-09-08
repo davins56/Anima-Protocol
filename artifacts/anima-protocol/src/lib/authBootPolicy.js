@@ -283,7 +283,8 @@ export function resolveHomeGate({
 } = {}) {
   if (isSignedInUser) return "home";
   if (suppressGuestHome) {
-    if (handshakeHold && isLoadingAuth && !authStalled) return "loading";
+    // Email OTP has no handshake query — still hold Home until the JWT exists.
+    if ((handshakeHold || isLoadingAuth) && !authStalled) return "loading";
     return "landing";
   }
   if (isGuest) return "home";

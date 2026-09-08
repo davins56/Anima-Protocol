@@ -40,6 +40,11 @@ import {
   hasPendingClerkHandshake,
 } from '@/lib/clerkOAuthPaths';
 import {
+  isUsableClerkSessionToken,
+  resolveSignedInUser,
+  waitForClerkSessionToken,
+} from '@/lib/clerkSessionReady';
+import {
   disableProactivePush,
   getProactiveMessagePreferences,
   syncProactivePushIfEnabled,
@@ -65,6 +70,7 @@ export const AuthProvider = ({ children }) => {
   // Instant Sandbox only applies after an explicit this-session Guest tap,
   // and only when Clerk has loaded without a real session.
   const [localUser, setLocalUser] = useState(null);
+  const [sessionTokenReady, setSessionTokenReady] = useState(false);
 
   const suppressGuestHome = shouldSuppressGuestHome({
     pendingClerkHandshake: hasPendingClerkHandshake({
@@ -101,7 +107,7 @@ export const AuthProvider = ({ children }) => {
       setAuthTokenGetter(async () => {
         try {
           const token = await getToken();
-          if (token) return token;
+          if (isUsableClerkSessionToken(token)) return token;
           return await getToken({ skipCache: true });
         } catch (err) {
           console.warn("[Anima] Clerk getToken failed:", err);
@@ -116,6 +122,25 @@ export const AuthProvider = ({ children }) => {
     }
     clearAuthTokenGetter();
   }, [getToken, isSignedIn, localUser, suppressGuestHome]);
+
+  // Email / GitHub can flip isSignedIn before a JWT is readable. Hold Home
+  // until getToken returns a real Clerk session — not a leftover local_ guest.
+  useEffect(() => {
+    if (!isSignedIn || !clerkUser) {
+      setSessionTokenReady(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const token = await waitForClerkSessionToken((options) => getToken(options));
+      if (!cancelled) {
+        setSessionTokenReady(isUsableClerkSessionToken(token));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, isSignedIn, clerkUser?.id]);
 
   // Sync localUser into base44 if not signed in with Clerk
   useEffect(() => {
@@ -206,7 +231,9 @@ export const AuthProvider = ({ children }) => {
     });
     if (boot.mode === 'signed-in') {
       clearGuestPersistence();
-      clearClerkAuthReturn();
+      if (sessionTokenReady) {
+        clearClerkAuthReturn();
+      }
       setLocalUser(null);
       return;
     }
@@ -215,7 +242,7 @@ export const AuthProvider = ({ children }) => {
       return;
     }
     setLocalUser(null);
-  }, [isLoaded, isSignedIn, clerkUser?.id, location.pathname, location.search, location.hash, suppressGuestHome]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, location.pathname, location.search, location.hash, suppressGuestHome, sessionTokenReady]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -299,17 +326,25 @@ export const AuthProvider = ({ children }) => {
     };
   }, [isLoaded, isSignedIn, clerkUser?.id, localUser, location.pathname, location.search, location.hash, suppressGuestHome]);
 
-  const isSignedInUser = !!isSignedIn && !!clerkUser;
-  // Clerk "signed in" without user yet, or a GitHub/email return, is not Guest.
+  const isSignedInUser = resolveSignedInUser({
+    clerkSignedIn: !!isSignedIn,
+    clerkUserId: clerkUser?.id,
+    sessionTokenReady,
+  });
+  // Clerk "signed in" without a JWT yet, or a GitHub/email return, is not Guest.
   const isGuest = !!localUser && !isSignedIn && !isSignedInUser && !suppressGuestHome;
   const isAuthenticated = isSignedInUser || isGuest;
   const pendingHandshakeQuery = hasClerkHandshakeQuery({
     search: location.search,
     hash: location.hash,
   });
-  // Always wait for Clerk. Leftover guest must not skip login. Hold Home
-  // while handshake query is still in the URL (GitHub / email return).
-  const isLoadingAuth = !isLoaded || (!isSignedInUser && pendingHandshakeQuery);
+  const awaitingClerkSession =
+    !isSignedInUser &&
+    (pendingHandshakeQuery ||
+      suppressGuestHome ||
+      (!!isSignedIn && !sessionTokenReady));
+  // Always wait for Clerk. Do not paint Home until a session JWT exists.
+  const isLoadingAuth = !isLoaded || awaitingClerkSession;
   const [authStalled, setAuthStalled] = useState(false);
 
   useEffect(() => {

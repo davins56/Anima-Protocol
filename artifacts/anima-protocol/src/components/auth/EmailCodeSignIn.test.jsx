@@ -13,6 +13,9 @@ const clerkMocks = vi.hoisted(() => ({
   isLoaded: true,
   isSignedIn: false,
   clerk: {},
+  getToken: vi.fn().mockResolvedValue(
+    "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEifQ.sig",
+  ),
   loginAsLocalUser: vi.fn(),
   isSignedInUser: false,
   isGuest: false,
@@ -29,6 +32,9 @@ vi.mock("@clerk/react", () => ({
     isSignedIn: clerkMocks.isSignedIn,
   }),
   useClerk: () => clerkMocks.clerk,
+  useAuth: () => ({
+    getToken: clerkMocks.getToken,
+  }),
 }));
 
 vi.mock("@/lib/AuthContext", () => ({
