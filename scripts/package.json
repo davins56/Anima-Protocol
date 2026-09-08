@@ -8,6 +8,7 @@
     "backfill:messages": "tsx ./src/backfill-chat-messages.ts",
     "migrate:account": "tsx ./src/migrate-account.ts",
     "verify:clerk-oauth": "tsx ./src/verify-clerk-oauth.ts",
+    "verify:clerk-cname-gateway": "tsx ./src/verify-clerk-cname-gateway.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
