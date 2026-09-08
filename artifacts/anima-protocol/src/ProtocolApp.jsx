@@ -60,6 +60,7 @@ import {
   resolveClerkProxyUrl,
   sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
+  expireBrowserApexClerkClientUatCookies,
 } from "@/lib/clerkProxy";
 import {
   destinationAfterClerkAuth,
@@ -124,6 +125,7 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
+expireBrowserApexClerkClientUatCookies();
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
