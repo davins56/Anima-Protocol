@@ -3,6 +3,7 @@ import {
   buildClerkProxyHeaderValues,
   buildClerkUpstreamHeaders,
   clerkFrontendApiBaseFromPublishableKey,
+  clerkReachableFrontendApiBase,
   clientIpFromHeaders,
   forwardedRequestProto,
   isClerkHandshakeRequest,
@@ -222,6 +223,9 @@ describe("clerkProxyFetch", () => {
         clerkFrontendApiBaseFromPublishableKey(CUSTOM_DOMAIN_KEY),
       ).toString(),
     ).toBe("https://clerk.anima-protocol.com/v1/environment");
+    expect(clerkReachableFrontendApiBase(CUSTOM_DOMAIN_KEY)).toBe(
+      "https://frontend-api.clerk.dev",
+    );
   });
 
   it("omits official proxy headers when talking to a custom FAPI domain", () => {
@@ -627,17 +631,17 @@ describe("clerkProxyFetch", () => {
       "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
     );
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
-      expect(String(url)).toBe(
-        "https://clerk.anima-protocol.com/v1/environment",
-      );
+      expect(String(url)).toBe("https://frontend-api.clerk.dev/v1/environment");
       const headers = new Headers(init?.headers);
-      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
-      expect(headers.get("X-Forwarded-Host")).toBeNull();
+      expect(headers.get("Clerk-Proxy-Url")).toBe(
+        "https://anima-protocol.com/api/__clerk/",
+      );
+      expect(headers.get("X-Forwarded-Host")).toBe("anima-protocol.com");
       expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
       expect(headers.get("Origin")).toBe("https://anima-protocol.com");
-      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBe(
-        "worker.clerkprod-cloudflare.net",
-      );
+      expect(
+        (init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride,
+      ).toBeUndefined();
       return new Response("{}", { status: 200, headers: upstreamHeaders });
     });
     const cookies: string[] = [];
@@ -797,14 +801,13 @@ describe("clerkProxyFetch", () => {
   it("follows Clerk CDN 307 for unversioned clerk-js and returns 200 JS", async () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const unversioned =
-      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js";
+      "https://frontend-api.clerk.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js";
     const versioned =
-      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js";
+      "https://frontend-api.clerk.dev/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js";
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const href = String(url);
       const headers = new Headers(init?.headers);
       expect(headers.get("Clerk-Secret-Key")).toBeNull();
-      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
       if (href === unversioned) {
         return new Response(null, {
           status: 307,
@@ -854,15 +857,17 @@ describe("clerkProxyFetch", () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe(
-        "https://clerk.anima-protocol.com/v1/oauth_callback?code=fake&state=abc",
+        "https://frontend-api.clerk.dev/v1/oauth_callback?code=fake&state=abc",
       );
       const headers = new Headers(init?.headers);
       expect(headers.get("Clerk-Secret-Key")).toBeNull();
-      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
-      expect(headers.get("cookie")).toBe("__client=tok; theme=dark");
-      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBe(
-        "worker.clerkprod-cloudflare.net",
+      expect(headers.get("Clerk-Proxy-Url")).toBe(
+        "https://anima-protocol.com/api/__clerk/",
       );
+      expect(headers.get("cookie")).toBe("__client=tok; theme=dark");
+      expect(
+        (init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride,
+      ).toBeUndefined();
       return new Response(null, {
         status: 303,
         headers: {

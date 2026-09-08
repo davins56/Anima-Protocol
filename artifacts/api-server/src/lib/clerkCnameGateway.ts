@@ -2,7 +2,10 @@ import {
   ANIMA_APEX_HOST,
   CLERK_PROXY_PATH,
 } from "../middlewares/clerkProxyHosts";
+import { readRuntimeEnv } from "./cloudflareEnv";
 import {
+  CLERK_FAPI,
+  buildClerkUpstreamHeaders,
   clerkCookieName,
   clerkOAuthCallbackShouldBypassUpstream,
   clerkOAuthCallbackShouldHideUpstreamBody,
@@ -11,8 +14,10 @@ import {
   isClerkClientTokenCookieName,
   isClerkClientUatCookieName,
   isClerkOAuthCallbackPath,
+  resolveClerkUpstreamUrl,
   rewriteClerkProxyLocation,
   rewriteClerkProxySetCookie,
+  shouldAuthorizeClerkUpstream,
   stripClerkAuthCookies,
 } from "../middlewares/clerkProxyFetch";
 import {
@@ -103,20 +108,53 @@ export async function cookieHeaderForClerkCnameOAuth(
   return stripped ? `${stripped}; ${injected}` : injected;
 }
 
+/** Shared FAPI — clerk.{apex} is this Worker now; resolveOverride 522s. */
+export function clerkCnameUpstreamUrl(requestUrl: string): URL {
+  const url = new URL(requestUrl);
+  return resolveClerkUpstreamUrl(`${url.pathname}${url.search}`, CLERK_FAPI);
+}
+
 export async function fetchClerkCnameUpstream(
   request: Request,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
-  const headers = new Headers(request.headers);
+  const url = new URL(request.url);
+  const requestUrl = `${url.pathname}${url.search}`;
+  let cookie = request.headers.get("cookie") || "";
   if (isClerkOAuthCallbackPath(request.url)) {
-    const cookie = await cookieHeaderForClerkCnameOAuth(request);
-    if (cookie) headers.set("cookie", cookie);
-    else headers.delete("cookie");
+    cookie = await cookieHeaderForClerkCnameOAuth(request);
   }
-  const upstream = new Request(request, { headers, redirect: "manual" });
+  const secretKey = readRuntimeEnv("CLERK_SECRET_KEY") || "";
+  const headers = buildClerkUpstreamHeaders(
+    {
+      method: request.method,
+      headers: {
+        host: ANIMA_APEX_HOST,
+        origin: clerkCnameAppOrigin(),
+        cookie: cookie || undefined,
+        accept: request.headers.get("accept") || undefined,
+        "user-agent": request.headers.get("user-agent") || undefined,
+        "cf-connecting-ip": request.headers.get("cf-connecting-ip") || undefined,
+      },
+    },
+    secretKey,
+    {
+      officialProxy: true,
+      authorizeUpstream: shouldAuthorizeClerkUpstream(requestUrl),
+      requestUrl,
+    },
+  );
+  const method = request.method.toUpperCase();
+  const upstreamUrl = clerkCnameUpstreamUrl(request.url);
   return fetchImpl(
-    upstream,
-    clerkFrontendFetchInit(upstream.url, { redirect: "manual" }),
+    upstreamUrl,
+    clerkFrontendFetchInit(upstreamUrl, {
+      method,
+      headers,
+      redirect: "manual",
+      body:
+        method === "GET" || method === "HEAD" ? undefined : request.body,
+    }),
   );
 }
 

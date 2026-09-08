@@ -19,7 +19,7 @@ import {
   rememberGitHubOAuthClientState,
 } from "../lib/clerkOAuthStateStore";
 
-const CLERK_FAPI = "https://frontend-api.clerk.dev";
+export const CLERK_FAPI = "https://frontend-api.clerk.dev";
 /** Public production host — www 301s here. Dashboard proxy/CNAME must match apex. */
 const PRODUCTION_PROXY_HOST = ANIMA_APEX_HOST;
 const UPSTREAM_TIMEOUT_MS = 25_000;
@@ -100,6 +100,20 @@ export function usesOfficialClerkProxyProtocol(frontendApiBase: string): boolean
   // Clerk-Proxy-Url / X-Forwarded-Host on that host 400 /v1/client with
   // host_invalid. Official headers belong only on frontend-api.clerk.dev.
   return clerkFrontendApiHostFromBase(frontendApiBase) === "frontend-api.clerk.dev";
+}
+
+/**
+ * After this Worker owns clerk.{apex} as a Custom Domain, fetching that
+ * host (even with resolveOverride to Clerk's SaaS worker) 522s. Talk to
+ * the shared FAPI and use the official proxy protocol instead.
+ */
+export function clerkReachableFrontendApiBase(
+  publishableKey?: string,
+): string {
+  const base = clerkFrontendApiBaseFromPublishableKey(publishableKey);
+  const host = clerkFrontendApiHostFromBase(base);
+  if (host === `clerk.${ANIMA_APEX_HOST}`) return CLERK_FAPI;
+  return base;
 }
 
 export function resolveClerkUpstreamUrl(
@@ -727,7 +741,7 @@ export async function proxyClerkWithFetch(
   secretKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const frontendApiBase = clerkFrontendApiBaseFromPublishableKey();
+  const frontendApiBase = clerkReachableFrontendApiBase();
   const officialProxy = usesOfficialClerkProxyProtocol(frontendApiBase);
   const fapiHost = clerkFrontendApiHostFromBase(frontendApiBase);
   const { origin, host } = buildClerkProxyHeaderValues(req, secretKey);
