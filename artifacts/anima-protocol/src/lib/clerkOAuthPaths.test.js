@@ -12,6 +12,7 @@ import {
   hasClerkHandshakeQuery,
   hasPendingClerkHandshake,
   joinBasePath,
+  pinPostAuthToChat,
   resolvePostAuthNavigation,
 } from './clerkOAuthPaths';
 
@@ -32,11 +33,11 @@ describe('clerkOAuthPaths', () => {
   it('returns relative redirect paths for signIn.sso', () => {
     expect(clerkOAuthRedirectPaths('', 'sign-up')).toEqual({
       redirectCallbackUrl: '/sign-up/sso-callback',
-      redirectUrl: '/',
+      redirectUrl: '/chat',
     });
     expect(clerkOAuthRedirectPaths('/__mockup', 'sign-in')).toEqual({
       redirectCallbackUrl: '/__mockup/sign-in/sso-callback',
-      redirectUrl: '/__mockup',
+      redirectUrl: '/__mockup/chat',
     });
   });
 
@@ -47,8 +48,8 @@ describe('clerkOAuthPaths', () => {
   });
 
   it('normalizes complete path for nested base', () => {
-    expect(clerkOAuthCompletePath('/__mockup')).toBe('/__mockup');
-    expect(clerkOAuthCompletePath('')).toBe('/');
+    expect(clerkOAuthCompletePath('/__mockup')).toBe('/__mockup/chat');
+    expect(clerkOAuthCompletePath('')).toBe('/chat');
   });
 
   it('pins post-auth navigation to the app, never the Clerk FAPI host', () => {
@@ -77,7 +78,13 @@ describe('clerkOAuthPaths', () => {
         fallbackPath: '/',
         origin: 'https://anima-protocol.com',
       }),
-    ).toEqual({ mode: 'in-app', path: '/' });
+    ).toEqual({ mode: 'in-app', path: '/chat' });
+    expect(
+      destinationAfterClerkAuth({
+        fallbackPath: '/',
+        origin: 'https://anima-protocol.com',
+      }),
+    ).toEqual({ mode: 'in-app', path: '/chat' });
     expect(
       resolvePostAuthNavigation(
         'https://clerk.anima-protocol.com/?__clerk_handshake=tok',
@@ -148,5 +155,30 @@ describe('clerkOAuthPaths', () => {
     expect(app).toMatch(/proxyRequiredFailed/);
     expect(app).toMatch(/setProxyRequiredFailed\(true\)/);
     expect(app).toMatch(/lockSameOriginClerkProxy && !nextUseProxy\) return/);
+  });
+
+  it('pins a bare origin title to chat after auth unless a handshake is still on /', () => {
+    expect(pinPostAuthToChat({ mode: 'in-app', path: '/' })).toEqual({
+      mode: 'in-app',
+      path: '/chat',
+    });
+    expect(pinPostAuthToChat({ mode: 'in-app', path: '/chat' })).toEqual({
+      mode: 'in-app',
+      path: '/chat',
+    });
+    expect(pinPostAuthToChat({ mode: 'in-app', path: '/settings' })).toEqual({
+      mode: 'in-app',
+      path: '/settings',
+    });
+    expect(
+      pinPostAuthToChat({ mode: 'in-app', path: '/?__clerk_handshake=tok' }),
+    ).toEqual({
+      mode: 'in-app',
+      path: '/?__clerk_handshake=tok',
+    });
+    expect(destinationAfterClerkAuth({})).toEqual({
+      mode: 'in-app',
+      path: '/chat',
+    });
   });
 });

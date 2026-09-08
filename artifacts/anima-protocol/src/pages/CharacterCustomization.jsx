@@ -4,6 +4,7 @@ import { base44, waitForStoreAuth } from "@/api/base44Client";
 import CharacterCustomizer from "@/components/character/CharacterCustomizer";
 import { ChevronLeft, Users, Sparkles } from "lucide-react";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
+import { useAuth } from "@/lib/AuthContext";
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import {
   companionLookHref,
@@ -15,6 +16,7 @@ import {
 export default function CharacterCustomization() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { isAuthenticated, isLoadingAuth, user } = useAuth();
   const characterId = searchParams.get("character");
   const [tab, setTab] = useState(searchParams.get("tab") || "characters");
   const [characters, setCharacters] = useState([]);
@@ -22,8 +24,9 @@ export default function CharacterCustomization() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isLoadingAuth) return;
     loadData();
-  }, []);
+  }, [isAuthenticated, isLoadingAuth, user?.id]);
 
   const loadData = async () => {
     setLoading(true);
@@ -33,8 +36,8 @@ export default function CharacterCustomization() {
         waitForStoreAuth(STORE_AUTH_WAIT_MS),
       ]).catch(() => {});
       const [chars, animaList] = await Promise.all([
-        base44.entities.Character.list("-created_date", 100).catch(() => []),
-        listPersonalAnimas(100).catch(() => []),
+        base44.entities.Character.list("-created_date", 500).catch(() => []),
+        listPersonalAnimas(500).catch(() => []),
       ]);
       // Generator companions belong on Animas, not the franchise roster tab.
       setCharacters((chars || []).filter((row) => !isPersonalAnimaRecord(row)));

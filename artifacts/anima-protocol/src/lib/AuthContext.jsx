@@ -26,6 +26,7 @@ import {
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
 import { createCompanionRecord } from '@/lib/createCompanion';
 import {
+  CLERK_AUTH_RETURN_HOLD_MS,
   clearClerkAuthReturn,
   clearGuestPersistence,
   persistExplicitGuest,
@@ -38,8 +39,10 @@ import {
   hasClerkHandshakeQuery,
   hasPendingClerkHandshake,
 } from '@/lib/clerkOAuthPaths';
+import { mergeAccountIdentity } from '@/lib/accountIdentity';
 import {
   clerkIdentityFromUser,
+  clerkIdentityHydrationKey,
   shouldClearLocalSession,
 } from '@/lib/clerkIdentity';
 import {
@@ -56,7 +59,8 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const { user: clerkUser, isLoaded, isSignedIn } = useUser();
   const { signOut } = useClerk();
-  const { getToken } = useClerkAuth();
+  const { getToken, userId: clerkUserId } = useClerkAuth();
+  const clerkHydrationKey = clerkIdentityHydrationKey(clerkUser);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -199,7 +203,8 @@ export const AuthProvider = ({ children }) => {
     });
     if (boot.mode === 'signed-in') {
       clearGuestPersistence();
-      clearClerkAuthReturn();
+      // Do not clearClerkAuthReturn on the first signed-in tick — iPad Safari
+      // can flicker isSignedIn and bounce the user back to Landing.
       setLocalUser(null);
       return;
     }
@@ -209,6 +214,15 @@ export const AuthProvider = ({ children }) => {
     }
     setLocalUser(null);
   }, [isLoaded, isSignedIn, clerkUser?.id, location.pathname, location.search, location.hash]);
+
+  // Drop the post-auth hold only after the Clerk session stays true.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return undefined;
+    const timer = setTimeout(() => {
+      clearClerkAuthReturn();
+    }, CLERK_AUTH_RETURN_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [isLoaded, isSignedIn]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -224,7 +238,11 @@ export const AuthProvider = ({ children }) => {
         // blank while the server profile fetch is in flight (or fails).
         if (!cancelled) {
           setUser((prev) =>
-            prev?.id === identity.id ? { ...prev, ...identity } : merged,
+            mergeAccountIdentity(
+              identity,
+              prev?.id === identity.id ? prev : null,
+              merged,
+            ),
           );
           setAuthError(null);
         }
@@ -240,7 +258,7 @@ export const AuthProvider = ({ children }) => {
             const isNewAccount = !profile.display_name;
             if (isNewAccount) {
               const preferred =
-                clerkUser.firstName || clerkUser.fullName || clerkUser.username;
+                clerkUser.firstName || clerkUser.fullName || clerkUser.username || identity.full_name;
               if (preferred) {
                 profile = await base44.auth.updateMe({ display_name: preferred });
               }
@@ -265,7 +283,8 @@ export const AuthProvider = ({ children }) => {
             }
 
             if (!cancelled) {
-              setUser(profile);
+              // Store profile can arrive with empty email/full_name — keep Clerk.
+              setUser(mergeAccountIdentity(identity, profile));
               setAuthError(null);
             }
           } catch (err) {
@@ -276,6 +295,18 @@ export const AuthProvider = ({ children }) => {
             }
           }
         })();
+      }
+    } else if (isSignedIn && clerkUserId) {
+      // Session exists; user object still hydrating (common on iPad Safari).
+      const provisional = {
+        id: clerkUserId,
+        email: '',
+        full_name: 'Seeker',
+      };
+      base44.auth.syncIdentity(provisional);
+      if (!cancelled) {
+        setUser((prev) => mergeAccountIdentity(provisional, prev));
+        setAuthError(null);
       }
     } else if (isSignedIn) {
       // Clerk session exists; user object is still hydrating. Do not wipe
@@ -308,7 +339,7 @@ export const AuthProvider = ({ children }) => {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, clerkUser?.id, localUser, location.pathname, location.search, location.hash]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, clerkUserId, clerkHydrationKey, localUser, location.pathname, location.search, location.hash]);
 
   // Clerk session is enough. Requiring clerkUser here used to drop
   // isAuthenticated during user hydration (Settings looked signed-out).
@@ -319,9 +350,13 @@ export const AuthProvider = ({ children }) => {
     search: location.search,
     hash: location.hash,
   });
-  // Always wait for Clerk. Leftover guest must not skip login. Hold Home
-  // while handshake query is still in the URL (GitHub / email return).
-  const isLoadingAuth = !isLoaded || (!isSignedInUser && pendingHandshakeQuery);
+  const justCompletedClerkAuth = readClerkAuthReturn();
+  // Always wait for Clerk. Leftover guest must not skip login. Hold the
+  // title screen while handshake query is in the URL *or* this tab just
+  // finished email/GitHub (iPad Safari: isSignedIn lags the cookies).
+  const isLoadingAuth =
+    !isLoaded ||
+    (!isSignedInUser && (pendingHandshakeQuery || justCompletedClerkAuth));
   const [authStalled, setAuthStalled] = useState(false);
 
   useEffect(() => {
@@ -335,10 +370,10 @@ export const AuthProvider = ({ children }) => {
         window.location.pathname === '/sign-up' ||
         window.location.pathname.startsWith('/sign-in/') ||
         window.location.pathname.startsWith('/sign-up/'));
-    const stallMs = onAuthScreen ? 15_000 : 5_000;
+    const stallMs = onAuthScreen || justCompletedClerkAuth ? 15_000 : 5_000;
     const timer = setTimeout(() => setAuthStalled(true), stallMs);
     return () => clearTimeout(timer);
-  }, [isLoadingAuth]);
+  }, [isLoadingAuth, justCompletedClerkAuth]);
 
   const navigateToLogin = useCallback(() => {
     navigate('/sign-in');
@@ -444,6 +479,7 @@ const logout = useCallback(() => {
         isGuest,
         setIsAuthenticated: () => {},
         isLoadingAuth,
+        justCompletedClerkAuth,
         authStalled,
         authChecked: isLoaded,
         checkUserAuth: () => {},
