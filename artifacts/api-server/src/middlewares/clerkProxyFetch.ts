@@ -194,6 +194,28 @@ export function isClerkHandshakeRequest(requestUrl: string | undefined): boolean
   }
 }
 
+/** Document Referer after GitHub → Clerk CNAME → SPA `/sign-in/sso-callback`. */
+export function isClerkSsoCallbackReferer(referer: string | undefined): boolean {
+  if (!referer) return false;
+  try {
+    const path = new URL(referer).pathname.replace(/\/+$/, "") || "/";
+    return path === "/sign-in/sso-callback" || path === "/sign-up/sso-callback";
+  } catch {
+    return /\/sign-(?:in|up)\/sso-callback(?:\/|\?|#|$)/.test(referer);
+  }
+}
+
+/**
+ * Handshake JWT (query/path) or the first FAPI XHR from the SSO callback
+ * page. Ordinary `/v1/client` from `/sign-in` keeps cookies.
+ */
+export function shouldStripClerkAuthCookies(
+  requestUrl: string | undefined,
+  referer?: string,
+): boolean {
+  return isClerkHandshakeRequest(requestUrl) || isClerkSsoCallbackReferer(referer);
+}
+
 export function isHttpRedirectStatus(status: number): boolean {
   return status >= 300 && status < 400;
 }
@@ -373,7 +395,9 @@ export function buildClerkUpstreamHeaders(
     headers.set("X-Forwarded-For", clientIp);
   }
 
-  if (isClerkHandshakeRequest(options.requestUrl)) {
+  const refererHeader = req.headers.referer;
+  const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
+  if (shouldStripClerkAuthCookies(options.requestUrl, referer)) {
     const cookie = headers.get("cookie");
     if (cookie) {
       const stripped = stripClerkAuthCookies(cookie);
