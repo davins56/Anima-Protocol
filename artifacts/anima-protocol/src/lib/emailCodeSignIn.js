@@ -15,6 +15,7 @@ import {
   CLERK_GITHUB_OAUTH_CALLBACK_URL,
   clerkOAuthRedirectPaths,
 } from "./clerkOAuthPaths";
+import { markClerkAuthReturn } from "./authBootPolicy";
 
 export const PRODUCTION_SIGN_IN_URL = ANIMA_PRODUCTION_SIGN_IN_URL;
 
@@ -474,6 +475,7 @@ export function watchPageNavigation(target = typeof window !== "undefined" ? win
  * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean }} [options]
  */
 export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = {}) {
+  markClerkAuthReturn();
   const paths = clerkOAuthRedirectPaths(basePath, "sign-in");
   const timeoutMs = options.timeoutMs ?? GITHUB_OAUTH_SSO_TIMEOUT_MS;
   const navigationGraceMs = options.navigationGraceMs ?? GITHUB_OAUTH_NAVIGATION_GRACE_MS;

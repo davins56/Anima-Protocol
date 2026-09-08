@@ -10,6 +10,8 @@ import {
   persistExplicitGuest,
   readExplicitGuestChosen,
   readPersistedGuest,
+  markClerkAuthReturn,
+  readClerkAuthReturn,
   resolveAuthBoot,
   shouldAutoInvokeInstantGuest,
   shouldEnterGuestOnSignInFailure,
@@ -95,6 +97,30 @@ describe("resolveAuthBoot", () => {
     });
     expect(boot.mode).toBe("signed-out");
     expect(boot.isGuest).toBe(false);
+  });
+
+  it("does not restore leftover guest after GitHub/email Clerk return", () => {
+    const handshakeBoot = resolveAuthBoot({
+      clerkLoaded: true,
+      clerkSignedIn: false,
+      clerkUser: null,
+      persistedGuest: leftoverGuest,
+      explicitGuestChosen: true,
+      pendingClerkHandshake: true,
+    });
+    expect(handshakeBoot.mode).toBe("signed-out");
+    expect(handshakeBoot.isGuest).toBe(false);
+
+    const returnBoot = resolveAuthBoot({
+      clerkLoaded: true,
+      clerkSignedIn: false,
+      clerkUser: null,
+      persistedGuest: leftoverGuest,
+      explicitGuestChosen: true,
+      clerkAuthReturn: true,
+    });
+    expect(returnBoot.mode).toBe("signed-out");
+    expect(returnBoot.isGuest).toBe(false);
   });
 });
 
@@ -183,6 +209,33 @@ describe("guest persistence helpers", () => {
     expect(readPersistedGuest(storage(localStorage))).toBeNull();
   });
 
+  it("clears leftover guest when marking a Clerk GitHub/email return", () => {
+    const localStorage = new Map();
+    const sessionStorage = new Map();
+    const storage = (map) => ({
+      getItem: (key) => (map.has(key) ? map.get(key) : null),
+      setItem: (key, value) => {
+        map.set(key, String(value));
+      },
+      removeItem: (key) => {
+        map.delete(key);
+      },
+    });
+
+    persistExplicitGuest(leftoverGuest, {
+      localStorage: storage(localStorage),
+      sessionStorage: storage(sessionStorage),
+    });
+    markClerkAuthReturn({
+      localStorage: storage(localStorage),
+      sessionStorage: storage(sessionStorage),
+    });
+
+    expect(readClerkAuthReturn(storage(sessionStorage))).toBe(true);
+    expect(readExplicitGuestChosen(storage(sessionStorage))).toBe(false);
+    expect(readPersistedGuest(storage(localStorage))).toBeNull();
+  });
+
   it("marks guest identities so they cannot be mistaken for Clerk users", () => {
     expect(isGuestIdentity(leftoverGuest)).toBe(false);
     expect(isGuestIdentity(markGuestIdentity(leftoverGuest))).toBe(true);
@@ -201,7 +254,9 @@ describe("boot wiring", () => {
     expect(auth).toMatch(/useState\(null\)/);
     expect(auth).toMatch(/resolveAuthBoot/);
     expect(auth).toMatch(/isSignedInUser/);
-    expect(auth).toContain("const isLoadingAuth = !isLoaded");
+    expect(auth).toMatch(/isLoadingAuth = !isLoaded/);
+    expect(auth).toMatch(/hasPendingClerkHandshake/);
+    expect(auth).toMatch(/readClerkAuthReturn/);
   });
 
   it("only invokes handleInstantGuest from the Guest button, never boot or form value", () => {
@@ -220,12 +275,16 @@ describe("boot wiring", () => {
     const invocations = signIn.match(/handleInstantGuest/g) || [];
     // definition + onClick + comment mentioning it
     expect(invocations.length).toBeGreaterThanOrEqual(2);
-    expect(signIn).toMatch(/isSignedInUser \|\| isGuest/);
+    expect(signIn).toMatch(/isSignedInUser/);
+    expect(signIn).toMatch(/markClerkAuthReturn/);
+    expect(signIn).toMatch(/hasPendingClerkHandshake/);
   });
 
   it("HomeGate enters the app only for Clerk or explicit guest", () => {
     const app = readFileSync(join(srcRoot, "ProtocolApp.jsx"), "utf8");
     expect(app).toMatch(/isSignedInUser \|\| isGuest \|\| isAuthenticated/);
+    expect(app).toMatch(/handshakeHold && isLoadingAuth && !authStalled && !isSignedInUser/);
+    expect(app).toMatch(/markClerkAuthReturn/);
     expect(app).not.toMatch(/if \(isAuthenticated \|\| localUser \|\| user\)/);
     expect(app).not.toMatch(/will load in guest mode/);
     expect(app).not.toMatch(/if \(isLoadingAuth\) \{\s*return <Landing/);

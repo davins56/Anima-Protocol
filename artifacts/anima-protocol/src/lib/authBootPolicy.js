@@ -8,6 +8,8 @@
 
 export const LOCAL_AUTH_STORAGE_KEY = "anima_local_auth_user";
 export const GUEST_CHOSEN_SESSION_KEY = "anima_guest_chosen";
+/** Set when the user starts GitHub or email Clerk sign-in in this tab. */
+export const CLERK_AUTH_RETURN_KEY = "anima_clerk_auth_return";
 
 export function isGuestIdentity(identity) {
   if (!identity || typeof identity !== "object") return false;
@@ -49,6 +51,11 @@ export function persistExplicitGuest(identity, {
     /* private mode */
   }
   try {
+    sessionStore?.removeItem?.(CLERK_AUTH_RETURN_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
     if (marked) {
       localStore?.setItem?.(LOCAL_AUTH_STORAGE_KEY, JSON.stringify(marked));
     }
@@ -72,6 +79,38 @@ export function clearGuestPersistence({
   } catch {
     /* ignore */
   }
+}
+
+export function readClerkAuthReturn(storage = globalThis.sessionStorage) {
+  try {
+    return storage?.getItem?.(CLERK_AUTH_RETURN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function clearClerkAuthReturn(storage = globalThis.sessionStorage) {
+  try {
+    storage?.removeItem?.(CLERK_AUTH_RETURN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Mark this tab as returning from a real Clerk sign-in (GitHub or email).
+ * Leftover Instant Sandbox must not win Home after that attempt.
+ */
+export function markClerkAuthReturn({
+  localStorage: localStore = globalThis.localStorage,
+  sessionStorage: sessionStore = globalThis.sessionStorage,
+} = {}) {
+  try {
+    sessionStore?.setItem?.(CLERK_AUTH_RETURN_KEY, "1");
+  } catch {
+    /* private mode */
+  }
+  clearGuestPersistence({ localStorage: localStore, sessionStorage: sessionStore });
 }
 
 /**
@@ -142,6 +181,8 @@ export function shouldAutoInvokeInstantGuest({
  *   clerkUser?: { id?: string } | null,
  *   persistedGuest?: object | null,
  *   explicitGuestChosen?: boolean,
+ *   pendingClerkHandshake?: boolean,
+ *   clerkAuthReturn?: boolean,
  * }} input
  * @returns {{
  *   mode: 'loading' | 'signed-in' | 'guest' | 'signed-out',
@@ -156,6 +197,8 @@ export function resolveAuthBoot({
   clerkUser = null,
   persistedGuest = null,
   explicitGuestChosen = false,
+  pendingClerkHandshake = false,
+  clerkAuthReturn = false,
 } = {}) {
   if (!clerkLoaded) {
     return {
@@ -171,6 +214,17 @@ export function resolveAuthBoot({
       mode: "signed-in",
       identity: clerkUser,
       isSignedInUser: true,
+      isGuest: false,
+    };
+  }
+
+  // GitHub / email just returned. Do not restore leftover Instant Sandbox —
+  // that is the "Home but not logged in" production failure.
+  if (pendingClerkHandshake || clerkAuthReturn) {
+    return {
+      mode: "signed-out",
+      identity: null,
+      isSignedInUser: false,
       isGuest: false,
     };
   }
