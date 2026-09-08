@@ -88,6 +88,9 @@ export function clerkFrontendApiHostFromBase(frontendApiBase: string): string {
 }
 
 export function usesOfficialClerkProxyProtocol(frontendApiBase: string): boolean {
+  // CNAME FAPI (clerk.anima-protocol.com) is not a dashboard Proxy URL.
+  // Clerk-Proxy-Url / X-Forwarded-Host on that host 400 /v1/client with
+  // host_invalid. Official headers belong only on frontend-api.clerk.dev.
   return clerkFrontendApiHostFromBase(frontendApiBase) === "frontend-api.clerk.dev";
 }
 
@@ -243,22 +246,50 @@ export function buildClerkProxyHeaderValues(
   return { proxyUrl, origin, host };
 }
 
-function clientIpFromHeaders(headers: IncomingHttpHeaders): string {
-  const xff = headers["x-forwarded-for"];
+function firstHeaderValue(value: string | string[] | undefined): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.split(",")[0]?.trim() || "";
+}
+
+/**
+ * End-user IP for Clerk FAPI. Behind Cloudflare the leftmost X-Forwarded-For
+ * hop is attacker-controlled; Clerk docs require CF-Connecting-IP instead.
+ */
+export function clientIpFromHeaders(headers: IncomingHttpHeaders): string {
   return (
-    (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim() ||
-    (typeof headers["x-real-ip"] === "string" ? headers["x-real-ip"] : "") ||
+    firstHeaderValue(headers["cf-connecting-ip"]) ||
+    firstHeaderValue(headers["true-client-ip"]) ||
+    firstHeaderValue(headers["x-real-ip"]) ||
+    firstHeaderValue(headers["x-forwarded-for"]) ||
     ""
   );
 }
 
+export type ClerkUpstreamHeaderOptions = {
+  /**
+   * Official path-proxy protocol (frontend-api.clerk.dev + dashboard Proxy URL).
+   * Must stay false for CNAME FAPI (clerk.anima-protocol.com): Clerk-Proxy-Url
+   * and X-Forwarded-Host make /v1/client return host_invalid on a CNAME-only
+   * instance.
+   */
+  officialProxy?: boolean;
+  /**
+   * Send Clerk-Secret-Key so Worker-originated /v1/* calls are authorized.
+   * Defaults to officialProxy. Never enable for /npm/* hops — those 307 to
+   * jsDelivr and must not receive the secret.
+   */
+  authorizeUpstream?: boolean;
+};
+
 export function buildClerkUpstreamHeaders(
   req: { headers: IncomingHttpHeaders; method?: string },
   secretKey: string,
-  options: { officialProxy?: boolean } = {},
+  options: ClerkUpstreamHeaderOptions = {},
 ): Headers {
   const officialProxy = options.officialProxy !== false;
-  const { proxyUrl, origin } = buildClerkProxyHeaderValues(req, secretKey);
+  const authorizeUpstream = options.authorizeUpstream ?? officialProxy;
+  const { proxyUrl, origin, host } = buildClerkProxyHeaderValues(req, secretKey);
+  const protocol = forwardedRequestProto(req.headers);
   const headers = new Headers();
 
   for (const name of FORWARD_REQUEST_HEADERS) {
@@ -271,8 +302,18 @@ export function buildClerkUpstreamHeaders(
     }
   }
 
+  // Browser FAPI uses Origin + cookies. Forwarding Authorization together
+  // with Origin makes Clerk return origin_authorization_headers_conflict.
+  headers.delete("Authorization");
+
   if (officialProxy) {
     headers.set("Clerk-Proxy-Url", proxyUrl);
+    if (host) {
+      headers.set("X-Forwarded-Host", host);
+      headers.set("X-Forwarded-Proto", protocol);
+    }
+  }
+  if (authorizeUpstream && secretKey) {
     headers.set("Clerk-Secret-Key", secretKey.trim());
   }
   if (origin) {
@@ -384,7 +425,17 @@ export async function proxyClerkWithFetch(
   const { origin, host } = buildClerkProxyHeaderValues(req, secretKey);
   const upstreamPath = resolveClerkUpstreamPath(req);
   let upstreamUrl = resolveClerkUpstreamUrl(upstreamPath, frontendApiBase);
-  const headers = buildClerkUpstreamHeaders(req, secretKey, { officialProxy });
+  const authorizeUpstream = !isClerkNpmAssetPath(upstreamUrl.pathname);
+  const headers = buildClerkUpstreamHeaders(req, secretKey, {
+    officialProxy,
+    authorizeUpstream,
+  });
+  const npmHeaders = authorizeUpstream
+    ? buildClerkUpstreamHeaders(req, secretKey, {
+        officialProxy: false,
+        authorizeUpstream: false,
+      })
+    : headers;
   const body = await readRequestBody(req);
   const method = req.method?.toUpperCase() || "GET";
   const payloadBody = body ? new Uint8Array(body) : undefined;
@@ -399,6 +450,7 @@ export async function proxyClerkWithFetch(
 
   // Clerk serves `/npm/@clerk/clerk-js@6/...` as 307 → `@6.31.0`. Script tags
   // (and our connectivity probe) need 200 JS, not a Location hop.
+  // Follow-up hops go to jsDelivr / Clerk CDN — never send Clerk-Secret-Key.
   let npmHops = 0;
   while (
     isClerkNpmAssetPath(upstreamUrl.pathname) &&
@@ -416,7 +468,7 @@ export async function proxyClerkWithFetch(
     upstreamUrl = next;
     upstream = await fetchImpl(next, {
       method: "GET",
-      headers,
+      headers: npmHeaders,
       redirect: "manual",
       signal: upstreamAbortSignal(),
     });
