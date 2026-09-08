@@ -200,3 +200,11 @@ export const CLERK_STALL_HINT =
  */
 export const CLERK_FAILURE_HINT =
   'API and Clerk look reachable, but the Clerk SDK failed to initialize. Disable ad blockers, try another browser, or hard-refresh.';
+
+/**
+ * Production must keep ClerkProvider proxyUrl=/api/__clerk/. Falling back to
+ * clerk.anima-protocol.com skips the Worker and GitHub return gets
+ * authorization_invalid.
+ */
+export const CLERK_PROXY_REQUIRED_HINT =
+  'Sign-in must stay on this site’s Clerk proxy (/api/__clerk). Direct clerk.anima-protocol.com is blocked — refresh, or open https://anima-protocol.com/sign-in if this preview cannot reach the proxy.';

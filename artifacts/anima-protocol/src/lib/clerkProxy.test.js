@@ -18,6 +18,7 @@ import {
   mustUseSameOriginClerkProxy,
   shouldAllowDirectClerkFallback,
   expireBrowserApexClerkClientUatCookies,
+  isBrowserClerkAuthCookieName,
 } from './clerkProxy';
 
 const LIVE_CUSTOM_KEY =
@@ -92,6 +93,18 @@ describe('clerkProxy', () => {
     );
   });
 
+  it('ignores VITE_CLERK_PROXY_URL=none on production pk_live_', () => {
+    vi.stubEnv('VITE_CLERK_PROXY_URL', 'none');
+    expect(mustUseSameOriginClerkProxy(LIVE_CUSTOM_KEY, 'anima-protocol.com')).toBe(
+      true,
+    );
+    expect(shouldAllowDirectClerkFallback(LIVE_CUSTOM_KEY, 'anima-protocol.com')).toBe(
+      false,
+    );
+    expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(true);
+    expect(resolveClerkProxyUrl(LIVE_CUSTOM_KEY)).toBe('/api/__clerk/');
+  });
+
   it('uses proxy on production for non-custom live keys', () => {
     expect(shouldUseClerkProxy(LIVE_DEFAULT_KEY)).toBe(true);
     expect(resolveClerkProxyUrl(LIVE_DEFAULT_KEY)).toBe('/api/__clerk/');
@@ -132,16 +145,23 @@ describe('clerkProxy', () => {
     );
   });
 
-  it('expires Domain=apex __client_uat cookies on production hosts', () => {
+  it('expires Domain=apex and Domain=.apex Clerk auth cookies on production hosts', () => {
+    expect(isBrowserClerkAuthCookieName('__session')).toBe(true);
+    expect(isBrowserClerkAuthCookieName('__client')).toBe(true);
+    expect(isBrowserClerkAuthCookieName('theme')).toBe(false);
     const written = [];
     expireBrowserApexClerkClientUatCookies({
-      cookie: '__client_uat=0; __client_uat_23i07izR=0; theme=dark',
+      cookie: '__client_uat=0; __client_uat_23i07izR=0; __session=stale; theme=dark',
       hostname: 'anima-protocol.com',
       writeCookie: (value) => written.push(value),
     });
     expect(written).toEqual([
       '__client_uat=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
+      '__client_uat=; Path=/; Domain=.anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
       '__client_uat_23i07izR=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
+      '__client_uat_23i07izR=; Path=/; Domain=.anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
+      '__session=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
+      '__session=; Path=/; Domain=.anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
     ]);
     expect(
       expireBrowserApexClerkClientUatCookies({
