@@ -31,7 +31,7 @@
     "llm:eval:validate": "node scripts/llm/eval/run-evals.mjs --validate",
     "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh",
     "postinstall": "node scripts/cloudflare/install-wrangler-deploy-guard.mjs",
-    "deploy:cloudflare": "rm -f ./dist/_redirects && node scripts/cloudflare/workers-builds-deploy.mjs deploy --assets=./dist --name anima-protocol"
+    "deploy:cloudflare": "rm -f ./dist/_redirects && node scripts/cloudflare/workers-builds-deploy.mjs deploy --assets=./dist --compatibility-date=2026-08-14 --name anima-protocol"
   },
   "private": true,
   "devDependencies": {

@@ -242,6 +242,9 @@ describe("Cloudflare wrangler config", () => {
     expect(pkg.scripts?.["deploy:cloudflare"]).toContain(
       "workers-builds-deploy.mjs",
     );
+    expect(pkg.scripts?.["deploy:cloudflare"]).toContain(
+      "--compatibility-date=2026-08-14",
+    );
     const workspace = readFileSync(
       path.join(repoRoot, "pnpm-workspace.yaml"),
       "utf8",

@@ -106,6 +106,14 @@ describe("wrangler GET /deployments guard", () => {
     expect(recovered.result.subdomain).toBe("anima-protocol");
   });
 
+  it("keeps previews enabled on an unparseable script subdomain GET", () => {
+    const recovered = guard.recoverInformationalGetJson(
+      "/accounts/abc/workers/scripts/anima-protocol/subdomain",
+      "upstream connect error",
+    );
+    expect(recovered.result.previews_enabled).toBe(true);
+  });
+
   it("patches wrangler fetchInternalBase so GET /deployments cannot abort deploy", () => {
     const cli = `'use strict';
 async function fetchInternalBase(complianceConfig, resource, init4 = {}, userAgent, logger6, queryParams, abortSignal, credentials) {
@@ -119,6 +127,9 @@ ${guard.PARSE_TRY}
     expect(patched).toContain(guard.MARKER);
     expect(patched).toContain("isAnimaInformationalGet(method, resource)");
     expect(patched).toContain("recoverAnimaInformationalGetJson(resource, jsonText)");
+    expect(patched).not.toMatch(
+      /parseJSON\(jsonText\);\s*if \(typeof isAnimaInformationalGet/,
+    );
     expect(guard.patchWranglerCliSource(patched)).toBe(patched);
   });
 
@@ -134,6 +145,17 @@ ${guard.PARSE_TRY}
     expect(
       wranglerSucceededDespiteInformationalGet(
         "Received a malformed response from the API\nGET /accounts/x/workers/scripts/anima-protocol/deployments -> 200 OK",
+        1,
+      ),
+    ).toBe(false);
+    expect(
+      wranglerSucceededDespiteInformationalGet(
+        [
+          "Worker Version ID: 28346896-021c-4567-be4a-8e17d9684b40",
+          "GET /accounts/x/workers/subdomain -> 503 Service Unavailable",
+          "upstream connect error",
+          "GET /accounts/x/memberships -> 500 Internal Server Error",
+        ].join("\n"),
         1,
       ),
     ).toBe(false);
