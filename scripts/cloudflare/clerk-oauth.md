@@ -129,21 +129,30 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   at Worker `anima-protocol`.
 - `__client` must be `Domain=anima-protocol.com` so GitHub's document
   callback on `clerk.anima-protocol.com/v1/oauth_callback` receives it.
-  Host-only `__client` is the clean-attempt `authorization_invalid` (301
-  `err_code` → 403 JSON). That Set-Cookie is still **first-party**: the
-  Worker writes it on `anima-protocol.com/api/__clerk` (Safari ITP). Do
-  not mint `__client` from the CNAME (ITP treats CNAME-cloaked cookies as
-  third-party). `__session` / `__refresh` / `__client_uat*` stay
-  **host-only**. The Worker never sees the CNAME document request, so
-  handshake cookie strip (#405) cannot mint `__client` for that hop.
-- **Do not Domain=apex-expire `__client` / `__session` / `__refresh`.** On
-  the apex host, `Set-Cookie: name=; Domain=anima-protocol.com; Max-Age=0`
-  also deletes the host-only cookie of the same name (Chrome/Safari). That
-  is the "signed in until refresh" failure. Expire only `__client_uat*`
-  leftovers, and only on handshake / SSO / oauth_callback — never on
-  ordinary `/v1/client` after reload. The SPA expires visible `__client_uat*`
-  on sign-in / sign-up (before GitHub) and on the SSO callback page.
-  Omit `Clerk-Secret-Key` on `/v1/oauth_callback`.
+  Host-only `__client` is the clean-attempt CNAME miss. That Set-Cookie is
+  still **first-party**: the Worker writes it on
+  `anima-protocol.com/api/__clerk` (Safari ITP).
+- The user-visible JSON
+  `{ code: "authorization_invalid", clerk_trace_id }` is also returned by
+  **proxied** `GET /api/__clerk/v1/oauth_callback?err_code=authorization_invalid`
+  (live 403). clerk-js `proxyUrl` + redirect-follow surfaces that as an
+  XHR body. The Worker must not 301 that hop onto `/api/__clerk` — send
+  `/sign-in?clerk_error=` instead — and must not fetch Clerk for
+  oauth_callback without `code`+`state` (HEAD/GET always 301/403 JSON).
+- **Never Domain=apex-expire `__client_uat` from the Worker.** Live
+  `HEAD /api/__clerk/v1/oauth_callback` sent
+  `__client_uat=; Domain=anima-protocol.com; Max-Age=0`. #414
+  skip-when-minting does not apply on HEAD 405. On apex that Max-Age=0
+  deletes the host-only UAT (Safari/Chrome). SPA #415 still preclears
+  leftover CNAME UAT. `__session` / `__refresh` / `__client_uat*`
+  Set-Cookie stay host-only.
+- **Do not Domain=apex-expire `__client` / `__session` / `__refresh` /
+  `__client_uat*` from the Worker.** On the apex host,
+  `Set-Cookie: name=; Domain=anima-protocol.com; Max-Age=0` also deletes
+  the host-only cookie of the same name (Chrome/Safari). That is the
+  "signed in until refresh" failure. The SPA expires visible `__client_uat*`
+  leftovers on sign-in / sign-up (before GitHub) and on the SSO callback
+  page. Omit `Clerk-Secret-Key` on `/v1/oauth_callback`.
 
 Live probes:
 

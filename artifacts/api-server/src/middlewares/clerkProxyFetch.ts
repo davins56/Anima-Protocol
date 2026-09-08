@@ -279,6 +279,26 @@ export function isClerkOAuthCallbackPath(
 }
 
 /**
+ * Proxied oauth_callback without a real `code`+`state` always 301/403s
+ * `authorization_invalid` JSON from Clerk (live, even with no cookies).
+ * Do not forward that to clerk-js — send the browser to `/sign-in`.
+ */
+export function clerkOAuthCallbackShouldBypassUpstream(
+  requestUrl: string | undefined,
+): boolean {
+  if (!requestUrl || !isClerkOAuthCallbackPath(requestUrl)) return false;
+  try {
+    const url = new URL(requestUrl, "https://anima-protocol.com");
+    if (url.searchParams.get("err_code")) return true;
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    return !code || !state;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Handshake JWT (query/path), the first FAPI XHR from the SSO callback
  * page, or a proxied oauth_callback. Ordinary `/v1/client` from `/sign-in`
  * keeps cookies. oauth_callback still forwards `__client` after the strip.
@@ -391,6 +411,11 @@ export function resolveClerkNpmRedirectUrl(
  * Keep FAPI XHR/asset redirects on the same-origin proxy. Document returns
  * (OAuth handshake, `/`, `/sign-in/sso-callback`) must land on the SPA —
  * mapping those to `/api/__clerk/?__clerk_handshake=` drops the session.
+ *
+ * `/v1/oauth_callback?err_code=` must NOT stay on `/api/__clerk`. Live GET
+ * of that proxy path returns the user-visible 403 JSON
+ * `{ code: "authorization_invalid", clerk_trace_id }`. clerk-js with
+ * `proxyUrl` + `redirect: follow` surfaces that as an XHR body.
  */
 export function rewriteClerkProxyLocation(
   location: string,
@@ -403,6 +428,10 @@ export function rewriteClerkProxyLocation(
       url.hostname === opts.fapiHost ||
       isClerkOwnedHostname(url.hostname)
     ) {
+      if (isClerkOAuthCallbackPath(`${url.pathname}${url.search}`)) {
+        const err = url.searchParams.get("err_code") || "oauth_callback_failed";
+        return `${opts.appOrigin}/sign-in?clerk_error=${encodeURIComponent(err)}`;
+      }
       if (isClerkFrontendApiPath(url.pathname)) {
         return `${opts.appOrigin}${proxyPath}${url.pathname}${url.search}${url.hash}`;
       }
@@ -626,34 +655,19 @@ export function forwardClerkProxyResponseHeaders(
   });
 
   const rewritten: string[] = [];
-  const writtenUat = new Set<string>();
   for (const cookie of collectSetCookies(upstream)) {
     const next = rewriteClerkProxySetCookie(cookie, rewrite.appHost);
     if (!next) continue;
     rewritten.push(next);
-    const name = clerkCookieName(next);
-    if (isClerkClientUatCookieName(name) && !/;\s*Max-Age=0(?:;|$)/i.test(next)) {
-      writtenUat.add(name.toLowerCase());
-    }
   }
 
-  // Expire Domain=apex `__client_uat*` leftovers first, then write host-only
-  // replacements. On apex, Domain= Max-Age=0 after the new cookie deletes it
-  // (Chrome/Safari collapse Domain=exact-host with host-only). Skip expiry
-  // for names this response is minting.
-  if (shouldStripClerkAuthCookies(rewrite.requestUrl, rewrite.referer)) {
-    const appApex = rewrite.appHost
-      .toLowerCase()
-      .replace(/^\./, "")
-      .replace(/^www\./, "");
-    const leftover = [
-      ...collectClerkAuthCookieNames(rewrite.requestCookie),
-      "__client_uat",
-    ].filter((name) => !writtenUat.has(name.toLowerCase()));
-    for (const expiry of apexClerkAuthCookieExpiries(leftover, appApex)) {
-      appendSetCookie(res, expiry);
-    }
-  }
+  // Never Domain=apex-expire Clerk cookies from the Worker. On
+  // anima-protocol.com, `Domain=apex; Max-Age=0` also deletes the host-only
+  // cookie of the same name (Chrome/Safari). Live
+  // `HEAD /api/__clerk/v1/oauth_callback` still sent
+  // `__client_uat=; Domain=anima-protocol.com; Max-Age=0` because #414's
+  // skip-when-minting does not apply when Clerk does not mint (HEAD 405).
+  // Leftover CNAME Domain=apex UAT is expired in the SPA (#415).
   for (const cookie of rewritten) {
     appendSetCookie(res, cookie);
   }
@@ -709,9 +723,19 @@ export async function proxyClerkWithFetch(
         authorizeUpstream,
         secretKeySent: headers.has("Clerk-Secret-Key"),
         clerkCookieNames: collectClerkAuthCookieNames(cookieHeader),
+        bypassUpstream: clerkOAuthCallbackShouldBypassUpstream(upstreamPath),
       },
       "Clerk oauth_callback proxy",
     );
+    if (clerkOAuthCallbackShouldBypassUpstream(upstreamPath)) {
+      res.statusCode = 303;
+      res.setHeader(
+        "location",
+        `${origin || "https://anima-protocol.com"}/sign-in?clerk_error=authorization_invalid`,
+      );
+      res.end();
+      return;
+    }
   }
 
   let upstream = await fetchImpl(upstreamUrl, {
