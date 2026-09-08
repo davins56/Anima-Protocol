@@ -627,17 +627,16 @@ describe("clerkProxyFetch", () => {
       "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
     );
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
-      expect(String(url)).toBe(
-        "https://clerk.anima-protocol.com/v1/environment",
-      );
+      expect(String(url)).toBe("https://frontend-api.clerk.dev/v1/environment");
       const headers = new Headers(init?.headers);
-      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
-      expect(headers.get("X-Forwarded-Host")).toBeNull();
+      expect(headers.get("host")).toBeNull();
+      expect(headers.get("Clerk-Proxy-Url")).toBe(
+        "https://anima-protocol.com/api/__clerk/",
+      );
+      expect(headers.get("X-Forwarded-Host")).toBe("anima-protocol.com");
       expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
       expect(headers.get("Origin")).toBe("https://anima-protocol.com");
-      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBe(
-        "worker.clerkprod-cloudflare.net",
-      );
+      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBeUndefined();
       return new Response("{}", { status: 200, headers: upstreamHeaders });
     });
     const cookies: string[] = [];
@@ -797,9 +796,9 @@ describe("clerkProxyFetch", () => {
   it("follows Clerk CDN 307 for unversioned clerk-js and returns 200 JS", async () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const unversioned =
-      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js";
+      "https://frontend-api.clerk.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js";
     const versioned =
-      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js";
+      "https://frontend-api.clerk.dev/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js";
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const href = String(url);
       const headers = new Headers(init?.headers);
@@ -808,7 +807,10 @@ describe("clerkProxyFetch", () => {
       if (href === unversioned) {
         return new Response(null, {
           status: 307,
-          headers: { location: versioned },
+          headers: {
+            location:
+              "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+          },
         });
       }
       expect(href).toBe(versioned);
@@ -850,19 +852,20 @@ describe("clerkProxyFetch", () => {
     expect(body?.toString()).toBe("/* clerk-js */");
   });
 
-  it("proxies oauth_callback without Secret-Key and keeps __client", async () => {
+  it("proxies oauth_callback to clerk.dev with official headers and keeps __client", async () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe(
-        "https://clerk.anima-protocol.com/v1/oauth_callback?code=fake&state=abc",
+        "https://frontend-api.clerk.dev/v1/oauth_callback?code=fake&state=abc",
       );
       const headers = new Headers(init?.headers);
-      expect(headers.get("Clerk-Secret-Key")).toBeNull();
-      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
-      expect(headers.get("cookie")).toBe("__client=tok; theme=dark");
-      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBe(
-        "worker.clerkprod-cloudflare.net",
+      expect(headers.get("host")).toBeNull();
+      expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+      expect(headers.get("Clerk-Proxy-Url")).toBe(
+        "https://anima-protocol.com/api/__clerk/",
       );
+      expect(headers.get("cookie")).toBe("__client=tok; theme=dark");
+      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBeUndefined();
       return new Response(null, {
         status: 303,
         headers: {

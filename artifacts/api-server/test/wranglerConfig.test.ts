@@ -238,14 +238,27 @@ describe("Cloudflare wrangler config", () => {
     expect(wrangler).toMatch(/clerk-cname-gateway\.md/);
     expect(workerSource).toContain("handleClerkCnameGateway");
     expect(workerSource).toContain("isClerkCnameRequestHost");
+    expect(workerSource).toContain("applyCloudflareRequestEnv");
+    const frontendFetch = readFileSync(
+      path.join(repoRoot, "artifacts/api-server/src/lib/clerkFrontendFetch.ts"),
+      "utf8",
+    );
+    expect(frontendFetch).toContain("clerkCnameUpstreamUrl");
+    expect(frontendFetch).toContain("https://frontend-api.clerk.dev");
+    expect(frontendFetch).not.toMatch(
+      /cf:\s*\{[^}]*resolveOverride/,
+    );
     const cnameNotes = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/clerk-cname-gateway.md"),
       "utf8",
     );
     expect(cnameNotes).toContain("frontend-api.clerk.services");
+    expect(cnameNotes).toContain("frontend-api.clerk.dev");
+    expect(cnameNotes).toContain("522");
     expect(cnameNotes).toContain("custom_domain");
     expect(cnameNotes).toContain("verify:clerk-cname-gateway");
     expect(cnameNotes).toContain("run_worker_first");
+    expect(workerSource).toContain("applyCloudflareRequestEnv(env)");
     expect(assets.run_worker_first).toEqual(
       expect.arrayContaining(["/v1", "/v1/*"]),
     );

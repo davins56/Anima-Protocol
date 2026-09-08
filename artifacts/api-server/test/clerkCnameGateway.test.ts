@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyClerkCnameResponseHeaders,
+  applyClerkOwnedFapiGatewayHeaders,
   cookieHeaderForClerkCnameOAuth,
+  fetchClerkCnameUpstream,
   handleClerkCnameGateway,
   isClerkCnameRequestHost,
   rewriteClerkCnameLocation,
@@ -9,7 +11,8 @@ import {
   shouldForwardClerkCnameSetCookie,
 } from "../src/lib/clerkCnameGateway";
 import {
-  CLERK_CNAME_RESOLVE_OVERRIDE,
+  CLERK_OWNED_FAPI_ORIGIN,
+  clerkCnameUpstreamUrl,
   clerkFrontendFetchInit,
 } from "../src/lib/clerkFrontendFetch";
 import {
@@ -32,20 +35,53 @@ const USER_JSON = {
 describe("clerk CNAME gateway", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete process.env.CLERK_SECRET_KEY;
   });
 
-  it("applies resolveOverride only for the production CNAME host", () => {
+  it("rewrites the Custom Domain host to Clerk-owned FAPI and never resolveOverride", () => {
     expect(
-      clerkFrontendFetchInit("https://clerk.anima-protocol.com/v1/client").cf,
-    ).toEqual({ resolveOverride: CLERK_CNAME_RESOLVE_OVERRIDE });
+      clerkCnameUpstreamUrl(
+        "https://clerk.anima-protocol.com/v1/environment",
+      ).href,
+    ).toBe(`${CLERK_OWNED_FAPI_ORIGIN}/v1/environment`);
+    expect(
+      clerkCnameUpstreamUrl(
+        "https://clerk.anima-protocol.com/v1/oauth_callback?code=a&state=b",
+      ).href,
+    ).toBe(`${CLERK_OWNED_FAPI_ORIGIN}/v1/oauth_callback?code=a&state=b`);
+    expect(
+      clerkCnameUpstreamUrl("https://frontend-api.clerk.dev/v1/environment")
+        .href,
+    ).toBe("https://frontend-api.clerk.dev/v1/environment");
+    expect(
+      clerkFrontendFetchInit("https://clerk.anima-protocol.com/v1/client", {
+        cf: { resolveOverride: "worker.clerkprod-cloudflare.net" },
+      }).cf,
+    ).toBeUndefined();
     expect(
       clerkFrontendFetchInit("https://frontend-api.clerk.dev/v1/environment").cf,
     ).toBeUndefined();
-    expect(
-      clerkFrontendFetchInit(
-        "https://something.clerk.accounts.dev/v1/client",
-      ).cf,
-    ).toBeUndefined();
+  });
+
+  it("strips Host clerk.{apex} and sends official proxy headers to clerk.dev", () => {
+    process.env.CLERK_SECRET_KEY = "sk_live_test";
+    const headers = new Headers({
+      host: "clerk.anima-protocol.com",
+      cookie: "__client=tok",
+      "cf-connecting-ip": "203.0.113.9",
+    });
+    applyClerkOwnedFapiGatewayHeaders(
+      headers,
+      new Request("https://clerk.anima-protocol.com/v1/environment"),
+    );
+    expect(headers.get("host")).toBeNull();
+    expect(headers.get("Clerk-Proxy-Url")).toBe(
+      "https://anima-protocol.com/api/__clerk/",
+    );
+    expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+    expect(headers.get("X-Forwarded-Host")).toBe("anima-protocol.com");
+    expect(headers.get("X-Forwarded-For")).toBe("203.0.113.9");
+    expect(headers.get("Origin")).toBe("https://anima-protocol.com");
   });
 
   it("recognizes only the Clerk custom-domain host", () => {
@@ -123,9 +159,54 @@ describe("clerk CNAME gateway", () => {
       "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
     );
     expect(await response.text()).toBe("");
-    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({
-      cf: { resolveOverride: CLERK_CNAME_RESOLVE_OVERRIDE },
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
+      `${CLERK_OWNED_FAPI_ORIGIN}/v1/oauth_callback?code=used&state=abc`,
+    );
+    expect(
+      (fetchImpl.mock.calls[0]?.[1] as { cf?: { resolveOverride?: string } })?.cf
+        ?.resolveOverride,
+    ).toBeUndefined();
+    expect(new Headers(fetchImpl.mock.calls[0]?.[1]?.headers).get("host")).toBeNull();
+  });
+
+  it("fetches /v1/environment from frontend-api.clerk.dev without looping the Custom Domain", async () => {
+    process.env.CLERK_SECRET_KEY = "sk_live_test";
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe(`${CLERK_OWNED_FAPI_ORIGIN}/v1/environment`);
+      const headers = new Headers(init?.headers);
+      expect(headers.get("host")).toBeNull();
+      expect(headers.get("Clerk-Proxy-Url")).toBe(
+        "https://anima-protocol.com/api/__clerk/",
+      );
+      expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+      expect(
+        (init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride,
+      ).toBeUndefined();
+      return new Response(JSON.stringify({ auth_config: { test: true } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     });
+    const response = await handleClerkCnameGateway(
+      new Request("https://clerk.anima-protocol.com/v1/environment", {
+        headers: { host: "clerk.anima-protocol.com" },
+      }),
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ auth_config: { test: true } });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rewrites fetchClerkCnameUpstream off the Custom Domain host", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    await fetchClerkCnameUpstream(
+      new Request("https://clerk.anima-protocol.com/v1/client"),
+      fetchImpl,
+    );
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
+      `${CLERK_OWNED_FAPI_ORIGIN}/v1/client`,
+    );
   });
 
   it("rewrites a successful Clerk 303 onto the SPA and strips planted UAT", async () => {

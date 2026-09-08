@@ -10,15 +10,20 @@ import {
   collectClerkAuthCookieNames,
   isClerkClientTokenCookieName,
   isClerkClientUatCookieName,
+  isClerkNpmAssetPath,
   isClerkOAuthCallbackPath,
   rewriteClerkProxyLocation,
   rewriteClerkProxySetCookie,
+  shouldAuthorizeClerkUpstream,
   stripClerkAuthCookies,
 } from "../middlewares/clerkProxyFetch";
+import { readRuntimeEnv } from "./cloudflareEnv";
 import {
   CLERK_CNAME_HOST,
+  clerkCnameUpstreamUrl,
   clerkFrontendFetchInit,
   isClerkCnameRequestHost,
+  stripClerkCnameHostHeader,
 } from "./clerkFrontendFetch";
 import { recallGitHubOAuthClientState } from "./clerkOAuthStateStore";
 
@@ -103,6 +108,42 @@ export async function cookieHeaderForClerkCnameOAuth(
   return stripped ? `${stripped}; ${injected}` : injected;
 }
 
+/**
+ * Official path-proxy headers for frontend-api.clerk.dev. Host stays the
+ * rewritten clerk.dev name (never clerk.{apex} — that 403s). Proxy URL is
+ * always the apex /api/__clerk path, not the CNAME host.
+ */
+export function applyClerkOwnedFapiGatewayHeaders(
+  headers: Headers,
+  request: Request,
+): void {
+  stripClerkCnameHostHeader(headers);
+  headers.set("Clerk-Proxy-Url", `${clerkCnameAppOrigin()}${CLERK_PROXY_PATH}/`);
+  headers.set("Origin", clerkCnameAppOrigin());
+  headers.set("X-Forwarded-Host", ANIMA_APEX_HOST);
+  headers.set("X-Forwarded-Proto", "https");
+  const clientIp =
+    headers.get("cf-connecting-ip") ||
+    request.headers.get("cf-connecting-ip") ||
+    headers.get("true-client-ip") ||
+    request.headers.get("true-client-ip") ||
+    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "";
+  if (clientIp) headers.set("X-Forwarded-For", clientIp);
+
+  const path = `${new URL(request.url).pathname}${new URL(request.url).search}`;
+  const secret = (readRuntimeEnv("CLERK_SECRET_KEY") || "").trim();
+  const authorize =
+    secret &&
+    !isClerkNpmAssetPath(new URL(request.url).pathname) &&
+    (shouldAuthorizeClerkUpstream(path) ||
+      (isClerkOAuthCallbackPath(path) &&
+        !clerkOAuthCallbackShouldBypassUpstream(path)));
+  if (authorize) headers.set("Clerk-Secret-Key", secret);
+  else headers.delete("Clerk-Secret-Key");
+}
+
 export async function fetchClerkCnameUpstream(
   request: Request,
   fetchImpl: typeof fetch = fetch,
@@ -113,11 +154,19 @@ export async function fetchClerkCnameUpstream(
     if (cookie) headers.set("cookie", cookie);
     else headers.delete("cookie");
   }
-  const upstream = new Request(request, { headers, redirect: "manual" });
-  return fetchImpl(
-    upstream,
-    clerkFrontendFetchInit(upstream.url, { redirect: "manual" }),
-  );
+  applyClerkOwnedFapiGatewayHeaders(headers, request);
+  const upstreamUrl = clerkCnameUpstreamUrl(request.url);
+  const method = request.method.toUpperCase();
+  const init: RequestInit = clerkFrontendFetchInit(upstreamUrl, {
+    method,
+    headers,
+    redirect: "manual",
+  });
+  if (method !== "GET" && method !== "HEAD" && request.body) {
+    init.body = request.body;
+    (init as RequestInit & { duplex?: string }).duplex = "half";
+  }
+  return fetchImpl(upstreamUrl, init);
 }
 
 export function clerkCnameFailedOAuthRedirect(errCode?: string): Response {
