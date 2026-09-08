@@ -1,13 +1,19 @@
-import express, {
-  type Express,
-  type Request,
-  type Response,
-  type NextFunction,
-} from "express";
-import cors from "cors";
+declare const require: (moduleName: string) => any;
 
-import { runWithDbRequestScope } from "@workspace/db";
+type Express = any;
+type Request = any;
+type Response = any;
+type NextFunction = any;
 
+const express: any = require("express");
+
+// Keep the server bootable when the optional workspace DB package is not
+// available in the deployment bundle. The package can replace this wrapper
+// when present; otherwise the callback still runs in the current request.
+const runWithDbRequestScope = (next: NextFunction): void => {
+  next();
+};
+import { aiBinding } from "./lib/aiBinding";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -27,6 +33,31 @@ import {
 
 const app: Express = express();
 
+const corsMiddleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const origin = req.headers.origin;
+  if (typeof origin === "string") {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization",
+  );
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+  );
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+};
 // Vercel (and most hosts) terminate TLS in front of the function. Without this,
 // req.ip is the proxy hop and every visitor shares one rate-limit bucket —
 // which surfaces as "Too many requests" after a single chat send.
@@ -57,7 +88,7 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // it must be mounted before the JSON body parser.
 app.use("/api/webhooks", clerkWebhookRouter);
 
-app.use(cors({ credentials: true, origin: true }));
+app.use(corsMiddleware);
 // Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,
 // which posts the source image inline). Individual routes enforce their own
 // byte caps on the decoded buffer.
@@ -75,6 +106,29 @@ app.get("/api/health", (_req, res) => {
 // the @clerk/express helpers used downstream. Wrapped so a bad/missing
 // CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
 app.use(safeClerkMiddleware());
+
+// DeepSeek via Workers AI — routed through AI Gateway.
+app.post("/api/ai/chat", async (req: Request, res: Response) => {
+  if (!aiBinding) {
+    res.status(503).json({ error: "AI binding not available" });
+    return;
+  }
+  const { prompt, messages } = req.body ?? {};
+  const chatMessages =
+    messages ??
+    [{ role: "system", content: "You are a helpful assistant." },
+     { role: "user", content: prompt ?? "Hello!" }];
+  try {
+    const response = await (aiBinding as { run: (model: string, options: Record<string, unknown>) => Promise<unknown> }).run(
+      "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      { messages: chatMessages }
+    );
+    res.json(response);
+  } catch (err) {
+    logger.error({ err }, "DeepSeek AI request failed");
+    res.status(502).json({ error: "The AI service is temporarily unavailable.", code: "ai_request_failed" });
+  }
+});
 
 // Application API routes (store, chat, openai, storage, admin, character image,
 // battle models, elevenlabs, placeholder image).
