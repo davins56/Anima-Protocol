@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useClerk, useSignIn, useUser } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import {
   clerkErrorMessage,
+  githubOAuthHangMessage,
   hasEmailCodeFactor,
   isAlreadySignedInError,
   isPreviewSignInHost,
@@ -35,6 +36,7 @@ export default function EmailCodeSignIn() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null); // null | 'email' | 'github' | 'verify' | 'resend' | 'signout' | 'guest'
   const [maskedEmail, setMaskedEmail] = useState("");
+  const githubAttemptRef = useRef(0);
   const onPreviewHost = isPreviewSignInHost();
 
   const loading = fetchStatus === "fetching" || Boolean(busy);
@@ -265,6 +267,7 @@ export default function EmailCodeSignIn() {
       goToProductionSignIn();
       return;
     }
+    const attempt = ++githubAttemptRef.current;
     setBusy("github");
     try {
       if (isSignedIn) {
@@ -273,21 +276,26 @@ export default function EmailCodeSignIn() {
       }
       if (!signIn) {
         setError("Sign-in is still loading. Wait a moment and try GitHub again.");
-        setBusy(null);
         return;
       }
-      await startGitHubOAuthSignIn(signIn, basePath, clerk);
+      const result = await startGitHubOAuthSignIn(signIn, basePath, clerk);
+      if (attempt !== githubAttemptRef.current) return;
+      if (result?.shouldFinalize) {
+        await finishSignIn();
+      }
     } catch (err) {
+      if (attempt !== githubAttemptRef.current) return;
       if (isAlreadySignedInError(err)) {
         await resumeExistingSession(err);
-        setBusy(null);
         return;
       }
       setError(
-        clerkErrorMessage(err, { context: "oauth" }) ||
-          "GitHub sign-in failed. Try again.",
+        clerkErrorMessage(err, { context: "oauth" }) || githubOAuthHangMessage(),
       );
-      setBusy(null);
+    } finally {
+      if (attempt === githubAttemptRef.current) {
+        setBusy(null);
+      }
     }
   };
 

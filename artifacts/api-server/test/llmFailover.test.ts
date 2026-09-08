@@ -70,6 +70,21 @@ vi.mock("../src/lib/openaiClient", () => {
     },
     hasMinimaxKey: () =>
       Boolean(process.env.MINIMAX_API_KEY?.trim() || process.env.ANIMA_MINIMAX_API_KEY?.trim()),
+    hasDeepshiKey: () =>
+      Boolean(process.env.DEEPSHI_API_KEY?.trim() || process.env.ANIMA_DEEPSHI_API_KEY?.trim()),
+    getDeepshiApiKeySource: () =>
+      process.env.DEEPSHI_API_KEY?.trim()
+        ? "DEEPSHI_API_KEY"
+        : process.env.ANIMA_DEEPSHI_API_KEY?.trim()
+          ? "ANIMA_DEEPSHI_API_KEY"
+          : null,
+    getDeepshiClient: () => {
+      if (!(process.env.DEEPSHI_API_KEY?.trim() || process.env.ANIMA_DEEPSHI_API_KEY?.trim())) {
+        return null;
+      }
+      return openRouterClient;
+    },
+    DEEPSHI_DEFAULT_MODEL: "deepshi-3.0",
     getMinimaxApiKeySource: () =>
       process.env.MINIMAX_API_KEY?.trim()
         ? "MINIMAX_API_KEY"
@@ -294,6 +309,7 @@ import {
   createChatStreamWithFailover,
   getLlmRoutingStatus,
   getProviderChain,
+  usesFreeTierOpenBudget,
   isAnimaCustomMode,
   isProviderAuthError,
   isProviderConnectionError,
@@ -308,11 +324,11 @@ import {
   isOpenRouterTransientGatewayError,
   isOpenRouterZdrOrDataPolicyError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
-  MINIMAX_DIRECT_FAIL_HINT,
   OPENROUTER_FREE_PROVIDER_HINT,
   OPENROUTER_ZDR_PRIVACY_HINT,
   shouldTryNextOpenRouterFreeModel,
   preferCustomLlmOnly,
+  preferMinimaxOnly,
   probeLlmProviders,
   remapGenericProviderError,
   resetOpenRouterCreditFallbackForTests,
@@ -742,13 +758,13 @@ describe("isAnimaCustomMode", () => {
     expect(isAnimaCustomMode()).toBe(true);
   });
 
-  it("is false when OpenRouter is the only configured provider", () => {
+  it("stays custom-mode when OpenRouter is the only cloud key (empty chain)", () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    expect(isAnimaCustomMode()).toBe(false);
+    expect(isAnimaCustomMode()).toBe(true);
   });
 });
 
@@ -796,101 +812,75 @@ describe("getProviderChain", () => {
     process.env = { ...SAVED };
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
+    delete process.env.DEEPSHI_API_KEY;
+    delete process.env.ANIMA_DEEPSHI_API_KEY;
   });
 
   it("uses the custom LLM alone when both local and OpenRouter are configured", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    delete process.env.ANIMA_OPENROUTER_FALLBACK;
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     delete process.env.ANIMA_LLM_PROVIDER;
+    expect(preferCustomLlmOnly()).toBe(true);
     expect(getProviderChain()).toEqual(["local"]);
     expect(allowOpenRouterFallback()).toBe(false);
   });
 
-  it("adds OpenRouter after local only when ANIMA_OPENROUTER_FALLBACK=true", () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+  it("keeps local-only when ANIMA_LLM_PROVIDER is unset (durable default)", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.MINIMAX_API_KEY = "minimax-test";
     delete process.env.ANIMA_LLM_PROVIDER;
-    expect(getProviderChain()).toEqual(["local", "openrouter"]);
-    expect(allowOpenRouterFallback()).toBe(true);
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(preferCustomLlmOnly()).toBe(true);
   });
 
-  it("keeps OpenRouter out of the chain when ANIMA_LLM_PROVIDER=custom", () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+  it("does not skip a usable local host when ANIMA_LLM_PROVIDER=minimax", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
-    process.env.ANIMA_LLM_PROVIDER = "custom";
-    expect(preferCustomLlmOnly()).toBe(true);
+    process.env.ANIMA_LLM_PROVIDER = "minimax";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    expect(preferMinimaxOnly()).toBe(true);
     expect(getProviderChain()).toEqual(["local"]);
   });
 
-  it("uses OpenRouter alone on Vercel when local is unset", () => {
+  it("fails closed when local is unset even if every cloud key is present", () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     delete process.env.ANIMA_LLM_PROVIDER;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    expect(getProviderChain()).toEqual(["openrouter"]);
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.DEEPSHI_API_KEY = "sk-bf-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    expect(getProviderChain()).toEqual([]);
+    expect(allowOpenRouterFallback()).toBe(false);
   });
 
-  it("does not use OpenRouter in custom mode even when local is unset", () => {
+  it("fails closed when ANIMA_LLM_PROVIDER pins MiniMax or Deepshi and local is missing", () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_LLM_PROVIDER = "custom";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.DEEPSHI_API_KEY = "sk-bf-test";
+    process.env.ANIMA_LLM_PROVIDER = "minimax";
+    expect(getProviderChain()).toEqual([]);
+    process.env.ANIMA_LLM_PROVIDER = "deepshi";
     expect(getProviderChain()).toEqual([]);
   });
 
-  it("puts MiniMax before OpenRouter when both cloud keys are set", () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.ANIMA_LLM_PROVIDER;
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    process.env.VERCEL = "1";
+  it("does not use the 80s free-tier open budget for local-only chat", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    expect(getProviderChain()).toEqual(["minimax", "openrouter"]);
-  });
-
-  it("omits MiniMax when ANIMA_OPENROUTER_FREE=true even if MINIMAX_API_KEY is set", () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.ANIMA_LLM_PROVIDER;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.MINIMAX_API_KEY = "minimax-test";
     process.env.ANIMA_OPENROUTER_FREE = "true";
-    expect(getProviderChain()).toEqual(["openrouter"]);
-  });
-
-  it("uses MiniMax alone when only MINIMAX_API_KEY is set", () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.ANIMA_OPENROUTER_API_KEY;
-    delete process.env.OPEN_ROUTER_API_KEY;
-    delete process.env.ANIMA_LLM_PROVIDER;
-    process.env.VERCEL = "1";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    expect(getProviderChain()).toEqual(["minimax"]);
-  });
-
-  it("keeps MiniMax-only when ANIMA_LLM_PROVIDER=minimax even if OpenRouter is set", () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_LLM_PROVIDER = "minimax";
-    expect(getProviderChain()).toEqual(["minimax"]);
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(isOpenRouterAlreadyFreeTier()).toBe(true);
+    expect(usesFreeTierOpenBudget()).toBe(false);
   });
 });
 
@@ -935,47 +925,29 @@ describe("getLlmRoutingStatus", () => {
     expect(status.preferred).toBe("local");
     expect(status.brand).toBe("anima");
     expect(status.chain).toEqual(["local"]);
-    expect(status.customOnly).toBe(false);
+    expect(status.customOnly).toBe(true);
     expect(status.openRouterFallback).toBe(false);
     expect(status.note).toMatch(/Self-hosted Anima LLM/i);
   });
 
-  it("reports error and a setup hint when no local endpoint or OpenRouter key on Vercel", () => {
+  it("reports error and a local-only setup hint when no local endpoint is set on Vercel", () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.ANIMA_OPENROUTER_API_KEY;
-    delete process.env.OPEN_ROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.MINIMAX_API_KEY = "minimax-test";
     process.env.VERCEL = "1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     const status = getLlmRoutingStatus();
     expect(status.status).toBe("error");
     expect(status.preferred).toBeNull();
+    expect(status.customOnly).toBe(true);
+    expect(status.chain).toEqual([]);
     expect(status.localEndpoint.configured).toBe(false);
     expect(status.localEndpoint.model).toBe("anima-chat");
-    expect(status.note).toMatch(/OPENROUTER_API_KEY|ANIMA_LOCAL_LLM_BASE_URL/i);
-  });
-
-  it("reports OpenRouter as preferred when only OPENROUTER_API_KEY is set on Vercel", () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    const status = getLlmRoutingStatus();
-    expect(status.status).toBe("ok");
-    expect(status.preferred).toBe("openrouter");
-    expect(status.brand).toBe("openrouter");
-    expect(status.chain).toEqual(["openrouter"]);
-    expect(status.customOnly).toBe(false);
-    expect(status.openRouterFallback).toBe(false);
-    expect(status.openrouter.configured).toBe(true);
-    expect(status.openrouter.model).toMatch(/venice|dolphin|gpt-oss/i);
-    expect(status.openrouter.env).toBe("OPENROUTER_API_KEY");
-    expect(status.openrouter.keyTail).toBe("test");
-    expect(status.openrouter.creditFallback).toBe(false);
-    expect(status.note).toMatch(/custom LLM not configured/i);
+    expect(status.note).toMatch(/ANIMA_LLM_PROVIDER=custom/i);
+    expect(status.note).toMatch(/ANIMA_LOCAL_LLM_BASE_URL/i);
+    expect(status.note).not.toMatch(/Set MINIMAX_API_KEY|OPENROUTER_API_KEY for OpenRouter/i);
   });
 
   it("reports error when ANIMA_LOCAL_LLM_BASE_URL points at api.openai.com", () => {
@@ -1040,13 +1012,29 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it("throws a setup error when no local endpoint or OpenRouter key is configured", async () => {
+  it("forwards sampling temperature on the local stream", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      temperature: 0.85,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      stream: true,
+      temperature: 0.85,
+    });
+  });
+
+  it("throws a local-only setup error when the self-hosted LLM is missing", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.ANIMA_OPENROUTER_API_KEY;
-    delete process.env.OPEN_ROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    process.env.DEEPSHI_API_KEY = "sk-bf-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     process.env.VERCEL = "1";
 
     await expect(
@@ -1056,196 +1044,9 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toThrow(/No chat LLM configured|OPENROUTER_API_KEY|ANIMA_LOCAL_LLM_BASE_URL/i);
+    ).rejects.toThrow(/ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM/i);
 
     expect(createMock).not.toHaveBeenCalled();
-  });
-
-  it("streams from OpenRouter Venice Uncensored when only OPENROUTER_API_KEY is set", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    createMock.mockResolvedValueOnce(fakeStream("venice"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.brand).toBe("openrouter");
-    expect(result.model).toBe(
-      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    );
-    expect(result.failedOver).toBe(false);
-    expect(createMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("retries the OpenRouter free model when Venice returns HTTP 402", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(
-          new Error("402 Insufficient credits. This account never purchased credits."),
-          { status: 402 },
-        ),
-      )
-      .mockResolvedValueOnce(fakeStream("free"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0][0].model).toBe(
-      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    );
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m2.7:free");
-    expect(isOpenRouterCreditFallback()).toBe(true);
-  });
-
-  it("does not persist free routing when Venice has a transient HTTP 429", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("Rate limit reached"), { status: 429 }))
-      .mockResolvedValueOnce(fakeStream("free"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
-    expect(isOpenRouterCreditFallback()).toBe(false);
-    expect(resolveOpenRouterModel("standard").model).toBe(
-      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
-    );
-  });
-
-  it("does not retry the free model when Venice already hit free-models-per-day", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    createMock.mockRejectedValue(
-      Object.assign(
-        new Error(
-          "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
-        ),
-        { status: 429 },
-      ),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected OpenRouter daily limit to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
-      expect(message).toMatch(/openrouter\.ai\/settings\/credits/);
-      expect(message).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
-      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE/);
-    }
-    expect(createMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not describe a per-minute free limit as today's daily cap", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    delete process.env.ANIMA_OPENROUTER_MODEL_STANDARD;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    createMock.mockRejectedValue(
-      Object.assign(new Error("Rate limit exceeded: free-models-per-min."), {
-        status: 429,
-      }),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected OpenRouter minute limit to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/per-minute limit/i);
-      expect(message).toMatch(/Wait a minute and retry/i);
-      expect(message).not.toMatch(/Today's free OpenRouter messages are used up/i);
-      expect(message).not.toMatch(/midnight UTC/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("mentions the Fly host when local is down and OpenRouter hits the daily free cap", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    delete process.env.ANIMA_LLM_PROVIDER;
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
-      )
-      .mockRejectedValueOnce(
-        Object.assign(
-          new Error("Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day."),
-          { status: 429 },
-        ),
-      );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected both providers to fail");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
-      expect(message).toMatch(/anima-chat-llm\.fly\.dev/);
-      expect(message).toMatch(/fly apps restart anima-chat-llm/);
-      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE/);
-    }
   });
 
   it("does not skip the custom LLM after a local auth failure", async () => {
@@ -1280,16 +1081,9 @@ describe("createChatStreamWithFailover", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     delete process.env.ANIMA_LLM_PROVIDER;
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
-      )
-      .mockRejectedValueOnce(
-        Object.assign(
-          new Error("Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day."),
-          { status: 429 },
-        ),
-      );
+    createMock.mockRejectedValueOnce(
+      Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
+    );
 
     try {
       await createChatStreamWithFailover({
@@ -1298,466 +1092,18 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 8192,
         messages: [{ role: "user", content: "hello" }],
       });
-      throw new Error("expected both providers to fail");
+      throw new Error("expected local connection to reject without OpenRouter");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       expect(message).toMatch(/custom-llm\.example\.com/);
-      expect(message).toMatch(/check that the host is running/i);
+      expect(message).toMatch(/Anima LLM connection failed/i);
+      expect(message).not.toMatch(/openrouter\.ai\/settings\/credits/i);
       expect(message).not.toMatch(/fly apps restart anima-chat-llm/);
     }
-  });
-
-  it("does not blame Venice credits when a 402 happens on the free model", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(
-        new Error("402 Insufficient credits. This account never purchased credits."),
-        { status: 402 },
-      ),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected OpenRouter 402 to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/OpenRouter free-tier provider error/i);
-      expect(message).toMatch(/free-tier model is temporarily unavailable/i);
-      expect(message).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
-      expect(message).not.toMatch(/Set OPENROUTER_API_KEY/);
-      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE=true/);
-      expect(message).not.toMatch(/Venice Uncensored/);
-      expect(message).not.toMatch(/no credits for Venice/i);
-    }
-  });
-
-  it("does not mention Venice credits when free-tier chat gets a provider 429", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(new Error("HTTP 429 - 429 Provider returned error"), { status: 429 }),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected OpenRouter free-tier 429 to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/OpenRouter free-tier provider error/i);
-      expect(message).toContain(OPENROUTER_FREE_PROVIDER_HINT);
-      expect(message).not.toMatch(/Provider returned error/i);
-      expect(message).not.toMatch(/Venice Uncensored/);
-      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE=true/);
-      expect(message).not.toMatch(/no credits for Venice/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(4);
-    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "minimax/minimax-m2.7:free",
-      "minimax/minimax-m3:free",
-      "google/gemma-4-26b-a4b-it:free",
-      "google/gemma-4-31b-it:free",
-    ]);
-  });
-
-  it("failovers from m2.7:free to m3:free on a provider 429 that is not the daily cap", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(new Error("429 Provider returned error"), { status: 429 }),
-      )
-      .mockResolvedValueOnce(fakeStream("m3"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m3:free");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
-  });
-
-  it("failovers from m2.7:free to m3:free after a provider 502", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }))
-      .mockResolvedValueOnce(fakeStream("m3"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.model).toBe("minimax/minimax-m3:free");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
-  });
-
-  it("failovers from m3:free HTTP 400 to the next live :free slug", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(new Error("400 Provider returned error"), { status: 400 }),
-      )
-      .mockResolvedValueOnce(fakeStream("m3"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m3:free");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
-  });
-
-  it("skips SDK retries on intermediate :free hops so a cascade can finish under the open budget", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }))
-      .mockRejectedValueOnce(
-        Object.assign(new Error("400 Provider returned error"), { status: 400 }),
-      )
-      .mockRejectedValueOnce(
-        Object.assign(new Error("400 Provider returned error"), { status: 400 }),
-      )
-      .mockResolvedValueOnce(fakeStream("gemma31"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.model).toBe("google/gemma-4-31b-it:free");
-    expect(createMock).toHaveBeenCalledTimes(4);
-    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "minimax/minimax-m2.7:free",
-      "minimax/minimax-m3:free",
-      "google/gemma-4-26b-a4b-it:free",
-      "google/gemma-4-31b-it:free",
-    ]);
-    expect(createMock.mock.calls[0][1]).toMatchObject({ maxRetries: 0 });
-    expect(createMock.mock.calls[1][1]).toMatchObject({ maxRetries: 0 });
-    expect(createMock.mock.calls[2][1]).toMatchObject({ maxRetries: 0 });
-    expect(createMock.mock.calls[3][1]).toMatchObject({ maxRetries: 2 });
-  });
-
-  it("remaps exhausted provider-400 hops so the client never sees Provider returned error", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(new Error("400 Provider returned error"), { status: 400 }),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected exhausted OpenRouter 400 hops to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/OpenRouter free-tier provider error/i);
-      expect(message).toContain(OPENROUTER_FREE_PROVIDER_HINT);
-      expect(message).not.toMatch(/Provider returned error/i);
-      expect(message).not.toMatch(/400 provider returned error/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(4);
-    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "minimax/minimax-m2.7:free",
-      "minimax/minimax-m3:free",
-      "google/gemma-4-26b-a4b-it:free",
-      "google/gemma-4-31b-it:free",
-    ]);
-  });
-
-  it("falls through to OpenRouter when MiniMax fails on provider 400", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("400 MiniMax error"), { status: 400 }))
-      .mockResolvedValueOnce(fakeStream("openrouter-free"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.brand).toBe("openrouter");
-    expect(result.failedOver).toBe(false);
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "MiniMax-M2.7",
-      "minimax/minimax-m2.7:free",
-    ]);
-  });
-
-  it("surfaces an error hint when MiniMax and OpenRouter both fail", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    createMock.mockRejectedValue(
-      Object.assign(new Error("400 Provider returned error"), { status: 400 }),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected both providers to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toContain(OPENROUTER_FREE_PROVIDER_HINT);
-      expect(message).not.toMatch(/Provider returned error/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(5);
-  });
-
-  it("falls through to OpenRouter when MiniMax fails on HTTP 402", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("402 Payment required"), { status: 402 }))
-      .mockResolvedValueOnce(fakeStream("openrouter-free"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.brand).toBe("openrouter");
-    expect(result.failedOver).toBe(false);
-    expect(result.model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "MiniMax-M2.7",
-      "minimax/minimax-m2.7:free",
-    ]);
-  });
-
-  it("remaps OpenRouter ZDR to the privacy hint when MiniMax is not configured", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.MINIMAX_API_KEY;
-    delete process.env.ANIMA_MINIMAX_API_KEY;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected OpenRouter ZDR to reject without MiniMax");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toContain(OPENROUTER_ZDR_PRIVACY_HINT);
-      expect(message).toMatch(/Zero Data Retention/i);
-      expect(message).toContain("https://openrouter.ai/settings/privacy");
-      expect(message).not.toMatch(/0 endpoints out of/i);
-      expect(message).not.toMatch(/ZDR violation/i);
-      expect(message).not.toMatch(/guardrail restrictions/i);
-    }
     expect(createMock).toHaveBeenCalledTimes(1);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
   });
 
-  it("does not hop free models on a data-policy HTTP 400", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    delete process.env.MINIMAX_API_KEY;
-    delete process.env.ANIMA_MINIMAX_API_KEY;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(
-        new Error("No endpoints found matching your data policy (Free model publication)"),
-        { status: 400 },
-      ),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected data-policy 400 to reject without hopping");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toContain(OPENROUTER_ZDR_PRIVACY_HINT);
-      expect(message).not.toMatch(/0 endpoints out of/i);
-      expect(message).not.toMatch(/Free model publication/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-  });
-
-  it("remaps to the ZDR privacy hint when OpenRouter ZDR fails", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("MiniMax unavailable"), { status: 503 }))
-      .mockRejectedValueOnce(
-        Object.assign(new Error(OPENROUTER_ZDR_PRODUCTION_TOAST), { status: 404 }),
-      );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected MiniMax then ZDR failure to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toContain(OPENROUTER_ZDR_PRIVACY_HINT);
-      expect(message).not.toMatch(/0 endpoints out of/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "MiniMax-M2.7",
-      "minimax/minimax-m2.7:free",
-    ]);
-  });
-
-  it("does not hop free models when the account-wide daily cap is already hit", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(
-        new Error(
-          "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day.",
-        ),
-        { status: 429 },
-      ),
-    );
-
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected OpenRouter daily limit to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
-      expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE=true/);
-      expect(message).not.toMatch(/Venice Uncensored/);
-    }
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-  });
-
-  it("fails over to OpenRouter when local is unreachable and fallback is enabled", async () => {
+  it("does not fail over to OpenRouter when local is unreachable", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
@@ -1765,27 +1111,6 @@ describe("createChatStreamWithFailover", () => {
     createMock
       .mockRejectedValueOnce(Object.assign(new Error("Connection error."), { name: "APIConnectionError" }))
       .mockResolvedValueOnce(fakeStream("venice"));
-
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 8192,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.failedOver).toBe(true);
-    expect(createMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not skip the custom LLM for OpenRouter when fallback is off", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    delete process.env.ANIMA_OPENROUTER_FALLBACK;
-    delete process.env.ANIMA_LLM_PROVIDER;
-    createMock.mockRejectedValueOnce(
-      Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
-    );
 
     await expect(
       createChatStreamWithFailover({
@@ -1799,13 +1124,13 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses OpenRouter in custom mode even when the local URL is missing", async () => {
+  it("refuses OpenRouter even when the local URL is missing", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_LLM_PROVIDER = "custom";
+    delete process.env.ANIMA_LLM_PROVIDER;
 
     await expect(
       createChatStreamWithFailover({
@@ -1996,7 +1321,7 @@ describe("createChatStreamWithFailover", () => {
     );
     expect(message).toMatch(/Connection error/i);
     expect(message).toMatch(/SSL_ERROR_SYSCALL|ECONNRESET/i);
-    expect(message).toMatch(/fly status -a anima-chat-llm/i);
+    expect(message).toMatch(/does not fall through to OpenRouter/i);
   });
 });
 
@@ -2030,86 +1355,24 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.brand).toBe("anima");
   });
 
-  it("hops OpenRouter free models on HTTP 400 for non-streaming completions", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(new Error("400 Provider returned error"), { status: 400 }),
-      )
-      .mockResolvedValueOnce(fakeCompletion("m3 reply"));
-
-    const result = await createChatCompletionWithFailover({
-      tier: "standard",
-      maxTokens: 1024,
-      messages: [{ role: "user", content: "hello" }],
-    });
-
-    expect(result.provider).toBe("openrouter");
-    expect(result.model).toBe("minimax/minimax-m3:free");
-    expect(result.content).toBe("m3 reply");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0][0].model).toBe("minimax/minimax-m2.7:free");
-    expect(createMock.mock.calls[1][0].model).toBe("minimax/minimax-m3:free");
-  });
-
-  it("remaps exhausted completion hops and never returns Provider returned error", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    createMock.mockRejectedValue(
-      Object.assign(new Error("400 Provider returned error"), { status: 400 }),
-    );
-
-    try {
-      await createChatCompletionWithFailover({
-        tier: "standard",
-        maxTokens: 1024,
-        messages: [{ role: "user", content: "hello" }],
-      });
-      throw new Error("expected exhausted completion hops to reject");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toContain(OPENROUTER_FREE_PROVIDER_HINT);
-      expect(message).not.toMatch(/Provider returned error/i);
-    }
-    expect(createMock).toHaveBeenCalledTimes(4);
-  });
-
-  it("falls through to OpenRouter on completion when MiniMax fails", async () => {
+  it("refuses OpenRouter and MiniMax for non-streaming completions when local is unset", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.MINIMAX_API_KEY = "minimax-test";
-    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
-    delete process.env.ANIMA_OPENROUTER_FREE;
-    createMock
-      .mockRejectedValueOnce(Object.assign(new Error("400 MiniMax error"), { status: 400 }))
-      .mockResolvedValueOnce(fakeCompletion("openrouter reply"));
+    process.env.ANIMA_OPENROUTER_FREE = "true";
 
-    const result = await createChatCompletionWithFailover({
-      tier: "standard",
-      maxTokens: 1024,
-      messages: [{ role: "user", content: "hello" }],
-    });
+    await expect(
+      createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: 1024,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM/i);
 
-    expect(result.provider).toBe("openrouter");
-    expect(result.content).toBe("openrouter reply");
-    expect(result.failedOver).toBe(false);
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls.map((call) => call[0].model)).toEqual([
-      "MiniMax-M2.7",
-      "minimax/minimax-m2.7:free",
-    ]);
+    expect(createMock).not.toHaveBeenCalled();
   });
 });
 
@@ -2139,11 +1402,10 @@ describe("probeLlmProviders", () => {
     delete process.env.OPEN_ROUTER_API_KEY;
     process.env.VERCEL = "1";
     const probes = await probeLlmProviders();
-    expect(probes).toHaveLength(3);
+    expect(probes).toHaveLength(1);
     expect(probes[0]).toMatchObject({ provider: "local", configured: false, ok: false });
-    expect(probes[1]).toMatchObject({ provider: "minimax", configured: false, ok: false });
-    expect(probes[2]).toMatchObject({ provider: "openrouter", configured: false, ok: false });
-    expect(probes[2].message).toMatch(/OPENROUTER_API_KEY/i);
+    expect(probes[0].message).toMatch(/ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM/i);
+    expect(probes[0].message).not.toMatch(/Set OPENROUTER_API_KEY|MINIMAX_API_KEY/i);
   });
 
   it("probes the local endpoint with a tiny completion", async () => {
@@ -2173,29 +1435,20 @@ describe("probeLlmProviders", () => {
     expect(probes[0]?.message).toMatch(/model=anima-chat/i);
   });
 
-  it("probes OpenRouter via the free model when Venice returns HTTP 402", async () => {
+  it("does not probe OpenRouter when local is unset even if a key is present", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.VLLM_BASE_URL;
-    delete process.env.ANIMA_OPENROUTER_FREE;
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
-    createMock
-      .mockRejectedValueOnce(
-        Object.assign(
-          new Error("402 Insufficient credits. This account never purchased credits."),
-          { status: 402 },
-        ),
-      )
-      .mockResolvedValueOnce(fakeCompletion("ok"));
 
     const probes = await probeLlmProviders();
     expect(probes).toHaveLength(1);
     expect(probes[0]).toMatchObject({
-      provider: "openrouter",
-      configured: true,
-      ok: true,
-      model: "minimax/minimax-m2.7:free",
+      provider: "local",
+      configured: false,
+      ok: false,
     });
+    expect(createMock).not.toHaveBeenCalled();
   });
 });

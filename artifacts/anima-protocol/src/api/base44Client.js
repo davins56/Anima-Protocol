@@ -1602,7 +1602,7 @@ export const base44 = {
               const err = await res
                 .json()
                 .catch(() => ({ error: res.statusText }));
-              throw new Error(err.error || res.statusText);
+              throw new Error(err.error || err.message || res.statusText || `Request failed with status ${res.status}`);
             }
             const json = await res.json();
             return json.result;

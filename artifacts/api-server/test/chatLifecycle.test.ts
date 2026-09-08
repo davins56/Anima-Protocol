@@ -24,6 +24,7 @@ vi.mock("../src/lib/llmFailover", () => ({
     brand: "anima",
     failedOver: false,
   })),
+  usesFreeTierOpenBudget: () => false,
   isOpenRouterAlreadyFreeTier: () => false,
   isOpenRouterGenericProviderError: () => false,
   isOpenRouterZdrOrDataPolicyError: () => false,
@@ -169,6 +170,14 @@ describe("chat lifecycle", () => {
       turn_id: turnId,
       persistence_status: "generated",
     });
+    const sent = llmMocks.createChatStreamWithFailover.mock.calls[0]?.[0] as {
+      messages?: Array<{ role: string; content: string }>;
+      temperature?: number;
+    };
+    expect(sent.messages?.some((message) => message.role === "user" && message.content === "Hello")).toBe(
+      true,
+    );
+    expect(sent.temperature).toBe(0.85);
 
     const retry = await request(`/chat/turns/${turnId}/retry`, {
       method: "POST",

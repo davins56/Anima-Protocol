@@ -1,7 +1,11 @@
 /**
  * Chat LLM open / stream / client abort budgets.
  *
- * Production free-tier OpenRouter chat (`ANIMA_OPENROUTER_FREE=true`) hops
+ * Production chat is local-only (`chain: ["local"]`). Use the 35s
+ * single-model open budget there. The unused OpenRouter :free key must
+ * not stretch that wait to 80s (`usesFreeTierOpenBudget()`).
+ *
+ * Historical free-tier OpenRouter chat (`ANIMA_OPENROUTER_FREE=true`) hops
  * m2.7:free → m3:free → Gemma 4 on 400/429/5xx. Those hops plus the last
  * candidate's SDK retries share one AbortSignal from `openStreamAbort()`.
  * A 35s cap aborts mid-cascade and surfaces as

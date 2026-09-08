@@ -9,12 +9,14 @@ import AnimaSoulprintPanel from "@/components/anima/AnimaSoulprintPanel";
 import AnimaVoicePanel from "@/components/anima/AnimaVoicePanel";
 import AnimaExpressionPanel from "@/components/anima/AnimaExpressionPanel";
 import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
+import IntimacyEditor from "@/components/intimacy/IntimacyEditor";
 import {
   AlertTriangle,
   ChevronLeft,
   Clock,
   Database,
   Fingerprint,
+  Heart,
   Loader,
   LogIn,
   Mic,
@@ -38,6 +40,7 @@ const TABS = [
   { id: "soulprint", label: "Soulprint", icon: Fingerprint, blurb: "Born identity & bond" },
   { id: "expression", label: "Expression", icon: Swords, blurb: "Angelic to Demonic spectrum" },
   { id: "voice", label: "Voice", icon: Mic, blurb: "Spoken presence" },
+  { id: "intimacy", label: "Intimacy", icon: Heart, blurb: "Pulse, safeword & intimacy" },
   { id: "permissions", label: "Permissions", icon: ScanSearch, blurb: "Device scan & data access" },
 ];
 
@@ -298,6 +301,13 @@ export default function CustomiseAnima() {
                 key={`${anima.id}-voice`}
                 anima={anima}
                 onSave={mergeAnima}
+              />
+            )}
+            {activeTab === "intimacy" && (
+              <IntimacyEditor
+                key={`${anima.id}-intimacy`}
+                characterId={anima.id}
+                characterName={anima.name}
               />
             )}
             {activeTab === "permissions" && (

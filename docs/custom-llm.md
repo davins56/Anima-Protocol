@@ -143,13 +143,13 @@ Exact `ANIMA_OPENROUTER_MODEL_STANDARD` / tier overrides still take precedence.
 
 ---
 
-## There is only one backend
+## Pin chat to the custom backend
 
-Chat has a single backend: the self-hosted Anima LLM, reached through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). There is no `ANIMA_LLM_PROVIDER` mode switch and no cloud BYOK chain — Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat, regardless of which API keys happen to be set in the environment.
+Chat supports the self-hosted Anima LLM through `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible — vLLM, Ollama, or llama.cpp). Set `ANIMA_LLM_PROVIDER=custom` (aliases `local`, `anima`, and `local-only` are also accepted) to pin every chat turn to that endpoint and prevent OpenRouter fallback. Gemini, Groq, Kimi, Grok, ChatGPT, and Vercel AI Gateway are never called for chat.
 
 `OPENAI_API_KEY` still exists as an env var, but only for image generation/edit (`/api/openai/functions` image routes) — it is never read for chat.
 
-If the local endpoint is unavailable, the turn fails with a clear setup error instead of silently switching to a different model — see the diagnostic checklist below.
+If the local endpoint is unavailable, the turn fails with a clear setup error instead of silently switching to a different model. OpenRouter can be enabled as an explicit connection-error fallback by setting `ANIMA_OPENROUTER_FALLBACK=true` and providing an OpenRouter key; leave it `false` for custom-only operation.
 
 More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
 
@@ -287,6 +287,7 @@ curl -s https://www.anima-protocol.com/api/healthz/llm | jq '.openrouter'
 
 1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
    - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
+   - **Named Cloudflare Tunnel (CPU Ollama, not vLLM):** [`scripts/llm/public-v1/`](../scripts/llm/public-v1/README.md) — bearer proxy + `cloudflared` so a box already running `anima-chat` is reachable as `https://llm.anima-protocol.com/v1`. Worker secrets: `ANIMA_LOCAL_LLM_BASE_URL` + `ANIMA_LOCAL_LLM_API_KEY`. Do not commit token files. A catch-all Worker route `*.anima-protocol.com/*` will swallow this hostname — narrow it (e.g. `www.anima-protocol.com/*`).
    - **One-paste VPS:** [`scripts/llm/cloud-init-vps.sh`](../scripts/llm/cloud-init-vps.sh) (`pnpm llm:vps-init`) — installs Ollama + `anima-chat` + a Cloudflare quick tunnel as systemd services on any fresh Debian/Ubuntu box. See [`docs/llm-deploy.md`](./llm-deploy.md).
    - **Local uncensored:** `ollama pull dolphin-mistral && ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored` then set `ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored`.
    - Or run Ollama/vLLM anywhere else with a public HTTPS URL (a reverse proxy, Cloudflare Tunnel, ngrok, another cloud VM, …) — just make sure it's actually authenticated; Ollama has none built in.
