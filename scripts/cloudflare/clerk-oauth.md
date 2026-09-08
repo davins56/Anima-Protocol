@@ -130,7 +130,10 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
 - `__client` must be `Domain=anima-protocol.com` so GitHub's document
   callback on `clerk.anima-protocol.com/v1/oauth_callback` receives it.
   Host-only `__client` is the clean-attempt `authorization_invalid` (301
-  `err_code` → 403 JSON). `__session` / `__refresh` / `__client_uat*` stay
+  `err_code` → 403 JSON). That Set-Cookie is still **first-party**: the
+  Worker writes it on `anima-protocol.com/api/__clerk` (Safari ITP). Do
+  not mint `__client` from the CNAME (ITP treats CNAME-cloaked cookies as
+  third-party). `__session` / `__refresh` / `__client_uat*` stay
   **host-only**. The Worker never sees the CNAME document request, so
   handshake cookie strip (#405) cannot mint `__client` for that hop.
 - **Do not Domain=apex-expire `__client` / `__session` / `__refresh`.** On
@@ -158,3 +161,24 @@ curl -s -H "Origin: https://anima-protocol.com" \
   "https://anima-protocol.com/api/__clerk/v1/client?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0"
 # expect HTTP 200 client JSON — not authorization_invalid / host_invalid
 ```
+
+## iPad Safari retest (after this Worker deploy)
+
+Safari on iPad has no Chrome DevTools. ITP will drop CNAME-cloaked
+`__client` if clerk-js talks to `clerk.anima-protocol.com` directly —
+keep `proxyUrl=/api/__clerk/`.
+
+1. Settings → Safari → Advanced → Website Data → remove
+   `anima-protocol.com` **and** `clerk.anima-protocol.com` (leftover
+   Domain=apex `__client_uat` from a failed hop will 301
+   `authorization_invalid` even with a valid `__client`).
+2. Open https://anima-protocol.com/sign-in (not www).
+3. Continue with GitHub (clean first attempt). Expect GitHub → CNAME
+   callback → `/sign-in/sso-callback` → Home. A JSON page with
+   `authorization_invalid` / `clerk_trace_id` is still the CNAME
+   callback failing.
+4. Sign out, open `/sign-in` again, Continue with GitHub (retry).
+5. Hard-refresh Home and Settings — identity stays.
+
+Do **not** change the GitHub OAuth App callback. It must stay
+`https://clerk.anima-protocol.com/v1/oauth_callback`.
