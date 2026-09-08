@@ -292,6 +292,19 @@ describe("Cloudflare wrangler config", () => {
     expect(notes).not.toMatch(/postgres(?:ql)?:\/\//i);
   });
 
+  it("binds Workers AI through AI Gateway deepseek-gateway", () => {
+    expect(config.ai).toEqual({
+      binding: "AI",
+      gateway: { id: "deepseek-gateway" },
+    });
+    expect(workerSource).toContain("setAiBinding(env.AI)");
+    expect(workerSource).not.toMatch(/console\.log\(["']AI BINDING/);
+    const source = readFileSync(path.join(repoRoot, "wrangler.jsonc"), "utf8");
+    expect(source).toMatch(/Do not set up/);
+    expect(source).toMatch(/Fly\.io Ollama/);
+    expect(source).toMatch(/deepseek-gateway/);
+  });
+
   it("binds Hyperdrive anima-postgres as HYPERDRIVE", () => {
     expect(config.hyperdrive).toEqual([
       {

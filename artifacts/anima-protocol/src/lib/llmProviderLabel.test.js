@@ -16,6 +16,7 @@ describe("llmProviderLabel", () => {
     expect(llmProviderShortLabel("minimax")).toBe("MiniMax");
     expect(llmProviderShortLabel("deepshi")).toBe("Deepshi");
     expect(llmProviderShortLabel("openrouter")).toBe("Venice");
+    expect(llmProviderShortLabel("workersai")).toBe("DeepSeek");
     expect(llmProviderShortLabel("kimi")).toBeNull();
     expect(llmProviderShortLabel(null)).toBeNull();
   });
@@ -24,14 +25,18 @@ describe("llmProviderLabel", () => {
     expect(llmDisplayLabel("local", "anima")).toBe("Anima");
     expect(llmDisplayLabel("local", null)).toBe("Anima");
     expect(llmDisplayLabel("openrouter", "openrouter")).toBe("Venice");
+    expect(llmDisplayLabel("workersai", "workersai")).toBe("DeepSeek");
     expect(llmDisplayTitle("local", "anima")).toMatch(/Anima LLM/);
     expect(llmDisplayTitle("openrouter", "openrouter")).toMatch(/Venice Uncensored/);
+    expect(llmDisplayTitle("workersai", "workersai")).toMatch(/Workers AI/);
     expect(llmDisplayBadgeClass("local", "anima")).toMatch(/rose/);
     expect(llmDisplayBadgeClass("openrouter", "openrouter")).toMatch(/amber/);
+    expect(llmDisplayBadgeClass("workersai", "workersai")).toMatch(/emerald/);
   });
 
   it("lists self-hosted Anima, MiniMax, and OpenRouter Venice backends", () => {
     expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
+      "workersai",
       "minimax",
       "deepshi",
       "local",

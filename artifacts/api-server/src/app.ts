@@ -14,6 +14,7 @@ const runWithDbRequestScope = (next: NextFunction): void => {
   next();
 };
 import { aiBinding } from "./lib/aiBinding";
+import { WORKERS_AI_CHAT_MODEL } from "./lib/workersAi";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -119,10 +120,9 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     [{ role: "system", content: "You are a helpful assistant." },
      { role: "user", content: prompt ?? "Hello!" }];
   try {
-    const response = await (aiBinding as { run: (model: string, options: Record<string, unknown>) => Promise<unknown> }).run(
-      "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-      { messages: chatMessages }
-    );
+    const response = await aiBinding.run(WORKERS_AI_CHAT_MODEL, {
+      messages: chatMessages,
+    });
     res.json(response);
   } catch (err) {
     logger.error({ err }, "DeepSeek AI request failed");
