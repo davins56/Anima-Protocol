@@ -276,15 +276,21 @@ export function isBrowserClerkAuthCookieName(name) {
   );
 }
 
+/** Non-HttpOnly GitHub leftover. Never `__client` / `__session` / `__refresh`. */
+export function isBrowserClerkClientUatCookieName(name) {
+  const n = String(name || '').trim().toLowerCase();
+  return n === '__client_uat' || n.startsWith('__client_uat_');
+}
+
 /**
- * Expire Domain=apex Clerk auth cookies (`__client*`, `__session*`, `__refresh*`).
+ * Expire Domain=apex `__client_uat*` leftovers only.
  *
  * `__client_uat*` is not HttpOnly, so GitHub's hop to
  * clerk.anima-protocol.com/v1/oauth_callback sends Domain=apex copies and
- * Clerk returns authorization_invalid. Host-only copies (no Domain) stay on
- * the app origin. HttpOnly leftovers are expired by the Worker on the next
- * `/api/__clerk` response — JS cannot delete those. clerk.anima-protocol.com
- * host-only cookies are not visible from this origin.
+ * Clerk returns authorization_invalid. Host-only `__client` / `__session`
+ * must survive refresh. On anima-protocol.com, `Domain=apex; Max-Age=0`
+ * also deletes the host-only cookie of the same name (Chrome/Safari).
+ * Call this only on SSO callback — not on every page load.
  */
 export function expireBrowserApexClerkClientUatCookies({
   cookie = typeof document !== 'undefined' ? document.cookie : '',
@@ -295,7 +301,7 @@ export function expireBrowserApexClerkClientUatCookies({
   const names = new Set(['__client_uat']);
   for (const part of String(cookie || '').split(';')) {
     const name = part.trim().split('=')[0] || '';
-    if (isBrowserClerkAuthCookieName(name)) names.add(name);
+    if (isBrowserClerkClientUatCookieName(name)) names.add(name);
   }
   const writer =
     writeCookie ||

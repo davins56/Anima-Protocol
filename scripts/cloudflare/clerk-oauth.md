@@ -12,7 +12,8 @@ bypasses Worker cookie handling and is the post-GitHub
 mode on production — if `/api/__clerk` is unhealthy, keep `proxyUrl` and
 show an error. Safari ITP would otherwise drop CNAME-cloaked
 `__client` cookies. The SPA expires leftover Domain=apex / Domain=.apex
-`__client_uat*` (and any other visible Clerk auth cookies) before handshake.
+`__client_uat*` on the SSO callback page only — never `__session` /
+`__client` on every refresh.
 
 GitHub (and Google) do **not** callback to the SPA. They callback to Clerk.
 
@@ -106,8 +107,15 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   (`/v1/oauth_callback`) then returns `authorization_invalid` (301
   `err_code=authorization_invalid` → 403 JSON). The Worker never sees that
   request, so stripping outbound `/api/__clerk` cookies on handshake (#405)
-  cannot fix it. The proxy also expires leftover Domain=apex copies and
-  omits `Clerk-Secret-Key` on `/v1/oauth_callback`.
+  cannot fix it.
+- **Do not Domain=apex-expire `__client` / `__session` / `__refresh`.** On
+  the apex host, `Set-Cookie: name=; Domain=anima-protocol.com; Max-Age=0`
+  also deletes the host-only cookie of the same name (Chrome/Safari). That
+  is the "signed in until refresh" failure. Expire only `__client_uat*`
+  leftovers, and only on handshake / SSO / oauth_callback — never on
+  ordinary `/v1/client` after reload. The SPA expires visible `__client_uat*`
+  on the SSO callback page only. Omit `Clerk-Secret-Key` on
+  `/v1/oauth_callback`.
 
 Live probes:
 
