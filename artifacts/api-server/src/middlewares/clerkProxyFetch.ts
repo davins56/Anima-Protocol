@@ -120,6 +120,17 @@ export function isClerkAuthCookieName(name: string): boolean {
 }
 
 /**
+ * Non-HttpOnly GitHub leftover. Safe to Domain=apex expire.
+ * Never treat `__client` / `__session` / `__refresh` as UAT leftovers —
+ * on anima-protocol.com, `Domain=apex; Max-Age=0` also deletes the
+ * host-only session cookie (Chrome/Safari collapse Domain=exact-host).
+ */
+export function isClerkClientUatCookieName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return n === "__client_uat" || n.startsWith("__client_uat_");
+}
+
+/**
  * Drop Domain= on Clerk FAPI cookies so the browser stores them host-only on
  * the app origin (same-origin /api/__clerk).
  *
@@ -282,7 +293,10 @@ export function apexClerkAuthCookieExpiries(
   const seen = new Set<string>();
   const out: string[] = [];
   for (const name of names) {
-    if (!isClerkAuthCookieName(name) || seen.has(name)) continue;
+    // Session cookies must stay host-only across refresh. Domain=apex
+    // Max-Age=0 for `__client` / `__session` on the apex host is what
+    // made login look signed-out after reload (#406 over-expire).
+    if (!isClerkClientUatCookieName(name) || seen.has(name)) continue;
     seen.add(name);
     out.push(expireApexClerkAuthCookie(name, appApex));
   }
@@ -553,6 +567,8 @@ export function forwardClerkProxyResponseHeaders(
     appOrigin: string;
     fapiHost: string;
     requestCookie?: string;
+    requestUrl?: string;
+    referer?: string;
   },
 ): void {
   upstream.headers.forEach((value, name) => {
@@ -572,25 +588,27 @@ export function forwardClerkProxyResponseHeaders(
     res.setHeader(name, value);
   });
 
-  const rewrittenNames: string[] = [];
   for (const cookie of collectSetCookies(upstream)) {
     const rewritten = rewriteClerkProxySetCookie(cookie, rewrite.appHost);
     if (rewritten) {
-      rewrittenNames.push(clerkCookieName(rewritten));
       appendSetCookie(res, rewritten);
     }
   }
 
-  const appApex = rewrite.appHost.toLowerCase().replace(/^\./, "").replace(/^www\./, "");
-  for (const expiry of apexClerkAuthCookieExpiries(
-    [
-      ...collectClerkAuthCookieNames(rewrite.requestCookie),
-      ...rewrittenNames,
-      "__client_uat",
-    ],
-    appApex,
-  )) {
-    appendSetCookie(res, expiry);
+  // Expire Domain=apex `__client_uat*` only on handshake / SSO / oauth_callback.
+  // Ordinary `/v1/client` after refresh must not send Domain=apex Max-Age=0
+  // for session cookies — that deletes the host-only copies on apex.
+  if (shouldStripClerkAuthCookies(rewrite.requestUrl, rewrite.referer)) {
+    const appApex = rewrite.appHost
+      .toLowerCase()
+      .replace(/^\./, "")
+      .replace(/^www\./, "");
+    for (const expiry of apexClerkAuthCookieExpiries(
+      [...collectClerkAuthCookieNames(rewrite.requestCookie), "__client_uat"],
+      appApex,
+    )) {
+      appendSetCookie(res, expiry);
+    }
   }
 }
 
@@ -685,11 +703,14 @@ export async function proxyClerkWithFetch(
 
   res.statusCode = upstream.status;
   const requestCookie = req.headers.cookie;
+  const refererHeader = req.headers.referer;
   forwardClerkProxyResponseHeaders(upstream, res, {
     appHost: host,
     appOrigin: origin,
     fapiHost,
     requestCookie: Array.isArray(requestCookie) ? requestCookie[0] : requestCookie,
+    requestUrl: upstreamPath,
+    referer: Array.isArray(refererHeader) ? refererHeader[0] : refererHeader,
   });
 
   const payload = Buffer.from(await upstream.arrayBuffer());
