@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { injectRequireIntoWranglerBin } from "../../../scripts/cloudflare/install-wrangler-deploy-guard.mjs";
+import { wranglerSucceededDespiteInformationalGet } from "../../../scripts/cloudflare/workers-builds-deploy.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -51,6 +52,33 @@ describe("wrangler GET /deployments guard", () => {
     ).toBe(false);
   });
 
+  it("identifies post-upload workers.dev subdomain GETs as informational", () => {
+    expect(
+      guard.isInformationalGet(
+        "GET",
+        "/accounts/abc/workers/subdomain",
+      ),
+    ).toBe(true);
+    expect(
+      guard.isInformationalGet(
+        "GET",
+        "/accounts/abc/workers/scripts/anima-protocol/subdomain",
+      ),
+    ).toBe(true);
+    expect(
+      guard.isInformationalGet(
+        "GET",
+        "/accounts/abc/workers/subdomain/edge-preview",
+      ),
+    ).toBe(false);
+    expect(
+      guard.isInformationalGet(
+        "POST",
+        "/accounts/abc/workers/subdomain",
+      ),
+    ).toBe(false);
+  });
+
   it("recovers valid JSON that jsonc-parser might still reject at wrap time", () => {
     const body = JSON.stringify({
       success: true,
@@ -69,6 +97,15 @@ describe("wrangler GET /deployments guard", () => {
     expect(recovered.result.deployments).toEqual([]);
   });
 
+  it("returns a dummy workers.dev subdomain when GET /subdomain is envoy 503 text", () => {
+    const recovered = guard.recoverInformationalGetJson(
+      "/accounts/abc/workers/subdomain",
+      "upstream connect error or disconnect/reset before headers. reset reason: connection termination",
+    );
+    expect(recovered.success).toBe(true);
+    expect(recovered.result.subdomain).toBe("anima-protocol");
+  });
+
   it("patches wrangler fetchInternalBase so GET /deployments cannot abort deploy", () => {
     const cli = `'use strict';
 async function fetchInternalBase(complianceConfig, resource, init4 = {}, userAgent, logger6, queryParams, abortSignal, credentials) {
@@ -80,9 +117,26 @@ ${guard.PARSE_TRY}
 }`;
     const patched = guard.patchWranglerCliSource(cli);
     expect(patched).toContain(guard.MARKER);
-    expect(patched).toContain("isAnimaDeploymentsListGet(method, resource)");
-    expect(patched).toContain("recoverAnimaDeploymentsListJson(jsonText)");
+    expect(patched).toContain("isAnimaInformationalGet(method, resource)");
+    expect(patched).toContain("recoverAnimaInformationalGetJson(resource, jsonText)");
     expect(guard.patchWranglerCliSource(patched)).toBe(patched);
+  });
+
+  it("treats wrangler exit 1 after Worker Version ID + subdomain 503 as success", () => {
+    const log = [
+      "Uploaded anima-protocol (4.27 sec)",
+      "Worker Version ID: 28346896-021c-4567-be4a-8e17d9684b40",
+      "Received a malformed response from the API",
+      "GET /accounts/347aa4800fdcf7570476a4c47f4bf9a5/workers/subdomain -> 503 Service Unavailable",
+      "upstream connect error or disconnect/reset before headers",
+    ].join("\n");
+    expect(wranglerSucceededDespiteInformationalGet(log, 1)).toBe(true);
+    expect(
+      wranglerSucceededDespiteInformationalGet(
+        "Received a malformed response from the API\nGET /accounts/x/workers/scripts/anima-protocol/deployments -> 200 OK",
+        1,
+      ),
+    ).toBe(false);
   });
 
   it("injects --require into wrangler/bin/wrangler.js spawn args", () => {

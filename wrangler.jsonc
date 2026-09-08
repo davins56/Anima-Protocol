@@ -2,10 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   // Production Worker "anima-protocol" (id b7f2ce9d029e46e8b75741ce999c121d)
   // is built from the repo root: `pnpm build` then `npx wrangler deploy`.
-  // Workers Builds on main uses `wrangler deploy` (GET /deployments first);
-  // PR previews use `wrangler versions upload`. See
+  // Workers Builds on main uses `wrangler deploy` (GET /deployments first;
+  // #401 d9d881b never uploaded; #402 bd3ea40 did — version 7a7d1ec0).
+  // PR previews use `wrangler versions upload` and can still die after
+  // upload on GET /workers/subdomain 503. See
   // scripts/cloudflare/workers-builds-deploy.md — do not drop the install
-  // guard that keeps a malformed 200 on that GET from aborting production.
+  // guard that keeps those informational GETs from aborting production.
   // Without this file Cloudflare deploys ./dist as static assets only, so
   // /api/healthz, /api/store, and /api/__clerk all 404.
   "name": "anima-protocol",

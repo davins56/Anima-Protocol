@@ -239,6 +239,9 @@ describe("Cloudflare wrangler config", () => {
     expect(pkg.scripts?.postinstall).toContain(
       "install-wrangler-deploy-guard.mjs",
     );
+    expect(pkg.scripts?.["deploy:cloudflare"]).toContain(
+      "workers-builds-deploy.mjs",
+    );
     const workspace = readFileSync(
       path.join(repoRoot, "pnpm-workspace.yaml"),
       "utf8",
@@ -257,6 +260,11 @@ describe("Cloudflare wrangler config", () => {
     );
     expect(notes).toContain("d2ee859e-8544-4d56-9598-f70cba9e7448");
     expect(notes).toContain("jsonc-parser");
+    expect(notes).toContain("Did main #401");
+    expect(notes).toContain("/workers/subdomain");
+    expect(notes).toContain("28346896-021c-4567-be4a-8e17d9684b40");
+    expect(notes).toContain("7a7d1ec0-95fe-42b5-8ad4-81f4beb5b4da");
+    expect(notes).toContain("83c54401-61b2-4070-ab5a-38982e3d6eb8");
     expect(notes).not.toMatch(/sk_live_|sk_test_/);
     const wrangler = readFileSync(
       path.join(repoRoot, "wrangler.jsonc"),
