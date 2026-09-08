@@ -28,6 +28,8 @@ export function isClerkCnameRequestHost(
 /**
  * Workers `fetch` init that keeps Host/SNI as clerk.{apex} while resolving
  * to Clerk's origin. Harmless in Node tests (mocked fetch ignores `cf`).
+ * Only apply when the URL host is the production CNAME — pk_test_ /
+ * accounts.dev / frontend-api.clerk.dev must use normal DNS.
  */
 type FetchInitWithCf = RequestInit & { cf?: Record<string, unknown> };
 
@@ -43,4 +45,21 @@ export function withClerkCnameResolveOverride(
       resolveOverride: CLERK_CNAME_RESOLVE_OVERRIDE,
     },
   };
+}
+
+export function clerkFrontendFetchInit(
+  upstream: URL | string,
+  init: FetchInitWithCf = {},
+): FetchInitWithCf {
+  const url =
+    typeof upstream === "string"
+      ? new URL(upstream, "https://anima-protocol.com")
+      : upstream;
+  if (!isClerkCnameRequestHost(url.hostname)) {
+    return {
+      ...init,
+      redirect: init.redirect ?? "manual",
+    };
+  }
+  return withClerkCnameResolveOverride(init);
 }

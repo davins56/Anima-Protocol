@@ -10,7 +10,7 @@ import {
   isClerkOwnedHostname,
   isLocalDevHost,
 } from "./clerkProxyHosts";
-import { withClerkCnameResolveOverride } from "../lib/clerkFrontendFetch";
+import { clerkFrontendFetchInit } from "../lib/clerkFrontendFetch";
 import {
   extractClientTokenFromCookieHeader,
   extractClientTokenFromSetCookies,
@@ -771,7 +771,7 @@ export async function proxyClerkWithFetch(
 
   let upstream = await fetchImpl(
     upstreamUrl,
-    withClerkCnameResolveOverride({
+    clerkFrontendFetchInit(upstreamUrl, {
       method,
       headers,
       body: payloadBody,
