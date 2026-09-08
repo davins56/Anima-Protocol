@@ -588,27 +588,37 @@ export function forwardClerkProxyResponseHeaders(
     res.setHeader(name, value);
   });
 
+  const rewritten: string[] = [];
+  const writtenUat = new Set<string>();
   for (const cookie of collectSetCookies(upstream)) {
-    const rewritten = rewriteClerkProxySetCookie(cookie, rewrite.appHost);
-    if (rewritten) {
-      appendSetCookie(res, rewritten);
+    const next = rewriteClerkProxySetCookie(cookie, rewrite.appHost);
+    if (!next) continue;
+    rewritten.push(next);
+    const name = clerkCookieName(next);
+    if (isClerkClientUatCookieName(name) && !/;\s*Max-Age=0(?:;|$)/i.test(next)) {
+      writtenUat.add(name.toLowerCase());
     }
   }
 
-  // Expire Domain=apex `__client_uat*` only on handshake / SSO / oauth_callback.
-  // Ordinary `/v1/client` after refresh must not send Domain=apex Max-Age=0
-  // for session cookies — that deletes the host-only copies on apex.
+  // Expire Domain=apex `__client_uat*` leftovers first, then write host-only
+  // replacements. On apex, Domain= Max-Age=0 after the new cookie deletes it
+  // (Chrome/Safari collapse Domain=exact-host with host-only). Skip expiry
+  // for names this response is minting.
   if (shouldStripClerkAuthCookies(rewrite.requestUrl, rewrite.referer)) {
     const appApex = rewrite.appHost
       .toLowerCase()
       .replace(/^\./, "")
       .replace(/^www\./, "");
-    for (const expiry of apexClerkAuthCookieExpiries(
-      [...collectClerkAuthCookieNames(rewrite.requestCookie), "__client_uat"],
-      appApex,
-    )) {
+    const leftover = [
+      ...collectClerkAuthCookieNames(rewrite.requestCookie),
+      "__client_uat",
+    ].filter((name) => !writtenUat.has(name.toLowerCase()));
+    for (const expiry of apexClerkAuthCookieExpiries(leftover, appApex)) {
       appendSetCookie(res, expiry);
     }
+  }
+  for (const cookie of rewritten) {
+    appendSetCookie(res, cookie);
   }
 }
 
