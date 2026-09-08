@@ -175,6 +175,36 @@ export function clerkProviderProxyPath() {
 }
 
 /**
+ * Production anima hosts + pk_live_ must keep Clerk FAPI on `/api/__clerk`.
+ *
+ * clerk-js buildUrl: if `proxyUrl` is set, XHR goes to
+ * `{origin}/api/__clerk/v1/…`. If `proxyUrl` is omitted, production uses
+ * `https://${frontendApi}` from the publishable key — for us that is
+ * `https://clerk.anima-protocol.com/v1/…` and #405's Worker cookie strip
+ * never runs. AGENTS.md used to describe that direct-CNAME path as the
+ * default for custom-domain keys; that contradicts Safari ITP first-party
+ * cookies and is the post-GitHub authorization_invalid path.
+ */
+export function mustUseSameOriginClerkProxy(
+  clerkPubKey,
+  hostname = typeof window !== 'undefined' ? window.location.hostname : '',
+) {
+  if (isClerkProxyExplicitlyDisabled()) return false;
+  if (typeof clerkPubKey !== 'string' || !clerkPubKey.startsWith('pk_live_')) {
+    return false;
+  }
+  return isAnimaProductionHost(hostname);
+}
+
+/** False on production custom-domain keys — never remount ClerkProvider without proxyUrl. */
+export function shouldAllowDirectClerkFallback(
+  clerkPubKey,
+  hostname = typeof window !== 'undefined' ? window.location.hostname : '',
+) {
+  return !mustUseSameOriginClerkProxy(clerkPubKey, hostname);
+}
+
+/**
  * Whether pk_live_ should route Clerk FAPI through the same-origin proxy.
  *
  * Custom-domain keys (clerk.anima-protocol.com) still use the proxy on
@@ -190,13 +220,8 @@ export function shouldUseClerkProxy(clerkPubKey) {
   if (typeof window === 'undefined') return false;
 
   const host = window.location.hostname;
+  if (mustUseSameOriginClerkProxy(clerkPubKey, host)) return true;
   if (import.meta.env.DEV && isLocalDevHostname(host)) return true;
-  if (
-    import.meta.env.PROD &&
-    isAnimaProductionHost(host)
-  ) {
-    return true;
-  }
   return false;
 }
 

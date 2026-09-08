@@ -126,5 +126,8 @@ describe('clerkOAuthPaths', () => {
     expect(app).toMatch(/allowedRedirectOrigins/);
     expect(app).toMatch(/path="\/sign-in\/sso-callback"/);
     expect(app).toMatch(/path="\/sign-up\/sso-callback"/);
+    expect(app).toMatch(/mustUseSameOriginClerkProxy/);
+    expect(app).toMatch(/shouldAllowDirectClerkFallback/);
+    expect(app).toMatch(/lockSameOriginClerkProxy/);
   });
 });
