@@ -790,6 +790,55 @@ describe("clerkProxyFetch", () => {
     ).toBe(false);
   });
 
+  it("does not Domain=apex-expire __client_uat after handshake mints a host-only copy", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const upstreamHeaders = new Headers();
+    upstreamHeaders.append(
+      "set-cookie",
+      "__client_uat=1710000000; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
+    );
+    const fetchImpl = vi.fn(async () => {
+      return new Response("{}", { status: 200, headers: upstreamHeaders });
+    });
+    const cookies: string[] = [];
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/client/handshake?__clerk_handshake=abc",
+        originalUrl: "/api/__clerk/v1/client/handshake?__clerk_handshake=abc",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          cookie: "__client_uat=0",
+          referer: "https://anima-protocol.com/sign-in/sso-callback",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    const uatSet = cookies.filter((c) => c.startsWith("__client_uat="));
+    expect(
+      uatSet.some((c) => c.includes("1710000000") && !/Domain=/i.test(c)),
+    ).toBe(true);
+    expect(
+      uatSet.some((c) => /Domain=anima-protocol\.com/i.test(c) && /Max-Age=0/i.test(c)),
+    ).toBe(false);
+  });
+
   it("does not follow OAuth Location off Clerk FAPI", async () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const github = "https://github.com/login/oauth/authorize?client_id=x";
