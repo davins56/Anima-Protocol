@@ -13,8 +13,10 @@ import {
   markClerkAuthReturn,
   readClerkAuthReturn,
   resolveAuthBoot,
+  resolveHomeGate,
   shouldAutoInvokeInstantGuest,
   shouldEnterGuestOnSignInFailure,
+  shouldSuppressGuestHome,
 } from "./authBootPolicy";
 
 const leftoverGuest = {
@@ -121,6 +123,51 @@ describe("resolveAuthBoot", () => {
     });
     expect(returnBoot.mode).toBe("signed-out");
     expect(returnBoot.isGuest).toBe(false);
+  });
+});
+
+describe("shouldSuppressGuestHome", () => {
+  it("suppresses leftover guest after Clerk return or GitHub/Clerk referrer", () => {
+    expect(shouldSuppressGuestHome({ clerkAuthReturn: true })).toBe(true);
+    expect(shouldSuppressGuestHome({ pendingClerkHandshake: true })).toBe(true);
+    expect(
+      shouldSuppressGuestHome({ referrer: "https://github.com/login/oauth/authorize" }),
+    ).toBe(true);
+    expect(
+      shouldSuppressGuestHome({ referrer: "https://clerk.anima-protocol.com/v1/oauth_callback" }),
+    ).toBe(true);
+    expect(shouldSuppressGuestHome({})).toBe(false);
+  });
+});
+
+describe("resolveHomeGate", () => {
+  it("keeps Clerk sessions on Home and blocks guest Home after OAuth", () => {
+    expect(resolveHomeGate({ isSignedInUser: true, isGuest: true })).toBe("home");
+    expect(
+      resolveHomeGate({
+        isSignedInUser: false,
+        isGuest: true,
+        suppressGuestHome: true,
+      }),
+    ).toBe("landing");
+    expect(
+      resolveHomeGate({
+        isSignedInUser: false,
+        isGuest: true,
+        suppressGuestHome: false,
+      }),
+    ).toBe("home");
+    expect(
+      resolveHomeGate({
+        isSignedInUser: false,
+        isGuest: false,
+        suppressGuestHome: true,
+        handshakeHold: true,
+        isLoadingAuth: true,
+        authStalled: false,
+      }),
+    ).toBe("loading");
+    expect(resolveHomeGate({})).toBe("landing");
   });
 });
 
@@ -257,6 +304,8 @@ describe("boot wiring", () => {
     expect(auth).toMatch(/isLoadingAuth = !isLoaded/);
     expect(auth).toMatch(/hasPendingClerkHandshake/);
     expect(auth).toMatch(/readClerkAuthReturn/);
+    expect(auth).toMatch(/shouldSuppressGuestHome/);
+    expect(auth).toMatch(/!isSignedIn && !isSignedInUser && !suppressGuestHome/);
   });
 
   it("only invokes handleInstantGuest from the Guest button, never boot or form value", () => {
@@ -282,9 +331,10 @@ describe("boot wiring", () => {
 
   it("HomeGate enters the app only for Clerk or explicit guest", () => {
     const app = readFileSync(join(srcRoot, "ProtocolApp.jsx"), "utf8");
-    expect(app).toMatch(/isSignedInUser \|\| isGuest \|\| isAuthenticated/);
-    expect(app).toMatch(/handshakeHold && isLoadingAuth && !authStalled && !isSignedInUser/);
+    expect(app).toMatch(/resolveHomeGate/);
+    expect(app).toMatch(/suppressGuestHome/);
     expect(app).toMatch(/markClerkAuthReturn/);
+    expect(app).not.toMatch(/if \(isSignedInUser \|\| isGuest \|\| isAuthenticated\)/);
     expect(app).not.toMatch(/if \(isAuthenticated \|\| localUser \|\| user\)/);
     expect(app).not.toMatch(/will load in guest mode/);
     expect(app).not.toMatch(/if \(isLoadingAuth\) \{\s*return <Landing/);

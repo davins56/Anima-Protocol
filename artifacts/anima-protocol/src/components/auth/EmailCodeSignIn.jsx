@@ -36,7 +36,7 @@ export default function EmailCodeSignIn() {
   const { isLoaded: userLoaded, isSignedIn } = useUser();
   const clerk = useClerk();
   const navigate = useNavigate();
-  const { loginAsLocalUser, isSignedInUser, isGuest } = useAuth();
+  const { loginAsLocalUser, isSignedInUser, isGuest, suppressGuestHome } = useAuth();
 
   const [step, setStep] = useState("identifier"); // 'identifier' | 'code'
   const [identifier, setIdentifier] = useState("");
@@ -64,10 +64,10 @@ export default function EmailCodeSignIn() {
         pathname: window.location.pathname,
         hash: window.location.hash,
       });
-    if (isGuest && !pendingAuth) {
+    if (isGuest && !pendingAuth && !suppressGuestHome) {
       navigate(basePath || "/", { replace: true });
     }
-  }, [userLoaded, isSignedIn, isSignedInUser, isGuest, navigate]);
+  }, [userLoaded, isSignedIn, isSignedInUser, isGuest, suppressGuestHome, navigate]);
 
   const resumeExistingSession = async (err) => {
     try {
@@ -343,7 +343,7 @@ export default function EmailCodeSignIn() {
   const secondaryBtnClass =
     "w-full rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors";
 
-  if ((userLoaded && isSignedIn) || isSignedInUser || isGuest) {
+  if ((userLoaded && isSignedIn) || isSignedInUser || (isGuest && !suppressGuestHome)) {
     return (
       <div className={cardClass}>
         {previewBanner}
