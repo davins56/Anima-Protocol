@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   asSearchText,
   clerkErrorMessage,
+  clerkOAuthProviderRedirectUrl,
   CLERK_GITHUB_OAUTH_CALLBACK_URL,
   GITHUB_OAUTH_NAVIGATION_GRACE_MS,
   GITHUB_OAUTH_SSO_TIMEOUT_MS,
   githubOAuthHangMessage,
+  githubOAuthNeedsIdentifierMessage,
   hasEmailCodeFactor,
   humanizeIdentifierError,
   interpretGitHubSsoResult,
@@ -315,13 +317,13 @@ describe("interpretGitHubSsoResult", () => {
     });
   });
 
-  it("surfaces incomplete needs_* statuses with the callback hint", () => {
+  it("surfaces incomplete needs_* statuses without blaming the GitHub App allowlist", () => {
     expect(isIncompleteOAuthSignInStatus("needs_second_factor")).toBe(true);
-    const result = interpretGitHubSsoResult({ status: "needs_first_factor" });
+    const result = interpretGitHubSsoResult({ status: "needs_identifier" });
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("oauth_incomplete");
-    expect(result.error?.message).toContain("needs_first_factor");
-    expect(result.error?.message).toContain(CLERK_GITHUB_OAUTH_CALLBACK_URL);
+    expect(result.error?.message).toBe(githubOAuthNeedsIdentifierMessage("needs_identifier"));
+    expect(result.error?.message).not.toContain(CLERK_GITHUB_OAUTH_CALLBACK_URL);
     expect(result.error?.message).toContain(PRODUCTION_SIGN_IN_URL);
   });
 
@@ -505,6 +507,71 @@ describe("startGitHubOAuthSignIn", () => {
       code: "oauth_incomplete",
       status: "needs_client_trust",
     });
+  });
+
+  it("assigns the GitHub authorize URL when sso returns needs_identifier without navigation", async () => {
+    const assignLocation = vi.fn();
+    const github =
+      "https://github.com/login/oauth/authorize?client_id=Ov23liAm73tVoGvOqrt2&redirect_uri=https%3A%2F%2Fclerk.anima-protocol.com%2Fv1%2Foauth_callback";
+    const result = await startGitHubOAuthSignIn(
+      {
+        sso: async () => ({ error: null }),
+        status: "needs_identifier",
+        firstFactorVerification: {
+          status: "unverified",
+          externalVerificationRedirectURL: github,
+        },
+      },
+      "",
+      null,
+      { didNavigate: () => false, assignLocation },
+    );
+    expect(assignLocation).toHaveBeenCalledWith(github);
+    expect(result.navigated).toBe(true);
+    expect(result.shouldFinalize).toBe(false);
+  });
+
+  it("creates a GitHub sign-in when sso skipped _create on an existing id", async () => {
+    const assignLocation = vi.fn();
+    const github =
+      "https://github.com/login/oauth/authorize?client_id=Ov23liAm73tVoGvOqrt2&state=abc";
+    const signIn = {
+      id: "sia_existing",
+      status: "needs_identifier",
+      sso: async () => ({ error: null }),
+      create: async function create() {
+        this.firstFactorVerification = {
+          status: "unverified",
+          external_verification_redirect_url: github,
+        };
+        return { error: null };
+      },
+    };
+    const result = await startGitHubOAuthSignIn(signIn, "", null, {
+      didNavigate: () => false,
+      assignLocation,
+      origin: "https://anima-protocol.com",
+    });
+    expect(assignLocation).toHaveBeenCalledWith(github);
+    expect(result.navigated).toBe(true);
+  });
+
+  it("rejects non-GitHub provider URLs", () => {
+    expect(
+      clerkOAuthProviderRedirectUrl({
+        firstFactorVerification: {
+          externalVerificationRedirectURL: "https://evil.example/oauth",
+        },
+      }),
+    ).toBeNull();
+    expect(
+      clerkOAuthProviderRedirectUrl({
+        first_factor_verification: {
+          external_verification_redirect_url:
+            "https://github.com/login/oauth/authorize?client_id=x",
+        },
+      }),
+    ).toBe("https://github.com/login/oauth/authorize?client_id=x");
   });
 
   it("does not treat a hang as an error if the page already started navigating", async () => {

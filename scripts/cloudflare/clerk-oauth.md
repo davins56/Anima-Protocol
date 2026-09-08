@@ -197,11 +197,15 @@ old host-only `__client` is invisible to the CNAME.
    `anima-protocol.com` **and** `clerk.anima-protocol.com`.
 2. Open https://anima-protocol.com/sign-in (not www). Wait for
    Continue with GitHub.
-3. Continue with GitHub. Expect GitHub →
-   `clerk.anima-protocol.com/v1/oauth_callback` →
-   `/sign-in/sso-callback` → **signed-in Home** (not `/sign-in`, not
-   JSON `authorization_invalid`). `/sign-in?clerk_error=` still means
-   the CNAME hop failed — wipe both hosts and retry.
+3. Continue with GitHub. The page must **leave for GitHub** (not stay
+   on `/sign-in` with `needs_identifier` / “did not redirect”). Then
+   GitHub → `clerk.anima-protocol.com/v1/oauth_callback` →
+   `/sign-in/sso-callback` → **signed-in Home**. A red
+   `needs_identifier` banner means clerk-js `sso()` did not navigate;
+   this app assigns the GitHub authorize URL itself. `/sign-in?clerk_error=`
+   still means the CNAME hop failed — wipe both hosts and retry.
+   Do **not** change the GitHub OAuth App callback — live FAPI still
+   issues `redirect_uri=https://clerk.anima-protocol.com/v1/oauth_callback`.
 4. Sign out, `/sign-in`, GitHub retry (no wipe required if step 3
    succeeded).
 5. Hard-refresh Home and Settings — identity stays.
