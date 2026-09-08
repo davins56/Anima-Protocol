@@ -44,6 +44,14 @@ export default {
     // CNAME to Clerk (Safari ITP cloaking). Terminate it here so we can
     // inject Domain=apex `__client` and never render 403 JSON.
     if (isClerkCnameRequestHost(url.hostname)) {
+      // Secrets Store bindings are needed for Clerk-Secret-Key on the
+      // rewritten frontend-api.clerk.dev hop. Mirror them before the
+      // gateway runs (this path returns before Express).
+      try {
+        await applyCloudflareRequestEnv(env);
+      } catch {
+        // Still gateway; environment may be host_invalid without the secret.
+      }
       return handleClerkCnameGateway(request);
     }
 

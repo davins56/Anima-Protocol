@@ -96,8 +96,10 @@ Causes, confirmed live:
    necessary on Chrome and still not sent on iPad Safari. Do **not**
    orange-cloud the Clerk CNAME (Cloudflare Error 1014 Cross-User
    Banned). This Worker binds `clerk.anima-protocol.com/*` and gateways
-   to Clerk with `cf.resolveOverride=worker.clerkprod-cloudflare.net`
-   so Safari sees same-eTLD+1 A records, not a third-party CNAME.
+   to Clerk by rewriting the URL to `https://frontend-api.clerk.dev`
+   (official path-proxy headers). Do **not** `fetch` the Custom Domain
+   host or use `cf.resolveOverride` — that is the production **522**.
+   Safari still sees same-eTLD+1 A records, not a third-party CNAME.
    Failed CNAME hops also plant `__client_uat=0; Domain=apex`; the
    gateway drops those Set-Cookies.
 2. **Missing `__client` (clean attempt on browsers without ITP cloaking).**
@@ -154,7 +156,8 @@ pnpm --filter @workspace/scripts run verify:clerk-cname-gateway
   after #420 still `301 err_code` from Clerk. Delete
   `CNAME clerk → frontend-api.clerk.services` first, then deploy
   (see `scripts/cloudflare/clerk-cname-gateway.md`). Do not orange-cloud
-  the Clerk CNAME (1014). Upstream is Clerk via `cf.resolveOverride`.
+  the   Clerk CNAME (1014). Upstream is Clerk via URL rewrite to
+  `frontend-api.clerk.dev` (not `cf.resolveOverride`).
   GitHub's Authorization callback URL stays
   `https://clerk.anima-protocol.com/v1/oauth_callback`.
 - `__client` must be `Domain=anima-protocol.com` so GitHub's document
