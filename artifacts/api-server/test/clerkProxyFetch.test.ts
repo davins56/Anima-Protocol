@@ -635,6 +635,9 @@ describe("clerkProxyFetch", () => {
       expect(headers.get("X-Forwarded-Host")).toBeNull();
       expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
       expect(headers.get("Origin")).toBe("https://anima-protocol.com");
+      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBe(
+        "worker.clerkprod-cloudflare.net",
+      );
       return new Response("{}", { status: 200, headers: upstreamHeaders });
     });
     const cookies: string[] = [];
@@ -690,6 +693,41 @@ describe("clerkProxyFetch", () => {
           /Domain=anima-protocol\.com/i.test(c) && /Max-Age=0/i.test(c),
       ),
     ).toBe(false);
+  });
+
+  it("does not resolveOverride development Frontend API hosts", async () => {
+    delete process.env.CLERK_PUBLISHABLE_KEY;
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://frontend-api.clerk.dev/v1/environment");
+      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBeUndefined();
+      return new Response("{}", { status: 200 });
+    });
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader() {},
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/environment",
+        originalUrl: "/api/__clerk/v1/environment",
+        headers: {
+          host: "localhost:8080",
+          origin: "http://localhost:23660",
+          "x-forwarded-proto": "http",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_test_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("does not Domain=apex-expire __client/__session on /v1/client refresh", async () => {

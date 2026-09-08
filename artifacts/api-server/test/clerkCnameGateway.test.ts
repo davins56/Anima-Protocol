@@ -8,7 +8,10 @@ import {
   rewriteClerkCnameSetCookie,
   shouldForwardClerkCnameSetCookie,
 } from "../src/lib/clerkCnameGateway";
-import { CLERK_CNAME_RESOLVE_OVERRIDE } from "../src/lib/clerkFrontendFetch";
+import {
+  CLERK_CNAME_RESOLVE_OVERRIDE,
+  clerkFrontendFetchInit,
+} from "../src/lib/clerkFrontendFetch";
 import {
   extractGitHubAuthorizeUrlFromSignInPayload,
   extractGitHubOAuthState,
@@ -29,6 +32,20 @@ const USER_JSON = {
 describe("clerk CNAME gateway", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("applies resolveOverride only for the production CNAME host", () => {
+    expect(
+      clerkFrontendFetchInit("https://clerk.anima-protocol.com/v1/client").cf,
+    ).toEqual({ resolveOverride: CLERK_CNAME_RESOLVE_OVERRIDE });
+    expect(
+      clerkFrontendFetchInit("https://frontend-api.clerk.dev/v1/environment").cf,
+    ).toBeUndefined();
+    expect(
+      clerkFrontendFetchInit(
+        "https://something.clerk.accounts.dev/v1/client",
+      ).cf,
+    ).toBeUndefined();
   });
 
   it("recognizes only the Clerk custom-domain host", () => {

@@ -17,8 +17,8 @@ import {
 } from "../middlewares/clerkProxyFetch";
 import {
   CLERK_CNAME_HOST,
+  clerkFrontendFetchInit,
   isClerkCnameRequestHost,
-  withClerkCnameResolveOverride,
 } from "./clerkFrontendFetch";
 import { recallGitHubOAuthClientState } from "./clerkOAuthStateStore";
 
@@ -114,7 +114,10 @@ export async function fetchClerkCnameUpstream(
     else headers.delete("cookie");
   }
   const upstream = new Request(request, { headers, redirect: "manual" });
-  return fetchImpl(upstream, withClerkCnameResolveOverride({ redirect: "manual" }));
+  return fetchImpl(
+    upstream,
+    clerkFrontendFetchInit(upstream.url, { redirect: "manual" }),
+  );
 }
 
 export function clerkCnameFailedOAuthRedirect(errCode?: string): Response {
