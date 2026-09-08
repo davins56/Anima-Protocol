@@ -3,6 +3,7 @@ import {
   canonicalClerkProxyHeaderHost,
   getClerkAuthHostCandidates,
   getClerkProxyHost,
+  isClerkOwnedHostname,
   resolveClerkPublishableKey,
   resolveRuntimePublishableKey,
 } from "../src/middlewares/clerkProxyMiddleware";
@@ -91,9 +92,9 @@ describe("getClerkAuthHostCandidates", () => {
 });
 
 describe("canonicalClerkProxyHeaderHost", () => {
-  it("normalizes apex to www for Clerk proxy headers", () => {
+  it("keeps apex and www as the request host (users are on apex)", () => {
     expect(canonicalClerkProxyHeaderHost("anima-protocol.com")).toBe(
-      "www.anima-protocol.com",
+      "anima-protocol.com",
     );
     expect(canonicalClerkProxyHeaderHost("www.anima-protocol.com")).toBe(
       "www.anima-protocol.com",
@@ -104,6 +105,15 @@ describe("canonicalClerkProxyHeaderHost", () => {
     expect(canonicalClerkProxyHeaderHost("preview.vercel.app")).toBe(
       "preview.vercel.app",
     );
+  });
+});
+
+describe("isClerkOwnedHostname", () => {
+  it("recognizes the Clerk FAPI and account-portal hosts", () => {
+    expect(isClerkOwnedHostname("clerk.anima-protocol.com")).toBe(true);
+    expect(isClerkOwnedHostname("accounts.anima-protocol.com")).toBe(true);
+    expect(isClerkOwnedHostname("anima-protocol.com")).toBe(false);
+    expect(isClerkOwnedHostname("www.anima-protocol.com")).toBe(false);
   });
 });
 

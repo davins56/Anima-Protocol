@@ -1,15 +1,19 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "http";
 import { logger } from "../lib/logger";
+import { decodeClerkFrontendHost } from "../lib/clerkDiagnostics";
 import { readRuntimeEnv } from "../lib/cloudflareEnv";
 import {
+  ANIMA_APEX_HOST,
   CLERK_PROXY_PATH,
   canonicalClerkProxyHeaderHost,
   getClerkProxyHost,
+  isClerkOwnedHostname,
   isLocalDevHost,
 } from "./clerkProxyHosts";
 
 const CLERK_FAPI = "https://frontend-api.clerk.dev";
-const PRODUCTION_PROXY_HOST = "www.anima-protocol.com";
+/** Public production host — www 301s here. Dashboard proxy/CNAME must match apex. */
+const PRODUCTION_PROXY_HOST = ANIMA_APEX_HOST;
 const UPSTREAM_TIMEOUT_MS = 25_000;
 
 /** Safe to forward from the browser — skip hop-by-hop and forbidden fetch headers. */
@@ -61,13 +65,92 @@ export function resolveClerkUpstreamPath(
   return url || "/v1/environment";
 }
 
+/**
+ * FAPI origin for this instance. A custom-domain key (clerk.anima-protocol.com)
+ * must be proxied to that host — frontend-api.clerk.dev returns host_invalid
+ * when the dashboard is CNAME-only and has no Proxy URL.
+ */
+export function clerkFrontendApiBaseFromPublishableKey(
+  publishableKey?: string,
+): string {
+  const host = decodeClerkFrontendHost(
+    publishableKey ?? readRuntimeEnv("CLERK_PUBLISHABLE_KEY"),
+  );
+  return host ? `https://${host}` : CLERK_FAPI;
+}
+
+export function clerkFrontendApiHostFromBase(frontendApiBase: string): string {
+  try {
+    return new URL(frontendApiBase).hostname;
+  } catch {
+    return "frontend-api.clerk.dev";
+  }
+}
+
+export function usesOfficialClerkProxyProtocol(frontendApiBase: string): boolean {
+  return clerkFrontendApiHostFromBase(frontendApiBase) === "frontend-api.clerk.dev";
+}
+
 export function resolveClerkUpstreamUrl(
   requestUrl: string | undefined,
+  frontendApiBase: string = CLERK_FAPI,
 ): URL {
   const path = requestUrl?.startsWith("/")
     ? requestUrl
     : `/${requestUrl ?? ""}`;
-  return new URL(path, CLERK_FAPI);
+  return new URL(path, frontendApiBase);
+}
+
+/**
+ * Drop Domain= on Clerk FAPI cookies so the browser stores them on the app
+ * origin (same-origin /api/__clerk). Safari ITP treats CNAME-cloaked
+ * clerk.anima-protocol.com cookies as third-party and never sends them.
+ */
+export function rewriteClerkProxySetCookie(
+  raw: string,
+  appHost: string,
+): string | null {
+  const domainMatch = raw.match(/;\s*Domain=([^;]*)/i);
+  if (!domainMatch) return raw;
+  const cookieDomain = domainMatch[1].trim().replace(/^\./, "").toLowerCase();
+  const app = appHost.toLowerCase().replace(/^\./, "");
+  const appApex = app.replace(/^www\./, "");
+
+  if (isClerkOwnedHostname(cookieDomain)) {
+    // Session cookies must become first-party. Drop Cloudflare bot cookies
+    // minted for Clerk's CNAME target — they are not used by clerk-js.
+    if (/^__(?:client|session)/i.test(raw.trim())) {
+      return raw.replace(/;\s*Domain=[^;]*/i, "");
+    }
+    return null;
+  }
+  if (
+    cookieDomain === app ||
+    cookieDomain === appApex ||
+    cookieDomain === `www.${appApex}`
+  ) {
+    return raw.replace(/;\s*Domain=[^;]*/i, `; Domain=${appApex}`);
+  }
+  return null;
+}
+
+export function rewriteClerkProxyLocation(
+  location: string,
+  opts: { fapiHost: string; appOrigin: string; proxyPath?: string },
+): string {
+  const proxyPath = opts.proxyPath ?? CLERK_PROXY_PATH;
+  try {
+    const url = new URL(location, `https://${opts.fapiHost}`);
+    if (
+      url.hostname === opts.fapiHost ||
+      isClerkOwnedHostname(url.hostname)
+    ) {
+      return `${opts.appOrigin}${proxyPath}${url.pathname}${url.search}${url.hash}`;
+    }
+    return location;
+  } catch {
+    return location;
+  }
 }
 
 function productionProxyHostFallback(): string {
@@ -122,7 +205,9 @@ function clientIpFromHeaders(headers: IncomingHttpHeaders): string {
 export function buildClerkUpstreamHeaders(
   req: { headers: IncomingHttpHeaders; method?: string },
   secretKey: string,
+  options: { officialProxy?: boolean } = {},
 ): Headers {
+  const officialProxy = options.officialProxy !== false;
   const { proxyUrl, origin } = buildClerkProxyHeaderValues(req, secretKey);
   const headers = new Headers();
 
@@ -136,8 +221,10 @@ export function buildClerkUpstreamHeaders(
     }
   }
 
-  headers.set("Clerk-Proxy-Url", proxyUrl);
-  headers.set("Clerk-Secret-Key", secretKey.trim());
+  if (officialProxy) {
+    headers.set("Clerk-Proxy-Url", proxyUrl);
+    headers.set("Clerk-Secret-Key", secretKey.trim());
+  }
   if (origin) {
     headers.set("Origin", origin);
   }
@@ -171,15 +258,68 @@ async function readRequestBody(
   return Buffer.concat(chunks);
 }
 
-function forwardResponseHeaders(
+const DROP_UPSTREAM_HEADERS = new Set([
+  ...HOP_BY_HOP_HEADERS,
+  "access-control-allow-origin",
+  "access-control-allow-credentials",
+  "access-control-expose-headers",
+  "content-security-policy",
+]);
+
+function collectSetCookies(upstream: Response): string[] {
+  const headers = upstream.headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+  if (typeof headers.getSetCookie === "function") {
+    const cookies = headers.getSetCookie();
+    if (cookies.length > 0) return cookies;
+  }
+  const single = upstream.headers.get("set-cookie");
+  return single ? [single] : [];
+}
+
+export function forwardClerkProxyResponseHeaders(
   upstream: Response,
   res: ServerResponse,
+  rewrite: { appHost: string; appOrigin: string; fapiHost: string },
 ): void {
   upstream.headers.forEach((value, name) => {
     const lower = name.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lower)) return;
+    if (DROP_UPSTREAM_HEADERS.has(lower)) return;
+    if (lower === "set-cookie") return;
+    if (lower === "location") {
+      res.setHeader(
+        name,
+        rewriteClerkProxyLocation(value, {
+          fapiHost: rewrite.fapiHost,
+          appOrigin: rewrite.appOrigin,
+        }),
+      );
+      return;
+    }
     res.setHeader(name, value);
   });
+
+  for (const cookie of collectSetCookies(upstream)) {
+    const rewritten = rewriteClerkProxySetCookie(cookie, rewrite.appHost);
+    if (rewritten) {
+      appendSetCookie(res, rewritten);
+    }
+  }
+}
+
+function appendSetCookie(res: ServerResponse, value: string): void {
+  if (typeof res.appendHeader === "function") {
+    res.appendHeader("set-cookie", value);
+    return;
+  }
+  const prev = res.getHeader("set-cookie");
+  if (prev === undefined) {
+    res.setHeader("set-cookie", value);
+    return;
+  }
+  const list = Array.isArray(prev) ? prev.map(String) : [String(prev)];
+  res.setHeader("set-cookie", [...list, value]);
 }
 
 export async function proxyClerkWithFetch(
@@ -188,9 +328,13 @@ export async function proxyClerkWithFetch(
   secretKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
+  const frontendApiBase = clerkFrontendApiBaseFromPublishableKey();
+  const officialProxy = usesOfficialClerkProxyProtocol(frontendApiBase);
+  const fapiHost = clerkFrontendApiHostFromBase(frontendApiBase);
+  const { origin, host } = buildClerkProxyHeaderValues(req, secretKey);
   const upstreamPath = resolveClerkUpstreamPath(req);
-  const upstreamUrl = resolveClerkUpstreamUrl(upstreamPath);
-  const headers = buildClerkUpstreamHeaders(req, secretKey);
+  const upstreamUrl = resolveClerkUpstreamUrl(upstreamPath, frontendApiBase);
+  const headers = buildClerkUpstreamHeaders(req, secretKey, { officialProxy });
   const body = await readRequestBody(req);
   const method = req.method?.toUpperCase() || "GET";
 
@@ -203,7 +347,11 @@ export async function proxyClerkWithFetch(
   });
 
   res.statusCode = upstream.status;
-  forwardResponseHeaders(upstream, res);
+  forwardClerkProxyResponseHeaders(upstream, res, {
+    appHost: host,
+    appOrigin: origin,
+    fapiHost,
+  });
 
   const payload = Buffer.from(await upstream.arrayBuffer());
   res.end(payload);

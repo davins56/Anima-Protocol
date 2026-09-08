@@ -26,6 +26,7 @@ export {
   canonicalClerkProxyHeaderHost,
   getClerkAuthHostCandidates,
   getClerkProxyHost,
+  isClerkOwnedHostname,
   resolveClerkPublishableKey,
   resolveRuntimePublishableKey,
 } from "./clerkProxyHosts";

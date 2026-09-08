@@ -1,14 +1,13 @@
 /**
  * Clerk Frontend API proxy URL helpers.
  *
- * Clerk requires proxyUrl to end with a trailing slash and to match the Proxy URL
- * configured in the Clerk dashboard exactly (production uses www.anima-protocol.com).
+ * Clerk requires proxyUrl to end with a trailing slash. Production users are
+ * on anima-protocol.com (www 301s there). The same-origin proxy is
+ * `/api/__clerk/` so Clerk session cookies are first-party.
  */
 
 export const ANIMA_APEX_HOST = 'anima-protocol.com';
-const ANIMA_WWW = `https://www.${ANIMA_APEX_HOST}`;
-
-/** Apex origin — Cloudflare serves production here. www 308s here with path kept. */
+/** Apex origin — Cloudflare serves production here. www 301s here with path kept. */
 export const ANIMA_PRODUCTION_ORIGIN = `https://${ANIMA_APEX_HOST}`;
 
 /**
@@ -157,10 +156,10 @@ export function clerkProviderOAuthCallbackUrl() {
 }
 
 /**
- * Absolute proxy URL for the API Clerk-Proxy-Url header (dashboard uses www).
+ * Absolute proxy URL advertised to Clerk (apex — www 301s here).
  */
 export function animaProductionClerkProxyUrl() {
-  return `${ANIMA_WWW}/api/__clerk/`;
+  return `${ANIMA_PRODUCTION_ORIGIN}/api/__clerk/`;
 }
 
 /**
@@ -177,15 +176,15 @@ export function clerkProviderProxyPath() {
 
 /**
  * Whether pk_live_ should route Clerk FAPI through the same-origin proxy.
- * If a custom domain is detected (e.g. clerk.anima-protocol.com), proxy is skipped unless explicitly configured.
+ *
+ * Custom-domain keys (clerk.anima-protocol.com) still use the proxy on
+ * anima-protocol.com. That host CNAMEs to Clerk infrastructure; Safari ITP
+ * treats those cookies as third-party, so a direct FAPI session never sticks.
  */
 export function shouldUseClerkProxy(clerkPubKey) {
   if (isClerkProxyExplicitlyDisabled()) return false;
   if (configuredClerkProxyUrl()) return true;
   if (typeof clerkPubKey !== 'string' || !clerkPubKey.startsWith('pk_live_')) {
-    return false;
-  }
-  if (publishableKeyUsesCustomDomain(clerkPubKey)) {
     return false;
   }
   if (typeof window === 'undefined') return false;
