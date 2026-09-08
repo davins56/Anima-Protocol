@@ -278,8 +278,34 @@ describe("Cloudflare wrangler config", () => {
     ).toEqual({
       ok: true,
       reason:
-        "gateway 303 to /sign-in?clerk_error= and environment 200 Clerk JSON",
+        "gateway 303 to apex /sign-in?clerk_error= and environment 200 Clerk JSON",
     });
+    expect(
+      interpretClerkCnameGatewayProbe({
+        oauthCallback: {
+          status: 303,
+          location:
+            "https://evil.example/sign-in?clerk_error=authorization_invalid",
+          bodySnippet: "",
+        },
+        environment: environmentOk,
+        cnameTarget: null,
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("Unexpected oauth_callback 303"),
+    });
+    expect(
+      interpretClerkCnameGatewayProbe({
+        oauthCallback: {
+          status: 303,
+          location: "/sign-in?clerk_error=authorization_invalid",
+          bodySnippet: "",
+        },
+        environment: environmentOk,
+        cnameTarget: null,
+      }).ok,
+    ).toBe(false);
     expect(
       interpretClerkCnameGatewayProbe({
         oauthCallback: oauthGatewayOk,

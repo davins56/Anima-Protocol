@@ -11,6 +11,21 @@
 
 const CLERK_CNAME_ORIGIN = "https://clerk.anima-protocol.com";
 const CLERK_SERVICES_CNAME = "frontend-api.clerk.services";
+const APEX_ORIGIN = "https://anima-protocol.com";
+
+export function isApexClerkErrorSignInLocation(location: string | null): boolean {
+  if (!location) return false;
+  try {
+    const url = new URL(location);
+    return (
+      url.origin === APEX_ORIGIN &&
+      url.pathname === "/sign-in" &&
+      url.searchParams.get("clerk_error") === "authorization_invalid"
+    );
+  } catch {
+    return false;
+  }
+}
 
 export type ClerkCnameHttpProbe = {
   status: number;
@@ -57,11 +72,8 @@ function interpretOauthCallback(
       reason: "GET /v1/oauth_callback still returns Clerk 403 JSON.",
     };
   }
-  if (
-    probe.status === 303 &&
-    /\/sign-in\?clerk_error=authorization_invalid/.test(probe.location || "")
-  ) {
-    return { ok: true, reason: "gateway 303 to /sign-in?clerk_error=" };
+  if (probe.status === 303 && isApexClerkErrorSignInLocation(probe.location)) {
+    return { ok: true, reason: "gateway 303 to apex /sign-in?clerk_error=" };
   }
   return {
     ok: false,
