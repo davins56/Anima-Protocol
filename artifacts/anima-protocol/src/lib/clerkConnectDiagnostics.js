@@ -38,8 +38,9 @@ function clerkErrorDetail(proxyError) {
 }
 
 /**
- * Quick health check for the same-origin Clerk proxy. When this returns false,
- * ClerkProvider should skip proxyUrl so email/OAuth can use Clerk's API directly.
+ * Quick health check for the same-origin Clerk proxy. When this returns false
+ * on non-production hosts, ClerkProvider may skip proxyUrl. Production
+ * custom-domain keys must keep proxyUrl — see mustUseSameOriginClerkProxy.
  */
 export async function isClerkProxyHealthy(clerkPubKey) {
   const proxyUrl = resolveClerkProxyUrl(clerkPubKey);
