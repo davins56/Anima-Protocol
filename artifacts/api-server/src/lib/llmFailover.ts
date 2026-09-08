@@ -1,4 +1,5 @@
 // Chat completion against the self-hosted Anima LLM only (vLLM / Ollama /
+import { aiBinding } from "./aiBinding";
 // llama.cpp, OpenAI-compatible). MiniMax, Deepshi, OpenRouter, Claude, and
 // OpenAI are never used for chat — there is no cloud failover.
 //
@@ -66,10 +67,10 @@ const LOCAL_LLM_SETUP_HINT =
   "See scripts/llm/public-v1/README.md.";
 
 /** Self-hosted Anima LLM, or OpenRouter open-weight models (not flagship BYOK). */
-export type LlmProviderId = "local" | "minimax" | "deepshi" | "openrouter";
+export type LlmProviderId = "local" | "minimax" | "deepshi" | "openrouter" | "workersai";
 
 /** Brand for chat replies. */
-export type LlmBrand = "anima" | "minimax" | "deepshi" | "openrouter";
+export type LlmBrand = "anima" | "minimax" | "deepshi" | "openrouter" | "workersai";
 
 /** Public, secret-free snapshot of chat routing (for /api/healthz/llm). */
 export interface LlmRoutingStatus {
@@ -343,7 +344,9 @@ function localUsable(): boolean {
  * keys or ANIMA_LLM_PROVIDER=minimax|deepshi are set.
  */
 export function getProviderChain(): LlmProviderId[] {
-  return localUsable() ? ["local"] : [];
+  if (localUsable()) return ["local"];
+  if (aiBinding) return ["workersai"];
+  return [];
 }
 
 /**
@@ -376,6 +379,7 @@ function brandFor(provider: LlmProviderId): LlmBrand {
   if (provider === "openrouter") return "openrouter";
   if (provider === "minimax") return "minimax";
   if (provider === "deepshi") return "deepshi";
+  if (provider === "workersai") return "workersai";
   return "anima";
 }
 
@@ -1697,6 +1701,60 @@ async function runDeepshiCompletion(
 
 /** Open a streaming chat completion (local Anima LLM, then OpenRouter). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
+
+async function runWorkersAiCompletion(req: ChatCompletionRequest): Promise<ChatCompletionResult> {
+  if (!aiBinding) throw new Error("Workers AI binding not available");
+  const response = await aiBinding.run(
+    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+    {
+      messages: req.messages.map((m) => ({ role: String(m.role), content: String(m.content) })),
+      max_tokens: req.maxTokens,
+      ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+    }
+  ) as { response?: string };
+  return {
+    content: typeof response.response === "string" ? response.response : "",
+    provider: "workersai",
+    brand: "workersai",
+    model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+    tier: req.tier,
+    failedOver: false,
+    toolCalls: null,
+  };
+}
+
+async function runWorkersAiStream(req: ChatStreamRequest, failedOver: boolean): Promise<ChatStreamResult> {
+  if (!aiBinding) throw new Error("Workers AI binding not available");
+  const response = await aiBinding.run(
+    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+    {
+      messages: req.messages.map((m) => ({ role: String(m.role), content: String(m.content) })),
+      max_tokens: req.maxTokens,
+      stream: true,
+      ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+    }
+  ) as { response?: string };
+  // Workers AI streaming returns a ReadableStream — wrap it as an AsyncIterable
+  const text = typeof response.response === "string" ? response.response : "";
+  const chunk = {
+    id: "workersai",
+    object: "chat.completion.chunk" as const,
+    created: Date.now(),
+    model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+    choices: [{ index: 0, delta: { content: text }, finish_reason: "stop" }],
+  };
+  async function* singleChunkStream() {
+    yield chunk;
+  }
+  return {
+    stream: singleChunkStream() as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+    provider: "workersai",
+    brand: "workersai",
+    model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+    tier: req.tier,
+    failedOver,
+  };
+}
   beginChatProviderTurn();
   if (cloudFlagshipMisconfigured()) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
@@ -1777,7 +1835,6 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
     openRouterZdrBlocked,
   });
 }
-
 /**
  * Non-streaming chat completion (local Anima LLM, then OpenRouter).
  * Used by companion generation, evolution, and other one-shot LLM helpers.
