@@ -246,7 +246,7 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `CURSOR_CLOUD_REPO_URL` | API | Optional. Defaults to `https://github.com/davins56/Anima-Protocol` |
 | `PROTOCOL_UPGRADE_ADMIN_EMAILS` | API | Optional comma-separated steward emails. Defaults to `davins56@gmail.com,davins56@hotmail.com` |
 
-Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback`; Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`.
+Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback` (not the SPA `/sign-in/sso-callback` path). Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`. Operator checklist: `scripts/cloudflare/clerk-oauth.md`.
 
 ## Validation
 

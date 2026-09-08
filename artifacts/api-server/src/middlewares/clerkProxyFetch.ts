@@ -140,6 +140,41 @@ export function isClerkFrontendApiPath(pathname: string): boolean {
   return path === "/v1" || path.startsWith("/v1/") || path === "/npm" || path.startsWith("/npm/");
 }
 
+export function isClerkNpmAssetPath(pathname: string): boolean {
+  const path = (pathname || "/").split("?")[0] || "/";
+  return path === "/npm" || path.startsWith("/npm/");
+}
+
+export function isHttpRedirectStatus(status: number): boolean {
+  return status >= 300 && status < 400;
+}
+
+/** Cap Clerk dist-tag hops (`@6` → `@6.31.0`) so a loop cannot hang the isolate. */
+export const MAX_CLERK_NPM_REDIRECTS = 5;
+
+/**
+ * Follow only clerk-js CDN dist-tag redirects. Do not follow OAuth / handshake
+ * Locations (GitHub, `/sign-in/sso-callback`) — those must reach the browser.
+ */
+export function resolveClerkNpmRedirectUrl(
+  location: string | null | undefined,
+  currentUrl: URL,
+  fapiHost: string,
+): URL | null {
+  if (!location) return null;
+  try {
+    const next = new URL(location, currentUrl);
+    const host = next.hostname.toLowerCase();
+    const allowed =
+      host === fapiHost.toLowerCase() || isClerkOwnedHostname(host);
+    if (!allowed) return null;
+    if (!isClerkNpmAssetPath(next.pathname)) return null;
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Keep FAPI XHR/asset redirects on the same-origin proxy. Document returns
  * (OAuth handshake, `/`, `/sign-in/sso-callback`) must land on the SPA —
@@ -348,18 +383,44 @@ export async function proxyClerkWithFetch(
   const fapiHost = clerkFrontendApiHostFromBase(frontendApiBase);
   const { origin, host } = buildClerkProxyHeaderValues(req, secretKey);
   const upstreamPath = resolveClerkUpstreamPath(req);
-  const upstreamUrl = resolveClerkUpstreamUrl(upstreamPath, frontendApiBase);
+  let upstreamUrl = resolveClerkUpstreamUrl(upstreamPath, frontendApiBase);
   const headers = buildClerkUpstreamHeaders(req, secretKey, { officialProxy });
   const body = await readRequestBody(req);
   const method = req.method?.toUpperCase() || "GET";
+  const payloadBody = body ? new Uint8Array(body) : undefined;
 
-  const upstream = await fetchImpl(upstreamUrl, {
+  let upstream = await fetchImpl(upstreamUrl, {
     method,
     headers,
-    body: body ? new Uint8Array(body) : undefined,
+    body: payloadBody,
     redirect: "manual",
     signal: upstreamAbortSignal(),
   });
+
+  // Clerk serves `/npm/@clerk/clerk-js@6/...` as 307 → `@6.31.0`. Script tags
+  // (and our connectivity probe) need 200 JS, not a Location hop.
+  let npmHops = 0;
+  while (
+    isClerkNpmAssetPath(upstreamUrl.pathname) &&
+    isHttpRedirectStatus(upstream.status) &&
+    npmHops < MAX_CLERK_NPM_REDIRECTS
+  ) {
+    const next = resolveClerkNpmRedirectUrl(
+      upstream.headers.get("location"),
+      upstreamUrl,
+      fapiHost,
+    );
+    if (!next) break;
+    npmHops += 1;
+    await upstream.arrayBuffer().catch(() => undefined);
+    upstreamUrl = next;
+    upstream = await fetchImpl(next, {
+      method: "GET",
+      headers,
+      redirect: "manual",
+      signal: upstreamAbortSignal(),
+    });
+  }
 
   res.statusCode = upstream.status;
   forwardClerkProxyResponseHeaders(upstream, res, {
