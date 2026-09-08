@@ -20,6 +20,7 @@ import {
 import { createChatCompletionWithFailover } from "./llmFailover";
 import { routeModel } from "./modelRouter";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
+import { loadOperatorModel } from "./operatorModel";
 import { notifyUser } from "./storeEvents";
 import { generateAutonomousReflection } from "./animaJournal";
 import { addSharedArtifact } from "./homeWorld";
@@ -306,6 +307,7 @@ async function generateMessage(userId: string, candidate: Candidate): Promise<st
     "Do not mention apps, notifications, inactivity, schedules, or being an AI. " +
     "Do not guilt, pressure, alarm, sexualize, or manipulate the user. " +
     "Keep it safe for a lock-screen preview, in character, and at most two short sentences.";
+  const { model: operatorModel } = await loadOperatorModel(userId);
   const prompt = buildCompanionPrompt({
     systemPrompt: instruction,
     characters: [candidate.character],
@@ -315,6 +317,7 @@ async function generateMessage(userId: string, candidate: Candidate): Promise<st
     mode: "solo",
     content: "[Proactive outreach: send the check-in now.]",
     isCrossover: false,
+    operatorModel,
   });
   const routed = routeModel("brief proactive companion check-in", {
     deepMode: false,
