@@ -476,6 +476,58 @@ describe("Character.list HTML failures", () => {
   });
 });
 
+describe("auth.me Clerk identity", () => {
+  afterEach(() => {
+    base44.auth.clearSession();
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("returns synced Clerk identity when the store token is not ready yet", async () => {
+    clearAuthTokenGetter();
+    base44.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+
+    const me = await base44.auth.me();
+    expect(me.id).toBe("user_abc");
+    expect(me.email).toBe("ada@example.com");
+    expect(me.full_name).toBe("Ada Lovelace");
+  });
+
+  it("does not cache an empty profile when getToken is missing", async () => {
+    clearAuthTokenGetter();
+    base44.auth.clearSession();
+    await base44.auth.me();
+
+    setAuthTokenGetter(() => "test-token");
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile") {
+        return Response.json({
+          display_name: "Ada",
+          settings: { theme_mode: "dark" },
+        });
+      }
+      return Response.json({});
+    });
+    base44.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+
+    const me = await base44.auth.me();
+    expect(global.fetch).toHaveBeenCalled();
+    expect(me.display_name).toBe("Ada");
+    expect(me.email).toBe("ada@example.com");
+    expect(me.settings).toEqual({ theme_mode: "dark" });
+  });
+});
+
 describe("auth.updateMe profile persist", () => {
   beforeEach(() => {
     setAuthTokenGetter(() => "test-token");

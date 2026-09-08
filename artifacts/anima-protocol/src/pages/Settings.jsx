@@ -59,9 +59,9 @@ const defaultPrefs = {
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user: authUser } = useAuth();
   const [section, setSection] = useState(SECTION.ACCOUNT);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(authUser || null);
   const [prefs, setPrefs] = useState(defaultPrefs);
   const [saved, setSaved] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
@@ -93,13 +93,33 @@ export default function Settings() {
   const [anima, setAnima] = useState(null);
 
   useEffect(() => {
+    if (!authUser) return;
+    setUser((prev) => {
+      if (
+        prev?.id === authUser.id &&
+        prev?.email === authUser.email &&
+        prev?.full_name === authUser.full_name
+      ) {
+        return prev ? { ...authUser, ...prev } : authUser;
+      }
+      return { ...(prev || {}), ...authUser };
+    });
+    if (authUser.settings) {
+      setPrefs((p) => ({ ...p, ...authUser.settings }));
+    } else if (authUser.display_name) {
+      setPrefs((p) => ({ ...p, display_name: authUser.display_name || "" }));
+    }
+  }, [authUser?.id, authUser?.email, authUser?.full_name, authUser?.display_name, authUser?.role]);
+
+  useEffect(() => {
     loadUser();
     loadStats();
-  }, []);
+  }, [authUser?.id]);
 
   const loadUser = async () => {
     const me = await base44.auth.me();
-    setUser(me);
+    // Keep Clerk identity visible if the store profile is still empty / late.
+    setUser((prev) => ({ ...(authUser || {}), ...(prev || {}), ...(me || {}) }));
     if (me?.settings) setPrefs({ ...defaultPrefs, ...me.settings });
     else if (me?.display_name) setPrefs((p) => ({ ...p, display_name: me.display_name || "" }));
     try {
@@ -433,9 +453,9 @@ export default function Settings() {
             <div className="space-y-4">
               <SectionTitle>Account Info</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
-                <InfoRow label="Email" value={user?.email || "—"} />
-                <InfoRow label="Display Name" value={user?.full_name || "—"} />
-                <InfoRow label="Role" value={user?.role || "user"} />
+                <InfoRow label="Email" value={user?.email || authUser?.email || "—"} />
+                <InfoRow label="Display Name" value={user?.full_name || authUser?.full_name || "—"} />
+                <InfoRow label="Role" value={user?.role || authUser?.role || "user"} />
               </div>
 
               <SectionTitle>Your Profile</SectionTitle>

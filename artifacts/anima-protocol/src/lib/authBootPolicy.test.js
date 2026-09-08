@@ -257,6 +257,8 @@ describe("boot wiring", () => {
     expect(auth).toMatch(/isLoadingAuth = !isLoaded/);
     expect(auth).toMatch(/hasPendingClerkHandshake/);
     expect(auth).toMatch(/readClerkAuthReturn/);
+    expect(auth).toMatch(/clerkIdentityFromUser/);
+    expect(auth).toMatch(/shouldClearLocalSession/);
   });
 
   it("only invokes handleInstantGuest from the Guest button, never boot or form value", () => {

@@ -1388,9 +1388,9 @@ async function loadProfile(force) {
   }
   const token = await getToken();
   if (!token) {
-    profileCache = {};
-    profileExpiry = Date.now() + PROFILE_TTL;
-    return profileCache;
+    // Do not cache an empty profile — Clerk getToken is often still minting
+    // right after sign-in. A 2s empty TTL made Settings look signed-out.
+    return profileCache || {};
   }
   const res = await storeFetch('/profile');
   if (!res.ok) {
