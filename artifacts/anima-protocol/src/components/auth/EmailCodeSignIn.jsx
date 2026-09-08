@@ -13,8 +13,16 @@ import {
   recoverExistingClerkSession,
   startGitHubOAuthSignIn,
 } from "@/lib/emailCodeSignIn";
-import { clerkOAuthCompletePath, destinationAfterClerkAuth } from "@/lib/clerkOAuthPaths";
-import { buildInstantGuestIdentity } from "@/lib/authBootPolicy";
+import {
+  clerkOAuthCompletePath,
+  destinationAfterClerkAuth,
+  hasPendingClerkHandshake,
+} from "@/lib/clerkOAuthPaths";
+import {
+  buildInstantGuestIdentity,
+  markClerkAuthReturn,
+  readClerkAuthReturn,
+} from "@/lib/authBootPolicy";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -43,9 +51,20 @@ export default function EmailCodeSignIn() {
 
   // Single-session Clerk instances reject a second sign-in. Send signed-in
   // users into the app instead of leaving them stuck on this form.
-  // Leftover Instant Sandbox storage is not a signed-in session.
+  // Leftover Instant Sandbox must not bounce a GitHub/email return to Home.
   useEffect(() => {
-    if ((userLoaded && isSignedIn) || isSignedInUser || isGuest) {
+    if ((userLoaded && isSignedIn) || isSignedInUser) {
+      navigate(basePath || "/", { replace: true });
+      return;
+    }
+    const pendingAuth =
+      readClerkAuthReturn() ||
+      hasPendingClerkHandshake({
+        search: window.location.search,
+        pathname: window.location.pathname,
+        hash: window.location.hash,
+      });
+    if (isGuest && !pendingAuth) {
       navigate(basePath || "/", { replace: true });
     }
   }, [userLoaded, isSignedIn, isSignedInUser, isGuest, navigate]);
@@ -95,6 +114,7 @@ export default function EmailCodeSignIn() {
       setError("Sign-in is not complete yet. Try the code again, or use GitHub.");
       return;
     }
+    markClerkAuthReturn();
     await signIn.finalize({
       navigate: ({ session, decorateUrl }) => {
         const next = destinationAfterClerkAuth({
@@ -217,6 +237,7 @@ export default function EmailCodeSignIn() {
       return;
     }
     setBusy("verify");
+    markClerkAuthReturn();
     try {
       const { error: verifyError } = await signIn.emailCode.verifyCode({
         code: value,
@@ -269,6 +290,7 @@ export default function EmailCodeSignIn() {
     }
     const attempt = ++githubAttemptRef.current;
     setBusy("github");
+    markClerkAuthReturn();
     try {
       if (isSignedIn) {
         navigate(basePath || "/", { replace: true });

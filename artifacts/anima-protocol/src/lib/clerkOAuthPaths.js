@@ -48,10 +48,83 @@ export function isClerkOwnedHostname(hostname) {
   );
 }
 
+/** Query keys Clerk uses to finish OAuth / satellite handshake on the app origin. */
+export const CLERK_HANDSHAKE_QUERY_KEYS = [
+  '__clerk_handshake',
+  '__clerk_handshake_nonce',
+  '__clerk_status',
+  '__clerk_created_session',
+  '__clerk_synced',
+];
+
+export function isClerkFrontendApiPath(pathname) {
+  const path = String(pathname || '');
+  return (
+    path === '/v1' ||
+    path.startsWith('/v1/') ||
+    path === '/npm' ||
+    path.startsWith('/npm/')
+  );
+}
+
+export function isClerkSsoCallbackPath(pathname) {
+  const path = String(pathname || '').split('?')[0];
+  return (
+    path === '/sso-callback' ||
+    path.endsWith('/sso-callback') ||
+    path.includes('/sign-in/sso-callback') ||
+    path.includes('/sign-up/sso-callback')
+  );
+}
+
+export function clerkHandshakeSearch(search) {
+  const raw = String(search || '');
+  const params = new URLSearchParams(raw.startsWith('?') ? raw.slice(1) : raw);
+  const kept = new URLSearchParams();
+  for (const key of CLERK_HANDSHAKE_QUERY_KEYS) {
+    if (params.has(key)) kept.set(key, params.get(key) ?? '');
+  }
+  const serialized = kept.toString();
+  return serialized ? `?${serialized}` : '';
+}
+
+/** Handshake tokens still in the URL — ClerkProvider / HandleSSOCallback need them. */
+export function hasClerkHandshakeQuery({ search = '', hash = '' } = {}) {
+  const hashQuery = String(hash || '').replace(/^#/, '');
+  return Boolean(clerkHandshakeSearch(search) || clerkHandshakeSearch(hashQuery));
+}
+
+/**
+ * True while Clerk still needs this navigation to finish a session transfer
+ * (SSO callback route or `__clerk_*` query).
+ */
+export function hasPendingClerkHandshake({
+  search = '',
+  pathname = '',
+  hash = '',
+} = {}) {
+  if (isClerkSsoCallbackPath(pathname)) return true;
+  return hasClerkHandshakeQuery({ search, hash });
+}
+
+function isKnownAppReturnPath(pathname) {
+  const path = String(pathname || '').split('?')[0];
+  if (isClerkSsoCallbackPath(path)) return true;
+  if (path === '/sign-in' || path.startsWith('/sign-in/')) return true;
+  if (path === '/sign-up' || path.startsWith('/sign-up/')) return true;
+  return false;
+}
+
+function appPathWithHandshake(pathname, search, hash, fallbackPath) {
+  const fallback = fallbackPath || '/';
+  const path = isKnownAppReturnPath(pathname) ? pathname : fallback;
+  return `${path}${clerkHandshakeSearch(search)}${hash || ''}`;
+}
+
 /**
  * Keep the user on the SPA after Clerk setActive / HandleSSOCallback.
  * Relative paths and same-origin (or anima production) URLs stay in-app.
- * Clerk FAPI hosts are rewritten to fallbackPath.
+ * Clerk FAPI hosts are rewritten to fallbackPath, keeping handshake query.
  *
  * @returns {{ mode: 'in-app', path: string } | { mode: 'external', href: string }}
  */
@@ -76,7 +149,10 @@ export function resolvePostAuthNavigation(
     return { mode: 'in-app', path: fallback };
   }
   if (isClerkOwnedHostname(url.hostname)) {
-    return { mode: 'in-app', path: fallback };
+    return {
+      mode: 'in-app',
+      path: appPathWithHandshake(url.pathname, url.search, url.hash, fallback),
+    };
   }
   const destOrigin = url.origin;
   if (origin && destOrigin === origin) {

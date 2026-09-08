@@ -61,7 +61,12 @@ import {
   sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
 } from "@/lib/clerkProxy";
-import { destinationAfterClerkAuth } from "@/lib/clerkOAuthPaths";
+import {
+  destinationAfterClerkAuth,
+  hasClerkHandshakeQuery,
+  hasPendingClerkHandshake,
+} from "@/lib/clerkOAuthPaths";
+import { markClerkAuthReturn } from "@/lib/authBootPolicy";
 
 // Title screen is eager so cold opens paint Landing immediately (no spinner).
 import Landing from "./pages/Landing";
@@ -413,6 +418,10 @@ function applyPostAuthNavigation(next, navigate) {
 function SsoCallbackPage() {
   const navigate = useNavigate();
 
+  useEffect(() => {
+    markClerkAuthReturn();
+  }, []);
+
   const navigateAfterAuth = ({ session, decorateUrl }) => {
     applyPostAuthNavigation(
       destinationAfterClerkAuth({
@@ -498,7 +507,18 @@ function SignedInHome() {
 // Leftover Instant Sandbox storage is not a signed-in session — only Clerk
 // or an explicit this-session Guest tap may enter the app.
 function HomeGate() {
-  const { isAuthenticated, isSignedInUser, isGuest } = useAuth();
+  const { isAuthenticated, isSignedInUser, isGuest, isLoadingAuth, authStalled } =
+    useAuth();
+  const location = useLocation();
+  const handshakeHold = hasClerkHandshakeQuery({
+    search: location.search,
+    hash: location.hash,
+  });
+
+  // GitHub / email handshake still in the URL — do not paint guest Home.
+  if (handshakeHold && isLoadingAuth && !authStalled && !isSignedInUser) {
+    return <PageLoader />;
+  }
 
   // Explicit Instant Sandbox / a live Clerk session must enter home even if
   // Clerk is still loading. Only unsigned visitors stay on the lock screen.
@@ -517,6 +537,15 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
     if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
     // Already on direct Clerk — never flip back to a broken same-origin proxy.
     if (!useProxy) return;
+    if (
+      hasPendingClerkHandshake({
+        search: window.location.search,
+        pathname: window.location.pathname,
+        hash: window.location.hash,
+      })
+    ) {
+      return;
+    }
 
     const timer = setTimeout(() => {
       if (clerk.loaded || toggledRef.current) return;
@@ -542,6 +571,15 @@ function ClerkProviderWithRoutes({ children }) {
     (async () => {
       try {
         if (!initialClerkProxyUrl) return;
+        if (
+          hasPendingClerkHandshake({
+            search: window.location.search,
+            pathname: window.location.pathname,
+            hash: window.location.hash,
+          })
+        ) {
+          return;
+        }
         const healthy = await isClerkProxyHealthy(clerkPubKey);
         if (cancelled || healthy) return;
         setUseProxy(false);
