@@ -555,6 +555,22 @@ describe("auth.me Clerk identity", () => {
     expect(me.email).toBe("ada@example.com");
     expect(me.settings).toEqual({ theme_mode: "dark" });
   });
+
+  it("does not let a later empty syncIdentity wipe a hydrated email", async () => {
+    base44.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+    base44.auth.syncIdentity({
+      id: "user_abc",
+      email: "",
+      full_name: "",
+    });
+    const me = await base44.auth.me();
+    expect(me.email).toBe("ada@example.com");
+    expect(me.full_name).toBe("Ada Lovelace");
+  });
 });
 
 describe("auth.updateMe profile persist", () => {

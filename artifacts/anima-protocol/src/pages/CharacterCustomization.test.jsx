@@ -28,10 +28,17 @@ vi.mock("@/api/base44Client", () => ({
   base44: {
     entities: {
       Anima: { list: mocks.listAnima },
-      Character: { list: mocks.listCharacter },
+      Character: {
+        list: mocks.listCharacter,
+        filter: (...args) => mocks.listCharacter(...args),
+      },
     },
   },
   waitForStoreAuth: mocks.waitForStoreAuth,
+}));
+
+vi.mock("@/lib/AuthContext", () => ({
+  useAuth: () => ({ isAuthenticated: true, isLoadingAuth: false, user: { id: "user_1" } }),
 }));
 
 vi.mock("@/lib/syncBootstrap", () => ({
@@ -123,6 +130,37 @@ describe("Customization hub Animas picker", () => {
     await waitFor(() => {
       expect(screen.getByText("Customizer char-aelindra anima Character")).toBeTruthy();
     });
+  });
+
+  it("lists Aelynd on the Animas tab even without ai_prompt flags", async () => {
+    mocks.listAnima.mockResolvedValue([
+      {
+        id: "anima-serenity",
+        name: "Serenity",
+        created_date: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    mocks.listCharacter.mockResolvedValue([
+      {
+        id: "char-aelynd",
+        name: "Aelynd",
+        universe: "Original",
+        created_date: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        id: "char-naruto",
+        name: "Naruto",
+        universe: "Naruto",
+        created_date: "2026-09-04T00:00:00.000Z",
+      },
+    ]);
+
+    renderPage("?tab=animas");
+
+    expect(await screen.findByRole("button", { name: "Select Aelynd" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Select Serenity" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Select Naruto" })).toBeNull();
+    expect(screen.getByText(/Animas \(2\)/i)).toBeTruthy();
   });
 
   it("keeps generator companions off the Characters roster tab", async () => {

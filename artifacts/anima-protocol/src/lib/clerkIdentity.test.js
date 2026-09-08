@@ -3,6 +3,7 @@ import {
   clerkDisplayNameFromUser,
   clerkEmailFromUser,
   clerkIdentityFromUser,
+  clerkIdentityHydrationKey,
   shouldClearLocalSession,
 } from "./clerkIdentity";
 
@@ -27,6 +28,19 @@ describe("clerkEmailFromUser", () => {
   it("returns empty when Clerk has no email yet", () => {
     expect(clerkEmailFromUser({ id: "user_1" })).toBe("");
     expect(clerkEmailFromUser(null)).toBe("");
+  });
+
+  it("reads Clerk paginated emailAddresses.data and OAuth account email", () => {
+    expect(
+      clerkEmailFromUser({
+        emailAddresses: { data: [{ emailAddress: "paged@example.com" }] },
+      }),
+    ).toBe("paged@example.com");
+    expect(
+      clerkEmailFromUser({
+        externalAccounts: [{ provider: "oauth_github", emailAddress: "gh@x.com" }],
+      }),
+    ).toBe("gh@x.com");
   });
 });
 
@@ -61,6 +75,16 @@ describe("clerkIdentityFromUser", () => {
   it("returns null without a Clerk user id", () => {
     expect(clerkIdentityFromUser(null)).toBeNull();
     expect(clerkIdentityFromUser({})).toBeNull();
+  });
+
+  it("changes hydration key when email arrives after id", () => {
+    const before = clerkIdentityHydrationKey({ id: "user_1" });
+    const after = clerkIdentityHydrationKey({
+      id: "user_1",
+      primaryEmailAddress: { emailAddress: "ada@example.com" },
+    });
+    expect(before).not.toBe(after);
+    expect(after).toContain("ada@example.com");
   });
 });
 
