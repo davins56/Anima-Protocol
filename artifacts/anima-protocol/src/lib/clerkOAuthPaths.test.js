@@ -130,6 +130,9 @@ describe('clerkOAuthPaths', () => {
     expect(app).toMatch(/shouldAllowDirectClerkFallback/);
     expect(app).toMatch(/lockSameOriginClerkProxy/);
     expect(app).toMatch(
+      /function AuthFormShell\([\s\S]*?useEffect\(\(\) => \{[\s\S]*?expireBrowserApexClerkClientUatCookies\(\);/,
+    );
+    expect(app).toMatch(
       /function SsoCallbackPage\(\) \{[\s\S]*?useEffect\(\(\) => \{[\s\S]*?expireBrowserApexClerkClientUatCookies\(\);[\s\S]*?markClerkAuthReturn/,
     );
     expect(app).not.toMatch(

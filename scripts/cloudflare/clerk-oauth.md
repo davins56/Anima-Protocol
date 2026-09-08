@@ -12,8 +12,12 @@ bypasses Worker cookie handling and is the post-GitHub
 mode on production — if `/api/__clerk` is unhealthy, keep `proxyUrl` and
 show an error. Safari ITP would otherwise drop CNAME-cloaked
 `__client` cookies. The SPA expires leftover Domain=apex / Domain=.apex
-`__client_uat*` on the SSO callback page only — never `__session` /
-`__client` on every refresh.
+`__client_uat*` on `/sign-in` and `/sign-up` (before GitHub leaves the
+page) and again on the SSO callback page — never `__session` /
+`__client`, and never on every app boot. Clerk's CNAME
+`/v1/oauth_callback` itself Set-Cookies `__client_uat=0; Domain=anima-protocol.com`,
+so a retry without that preclear sends the leftover to the CNAME and
+Clerk returns `authorization_invalid`.
 
 GitHub (and Google) do **not** callback to the SPA. They callback to Clerk.
 
@@ -114,8 +118,8 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   is the "signed in until refresh" failure. Expire only `__client_uat*`
   leftovers, and only on handshake / SSO / oauth_callback — never on
   ordinary `/v1/client` after reload. The SPA expires visible `__client_uat*`
-  on the SSO callback page only. Omit `Clerk-Secret-Key` on
-  `/v1/oauth_callback`.
+  on sign-in / sign-up (before GitHub) and on the SSO callback page.
+  Omit `Clerk-Secret-Key` on `/v1/oauth_callback`.
 
 Live probes:
 
