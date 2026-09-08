@@ -6,6 +6,8 @@ import {
   clientIpFromHeaders,
   forwardedRequestProto,
   isClerkHandshakeRequest,
+  isClerkSsoCallbackReferer,
+  shouldStripClerkAuthCookies,
   proxyClerkWithFetch,
   resolveClerkNpmRedirectUrl,
   resolveClerkUpstreamPath,
@@ -348,6 +350,43 @@ describe("clerkProxyFetch", () => {
       },
     );
     expect(headers.get("cookie")).toBe("__client=keep; __session=keep");
+  });
+
+  it("strips Clerk cookies on /v1/client when Referer is the SSO callback", () => {
+    expect(
+      isClerkSsoCallbackReferer(
+        "https://anima-protocol.com/sign-in/sso-callback?__clerk_handshake=abc",
+      ),
+    ).toBe(true);
+    expect(isClerkSsoCallbackReferer("https://anima-protocol.com/sign-in")).toBe(
+      false,
+    );
+    expect(
+      shouldStripClerkAuthCookies(
+        "/v1/client?__clerk_api_version=2026-05-12",
+        "https://anima-protocol.com/sign-in/sso-callback",
+      ),
+    ).toBe(true);
+
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          referer: "https://anima-protocol.com/sign-in/sso-callback?__clerk_handshake=abc",
+          cookie: "__session=from-cname; __client_uat=0; theme=dark",
+          accept: "application/json",
+        },
+      },
+      "sk_live_test",
+      {
+        officialProxy: false,
+        authorizeUpstream: true,
+        requestUrl: "/v1/client?__clerk_api_version=2026-05-12",
+      },
+    );
+    expect(headers.get("cookie")).toBe("theme=dark");
   });
 
   it("rewrites FAPI Location headers onto the same-origin proxy path", () => {

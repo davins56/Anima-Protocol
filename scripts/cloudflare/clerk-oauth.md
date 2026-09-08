@@ -69,10 +69,13 @@ GitHub returns to `https://clerk.anima-protocol.com/v1/oauth_callback`
 `.anima-protocol.com` while `__client` stays on the CNAME. The SPA then
 lands on `/sign-in/sso-callback?__clerk_handshake=…` and clerk-js calls
 `/api/__clerk/v1/client…`. Forwarding that orphan `__session` without
-the matching `__client` is InvalidAuthorization. Handshake requests
-strip `__client` / `__session` / `__refresh` cookies so the handshake
-JWT is the only credential; Set-Cookie on the response is rewritten
-first-party.
+the matching `__client` is InvalidAuthorization. The proxy strips
+`__client` / `__session` / `__refresh` when the request is a handshake
+(`__clerk_handshake` / `/v1/client/handshake`) **or** the Referer is
+`/sign-in/sso-callback` / `/sign-up/sso-callback`. Ordinary `/v1/client`
+from `/sign-in` keeps cookies. Set-Cookie on the handshake response is
+rewritten first-party. Document redirects stay on the SPA — they are
+not remapped onto `/api/__clerk/`.
 
 Verify:
 
