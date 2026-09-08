@@ -264,12 +264,25 @@ export function clerkJsScriptProbeUrl(clerkPubKey) {
   return `${base}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`;
 }
 
+/** Clerk client/session cookies, including `__client_uat*`. */
+export function isBrowserClerkAuthCookieName(name) {
+  const n = String(name || '').trim().toLowerCase();
+  return (
+    n.startsWith('__client') ||
+    n.startsWith('__session') ||
+    n.startsWith('__refresh')
+  );
+}
+
 /**
- * Expire Domain=apex `__client_uat*` copies.
+ * Expire Domain=apex Clerk auth cookies (`__client*`, `__session*`, `__refresh*`).
  *
- * Those cookies are not HttpOnly, so GitHub's hop to
- * clerk.anima-protocol.com/v1/oauth_callback sends them and Clerk returns
- * authorization_invalid. Host-only copies (no Domain) stay on the app origin.
+ * `__client_uat*` is not HttpOnly, so GitHub's hop to
+ * clerk.anima-protocol.com/v1/oauth_callback sends Domain=apex copies and
+ * Clerk returns authorization_invalid. Host-only copies (no Domain) stay on
+ * the app origin. HttpOnly leftovers are expired by the Worker on the next
+ * `/api/__clerk` response — JS cannot delete those. clerk.anima-protocol.com
+ * host-only cookies are not visible from this origin.
  */
 export function expireBrowserApexClerkClientUatCookies({
   cookie = typeof document !== 'undefined' ? document.cookie : '',
@@ -280,9 +293,7 @@ export function expireBrowserApexClerkClientUatCookies({
   const names = new Set(['__client_uat']);
   for (const part of String(cookie || '').split(';')) {
     const name = part.trim().split('=')[0] || '';
-    if (name === '__client_uat' || name.startsWith('__client_uat_')) {
-      names.add(name);
-    }
+    if (isBrowserClerkAuthCookieName(name)) names.add(name);
   }
   const writer =
     writeCookie ||
@@ -290,10 +301,13 @@ export function expireBrowserApexClerkClientUatCookies({
       if (typeof document !== 'undefined') document.cookie = value;
     });
   const written = [];
+  const domains = [ANIMA_APEX_HOST, `.${ANIMA_APEX_HOST}`];
   for (const name of names) {
-    const expiry = `${name}=; Path=/; Domain=${ANIMA_APEX_HOST}; Max-Age=0; Secure; SameSite=Lax`;
-    writer(expiry);
-    written.push(expiry);
+    for (const domain of domains) {
+      const expiry = `${name}=; Path=/; Domain=${domain}; Max-Age=0; Secure; SameSite=Lax`;
+      writer(expiry);
+      written.push(expiry);
+    }
   }
   return written;
 }

@@ -9,8 +9,10 @@ Production FAPI is the Clerk **custom domain** `clerk.anima-protocol.com`
 `https://clerk.anima-protocol.com/v1/*` from the publishable key — that
 bypasses Worker cookie handling and is the post-GitHub
 `authorization_invalid` path. Do not remount ClerkProvider in "direct"
-mode on production. Safari ITP would otherwise drop CNAME-cloaked
-`__client` cookies.
+mode on production — if `/api/__clerk` is unhealthy, keep `proxyUrl` and
+show an error. Safari ITP would otherwise drop CNAME-cloaked
+`__client` cookies. The SPA expires leftover Domain=apex / Domain=.apex
+`__client_uat*` (and any other visible Clerk auth cookies) before handshake.
 
 GitHub (and Google) do **not** callback to the SPA. They callback to Clerk.
 
