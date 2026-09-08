@@ -287,11 +287,12 @@ export function isBrowserClerkClientUatCookieName(name) {
  *
  * `__client_uat*` is not HttpOnly, so GitHub's hop to
  * clerk.anima-protocol.com/v1/oauth_callback sends Domain=apex copies and
- * Clerk returns authorization_invalid. Host-only `__client` / `__session`
- * must survive refresh. On anima-protocol.com, `Domain=apex; Max-Age=0`
- * also deletes the host-only cookie of the same name (Chrome/Safari).
- * Call this on sign-in / sign-up (before GitHub) and on SSO callback —
- * not on every page load.
+ * Clerk returns authorization_invalid even when `__client` is present.
+ * Never expire `__client` / `__session` / `__refresh` — the Worker sets
+ * `__client` with Domain=apex so the CNAME callback can authenticate.
+ * On anima-protocol.com, `Domain=apex; Max-Age=0` also deletes the cookie
+ * of the same name (Chrome/Safari). Call this on sign-in / sign-up
+ * (before GitHub) and on SSO callback — not on every page load.
  */
 export function expireBrowserApexClerkClientUatCookies({
   cookie = typeof document !== 'undefined' ? document.cookie : '',
