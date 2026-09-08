@@ -70,8 +70,13 @@ vi.mock("@clerk/react", () => ({
   }),
 }));
 
+vi.mock("@/lib/syncBootstrap", () => ({
+  whenBootstrapReady: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@/api/base44Client", () => ({
   exportData: vi.fn(),
+  waitForStoreAuth: vi.fn().mockResolvedValue("token"),
   base44: {
     auth: {
       me: meMock,
@@ -119,7 +124,7 @@ vi.mock("@/lib/restoreHandlers", () => ({
   performRestoreFlow: vi.fn(),
 }));
 
-import Settings from "./Settings";
+import Settings, { normalizeSettingsSection, SECTION } from "./Settings";
 
 function renderPage() {
   const container = document.createElement("div");
@@ -149,6 +154,15 @@ async function openCustomBackground(container) {
     customBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 }
+
+describe("normalizeSettingsSection", () => {
+  it("opens Customise Anima from the settings query string", () => {
+    expect(normalizeSettingsSection("customise-anima")).toBe(SECTION.CUSTOMISE_ANIMA);
+    expect(normalizeSettingsSection("CUSTOMISE-ANIMA")).toBe(SECTION.CUSTOMISE_ANIMA);
+    expect(normalizeSettingsSection("unknown")).toBe(SECTION.ACCOUNT);
+    expect(normalizeSettingsSection(null)).toBe(SECTION.ACCOUNT);
+  });
+});
 
 describe("Settings custom chat background upload", () => {
   beforeEach(() => {
@@ -413,6 +427,46 @@ describe("Settings account identity after Clerk login", () => {
     expect(container.textContent).toMatch(/davins56@hotmail\.com/);
     expect(container.textContent).toMatch(/Dàvīn Smith/);
     expect(container.textContent).not.toMatch(/Email—|Email —/);
+  });
+
+  it("lists Serenity and Aelynd on Settings → Customise Anima", async () => {
+    listMock.mockImplementation(async () => [
+      {
+        id: "anima-1",
+        name: "Serenity",
+        created_date: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "char-aelynd",
+        name: "Aelynd",
+        created_date: "2026-03-01T00:00:00.000Z",
+      },
+    ]);
+    const { container } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const customiseBtn = Array.from(container.querySelectorAll("button")).find(
+      (btn) => (btn.textContent || "").replace(/\s+/g, " ").trim() === "Customise Anima",
+    );
+    expect(customiseBtn).toBeTruthy();
+    await act(async () => {
+      customiseBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/Your Animas/);
+    expect(container.textContent).toMatch(/Serenity/);
+    expect(container.textContent).toMatch(/Aelynd/);
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (btn) => btn.getAttribute("aria-label") === "Customise Aelynd",
+      ),
+    ).toBe(true);
   });
 
   it("reloads auth.me when isAuthenticated becomes true", async () => {
