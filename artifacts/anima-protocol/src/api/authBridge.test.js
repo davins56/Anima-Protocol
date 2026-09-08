@@ -3,6 +3,7 @@ import { STORE_TOKEN_TIMEOUT_MS } from "@/lib/storeTimeouts";
 import {
   clearAuthTokenGetter,
   getToken,
+  hasAuthTokenGetter,
   setAuthTokenGetter,
   waitForStoreAuth,
 } from "./authBridge";
@@ -18,7 +19,16 @@ describe("authBridge getToken", () => {
   });
 
   it("returns null when no getter is registered", async () => {
+    expect(hasAuthTokenGetter()).toBe(false);
     await expect(getToken()).resolves.toBeNull();
+  });
+
+  it("reports when a token getter is registered", () => {
+    expect(hasAuthTokenGetter()).toBe(false);
+    setAuthTokenGetter(() => "tok");
+    expect(hasAuthTokenGetter()).toBe(true);
+    clearAuthTokenGetter();
+    expect(hasAuthTokenGetter()).toBe(false);
   });
 
   it("returns a string token from a sync getter without arming a timer", async () => {

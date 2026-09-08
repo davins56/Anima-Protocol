@@ -25,13 +25,14 @@ import {
   authHeaders,
   clearAuthTokenGetter,
   getToken,
+  hasAuthTokenGetter,
   setAuthTokenGetter,
   waitForStoreAuth,
 } from './authBridge';
 
 const STORE_BASE = () => apiUrl('/store');
 
-export { clearAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
+export { clearAuthTokenGetter, hasAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
 export {
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
@@ -1432,6 +1433,16 @@ export const base44 = {
     },
 
     me: async () => {
+      // AuthContext registers the Clerk/guest getter as soon as a session
+      // exists. Wait for the JWT so Settings does not snapshot an empty
+      // profile while getToken() is still minting.
+      if (hasAuthTokenGetter()) {
+        try {
+          await waitForStoreAuth();
+        } catch {
+          // Fall through — mergedUser still overlays syncIdentity.
+        }
+      }
       const profile = await loadProfile(false);
       return mergedUser(profile);
     },
