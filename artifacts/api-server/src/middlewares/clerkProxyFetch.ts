@@ -153,7 +153,9 @@ function withCookieDomain(raw: string, domain: string | null): string {
  * Host-only `__client` (the #406 rewrite) is invisible to that CNAME —
  * live: no `__client` → 301 `err_code=authorization_invalid` → 403 JSON
  * matching the user error. A real `__client` + `state` + `code` (no UAT)
- * 303s to `/sign-in/sso-callback` instead.
+ * 303s to `/sign-in/sso-callback` instead. The cookie is still first-party
+ * (Set-Cookie on `/api/__clerk`); Safari ITP only treats CNAME-cloaked
+ * cookies minted on `clerk.{apex}` as third-party.
  *
  * `__client_uat*` stays host-only. Domain=apex UAT on the CNAME hop is a
  * separate failure (live: valid `__client` + leftover `__client_uat=0` →
