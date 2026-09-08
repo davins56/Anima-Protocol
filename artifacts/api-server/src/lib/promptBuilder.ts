@@ -64,6 +64,10 @@ import {
 } from "./therapySafety";
 import type { IntimacyProfile, IntimacyScene, IntimacyTurnResult } from "./intimacyTypes";
 import { getIntimacyPromptGuidance } from "./intimacyPrompt";
+import {
+  formatOperatorModelForPrompt,
+  type OperatorModel,
+} from "./operatorModel";
 
 // Re-export sub-module types for consumers
 export type { CompanionMemoryRecord, CharacterData, ResonanceState, SynchroState };
@@ -148,6 +152,12 @@ export interface PromptBuilderParams {
   intimacyProfile?: IntimacyProfile | null;
   intimacyScene?: IntimacyScene | null;
   intimacyTurnResult?: IntimacyTurnResult | null;
+
+  /**
+   * Steward / operator Hub-DNA analogue. Injected after identity lock as
+   * bounded context — never an override of CHARACTER IDENTITY LOCK or memories.
+   */
+  operatorModel?: OperatorModel | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -160,6 +170,7 @@ const BUDGET = {
   crossover: 800,
   history: 4000,
   userMessage: 600,
+  operatorModel: 1200,
 } as const;
 
 function clientOwnsTranscript(systemPrompt?: string): boolean {
@@ -387,6 +398,7 @@ export function composePrompt(params: PromptBuilderParams): string {
     crisisResource,
     hiddenSequences,
     conversationalWeather,
+    operatorModel,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -601,12 +613,19 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     );
   }
 
+  const operatorModelBlock = formatOperatorModelForPrompt(
+    operatorModel,
+    BUDGET.operatorModel,
+  );
+
   // Assemble in one authoritative pipeline:
-  // scene data → identity → user/world → relationship → memory → mode/safety
-  // → lore/voice → conversation → current turn → final safety guardrail.
+  // scene data → identity → steward/operator → user/world → relationship
+  // → memory → mode/safety → lore/voice → conversation → current turn
+  // → final safety guardrail.
   const sections: string[] = [
     corePrompt,
     charDef ? `CHARACTER:\n${charDef}` : "",
+    operatorModelBlock,
     worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
     resonanceBlock,
     relationshipBlock,
