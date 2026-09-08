@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { interpretClerkCnameGatewayProbe } from "../../../scripts/src/verify-clerk-cname-gateway";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -212,11 +213,12 @@ describe("Cloudflare wrangler config", () => {
   });
 
   it("does not assume a wrangler www route until the zone rule keeps ${1}", () => {
-    const routes = (config.routes ?? []) as Array<Record<string, string>>;
+    const routes = (config.routes ?? []) as Array<Record<string, unknown>>;
     expect(routes.map((row) => row.pattern)).toEqual([
-      "clerk.anima-protocol.com/*",
+      "clerk.anima-protocol.com",
     ]);
-    expect(routes[0]?.zone_name).toBe("anima-protocol.com");
+    expect(routes[0]?.custom_domain).toBe(true);
+    expect(routes[0]?.zone_name).toBeUndefined();
     expect(JSON.stringify(routes)).not.toMatch(/www\.anima-protocol\.com/);
     const wrangler = readFileSync(
       path.join(repoRoot, "wrangler.jsonc"),
@@ -225,15 +227,43 @@ describe("Cloudflare wrangler config", () => {
     expect(wrangler).toMatch(/scripts\/cloudflare\/www-redirect\.md/);
     expect(wrangler).toMatch(/Redirect www to root/);
     expect(wrangler).toMatch(/Do not add www\.anima-protocol\.com routes/);
-    expect(wrangler).toMatch(/clerkCnameGateway/);
+    expect(wrangler).toMatch(/custom_domain/);
+    expect(wrangler).toMatch(/clerk-cname-gateway\.md/);
     expect(workerSource).toContain("handleClerkCnameGateway");
     expect(workerSource).toContain("isClerkCnameRequestHost");
+    const cnameNotes = readFileSync(
+      path.join(repoRoot, "scripts/cloudflare/clerk-cname-gateway.md"),
+      "utf8",
+    );
+    expect(cnameNotes).toContain("frontend-api.clerk.services");
+    expect(cnameNotes).toContain("custom_domain");
+    expect(cnameNotes).toContain("verify:clerk-cname-gateway");
     const notes = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/www-redirect.md"),
       "utf8",
     );
     expect(notes).toMatch(/\$\{1\}/);
     expect(notes).toMatch(/Do \*\*not\*\* add a `www\.anima-protocol\.com` route/);
+  });
+
+  it("detects a grey-cloud Clerk CNAME as an unsuccessful gateway cutover", () => {
+    expect(
+      interpretClerkCnameGatewayProbe({
+        status: 301,
+        location: "/v1/oauth_callback?err_code=authorization_invalid#",
+        bodySnippet: "",
+        cnameTarget: "frontend-api.clerk.services.",
+      }).ok,
+    ).toBe(false);
+    expect(
+      interpretClerkCnameGatewayProbe({
+        status: 303,
+        location:
+          "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+        bodySnippet: "",
+        cnameTarget: null,
+      }).ok,
+    ).toBe(true);
   });
 
   it("pins wrangler so production GET /deployments cannot abort clerk-js deploys", () => {
@@ -296,6 +326,8 @@ describe("Cloudflare wrangler config", () => {
     expect(notes).toContain(
       "/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
     );
+    expect(notes).toContain("custom_domain");
+    expect(notes).toContain("clerk-cname-gateway.md");
     expect(notes).not.toMatch(/sk_live_[A-Za-z0-9]{8,}|sk_test_[A-Za-z0-9]{8,}/);
     expect(notes).not.toMatch(/postgres(?:ql)?:\/\//i);
   });

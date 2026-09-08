@@ -136,6 +136,7 @@ Verify:
 
 ```bash
 pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
+pnpm --filter @workspace/scripts run verify:clerk-cname-gateway
 ```
 
 ## Worker proxy (code)
@@ -147,9 +148,13 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   the script tag.
 - `/api/__clerk/v1/*` 3xx with `Location` (GitHub authorize URL, handshake)
   must be forwarded, not rewritten as JSON.
-- `clerk.anima-protocol.com` is bound to Worker `anima-protocol` as a
-  **gateway** (`wrangler.jsonc` routes). Do not orange-cloud the raw
-  Clerk CNAME (1014). Upstream is Clerk via `cf.resolveOverride`.
+- `clerk.anima-protocol.com` must be a Worker **Custom Domain**
+  (`wrangler.jsonc` `custom_domain: true`), not a zone route in front of
+  Clerk's CNAME. A route never receives grey-cloud CNAME traffic — live
+  after #420 still `301 err_code` from Clerk. Delete
+  `CNAME clerk → frontend-api.clerk.services` first, then deploy
+  (see `scripts/cloudflare/clerk-cname-gateway.md`). Do not orange-cloud
+  the Clerk CNAME (1014). Upstream is Clerk via `cf.resolveOverride`.
   GitHub's Authorization callback URL stays
   `https://clerk.anima-protocol.com/v1/oauth_callback`.
 - `__client` must be `Domain=anima-protocol.com` so GitHub's document
