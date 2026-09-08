@@ -298,6 +298,24 @@ export function clerkOAuthCallbackShouldBypassUpstream(
   }
 }
 
+/** SPA landing for a failed proxied oauth_callback (never the 403 JSON body). */
+export function clerkOAuthCallbackSignInRedirect(
+  origin: string | undefined,
+  errCode = "authorization_invalid",
+): string {
+  const base = origin || "https://anima-protocol.com";
+  return `${base}/sign-in?clerk_error=${encodeURIComponent(errCode)}`;
+}
+
+/**
+ * Live Clerk 403 on `/v1/oauth_callback?err_code=` is the user JSON
+ * `{ code: "authorization_invalid", clerk_trace_id }`. Do not give that
+ * body to clerk-js even when the request had `code`+`state`.
+ */
+export function clerkOAuthCallbackShouldHideUpstreamBody(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
 /**
  * Handshake JWT (query/path), the first FAPI XHR from the SSO callback
  * page, or a proxied oauth_callback. Ordinary `/v1/client` from `/sign-in`
@@ -729,10 +747,7 @@ export async function proxyClerkWithFetch(
     );
     if (clerkOAuthCallbackShouldBypassUpstream(upstreamPath)) {
       res.statusCode = 303;
-      res.setHeader(
-        "location",
-        `${origin || "https://anima-protocol.com"}/sign-in?clerk_error=authorization_invalid`,
-      );
+      res.setHeader("location", clerkOAuthCallbackSignInRedirect(origin));
       res.end();
       return;
     }
@@ -770,6 +785,17 @@ export async function proxyClerkWithFetch(
       redirect: "manual",
       signal: upstreamAbortSignal(),
     });
+  }
+
+  if (
+    isClerkOAuthCallbackPath(upstreamPath) &&
+    clerkOAuthCallbackShouldHideUpstreamBody(upstream.status)
+  ) {
+    await upstream.arrayBuffer().catch(() => undefined);
+    res.statusCode = 303;
+    res.setHeader("location", clerkOAuthCallbackSignInRedirect(origin));
+    res.end();
+    return;
   }
 
   res.statusCode = upstream.status;

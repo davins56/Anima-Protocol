@@ -14,6 +14,7 @@ import {
   Route,
   useLocation,
   useNavigate,
+  useSearchParams,
 } from "react-router-dom";
 import {
   ClerkFailed,
@@ -341,6 +342,9 @@ function ClerkFailedConnectivityHints() {
 }
 
 function AuthFormShell({ mode, children }) {
+  const [searchParams] = useSearchParams();
+  const clerkError = searchParams.get("clerk_error");
+
   useEffect(() => {
     // Clerk's CNAME oauth_callback Set-Cookies Domain=apex `__client_uat*`.
     // Those copies are sent back to clerk.anima-protocol.com on the next
@@ -354,6 +358,12 @@ function AuthFormShell({ mode, children }) {
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
         <ClerkLoginDiagnostics />
+        {clerkError ? (
+          <p className="px-1 text-center text-xs leading-relaxed text-amber-200/80">
+            GitHub sign-in did not finish. Continue with GitHub to try again —
+            this is not a JSON Clerk error page.
+          </p>
+        ) : null}
         {mode === "sign-in" ? (
           <p className="px-1 text-center text-xs leading-relaxed text-cyan-400/55">
             Prefer Continue with GitHub, or the username/email already on your
