@@ -115,7 +115,7 @@ function pipeDownload(
   response.headers.forEach((value, key) => res.setHeader(key, value));
   if (response.body) {
     const nodeStream = Readable.fromWeb(
-      response.body as ReadableStream<Uint8Array>,
+      response.body as unknown as Parameters<typeof Readable.fromWeb>[0],
     );
     nodeStream.pipe(res);
   } else {
