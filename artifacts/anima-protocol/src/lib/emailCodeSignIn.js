@@ -347,6 +347,66 @@ export function githubOAuthHangMessage() {
   );
 }
 
+export function githubOAuthNeedsIdentifierMessage(status) {
+  const label = typeof status === "string" && status ? status : "needs_identifier";
+  return (
+    `GitHub sign-in did not leave this page (${label}). ` +
+    `Tap Continue with GitHub again. Use ${PRODUCTION_SIGN_IN_URL}.`
+  );
+}
+
+/**
+ * GitHub authorize URL Clerk left on the SignIn after `sso()` / `create`.
+ * clerk-js only calls `__internal_windowNavigate` when verification status is
+ * `unverified` *and* this URL is set. An existing `signIn.id` without that
+ * URL skips `_create` — Safari then stays on `needs_identifier` with no
+ * navigation (the iPad screenshot).
+ */
+export function clerkOAuthProviderRedirectUrl(signIn) {
+  if (!signIn || typeof signIn !== "object") return null;
+  const verification =
+    signIn.firstFactorVerification ||
+    signIn.first_factor_verification ||
+    signIn.verifications?.externalAccount ||
+    null;
+  const raw =
+    verification?.externalVerificationRedirectURL ||
+    verification?.externalVerificationRedirectUrl ||
+    verification?.external_verification_redirect_url ||
+    null;
+  if (!raw) return null;
+  const href =
+    typeof raw === "string"
+      ? raw
+      : typeof raw.href === "string"
+        ? raw.href
+        : String(raw);
+  try {
+    const url = new URL(
+      href,
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://anima-protocol.com",
+    );
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    if (host === "github.com" || host.endsWith(".github.com")) return url.href;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function assignBrowserLocation(href, assign = defaultAssignLocation) {
+  if (typeof assign === "function") assign(href);
+}
+
+function defaultAssignLocation(href) {
+  if (typeof window !== "undefined" && window.location) {
+    window.location.assign(href);
+  }
+}
+
 /** @param {unknown} status */
 export function isIncompleteOAuthSignInStatus(status) {
   if (typeof status !== "string") return false;
@@ -376,8 +436,12 @@ export function interpretGitHubSsoResult(signIn, { didNavigate = false } = {}) {
         ? "GitHub sign-in needs another verification step before it can finish."
         : status === "needs_client_trust"
           ? "GitHub sign-in needs to verify this device before it can finish."
-          : `GitHub sign-in did not finish (${status}).`;
-    const error = new Error(`${detail} ${githubOAuthHangMessage()}`);
+          : githubOAuthNeedsIdentifierMessage(status);
+    const error = new Error(
+      status === "needs_second_factor" || status === "needs_client_trust"
+        ? `${detail} ${githubOAuthHangMessage()}`
+        : detail,
+    );
     error.code = "oauth_incomplete";
     error.status = status;
     return { ok: false, navigated: false, shouldFinalize: false, status, error };
@@ -473,7 +537,7 @@ export function watchPageNavigation(target = typeof window !== "undefined" ? win
  * @param {{ sso?: Function, authenticateWithRedirect?: Function, status?: string | null } | null | undefined} signIn
  * @param {string} basePath
  * @param {{ authenticateWithRedirect?: Function, client?: { signIn?: { authenticateWithRedirect?: Function } } } | null | undefined} [clerk]
- * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean, expireApexUat?: () => void }} [options]
+ * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean, expireApexUat?: () => void, assignLocation?: (href: string) => void, origin?: string }} [options]
  */
 export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = {}) {
   const expireApexUat =
@@ -483,9 +547,30 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = 
   const paths = clerkOAuthRedirectPaths(basePath, "sign-in");
   const timeoutMs = options.timeoutMs ?? GITHUB_OAUTH_SSO_TIMEOUT_MS;
   const navigationGraceMs = options.navigationGraceMs ?? GITHUB_OAUTH_NAVIGATION_GRACE_MS;
+  const assignLocation = options.assignLocation;
+  const origin =
+    options.origin ||
+    (typeof window !== "undefined" ? window.location.origin : "https://anima-protocol.com");
   const watcher = options.didNavigate
     ? { didNavigate: () => Boolean(options.didNavigate()), dispose() {} }
     : watchPageNavigation();
+
+  const navigateToProviderIfNeeded = async () => {
+    if (watcher.didNavigate()) return true;
+    let href = clerkOAuthProviderRedirectUrl(signIn);
+    if (!href && typeof signIn?.create === "function") {
+      const completePath = paths.redirectUrl === "/" ? "/" : paths.redirectUrl;
+      await signIn.create({
+        strategy: "oauth_github",
+        redirectUrl: `${origin.replace(/\/$/, "")}${paths.redirectCallbackUrl}`,
+        actionCompleteRedirectUrl: `${origin.replace(/\/$/, "")}${completePath}`,
+      });
+      href = clerkOAuthProviderRedirectUrl(signIn);
+    }
+    if (!href) return false;
+    assignBrowserLocation(href, assignLocation ?? defaultAssignLocation);
+    return true;
+  };
 
   const finishOAuth = async (method) => {
     let interpreted = interpretGitHubSsoResult(signIn, {
@@ -494,6 +579,17 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = 
     if (!interpreted.ok && interpreted.error?.code === "oauth_no_redirect") {
       const navigated = await waitForPageNavigation(watcher.didNavigate, navigationGraceMs);
       interpreted = interpretGitHubSsoResult(signIn, { didNavigate: navigated });
+    }
+    if (
+      !interpreted.ok &&
+      (interpreted.error?.code === "oauth_no_redirect" ||
+        interpreted.status === "needs_identifier" ||
+        interpreted.status === "needs_first_factor")
+    ) {
+      const assigned = await navigateToProviderIfNeeded();
+      if (assigned) {
+        return { method, ...paths, ok: true, navigated: true, shouldFinalize: false };
+      }
     }
     if (!interpreted.ok) {
       throw interpreted.error;
