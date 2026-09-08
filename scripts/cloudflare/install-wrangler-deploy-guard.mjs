@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * Copy the GET /deployments parse guard next to wrangler's bin and inject
- * `node --require` so `npx wrangler deploy` (Workers Builds production) loads
- * it. Idempotent. Skips when wrangler is not installed.
+ * Copy the informational-GET parse guard next to wrangler's bin and inject
+ * `node --require` so `npx wrangler deploy` / `versions upload` (Workers
+ * Builds) load it. Covers GET /deployments (before production upload) and
+ * GET /workers/subdomain (after upload). Idempotent. Skips when wrangler
+ * is not installed.
  */
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
