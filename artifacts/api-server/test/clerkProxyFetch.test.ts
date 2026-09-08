@@ -18,6 +18,7 @@ import {
   isClerkOAuthCallbackPath,
   apexClerkAuthCookieExpiries,
   collectClerkAuthCookieNames,
+  isClerkClientTokenCookieName,
   isClerkClientUatCookieName,
   stripClerkAuthCookies,
   usesOfficialClerkProxyProtocol,
@@ -263,12 +264,26 @@ describe("clerkProxyFetch", () => {
   });
 
   it("rewrites CNAME-cloaked Clerk cookies onto the app origin", () => {
+    expect(isClerkClientTokenCookieName("__client")).toBe(true);
+    expect(isClerkClientTokenCookieName("__client_uat")).toBe(false);
+    // GitHub oauth_callback on clerk.{apex} authenticates with __client.
+    // Host-only is invisible there → 301 authorization_invalid.
     expect(
       rewriteClerkProxySetCookie(
         "__client=abc; Path=/; Domain=clerk.anima-protocol.com; HttpOnly; Secure; SameSite=Lax",
         "anima-protocol.com",
       ),
-    ).toBe("__client=abc; Path=/; HttpOnly; Secure; SameSite=Lax");
+    ).toBe(
+      "__client=abc; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=anima-protocol.com",
+    );
+    expect(
+      rewriteClerkProxySetCookie(
+        "__client=abc; Path=/; HttpOnly; Secure; SameSite=Lax",
+        "www.anima-protocol.com",
+      ),
+    ).toBe(
+      "__client=abc; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=anima-protocol.com",
+    );
     expect(
       rewriteClerkProxySetCookie(
         "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
@@ -398,7 +413,7 @@ describe("clerkProxyFetch", () => {
     expect(headers.get("cookie")).toBe("theme=dark");
   });
 
-  it("strips Clerk cookies and omits Secret-Key on oauth_callback", () => {
+  it("strips leftover UAT/session on oauth_callback but forwards __client", () => {
     expect(isClerkOAuthCallbackPath("/v1/oauth_callback?code=x&state=y")).toBe(
       true,
     );
@@ -449,9 +464,14 @@ describe("clerkProxyFetch", () => {
         requestUrl: "/v1/oauth_callback?code=fake&state=abc",
       },
     );
-    expect(headers.get("cookie")).toBe("theme=dark");
+    expect(headers.get("cookie")).toBe("__client=tok; theme=dark");
     expect(headers.get("Clerk-Secret-Key")).toBeNull();
     expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+    expect(
+      stripClerkAuthCookies("__client_uat=0; __client=tok; __session=x; theme=dark", {
+        keepClientToken: true,
+      }),
+    ).toBe("__client=tok; theme=dark");
   });
 
   it("rewrites FAPI Location headers onto the same-origin proxy path", () => {
@@ -582,9 +602,14 @@ describe("clerkProxyFetch", () => {
       fetchImpl as unknown as typeof fetch,
     );
     expect(res.statusCode).toBe(200);
-    expect(cookies.some((c) => c.startsWith("__client=tok") && !/Domain=/i.test(c))).toBe(
-      true,
-    );
+    expect(
+      cookies.some(
+        (c) =>
+          c.startsWith("__client=tok") &&
+          /Domain=anima-protocol\.com/i.test(c) &&
+          !/Max-Age=0/i.test(c),
+      ),
+    ).toBe(true);
     expect(
       cookies.some(
         (c) =>
@@ -646,9 +671,14 @@ describe("clerkProxyFetch", () => {
       "sk_live_test",
       fetchImpl as unknown as typeof fetch,
     );
-    expect(cookies.some((c) => c.startsWith("__client=tok") && !/Domain=/i.test(c))).toBe(
-      true,
-    );
+    expect(
+      cookies.some(
+        (c) =>
+          c.startsWith("__client=tok") &&
+          /Domain=anima-protocol\.com/i.test(c) &&
+          !/Max-Age=0/i.test(c),
+      ),
+    ).toBe(true);
     expect(cookies.some((c) => c.startsWith("__session=sess") && !/Domain=/i.test(c))).toBe(
       true,
     );
@@ -718,7 +748,7 @@ describe("clerkProxyFetch", () => {
     expect(body?.toString()).toBe("/* clerk-js */");
   });
 
-  it("proxies oauth_callback without Secret-Key or Clerk cookies", async () => {
+  it("proxies oauth_callback without Secret-Key and keeps __client", async () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe(
@@ -727,7 +757,7 @@ describe("clerkProxyFetch", () => {
       const headers = new Headers(init?.headers);
       expect(headers.get("Clerk-Secret-Key")).toBeNull();
       expect(headers.get("Clerk-Proxy-Url")).toBeNull();
-      expect(headers.get("cookie")).toBe("theme=dark");
+      expect(headers.get("cookie")).toBe("__client=tok; theme=dark");
       return new Response(null, {
         status: 303,
         headers: {

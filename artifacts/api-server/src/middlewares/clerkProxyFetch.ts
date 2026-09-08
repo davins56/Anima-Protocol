@@ -120,26 +120,47 @@ export function isClerkAuthCookieName(name: string): boolean {
 }
 
 /**
+ * The ProductionBrowser client token. Exact `__client` only — never
+ * `__client_uat*`. Clerk's CNAME `/v1/oauth_callback` authenticates with
+ * this cookie (OpenAPI `ProductionBrowser`).
+ */
+export function isClerkClientTokenCookieName(name: string): boolean {
+  return name.trim().toLowerCase() === "__client";
+}
+
+/**
  * Non-HttpOnly GitHub leftover. Safe to Domain=apex expire.
  * Never treat `__client` / `__session` / `__refresh` as UAT leftovers —
  * on anima-protocol.com, `Domain=apex; Max-Age=0` also deletes the
- * host-only session cookie (Chrome/Safari collapse Domain=exact-host).
+ * session cookie of the same name (Chrome/Safari collapse Domain=exact-host).
  */
 export function isClerkClientUatCookieName(name: string): boolean {
   const n = name.trim().toLowerCase();
   return n === "__client_uat" || n.startsWith("__client_uat_");
 }
 
+function withCookieDomain(raw: string, domain: string | null): string {
+  const stripped = raw.replace(/;\s*Domain=[^;]*/gi, "");
+  if (!domain) return stripped;
+  return `${stripped}; Domain=${domain}`;
+}
+
 /**
- * Drop Domain= on Clerk FAPI cookies so the browser stores them host-only on
- * the app origin (same-origin /api/__clerk).
+ * Rewrite Clerk FAPI Set-Cookie onto the app origin.
  *
- * `Domain=anima-protocol.com` (or `.anima-protocol.com`) is also sent to
- * `clerk.anima-protocol.com`. GitHub's oauth_callback is a document hit on
- * that CNAME — the Worker never sees it, so #405's outbound strip cannot
- * help. Any `__client` / `__client_uat` / `__session` on that request makes
- * Clerk return authorization_invalid (live: uat-only → 301 err_code;
- * no Clerk cookies → 303 /sign-in/sso-callback?__clerk_status=failed).
+ * `__client` must use `Domain={apex}` so GitHub's top-level hop to
+ * `clerk.{apex}/v1/oauth_callback` receives the client that started OAuth.
+ * Host-only `__client` (the #406 rewrite) is invisible to that CNAME —
+ * live: no `__client` → 301 `err_code=authorization_invalid` → 403 JSON
+ * matching the user error. A real `__client` + `state` + `code` (no UAT)
+ * 303s to `/sign-in/sso-callback` instead.
+ *
+ * `__client_uat*` stays host-only. Domain=apex UAT on the CNAME hop is a
+ * separate failure (live: valid `__client` + leftover `__client_uat=0` →
+ * 301 authorization_invalid). The SPA still preclears those leftovers.
+ *
+ * `__session` / `__refresh` stay host-only so an orphan CNAME session is
+ * not replayed on the next OAuth attempt.
  */
 export function rewriteClerkProxySetCookie(
   raw: string,
@@ -150,8 +171,12 @@ export function rewriteClerkProxySetCookie(
   const app = appHost.toLowerCase().replace(/^\./, "");
   const appApex = app.replace(/^www\./, "");
 
+  if (isClerkClientTokenCookieName(name)) {
+    return withCookieDomain(raw, appApex);
+  }
+
   if (isClerkAuthCookieName(name)) {
-    return domainMatch ? raw.replace(/;\s*Domain=[^;]*/i, "") : raw;
+    return withCookieDomain(raw, null);
   }
 
   if (!domainMatch) return raw;
@@ -184,20 +209,25 @@ export function isClerkNpmAssetPath(pathname: string): boolean {
 
 /**
  * After GitHub, oauth_callback runs on clerk.anima-protocol.com and may set
- * `__session` on `.anima-protocol.com` while `__client` stays on the CNAME.
- * The SPA then calls `/api/__clerk` with that orphan session cookie. Clerk
- * returns authorization_invalid on handshake. Handshake tokens are single-use
- * and must not share the request with a mismatched client/session pair.
- * (The CNAME oauth_callback itself is a different failure: Domain=apex
- * `__client_uat` — see rewriteClerkProxySetCookie.)
+ * `__session` on `.anima-protocol.com` while a CNAME-host `__client` stays
+ * there. The SPA then calls `/api/__clerk` with that orphan session cookie.
+ * Clerk returns authorization_invalid on handshake. Handshake tokens are
+ * single-use and must not share the request with a mismatched pair.
+ * Proxied oauth_callback keeps `__client` (see stripClerkAuthCookies).
  */
-export function stripClerkAuthCookies(cookieHeader: string): string {
+export function stripClerkAuthCookies(
+  cookieHeader: string,
+  options: { keepClientToken?: boolean } = {},
+): string {
   return cookieHeader
     .split(";")
     .map((part) => part.trim())
     .filter((part) => {
       if (!part) return false;
       const name = part.split("=", 1)[0] || "";
+      if (options.keepClientToken && isClerkClientTokenCookieName(name)) {
+        return true;
+      }
       return !isClerkAuthCookieName(name);
     })
     .join("; ");
@@ -249,7 +279,7 @@ export function isClerkOAuthCallbackPath(
 /**
  * Handshake JWT (query/path), the first FAPI XHR from the SSO callback
  * page, or a proxied oauth_callback. Ordinary `/v1/client` from `/sign-in`
- * keeps cookies.
+ * keeps cookies. oauth_callback still forwards `__client` after the strip.
  */
 export function shouldStripClerkAuthCookies(
   requestUrl: string | undefined,
@@ -509,7 +539,12 @@ export function buildClerkUpstreamHeaders(
   if (shouldStripClerkAuthCookies(options.requestUrl, referer)) {
     const cookie = headers.get("cookie");
     if (cookie) {
-      const stripped = stripClerkAuthCookies(cookie);
+      const stripped = stripClerkAuthCookies(cookie, {
+        // Proxied oauth_callback still needs ProductionBrowser `__client`.
+        // Strip leftover UAT / orphan session — those 301 authorization_invalid
+        // even when `__client` is present (live CNAME matrix).
+        keepClientToken: isClerkOAuthCallbackPath(options.requestUrl),
+      });
       if (stripped) headers.set("cookie", stripped);
       else headers.delete("cookie");
     }
