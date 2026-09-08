@@ -128,7 +128,6 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
 // Relative `/api/__clerk/` in production (pk_live_) — see lib/clerkProxy.js. An
 // absolute proxyUrl breaks clerk-js script loading and OAuth redirects.
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
-expireBrowserApexClerkClientUatCookies();
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const lockSameOriginClerkProxy = mustUseSameOriginClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
@@ -579,7 +578,6 @@ function ClerkProviderWithRoutes({ children }) {
   const [proxyRequiredFailed, setProxyRequiredFailed] = useState(false);
 
   useEffect(() => {
-    expireBrowserApexClerkClientUatCookies();
     let cancelled = false;
     (async () => {
       try {

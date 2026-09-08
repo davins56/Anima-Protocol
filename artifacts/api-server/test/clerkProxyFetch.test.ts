@@ -18,6 +18,7 @@ import {
   isClerkOAuthCallbackPath,
   apexClerkAuthCookieExpiries,
   collectClerkAuthCookieNames,
+  isClerkClientUatCookieName,
   stripClerkAuthCookies,
   usesOfficialClerkProxyProtocol,
 } from "../src/middlewares/clerkProxyFetch";
@@ -414,8 +415,19 @@ describe("clerkProxyFetch", () => {
     expect(collectClerkAuthCookieNames("__client_uat=0; theme=dark; __session=x")).toEqual(
       ["__client_uat", "__session"],
     );
+    expect(isClerkClientUatCookieName("__client_uat")).toBe(true);
+    expect(isClerkClientUatCookieName("__client")).toBe(false);
+    expect(isClerkClientUatCookieName("__session")).toBe(false);
     expect(
       apexClerkAuthCookieExpiries(["__client_uat", "theme"], "www.anima-protocol.com"),
+    ).toEqual([
+      "__client_uat=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax",
+    ]);
+    expect(
+      apexClerkAuthCookieExpiries(
+        ["__client", "__session", "__refresh_x", "__client_uat"],
+        "anima-protocol.com",
+      ),
     ).toEqual([
       "__client_uat=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax",
     ]);
@@ -581,14 +593,73 @@ describe("clerkProxyFetch", () => {
           !/Max-Age=0/i.test(c),
       ),
     ).toBe(true);
+    // Ordinary FAPI must not Domain=apex-expire session or uat cookies.
+    // On anima-protocol.com that Max-Age=0 also deletes the host-only copy.
     expect(
       cookies.some(
         (c) =>
-          c.startsWith("__client_uat=") &&
-          c.includes("Domain=anima-protocol.com") &&
-          c.includes("Max-Age=0"),
+          /Domain=anima-protocol\.com/i.test(c) && /Max-Age=0/i.test(c),
       ),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it("does not Domain=apex-expire __client/__session on /v1/client refresh", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const upstreamHeaders = new Headers();
+    upstreamHeaders.append(
+      "set-cookie",
+      "__client=tok; Path=/; Domain=clerk.anima-protocol.com; HttpOnly; Secure; SameSite=Lax",
+    );
+    upstreamHeaders.append(
+      "set-cookie",
+      "__session=sess; Path=/; Domain=clerk.anima-protocol.com; HttpOnly; Secure; SameSite=Lax",
+    );
+    const fetchImpl = vi.fn(async () => {
+      return new Response("{}", { status: 200, headers: upstreamHeaders });
+    });
+    const cookies: string[] = [];
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/client",
+        originalUrl: "/api/__clerk/v1/client",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          cookie: "__client=tok; __session=sess; __client_uat=1",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(cookies.some((c) => c.startsWith("__client=tok") && !/Domain=/i.test(c))).toBe(
+      true,
+    );
+    expect(cookies.some((c) => c.startsWith("__session=sess") && !/Domain=/i.test(c))).toBe(
+      true,
+    );
+    expect(
+      cookies.some(
+        (c) =>
+          (c.startsWith("__client=") || c.startsWith("__session=")) &&
+          /Domain=anima-protocol\.com/i.test(c) &&
+          /Max-Age=0/i.test(c),
+      ),
+    ).toBe(false);
   });
 
   it("follows Clerk CDN 307 for unversioned clerk-js and returns 200 JS", async () => {
@@ -709,6 +780,14 @@ describe("clerkProxyFetch", () => {
           c.includes("Max-Age=0"),
       ),
     ).toBe(true);
+    expect(
+      cookies.some(
+        (c) =>
+          c.startsWith("__client=") &&
+          /Domain=anima-protocol\.com/i.test(c) &&
+          /Max-Age=0/i.test(c),
+      ),
+    ).toBe(false);
   });
 
   it("does not follow OAuth Location off Clerk FAPI", async () => {

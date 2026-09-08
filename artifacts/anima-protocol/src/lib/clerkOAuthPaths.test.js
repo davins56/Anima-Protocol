@@ -129,7 +129,12 @@ describe('clerkOAuthPaths', () => {
     expect(app).toMatch(/mustUseSameOriginClerkProxy/);
     expect(app).toMatch(/shouldAllowDirectClerkFallback/);
     expect(app).toMatch(/lockSameOriginClerkProxy/);
-    expect(app).toMatch(/expireBrowserApexClerkClientUatCookies\(\)/);
+    expect(app).toMatch(
+      /function SsoCallbackPage[\s\S]*expireBrowserApexClerkClientUatCookies\(\)/,
+    );
+    expect(app).not.toMatch(
+      /const initialClerkProxyUrl[\s\S]{0,120}expireBrowserApexClerkClientUatCookies\(\)/,
+    );
     expect(app).toMatch(/CLERK_PROXY_REQUIRED_HINT/);
     expect(app).toMatch(/proxyRequiredFailed/);
     expect(app).toMatch(/setProxyRequiredFailed\(true\)/);
