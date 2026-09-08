@@ -2,6 +2,10 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   // Production Worker "anima-protocol" (id b7f2ce9d029e46e8b75741ce999c121d)
   // is built from the repo root: `pnpm build` then `npx wrangler deploy`.
+  // Workers Builds on main uses `wrangler deploy` (GET /deployments first);
+  // PR previews use `wrangler versions upload`. See
+  // scripts/cloudflare/workers-builds-deploy.md — do not drop the install
+  // guard that keeps a malformed 200 on that GET from aborting production.
   // Without this file Cloudflare deploys ./dist as static assets only, so
   // /api/healthz, /api/store, and /api/__clerk all 404.
   "name": "anima-protocol",
