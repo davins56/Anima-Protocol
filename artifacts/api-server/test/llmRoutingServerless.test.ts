@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getLlmRoutingStatus, getProviderChain } from "../src/lib/llmFailover";
 import { resetLlmClientsForTests } from "../src/lib/openaiClient";
+import { resetAiBindingForTests } from "../src/lib/aiBinding";
 
 const SAVED = { ...process.env };
 
@@ -27,6 +28,7 @@ function clearLlmEnv() {
 afterEach(() => {
   process.env = { ...SAVED };
   resetLlmClientsForTests();
+  resetAiBindingForTests();
 });
 
 describe("getLlmRoutingStatus on serverless / Worker", () => {

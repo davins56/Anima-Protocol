@@ -1,7 +1,8 @@
-// Chat completion against the self-hosted Anima LLM only (vLLM / Ollama /
-import { aiBinding } from "./aiBinding";
-// llama.cpp, OpenAI-compatible). MiniMax, Deepshi, OpenRouter, Claude, and
-// OpenAI are never used for chat — there is no cloud failover.
+// Chat completion: Cloudflare Workers AI (DeepSeek via AI Gateway) when the
+// Worker AI binding is present; otherwise the self-hosted Anima LLM
+// (vLLM / Ollama / llama.cpp, OpenAI-compatible). MiniMax, Deepshi,
+// OpenRouter, Claude, and OpenAI are never used for chat — there is no
+// cloud failover to those providers, and Fly.io Ollama is not required.
 //
 // Local endpoint: ANIMA_LOCAL_LLM_BASE_URL (or VLLM_BASE_URL / OLLAMA_BASE_URL).
 // Image generate/edit may still use Gemini / OpenAI on separate routes.
@@ -52,6 +53,13 @@ import {
   rememberModelSubstitution,
 } from "./localModelCatalog";
 import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
+import {
+  completeWorkersAi,
+  hasWorkersAiBinding,
+  streamWorkersAi,
+  WORKERS_AI_CHAT_MODEL,
+  WORKERS_AI_GATEWAY_ID,
+} from "./workersAi";
 
 const CLOUD_FLAGSHIP_SETUP_HINT =
   "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. " +
@@ -119,6 +127,12 @@ export interface LlmRoutingStatus {
     configured: boolean;
     model: string;
     env: string | null;
+  };
+  /** Secret-free Workers AI diagnostics. */
+  workersai: {
+    configured: boolean;
+    model: string;
+    gateway: string;
   };
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
@@ -338,14 +352,15 @@ function localUsable(): boolean {
 }
 
 /**
- * Ordered chat providers: local Anima only.
- * Missing or unusable ANIMA_LOCAL_LLM_BASE_URL yields an empty chain and a
- * setup error — MiniMax / Deepshi / OpenRouter never fill the gap, even when
- * keys or ANIMA_LLM_PROVIDER=minimax|deepshi are set.
+ * Ordered chat providers. Production Worker chat is Workers AI (DeepSeek
+ * via `deepseek-gateway`) whenever `env.AI` is bound. Local Ollama/vLLM is
+ * only used when that binding is missing (Node/dev). MiniMax / Deepshi /
+ * OpenRouter never fill the gap, even when keys or ANIMA_LLM_PROVIDER=
+ * minimax|deepshi are set. Do not set up Fly.io Ollama for production chat.
  */
 export function getProviderChain(): LlmProviderId[] {
+  if (hasWorkersAiBinding()) return ["workersai"];
   if (localUsable()) return ["local"];
-  if (aiBinding) return ["workersai"];
   return [];
 }
 
@@ -1096,12 +1111,12 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   const openRouterFallback = allowOpenRouterFallback();
   const noLoopback = isLoopbackUnreachableRuntime();
   const noteParts: string[] = [];
-  if (localSummary.isLoopbackMisconfigured) {
+  if (localSummary.isLoopbackMisconfigured && !chain.includes("workersai")) {
     noteParts.push(
       "ANIMA_LOCAL_LLM_BASE_URL points at localhost/loopback, which this serverless runtime cannot reach " +
         "(Cloudflare Workers reject isolate fetch to localhost with error 1003). " +
-        "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
-        "e.g. https://anima-chat-llm.fly.dev/v1. See deploy/ollama-fly/README.md.",
+        "Production chat uses Cloudflare Workers AI (DeepSeek via AI Gateway), not Fly.io Ollama. " +
+        "Confirm wrangler.jsonc binds AI through gateway deepseek-gateway.",
     );
   }
   if (chain.length === 0) {
@@ -1118,6 +1133,17 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       );
     }
   } else {
+    if (chain.includes("workersai")) {
+      noteParts.push(
+        `Cloudflare Workers AI model=${WORKERS_AI_CHAT_MODEL} via AI Gateway ${WORKERS_AI_GATEWAY_ID}. ` +
+          "Production chat does not use Fly.io Ollama or the named tunnel.",
+      );
+      if (localSummary.configured) {
+        noteParts.push(
+          `Self-hosted URL at host=${localSummary.host ?? "?"} is bound but unused while the Workers AI binding is present.`,
+        );
+      }
+    }
     if (chain.includes("local")) {
       noteParts.push(
         `Self-hosted Anima LLM at host=${localSummary.host ?? "?"} model=${localModel}.`,
@@ -1204,6 +1230,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       configured: hasDeepshiKey(),
       model: deepshiModel.model,
       env: getDeepshiApiKeySource(),
+    },
+    workersai: {
+      configured: hasWorkersAiBinding(),
+      model: WORKERS_AI_CHAT_MODEL,
+      gateway: WORKERS_AI_GATEWAY_ID,
     },
     chain,
     customOnly,
@@ -1299,6 +1330,47 @@ async function probeOneProvider(
         message: summarizeError(err),
         model: resolved.model,
         configuredModel: resolved.model,
+        latencyMs: Date.now() - started,
+      };
+    }
+  }
+
+  if (provider === "workersai") {
+    if (!hasWorkersAiBinding()) {
+      return { provider: "workersai", configured: false, ok: false };
+    }
+    const started = Date.now();
+    try {
+      await completeWorkersAi({
+        messages: [{ role: "user", content: "Reply with the single word: ok" }],
+        maxTokens: 16,
+        temperature: 0,
+      });
+      return {
+        provider: "workersai",
+        configured: true,
+        ok: true,
+        model: WORKERS_AI_CHAT_MODEL,
+        configuredModel: WORKERS_AI_CHAT_MODEL,
+        latencyMs: Date.now() - started,
+      };
+    } catch (err) {
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? Number((err as { status?: unknown }).status)
+          : undefined;
+      const auth = isProviderAuthError(err);
+      const connection = !auth && isProviderConnectionError(err);
+      const quota = !auth && !connection && isProviderQuotaError(err);
+      return {
+        provider: "workersai",
+        configured: true,
+        ok: false,
+        status: Number.isFinite(status) ? status : undefined,
+        errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
+        message: summarizeError(err),
+        model: WORKERS_AI_CHAT_MODEL,
+        configuredModel: WORKERS_AI_CHAT_MODEL,
         latencyMs: Date.now() - started,
       };
     }
@@ -1699,64 +1771,10 @@ async function runDeepshiCompletion(
   };
 }
 
-/** Open a streaming chat completion (local Anima LLM, then OpenRouter). */
+/** Open a streaming chat completion (Workers AI when bound, else local Anima LLM). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
-
-async function runWorkersAiCompletion(req: ChatCompletionRequest): Promise<ChatCompletionResult> {
-  if (!aiBinding) throw new Error("Workers AI binding not available");
-  const response = await aiBinding.run(
-    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    {
-      messages: req.messages.map((m) => ({ role: String(m.role), content: String(m.content) })),
-      max_tokens: req.maxTokens,
-      ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-    }
-  ) as { response?: string };
-  return {
-    content: typeof response.response === "string" ? response.response : "",
-    provider: "workersai",
-    brand: "workersai",
-    model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    tier: req.tier,
-    failedOver: false,
-    toolCalls: null,
-  };
-}
-
-async function runWorkersAiStream(req: ChatStreamRequest, failedOver: boolean): Promise<ChatStreamResult> {
-  if (!aiBinding) throw new Error("Workers AI binding not available");
-  const response = await aiBinding.run(
-    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    {
-      messages: req.messages.map((m) => ({ role: String(m.role), content: String(m.content) })),
-      max_tokens: req.maxTokens,
-      stream: true,
-      ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-    }
-  ) as { response?: string };
-  // Workers AI streaming returns a ReadableStream — wrap it as an AsyncIterable
-  const text = typeof response.response === "string" ? response.response : "";
-  const chunk = {
-    id: "workersai",
-    object: "chat.completion.chunk" as const,
-    created: Date.now(),
-    model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    choices: [{ index: 0, delta: { content: text }, finish_reason: "stop" }],
-  };
-  async function* singleChunkStream() {
-    yield chunk;
-  }
-  return {
-    stream: singleChunkStream() as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
-    provider: "workersai",
-    brand: "workersai",
-    model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    tier: req.tier,
-    failedOver,
-  };
-}
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured()) {
+  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding()) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1770,6 +1788,22 @@ async function runWorkersAiStream(req: ChatStreamRequest, failedOver: boolean): 
 
   for (const provider of chain) {
     try {
+      if (provider === "workersai") {
+        const stream = await streamWorkersAi({
+          messages: req.messages,
+          maxTokens: req.maxTokens,
+          temperature: req.temperature,
+        });
+        return {
+          stream,
+          provider: "workersai",
+          brand: "workersai",
+          model: WORKERS_AI_CHAT_MODEL,
+          tier: req.tier,
+          failedOver: false,
+        };
+      }
+
       if (provider === "local") {
         triedLocal = true;
         const client = requireLocalClient();
@@ -1804,8 +1838,12 @@ async function runWorkersAiStream(req: ChatStreamRequest, failedOver: boolean): 
         return await runDeepshiStream(req, triedLocal || triedOpenRouter);
       }
 
-      triedOpenRouter = true;
-      return await runOpenRouterStream(req, triedLocal);
+      if (provider === "openrouter") {
+        triedOpenRouter = true;
+        return await runOpenRouterStream(req, triedLocal);
+      }
+
+      throw new Error(`Unsupported chat provider: ${provider}`);
     } catch (err) {
       lastErr = err;
       if (provider === "local" && isProviderConnectionError(err)) {
@@ -1835,15 +1873,16 @@ async function runWorkersAiStream(req: ChatStreamRequest, failedOver: boolean): 
     openRouterZdrBlocked,
   });
 }
+
 /**
- * Non-streaming chat completion (local Anima LLM, then OpenRouter).
+ * Non-streaming chat completion (Workers AI when bound, else local Anima LLM).
  * Used by companion generation, evolution, and other one-shot LLM helpers.
  */
 export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured()) {
+  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding()) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
   const chain = getProviderChain();
@@ -1857,6 +1896,23 @@ export async function createChatCompletionWithFailover(
 
   for (const provider of chain) {
     try {
+      if (provider === "workersai") {
+        const content = await completeWorkersAi({
+          messages: req.messages,
+          maxTokens: req.maxTokens,
+          temperature: req.temperature,
+        });
+        return {
+          content,
+          provider: "workersai",
+          brand: "workersai",
+          model: WORKERS_AI_CHAT_MODEL,
+          tier: req.tier,
+          failedOver: false,
+          toolCalls: null,
+        };
+      }
+
       if (provider === "local") {
         triedLocal = true;
         const client = requireLocalClient();
@@ -1895,8 +1951,12 @@ export async function createChatCompletionWithFailover(
         return await runDeepshiCompletion(req, triedLocal || triedOpenRouter);
       }
 
-      triedOpenRouter = true;
-      return await runOpenRouterCompletion(req, triedLocal);
+      if (provider === "openrouter") {
+        triedOpenRouter = true;
+        return await runOpenRouterCompletion(req, triedLocal);
+      }
+
+      throw new Error(`Unsupported chat provider: ${provider}`);
     } catch (err) {
       lastErr = err;
       if (provider === "local" && isProviderConnectionError(err)) {

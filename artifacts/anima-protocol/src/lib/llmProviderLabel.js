@@ -9,6 +9,7 @@ export function llmProviderShortLabel(provider) {
   if (provider === "minimax") return "MiniMax";
   if (provider === "deepshi") return "Deepshi";
   if (provider === "openrouter") return "Venice";
+  if (provider === "workersai") return "DeepSeek";
   return null;
 }
 
@@ -22,6 +23,7 @@ export function llmDisplayLabel(provider, brand) {
   if (brand === "minimax" || provider === "minimax") return "MiniMax";
   if (brand === "deepshi" || provider === "deepshi") return "Deepshi";
   if (brand === "openrouter" || provider === "openrouter") return "Venice";
+  if (brand === "workersai" || provider === "workersai") return "DeepSeek";
   return llmProviderShortLabel(provider);
 }
 
@@ -38,6 +40,9 @@ export function llmProviderTitle(provider) {
   }
   if (provider === "deepshi") {
     return "Last reply from Deepshi";
+  }
+  if (provider === "workersai") {
+    return "Last reply from DeepSeek via Cloudflare Workers AI";
   }
   return "Last reply LLM";
 }
@@ -60,6 +65,9 @@ export function llmDisplayTitle(provider, brand) {
   if (brand === "openrouter" || provider === "openrouter") {
     return "Venice Uncensored (Dolphin Mistral 24B) via OpenRouter — open-weight uncensored chat";
   }
+  if (brand === "workersai" || provider === "workersai") {
+    return "DeepSeek R1 distill via Cloudflare Workers AI (AI Gateway)";
+  }
   return llmProviderTitle(provider);
 }
 
@@ -77,6 +85,9 @@ export function llmProviderBadgeClass(provider) {
   if (provider === "deepshi") {
     return "border-violet-400/50 text-violet-200/90 bg-violet-400/10";
   }
+  if (provider === "workersai") {
+    return "border-emerald-400/50 text-emerald-200/90 bg-emerald-400/10";
+  }
   return "border-primary/30 text-primary/50";
 }
 
@@ -89,11 +100,18 @@ export function llmDisplayBadgeClass(provider, brand) {
   if (brand === "minimax") return llmProviderBadgeClass("minimax");
   if (brand === "deepshi") return llmProviderBadgeClass("deepshi");
   if (brand === "openrouter") return llmProviderBadgeClass("openrouter");
+  if (brand === "workersai") return llmProviderBadgeClass("workersai");
   return llmProviderBadgeClass(provider);
 }
 
 /** Chat backends shown in Settings. */
 export const CONFIGURED_LLM_PROVIDERS = [
+  {
+    id: "workersai",
+    label: "DeepSeek (Workers AI)",
+    env: "AI",
+    note: "Production chat on anima-protocol.com. Cloudflare Workers AI DeepSeek R1 distill via AI Gateway deepseek-gateway. No Fly.io Ollama required.",
+  },
   {
     id: "minimax",
     label: "MiniMax",
