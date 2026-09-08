@@ -332,4 +332,33 @@ describe("Settings account identity after Clerk login", () => {
     expect(container.textContent).toMatch(/seeker@anima-protocol\.com/);
     expect(container.textContent).toMatch(/Seeker/);
   });
+
+  it("reloads auth.me when isAuthenticated becomes true", async () => {
+    authState.isAuthenticated = false;
+    authState.user = null;
+    meMock.mockResolvedValue({ role: "User", selected_mode: "companion" });
+    const { container, root } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const callsBeforeSignIn = meMock.mock.calls.length;
+
+    authState.isAuthenticated = true;
+    authState.user = {
+      id: "user_2github",
+      email: "davins56@hotmail.com",
+      full_name: "Dàvīn Smith",
+      role: "admin",
+    };
+    await act(async () => {
+      root.render(<Settings />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(meMock.mock.calls.length).toBeGreaterThan(callsBeforeSignIn);
+    expect(container.textContent).toMatch(/davins56@hotmail\.com/);
+    expect(container.textContent).toMatch(/Dàvīn Smith/);
+  });
 });

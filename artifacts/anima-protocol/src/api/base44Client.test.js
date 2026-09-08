@@ -498,6 +498,35 @@ describe("auth.me Clerk identity", () => {
     expect(me.full_name).toBe("Ada Lovelace");
   });
 
+  it("waits for a registered token getter before fetching the store profile", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    base44.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile") {
+        return Response.json({
+          display_name: "Ada",
+          settings: { theme_mode: "dark" },
+        });
+      }
+      return Response.json({});
+    });
+
+    const pending = base44.auth.me();
+    await new Promise((r) => setTimeout(r, 80));
+    expect(global.fetch).not.toHaveBeenCalled();
+    token = "live-jwt";
+    const me = await pending;
+    expect(global.fetch).toHaveBeenCalled();
+    expect(me.display_name).toBe("Ada");
+    expect(me.email).toBe("ada@example.com");
+  });
+
   it("does not cache an empty profile when getToken is missing", async () => {
     clearAuthTokenGetter();
     base44.auth.clearSession();
