@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
@@ -91,9 +91,13 @@ export default function Settings() {
   const [startersRestored, setStartersRestored] = useState(false);
   const [startersRestoreError, setStartersRestoreError] = useState(null);
   const [anima, setAnima] = useState(null);
+  const loadUserGen = useRef(0);
 
   useEffect(() => {
-    if (!authUser) return;
+    if (!authUser) {
+      if (!isAuthenticated) setUser(null);
+      return;
+    }
     setUser((prev) => {
       if (
         prev?.id === authUser.id &&
@@ -109,29 +113,44 @@ export default function Settings() {
     } else if (authUser.display_name) {
       setPrefs((p) => ({ ...p, display_name: authUser.display_name || "" }));
     }
-  }, [authUser?.id, authUser?.email, authUser?.full_name, authUser?.display_name, authUser?.role]);
-
-  useEffect(() => {
-    loadUser();
-    loadStats();
-  }, [authUser?.id, isAuthenticated]);
+  }, [
+    authUser,
+    authUser?.id,
+    authUser?.email,
+    authUser?.full_name,
+    authUser?.display_name,
+    authUser?.role,
+    authUser?.settings,
+    isAuthenticated,
+  ]);
 
   const loadUser = async () => {
+    const gen = ++loadUserGen.current;
     const me = await base44.auth.me();
+    if (gen !== loadUserGen.current) return;
     // Keep Clerk identity visible if the store profile is still empty / late.
     setUser((prev) => ({ ...(authUser || {}), ...(prev || {}), ...(me || {}) }));
     if (me?.settings) setPrefs({ ...defaultPrefs, ...me.settings });
     else if (me?.display_name) setPrefs((p) => ({ ...p, display_name: me.display_name || "" }));
     try {
       const animas = await base44.entities.Anima.list("-created_date", 20);
+      if (gen !== loadUserGen.current) return;
       const selected = me?.email
         ? animas.find((a) => a.assigned_user === me.email) || animas[0]
         : animas[0];
       setAnima(selected || null);
     } catch {
-      setAnima(null);
+      if (gen === loadUserGen.current) setAnima(null);
     }
   };
+
+  useEffect(() => {
+    loadUser();
+    loadStats();
+    return () => {
+      loadUserGen.current += 1;
+    };
+  }, [authUser?.id, isAuthenticated]);
 
   const loadStats = async () => {
     const [sessions, chars] = await Promise.all([

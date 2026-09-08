@@ -3,6 +3,7 @@ import {
   clerkDisplayNameFromUser,
   clerkEmailFromUser,
   clerkIdentityFromUser,
+  isNewStoreAccount,
   shouldClearLocalSession,
 } from "./clerkIdentity";
 
@@ -61,6 +62,19 @@ describe("clerkIdentityFromUser", () => {
   it("returns null without a Clerk user id", () => {
     expect(clerkIdentityFromUser(null)).toBeNull();
     expect(clerkIdentityFromUser({})).toBeNull();
+  });
+});
+
+describe("isNewStoreAccount", () => {
+  it("does not treat a token-less me() overlay as a new account", () => {
+    expect(isNewStoreAccount({ id: "user_1", email: "a@b.com" }, false)).toBe(
+      false,
+    );
+  });
+
+  it("treats a store profile without display_name as new", () => {
+    expect(isNewStoreAccount({ role: "User" }, true)).toBe(true);
+    expect(isNewStoreAccount({ display_name: "Ada" }, true)).toBe(false);
   });
 });
 

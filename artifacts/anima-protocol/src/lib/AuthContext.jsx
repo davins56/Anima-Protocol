@@ -40,6 +40,7 @@ import {
 } from '@/lib/clerkOAuthPaths';
 import {
   clerkIdentityFromUser,
+  isNewStoreAccount,
   shouldClearLocalSession,
 } from '@/lib/clerkIdentity';
 import {
@@ -235,9 +236,10 @@ export const AuthProvider = ({ children }) => {
         (async () => {
           try {
             let profile = await base44.auth.me();
-            // A profile with no display_name is a brand-new account on its first
-            // load — the only reliable client-side signal we have for sign-up.
-            const isNewAccount = !profile.display_name;
+            // me() without a store JWT has no display_name even for
+            // returning accounts — do not treat that as sign-up.
+            const storeReady = await base44.auth.isAuthenticated();
+            const isNewAccount = isNewStoreAccount(profile, storeReady);
             if (isNewAccount) {
               const preferred =
                 clerkUser.firstName || clerkUser.fullName || clerkUser.username;
