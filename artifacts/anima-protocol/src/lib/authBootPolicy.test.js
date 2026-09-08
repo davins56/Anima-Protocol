@@ -256,7 +256,7 @@ describe("boot wiring", () => {
     expect(auth).toMatch(/useState\(null\)/);
     expect(auth).toMatch(/resolveAuthBoot/);
     expect(auth).toMatch(/isSignedInUser/);
-    expect(auth).toMatch(/isLoadingAuth = !isLoaded/);
+    expect(auth).toMatch(/isLoadingAuth =\s*\n\s*!isLoaded/);
     expect(auth).toMatch(/hasPendingClerkHandshake/);
     expect(auth).toMatch(/readClerkAuthReturn/);
     expect(auth).toMatch(/clerkIdentityFromUser/);
