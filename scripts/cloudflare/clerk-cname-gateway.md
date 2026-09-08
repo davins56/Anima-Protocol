@@ -74,3 +74,57 @@ Workers Builds skipped or queued the `custom_domain` deploy:
 
 If the Custom Domain is already attached but `/v1/*` is HTML, the gap is
 `run_worker_first` (git), not DNS. Purge cache after that deploy.
+
+## Worker → Clerk origin (required after Custom Domain)
+
+`GET /v1/environment` must reach **Clerk**, not this isolate. A
+`fetch` whose URL host is still `clerk.anima-protocol.com` is a Custom
+Domain self-fetch and Cloudflare returns **522**.
+
+`cf.resolveOverride=worker.clerkprod-cloudflare.net` does **not** fix
+that:
+
+- Cloudflare ignores `resolveOverride` unless both the URL host and the
+  override host are orange-clouded on **this** zone.
+- Clerk's SaaS hostname is not on this zone, so the override is dropped
+  and the Worker fetches itself (522).
+- Connecting to Clerk's anycast IPs with SNI `clerk.anima-protocol.com`
+  also lands on this Custom Domain (same 522 page).
+
+`frontend-api.clerk.services` has no public certificate for its own
+name (TLS handshake failure). Setting `Host: clerk.anima-protocol.com`
+on `frontend-api.clerk.dev` is a Cloudflare **403** (Host/SNI mismatch).
+
+The Worker therefore rewrites the upstream URL to
+`https://frontend-api.clerk.dev` (path and query unchanged), **deletes
+Host**, and sends Clerk's official path-proxy headers:
+
+- `Clerk-Proxy-Url: https://anima-protocol.com/api/__clerk/`
+- `Clerk-Secret-Key` (not on `/npm/*`)
+- `X-Forwarded-For` from `CF-Connecting-IP`
+
+`GET /v1/oauth_callback` without `code` still **303s locally** and never
+hits Clerk.
+
+This instance is CNAME-only (`proxy_url` is null). `frontend-api.clerk.dev`
+returns `host_invalid` until Clerk Dashboard → Domains → **Set proxy
+configuration** is `https://anima-protocol.com/api/__clerk`. Deploy this
+Worker first (so `/api/__clerk` already forwards to `frontend-api.clerk.dev`),
+then set that proxy URL. Do not put `sk_` in git.
+
+## Live verify (after deploy + proxy URL)
+
+```bash
+# oauth_callback must stay on the gateway (no Clerk 301 err_code)
+curl -sI "https://clerk.anima-protocol.com/v1/oauth_callback"
+# expect: HTTP/2 303
+#         location: https://anima-protocol.com/sign-in?clerk_error=authorization_invalid
+
+# environment must be Clerk JSON, not 522 HTML
+curl -sS -D - -o /tmp/clerk-env.json \
+  "https://clerk.anima-protocol.com/v1/environment"
+# expect: HTTP/2 200 and auth_config in the body
+python3 -c 'import json; d=json.load(open("/tmp/clerk-env.json")); assert "auth_config" in d'
+
+pnpm --filter @workspace/scripts run verify:clerk-cname-gateway
+```
