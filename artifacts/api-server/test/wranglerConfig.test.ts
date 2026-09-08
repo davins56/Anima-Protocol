@@ -228,6 +228,43 @@ describe("Cloudflare wrangler config", () => {
     expect(notes).toMatch(/Do \*\*not\*\* add a `www\.anima-protocol\.com` route/);
   });
 
+  it("pins wrangler so production GET /deployments cannot abort clerk-js deploys", () => {
+    const pkg = JSON.parse(
+      readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+    ) as {
+      scripts?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(pkg.devDependencies?.wrangler).toBe("4.129.1");
+    expect(pkg.scripts?.postinstall).toContain(
+      "install-wrangler-deploy-guard.mjs",
+    );
+    const workspace = readFileSync(
+      path.join(repoRoot, "pnpm-workspace.yaml"),
+      "utf8",
+    );
+    expect(workspace).toMatch(/^ {2}- wrangler$/m);
+    expect(workspace).toMatch(/^ {2}- miniflare$/m);
+    expect(workspace).toMatch(/^ {2}- '@cloudflare\/\*'$/m);
+    expect(workspace).toMatch(/workerd:\s*true/);
+    const notes = readFileSync(
+      path.join(repoRoot, "scripts/cloudflare/workers-builds-deploy.md"),
+      "utf8",
+    );
+    expect(notes).toContain("wrangler versions upload");
+    expect(notes).toContain(
+      "/workers/scripts/anima-protocol/deployments",
+    );
+    expect(notes).toContain("d2ee859e-8544-4d56-9598-f70cba9e7448");
+    expect(notes).toContain("jsonc-parser");
+    expect(notes).not.toMatch(/sk_live_|sk_test_/);
+    const wrangler = readFileSync(
+      path.join(repoRoot, "wrangler.jsonc"),
+      "utf8",
+    );
+    expect(wrangler).toContain("scripts/cloudflare/workers-builds-deploy.md");
+  });
+
   it("documents GitHub OAuth App callback and clerk-js 200 via the proxy", () => {
     const notes = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/clerk-oauth.md"),

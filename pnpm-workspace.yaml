@@ -9,6 +9,7 @@ allowBuilds:
   '@clerk/shared': true
   core-js: true
   esbuild: true
+  workerd: true
 
 autoInstallPeers: false
 
@@ -57,6 +58,9 @@ minimumReleaseAgeExclude:
   - react-router-dom
   - undici
   - vite
+  - wrangler
+  - miniflare
+  - '@cloudflare/*'
 
 overrides:
   '@babel/core': '^7.29.6'
