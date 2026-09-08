@@ -228,6 +228,22 @@ describe("Cloudflare wrangler config", () => {
     expect(notes).toMatch(/Do \*\*not\*\* add a `www\.anima-protocol\.com` route/);
   });
 
+  it("documents GitHub OAuth App callback and clerk-js 200 via the proxy", () => {
+    const notes = readFileSync(
+      path.join(repoRoot, "scripts/cloudflare/clerk-oauth.md"),
+      "utf8",
+    );
+    expect(notes).toContain(
+      "https://clerk.anima-protocol.com/v1/oauth_callback",
+    );
+    expect(notes).toContain("https://anima-protocol.com/sign-in/sso-callback");
+    expect(notes).toContain(
+      "/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
+    );
+    expect(notes).not.toMatch(/sk_live_[A-Za-z0-9]{8,}|sk_test_[A-Za-z0-9]{8,}/);
+    expect(notes).not.toMatch(/postgres(?:ql)?:\/\//i);
+  });
+
   it("binds Hyperdrive anima-postgres as HYPERDRIVE", () => {
     expect(config.hyperdrive).toEqual([
       {

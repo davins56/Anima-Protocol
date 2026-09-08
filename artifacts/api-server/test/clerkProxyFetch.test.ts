@@ -5,6 +5,7 @@ import {
   clerkFrontendApiBaseFromPublishableKey,
   forwardedRequestProto,
   proxyClerkWithFetch,
+  resolveClerkNpmRedirectUrl,
   resolveClerkUpstreamPath,
   resolveClerkUpstreamUrl,
   rewriteClerkProxyLocation,
@@ -263,6 +264,35 @@ describe("clerkProxyFetch", () => {
     );
   });
 
+  it("follows clerk-js dist-tag 307 hops to the versioned 200 script", () => {
+    const current = new URL(
+      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
+    );
+    expect(
+      resolveClerkNpmRedirectUrl(
+        "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+        current,
+        "clerk.anima-protocol.com",
+      )?.toString(),
+    ).toBe(
+      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+    );
+    expect(
+      resolveClerkNpmRedirectUrl(
+        "https://github.com/login/oauth/authorize?client_id=x",
+        current,
+        "clerk.anima-protocol.com",
+      ),
+    ).toBeNull();
+    expect(
+      resolveClerkNpmRedirectUrl(
+        "https://clerk.anima-protocol.com/sign-in/sso-callback",
+        current,
+        "clerk.anima-protocol.com",
+      ),
+    ).toBeNull();
+  });
+
   it("proxies custom-domain FAPI through the app origin with first-party cookies", async () => {
     process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
     const upstreamHeaders = new Headers();
@@ -320,5 +350,100 @@ describe("clerkProxyFetch", () => {
         c.includes("__client_uat=1") && c.includes("Domain=anima-protocol.com"),
       ),
     ).toBe(true);
+  });
+
+  it("follows Clerk CDN 307 for unversioned clerk-js and returns 200 JS", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const unversioned =
+      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js";
+    const versioned =
+      "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js";
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      const href = String(url);
+      if (href === unversioned) {
+        return new Response(null, {
+          status: 307,
+          headers: { location: versioned },
+        });
+      }
+      expect(href).toBe(versioned);
+      return new Response("/* clerk-js */", {
+        status: 200,
+        headers: { "content-type": "application/javascript; charset=utf-8" },
+      });
+    });
+    let body: Buffer | undefined;
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader() {},
+      getHeader() {
+        return undefined;
+      },
+      end(payload?: Buffer) {
+        body = payload;
+      },
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
+        originalUrl: "/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(res.statusCode).toBe(200);
+    expect(body?.toString()).toBe("/* clerk-js */");
+  });
+
+  it("does not follow OAuth Location off Clerk FAPI", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const github = "https://github.com/login/oauth/authorize?client_id=x";
+    const fetchImpl = vi.fn(async () => {
+      return new Response(null, {
+        status: 307,
+        headers: { location: github },
+      });
+    });
+    const headers: Record<string, string> = {};
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader(name: string, value: string) {
+        headers[name.toLowerCase()] = value;
+      },
+      appendHeader() {},
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/oauth_callback",
+        originalUrl: "/api/__clerk/v1/oauth_callback",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(307);
+    expect(headers.location).toBe(github);
   });
 });

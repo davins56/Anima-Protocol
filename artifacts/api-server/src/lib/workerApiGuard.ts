@@ -70,6 +70,25 @@ export function isStreamingContentType(
   );
 }
 
+export function isHttpRedirectStatus(status: number): boolean {
+  return status >= 300 && status < 400;
+}
+
+/** clerk-js and other non-JSON FAPI assets must not be rewritten as JSON errors. */
+export function isScriptOrBinaryContentType(
+  contentType: string | null | undefined,
+): boolean {
+  const value = String(contentType || "").toLowerCase();
+  return (
+    value.includes("javascript") ||
+    value.includes("ecmascript") ||
+    value.includes("wasm") ||
+    value.startsWith("image/") ||
+    value.startsWith("font/") ||
+    value.includes("octet-stream")
+  );
+}
+
 export function looksLikeHtmlBody(text: string): boolean {
   const raw = String(text || "").replace(/^\uFEFF/, "");
   const head = raw.trimStart().slice(0, 400);
@@ -126,6 +145,11 @@ export async function coerceApiResponseToJson(
   const contentType = response.headers.get("content-type");
   if (isStreamingContentType(contentType)) return response;
   if (isJsonContentType(contentType)) return response;
+  // Clerk npm version hops and OAuth Location must keep their status + Location.
+  // Swallowing a 307 as JSON (`worker_api_failure`) drops Location; browsers
+  // then refuse clerk.browser.js as a script (classic "failed to load (307)").
+  if (isHttpRedirectStatus(response.status)) return response;
+  if (isScriptOrBinaryContentType(contentType)) return response;
   if (response.ok) return response;
 
   if (isHtmlContentType(contentType)) {
