@@ -59,7 +59,7 @@ const defaultPrefs = {
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { logout, user: authUser } = useAuth();
+  const { logout, user: authUser, isAuthenticated } = useAuth();
   const [section, setSection] = useState(SECTION.ACCOUNT);
   const [user, setUser] = useState(authUser || null);
   const [prefs, setPrefs] = useState(defaultPrefs);
@@ -114,7 +114,7 @@ export default function Settings() {
   useEffect(() => {
     loadUser();
     loadStats();
-  }, [authUser?.id]);
+  }, [authUser?.id, isAuthenticated]);
 
   const loadUser = async () => {
     const me = await base44.auth.me();
