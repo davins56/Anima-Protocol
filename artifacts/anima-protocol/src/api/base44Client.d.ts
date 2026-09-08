@@ -124,6 +124,7 @@ export declare function setAuthTokenGetter(
   fn: (() => Promise<string | null>) | null,
 ): void;
 export declare function clearAuthTokenGetter(): void;
+export declare function hasAuthTokenGetter(): boolean;
 export declare function clearStoreCache(): void;
 export declare function bulkImport(payload?: Record<string, unknown>): Promise<any>;
 export declare function restoreData(

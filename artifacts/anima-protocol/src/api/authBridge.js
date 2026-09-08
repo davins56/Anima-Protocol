@@ -14,6 +14,10 @@ export function clearAuthTokenGetter() {
   tokenGetter = null;
 }
 
+export function hasAuthTokenGetter() {
+  return typeof tokenGetter === "function";
+}
+
 function tokenTimeoutError() {
   const err = new Error("Auth token timed out");
   err.code = "timeout";
