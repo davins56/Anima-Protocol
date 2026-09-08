@@ -96,7 +96,7 @@ describe("Cloudflare wrangler config", () => {
     expect(Array.isArray(bindings)).toBe(true);
     // These three exist in store a31e40473ef34db896b5bc1e6c1c4b86 today.
     // LLM names must NOT be bound until the operator creates those store
-    // entries (Fly URL / PROXY_AUTH_TOKEN / OpenRouter key). A binding for
+    // entries (tunnel URL / bearer / OpenRouter key). A binding for
     // a missing secret_name fails wrangler deploy and takes down the site.
     const declaredNames = [
       "CLERK_SECRET_KEY",

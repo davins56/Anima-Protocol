@@ -60,6 +60,14 @@ export function hasOpenAIKey(): boolean {
   return Boolean(normalizeApiKey(process.env.OPENAI_API_KEY));
 }
 
+/**
+ * Production self-hosted Anima LLM — named Cloudflare Tunnel in front of
+ * the existing Ollama box (`scripts/llm/tunnel-cloudflared.sh`).
+ * Do not invent a Fly host; this is the path already in use.
+ */
+export const PRODUCTION_ANIMA_LLM_HOST = "llm.anima-protocol.com";
+export const PRODUCTION_ANIMA_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+
 /** Hosts that only exist on the same machine as the process. */
 const LOOPBACK_LLM_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
 
@@ -308,7 +316,7 @@ export function logLocalLlmClientInitOnce(): void {
       `[llm] MISCONFIGURED: ANIMA_LOCAL_LLM_BASE_URL host=${summary.host} is loopback, ` +
         `which this serverless runtime cannot reach (Cloudflare error 1003). ` +
         `Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), ` +
-        `e.g. https://anima-chat-llm.fly.dev/v1. See deploy/ollama-fly/README.md.`,
+        `e.g. ${PRODUCTION_ANIMA_LLM_BASE_URL}. See scripts/llm/README.md.`,
     );
     return;
   }
@@ -316,7 +324,7 @@ export function logLocalLlmClientInitOnce(): void {
     console.info(
       "[llm] ANIMA_LOCAL_LLM_BASE_URL unset — this runtime will not invent localhost. " +
         "Set a public HTTPS OpenAI-compatible URL (…/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. " +
-        "See deploy/ollama-fly/README.md.",
+        `Production already uses ${PRODUCTION_ANIMA_LLM_BASE_URL}. See scripts/llm/README.md.`,
     );
     return;
   }

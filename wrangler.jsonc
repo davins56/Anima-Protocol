@@ -64,10 +64,11 @@
   // Adding a binding for a secret_name that does not exist yet makes
   // `wrangler deploy` fail and blocks the Worker (the whole site).
   // LLM names to add later, after Fly + OpenRouter values exist:
-  //   ANIMA_LOCAL_LLM_BASE_URL  = https://anima-chat-llm.fly.dev/v1
-  //   ANIMA_LOCAL_LLM_API_KEY   = same value as Fly PROXY_AUTH_TOKEN
+  //   ANIMA_LOCAL_LLM_BASE_URL  = https://llm.anima-protocol.com/v1
+  //   ANIMA_LOCAL_LLM_API_KEY   = tunnel / host bearer (same as the public-v1 proxy token)
   //   OPENROUTER_API_KEY        = OpenRouter key (used when local URL is unset)
-  // See deploy/ollama-fly/README.md.
+  // Production already uses the named Cloudflare Tunnel, not Fly.
+  // See scripts/llm/README.md.
   "secrets_store_secrets": [
     {
       "binding": "CLERK_SECRET_KEY",
