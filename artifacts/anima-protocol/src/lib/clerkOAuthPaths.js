@@ -19,11 +19,33 @@ export function clerkSsoCallbackPath(basePath, mode = 'sign-in') {
   return joinBasePath(basePath, `${segment}/sso-callback`);
 }
 
-/** Post-auth landing path after OAuth completes without extra steps. */
+/** Post-auth app path — signed-in users go to Chat, not the title screen. */
 export function clerkOAuthCompletePath(basePath) {
-  if (!basePath) return '/';
-  const path = basePath.startsWith('/') ? basePath : `/${basePath}`;
-  return path || '/';
+  return joinBasePath(basePath, 'chat');
+}
+
+/**
+ * `/` is HomeGate (Landing when Clerk is still hydrating). After a completed
+ * sign-in, pin bare origin paths to Chat unless a handshake token is still
+ * in the URL and must be consumed on `/`.
+ */
+export function pinPostAuthToChat(resolved, fallbackPath = '/chat') {
+  if (!resolved || resolved.mode !== 'in-app') return resolved;
+  const raw = String(resolved.path || '');
+  const qIndex = raw.indexOf('?');
+  const hIndex = raw.indexOf('#');
+  const cut = [qIndex, hIndex].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+  const pathname = cut == null ? raw : raw.slice(0, cut);
+  const rest = cut == null ? '' : raw.slice(cut);
+  if (hasClerkHandshakeQuery({ search: rest, hash: rest })) return resolved;
+  if (pathname === '/' || pathname === '') {
+    const pin =
+      fallbackPath && fallbackPath !== '/' && fallbackPath !== ''
+        ? fallbackPath
+        : '/chat';
+    return { mode: 'in-app', path: pin };
+  }
+  return resolved;
 }
 
 /**
@@ -178,7 +200,7 @@ export function resolvePostAuthNavigation(
 export function destinationAfterClerkAuth({
   session,
   decorateUrl,
-  fallbackPath = '/',
+  fallbackPath = '/chat',
   origin,
 } = {}) {
   const decorate =
@@ -186,7 +208,10 @@ export function destinationAfterClerkAuth({
   const raw = session?.currentTask
     ? decorate(`/${session.currentTask.key}`)
     : decorate(fallbackPath);
-  return resolvePostAuthNavigation(raw, { fallbackPath, origin });
+  return pinPostAuthToChat(
+    resolvePostAuthNavigation(raw, { fallbackPath, origin }),
+    fallbackPath,
+  );
 }
 
 /**
