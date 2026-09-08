@@ -36,7 +36,8 @@ describe("getLlmRoutingStatus on serverless / Worker", () => {
     expect(status.status).toBe("error");
     expect(status.note).toMatch(/ANIMA_LOCAL_LLM_BASE_URL is unset/i);
     expect(status.note).toMatch(/public HTTPS/i);
-    expect(status.note).toMatch(/deploy\/ollama-fly/i);
+    expect(status.note).toMatch(/scripts\/llm/i);
+    expect(status.note).toMatch(/llm\.anima-protocol\.com/i);
     expect(status.note).not.toMatch(/Self-hosted Anima LLM at host=localhost/i);
   });
 
@@ -75,6 +76,6 @@ describe("getLlmRoutingStatus on serverless / Worker", () => {
     expect(status.chain).toEqual(["openrouter"]);
     expect(status.note).toMatch(/loopback/i);
     expect(status.note).toMatch(/1003/i);
-    expect(status.note).toMatch(/anima-chat-llm\.fly\.dev/i);
+    expect(status.note).toMatch(/llm\.anima-protocol\.com/i);
   });
 });

@@ -821,8 +821,8 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it("mentions the Fly host when local is down and OpenRouter hits the daily free cap", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+  it("mentions the tunnel host when local is down and OpenRouter hits the daily free cap", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
@@ -850,14 +850,14 @@ describe("createChatStreamWithFailover", () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       expect(message).toMatch(/Today's free OpenRouter messages are used up/i);
-      expect(message).toMatch(/anima-chat-llm\.fly\.dev/);
-      expect(message).toMatch(/fly apps restart anima-chat-llm/);
+      expect(message).toMatch(/llm\.anima-protocol\.com/);
+      expect(message).toMatch(/pnpm llm:tunnel/);
       expect(message).not.toMatch(/ANIMA_OPENROUTER_FREE/);
     }
   });
 
   it("does not skip the custom LLM after a local auth failure", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     process.env.OPENROUTER_API_KEY = "sk-or-test-key-abcd";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
@@ -1158,7 +1158,7 @@ describe("createChatStreamWithFailover", () => {
   });
 
   it("names the LLM host when the OpenAI SDK only says Connection error.", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     const sdkErr = Object.assign(new Error("Connection error."), {
       name: "APIConnectionError",
@@ -1180,11 +1180,12 @@ describe("createChatStreamWithFailover", () => {
     expect(thrown).toBeInstanceOf(Error);
     const message = (thrown as Error).message;
     expect(message).toMatch(
-      /Anima LLM connection failed for host=anima-chat-llm\.fly\.dev model=anima-chat/i,
+      /Anima LLM connection failed for host=llm\.anima-protocol\.com model=anima-chat/i,
     );
     expect(message).toMatch(/Connection error/i);
     expect(message).toMatch(/SSL_ERROR_SYSCALL|ECONNRESET/i);
-    expect(message).toMatch(/fly status -a anima-chat-llm/i);
+    expect(message).toMatch(/llm\.anima-protocol\.com/i);
+    expect(message).toMatch(/pnpm llm:tunnel|Cloudflare Tunnel/i);
   });
 });
 
@@ -1256,7 +1257,7 @@ describe("probeLlmProviders", () => {
   });
 
   it("reports errorKind=connection with host + fix hint when the host is unreachable", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     createMock.mockRejectedValueOnce(
       Object.assign(new Error("Connection error."), { name: "APIConnectionError" }),
@@ -1270,7 +1271,7 @@ describe("probeLlmProviders", () => {
       errorKind: "connection",
       hint: LOCAL_LLM_CONNECTION_FIX_HINT,
     });
-    expect(probes[0]?.message).toMatch(/host=anima-chat-llm\.fly\.dev/i);
+    expect(probes[0]?.message).toMatch(/host=llm\.anima-protocol\.com/i);
     expect(probes[0]?.message).toMatch(/model=anima-chat/i);
   });
 

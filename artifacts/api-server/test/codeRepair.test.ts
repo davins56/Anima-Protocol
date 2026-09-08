@@ -30,7 +30,7 @@ describe("analyzeCodeRepairInput", () => {
       diagnostics: {
         openrouterConfigured: true,
         localConfigured: true,
-        localHost: "anima-chat-llm.fly.dev",
+        localHost: "llm.anima-protocol.com",
         customOnly: false,
       },
     });

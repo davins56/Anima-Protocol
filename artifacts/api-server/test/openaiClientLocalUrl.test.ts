@@ -73,7 +73,7 @@ describe("isLoopbackLlmHost", () => {
     expect(isLoopbackLlmHost("::1")).toBe(true);
     expect(isLoopbackLlmHost("[::1]")).toBe(true);
     expect(isLoopbackLlmHost("0.0.0.0")).toBe(true);
-    expect(isLoopbackLlmHost("anima-chat-llm.fly.dev")).toBe(false);
+    expect(isLoopbackLlmHost("llm.anima-protocol.com")).toBe(false);
   });
 });
 
@@ -132,7 +132,7 @@ describe("localLlmBaseUrl runtime matrix", () => {
   });
 
   it("explicit public HTTPS URL is used as-is on every runtime", () => {
-    const publicUrl = "https://anima-chat-llm.fly.dev/v1";
+    const publicUrl = "https://llm.anima-protocol.com/v1";
     clearLocalLlmEnv();
     process.env.ANIMA_LOCAL_LLM_BASE_URL = publicUrl;
 
@@ -145,7 +145,7 @@ describe("localLlmBaseUrl runtime matrix", () => {
 
     const summary = summarizeLocalLlmBaseUrl(process.env, workerGlobal);
     expect(summary.configured).toBe(true);
-    expect(summary.host).toBe("anima-chat-llm.fly.dev");
+    expect(summary.host).toBe("llm.anima-protocol.com");
     expect(summary.isHttps).toBe(true);
     expect(summary.hasV1Path).toBe(true);
     expect(summary.isLocalhost).toBe(false);

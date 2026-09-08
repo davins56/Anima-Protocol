@@ -32,6 +32,8 @@ import {
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
   OPENROUTER_VENICE_UNCENSORED,
+  PRODUCTION_ANIMA_LLM_BASE_URL,
+  PRODUCTION_ANIMA_LLM_HOST,
   openRouterKeyFingerprint,
   summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
@@ -366,25 +368,24 @@ function summarizeError(err: unknown): string {
 
 /**
  * Shared operator hint when the self-hosted LLM rejects the bearer token.
- * Fly's Caddy proxy (`deploy/ollama-fly`) returns 401; some edges/proxies
- * surface the same failure as 403 with an empty body.
+ * The named-tunnel proxy in front of Ollama (`scripts/llm/tunnel-cloudflared.sh`)
+ * returns 401; some edges/proxies surface the same failure as 403 with an empty body.
  */
 export const LOCAL_LLM_AUTH_FIX_HINT =
   "ANIMA_LOCAL_LLM_API_KEY on the Cloudflare Worker (Secrets Store binding in wrangler.jsonc) " +
-  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
-  "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
-  "as ANIMA_LOCAL_LLM_API_KEY and redeploy). See deploy/ollama-fly/README.md.";
+  "must exactly match the bearer token on the existing tunnel proxy " +
+  `(${PRODUCTION_ANIMA_LLM_HOST}). See scripts/llm/README.md.`;
 
 /**
  * Shared operator hint when the Worker / Vercel cannot open a TCP/TLS session
- * to the LLM host. Distinct from auth (401/403): the machine is down, sleeping,
- * or TLS is broken. A localhost URL on Workers is CF error 1003, not this hint.
+ * to the LLM host. Distinct from auth (401/403): the origin box, Ollama, or
+ * the Cloudflare Tunnel is down. A localhost URL on Workers is CF error 1003, not this hint.
  */
 export const LOCAL_LLM_CONNECTION_FIX_HINT =
   "The self-hosted Anima LLM host did not accept a connection. " +
-  "Check `fly status -a anima-chat-llm` / `fly logs -a anima-chat-llm`, then " +
-  "`fly apps restart anima-chat-llm` or `fly deploy -a anima-chat-llm` " +
-  "(see deploy/ollama-fly/README.md). Or set OPENROUTER_API_KEY for Venice Uncensored via OpenRouter.";
+  `Check that Ollama and the Cloudflare Tunnel for ${PRODUCTION_ANIMA_LLM_HOST} are running ` +
+  "(`pnpm llm:tunnel` / scripts/llm/tunnel-cloudflared.sh). " +
+  "Or set OPENROUTER_API_KEY for Venice Uncensored via OpenRouter. See scripts/llm/README.md.";
 
 const OPENROUTER_SETUP_HINT =
   "Set OPENROUTER_API_KEY (free at https://openrouter.ai/keys). " +
@@ -471,7 +472,7 @@ export function isProviderAuthError(err: unknown): boolean {
     return true;
   }
   // 401 = standard unauthorized. 403 = some reverse proxies / edges reject a
-  // bad bearer the same way (production probe against anima-chat-llm.fly.dev).
+  // bad bearer the same way (production probe against llm.anima-protocol.com).
   return e.status === 401 || e.status === 403;
 }
 
@@ -671,8 +672,8 @@ function configuredLocalModelLabel(): string {
 function localHostDownSuffix(include: boolean): string {
   if (!include) return "";
   const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
-  if (host === "anima-chat-llm.fly.dev") {
-    return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
+  if (host === PRODUCTION_ANIMA_LLM_HOST) {
+    return ` The primary LLM host (${host}) is also unreachable — restart Ollama and the Cloudflare Tunnel (\`pnpm llm:tunnel\`).`;
   }
   return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from the Cloudflare Worker.`;
 }
@@ -770,7 +771,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       "ANIMA_LOCAL_LLM_BASE_URL points at localhost/loopback, which this serverless runtime cannot reach " +
         "(Cloudflare Workers reject isolate fetch to localhost with error 1003). " +
         "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), " +
-        "e.g. https://anima-chat-llm.fly.dev/v1. See deploy/ollama-fly/README.md.",
+        `e.g. ${PRODUCTION_ANIMA_LLM_BASE_URL}. See scripts/llm/README.md.`,
     );
   }
   if (chain.length === 0) {
@@ -780,18 +781,19 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       noteParts.push(
         "ANIMA_LLM_PROVIDER=custom but ANIMA_LOCAL_LLM_BASE_URL is unset or unusable. " +
           "OpenRouter will not be used. Set a public HTTPS OpenAI-compatible URL and redeploy. " +
-          "See deploy/ollama-fly/README.md.",
+          `Production already uses ${PRODUCTION_ANIMA_LLM_BASE_URL}. See scripts/llm/README.md.`,
       );
     } else if (!localSummary.isLoopbackMisconfigured) {
       noteParts.push(
         noLoopback
           ? "ANIMA_LOCAL_LLM_BASE_URL is unset. This serverless runtime cannot invent or reach localhost. " +
-            "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1) " +
-            "(see deploy/ollama-fly/README.md), or set OPENROUTER_API_KEY for Venice Uncensored / " +
+            `Set ANIMA_LOCAL_LLM_BASE_URL to ${PRODUCTION_ANIMA_LLM_BASE_URL} ` +
+            "(existing Cloudflare Tunnel → Ollama; see scripts/llm/README.md), or set OPENROUTER_API_KEY for Venice Uncensored / " +
             "free open-weight chat via OpenRouter. Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used."
-          : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM, " +
+          : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM " +
+            `(production: ${PRODUCTION_ANIMA_LLM_BASE_URL}), ` +
             "or OPENROUTER_API_KEY for Venice Uncensored / free open-weight chat via OpenRouter. " +
-            "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See deploy/ollama-fly/README.md.",
+            "Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used. See scripts/llm/README.md.",
       );
     }
   } else {

@@ -1,9 +1,14 @@
-# Fly.io Ollama host (`anima-chat-llm`)
+# Fly.io Ollama host (`anima-chat-llm`) — unused
+
+**Do not set this up.** Production already uses the named Cloudflare Tunnel
+`https://llm.anima-protocol.com/v1` in front of the existing Ollama box
+(`scripts/llm/tunnel-cloudflared.sh`). Point `ANIMA_LOCAL_LLM_BASE_URL` at
+that URL. This directory is leftover scaffolding only.
 
 Public HTTPS OpenAI-compatible API for the branded `anima-chat` model
 (`qwen2.5:3b`, ~2 GB, CPU-friendly). The Cloudflare Worker at
 `anima-protocol.com` cannot reach `localhost` (isolate fetch is rejected with
-Cloudflare error 1003). This app is the intended `ANIMA_LOCAL_LLM_BASE_URL`.
+Cloudflare error 1003).
 
 Chat still uses only a self-hosted Anima LLM or OpenRouter. This host is not
 Gemini, Groq, or OpenAI flagship.

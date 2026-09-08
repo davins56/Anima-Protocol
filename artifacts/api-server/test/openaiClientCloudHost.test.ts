@@ -18,6 +18,7 @@ describe("isCloudFlagshipLlmHost", () => {
     expect(isCloudFlagshipLlmHost("localhost")).toBe(false);
     expect(isCloudFlagshipLlmHost("127.0.0.1")).toBe(false);
     expect(isCloudFlagshipLlmHost("anima-llm.onrender.com")).toBe(false);
+    expect(isCloudFlagshipLlmHost("llm.anima-protocol.com")).toBe(false);
     expect(isCloudFlagshipLlmHost("anima-chat-llm.fly.dev")).toBe(false);
     expect(isCloudFlagshipLlmHost("random-words.trycloudflare.com")).toBe(false);
     expect(isCloudFlagshipLlmHost(null)).toBe(false);
