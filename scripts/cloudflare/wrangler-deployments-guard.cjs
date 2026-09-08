@@ -28,9 +28,6 @@ const PARSE_TRY = `  try {
 
 const PARSE_TRY_PATCHED = `  try {
     const json2 = parseJSON(jsonText);
-    if (typeof isAnimaInformationalGet === "function" && isAnimaInformationalGet(method, resource) && response.status >= 500) {
-      return { response: recoverAnimaInformationalGetJson(resource, jsonText), status: 200, retryAfterMs };
-    }
     return { response: json2, status: response.status, retryAfterMs };
   } catch {
     if (typeof isAnimaInformationalGet === "function" && isAnimaInformationalGet(method, resource) && (response.status === 200 || response.status >= 500)) {
@@ -51,14 +48,14 @@ function recoverAnimaInformationalGetJson(resource, jsonText) {
     if (parsed && typeof parsed === "object" && parsed.success !== false) return parsed;
   } catch {}
   if (typeof console !== "undefined" && console.warn) {
-    console.warn("[anima-wrangler-guard] informational GET was unparseable or 5xx; continuing wrangler.", resource);
+    console.warn("[anima-wrangler-guard] informational GET JSON was unparseable; continuing wrangler.", resource);
   }
   const path = String(resource || "");
   if (/\\/workers\\/scripts\\/[^/]+\\/deployments\\/?$/.test(path)) {
     return { success: true, errors: [], messages: [], result: { deployments: [] } };
   }
   if (/\\/workers\\/scripts\\/[^/]+\\/subdomain\\/?$/.test(path)) {
-    return { success: true, errors: [], messages: [], result: { enabled: true, previews_enabled: false } };
+    return { success: true, errors: [], messages: [], result: { enabled: true, previews_enabled: true } };
   }
   return { success: true, errors: [], messages: [], result: { subdomain: "anima-protocol" } };
 }
@@ -106,7 +103,7 @@ function recoverInformationalGetJson(resource, jsonText) {
       success: true,
       errors: [],
       messages: [],
-      result: { enabled: true, previews_enabled: false },
+      result: { enabled: true, previews_enabled: true },
     };
   }
   return {
