@@ -48,13 +48,14 @@ export default function EmailCodeSignIn() {
   const onPreviewHost = isPreviewSignInHost();
 
   const loading = fetchStatus === "fetching" || Boolean(busy);
+  const afterAuthPath = clerkOAuthCompletePath(basePath);
 
   // Single-session Clerk instances reject a second sign-in. Send signed-in
-  // users into the app instead of leaving them stuck on this form.
+  // users into Chat instead of bouncing them through the title screen.
   // Leftover Instant Sandbox must not bounce a GitHub/email return to Home.
   useEffect(() => {
     if ((userLoaded && isSignedIn) || isSignedInUser) {
-      navigate(basePath || "/", { replace: true });
+      navigate(afterAuthPath, { replace: true });
       return;
     }
     const pendingAuth =
@@ -67,13 +68,13 @@ export default function EmailCodeSignIn() {
     if (isGuest && !pendingAuth) {
       navigate(basePath || "/", { replace: true });
     }
-  }, [userLoaded, isSignedIn, isSignedInUser, isGuest, navigate]);
+  }, [afterAuthPath, userLoaded, isSignedIn, isSignedInUser, isGuest, navigate]);
 
   const resumeExistingSession = async (err) => {
     try {
       const sessionId = await recoverExistingClerkSession(clerk, err);
       if (sessionId) {
-        navigate(basePath || "/", { replace: true });
+        navigate(afterAuthPath, { replace: true });
         return true;
       }
     } catch {
@@ -120,7 +121,7 @@ export default function EmailCodeSignIn() {
         const next = destinationAfterClerkAuth({
           session,
           decorateUrl,
-          fallbackPath: clerkOAuthCompletePath(basePath),
+          fallbackPath: afterAuthPath,
         });
         if (next.mode === "external") {
           window.location.href = next.href;
@@ -293,7 +294,7 @@ export default function EmailCodeSignIn() {
     markClerkAuthReturn();
     try {
       if (isSignedIn) {
-        navigate(basePath || "/", { replace: true });
+        navigate(afterAuthPath, { replace: true });
         return;
       }
       if (!signIn) {

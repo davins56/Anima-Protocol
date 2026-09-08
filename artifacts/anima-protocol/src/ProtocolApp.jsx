@@ -67,11 +67,15 @@ import {
   expireBrowserApexClerkClientUatCookies,
 } from "@/lib/clerkProxy";
 import {
+  clerkOAuthCompletePath,
   destinationAfterClerkAuth,
   hasClerkHandshakeQuery,
   hasPendingClerkHandshake,
 } from "@/lib/clerkOAuthPaths";
-import { markClerkAuthReturn } from "@/lib/authBootPolicy";
+import {
+  markClerkAuthReturn,
+  shouldHoldSignedOutLanding,
+} from "@/lib/authBootPolicy";
 
 // Title screen is eager so cold opens paint Landing immediately (no spinner).
 import Landing from "./pages/Landing";
@@ -131,7 +135,7 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
 const lockSameOriginClerkProxy = mustUseSameOriginClerkProxy(clerkPubKey);
-const authRedirectCompleteUrl = basePath || "/";
+const authRedirectCompleteUrl = clerkOAuthCompletePath(basePath);
 
 function stripBase(path) {
   return basePath && path.startsWith(basePath)
@@ -534,17 +538,36 @@ function SignedInHome() {
 // Leftover Instant Sandbox storage is not a signed-in session — only Clerk
 // or an explicit this-session Guest tap may enter the app.
 function HomeGate() {
-  const { isAuthenticated, isSignedInUser, isGuest, isLoadingAuth, authStalled } =
-    useAuth();
+  const {
+    isAuthenticated,
+    isSignedInUser,
+    isGuest,
+    isLoadingAuth,
+    authStalled,
+    justCompletedClerkAuth,
+  } = useAuth();
   const location = useLocation();
   const handshakeHold = hasClerkHandshakeQuery({
     search: location.search,
     hash: location.hash,
   });
 
-  // GitHub / email handshake still in the URL — do not paint guest Home.
-  if (handshakeHold && isLoadingAuth && !authStalled && !isSignedInUser) {
+  // GitHub handshake in the URL, or this tab just finished email sign-in —
+  // do not paint the title screen while Clerk is still hydrating.
+  if (
+    shouldHoldSignedOutLanding({
+      isSignedInUser,
+      authStalled,
+      handshakeHold,
+      clerkAuthReturn: justCompletedClerkAuth,
+    })
+  ) {
     return <PageLoader />;
+  }
+
+  // Sign-in → Chat. Keep handshake tokens on `/` until Clerk consumes them.
+  if (isSignedInUser && justCompletedClerkAuth && !handshakeHold) {
+    return <Navigate to={stripBase(authRedirectCompleteUrl)} replace />;
   }
 
   // Explicit Instant Sandbox / a live Clerk session must enter home even if

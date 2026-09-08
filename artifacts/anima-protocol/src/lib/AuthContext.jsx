@@ -26,6 +26,7 @@ import {
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
 import { createCompanionRecord } from '@/lib/createCompanion';
 import {
+  CLERK_AUTH_RETURN_HOLD_MS,
   clearClerkAuthReturn,
   clearGuestPersistence,
   persistExplicitGuest,
@@ -202,7 +203,8 @@ export const AuthProvider = ({ children }) => {
     });
     if (boot.mode === 'signed-in') {
       clearGuestPersistence();
-      clearClerkAuthReturn();
+      // Do not clearClerkAuthReturn on the first signed-in tick — iPad Safari
+      // can flicker isSignedIn and bounce the user back to Landing.
       setLocalUser(null);
       return;
     }
@@ -212,6 +214,15 @@ export const AuthProvider = ({ children }) => {
     }
     setLocalUser(null);
   }, [isLoaded, isSignedIn, clerkUser?.id, location.pathname, location.search, location.hash]);
+
+  // Drop the post-auth hold only after the Clerk session stays true.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return undefined;
+    const timer = setTimeout(() => {
+      clearClerkAuthReturn();
+    }, CLERK_AUTH_RETURN_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [isLoaded, isSignedIn]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -339,9 +350,13 @@ export const AuthProvider = ({ children }) => {
     search: location.search,
     hash: location.hash,
   });
-  // Always wait for Clerk. Leftover guest must not skip login. Hold Home
-  // while handshake query is still in the URL (GitHub / email return).
-  const isLoadingAuth = !isLoaded || (!isSignedInUser && pendingHandshakeQuery);
+  const justCompletedClerkAuth = readClerkAuthReturn();
+  // Always wait for Clerk. Leftover guest must not skip login. Hold the
+  // title screen while handshake query is in the URL *or* this tab just
+  // finished email/GitHub (iPad Safari: isSignedIn lags the cookies).
+  const isLoadingAuth =
+    !isLoaded ||
+    (!isSignedInUser && (pendingHandshakeQuery || justCompletedClerkAuth));
   const [authStalled, setAuthStalled] = useState(false);
 
   useEffect(() => {
@@ -355,10 +370,10 @@ export const AuthProvider = ({ children }) => {
         window.location.pathname === '/sign-up' ||
         window.location.pathname.startsWith('/sign-in/') ||
         window.location.pathname.startsWith('/sign-up/'));
-    const stallMs = onAuthScreen ? 15_000 : 5_000;
+    const stallMs = onAuthScreen || justCompletedClerkAuth ? 15_000 : 5_000;
     const timer = setTimeout(() => setAuthStalled(true), stallMs);
     return () => clearTimeout(timer);
-  }, [isLoadingAuth]);
+  }, [isLoadingAuth, justCompletedClerkAuth]);
 
   const navigateToLogin = useCallback(() => {
     navigate('/sign-in');
@@ -464,6 +479,7 @@ const logout = useCallback(() => {
         isGuest,
         setIsAuthenticated: () => {},
         isLoadingAuth,
+        justCompletedClerkAuth,
         authStalled,
         authChecked: isLoaded,
         checkUserAuth: () => {},

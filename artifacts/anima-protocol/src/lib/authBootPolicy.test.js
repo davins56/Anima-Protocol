@@ -15,6 +15,8 @@ import {
   resolveAuthBoot,
   shouldAutoInvokeInstantGuest,
   shouldEnterGuestOnSignInFailure,
+  shouldHoldSignedOutLanding,
+  CLERK_AUTH_RETURN_HOLD_MS,
 } from "./authBootPolicy";
 
 const leftoverGuest = {
@@ -259,6 +261,10 @@ describe("boot wiring", () => {
     expect(auth).toMatch(/readClerkAuthReturn/);
     expect(auth).toMatch(/clerkIdentityFromUser/);
     expect(auth).toMatch(/shouldClearLocalSession/);
+    expect(auth).toMatch(/CLERK_AUTH_RETURN_HOLD_MS/);
+    expect(auth).toMatch(
+      /Do not clearClerkAuthReturn on the first signed-in tick/,
+    );
   });
 
   it("only invokes handleInstantGuest from the Guest button, never boot or form value", () => {
@@ -285,10 +291,62 @@ describe("boot wiring", () => {
   it("HomeGate enters the app only for Clerk or explicit guest", () => {
     const app = readFileSync(join(srcRoot, "ProtocolApp.jsx"), "utf8");
     expect(app).toMatch(/isSignedInUser \|\| isGuest \|\| isAuthenticated/);
-    expect(app).toMatch(/handshakeHold && isLoadingAuth && !authStalled && !isSignedInUser/);
+    expect(app).toMatch(/shouldHoldSignedOutLanding/);
+    expect(app).toMatch(/justCompletedClerkAuth/);
+    expect(app).toMatch(/clerkOAuthCompletePath\(basePath\)/);
     expect(app).toMatch(/markClerkAuthReturn/);
+    expect(app).toMatch(
+      /isSignedInUser && justCompletedClerkAuth && !handshakeHold/,
+    );
     expect(app).not.toMatch(/if \(isAuthenticated \|\| localUser \|\| user\)/);
     expect(app).not.toMatch(/will load in guest mode/);
     expect(app).not.toMatch(/if \(isLoadingAuth\) \{\s*return <Landing/);
+  });
+});
+
+describe("CLERK_AUTH_RETURN_HOLD_MS", () => {
+  it("outlasts a brief iPad Safari isSignedIn flicker", () => {
+    expect(CLERK_AUTH_RETURN_HOLD_MS).toBeGreaterThanOrEqual(8_000);
+  });
+});
+
+describe("shouldHoldSignedOutLanding", () => {
+  it("holds the title screen after email/GitHub return until Clerk is signed in", () => {
+    expect(
+      shouldHoldSignedOutLanding({
+        isSignedInUser: false,
+        authStalled: false,
+        handshakeHold: false,
+        clerkAuthReturn: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldHoldSignedOutLanding({
+        isSignedInUser: false,
+        handshakeHold: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not hold once signed in, stalled, or on a cold unsigned visit", () => {
+    expect(
+      shouldHoldSignedOutLanding({
+        isSignedInUser: true,
+        clerkAuthReturn: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldHoldSignedOutLanding({
+        authStalled: true,
+        clerkAuthReturn: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldHoldSignedOutLanding({
+        isSignedInUser: false,
+        handshakeHold: false,
+        clerkAuthReturn: false,
+      }),
+    ).toBe(false);
   });
 });

@@ -10,6 +10,12 @@ export const LOCAL_AUTH_STORAGE_KEY = "anima_local_auth_user";
 export const GUEST_CHOSEN_SESSION_KEY = "anima_guest_chosen";
 /** Set when the user starts GitHub or email Clerk sign-in in this tab. */
 export const CLERK_AUTH_RETURN_KEY = "anima_clerk_auth_return";
+/**
+ * Keep the return flag after the first `isSignedIn` tick. iPad Safari can
+ * flicker the session for a few seconds; clearing immediately lets HomeGate
+ * paint Landing and the protected-route guard bounce `/chat` back to `/`.
+ */
+export const CLERK_AUTH_RETURN_HOLD_MS = 8_000;
 
 export function isGuestIdentity(identity) {
   if (!identity || typeof identity !== "object") return false;
@@ -244,4 +250,20 @@ export function resolveAuthBoot({
     isSignedInUser: false,
     isGuest: false,
   };
+}
+
+/**
+ * After email/GitHub return, Clerk `isSignedIn` can still be false for a
+ * tick (iPad Safari cookie hydrate). Painting Landing then looks like a
+ * reload loop of the title screen. Hold the loader until the session
+ * appears or auth stalls.
+ */
+export function shouldHoldSignedOutLanding({
+  isSignedInUser = false,
+  authStalled = false,
+  handshakeHold = false,
+  clerkAuthReturn = false,
+} = {}) {
+  if (isSignedInUser || authStalled) return false;
+  return Boolean(handshakeHold || clerkAuthReturn);
 }
