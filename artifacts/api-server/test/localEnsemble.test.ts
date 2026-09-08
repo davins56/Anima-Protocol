@@ -11,6 +11,8 @@ vi.mock("../src/lib/openaiClient", () => {
     OPENROUTER_VENICE_UNCENSORED:
       "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     OPENROUTER_FREE_MODEL: "openai/gpt-oss-20b:free",
+    PRODUCTION_ANIMA_LLM_HOST: "llm.anima-protocol.com",
+    PRODUCTION_ANIMA_LLM_BASE_URL: "https://llm.anima-protocol.com/v1",
     hasOpenAIKey: () => Boolean(process.env.OPENAI_API_KEY?.trim()),
     hasOpenRouterKey: () =>
       Boolean(

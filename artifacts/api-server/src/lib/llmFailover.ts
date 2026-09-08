@@ -787,7 +787,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       noteParts.push(
         noLoopback
           ? "ANIMA_LOCAL_LLM_BASE_URL is unset. This serverless runtime cannot invent or reach localhost. " +
-            `Set ANIMA_LOCAL_LLM_BASE_URL to ${PRODUCTION_ANIMA_LLM_BASE_URL} ` +
+            `Set ANIMA_LOCAL_LLM_BASE_URL to the public HTTPS host ${PRODUCTION_ANIMA_LLM_BASE_URL} ` +
             "(existing Cloudflare Tunnel → Ollama; see scripts/llm/README.md), or set OPENROUTER_API_KEY for Venice Uncensored / " +
             "free open-weight chat via OpenRouter. Gemini/Groq/Kimi/Grok/ChatGPT are intentionally not used."
           : "No chat LLM configured. Set ANIMA_LOCAL_LLM_BASE_URL for self-hosted Anima LLM " +
