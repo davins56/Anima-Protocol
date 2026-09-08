@@ -45,7 +45,14 @@ describe("Cloudflare wrangler config", () => {
 
   it("runs the Worker first for /api so Express handles healthz, store, and Clerk", () => {
     expect(assets.run_worker_first).toEqual(
-      expect.arrayContaining(["/api", "/api/*", "/assets", "/assets/*"]),
+      expect.arrayContaining([
+        "/api",
+        "/api/*",
+        "/assets",
+        "/assets/*",
+        "/v1",
+        "/v1/*",
+      ]),
     );
     expect(workerSource).toContain("isWorkerApiPath");
     expect(workerSource).toContain("fetchApiThroughExpress");
@@ -238,6 +245,10 @@ describe("Cloudflare wrangler config", () => {
     expect(cnameNotes).toContain("frontend-api.clerk.services");
     expect(cnameNotes).toContain("custom_domain");
     expect(cnameNotes).toContain("verify:clerk-cname-gateway");
+    expect(cnameNotes).toContain("run_worker_first");
+    expect(assets.run_worker_first).toEqual(
+      expect.arrayContaining(["/v1", "/v1/*"]),
+    );
     const notes = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/www-redirect.md"),
       "utf8",
