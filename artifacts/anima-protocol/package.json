@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@clerk/react": "^6.15.1",
+    "@clerk/shared": "^4.31.0",
     "@clerk/themes": "^2.4.57",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
