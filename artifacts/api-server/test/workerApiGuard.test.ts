@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   coerceApiResponseToJson,
   fetchApiThroughExpress,
+  isHttpRedirectStatus,
   isLongLivedApiPath,
+  isScriptOrBinaryContentType,
   isWorkerApiPath,
   jsonApiErrorResponse,
   looksLikeHtmlBody,
@@ -101,6 +103,59 @@ describe("coerceApiResponseToJson", () => {
     const cf301 = `<html><head><title>301 Moved Permanently</title></head><body><center><h1>301 Moved Permanently</h1></center><hr><center>cloudflare</center></body></html>`;
     expect(looksLikeHtmlBody(cf301)).toBe(true);
   });
+
+  it("keeps Clerk clerk-js 307 Location instead of rewriting JSON worker_api_failure", async () => {
+    expect(isHttpRedirectStatus(307)).toBe(true);
+    expect(
+      isScriptOrBinaryContentType("application/javascript; charset=utf-8"),
+    ).toBe(true);
+    const redirected = new Response(null, {
+      status: 307,
+      headers: {
+        location:
+          "https://anima-protocol.com/api/__clerk/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+      },
+    });
+    const coerced = await coerceApiResponseToJson(
+      redirected,
+      "/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
+    );
+    expect(coerced.status).toBe(307);
+    expect(coerced.headers.get("location")).toContain(
+      "/api/__clerk/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+    );
+    expect(coerced.headers.get("content-type") || "").not.toMatch(
+      /application\/json/,
+    );
+  });
+
+  it("keeps GitHub OAuth 307 Location through /api/__clerk", async () => {
+    const redirected = new Response(null, {
+      status: 307,
+      headers: {
+        location: "https://github.com/login/oauth/authorize?client_id=x",
+      },
+    });
+    const coerced = await coerceApiResponseToJson(
+      redirected,
+      "/api/__clerk/v1/client/sign_ins/id",
+    );
+    expect(coerced.status).toBe(307);
+    expect(coerced.headers.get("location")).toMatch(/github\.com\/login\/oauth/);
+  });
+
+  it("passes clerk-js JavaScript through without JSON wrapping", async () => {
+    const js = new Response("/* clerk-js */", {
+      status: 200,
+      headers: { "content-type": "application/javascript; charset=utf-8" },
+    });
+    const coerced = await coerceApiResponseToJson(
+      js,
+      "/api/__clerk/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+    );
+    expect(coerced.status).toBe(200);
+    await expect(coerced.text()).resolves.toBe("/* clerk-js */");
+  });
 });
 
 describe("fetchApiThroughExpress", () => {
@@ -179,6 +234,33 @@ describe("fetchApiThroughExpress", () => {
     expect(["timeout", "ETIMEOUT"]).toContain(body.code);
     expect(body.error).toMatch(/unavailable|timeout|database/i);
     expect(JSON.stringify(body)).not.toMatch(/<!DOCTYPE|lt IE 7/);
+  });
+
+  it("does not rewrite a clerk-js 307 into worker_api_failure JSON", async () => {
+    const handler = {
+      fetch: async () =>
+        new Response(null, {
+          status: 307,
+          headers: {
+            location:
+              "https://anima-protocol.com/api/__clerk/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+          },
+        }),
+    };
+    const response = await fetchApiThroughExpress(
+      new Request(
+        "https://anima-protocol.com/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
+      ),
+      {},
+      {},
+      handler,
+    );
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain(
+      "@clerk/clerk-js@6.31.0",
+    );
+    const text = await response.text();
+    expect(text).not.toMatch(/worker_api_failure/);
   });
 });
 
