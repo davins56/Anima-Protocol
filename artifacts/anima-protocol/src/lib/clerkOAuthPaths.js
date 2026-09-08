@@ -212,3 +212,19 @@ export function clerkOAuthCallbackAbsolute(origin, basePath, mode = 'sign-in') {
  */
 export const CLERK_GITHUB_OAUTH_CALLBACK_URL =
   'https://clerk.anima-protocol.com/v1/oauth_callback';
+
+/**
+ * True when the browser just came back from GitHub or Clerk FAPI.
+ * Used so leftover Instant Sandbox cannot paint Home after OAuth.
+ */
+export function isClerkOAuthReferrer(referrer) {
+  const raw = String(referrer || '').trim();
+  if (!raw) return false;
+  try {
+    const host = new URL(raw).hostname.toLowerCase().replace(/:\d+$/, '');
+    if (host === 'github.com' || host.endsWith('.github.com')) return true;
+    return isClerkOwnedHostname(host);
+  } catch {
+    return false;
+  }
+}

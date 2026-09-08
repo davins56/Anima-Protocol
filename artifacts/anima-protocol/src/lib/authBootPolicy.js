@@ -1,3 +1,5 @@
+import { isClerkOAuthReferrer } from "./clerkOAuthPaths";
+
 /**
  * Boot-time auth policy for Clerk vs Instant Sandbox / Guest Access.
  *
@@ -220,7 +222,12 @@ export function resolveAuthBoot({
 
   // GitHub / email just returned. Do not restore leftover Instant Sandbox —
   // that is the "Home but not logged in" production failure.
-  if (pendingClerkHandshake || clerkAuthReturn) {
+  if (
+    shouldSuppressGuestHome({
+      pendingClerkHandshake,
+      clerkAuthReturn,
+    })
+  ) {
     return {
       mode: "signed-out",
       identity: null,
@@ -244,4 +251,41 @@ export function resolveAuthBoot({
     isSignedInUser: false,
     isGuest: false,
   };
+}
+
+/**
+ * After GitHub / email Clerk return, leftover Instant Sandbox must not
+ * look like a signed-in Home session.
+ */
+export function shouldSuppressGuestHome({
+  pendingClerkHandshake = false,
+  clerkAuthReturn = false,
+  referrer = "",
+} = {}) {
+  if (pendingClerkHandshake || clerkAuthReturn) return true;
+  return isClerkOAuthReferrer(referrer);
+}
+
+/**
+ * Root `/` paint after auth. Clerk session → Home. Guest Home is allowed
+ * only when this tab explicitly chose Instant Sandbox and we are not
+ * finishing a Clerk return.
+ *
+ * @returns {'home' | 'landing' | 'loading'}
+ */
+export function resolveHomeGate({
+  isSignedInUser = false,
+  isGuest = false,
+  suppressGuestHome = false,
+  handshakeHold = false,
+  isLoadingAuth = false,
+  authStalled = false,
+} = {}) {
+  if (isSignedInUser) return "home";
+  if (suppressGuestHome) {
+    if (handshakeHold && isLoadingAuth && !authStalled) return "loading";
+    return "landing";
+  }
+  if (isGuest) return "home";
+  return "landing";
 }

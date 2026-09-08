@@ -33,6 +33,7 @@ import {
   readExplicitGuestChosen,
   readPersistedGuest,
   resolveAuthBoot,
+  shouldSuppressGuestHome,
 } from '@/lib/authBootPolicy';
 import {
   hasClerkHandshakeQuery,
@@ -64,6 +65,16 @@ export const AuthProvider = ({ children }) => {
   // Instant Sandbox only applies after an explicit this-session Guest tap,
   // and only when Clerk has loaded without a real session.
   const [localUser, setLocalUser] = useState(null);
+
+  const suppressGuestHome = shouldSuppressGuestHome({
+    pendingClerkHandshake: hasPendingClerkHandshake({
+      search: location.search,
+      pathname: location.pathname,
+      hash: location.hash,
+    }),
+    clerkAuthReturn: readClerkAuthReturn(),
+    referrer: typeof document !== 'undefined' ? document.referrer : '',
+  });
 
   const loginAsLocalUser = useCallback((customIdentity) => {
     const fallbackId = 'user_' + Math.random().toString(36).substring(2, 10);
@@ -99,20 +110,20 @@ export const AuthProvider = ({ children }) => {
       });
       return;
     }
-    if (localUser) {
+    if (localUser && !suppressGuestHome) {
       setAuthTokenGetter(async () => `local_${localUser.id}`);
       return;
     }
     clearAuthTokenGetter();
-  }, [getToken, isSignedIn, localUser]);
+  }, [getToken, isSignedIn, localUser, suppressGuestHome]);
 
   // Sync localUser into base44 if not signed in with Clerk
   useEffect(() => {
-    if (!isSignedIn && localUser) {
+    if (!isSignedIn && localUser && !suppressGuestHome) {
       base44.auth.syncIdentity(localUser);
       setUser(localUser);
     }
-  }, [isSignedIn, localUser]);
+  }, [isSignedIn, localUser, suppressGuestHome]);
 
   // Retry starter seeding once the session token is live, independent of whether
   // profile load succeeds — an empty roster after bootstrap usually means seeding
@@ -191,7 +202,7 @@ export const AuthProvider = ({ children }) => {
       persistedGuest: readPersistedGuest(),
       explicitGuestChosen: readExplicitGuestChosen(),
       pendingClerkHandshake: pendingHandshake,
-      clerkAuthReturn: readClerkAuthReturn(),
+      clerkAuthReturn: readClerkAuthReturn() || suppressGuestHome,
     });
     if (boot.mode === 'signed-in') {
       clearGuestPersistence();
@@ -204,7 +215,7 @@ export const AuthProvider = ({ children }) => {
       return;
     }
     setLocalUser(null);
-  }, [isLoaded, isSignedIn, clerkUser?.id, location.pathname, location.search, location.hash]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, location.pathname, location.search, location.hash, suppressGuestHome]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -271,31 +282,26 @@ export const AuthProvider = ({ children }) => {
           }
         }
       })();
-    } else if (localUser) {
+    } else if (localUser && !suppressGuestHome) {
       // Explicit Instant Sandbox — keep the guest identity. Do not clear
       // the token getter; the other effect owns local_* for guests.
-    } else {
-      const pendingHandshake = hasPendingClerkHandshake({
-        search: location.search,
-        pathname: location.pathname,
-        hash: location.hash,
-      });
+    } else if (suppressGuestHome) {
       // Handshake / just-returned Clerk auth may still mint the session.
-      // Clearing here is the "Home as guest / signed-out" race.
-      if (!pendingHandshake && !readClerkAuthReturn()) {
-        clearAuthTokenGetter();
-        base44.auth.clearSession();
-        setUser(null);
-      }
+      // Do not sync leftover guest or clear a session that is about to land.
+    } else {
+      clearAuthTokenGetter();
+      base44.auth.clearSession();
+      setUser(null);
     }
 
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, clerkUser?.id, localUser, location.pathname, location.search, location.hash]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, localUser, location.pathname, location.search, location.hash, suppressGuestHome]);
 
   const isSignedInUser = !!isSignedIn && !!clerkUser;
-  const isGuest = !!localUser && !isSignedInUser;
+  // Clerk "signed in" without user yet, or a GitHub/email return, is not Guest.
+  const isGuest = !!localUser && !isSignedIn && !isSignedInUser && !suppressGuestHome;
   const isAuthenticated = isSignedInUser || isGuest;
   const pendingHandshakeQuery = hasClerkHandshakeQuery({
     search: location.search,
@@ -417,13 +423,14 @@ const logout = useCallback(() => {
   return (
     <AuthContext.Provider
       value={{
-        user: isSignedInUser ? user : user || localUser,
+        user: isSignedInUser ? user : isGuest ? user || localUser : null,
         setUser,
         localUser,
         loginAsLocalUser,
         isAuthenticated,
         isSignedInUser,
         isGuest,
+        suppressGuestHome,
         setIsAuthenticated: () => {},
         isLoadingAuth,
         authStalled,

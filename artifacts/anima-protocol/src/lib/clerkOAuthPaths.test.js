@@ -11,6 +11,7 @@ import {
   destinationAfterClerkAuth,
   hasClerkHandshakeQuery,
   hasPendingClerkHandshake,
+  isClerkOAuthReferrer,
   joinBasePath,
   resolvePostAuthNavigation,
 } from './clerkOAuthPaths';
@@ -103,6 +104,18 @@ describe('clerkOAuthPaths', () => {
     expect(
       hasPendingClerkHandshake({ pathname: '/', search: '' }),
     ).toBe(false);
+  });
+
+  it('treats GitHub and Clerk FAPI referrers as OAuth return', () => {
+    expect(isClerkOAuthReferrer('https://github.com/login/oauth/authorize')).toBe(
+      true,
+    );
+    expect(
+      isClerkOAuthReferrer('https://clerk.anima-protocol.com/v1/oauth_callback'),
+    ).toBe(true);
+    expect(isClerkOAuthReferrer('https://anima-protocol.com/sign-in')).toBe(
+      false,
+    );
   });
 
   it('documents the Clerk custom-domain GitHub OAuth callback', () => {

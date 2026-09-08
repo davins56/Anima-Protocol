@@ -66,7 +66,7 @@ import {
   hasClerkHandshakeQuery,
   hasPendingClerkHandshake,
 } from "@/lib/clerkOAuthPaths";
-import { markClerkAuthReturn } from "@/lib/authBootPolicy";
+import { markClerkAuthReturn, resolveHomeGate } from "@/lib/authBootPolicy";
 
 // Title screen is eager so cold opens paint Landing immediately (no spinner).
 import Landing from "./pages/Landing";
@@ -507,22 +507,33 @@ function SignedInHome() {
 // Leftover Instant Sandbox storage is not a signed-in session — only Clerk
 // or an explicit this-session Guest tap may enter the app.
 function HomeGate() {
-  const { isAuthenticated, isSignedInUser, isGuest, isLoadingAuth, authStalled } =
-    useAuth();
+  const {
+    isSignedInUser,
+    isGuest,
+    isLoadingAuth,
+    authStalled,
+    suppressGuestHome,
+  } = useAuth();
   const location = useLocation();
   const handshakeHold = hasClerkHandshakeQuery({
     search: location.search,
     hash: location.hash,
   });
+  const gate = resolveHomeGate({
+    isSignedInUser,
+    isGuest,
+    suppressGuestHome,
+    handshakeHold,
+    isLoadingAuth,
+    authStalled,
+  });
 
-  // GitHub / email handshake still in the URL — do not paint guest Home.
-  if (handshakeHold && isLoadingAuth && !authStalled && !isSignedInUser) {
+  // After GitHub / email, leftover Instant Sandbox must not paint Home.
+  // Only a live Clerk session (or an explicit guest tap) enters the app.
+  if (gate === "loading") {
     return <PageLoader />;
   }
-
-  // Explicit Instant Sandbox / a live Clerk session must enter home even if
-  // Clerk is still loading. Only unsigned visitors stay on the lock screen.
-  if (isSignedInUser || isGuest || isAuthenticated) {
+  if (gate === "home") {
     return <SignedInHome />;
   }
 
