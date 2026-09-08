@@ -395,8 +395,16 @@ describe("startGitHubOAuthSignIn", () => {
       LOCAL_AUTH_STORAGE_KEY,
       JSON.stringify({ id: "user_seeker", is_guest: true }),
     );
+    const expireApexUat = vi.fn();
     const sso = vi.fn(async () => ({ error: null }));
-    await startGitHubOAuthSignIn({ sso, status: "complete" }, "");
+    await startGitHubOAuthSignIn({ sso, status: "complete" }, "", null, {
+      expireApexUat,
+    });
+    expect(expireApexUat).toHaveBeenCalledTimes(1);
+    expect(sso).toHaveBeenCalled();
+    expect(expireApexUat.mock.invocationCallOrder[0]).toBeLessThan(
+      sso.mock.invocationCallOrder[0],
+    );
     expect(readClerkAuthReturn()).toBe(true);
     expect(sessionStorage.getItem(GUEST_CHOSEN_SESSION_KEY)).toBeNull();
     expect(localStorage.getItem(LOCAL_AUTH_STORAGE_KEY)).toBeNull();
