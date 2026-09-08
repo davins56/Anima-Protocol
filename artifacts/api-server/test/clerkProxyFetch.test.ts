@@ -3,6 +3,7 @@ import {
   buildClerkProxyHeaderValues,
   buildClerkUpstreamHeaders,
   clerkFrontendApiBaseFromPublishableKey,
+  clientIpFromHeaders,
   forwardedRequestProto,
   proxyClerkWithFetch,
   resolveClerkNpmRedirectUrl,
@@ -63,8 +64,43 @@ describe("clerkProxyFetch", () => {
       "https://www.anima-protocol.com/api/__clerk/",
     );
     expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+    expect(headers.get("X-Forwarded-Host")).toBe("www.anima-protocol.com");
+    expect(headers.get("X-Forwarded-Proto")).toBe("https");
     expect(headers.get("Host")).toBeNull();
     expect(headers.get("Origin")).toBe("https://www.anima-protocol.com");
+  });
+
+  it("prefers CF-Connecting-IP over spoofable X-Forwarded-For", () => {
+    expect(
+      clientIpFromHeaders({
+        "x-forwarded-for": "203.0.113.1, 198.51.100.2",
+        "cf-connecting-ip": "198.51.100.10",
+        "x-real-ip": "203.0.113.9",
+      }),
+    ).toBe("198.51.100.10");
+    expect(
+      clientIpFromHeaders({
+        "x-forwarded-for": "203.0.113.1, 198.51.100.2",
+      }),
+    ).toBe("203.0.113.1");
+  });
+
+  it("does not forward Authorization when Origin is set", () => {
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          authorization: "Bearer pk_live_dummy",
+          accept: "application/json",
+        },
+      },
+      "sk_live_test",
+      { officialProxy: false, authorizeUpstream: true },
+    );
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("Origin")).toBe("https://anima-protocol.com");
   });
 
   it("derives upstream path from originalUrl when mount path is missing", () => {
@@ -189,7 +225,31 @@ describe("clerkProxyFetch", () => {
       { officialProxy: false },
     );
     expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+    expect(headers.get("X-Forwarded-Host")).toBeNull();
     expect(headers.get("Clerk-Secret-Key")).toBeNull();
+    expect(headers.get("Origin")).toBe("https://anima-protocol.com");
+  });
+
+  it("authorizes CNAME FAPI /v1 with the secret but not Clerk-Proxy-Url", () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          accept: "application/json",
+          "cf-connecting-ip": "198.51.100.20",
+          "x-forwarded-for": "203.0.113.1",
+        },
+      },
+      "sk_live_test",
+      { officialProxy: false, authorizeUpstream: true },
+    );
+    expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+    expect(headers.get("X-Forwarded-Host")).toBeNull();
+    expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+    expect(headers.get("X-Forwarded-For")).toBe("198.51.100.20");
     expect(headers.get("Origin")).toBe("https://anima-protocol.com");
   });
 
@@ -310,6 +370,8 @@ describe("clerkProxyFetch", () => {
       );
       const headers = new Headers(init?.headers);
       expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+      expect(headers.get("X-Forwarded-Host")).toBeNull();
+      expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
       expect(headers.get("Origin")).toBe("https://anima-protocol.com");
       return new Response("{}", { status: 200, headers: upstreamHeaders });
     });
@@ -358,8 +420,11 @@ describe("clerkProxyFetch", () => {
       "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js";
     const versioned =
       "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js";
-    const fetchImpl = vi.fn(async (url: string | URL) => {
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const href = String(url);
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Clerk-Secret-Key")).toBeNull();
+      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
       if (href === unversioned) {
         return new Response(null, {
           status: 307,
