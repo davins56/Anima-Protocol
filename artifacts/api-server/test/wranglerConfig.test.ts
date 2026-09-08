@@ -247,23 +247,93 @@ describe("Cloudflare wrangler config", () => {
   });
 
   it("detects a grey-cloud Clerk CNAME as an unsuccessful gateway cutover", () => {
+    const environmentOk = {
+      status: 200,
+      location: null,
+      bodySnippet: '{"auth_config":{},"display_config":{}}',
+    };
+    const oauthGatewayOk = {
+      status: 303,
+      location:
+        "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+      bodySnippet: "",
+    };
     expect(
       interpretClerkCnameGatewayProbe({
-        status: 301,
-        location: "/v1/oauth_callback?err_code=authorization_invalid#",
-        bodySnippet: "",
+        oauthCallback: {
+          status: 301,
+          location: "/v1/oauth_callback?err_code=authorization_invalid#",
+          bodySnippet: "",
+        },
+        environment: environmentOk,
         cnameTarget: "frontend-api.clerk.services.",
       }).ok,
     ).toBe(false);
     expect(
       interpretClerkCnameGatewayProbe({
-        status: 303,
-        location:
-          "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
-        bodySnippet: "",
+        oauthCallback: oauthGatewayOk,
+        environment: environmentOk,
+        cnameTarget: null,
+      }),
+    ).toEqual({
+      ok: true,
+      reason:
+        "gateway 303 to apex /sign-in?clerk_error= and environment 200 Clerk JSON",
+    });
+    expect(
+      interpretClerkCnameGatewayProbe({
+        oauthCallback: {
+          status: 303,
+          location:
+            "https://evil.example/sign-in?clerk_error=authorization_invalid",
+          bodySnippet: "",
+        },
+        environment: environmentOk,
+        cnameTarget: null,
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("Unexpected oauth_callback 303"),
+    });
+    expect(
+      interpretClerkCnameGatewayProbe({
+        oauthCallback: {
+          status: 303,
+          location: "/sign-in?clerk_error=authorization_invalid",
+          bodySnippet: "",
+        },
+        environment: environmentOk,
         cnameTarget: null,
       }).ok,
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      interpretClerkCnameGatewayProbe({
+        oauthCallback: oauthGatewayOk,
+        environment: {
+          status: 502,
+          location: null,
+          bodySnippet: "error code: 502",
+        },
+        cnameTarget: null,
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("GET /v1/environment returned 502"),
+    });
+    expect(
+      interpretClerkCnameGatewayProbe({
+        oauthCallback: oauthGatewayOk,
+        environment: {
+          status: 200,
+          location: null,
+          bodySnippet: "<!DOCTYPE html><html><title>Anima Protocol</title>",
+        },
+        cnameTarget: null,
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("not Clerk environment JSON"),
+    });
   });
 
   it("pins wrangler so production GET /deployments cannot abort clerk-js deploys", () => {

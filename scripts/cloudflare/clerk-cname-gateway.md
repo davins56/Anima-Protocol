@@ -26,13 +26,19 @@ Custom Domain while a CNAME already exists.
 pnpm --filter @workspace/scripts run verify:clerk-cname-gateway
 ```
 
+The command GETs `/v1/oauth_callback` **and** `/v1/environment`. It
+fails unless both succeed (a callback-only 303 can hide a broken
+environment origin). The 303 `Location` must be the apex
+`https://anima-protocol.com/sign-in?clerk_error=authorization_invalid`,
+not a relative path or another host.
+
 Expect:
 
 | Probe | After cutover |
 | --- | --- |
 | `dig +short clerk.anima-protocol.com CNAME` | **not** `frontend-api.clerk.services` |
 | `GET /v1/oauth_callback` (no code) | **303** `https://anima-protocol.com/sign-in?clerk_error=` |
-| `GET /v1/environment` | **200** Clerk environment JSON (gateway → Clerk origin) |
+| `GET /v1/environment` | **200** Clerk environment JSON (`auth_config` / `display_config`) |
 
 GitHub OAuth App callback stays
 `https://clerk.anima-protocol.com/v1/oauth_callback`.
