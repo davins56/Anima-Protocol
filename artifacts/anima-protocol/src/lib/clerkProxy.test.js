@@ -15,6 +15,7 @@ import {
   resolveClerkProxyUrl,
   sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
+  expireBrowserApexClerkClientUatCookies,
 } from './clerkProxy';
 
 const LIVE_CUSTOM_KEY =
@@ -113,5 +114,25 @@ describe('clerkProxy', () => {
     expect(animaProductionClerkProxyUrl()).toBe(
       'https://anima-protocol.com/api/__clerk/',
     );
+  });
+
+  it('expires Domain=apex __client_uat cookies on production hosts', () => {
+    const written = [];
+    expireBrowserApexClerkClientUatCookies({
+      cookie: '__client_uat=0; __client_uat_23i07izR=0; theme=dark',
+      hostname: 'anima-protocol.com',
+      writeCookie: (value) => written.push(value),
+    });
+    expect(written).toEqual([
+      '__client_uat=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
+      '__client_uat_23i07izR=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax',
+    ]);
+    expect(
+      expireBrowserApexClerkClientUatCookies({
+        cookie: '__client_uat=0',
+        hostname: 'localhost',
+        writeCookie: (value) => written.push(value),
+      }),
+    ).toEqual([]);
   });
 });

@@ -104,27 +104,50 @@ export function resolveClerkUpstreamUrl(
   return new URL(path, frontendApiBase);
 }
 
+/** Cookie name from a Set-Cookie or Cookie pair (`name=value`). */
+export function clerkCookieName(raw: string): string {
+  return raw.split("=", 1)[0]?.trim() || "";
+}
+
+/** Clerk cookies that identify a client/session (includes `__client_uat*`). */
+export function isClerkAuthCookieName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return (
+    n.startsWith("__client") ||
+    n.startsWith("__session") ||
+    n.startsWith("__refresh")
+  );
+}
+
 /**
- * Drop Domain= on Clerk FAPI cookies so the browser stores them on the app
- * origin (same-origin /api/__clerk). Safari ITP treats CNAME-cloaked
- * clerk.anima-protocol.com cookies as third-party and never sends them.
+ * Drop Domain= on Clerk FAPI cookies so the browser stores them host-only on
+ * the app origin (same-origin /api/__clerk).
+ *
+ * `Domain=anima-protocol.com` (or `.anima-protocol.com`) is also sent to
+ * `clerk.anima-protocol.com`. GitHub's oauth_callback is a document hit on
+ * that CNAME — the Worker never sees it, so #405's outbound strip cannot
+ * help. Any `__client` / `__client_uat` / `__session` on that request makes
+ * Clerk return authorization_invalid (live: uat-only → 301 err_code;
+ * no Clerk cookies → 303 /sign-in/sso-callback?__clerk_status=failed).
  */
 export function rewriteClerkProxySetCookie(
   raw: string,
   appHost: string,
 ): string | null {
+  const name = clerkCookieName(raw);
   const domainMatch = raw.match(/;\s*Domain=([^;]*)/i);
-  if (!domainMatch) return raw;
-  const cookieDomain = domainMatch[1].trim().replace(/^\./, "").toLowerCase();
   const app = appHost.toLowerCase().replace(/^\./, "");
   const appApex = app.replace(/^www\./, "");
 
+  if (isClerkAuthCookieName(name)) {
+    return domainMatch ? raw.replace(/;\s*Domain=[^;]*/i, "") : raw;
+  }
+
+  if (!domainMatch) return raw;
+  const cookieDomain = domainMatch[1].trim().replace(/^\./, "").toLowerCase();
+
   if (isClerkOwnedHostname(cookieDomain)) {
-    // Session cookies must become first-party. Drop Cloudflare bot cookies
-    // minted for Clerk's CNAME target — they are not used by clerk-js.
-    if (/^__(?:client|session|refresh)/i.test(raw.trim())) {
-      return raw.replace(/;\s*Domain=[^;]*/i, "");
-    }
+    // Cloudflare bot cookies minted for Clerk's CNAME — not used by clerk-js.
     return null;
   }
   if (
@@ -148,22 +171,14 @@ export function isClerkNpmAssetPath(pathname: string): boolean {
   return path === "/npm" || path.startsWith("/npm/");
 }
 
-/** Clerk cookies that identify a client/session. */
-export function isClerkAuthCookieName(name: string): boolean {
-  const n = name.trim().toLowerCase();
-  return (
-    n.startsWith("__client") ||
-    n.startsWith("__session") ||
-    n.startsWith("__refresh")
-  );
-}
-
 /**
  * After GitHub, oauth_callback runs on clerk.anima-protocol.com and may set
  * `__session` on `.anima-protocol.com` while `__client` stays on the CNAME.
  * The SPA then calls `/api/__clerk` with that orphan session cookie. Clerk
- * returns authorization_invalid. Handshake tokens are single-use and must
- * not share the request with a mismatched client/session pair.
+ * returns authorization_invalid on handshake. Handshake tokens are single-use
+ * and must not share the request with a mismatched client/session pair.
+ * (The CNAME oauth_callback itself is a different failure: Domain=apex
+ * `__client_uat` — see rewriteClerkProxySetCookie.)
  */
 export function stripClerkAuthCookies(cookieHeader: string): string {
   return cookieHeader
@@ -205,15 +220,95 @@ export function isClerkSsoCallbackReferer(referer: string | undefined): boolean 
   }
 }
 
+/** GitHub (and Google) finish on `/v1/oauth_callback` — document, not XHR. */
+export function isClerkOAuthCallbackPath(
+  requestUrl: string | undefined,
+): boolean {
+  if (!requestUrl) return false;
+  try {
+    const path =
+      new URL(requestUrl, "https://anima-protocol.com").pathname.split("?")[0] ||
+      "/";
+    return path === "/v1/oauth_callback" || path.startsWith("/v1/oauth_callback/");
+  } catch {
+    return /\/v1\/oauth_callback(?:\/|\?|#|$)/.test(requestUrl);
+  }
+}
+
 /**
- * Handshake JWT (query/path) or the first FAPI XHR from the SSO callback
- * page. Ordinary `/v1/client` from `/sign-in` keeps cookies.
+ * Handshake JWT (query/path), the first FAPI XHR from the SSO callback
+ * page, or a proxied oauth_callback. Ordinary `/v1/client` from `/sign-in`
+ * keeps cookies.
  */
 export function shouldStripClerkAuthCookies(
   requestUrl: string | undefined,
   referer?: string,
 ): boolean {
-  return isClerkHandshakeRequest(requestUrl) || isClerkSsoCallbackReferer(referer);
+  return (
+    isClerkHandshakeRequest(requestUrl) ||
+    isClerkSsoCallbackReferer(referer) ||
+    isClerkOAuthCallbackPath(requestUrl)
+  );
+}
+
+/**
+ * Names only — never values. Used to expire leaked Domain=apex copies and
+ * for secret-free oauth_callback diagnostics.
+ */
+export function collectClerkAuthCookieNames(
+  cookieHeader: string | undefined,
+): string[] {
+  if (!cookieHeader) return [];
+  const names = new Set<string>();
+  for (const part of cookieHeader.split(";")) {
+    const name = clerkCookieName(part);
+    if (isClerkAuthCookieName(name)) names.add(name);
+  }
+  return [...names];
+}
+
+export function expireApexClerkAuthCookie(
+  name: string,
+  appApex: string,
+): string {
+  const apex = appApex.toLowerCase().replace(/^\./, "").replace(/^www\./, "");
+  return `${name}=; Path=/; Domain=${apex}; Max-Age=0; Secure; SameSite=Lax`;
+}
+
+export function apexClerkAuthCookieExpiries(
+  names: Iterable<string>,
+  appApex: string,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const name of names) {
+    if (!isClerkAuthCookieName(name) || seen.has(name)) continue;
+    seen.add(name);
+    out.push(expireApexClerkAuthCookie(name, appApex));
+  }
+  return out;
+}
+
+/**
+ * Send Clerk-Secret-Key on Worker→CNAME /v1/* so environment/client work.
+ * Never on /npm/* (jsDelivr) or /v1/oauth_callback — Secret-Key on the
+ * callback makes Clerk return authorization_invalid even with no cookies
+ * (live: proxied callback 301 err_code; CNAME callback 303 failed).
+ */
+export function shouldAuthorizeClerkUpstream(
+  requestUrl: string | undefined,
+): boolean {
+  if (!requestUrl) return true;
+  try {
+    const path =
+      new URL(requestUrl, "https://anima-protocol.com").pathname.split("?")[0] ||
+      "/";
+    if (isClerkNpmAssetPath(path)) return false;
+    if (isClerkOAuthCallbackPath(requestUrl)) return false;
+    return true;
+  } catch {
+    return !isClerkNpmAssetPath(requestUrl) && !isClerkOAuthCallbackPath(requestUrl);
+  }
 }
 
 export function isHttpRedirectStatus(status: number): boolean {
@@ -453,7 +548,12 @@ function collectSetCookies(upstream: Response): string[] {
 export function forwardClerkProxyResponseHeaders(
   upstream: Response,
   res: ServerResponse,
-  rewrite: { appHost: string; appOrigin: string; fapiHost: string },
+  rewrite: {
+    appHost: string;
+    appOrigin: string;
+    fapiHost: string;
+    requestCookie?: string;
+  },
 ): void {
   upstream.headers.forEach((value, name) => {
     const lower = name.toLowerCase();
@@ -472,11 +572,25 @@ export function forwardClerkProxyResponseHeaders(
     res.setHeader(name, value);
   });
 
+  const rewrittenNames: string[] = [];
   for (const cookie of collectSetCookies(upstream)) {
     const rewritten = rewriteClerkProxySetCookie(cookie, rewrite.appHost);
     if (rewritten) {
+      rewrittenNames.push(clerkCookieName(rewritten));
       appendSetCookie(res, rewritten);
     }
+  }
+
+  const appApex = rewrite.appHost.toLowerCase().replace(/^\./, "").replace(/^www\./, "");
+  for (const expiry of apexClerkAuthCookieExpiries(
+    [
+      ...collectClerkAuthCookieNames(rewrite.requestCookie),
+      ...rewrittenNames,
+      "__client_uat",
+    ],
+    appApex,
+  )) {
+    appendSetCookie(res, expiry);
   }
 }
 
@@ -506,7 +620,7 @@ export async function proxyClerkWithFetch(
   const { origin, host } = buildClerkProxyHeaderValues(req, secretKey);
   const upstreamPath = resolveClerkUpstreamPath(req);
   let upstreamUrl = resolveClerkUpstreamUrl(upstreamPath, frontendApiBase);
-  const authorizeUpstream = !isClerkNpmAssetPath(upstreamUrl.pathname);
+  const authorizeUpstream = shouldAuthorizeClerkUpstream(upstreamPath);
   const headers = buildClerkUpstreamHeaders(req, secretKey, {
     officialProxy,
     authorizeUpstream,
@@ -521,6 +635,19 @@ export async function proxyClerkWithFetch(
   const body = await readRequestBody(req);
   const method = req.method?.toUpperCase() || "GET";
   const payloadBody = body ? new Uint8Array(body) : undefined;
+
+  if (isClerkOAuthCallbackPath(upstreamPath)) {
+    const cookieHeader = headers.get("cookie") || "";
+    logger.info(
+      {
+        path: upstreamPath.split("?")[0],
+        authorizeUpstream,
+        secretKeySent: headers.has("Clerk-Secret-Key"),
+        clerkCookieNames: collectClerkAuthCookieNames(cookieHeader),
+      },
+      "Clerk oauth_callback proxy",
+    );
+  }
 
   let upstream = await fetchImpl(upstreamUrl, {
     method,
@@ -557,10 +684,12 @@ export async function proxyClerkWithFetch(
   }
 
   res.statusCode = upstream.status;
+  const requestCookie = req.headers.cookie;
   forwardClerkProxyResponseHeaders(upstream, res, {
     appHost: host,
     appOrigin: origin,
     fapiHost,
+    requestCookie: Array.isArray(requestCookie) ? requestCookie[0] : requestCookie,
   });
 
   const payload = Buffer.from(await upstream.arrayBuffer());

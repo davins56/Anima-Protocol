@@ -94,6 +94,14 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   must be forwarded, not rewritten as JSON.
 - `clerk.anima-protocol.com` stays on Clerk DNS. Do not point that hostname
   at Worker `anima-protocol`.
+- Clerk auth cookies (`__client*`, `__session*`, `__refresh*`) must be
+  **host-only** on `anima-protocol.com`. `Domain=anima-protocol.com` is also
+  sent to `clerk.anima-protocol.com`. GitHub's document callback
+  (`/v1/oauth_callback`) then returns `authorization_invalid` (301
+  `err_code=authorization_invalid` → 403 JSON). The Worker never sees that
+  request, so stripping outbound `/api/__clerk` cookies on handshake (#405)
+  cannot fix it. The proxy also expires leftover Domain=apex copies and
+  omits `Clerk-Secret-Key` on `/v1/oauth_callback`.
 
 Live probes:
 
