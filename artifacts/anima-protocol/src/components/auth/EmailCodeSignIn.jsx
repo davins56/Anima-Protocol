@@ -13,7 +13,7 @@ import {
   recoverExistingClerkSession,
   startGitHubOAuthSignIn,
 } from "@/lib/emailCodeSignIn";
-import { clerkOAuthCompletePath } from "@/lib/clerkOAuthPaths";
+import { clerkOAuthCompletePath, destinationAfterClerkAuth } from "@/lib/clerkOAuthPaths";
 import { buildInstantGuestIdentity } from "@/lib/authBootPolicy";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -97,25 +97,25 @@ export default function EmailCodeSignIn() {
     }
     await signIn.finalize({
       navigate: ({ session, decorateUrl }) => {
-        if (session?.currentTask) {
-          const destination = decorateUrl(`/${session.currentTask.key}`);
-          if (destination.startsWith("http")) {
-            window.location.href = destination;
-          } else {
-            navigate(destination.startsWith(basePath) ? destination.slice(basePath.length) || "/" : destination);
-          }
+        const next = destinationAfterClerkAuth({
+          session,
+          decorateUrl,
+          fallbackPath: clerkOAuthCompletePath(basePath),
+        });
+        if (next.mode === "external") {
+          window.location.href = next.href;
           return;
         }
-        const destination = decorateUrl(clerkOAuthCompletePath(basePath));
+        const destination = next.path;
         if (destination.startsWith("http")) {
           window.location.href = destination;
-        } else {
-          const stripped =
-            basePath && destination.startsWith(basePath)
-              ? destination.slice(basePath.length) || "/"
-              : destination;
-          navigate(stripped);
+          return;
         }
+        const stripped =
+          basePath && destination.startsWith(basePath)
+            ? destination.slice(basePath.length) || "/"
+            : destination;
+        navigate(stripped);
       },
     });
   };

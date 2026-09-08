@@ -2,10 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildClerkProxyHeaderValues,
   buildClerkUpstreamHeaders,
+  clerkFrontendApiBaseFromPublishableKey,
   forwardedRequestProto,
+  proxyClerkWithFetch,
   resolveClerkUpstreamPath,
   resolveClerkUpstreamUrl,
+  rewriteClerkProxyLocation,
+  rewriteClerkProxySetCookie,
+  usesOfficialClerkProxyProtocol,
 } from "../src/middlewares/clerkProxyFetch";
+
+const CUSTOM_DOMAIN_KEY = "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29t";
 
 describe("clerkProxyFetch", () => {
   it("maps proxy paths to frontend-api.clerk.dev", () => {
@@ -68,7 +75,7 @@ describe("clerkProxyFetch", () => {
     ).toBe("/v1/environment");
   });
 
-  it("falls back to www proxy host when request host headers are missing", () => {
+  it("falls back to the apex proxy host when request host headers are missing", () => {
     process.env.CLERK_PUBLISHABLE_KEY =
       "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
 
@@ -78,8 +85,25 @@ describe("clerkProxyFetch", () => {
     );
 
     expect(values.proxyUrl).toBe(
-      "https://www.anima-protocol.com/api/__clerk/",
+      "https://anima-protocol.com/api/__clerk/",
     );
+  });
+
+  it("keeps apex Origin when the browser is on anima-protocol.com", () => {
+    process.env.CLERK_PUBLISHABLE_KEY =
+      "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
+    const values = buildClerkProxyHeaderValues(
+      {
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      },
+      "sk_live_test",
+    );
+    expect(values.origin).toBe("https://anima-protocol.com");
+    expect(values.proxyUrl).toBe("https://anima-protocol.com/api/__clerk/");
   });
 
   it("uses the first x-forwarded-proto hop so Origin matches Clerk-Proxy-Url", () => {
@@ -112,7 +136,7 @@ describe("clerkProxyFetch", () => {
     );
   });
 
-  it("uses dashboard www proxy headers for localhost pk_live_ dev", () => {
+  it("uses dashboard apex proxy headers for localhost pk_live_ dev", () => {
     process.env.CLERK_PUBLISHABLE_KEY =
       "pk_live_Y2xlcmsuYW5pbWEtcHJvdG9jb2wuY29tJA"; // pragma: allowlist secret
 
@@ -127,8 +151,140 @@ describe("clerkProxyFetch", () => {
     );
 
     expect(values.proxyUrl).toBe(
-      "https://www.anima-protocol.com/api/__clerk/",
+      "https://anima-protocol.com/api/__clerk/",
     );
-    expect(values.origin).toBe("https://www.anima-protocol.com");
+    expect(values.origin).toBe("https://anima-protocol.com");
+  });
+
+  it("proxies a custom-domain publishable key to that FAPI host", () => {
+    expect(clerkFrontendApiBaseFromPublishableKey(CUSTOM_DOMAIN_KEY)).toBe(
+      "https://clerk.anima-protocol.com",
+    );
+    expect(
+      usesOfficialClerkProxyProtocol(
+        clerkFrontendApiBaseFromPublishableKey(CUSTOM_DOMAIN_KEY),
+      ),
+    ).toBe(false);
+    expect(
+      resolveClerkUpstreamUrl(
+        "/v1/environment",
+        clerkFrontendApiBaseFromPublishableKey(CUSTOM_DOMAIN_KEY),
+      ).toString(),
+    ).toBe("https://clerk.anima-protocol.com/v1/environment");
+  });
+
+  it("omits official proxy headers when talking to a custom FAPI domain", () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          accept: "application/json",
+        },
+      },
+      "sk_live_test",
+      { officialProxy: false },
+    );
+    expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+    expect(headers.get("Clerk-Secret-Key")).toBeNull();
+    expect(headers.get("Origin")).toBe("https://anima-protocol.com");
+  });
+
+  it("rewrites CNAME-cloaked Clerk cookies onto the app origin", () => {
+    expect(
+      rewriteClerkProxySetCookie(
+        "__client=abc; Path=/; Domain=clerk.anima-protocol.com; HttpOnly; Secure; SameSite=Lax",
+        "anima-protocol.com",
+      ),
+    ).toBe("__client=abc; Path=/; HttpOnly; Secure; SameSite=Lax");
+    expect(
+      rewriteClerkProxySetCookie(
+        "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
+        "anima-protocol.com",
+      ),
+    ).toBe(
+      "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
+    );
+    expect(
+      rewriteClerkProxySetCookie(
+        "__cf_bm=x; Path=/; Domain=.clerkprod-cloudflare.net; HttpOnly; Secure; SameSite=None",
+        "anima-protocol.com",
+      ),
+    ).toBeNull();
+  });
+
+  it("rewrites FAPI Location headers onto the same-origin proxy path", () => {
+    expect(
+      rewriteClerkProxyLocation(
+        "https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+        {
+          fapiHost: "clerk.anima-protocol.com",
+          appOrigin: "https://anima-protocol.com",
+        },
+      ),
+    ).toBe(
+      "https://anima-protocol.com/api/__clerk/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
+    );
+  });
+
+  it("proxies custom-domain FAPI through the app origin with first-party cookies", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const upstreamHeaders = new Headers();
+    upstreamHeaders.append(
+      "set-cookie",
+      "__client=tok; Path=/; Domain=clerk.anima-protocol.com; HttpOnly; Secure; SameSite=Lax",
+    );
+    upstreamHeaders.append(
+      "set-cookie",
+      "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
+    );
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe(
+        "https://clerk.anima-protocol.com/v1/environment",
+      );
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+      expect(headers.get("Origin")).toBe("https://anima-protocol.com");
+      return new Response("{}", { status: 200, headers: upstreamHeaders });
+    });
+    const cookies: string[] = [];
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/environment",
+        originalUrl: "/api/__clerk/v1/environment",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(cookies.some((c) => c.startsWith("__client=tok") && !/Domain=/i.test(c))).toBe(
+      true,
+    );
+    expect(
+      cookies.some((c) =>
+        c.includes("__client_uat=1") && c.includes("Domain=anima-protocol.com"),
+      ),
+    ).toBe(true);
   });
 });
