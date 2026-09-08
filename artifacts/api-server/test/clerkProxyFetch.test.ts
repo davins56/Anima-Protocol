@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildClerkProxyHeaderValues,
   buildClerkUpstreamHeaders,
+  clerkForwardedFor,
   clerkFrontendApiBaseFromPublishableKey,
+  CLERK_PROXY_XFF_FALLBACK,
   clientIpFromHeaders,
   forwardedRequestProto,
   isClerkHandshakeRequest,
   isClerkSsoCallbackReferer,
   shouldStripClerkAuthCookies,
+  shouldUseOfficialClerkProxyHeaders,
   proxyClerkWithFetch,
   resolveClerkNpmRedirectUrl,
   resolveClerkUpstreamPath,
@@ -97,6 +100,57 @@ describe("clerkProxyFetch", () => {
         "x-forwarded-for": "203.0.113.1, 198.51.100.2",
       }),
     ).toBe("203.0.113.1");
+  });
+
+  it("always resolves a non-empty X-Forwarded-For for proxy-health", () => {
+    expect(
+      clerkForwardedFor({
+        headers: { "cf-connecting-ip": "198.51.100.10" },
+      }),
+    ).toBe("198.51.100.10");
+    expect(
+      clerkForwardedFor({
+        headers: {},
+        socket: { remoteAddress: "::ffff:203.0.113.50" },
+      }),
+    ).toBe("203.0.113.50");
+    expect(clerkForwardedFor({ headers: {} })).toBe(CLERK_PROXY_XFF_FALLBACK);
+
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          accept: "application/json",
+        },
+      },
+      "sk_live_test",
+    );
+    expect(headers.get("X-Forwarded-For")).toBe(CLERK_PROXY_XFF_FALLBACK);
+  });
+
+  it("uses official headers only on Clerk-owned FAPI after rewrite, never npm", () => {
+    expect(
+      shouldUseOfficialClerkProxyHeaders(
+        "/v1/proxy-health?domain_id=dmn_test",
+        "frontend-api.clerk.dev",
+      ),
+    ).toBe(true);
+    expect(
+      shouldUseOfficialClerkProxyHeaders("/v1/environment", "frontend-api.clerk.dev"),
+    ).toBe(true);
+    expect(
+      shouldUseOfficialClerkProxyHeaders(
+        "/v1/environment",
+        "clerk.anima-protocol.com",
+      ),
+    ).toBe(false);
+    expect(
+      shouldUseOfficialClerkProxyHeaders(
+        "/npm/@clerk/clerk-js@6/dist/clerk.browser.js",
+        "frontend-api.clerk.dev",
+      ),
+    ).toBe(false);
   });
 
   it("does not forward Authorization when Origin is set", () => {
@@ -635,6 +689,7 @@ describe("clerkProxyFetch", () => {
       );
       expect(headers.get("X-Forwarded-Host")).toBe("anima-protocol.com");
       expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+      expect(headers.get("X-Forwarded-For")).toBe(CLERK_PROXY_XFF_FALLBACK);
       expect(headers.get("Origin")).toBe("https://anima-protocol.com");
       expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBeUndefined();
       return new Response("{}", { status: 200, headers: upstreamHeaders });
@@ -1226,5 +1281,107 @@ describe("clerkProxyFetch", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(res.statusCode).toBe(307);
     expect(headers.location).toBe(github);
+  });
+
+  it("forwards /v1/proxy-health to frontend-api.clerk.dev with all official headers", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe(
+        "https://frontend-api.clerk.dev/v1/proxy-health?domain_id=dmn_test",
+      );
+      const headers = new Headers(init?.headers);
+      expect(headers.get("host")).toBeNull();
+      expect(headers.get("Clerk-Proxy-Url")).toBe(
+        "https://anima-protocol.com/api/__clerk/",
+      );
+      expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+      expect(headers.get("X-Forwarded-For")).toBe("198.51.100.10");
+      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBeUndefined();
+      return new Response(
+        JSON.stringify({ status: "healthy", x_forwarded_for: "198.51.100.10" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    let body: Buffer | undefined;
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader() {},
+      getHeader() {
+        return undefined;
+      },
+      end(payload?: Buffer) {
+        body = payload;
+      },
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/proxy-health?domain_id=dmn_test",
+        originalUrl: "/api/__clerk/v1/proxy-health?domain_id=dmn_test",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+          "cf-connecting-ip": "198.51.100.10",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(String(body))).toEqual({
+      status: "healthy",
+      x_forwarded_for: "198.51.100.10",
+    });
+  });
+
+  it("sends fallback X-Forwarded-For on proxy-health when CF-Connecting-IP is missing", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://frontend-api.clerk.dev/v1/proxy-health");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Clerk-Proxy-Url")).toBe(
+        "https://anima-protocol.com/api/__clerk/",
+      );
+      expect(headers.get("Clerk-Secret-Key")).toBe("sk_live_test");
+      expect(headers.get("X-Forwarded-For")).toBe(CLERK_PROXY_XFF_FALLBACK);
+      return new Response(
+        JSON.stringify({
+          errors: [{ code: "bad_request", message: "domain_id is required" }],
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader() {},
+      appendHeader() {},
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/proxy-health",
+        originalUrl: "/api/__clerk/v1/proxy-health",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(400);
   });
 });

@@ -105,16 +105,26 @@ Host**, and sends Clerk's official path-proxy headers:
 
 - `Clerk-Proxy-Url: https://anima-protocol.com/api/__clerk/`
 - `Clerk-Secret-Key` (not on `/npm/*`)
-- `X-Forwarded-For` from `CF-Connecting-IP`
+- `X-Forwarded-For` from `CF-Connecting-IP` (fallback `127.0.0.1` if
+  Cloudflare omitted the client IP — Clerk's `/v1/proxy-health` requires
+  the header)
 
 `GET /v1/oauth_callback` without `code` still **303s locally** and never
 hits Clerk.
 
-This instance is CNAME-only (`proxy_url` is null). `frontend-api.clerk.dev`
-returns `host_invalid` until Clerk Dashboard → Domains → **Set proxy
-configuration** is `https://anima-protocol.com/api/__clerk`. Deploy this
-Worker first (so `/api/__clerk` already forwards to `frontend-api.clerk.dev`),
-then set that proxy URL. Do not put `sk_` in git.
+`/api/__clerk/v1/*` (except `/npm`) always rewrites to
+`frontend-api.clerk.dev` and sends those three headers, even when the
+publishable key host is `clerk.anima-protocol.com`. Official headers are
+**not** sent to an unrewritten `clerk.*` hop (`host_invalid` on
+`/v1/client`).
+
+`frontend-api.clerk.dev` returns `host_invalid` until Clerk Dashboard →
+Domains → **Set proxy** is `https://anima-protocol.com/api/__clerk`
+(trailing slash OK). Deploy this Worker first so Dashboard verify can
+reach `/api/__clerk/v1/proxy-health`, then set that proxy URL. A probe
+without `domain_id` is expected **400** `bad_request`. Cloudflare
+**Bot Fight Mode** may still block Clerk's checker (ops: skip or
+allowlist — not a code fix). Do not put `sk_` in git.
 
 ## Live verify (after deploy + proxy URL)
 
