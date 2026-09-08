@@ -34,10 +34,20 @@
     // stale hashed files under /assets/* (browser then rejects HTML as a JS
     // module — Profile EchoKeys MIME error). Run the Worker first: /api →
     // Express; /assets → 404 if ASSETS returns HTML. Client routes stay SPA.
+    // clerk.anima-protocol.com is this Worker (custom_domain). /v1/* must
+    // hit handleClerkCnameGateway — otherwise Assets SPA-fallback returns
+    // index.html for oauth_callback and /v1/environment (live after #423).
     // Hashed /assets Cache-Control: public/_headers (copied into ./dist) plus
     // Worker withHashedAssetCache. Do not gitignore _headers — CF Assets
     // default is max-age=0 without it.
-    "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
+    "run_worker_first": [
+      "/api",
+      "/api/*",
+      "/assets",
+      "/assets/*",
+      "/v1",
+      "/v1/*"
+    ]
   },
   // GitHub's top-level hop lands on clerk.anima-protocol.com.
   // A zone *route* (`pattern/*` + zone_name) does NOT receive traffic while
