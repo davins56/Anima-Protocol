@@ -9,6 +9,7 @@
 
 import {
   ANIMA_PRODUCTION_SIGN_IN_URL,
+  expireBrowserApexClerkClientUatCookies,
   isClerkAuthorizedBrowserHost,
 } from "./clerkProxy";
 import {
@@ -472,9 +473,12 @@ export function watchPageNavigation(target = typeof window !== "undefined" ? win
  * @param {{ sso?: Function, authenticateWithRedirect?: Function, status?: string | null } | null | undefined} signIn
  * @param {string} basePath
  * @param {{ authenticateWithRedirect?: Function, client?: { signIn?: { authenticateWithRedirect?: Function } } } | null | undefined} [clerk]
- * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean }} [options]
+ * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean, expireApexUat?: () => void }} [options]
  */
 export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = {}) {
+  const expireApexUat =
+    options.expireApexUat ?? expireBrowserApexClerkClientUatCookies;
+  expireApexUat();
   markClerkAuthReturn();
   const paths = clerkOAuthRedirectPaths(basePath, "sign-in");
   const timeoutMs = options.timeoutMs ?? GITHUB_OAUTH_SSO_TIMEOUT_MS;

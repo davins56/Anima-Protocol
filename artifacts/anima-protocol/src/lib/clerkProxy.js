@@ -290,7 +290,8 @@ export function isBrowserClerkClientUatCookieName(name) {
  * Clerk returns authorization_invalid. Host-only `__client` / `__session`
  * must survive refresh. On anima-protocol.com, `Domain=apex; Max-Age=0`
  * also deletes the host-only cookie of the same name (Chrome/Safari).
- * Call this only on SSO callback — not on every page load.
+ * Call this on sign-in / sign-up (before GitHub) and on SSO callback —
+ * not on every page load.
  */
 export function expireBrowserApexClerkClientUatCookies({
   cookie = typeof document !== 'undefined' ? document.cookie : '',

@@ -341,6 +341,15 @@ function ClerkFailedConnectivityHints() {
 }
 
 function AuthFormShell({ mode, children }) {
+  useEffect(() => {
+    // Clerk's CNAME oauth_callback Set-Cookies Domain=apex `__client_uat*`.
+    // Those copies are sent back to clerk.anima-protocol.com on the next
+    // GitHub hop and Clerk returns authorization_invalid. Clear them here —
+    // before native or custom GitHub buttons navigate away — not on every
+    // app boot (that raced host-only UAT after a successful handshake).
+    expireBrowserApexClerkClientUatCookies();
+  }, []);
+
   return (
     <div className="flex min-h-screen-safe items-center justify-center bg-background px-4">
       <div className="w-[420px] max-w-full space-y-3">
