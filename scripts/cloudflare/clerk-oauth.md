@@ -4,9 +4,13 @@ Dashboard-only checklist. Do not put client secrets or `sk_` / `pk_` values
 in git.
 
 Production FAPI is the Clerk **custom domain** `clerk.anima-protocol.com`
-(CNAME to Clerk). The SPA still talks to Clerk through the same-origin
-Worker proxy `/api/__clerk/` so session cookies are first-party (Safari ITP
-would otherwise drop CNAME-cloaked `__client` cookies).
+(CNAME to Clerk). The SPA must talk to Clerk through the same-origin Worker proxy
+`/api/__clerk/` (`ClerkProvider proxyUrl`). clerk-js without `proxyUrl` uses
+`https://clerk.anima-protocol.com/v1/*` from the publishable key — that
+bypasses Worker cookie handling and is the post-GitHub
+`authorization_invalid` path. Do not remount ClerkProvider in "direct"
+mode on production. Safari ITP would otherwise drop CNAME-cloaked
+`__client` cookies.
 
 GitHub (and Google) do **not** callback to the SPA. They callback to Clerk.
 

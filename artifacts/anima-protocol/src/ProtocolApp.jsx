@@ -60,6 +60,8 @@ import {
   resolveClerkProxyUrl,
   sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
+  mustUseSameOriginClerkProxy,
+  shouldAllowDirectClerkFallback,
   expireBrowserApexClerkClientUatCookies,
 } from "@/lib/clerkProxy";
 import {
@@ -127,6 +129,7 @@ const clerkPubKey = resolveFrontendClerkPublishableKey(
 const initialClerkProxyUrl = resolveClerkProxyUrl(clerkPubKey);
 expireBrowserApexClerkClientUatCookies();
 const clerkProxyCapable = shouldUseClerkProxy(clerkPubKey);
+const lockSameOriginClerkProxy = mustUseSameOriginClerkProxy(clerkPubKey);
 const authRedirectCompleteUrl = basePath || "/";
 
 function stripBase(path) {
@@ -537,6 +540,10 @@ function ClerkStallRecovery({ useProxy, onToggleProxy }) {
 
   useEffect(() => {
     if (!clerkProxyCapable || toggledRef.current || clerk.loaded) return;
+    // Production custom-domain keys must not fall back to clerk.anima-protocol.com.
+    if (lockSameOriginClerkProxy || !shouldAllowDirectClerkFallback(clerkPubKey)) {
+      return;
+    }
     // Already on direct Clerk — never flip back to a broken same-origin proxy.
     if (!useProxy) return;
     if (
@@ -582,12 +589,13 @@ function ClerkProviderWithRoutes({ children }) {
         ) {
           return;
         }
+        if (!shouldAllowDirectClerkFallback(clerkPubKey)) return;
         const healthy = await isClerkProxyHealthy(clerkPubKey);
         if (cancelled || healthy) return;
         setUseProxy(false);
         setProviderKey((key) => key + 1);
       } catch {
-        if (!cancelled) {
+        if (!cancelled && shouldAllowDirectClerkFallback(clerkPubKey)) {
           setUseProxy(false);
           setProviderKey((key) => key + 1);
         }
@@ -600,16 +608,19 @@ function ClerkProviderWithRoutes({ children }) {
   }, []);
 
   const activeProxyUrl =
-    useProxy === true ? resolveClerkProxyUrl(clerkPubKey) : "";
+    useProxy === true || lockSameOriginClerkProxy
+      ? resolveClerkProxyUrl(clerkPubKey)
+      : "";
 
   const handleToggleProxy = (nextUseProxy) => {
+    if (lockSameOriginClerkProxy && !nextUseProxy) return;
     setUseProxy(nextUseProxy);
     setProviderKey((key) => key + 1);
   };
 
   return (
     <ClerkProvider
-      key={`clerk-${providerKey}-${useProxy ? "proxy" : "direct"}`}
+      key={`clerk-${providerKey}-${activeProxyUrl ? "proxy" : "direct"}`}
       publishableKey={clerkPubKey}
       {...(activeProxyUrl ? { proxyUrl: activeProxyUrl } : {})}
       appearance={clerkAppearance}
