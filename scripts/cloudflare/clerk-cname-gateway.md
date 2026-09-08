@@ -11,6 +11,13 @@ Cloudflare **Custom Domain** (`custom_domain: true` in `wrangler.jsonc`)
 makes the Worker the origin and creates proxied DNS. You cannot attach a
 Custom Domain while a CNAME already exists.
 
+`custom_domain: true` stays in root `wrangler.jsonc`. Any later successful
+`npx wrangler deploy` of Worker **anima-protocol** re-applies it. The
+#421 main build (`92718b9`) was **skipped**; #423 (`14dd27f`) deployed
+and attached the host. If public DNS is already apex A records
+(`104.21.8.130` / `172.67.157.94`), do **not** add the Custom Domain
+again and do **not** recreate a Clerk CNAME.
+
 ## Cutover (required before / with the next `wrangler deploy`)
 
 1. Cloudflare dashboard → anima-protocol.com → **DNS** → **Records**.
