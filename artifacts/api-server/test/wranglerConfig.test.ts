@@ -222,10 +222,12 @@ describe("Cloudflare wrangler config", () => {
   it("does not assume a wrangler www route until the zone rule keeps ${1}", () => {
     const routes = (config.routes ?? []) as Array<Record<string, unknown>>;
     expect(routes.map((row) => row.pattern)).toEqual([
+      "anima-protocol.com",
       "clerk.anima-protocol.com",
     ]);
-    expect(routes[0]?.custom_domain).toBe(true);
-    expect(routes[0]?.zone_name).toBeUndefined();
+    expect(routes).toHaveLength(2);
+    expect(routes.every((row) => row.custom_domain === true)).toBe(true);
+    expect(routes.every((row) => row.zone_name === undefined)).toBe(true);
     expect(JSON.stringify(routes)).not.toMatch(/www\.anima-protocol\.com/);
     const wrangler = readFileSync(
       path.join(repoRoot, "wrangler.jsonc"),
@@ -234,6 +236,7 @@ describe("Cloudflare wrangler config", () => {
     expect(wrangler).toMatch(/scripts\/cloudflare\/www-redirect\.md/);
     expect(wrangler).toMatch(/Redirect www to root/);
     expect(wrangler).toMatch(/Do not add www\.anima-protocol\.com routes/);
+    expect(wrangler).toMatch(/Apex \+ clerk MUST both stay/);
     expect(wrangler).toMatch(/custom_domain/);
     expect(wrangler).toMatch(/clerk-cname-gateway\.md/);
     expect(workerSource).toContain("handleClerkCnameGateway");
@@ -268,6 +271,10 @@ describe("Cloudflare wrangler config", () => {
     );
     expect(notes).toMatch(/\$\{1\}/);
     expect(notes).toMatch(/Do \*\*not\*\* add a `www\.anima-protocol\.com` route/);
+    expect(notes).toMatch(/Apex Custom Domain/);
+    expect(notes).toMatch(/"pattern": "anima-protocol.com"/);
+    expect(notes).toMatch(/Do \*\*not\*\* list only clerk/);
+    expect(cnameNotes).toMatch(/Do \*\*not\*\* list only clerk/);
   });
 
   it("detects a grey-cloud Clerk CNAME as an unsuccessful gateway cutover", () => {
