@@ -93,6 +93,18 @@ describe('clerkProxy', () => {
     );
   });
 
+  it('ignores VITE_CLERK_PROXY_URL=none on production pk_live_', () => {
+    vi.stubEnv('VITE_CLERK_PROXY_URL', 'none');
+    expect(mustUseSameOriginClerkProxy(LIVE_CUSTOM_KEY, 'anima-protocol.com')).toBe(
+      true,
+    );
+    expect(shouldAllowDirectClerkFallback(LIVE_CUSTOM_KEY, 'anima-protocol.com')).toBe(
+      false,
+    );
+    expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(true);
+    expect(resolveClerkProxyUrl(LIVE_CUSTOM_KEY)).toBe('/api/__clerk/');
+  });
+
   it('uses proxy on production for non-custom live keys', () => {
     expect(shouldUseClerkProxy(LIVE_DEFAULT_KEY)).toBe(true);
     expect(resolveClerkProxyUrl(LIVE_DEFAULT_KEY)).toBe('/api/__clerk/');

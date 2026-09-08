@@ -189,7 +189,6 @@ export function mustUseSameOriginClerkProxy(
   clerkPubKey,
   hostname = typeof window !== 'undefined' ? window.location.hostname : '',
 ) {
-  if (isClerkProxyExplicitlyDisabled()) return false;
   if (typeof clerkPubKey !== 'string' || !clerkPubKey.startsWith('pk_live_')) {
     return false;
   }
@@ -212,6 +211,7 @@ export function shouldAllowDirectClerkFallback(
  * treats those cookies as third-party, so a direct FAPI session never sticks.
  */
 export function shouldUseClerkProxy(clerkPubKey) {
+  if (mustUseSameOriginClerkProxy(clerkPubKey)) return true;
   if (isClerkProxyExplicitlyDisabled()) return false;
   if (configuredClerkProxyUrl()) return true;
   if (typeof clerkPubKey !== 'string' || !clerkPubKey.startsWith('pk_live_')) {
@@ -220,7 +220,6 @@ export function shouldUseClerkProxy(clerkPubKey) {
   if (typeof window === 'undefined') return false;
 
   const host = window.location.hostname;
-  if (mustUseSameOriginClerkProxy(clerkPubKey, host)) return true;
   if (import.meta.env.DEV && isLocalDevHostname(host)) return true;
   return false;
 }
@@ -229,6 +228,9 @@ export function shouldUseClerkProxy(clerkPubKey) {
  * Resolved proxy URL for ClerkProvider, or "" when Clerk should talk directly.
  */
 export function resolveClerkProxyUrl(clerkPubKey) {
+  if (mustUseSameOriginClerkProxy(clerkPubKey)) {
+    return configuredClerkProxyUrl() || clerkProviderProxyPath();
+  }
   if (isClerkProxyExplicitlyDisabled()) return '';
 
   const configured = configuredClerkProxyUrl();
