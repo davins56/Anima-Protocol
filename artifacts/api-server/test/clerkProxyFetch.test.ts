@@ -16,6 +16,7 @@ import {
   rewriteClerkProxySetCookie,
   shouldAuthorizeClerkUpstream,
   isClerkOAuthCallbackPath,
+  clerkOAuthCallbackShouldBypassUpstream,
   apexClerkAuthCookieExpiries,
   collectClerkAuthCookieNames,
   isClerkClientTokenCookieName,
@@ -499,6 +500,33 @@ describe("clerkProxyFetch", () => {
     );
   });
 
+  it("sends oauth_callback err_code Locations to /sign-in, not /api/__clerk", () => {
+    expect(clerkOAuthCallbackShouldBypassUpstream("/v1/oauth_callback")).toBe(
+      true,
+    );
+    expect(
+      clerkOAuthCallbackShouldBypassUpstream(
+        "/v1/oauth_callback?err_code=authorization_invalid",
+      ),
+    ).toBe(true);
+    expect(
+      clerkOAuthCallbackShouldBypassUpstream(
+        "/v1/oauth_callback?code=real&state=abc",
+      ),
+    ).toBe(false);
+    expect(
+      rewriteClerkProxyLocation(
+        "/v1/oauth_callback?err_code=authorization_invalid#",
+        {
+          fapiHost: "clerk.anima-protocol.com",
+          appOrigin: "https://anima-protocol.com",
+        },
+      ),
+    ).toBe(
+      "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+    );
+  });
+
   it("sends OAuth handshake document redirects to the SPA, not /api/__clerk", () => {
     expect(
       rewriteClerkProxyLocation(
@@ -805,19 +833,53 @@ describe("clerkProxyFetch", () => {
     expect(
       cookies.some(
         (c) =>
-          c.startsWith("__client_uat=") &&
-          c.includes("Domain=anima-protocol.com") &&
-          c.includes("Max-Age=0"),
-      ),
-    ).toBe(true);
-    expect(
-      cookies.some(
-        (c) =>
-          c.startsWith("__client=") &&
-          /Domain=anima-protocol\.com/i.test(c) &&
-          /Max-Age=0/i.test(c),
+          /Domain=anima-protocol\.com/i.test(c) && /Max-Age=0/i.test(c),
       ),
     ).toBe(false);
+  });
+
+  it("does not Domain=apex-expire UAT or return JSON on HEAD/GET oauth_callback without code", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("oauth_callback without code must not hit Clerk");
+    });
+    const headers: Record<string, string> = {};
+    const cookies: string[] = [];
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader(name: string, value: string) {
+        headers[name.toLowerCase()] = value;
+      },
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "HEAD",
+        url: "/v1/oauth_callback",
+        originalUrl: "/api/__clerk/v1/oauth_callback",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(303);
+    expect(headers.location).toBe(
+      "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+    );
+    expect(cookies).toEqual([]);
   });
 
   it("does not Domain=apex-expire __client_uat after handshake mints a host-only copy", async () => {
@@ -894,8 +956,8 @@ describe("clerkProxyFetch", () => {
     await proxyClerkWithFetch(
       {
         method: "GET",
-        url: "/v1/oauth_callback",
-        originalUrl: "/api/__clerk/v1/oauth_callback",
+        url: "/v1/oauth_callback?code=real&state=abc",
+        originalUrl: "/api/__clerk/v1/oauth_callback?code=real&state=abc",
         headers: {
           host: "anima-protocol.com",
           origin: "https://anima-protocol.com",
