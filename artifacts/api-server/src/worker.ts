@@ -15,7 +15,6 @@ import {
   jsonApiErrorResponse,
 } from "./lib/workerApiGuard";
 import { apexRedirectForWww } from "./lib/wwwHostRedirect";
-// ↓↓↓ ADD THIS IMPORT ↓↓↓
 import { setAiBinding } from "./lib/aiBinding";
 
 interface Env {
@@ -44,10 +43,10 @@ export default {
     if (wwwRedirect) return wwwRedirect;
 
     if (isWorkerApiPath(url.pathname)) {
-      setAiBinding(env.AI); // ← SET THE BINDING HERE
+      setAiBinding(env.AI);
       try {
         await applyCloudflareRequestEnv(env);
-        console.log("AI BINDING:", typeof env.AI); return await fetchApiThroughExpress(request, env, ctx, expressHandler);
+        return await fetchApiThroughExpress(request, env, ctx, expressHandler);
       } catch (err) {
         return jsonApiErrorResponse(err, 503, url.pathname);
       }

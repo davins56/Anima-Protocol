@@ -303,6 +303,8 @@ vi.mock("../src/lib/openaiClient", () => {
 });
 
 import { resetLocalModelCatalogForTests } from "../src/lib/localModelCatalog";
+import { resetAiBindingForTests, setAiBinding } from "../src/lib/aiBinding";
+import { WORKERS_AI_CHAT_MODEL, WORKERS_AI_GATEWAY_ID } from "../src/lib/workersAi";
 import {
   allowOpenRouterFallback,
   createChatCompletionWithFailover,
@@ -748,6 +750,7 @@ describe("isAnimaCustomMode", () => {
   const SAVED = { ...process.env };
   afterEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
   });
 
   it("is true when the first provider is the self-hosted Anima LLM", () => {
@@ -765,6 +768,15 @@ describe("isAnimaCustomMode", () => {
     process.env.VERCEL = "1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     expect(isAnimaCustomMode()).toBe(true);
+  });
+
+  it("is false when Workers AI is the preferred chat provider", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    setAiBinding({
+      run: async () => ({ response: "ok" }),
+    });
+    expect(isAnimaCustomMode()).toBe(false);
+    expect(getProviderChain()).toEqual(["workersai"]);
   });
 });
 
@@ -807,9 +819,11 @@ describe("getProviderChain", () => {
   const SAVED = { ...process.env };
   afterEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
   });
   beforeEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
     delete process.env.DEEPSHI_API_KEY;
@@ -882,6 +896,16 @@ describe("getProviderChain", () => {
     expect(isOpenRouterAlreadyFreeTier()).toBe(true);
     expect(usesFreeTierOpenBudget()).toBe(false);
   });
+
+  it("prefers Workers AI over a configured local host", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    setAiBinding({
+      run: async () => ({ response: "ok" }),
+    });
+    expect(getProviderChain()).toEqual(["workersai"]);
+    expect(allowOpenRouterFallback()).toBe(false);
+  });
 });
 
 describe("resolveLocalModel", () => {
@@ -906,6 +930,7 @@ describe("getLlmRoutingStatus", () => {
 
   beforeEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
     resetOpenRouterCreditFallbackForTests();
@@ -913,6 +938,7 @@ describe("getLlmRoutingStatus", () => {
 
   afterEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
   });
 
   it("reports ok with brand anima when a local endpoint is configured", () => {
@@ -978,6 +1004,28 @@ describe("getLlmRoutingStatus", () => {
     expect(status.note).toMatch(/ANIMA_LLM_PROVIDER=custom/i);
     expect(status.note).toMatch(/OpenRouter will not be used/i);
   });
+
+  it("reports Workers AI as preferred even when a local tunnel URL is set", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    setAiBinding({
+      run: async () => ({ response: "ok" }),
+    });
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("ok");
+    expect(status.preferred).toBe("workersai");
+    expect(status.brand).toBe("workersai");
+    expect(status.chain).toEqual(["workersai"]);
+    expect(status.workersai).toEqual({
+      configured: true,
+      model: WORKERS_AI_CHAT_MODEL,
+      gateway: WORKERS_AI_GATEWAY_ID,
+    });
+    expect(status.note).toMatch(/Workers AI/i);
+    expect(status.note).toMatch(/deepseek-gateway/i);
+    expect(status.note).toMatch(/does not use Fly\.io Ollama/i);
+    expect(status.note).toMatch(/unused while the Workers AI binding is present/i);
+  });
 });
 
 describe("createChatStreamWithFailover", () => {
@@ -992,10 +1040,12 @@ describe("createChatStreamWithFailover", () => {
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
     resetOpenRouterCreditFallbackForTests();
+    resetAiBindingForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
   });
 
   it("streams from the local Anima LLM", async () => {
@@ -1323,6 +1373,32 @@ describe("createChatStreamWithFailover", () => {
     expect(message).toMatch(/SSL_ERROR_SYSCALL|ECONNRESET/i);
     expect(message).toMatch(/does not fall through to OpenRouter/i);
   });
+
+  it("streams from Workers AI and skips the local host", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    const run = vi.fn(async (model: string, options: Record<string, unknown>) => {
+      expect(model).toBe(WORKERS_AI_CHAT_MODEL);
+      expect(options.stream).toBe(true);
+      return { response: "from workersai" };
+    });
+    setAiBinding({ run });
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 8192,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("workersai");
+    expect(result.brand).toBe("workersai");
+    expect(result.model).toBe(WORKERS_AI_CHAT_MODEL);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledTimes(1);
+    const chunks: Array<{ choices?: Array<{ delta?: { content?: string } }> }> = [];
+    for await (const chunk of result.stream) {
+      chunks.push(chunk);
+    }
+    expect(chunks.some((chunk) => chunk.choices?.[0]?.delta?.content === "from workersai")).toBe(true);
+  });
 });
 
 describe("createChatCompletionWithFailover", () => {
@@ -1337,10 +1413,12 @@ describe("createChatCompletionWithFailover", () => {
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
     resetOpenRouterCreditFallbackForTests();
+    resetAiBindingForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
   });
 
   it("returns a completion from the local Anima LLM", async () => {
@@ -1374,6 +1452,23 @@ describe("createChatCompletionWithFailover", () => {
 
     expect(createMock).not.toHaveBeenCalled();
   });
+
+  it("completes via Workers AI and skips the local host", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    const run = vi.fn(async () => ({ response: "workersai reply" }));
+    setAiBinding({ run });
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.content).toBe("workersai reply");
+    expect(result.provider).toBe("workersai");
+    expect(result.brand).toBe("workersai");
+    expect(result.model).toBe(WORKERS_AI_CHAT_MODEL);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("probeLlmProviders", () => {
@@ -1387,10 +1482,12 @@ describe("probeLlmProviders", () => {
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
     resetOpenRouterCreditFallbackForTests();
+    resetAiBindingForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
+    resetAiBindingForTests();
   });
 
   it("reports not configured when there is no local endpoint", async () => {
@@ -1450,5 +1547,21 @@ describe("probeLlmProviders", () => {
       ok: false,
     });
     expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("probes Workers AI instead of the local tunnel when the binding is set", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    const run = vi.fn(async () => ({ response: "ok" }));
+    setAiBinding({ run });
+    const probes = await probeLlmProviders();
+    expect(probes).toHaveLength(1);
+    expect(probes[0]).toMatchObject({
+      provider: "workersai",
+      configured: true,
+      ok: true,
+      model: WORKERS_AI_CHAT_MODEL,
+    });
+    expect(createMock).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });
