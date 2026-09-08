@@ -39,6 +39,10 @@ import {
   hasPendingClerkHandshake,
 } from '@/lib/clerkOAuthPaths';
 import {
+  clerkIdentityFromUser,
+  shouldClearLocalSession,
+} from '@/lib/clerkIdentity';
+import {
   disableProactivePush,
   getProactiveMessagePreferences,
   syncProactivePushIfEnabled,
@@ -211,66 +215,71 @@ export const AuthProvider = ({ children }) => {
     let cancelled = false;
 
     if (isSignedIn && clerkUser) {
-      const identity = {
-        id: clerkUser.id,
-        email: clerkUser.primaryEmailAddress?.emailAddress || '',
-        username: clerkUser.username || '',
-        full_name: clerkUser.fullName || clerkUser.username || 'Seeker',
-        github: clerkUser.username || '',
-        externalAccounts: (clerkUser.externalAccounts || []).map((acc) => ({
-          provider: acc.provider,
-          username: acc.username,
-        })),
-      };
-      base44.auth.syncIdentity(identity);
+      const identity = clerkIdentityFromUser(clerkUser);
+      if (!identity) {
+        // Signed-in but Clerk user id not ready — keep existing identity.
+      } else {
+        const merged = base44.auth.syncIdentity(identity);
+        // Publish Clerk identity immediately so Settings / me() callers are not
+        // blank while the server profile fetch is in flight (or fails).
+        if (!cancelled) {
+          setUser((prev) =>
+            prev?.id === identity.id ? { ...prev, ...identity } : merged,
+          );
+          setAuthError(null);
+        }
 
-      // Kick off the bootstrap (local data migration + starter character seeding)
-      bootstrapUserData(clerkUser.id).catch((err) => console.warn('[Anima] Bootstrap failed:', err));
+        // Kick off the bootstrap (local data migration + starter character seeding)
+        bootstrapUserData(clerkUser.id).catch((err) => console.warn('[Anima] Bootstrap failed:', err));
 
-      (async () => {
-        try {
-          let profile = await base44.auth.me();
-          // A profile with no display_name is a brand-new account on its first
-          // load — the only reliable client-side signal we have for sign-up.
-          const isNewAccount = !profile.display_name;
-          if (isNewAccount) {
-            const preferred =
-              clerkUser.firstName || clerkUser.fullName || clerkUser.username;
-            if (preferred) {
-              profile = await base44.auth.updateMe({ display_name: preferred });
+        (async () => {
+          try {
+            let profile = await base44.auth.me();
+            // A profile with no display_name is a brand-new account on its first
+            // load — the only reliable client-side signal we have for sign-up.
+            const isNewAccount = !profile.display_name;
+            if (isNewAccount) {
+              const preferred =
+                clerkUser.firstName || clerkUser.fullName || clerkUser.username;
+              if (preferred) {
+                profile = await base44.auth.updateMe({ display_name: preferred });
+              }
+            }
+
+            // Identity must come before any track() so events attribute correctly.
+            // Use Clerk's stable user id as distinct_id (never the email).
+            identifyUser(clerkUser.id);
+            setProfile({
+              $name: identity.full_name,
+              $email: identity.email || undefined,
+            });
+            setProfileOnce({ first_seen_at: new Date().toISOString() });
+            registerSuper({ platform: 'web' });
+
+            if (isNewAccount) {
+              track('sign_up_completed', {
+                sign_up_method:
+                  clerkUser.externalAccounts?.[0]?.provider || 'email',
+                platform: 'web',
+              });
+            }
+
+            if (!cancelled) {
+              setUser(profile);
+              setAuthError(null);
+            }
+          } catch (err) {
+            console.warn('Failed to load profile:', err);
+            if (!cancelled) {
+              setUser(identity);
+              setAuthError(null);
             }
           }
-
-          // Identity must come before any track() so events attribute correctly.
-          // Use Clerk's stable user id as distinct_id (never the email).
-          identifyUser(clerkUser.id);
-          setProfile({
-            $name: clerkUser.fullName || clerkUser.username || 'Seeker',
-            $email: clerkUser.primaryEmailAddress?.emailAddress || undefined,
-          });
-          setProfileOnce({ first_seen_at: new Date().toISOString() });
-          registerSuper({ platform: 'web' });
-
-          if (isNewAccount) {
-            track('sign_up_completed', {
-              sign_up_method:
-                clerkUser.externalAccounts?.[0]?.provider || 'email',
-              platform: 'web',
-            });
-          }
-
-          if (!cancelled) {
-            setUser(profile);
-            setAuthError(null);
-          }
-        } catch (err) {
-          console.warn('Failed to load profile:', err);
-          if (!cancelled) {
-            setUser(identity);
-            setAuthError(null);
-          }
-        }
-      })();
+        })();
+      }
+    } else if (isSignedIn) {
+      // Clerk session exists; user object is still hydrating. Do not wipe
+      // base44 identity — that is the Settings-blank-after-Home race.
     } else if (localUser) {
       // Explicit Instant Sandbox — keep the guest identity. Do not clear
       // the token getter; the other effect owns local_* for guests.
@@ -282,7 +291,14 @@ export const AuthProvider = ({ children }) => {
       });
       // Handshake / just-returned Clerk auth may still mint the session.
       // Clearing here is the "Home as guest / signed-out" race.
-      if (!pendingHandshake && !readClerkAuthReturn()) {
+      if (
+        shouldClearLocalSession({
+          isSignedIn: false,
+          hasLocalUser: false,
+          pendingHandshake,
+          clerkAuthReturn: !!readClerkAuthReturn(),
+        })
+      ) {
         clearAuthTokenGetter();
         base44.auth.clearSession();
         setUser(null);
@@ -294,7 +310,9 @@ export const AuthProvider = ({ children }) => {
     };
   }, [isLoaded, isSignedIn, clerkUser?.id, localUser, location.pathname, location.search, location.hash]);
 
-  const isSignedInUser = !!isSignedIn && !!clerkUser;
+  // Clerk session is enough. Requiring clerkUser here used to drop
+  // isAuthenticated during user hydration (Settings looked signed-out).
+  const isSignedInUser = !!isSignedIn;
   const isGuest = !!localUser && !isSignedInUser;
   const isAuthenticated = isSignedInUser || isGuest;
   const pendingHandshakeQuery = hasClerkHandshakeQuery({
