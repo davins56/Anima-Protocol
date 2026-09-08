@@ -28,7 +28,11 @@ vi.mock("@/api/base44Client", () => ({
   base44: {
     entities: {
       Anima: { list: mocks.listAnima, update: mocks.updateAnima },
-      Character: { list: mocks.listCharacter, update: mocks.updateCharacter },
+      Character: {
+        list: mocks.listCharacter,
+        filter: (...args) => mocks.listCharacter(...args),
+        update: mocks.updateCharacter,
+      },
     },
     integrations: { Core: { InvokeLLM: vi.fn() } },
   },

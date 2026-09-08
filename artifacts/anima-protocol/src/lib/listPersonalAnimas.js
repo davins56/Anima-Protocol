@@ -1,20 +1,15 @@
 import { base44 } from "@/api/base44Client";
+import {
+  isKnownPersonalAnimaName,
+  isPersonalAnimaRecord,
+  PERSONAL_ANIMA_NAME_ALIASES,
+} from "@/lib/personalAnimaRecord";
 
-/**
- * A personal Anima (the companion Customise Anima shapes), as opposed to a
- * roster Character from a franchise. Onboarding and the Animas page write
- * `Anima` rows; Companion Generator writes `Character` with
- * `creation_method: "ai_prompt"`; some older seed paths wrote `Character`
- * with `_isAnima`.
- */
-export function isPersonalAnimaRecord(row) {
-  if (!row || typeof row !== "object") return false;
-  if (row._isAnima === true) return true;
-  const category = String(row.category || "").toLowerCase();
-  if (category === "anima-construct" || category === "anima") return true;
-  const method = String(row.creation_method || "").toLowerCase();
-  return method === "ai_prompt";
-}
+export {
+  isKnownPersonalAnimaName,
+  isPersonalAnimaRecord,
+  PERSONAL_ANIMA_NAME_ALIASES,
+} from "@/lib/personalAnimaRecord";
 
 export function companionStoreEntity(row) {
   if (row?._storeEntity === "Character") return "Character";
@@ -82,23 +77,61 @@ function tagCompanionRow(row, storeEntity) {
  * never appeared in Customise Anima.
  */
 export function mergePersonalCompanions(animas, characters) {
-  const animaRows = (Array.isArray(animas) ? animas : [])
-    .filter(Boolean)
-    .map((row) => tagCompanionRow(row, "Anima"));
-  const seen = new Set(animaRows.map((row) => row.id).filter(Boolean));
-  const extras = (Array.isArray(characters) ? characters : [])
-    .filter((row) => row && isPersonalAnimaRecord(row) && !seen.has(row.id))
-    .map((row) => tagCompanionRow(row, "Character"));
+  const seen = new Set();
+  const animaRows = [];
+  for (const row of Array.isArray(animas) ? animas : []) {
+    if (!row) continue;
+    if (row.id && seen.has(row.id)) continue;
+    if (row.id) seen.add(row.id);
+    animaRows.push(tagCompanionRow(row, "Anima"));
+  }
+  const extras = [];
+  for (const row of Array.isArray(characters) ? characters : []) {
+    if (!row || !isPersonalAnimaRecord(row)) continue;
+    if (row.id && seen.has(row.id)) continue;
+    if (row.id) seen.add(row.id);
+    extras.push(tagCompanionRow(row, "Character"));
+  }
   return [...animaRows, ...extras].sort((a, b) => createdMs(b) - createdMs(a));
 }
 
-export async function listPersonalAnimas(limit = 100) {
+async function listByNameSearch(entity, name, limit) {
+  return base44.entities[entity]
+    .list("-created_date", limit, { search: { name } })
+    .catch(() => []);
+}
+
+/**
+ * Load personal companions from Anima + Character.
+ *
+ * Character.list(limit) is newest-first. A second Anima stored as an older
+ * Character (Aelynd without `ai_prompt`) can fall past a 100-row roster cap.
+ * Also query `creation_method` and known name aliases across the whole store.
+ */
+export async function listPersonalAnimas(limit = 500) {
+  // Primary Anima.list must throw so Customise Anima can classify
+  // timeout / database / misconfigured failures. Recovery queries are
+  // best-effort and must not hide that error.
   const animas = await base44.entities.Anima.list("-created_date", limit);
   const characters = await base44.entities.Character.list(
     "-created_date",
     limit,
   ).catch(() => []);
-  return mergePersonalCompanions(animas, characters);
+  const [prompted, ...namedCharacters] = await Promise.all([
+    base44.entities.Character.filter(
+      { creation_method: "ai_prompt" },
+      "-created_date",
+      limit,
+    ).catch(() => []),
+    ...PERSONAL_ANIMA_NAME_ALIASES.map((name) =>
+      listByNameSearch("Character", name, 20),
+    ),
+  ]);
+  return mergePersonalCompanions(animas, [
+    ...(characters || []),
+    ...(prompted || []),
+    ...namedCharacters.flat(),
+  ]);
 }
 
 /**

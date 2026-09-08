@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useUser } from "@clerk/react";
 import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
+import {
+  displayNameFromAccount,
+  mergeAccountIdentity,
+} from "@/lib/accountIdentity";
+import { clerkIdentityFromUser } from "@/lib/clerkIdentity";
 import { deleteAllWithUndo } from "@/lib/undoableDelete";
 import {
   ArrowLeft, User, Bot, Sliders, LogOut, Shield, Save, Trash2, AlertTriangle, Loader, Volume2, HelpCircle, Scale, ExternalLink, Download, RotateCcw, CheckCircle, Wand2, Palette
@@ -60,9 +66,16 @@ const defaultPrefs = {
 export default function Settings() {
   const navigate = useNavigate();
   const { logout, user: authUser, isAuthenticated } = useAuth();
+  const { user: clerkUser } = useUser();
+  const clerkIdentity = clerkIdentityFromUser(clerkUser);
   const [section, setSection] = useState(SECTION.ACCOUNT);
-  const [user, setUser] = useState(authUser || null);
-  const [prefs, setPrefs] = useState(defaultPrefs);
+  const [user, setUser] = useState(
+    mergeAccountIdentity(clerkIdentity, authUser) || null,
+  );
+  const [prefs, setPrefs] = useState({
+    ...defaultPrefs,
+    display_name: displayNameFromAccount(authUser) || displayNameFromAccount(clerkIdentity) || "",
+  });
   const [saved, setSaved] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
@@ -93,35 +106,52 @@ export default function Settings() {
   const [anima, setAnima] = useState(null);
 
   useEffect(() => {
-    if (!authUser) return;
-    setUser((prev) => {
-      if (
-        prev?.id === authUser.id &&
-        prev?.email === authUser.email &&
-        prev?.full_name === authUser.full_name
-      ) {
-        return prev ? { ...authUser, ...prev } : authUser;
+    const identity = mergeAccountIdentity(clerkIdentity, authUser);
+    if (!identity?.id && !identity?.email && !identity?.full_name) return;
+    setUser((prev) => mergeAccountIdentity(identity, prev));
+    setPrefs((p) => {
+      const nextDisplay =
+        p.display_name ||
+        displayNameFromAccount(authUser) ||
+        displayNameFromAccount(identity);
+      if (authUser?.settings) {
+        return { ...p, ...authUser.settings, display_name: authUser.settings.display_name || nextDisplay || p.display_name };
       }
-      return { ...(prev || {}), ...authUser };
+      if (!p.display_name && nextDisplay) {
+        return { ...p, display_name: nextDisplay };
+      }
+      return p;
     });
-    if (authUser.settings) {
-      setPrefs((p) => ({ ...p, ...authUser.settings }));
-    } else if (authUser.display_name) {
-      setPrefs((p) => ({ ...p, display_name: authUser.display_name || "" }));
-    }
-  }, [authUser?.id, authUser?.email, authUser?.full_name, authUser?.display_name, authUser?.role]);
+  }, [authUser?.id, authUser?.email, authUser?.full_name, authUser?.display_name, authUser?.role, clerkIdentity?.id, clerkIdentity?.email, clerkIdentity?.full_name]);
 
   useEffect(() => {
     loadUser();
     loadStats();
-  }, [authUser?.id, isAuthenticated]);
+  }, [authUser?.id, authUser?.email, isAuthenticated, clerkIdentity?.id, clerkIdentity?.email]);
 
   const loadUser = async () => {
     const me = await base44.auth.me();
-    // Keep Clerk identity visible if the store profile is still empty / late.
-    setUser((prev) => ({ ...(authUser || {}), ...(prev || {}), ...(me || {}) }));
-    if (me?.settings) setPrefs({ ...defaultPrefs, ...me.settings });
-    else if (me?.display_name) setPrefs((p) => ({ ...p, display_name: me.display_name || "" }));
+    // Clerk / AuthContext identity first — empty store strings must not win.
+    setUser((prev) => mergeAccountIdentity(clerkIdentity, authUser, prev, me));
+    if (me?.settings) {
+      setPrefs({
+        ...defaultPrefs,
+        ...me.settings,
+        display_name:
+          me.settings.display_name ||
+          me.display_name ||
+          displayNameFromAccount(authUser) ||
+          displayNameFromAccount(clerkIdentity) ||
+          "",
+      });
+    } else {
+      const display =
+        me?.display_name ||
+        displayNameFromAccount(authUser) ||
+        displayNameFromAccount(clerkIdentity) ||
+        "";
+      if (display) setPrefs((p) => ({ ...p, display_name: p.display_name || display }));
+    }
     try {
       const animas = await base44.entities.Anima.list("-created_date", 20);
       const selected = me?.email
@@ -453,8 +483,8 @@ export default function Settings() {
             <div className="space-y-4">
               <SectionTitle>Account Info</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
-                <InfoRow label="Email" value={user?.email || authUser?.email || "—"} />
-                <InfoRow label="Display Name" value={user?.full_name || authUser?.full_name || "—"} />
+                <InfoRow label="Email" value={user?.email || authUser?.email || clerkIdentity?.email || "—"} />
+                <InfoRow label="Display Name" value={user?.full_name || authUser?.full_name || clerkIdentity?.full_name || "—"} />
                 <InfoRow label="Role" value={user?.role || authUser?.role || "user"} />
               </div>
 

@@ -1455,12 +1455,27 @@ export const base44 = {
         clearStoreCache();
         profileCache = null;
         profileExpiry = 0;
+        currentIdentity = null;
         // Re-baseline cross-device sync so the next poll compares against the
         // NEW account, never firing a spurious change from the old account's
         // revision (and never missing the new account's first real change).
         resetSyncBaseline();
       }
-      currentIdentity = { ...(currentIdentity || {}), ...identity };
+      const prev = currentIdentity || {};
+      const next = { ...prev, ...(identity || {}) };
+      const pick = (key) => {
+        const incoming = identity?.[key];
+        if (typeof incoming === "string" && incoming.trim()) return incoming.trim();
+        if (typeof prev[key] === "string" && prev[key].trim()) return prev[key];
+        return incoming ?? prev[key] ?? "";
+      };
+      currentIdentity = {
+        ...next,
+        id: identity?.id || prev.id,
+        email: pick("email"),
+        full_name: pick("full_name"),
+        username: pick("username"),
+      };
       return mergedUser(profileCache);
     },
 

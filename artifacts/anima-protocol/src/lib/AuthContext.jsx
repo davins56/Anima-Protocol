@@ -38,8 +38,10 @@ import {
   hasClerkHandshakeQuery,
   hasPendingClerkHandshake,
 } from '@/lib/clerkOAuthPaths';
+import { mergeAccountIdentity } from '@/lib/accountIdentity';
 import {
   clerkIdentityFromUser,
+  clerkIdentityHydrationKey,
   shouldClearLocalSession,
 } from '@/lib/clerkIdentity';
 import {
@@ -56,7 +58,8 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const { user: clerkUser, isLoaded, isSignedIn } = useUser();
   const { signOut } = useClerk();
-  const { getToken } = useClerkAuth();
+  const { getToken, userId: clerkUserId } = useClerkAuth();
+  const clerkHydrationKey = clerkIdentityHydrationKey(clerkUser);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -224,7 +227,11 @@ export const AuthProvider = ({ children }) => {
         // blank while the server profile fetch is in flight (or fails).
         if (!cancelled) {
           setUser((prev) =>
-            prev?.id === identity.id ? { ...prev, ...identity } : merged,
+            mergeAccountIdentity(
+              identity,
+              prev?.id === identity.id ? prev : null,
+              merged,
+            ),
           );
           setAuthError(null);
         }
@@ -240,7 +247,7 @@ export const AuthProvider = ({ children }) => {
             const isNewAccount = !profile.display_name;
             if (isNewAccount) {
               const preferred =
-                clerkUser.firstName || clerkUser.fullName || clerkUser.username;
+                clerkUser.firstName || clerkUser.fullName || clerkUser.username || identity.full_name;
               if (preferred) {
                 profile = await base44.auth.updateMe({ display_name: preferred });
               }
@@ -265,7 +272,8 @@ export const AuthProvider = ({ children }) => {
             }
 
             if (!cancelled) {
-              setUser(profile);
+              // Store profile can arrive with empty email/full_name — keep Clerk.
+              setUser(mergeAccountIdentity(identity, profile));
               setAuthError(null);
             }
           } catch (err) {
@@ -276,6 +284,18 @@ export const AuthProvider = ({ children }) => {
             }
           }
         })();
+      }
+    } else if (isSignedIn && clerkUserId) {
+      // Session exists; user object still hydrating (common on iPad Safari).
+      const provisional = {
+        id: clerkUserId,
+        email: '',
+        full_name: 'Seeker',
+      };
+      base44.auth.syncIdentity(provisional);
+      if (!cancelled) {
+        setUser((prev) => mergeAccountIdentity(provisional, prev));
+        setAuthError(null);
       }
     } else if (isSignedIn) {
       // Clerk session exists; user object is still hydrating. Do not wipe
@@ -308,7 +328,7 @@ export const AuthProvider = ({ children }) => {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, clerkUser?.id, localUser, location.pathname, location.search, location.hash]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, clerkUserId, clerkHydrationKey, localUser, location.pathname, location.search, location.hash]);
 
   // Clerk session is enough. Requiring clerkUser here used to drop
   // isAuthenticated during user hydration (Settings looked signed-out).
