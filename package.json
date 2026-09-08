@@ -30,6 +30,7 @@
     "llm:eval": "node scripts/llm/eval/run-evals.mjs",
     "llm:eval:validate": "node scripts/llm/eval/run-evals.mjs --validate",
     "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh",
+    "postinstall": "node scripts/cloudflare/install-wrangler-deploy-guard.mjs",
     "deploy:cloudflare": "rm -f ./dist/_redirects && npx wrangler deploy --assets=./dist --name anima-protocol"
   },
   "private": true,
@@ -43,7 +44,8 @@
     "prettier": "^3.9.6",
     "tsx": "catalog:",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.69.0"
+    "typescript-eslint": "^8.69.0",
+    "wrangler": "4.129.1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",
