@@ -16,6 +16,7 @@ import {
   resonanceToPromptGuidance,
 } from "../src/lib/resonanceState";
 import { extractVoiceAnchors, buildCrossoverAwareness } from "../src/lib/voiceAnchors";
+import { normalizeOperatorModel } from "../src/lib/operatorModel";
 
 describe("buildCompanionPrompt", () => {
   const baseCharacter = {
@@ -593,5 +594,76 @@ describe("voiceAnchors", () => {
     expect(awareness).toContain("CROSSOVER AWARENESS");
     expect(awareness).toContain("Linda");
     expect(awareness).toContain("CROSS-UNIVERSE");
+  });
+});
+
+describe("operator model prompt injection", () => {
+  const anima = {
+    id: "char-1",
+    name: "Serenity",
+    personality: "Warm, ethereal",
+    speaking_style: "Soft, poetic",
+    backstory: "A fallen angel who chose to remain close to humanity.",
+    _isAnima: true,
+  };
+
+  it("injects bounded operator-model context after identity lock without replacing memories", () => {
+    const operatorModel = normalizeOperatorModel({
+      identity: {
+        name: "Dàvīn",
+        communication_style: "direct, mythic",
+        preferences: ["quiet mornings"],
+      },
+      cognitive: { projects: ["Anima Protocol"] },
+    });
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [
+        {
+          characterId: "char-1",
+          summary: "Deep bond formed over weeks of conversation about loss and healing.",
+          facts: [
+            {
+              type: "emotional",
+              text: "User shared grief about losing their mother",
+              created_at: new Date().toISOString(),
+            },
+          ],
+          emotionalState: { intimacy: 70 },
+          resonanceNotes: "Warm, tender connection.",
+        },
+      ],
+      recentMessages: [],
+      mode: "solo",
+      content: "sit with me",
+      operatorModel,
+    });
+
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+    expect(prompt).toContain("OPERATOR MODEL (steward / operator context");
+    expect(prompt).toContain("name: Dàvīn");
+    expect(prompt).toContain("projects: Anima Protocol");
+    expect(prompt).toContain("User shared grief about losing their mother");
+    expect(prompt.indexOf("CHARACTER IDENTITY LOCK")).toBeLessThan(
+      prompt.indexOf("OPERATOR MODEL"),
+    );
+    expect(prompt.indexOf("OPERATOR MODEL")).toBeLessThan(
+      prompt.indexOf("User shared grief about losing their mother"),
+    );
+  });
+
+  it("omits the operator-model block when sections are empty", () => {
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hello",
+      operatorModel: normalizeOperatorModel({}),
+    });
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+    expect(prompt).not.toContain("OPERATOR MODEL");
   });
 });

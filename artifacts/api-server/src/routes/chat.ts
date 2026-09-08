@@ -59,6 +59,7 @@ import {
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
+import { extractOperatorModelFromProfile } from "../lib/operatorModel";
 import {
   incrementConversationCount,
   maybeTriggerMilestoneEvolution,
@@ -1597,6 +1598,10 @@ router.post("/messages", async (req, res) => {
     intimacyScene = intimacyResult?.scene || null;
   }
 
+  const operatorModel = extractOperatorModelFromProfile(
+    worldKnowledgeResult.profile,
+  );
+
   const prompt = telemetry.measureSync("prompt_build_ms", () =>
     composePrompt({
       clientContext: body.system_prompt,
@@ -1623,6 +1628,7 @@ router.post("/messages", async (req, res) => {
       intimacyProfile,
       intimacyScene,
       intimacyTurnResult: intimacyResult,
+      operatorModel,
     }),
   );
 
