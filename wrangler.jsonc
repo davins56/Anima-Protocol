@@ -50,10 +50,12 @@
     // Never invent localhost on this isolate (belt-and-suspenders with
     // navigator.userAgent === "Cloudflare-Workers").
     "ANIMA_RUNTIME": "worker",
-    // Safe defaults for the self-hosted Anima LLM. Do NOT put
-    // ANIMA_LOCAL_LLM_BASE_URL in vars — bind the public HTTPS …/v1 URL
-    // as a Secrets Store secret (same store as Clerk). Chat is fail-closed
-    // to that host; MiniMax / OpenRouter keys cannot take over chat.
+    // Production chat is Cloudflare Workers AI (DeepSeek R1 distill) via
+    // `ai.binding` + gateway id `deepseek-gateway` below. Do not set up
+    // Fly.io Ollama for production chat. Local LLM secrets remain bound
+    // for optional Node/dev and healthz diagnostics; getProviderChain
+    // prefers the AI binding when env.AI is present.
+    // Do NOT put ANIMA_LOCAL_LLM_BASE_URL in vars.
     // ANIMA_LOCAL_LLM_BACKEND stays in vars only (`ollama` is not secret).
     // Binding the same name in secrets_store_secrets fails wrangler deploy:
     // "Bindings must have unique names".
@@ -83,7 +85,7 @@
   // MINIMAX_API_KEY stays a classic Worker secret (`wrangler secret put
   // MINIMAX_API_KEY`). Do not add it to secrets_store_secrets until that
   // secret_name exists in the store.
-  // See deploy/ollama-fly/README.md and docs/upgrade-audit.md.
+  // Production chat does not use Fly.io Ollama. See wrangler `ai.gateway`.
   "secrets_store_secrets": [
     {
       "binding": "CLERK_SECRET_KEY",
