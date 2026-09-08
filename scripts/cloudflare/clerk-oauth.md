@@ -51,8 +51,18 @@ Same instance as the live `pk_live_` / `sk_live_` pair.
 | | `https://www.anima-protocol.com/sign-up/sso-callback` |
 
 Leave **Proxy URL** empty in the dashboard when using the custom FAPI
-domain. The Worker still proxies browser traffic; official
-`Clerk-Proxy-Url` headers 400 on a CNAME-only instance.
+domain. The Worker still proxies browser traffic through
+`/api/__clerk/`. This instance is **CNAME-only**:
+`frontend-api.clerk.dev` returns `host_invalid` even with a live secret
+and `Clerk-Proxy-Url`. Sending official path-proxy headers
+(`Clerk-Proxy-Url`, `X-Forwarded-Host`) to `clerk.anima-protocol.com`
+makes `GET /v1/client` return `host_invalid`.
+
+Worker-originated FAPI (`/v1/*` after clerk-js loads) must still send
+`Clerk-Secret-Key` and `X-Forwarded-For` (from `CF-Connecting-IP`, not
+the spoofable leftmost XFF hop). Missing those is Clerk
+`authorization_invalid` / InvalidAuthorization. Do **not** attach the
+secret to `/npm/*` hops — those 307 to jsDelivr.
 
 Verify:
 
@@ -83,4 +93,8 @@ curl -sI "https://clerk.anima-protocol.com/v1/oauth_callback"
 
 curl -s "https://anima-protocol.com/api/healthz/clerk?probe=1"
 # expect keyPairing: ok, frontendApiHost: clerk.anima-protocol.com
+
+curl -s -H "Origin: https://anima-protocol.com" \
+  "https://anima-protocol.com/api/__clerk/v1/client?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0"
+# expect HTTP 200 client JSON — not authorization_invalid / host_invalid
 ```
