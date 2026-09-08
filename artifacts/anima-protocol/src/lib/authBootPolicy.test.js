@@ -167,6 +167,16 @@ describe("resolveHomeGate", () => {
         authStalled: false,
       }),
     ).toBe("loading");
+    expect(
+      resolveHomeGate({
+        isSignedInUser: false,
+        isGuest: false,
+        suppressGuestHome: true,
+        handshakeHold: false,
+        isLoadingAuth: true,
+        authStalled: false,
+      }),
+    ).toBe("loading");
     expect(resolveHomeGate({})).toBe("landing");
   });
 });
@@ -305,6 +315,8 @@ describe("boot wiring", () => {
     expect(auth).toMatch(/hasPendingClerkHandshake/);
     expect(auth).toMatch(/readClerkAuthReturn/);
     expect(auth).toMatch(/shouldSuppressGuestHome/);
+    expect(auth).toMatch(/resolveSignedInUser/);
+    expect(auth).toMatch(/waitForClerkSessionToken/);
     expect(auth).toMatch(/!isSignedIn && !isSignedInUser && !suppressGuestHome/);
   });
 

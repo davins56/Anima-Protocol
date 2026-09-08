@@ -131,6 +131,7 @@ describe('clerkOAuthPaths', () => {
     );
     expect(app).toMatch(/HandleSSOCallback/);
     expect(app).toMatch(/navigateToApp=\{navigateAfterAuth\}/);
+    expect(app).toMatch(/waitForClerkSessionToken/);
     expect(app).toMatch(/navigateToSignIn=/);
     expect(app).toMatch(/navigateToSignUp=/);
     expect(app).toMatch(/destinationAfterClerkAuth/);

@@ -23,6 +23,7 @@ import {
   HandleSSOCallback,
   SignUp,
   Show,
+  useAuth as useClerkAuth,
   useClerk,
 } from "@clerk/react";
 import EmailCodeSignIn from "@/components/auth/EmailCodeSignIn";
@@ -67,6 +68,7 @@ import {
   hasPendingClerkHandshake,
 } from "@/lib/clerkOAuthPaths";
 import { markClerkAuthReturn, resolveHomeGate } from "@/lib/authBootPolicy";
+import { waitForClerkSessionToken } from "@/lib/clerkSessionReady";
 
 // Title screen is eager so cold opens paint Landing immediately (no spinner).
 import Landing from "./pages/Landing";
@@ -417,12 +419,14 @@ function applyPostAuthNavigation(next, navigate) {
  */
 function SsoCallbackPage() {
   const navigate = useNavigate();
+  const { getToken } = useClerkAuth();
 
   useEffect(() => {
     markClerkAuthReturn();
   }, []);
 
-  const navigateAfterAuth = ({ session, decorateUrl }) => {
+  const navigateAfterAuth = async ({ session, decorateUrl }) => {
+    await waitForClerkSessionToken((options) => getToken(options));
     applyPostAuthNavigation(
       destinationAfterClerkAuth({
         session,
