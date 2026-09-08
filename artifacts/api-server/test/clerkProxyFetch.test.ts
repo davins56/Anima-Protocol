@@ -379,7 +379,7 @@ describe("clerkProxyFetch", () => {
     expect(headers.get("cookie")).toBe("__client=keep; __session=keep");
   });
 
-  it("strips Clerk cookies on /v1/client when Referer is the SSO callback", () => {
+  it("keeps Clerk cookies on /v1/client even when Referer is the SSO callback", () => {
     expect(
       isClerkSsoCallbackReferer(
         "https://anima-protocol.com/sign-in/sso-callback?__clerk_handshake=abc",
@@ -393,6 +393,12 @@ describe("clerkProxyFetch", () => {
         "/v1/client?__clerk_api_version=2026-05-12",
         "https://anima-protocol.com/sign-in/sso-callback",
       ),
+    ).toBe(false);
+    expect(
+      shouldStripClerkAuthCookies(
+        "/v1/client?__clerk_handshake=abc&__clerk_api_version=2026-05-12",
+        "https://anima-protocol.com/sign-in/sso-callback",
+      ),
     ).toBe(true);
 
     const headers = buildClerkUpstreamHeaders(
@@ -402,7 +408,7 @@ describe("clerkProxyFetch", () => {
           host: "anima-protocol.com",
           origin: "https://anima-protocol.com",
           referer: "https://anima-protocol.com/sign-in/sso-callback?__clerk_handshake=abc",
-          cookie: "__session=from-cname; __client_uat=0; theme=dark",
+          cookie: "__session=from-handshake; __client=tok; theme=dark",
           accept: "application/json",
         },
       },
@@ -413,7 +419,9 @@ describe("clerkProxyFetch", () => {
         requestUrl: "/v1/client?__clerk_api_version=2026-05-12",
       },
     );
-    expect(headers.get("cookie")).toBe("theme=dark");
+    expect(headers.get("cookie")).toBe(
+      "__session=from-handshake; __client=tok; theme=dark",
+    );
   });
 
   it("strips leftover UAT/session on oauth_callback but forwards __client", () => {
@@ -532,6 +540,17 @@ describe("clerkProxyFetch", () => {
       ),
     ).toBe(
       "https://anima-protocol.com/sign-in?clerk_error=authorization_invalid",
+    );
+    expect(
+      rewriteClerkProxyLocation(
+        "/v1/oauth_callback?code=real&state=abc",
+        {
+          fapiHost: "clerk.anima-protocol.com",
+          appOrigin: "https://anima-protocol.com",
+        },
+      ),
+    ).toBe(
+      "https://anima-protocol.com/api/__clerk/v1/oauth_callback?code=real&state=abc",
     );
   });
 

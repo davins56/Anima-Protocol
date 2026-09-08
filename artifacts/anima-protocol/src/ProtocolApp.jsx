@@ -443,7 +443,9 @@ function SsoCallbackPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    expireBrowserApexClerkClientUatCookies();
+    // Do not Domain=apex-expire `__client_uat*` here. On anima-protocol.com
+    // that Max-Age=0 also deletes the host-only UAT handshake just minted
+    // (#413 / #415 race). Preclear leftovers on `/sign-in` before GitHub.
     markClerkAuthReturn();
   }, []);
 

@@ -317,18 +317,20 @@ export function clerkOAuthCallbackShouldHideUpstreamBody(status: number): boolea
 }
 
 /**
- * Handshake JWT (query/path), the first FAPI XHR from the SSO callback
- * page, or a proxied oauth_callback. Ordinary `/v1/client` from `/sign-in`
- * keeps cookies. oauth_callback still forwards `__client` after the strip.
+ * Handshake JWT (query/path) or a proxied oauth_callback.
+ * Do **not** strip on ordinary `/v1/client` just because Referer is
+ * `/sign-in/sso-callback`. After a successful CNAME hop, clerk-js refetches
+ * `/v1/client` with that Referer; stripping drops the `__session` handshake
+ * just minted and HandleSSOCallback navigates to signed-out `/sign-in`.
+ * Orphan CNAME `__session` on `/v1/client` is 200 (not authorization_invalid).
+ * oauth_callback still forwards `__client` after the strip.
  */
 export function shouldStripClerkAuthCookies(
   requestUrl: string | undefined,
-  referer?: string,
+  _referer?: string,
 ): boolean {
   return (
-    isClerkHandshakeRequest(requestUrl) ||
-    isClerkSsoCallbackReferer(referer) ||
-    isClerkOAuthCallbackPath(requestUrl)
+    isClerkHandshakeRequest(requestUrl) || isClerkOAuthCallbackPath(requestUrl)
   );
 }
 
@@ -447,8 +449,14 @@ export function rewriteClerkProxyLocation(
       isClerkOwnedHostname(url.hostname)
     ) {
       if (isClerkOAuthCallbackPath(`${url.pathname}${url.search}`)) {
-        const err = url.searchParams.get("err_code") || "oauth_callback_failed";
-        return `${opts.appOrigin}/sign-in?clerk_error=${encodeURIComponent(err)}`;
+        const err = url.searchParams.get("err_code");
+        // Only failed hops go to /sign-in. A Location with code+state is a
+        // real callback (first-party proxy or Clerk multi-hop) — keep it on
+        // /api/__clerk so #417 does not steal a legitimate document navigation.
+        if (err) {
+          return `${opts.appOrigin}/sign-in?clerk_error=${encodeURIComponent(err)}`;
+        }
+        return `${opts.appOrigin}${proxyPath}${url.pathname}${url.search}${url.hash}`;
       }
       if (isClerkFrontendApiPath(url.pathname)) {
         return `${opts.appOrigin}${proxyPath}${url.pathname}${url.search}${url.hash}`;

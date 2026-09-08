@@ -292,7 +292,8 @@ export function isBrowserClerkClientUatCookieName(name) {
  * `__client` with Domain=apex so the CNAME callback can authenticate.
  * On anima-protocol.com, `Domain=apex; Max-Age=0` also deletes the cookie
  * of the same name (Chrome/Safari). Call this on sign-in / sign-up
- * (before GitHub) and on SSO callback — not on every page load.
+ * **before GitHub leaves the page** — never on `/sign-in/sso-callback`
+ * (that raced the host-only UAT handshake just minted).
  */
 export function expireBrowserApexClerkClientUatCookies({
   cookie = typeof document !== 'undefined' ? document.cookie : '',
