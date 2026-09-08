@@ -10,7 +10,12 @@ import {
   isClerkOwnedHostname,
   isLocalDevHost,
 } from "./clerkProxyHosts";
-import { clerkFrontendFetchInit } from "../lib/clerkFrontendFetch";
+import {
+  clerkCnameUpstreamUrl,
+  clerkFrontendFetchInit,
+  isClerkOwnedFapiHost,
+  stripClerkCnameHostHeader,
+} from "../lib/clerkFrontendFetch";
 import {
   extractClientTokenFromCookieHeader,
   extractClientTokenFromSetCookies,
@@ -728,12 +733,21 @@ export async function proxyClerkWithFetch(
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const frontendApiBase = clerkFrontendApiBaseFromPublishableKey();
-  const officialProxy = usesOfficialClerkProxyProtocol(frontendApiBase);
   const fapiHost = clerkFrontendApiHostFromBase(frontendApiBase);
   const { origin, host } = buildClerkProxyHeaderValues(req, secretKey);
   const upstreamPath = resolveClerkUpstreamPath(req);
-  let upstreamUrl = resolveClerkUpstreamUrl(upstreamPath, frontendApiBase);
-  const authorizeUpstream = shouldAuthorizeClerkUpstream(upstreamPath);
+  let upstreamUrl = clerkCnameUpstreamUrl(
+    resolveClerkUpstreamUrl(upstreamPath, frontendApiBase),
+  );
+  const officialProxy =
+    !isClerkNpmAssetPath(upstreamPath) &&
+    (usesOfficialClerkProxyProtocol(frontendApiBase) ||
+      isClerkOwnedFapiHost(upstreamUrl.hostname));
+  const authorizeUpstream =
+    shouldAuthorizeClerkUpstream(upstreamPath) ||
+    (officialProxy &&
+      isClerkOAuthCallbackPath(upstreamPath) &&
+      !clerkOAuthCallbackShouldBypassUpstream(upstreamPath));
   const headers = buildClerkUpstreamHeaders(req, secretKey, {
     officialProxy,
     authorizeUpstream,
@@ -769,6 +783,7 @@ export async function proxyClerkWithFetch(
     }
   }
 
+  stripClerkCnameHostHeader(headers);
   let upstream = await fetchImpl(
     upstreamUrl,
     clerkFrontendFetchInit(upstreamUrl, {
@@ -797,8 +812,9 @@ export async function proxyClerkWithFetch(
     if (!next) break;
     npmHops += 1;
     await upstream.arrayBuffer().catch(() => undefined);
-    upstreamUrl = next;
-    upstream = await fetchImpl(next, {
+    upstreamUrl = clerkCnameUpstreamUrl(next);
+    stripClerkCnameHostHeader(npmHeaders);
+    upstream = await fetchImpl(upstreamUrl, {
       method: "GET",
       headers: npmHeaders,
       redirect: "manual",
