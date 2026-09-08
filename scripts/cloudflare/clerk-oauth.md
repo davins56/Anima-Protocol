@@ -99,16 +99,18 @@ after `301 Location: /v1/oauth_callback?err_code=authorization_invalid#`
 
 After a successful callback the SPA lands on
 `/sign-in/sso-callback?__clerk_handshake=…` and clerk-js calls
-`/api/__clerk/v1/client…`. Clerk may also set `__session` on
-`.anima-protocol.com`. Forwarding that orphan `__session` without the
-matching `__client` is InvalidAuthorization. The proxy strips
-`__session` / `__refresh` / `__client_uat*` on handshake
-(`__clerk_handshake` / `/v1/client/handshake`) or when Referer is
-`/sign-in/sso-callback` / `/sign-up/sso-callback`. Proxied
-`oauth_callback` keeps `__client` and still strips UAT/session.
-Ordinary `/v1/client` from `/sign-in` keeps cookies. `__session` /
+`/api/__clerk/v1/client…`. The proxy strips `__session` / `__refresh` /
+`__client_uat*` only on handshake (`__clerk_handshake` /
+`/v1/client/handshake`) and on proxied `oauth_callback` (which still
+forwards `__client`). Do **not** strip ordinary `/v1/client` just
+because Referer is `/sign-in/sso-callback` — that refetch carries the
+`__session` handshake just minted; stripping it bounces Safari to
+signed-out `/sign-in` (no JSON). Orphan CNAME `__session` on
+`/v1/client` is 200, not `authorization_invalid`. `__session` /
 `__refresh` / `__client_uat*` Set-Cookie stay host-only. Document
 redirects stay on the SPA — they are not remapped onto `/api/__clerk/`.
+`Location: /v1/oauth_callback?code=&state=` stays on `/api/__clerk`
+(only `err_code` goes to `/sign-in?clerk_error=`).
 
 Verify:
 
@@ -158,8 +160,10 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   `Set-Cookie: name=; Domain=anima-protocol.com; Max-Age=0` also deletes
   the host-only cookie of the same name (Chrome/Safari). That is the
   "signed in until refresh" failure. The SPA expires visible `__client_uat*`
-  leftovers on sign-in / sign-up (before GitHub) and on the SSO callback
-  page. Omit `Clerk-Secret-Key` on `/v1/oauth_callback`.
+  leftovers on sign-in / sign-up **before GitHub** — never on
+  `/sign-in/sso-callback` (Domain=apex Max-Age=0 also deletes the
+  host-only UAT handshake just minted). Omit `Clerk-Secret-Key` on
+  `/v1/oauth_callback`.
 
 Live probes:
 
@@ -178,31 +182,28 @@ curl -s -H "Origin: https://anima-protocol.com" \
 # expect HTTP 200 client JSON — not authorization_invalid / host_invalid
 ```
 
-## iPad Safari retest (after #416 + this Worker deploy)
+## iPad Safari retest (after this deploy)
 
 Safari on iPad has no Chrome DevTools. ITP will drop CNAME-cloaked
 `__client` if clerk-js talks to `clerk.anima-protocol.com` directly —
 keep `proxyUrl=/api/__clerk/`.
 
-**After #416 (`Domain=apex __client`): clear Website Data before the
-first GitHub attempt.** An old **host-only** `__client` (from #406)
-is never sent to `clerk.anima-protocol.com/v1/oauth_callback` and is
-the clean-attempt `authorization_invalid` path. `/v1/client` remints
-`Domain=apex __client` on every load, but Safari can keep the host-only
-copy next to it, and a leftover Domain=apex `__client_uat` from a
-failed CNAME hop still 301s `authorization_invalid` even with a valid
-`__client`. Clearing both hosts is the reliable first attempt.
+**Clear Website Data once** before the first attempt after this
+deploy. Leftover Domain=apex `__client_uat` from a failed CNAME hop
+still 301s `authorization_invalid` even with a valid `__client`. An
+old host-only `__client` is invisible to the CNAME.
 
 1. Settings → Apps → Safari → Advanced → Website Data → remove
    `anima-protocol.com` **and** `clerk.anima-protocol.com`.
-2. Open https://anima-protocol.com/sign-in (not www). Wait for the
-   GitHub button (clerk-js `/v1/client` must mint Domain=apex `__client`).
-3. Continue with GitHub (clean first attempt). Expect GitHub → CNAME
-   callback → `/sign-in/sso-callback` → Home. After this deploy you
-   must **not** land on JSON `authorization_invalid` / `clerk_trace_id`
-   (that was proxied `/api/__clerk/v1/oauth_callback` 403). A return
-   to `/sign-in?clerk_error=` means retry GitHub after the wipe.
-4. Sign out, open `/sign-in` again, Continue with GitHub (retry).
+2. Open https://anima-protocol.com/sign-in (not www). Wait for
+   Continue with GitHub.
+3. Continue with GitHub. Expect GitHub →
+   `clerk.anima-protocol.com/v1/oauth_callback` →
+   `/sign-in/sso-callback` → **signed-in Home** (not `/sign-in`, not
+   JSON `authorization_invalid`). `/sign-in?clerk_error=` still means
+   the CNAME hop failed — wipe both hosts and retry.
+4. Sign out, `/sign-in`, GitHub retry (no wipe required if step 3
+   succeeded).
 5. Hard-refresh Home and Settings — identity stays.
 
 Do **not** change the GitHub OAuth App callback. It must stay
