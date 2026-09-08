@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -151,20 +151,24 @@ ${guard.PARSE_TRY}
 
   it("writes the guard next to a fake wrangler bin", () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "anima-wrangler-guard-"));
-    const bin = path.join(dir, "wrangler.js");
-    writeFileSync(bin, `#!/usr/bin/env node\n${SPAWN_SNIPPET}\n`);
-    const dest = path.join(dir, "anima-deployments-guard.cjs");
-    writeFileSync(
-      dest,
-      readFileSync(
-        path.join(repoRoot, "scripts/cloudflare/wrangler-deployments-guard.cjs"),
-      ),
-    );
-    const after = injectRequireIntoWranglerBin(
-      readFileSync(bin, "utf8"),
-      'path.join(__dirname, "./anima-deployments-guard.cjs")',
-    );
-    writeFileSync(bin, after);
-    expect(readFileSync(bin, "utf8")).toContain("--require");
+    try {
+      const bin = path.join(dir, "wrangler.js");
+      writeFileSync(bin, `#!/usr/bin/env node\n${SPAWN_SNIPPET}\n`);
+      const dest = path.join(dir, "anima-deployments-guard.cjs");
+      writeFileSync(
+        dest,
+        readFileSync(
+          path.join(repoRoot, "scripts/cloudflare/wrangler-deployments-guard.cjs"),
+        ),
+      );
+      const after = injectRequireIntoWranglerBin(
+        readFileSync(bin, "utf8"),
+        'path.join(__dirname, "./anima-deployments-guard.cjs")',
+      );
+      writeFileSync(bin, after);
+      expect(readFileSync(bin, "utf8")).toContain("--require");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
