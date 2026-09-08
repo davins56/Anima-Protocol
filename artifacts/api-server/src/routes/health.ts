@@ -20,6 +20,7 @@ import {
   probeClerkInstance,
   summarizeClerkProbe,
 } from "../lib/clerkDiagnostics";
+import { requireOpsBearer } from "../lib/opsAuth";
 
 const router: IRouter = Router();
 
@@ -201,13 +202,12 @@ router.get("/healthz/db", async (_req, res) => {
 });
 
 /**
- * Public schema probe + optional self-heal.
- * - GET  → inspect only
+ * Schema inspect + optional self-heal.
+ * - GET  → inspect only (public — operators diagnose missing tables without a session)
  * - POST → run idempotent ensureSchemaOnce() (CREATE IF NOT EXISTS)
  *
- * Safe to expose: DDL is IF NOT EXISTS only, no data mutation, no secrets
- * returned. Lets production recover from a blank Supabase without needing
- * drizzle-kit credentials on an operator laptop.
+ * POST is operator-only. Health mounts before Clerk, so this uses the same
+ * ADMIN_MIGRATION_SECRET / CRON_SECRET bearer as `/api/admin/ensure-schema`.
  */
 router.get("/healthz/schema", async (_req, res) => {
   const target = databaseTargetHint();
@@ -230,7 +230,7 @@ router.get("/healthz/schema", async (_req, res) => {
   }
 });
 
-router.post("/healthz/schema", async (_req, res) => {
+router.post("/healthz/schema", requireOpsBearer, async (_req, res) => {
   const target = databaseTargetHint();
   try {
     const result = await ensureSchemaOnce();

@@ -77,6 +77,22 @@ describe("mirrorCloudflareBindings", () => {
     expect(target.DATABASE_URL).toBe("postgresql://wrapped/db");
   });
 
+  it("mirrors a non-enumerable MiniMax classic Worker secret", () => {
+    const env: Record<string, unknown> = { NODE_ENV: "production" };
+    Object.defineProperty(env, "MINIMAX_API_KEY", {
+      value: "minimax-classic-secret",
+      enumerable: false,
+    });
+    Object.defineProperty(env, "ANIMA_MINIMAX_MODEL", {
+      value: "MiniMax-M2.7",
+      enumerable: false,
+    });
+    const target: Record<string, string | undefined> = {};
+    mirrorCloudflareBindings(env, target);
+    expect(target.MINIMAX_API_KEY).toBe("minimax-classic-secret");
+    expect(target.ANIMA_MINIMAX_MODEL).toBe("MiniMax-M2.7");
+  });
+
   it("includes every name from the production secret list", () => {
     const listed = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/production-secret-names.txt"),

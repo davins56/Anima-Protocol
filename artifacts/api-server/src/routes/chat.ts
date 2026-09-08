@@ -24,7 +24,7 @@ import { createRateLimit } from "../lib/rateLimit";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
-  isOpenRouterAlreadyFreeTier,
+  usesFreeTierOpenBudget,
   isOpenRouterGenericProviderError,
   isOpenRouterZdrOrDataPolicyError,
   OPENROUTER_FREE_PROVIDER_HINT,
@@ -49,7 +49,13 @@ import {
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
 import {
+  isSupermemoryEnabled,
+  mergeRemoteFactsIntoMemories,
+  searchCompanionFactsFromSupermemory,
+} from "../lib/supermemory";
+import {
   composePrompt,
+  buildLlmChatMessages,
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
@@ -113,6 +119,18 @@ import {
   shouldCrystallize,
   crystallizeResonanceMemory,
 } from "../lib/resonanceMemories";
+import {
+  loadIntimacyProfile,
+  saveIntimacyProfile,
+  loadIntimacyScene,
+  saveIntimacyScene,
+} from "../lib/intimacyStore";
+import { evaluateTurn, decayHeat } from "../lib/intimacyEngine";
+import type {
+  IntimacyProfile,
+  IntimacyScene,
+  IntimacyTurnResult,
+} from "../lib/intimacyTypes";
 
 const router = Router();
 
@@ -1402,9 +1420,25 @@ router.post("/messages", async (req, res) => {
       readRecentStoreMessages(userId, sessionId, 24, {
         skipMigrate: Boolean(sessionData.messages_migrated),
       }),
-      memoriesPromise.then((rows) =>
-        attachStoredEmbeddings(userId, adaptMemories(rows)),
-      ),
+      memoriesPromise.then(async (rows) => {
+        const adapted = await attachStoredEmbeddings(
+          userId,
+          adaptMemories(rows),
+        );
+        if (!isSupermemoryEnabled() || !content.trim()) return adapted;
+        try {
+          const speakerId = hintedCharId || characterIds[0];
+          const hits = await searchCompanionFactsFromSupermemory({
+            userId,
+            characterId: speakerId,
+            query: content,
+            limit: 8,
+          });
+          return mergeRemoteFactsIntoMemories(adapted, hits, speakerId);
+        } catch {
+          return adapted;
+        }
+      }),
       hintedStatePromise,
       worldKnowledgePromise,
     ]),
@@ -1538,6 +1572,31 @@ router.post("/messages", async (req, res) => {
     modePolicy.name === "therapy"
       ? assessTherapySafety({ content, recentMessages })
       : null;
+
+  let intimacyProfile: IntimacyProfile | null = null;
+  let intimacyScene: IntimacyScene | null = null;
+  let intimacyResult: IntimacyTurnResult | null = null;
+
+  if (activeCharacterId && adultActive && !therapyActive) {
+    let profile = await loadIntimacyProfile(userId, activeCharacterId);
+    if (profile.lastSceneAt) {
+      const idle = (Date.now() - Date.parse(profile.lastSceneAt)) / 60000;
+      if (idle >= 8) {
+        profile = decayHeat(profile, idle);
+      }
+    }
+    const scene = await loadIntimacyScene(userId, sessionId, activeCharacterId);
+    intimacyResult = evaluateTurn({
+      profile,
+      scene,
+      content,
+      adultEnabled: adultActive,
+      therapyMode: therapyActive,
+    });
+    intimacyProfile = intimacyResult?.profile || null;
+    intimacyScene = intimacyResult?.scene || null;
+  }
+
   const prompt = telemetry.measureSync("prompt_build_ms", () =>
     composePrompt({
       clientContext: body.system_prompt,
@@ -1561,6 +1620,9 @@ router.post("/messages", async (req, res) => {
       ),
       hiddenSequences: (body.metadata?.hidden_sequences as any) || null,
       conversationalWeather: (body.metadata?.conversational_weather as any) || null,
+      intimacyProfile,
+      intimacyScene,
+      intimacyTurnResult: intimacyResult,
     }),
   );
 
@@ -1630,7 +1692,11 @@ router.post("/messages", async (req, res) => {
 
   telemetry.startGeneration();
   try {
-    const messages = [{ role: "system" as const, content: prompt }];
+    const messages = buildLlmChatMessages({
+      systemPrompt: prompt,
+      recentMessages,
+      content,
+    });
 
     if (isLocalEnsembleEnabled()) {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
@@ -1677,7 +1743,7 @@ router.post("/messages", async (req, res) => {
       }
     } else {
       const open = openStreamAbort(
-        llmOpenTimeoutMs({ freeTierCascade: isOpenRouterAlreadyFreeTier() }),
+        llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
       );
       let completion;
       try {
@@ -1686,6 +1752,7 @@ router.post("/messages", async (req, res) => {
           model: routed.model,
           maxTokens: routed.maxTokens,
           messages,
+          temperature: 0.85,
           signal: open.signal,
         });
       } finally {
@@ -1824,6 +1891,14 @@ router.post("/messages", async (req, res) => {
       }
     }
     if (persistenceOwner !== "server" || !shouldPersist) return;
+
+    // Save intimacy profile and scene updates if intimacy engine ran
+    if (intimacyProfile) {
+      void saveIntimacyProfile(intimacyProfile).catch((e) => logger.warn({ error: e }, "Failed to save intimacy profile"));
+    }
+    if (intimacyScene) {
+      void saveIntimacyScene(intimacyScene).catch((e) => logger.warn({ error: e }, "Failed to save intimacy scene"));
+    }
 
     // Relationship/evolution is derived state. Message + memory durability is
     // committed first; failures here are observable and can be rebuilt without

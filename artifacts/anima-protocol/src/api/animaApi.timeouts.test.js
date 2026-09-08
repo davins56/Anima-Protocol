@@ -6,6 +6,14 @@ import { describe, expect, it } from "vitest";
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(srcRoot, "../../..");
 
+describe("chat stream client error handling", () => {
+  it("parses JSON error responses on non-OK status instead of throwing raw API error status strings", () => {
+    const animaApi = readFileSync(join(srcRoot, "api/animaApi.js"), "utf8");
+    expect(animaApi).toContain("const err = await res.json().catch(() => ({ error: res.statusText }));");
+    expect(animaApi).toContain("throw new Error(err.error || err.message || res.statusText || `API error: ${res.status}`);");
+  });
+});
+
 describe("chat stream client abort", () => {
   it("stays above the Worker free-tier open budget so hops are not aborted in the browser", () => {
     const animaApi = readFileSync(join(srcRoot, "api/animaApi.js"), "utf8");

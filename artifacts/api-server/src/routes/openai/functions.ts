@@ -9,6 +9,7 @@ import { resolveModel } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
+import { writeCompanionFactsToSupermemory } from "../../lib/supermemory";
 import {
   editImageWithGemini,
   generateImageWithGemini,
@@ -407,6 +408,21 @@ async function saveCharacterMemories(
   if (rows.length > 0) {
     await db.insert(userEntities).values(rows);
     notifyUser(userId);
+    // Dual-write distilled facts to supermemory when configured. Chat must
+    // not fail if the remote host is down — Postgres remains source of truth.
+    void writeCompanionFactsToSupermemory({
+      userId,
+      characterId,
+      facts: rows.map((row) => {
+        const data = (row.data || {}) as Record<string, unknown>;
+        return {
+          text: String(data.fact || ""),
+          category: String(data.category || "general"),
+          factId: String(data.id || row.entityId || ""),
+          sessionId: String(data.session_id || ""),
+        };
+      }),
+    }).catch(() => 0);
   }
 
   const memories = await loadCharacterMemories(userId, characterId);

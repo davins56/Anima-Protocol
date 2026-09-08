@@ -62,6 +62,8 @@ import {
   type CrisisResource,
   type TherapySafetyAssessment,
 } from "./therapySafety";
+import type { IntimacyProfile, IntimacyScene, IntimacyTurnResult } from "./intimacyTypes";
+import { getIntimacyPromptGuidance } from "./intimacyPrompt";
 
 // Re-export sub-module types for consumers
 export type { CompanionMemoryRecord, CharacterData, ResonanceState, SynchroState };
@@ -141,6 +143,11 @@ export interface PromptBuilderParams {
   /** Hidden Sequences / conversational weather (client-authored, sanitized as guidance). */
   hiddenSequences?: HiddenSequencesState | null;
   conversationalWeather?: Weather | null;
+
+  /** Intimacy profile, scene, and turn evaluation result */
+  intimacyProfile?: IntimacyProfile | null;
+  intimacyScene?: IntimacyScene | null;
+  intimacyTurnResult?: IntimacyTurnResult | null;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -157,7 +164,69 @@ const BUDGET = {
 
 function clientOwnsTranscript(systemPrompt?: string): boolean {
   if (!systemPrompt) return false;
-  return /Story so far:|CONVERSATION CONTEXT:/i.test(systemPrompt);
+  // Chat.jsx / buildGroupPrompt emit these as their own (possibly indented)
+  // line. A mid-sentence mention in personality or scene text is not a
+  // transcript and must not drop store history.
+  return /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)/i.test(systemPrompt);
+}
+
+/** Instruct-style chat models (Qwen2.5 / anima-chat) require a user turn. */
+export const CONTINUE_USER_TURN = "(Continue the scene naturally.)";
+
+export type LlmChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+/**
+ * Build the OpenAI-compatible message list for a companion turn.
+ *
+ * `/chat/messages` used to send only `{ role: "system" }`. Ollama chat
+ * templates then open an assistant turn with no user message, so Qwen2.5
+ * 3B (`anima-chat`) emits the same generic greeting every send.
+ *
+ * Always end with a user turn. When the client already shipped
+ * "Story so far:", skip store history here so we do not double-prefill.
+ */
+export function buildLlmChatMessages(params: {
+  systemPrompt: string;
+  recentMessages?: MsgData[];
+  content?: string;
+  includeHistory?: boolean;
+}): LlmChatMessage[] {
+  const systemPrompt = String(params.systemPrompt || "").trim();
+  const content = String(params.content ?? "").trim();
+  const includeHistory =
+    params.includeHistory ?? !clientOwnsTranscript(systemPrompt);
+
+  const messages: LlmChatMessage[] = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+
+  if (includeHistory) {
+    for (const msg of params.recentMessages ?? []) {
+      const text = String(msg.content ?? "").trim();
+      if (!text) continue;
+      const name = String(msg.character_name || msg.characterName || "");
+      if (name === "__thinking__" || name === "__typing__") continue;
+      const role =
+        msg.role === "user" ? "user" : msg.role === "assistant" ? "assistant" : null;
+      if (!role) continue;
+      messages.push({
+        role,
+        content: text.length > 800 ? `${text.slice(0, 799)}…` : text,
+      });
+    }
+  }
+
+  const userTurn = content || CONTINUE_USER_TURN;
+  const last = messages[messages.length - 1];
+  if (!(last?.role === "user" && last.content === userTurn)) {
+    messages.push({ role: "user", content: userTurn });
+  }
+
+  return messages;
 }
 
 function truncate(value: unknown, max = 600): string {
@@ -523,6 +592,15 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     therapy: modePolicy.name === "therapy" || mode === "therapy",
   });
 
+  let intimacyBlock = "";
+  if (params.intimacyProfile) {
+    intimacyBlock = getIntimacyPromptGuidance(
+      params.intimacyProfile,
+      params.intimacyScene || undefined,
+      params.intimacyTurnResult || undefined,
+    );
+  }
+
   // Assemble in one authoritative pipeline:
   // scene data → identity → user/world → relationship → memory → mode/safety
   // → lore/voice → conversation → current turn → final safety guardrail.
@@ -540,6 +618,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     sharedBlock,
     authoritativeModeBlock,
     careSafetyBlock,
+    intimacyBlock,
     voiceBlock,
     crossoverBlock,
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
