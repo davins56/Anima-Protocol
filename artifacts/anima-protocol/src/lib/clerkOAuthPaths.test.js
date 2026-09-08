@@ -8,7 +8,9 @@ import {
   clerkOAuthCompletePath,
   clerkOAuthRedirectPaths,
   clerkSsoCallbackPath,
+  destinationAfterClerkAuth,
   joinBasePath,
+  resolvePostAuthNavigation,
 } from './clerkOAuthPaths';
 
 describe('clerkOAuthPaths', () => {
@@ -47,6 +49,35 @@ describe('clerkOAuthPaths', () => {
     expect(clerkOAuthCompletePath('')).toBe('/');
   });
 
+  it('pins post-auth navigation to the app, never the Clerk FAPI host', () => {
+    expect(
+      resolvePostAuthNavigation('https://clerk.anima-protocol.com/', {
+        fallbackPath: '/',
+        origin: 'https://anima-protocol.com',
+      }),
+    ).toEqual({ mode: 'in-app', path: '/' });
+    expect(
+      resolvePostAuthNavigation('/', {
+        fallbackPath: '/home',
+        origin: 'https://anima-protocol.com',
+      }),
+    ).toEqual({ mode: 'in-app', path: '/' });
+    expect(
+      resolvePostAuthNavigation('https://anima-protocol.com/?__clerk_handshake=1', {
+        fallbackPath: '/',
+        origin: 'https://anima-protocol.com',
+      }),
+    ).toEqual({ mode: 'in-app', path: '/?__clerk_handshake=1' });
+    expect(
+      destinationAfterClerkAuth({
+        session: { currentTask: { key: 'choose-organization' } },
+        decorateUrl: (path) => `https://clerk.anima-protocol.com${path}`,
+        fallbackPath: '/',
+        origin: 'https://anima-protocol.com',
+      }),
+    ).toEqual({ mode: 'in-app', path: '/' });
+  });
+
   it('documents the Clerk custom-domain GitHub OAuth callback', () => {
     expect(CLERK_GITHUB_OAUTH_CALLBACK_URL).toBe(
       'https://clerk.anima-protocol.com/v1/oauth_callback',
@@ -62,8 +93,10 @@ describe('clerkOAuthPaths', () => {
     expect(app).toMatch(/navigateToApp=\{navigateAfterAuth\}/);
     expect(app).toMatch(/navigateToSignIn=/);
     expect(app).toMatch(/navigateToSignUp=/);
-    expect(app).toMatch(/session\?\.currentTask/);
+    expect(app).toMatch(/destinationAfterClerkAuth/);
     expect(app).toMatch(/decorateUrl/);
+    expect(app).toMatch(/signInForceRedirectUrl=\{authRedirectCompleteUrl\}/);
+    expect(app).toMatch(/allowedRedirectOrigins/);
     expect(app).toMatch(/path="\/sign-in\/sso-callback"/);
     expect(app).toMatch(/path="\/sign-up\/sso-callback"/);
   });

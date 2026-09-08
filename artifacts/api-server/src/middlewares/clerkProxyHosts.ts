@@ -11,6 +11,22 @@ export const CLERK_PROXY_PATH = "/api/__clerk";
 /** Apex host — Clerk custom domain FAPI is clerk.anima-protocol.com. */
 export const ANIMA_APEX_HOST = "anima-protocol.com";
 
+/** Clerk Frontend API / Account Portal hosts — never the app origin. */
+export function isClerkOwnedHostname(hostname: string | undefined): boolean {
+  const host = (hostname ?? "").toLowerCase().replace(/^\./, "").replace(/:\d+$/, "");
+  if (!host) return false;
+  return (
+    host === `clerk.${ANIMA_APEX_HOST}` ||
+    host === `accounts.${ANIMA_APEX_HOST}` ||
+    host === "frontend-api.clerk.dev" ||
+    host === "clerkprod-cloudflare.net" ||
+    host.endsWith(".clerk.accounts.dev") ||
+    host.endsWith(".accounts.dev") ||
+    host.endsWith(".clerk.services") ||
+    host.endsWith(".clerkprod-cloudflare.net")
+  );
+}
+
 /** Public hosts that mint Clerk sessions for this product (apex + www). */
 export const KNOWN_PUBLIC_HOSTS = new Set([
   "www.anima-protocol.com",
@@ -55,14 +71,15 @@ function isBackendProxyHost(hostname: string): boolean {
   );
 }
 
-/** Clerk dashboard Proxy URL uses www; apex must not produce a mismatched header. */
+/**
+ * Host advertised in Clerk-Proxy-Url / Origin. Production users are on apex;
+ * www 301s there. Remapping apex → www made Clerk return host_invalid and
+ * ACAO for www while the browser origin is anima-protocol.com.
+ */
 export function canonicalClerkProxyHeaderHost(host: string | undefined): string {
   const normalized = normalizeHostname(host);
-  if (
-    normalized === "anima-protocol.com" ||
-    normalized === "www.anima-protocol.com"
-  ) {
-    return "www.anima-protocol.com";
+  if (normalized === ANIMA_APEX_HOST || normalized === `www.${ANIMA_APEX_HOST}`) {
+    return normalized;
   }
   return host?.split(",")[0]?.trim() || "";
 }

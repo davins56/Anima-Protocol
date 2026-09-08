@@ -61,7 +61,7 @@ describe('clerkProxy', () => {
     expect(clerkFrontendApiProbeBase('pk_test_placeholder')).toBe('');
     expect(isUsableClerkPublishableKey(LIVE_CUSTOM_KEY)).toBe(true);
     expect(sanitizeClerkPublishableKey(LIVE_CUSTOM_KEY)).toBe(LIVE_CUSTOM_KEY);
-    expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(false);
+    expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(true);
   });
 
   it('detects custom domains', () => {
@@ -70,9 +70,9 @@ describe('clerkProxy', () => {
     expect(publishableKeyUsesCustomDomain(TEST_KEY)).toBe(false);
   });
 
-  it('skips proxy when custom domain is used', () => {
-    expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(false);
-    expect(resolveClerkProxyUrl(LIVE_CUSTOM_KEY)).toBe('');
+  it('uses the same-origin proxy on production even for custom-domain pk_live_ keys', () => {
+    expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(true);
+    expect(resolveClerkProxyUrl(LIVE_CUSTOM_KEY)).toBe('/api/__clerk/');
   });
 
   it('uses proxy on production for non-custom live keys', () => {
@@ -81,9 +81,11 @@ describe('clerkProxy', () => {
   });
 
   it('builds probe URLs correctly', () => {
-    expect(clerkProxyProbeBase(LIVE_CUSTOM_KEY)).toBe('https://clerk.anima-protocol.com');
+    expect(clerkProxyProbeBase(LIVE_CUSTOM_KEY)).toBe(
+      'https://www.anima-protocol.com/api/__clerk',
+    );
     expect(clerkJsScriptProbeUrl(LIVE_CUSTOM_KEY)).toBe(
-      'https://clerk.anima-protocol.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
+      'https://www.anima-protocol.com/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
     );
   });
 
@@ -107,6 +109,9 @@ describe('clerkProxy', () => {
     );
     expect(ANIMA_PRODUCTION_SIGN_IN_URL).toBe(
       'https://anima-protocol.com/sign-in',
+    );
+    expect(animaProductionClerkProxyUrl()).toBe(
+      'https://anima-protocol.com/api/__clerk/',
     );
   });
 });
