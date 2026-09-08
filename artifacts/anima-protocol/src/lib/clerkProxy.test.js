@@ -15,6 +15,8 @@ import {
   resolveClerkProxyUrl,
   sanitizeClerkPublishableKey,
   shouldUseClerkProxy,
+  mustUseSameOriginClerkProxy,
+  shouldAllowDirectClerkFallback,
   expireBrowserApexClerkClientUatCookies,
 } from './clerkProxy';
 
@@ -72,8 +74,22 @@ describe('clerkProxy', () => {
   });
 
   it('uses the same-origin proxy on production even for custom-domain pk_live_ keys', () => {
+    expect(publishableKeyUsesCustomDomain(LIVE_CUSTOM_KEY)).toBe(true);
+    expect(mustUseSameOriginClerkProxy(LIVE_CUSTOM_KEY, 'anima-protocol.com')).toBe(
+      true,
+    );
+    expect(shouldAllowDirectClerkFallback(LIVE_CUSTOM_KEY, 'anima-protocol.com')).toBe(
+      false,
+    );
     expect(shouldUseClerkProxy(LIVE_CUSTOM_KEY)).toBe(true);
     expect(resolveClerkProxyUrl(LIVE_CUSTOM_KEY)).toBe('/api/__clerk/');
+    expect(mustUseSameOriginClerkProxy(LIVE_CUSTOM_KEY, 'preview.vercel.app')).toBe(
+      false,
+    );
+    expect(mustUseSameOriginClerkProxy(TEST_KEY, 'anima-protocol.com')).toBe(false);
+    expect(shouldAllowDirectClerkFallback(TEST_KEY, 'anima-protocol.com')).toBe(
+      true,
+    );
   });
 
   it('uses proxy on production for non-custom live keys', () => {
