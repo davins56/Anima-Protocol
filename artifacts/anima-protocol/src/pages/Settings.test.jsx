@@ -9,6 +9,16 @@ const updateMeMock = vi.hoisted(() => vi.fn());
 const meMock = vi.hoisted(() => vi.fn());
 const listMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
+const authState = vi.hoisted(() => ({
+  logout: () => {},
+  isAuthenticated: true,
+  user: {
+    id: "user_clerk",
+    email: "operator@example.com",
+    full_name: "Operator",
+    role: "user",
+  },
+}));
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -25,11 +35,7 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/lib/AuthContext", () => ({
-  useAuth: () => ({
-    logout: vi.fn(),
-    isAuthenticated: true,
-    user: { email: "operator@example.com" },
-  }),
+  useAuth: () => authState,
 }));
 
 vi.mock("@/api/base44Client", () => ({
@@ -119,6 +125,13 @@ describe("Settings custom chat background upload", () => {
     meMock.mockReset();
     listMock.mockReset();
     toastErrorMock.mockReset();
+    authState.isAuthenticated = true;
+    authState.user = {
+      id: "user_clerk",
+      email: "operator@example.com",
+      full_name: "Operator",
+      role: "user",
+    };
     meMock.mockResolvedValue({
       email: "operator@example.com",
       settings: { chat_bg_theme: "default", chat_bg_image: "" },
@@ -229,5 +242,94 @@ describe("Settings custom chat background upload", () => {
     expect(String(toastErrorMock.mock.calls[0][0])).toMatch(
       /dropped the upload connection|try again/i,
     );
+  });
+});
+
+describe("Settings account identity after Clerk login", () => {
+  beforeEach(() => {
+    uploadFileMock.mockReset();
+    updateMeMock.mockReset();
+    meMock.mockReset();
+    listMock.mockReset();
+    toastErrorMock.mockReset();
+    listMock.mockResolvedValue([]);
+    updateMeMock.mockResolvedValue({});
+    authState.isAuthenticated = true;
+    authState.user = {
+      id: "user_2github",
+      email: "davins56@hotmail.com",
+      full_name: "Dàvīn Smith",
+      role: "admin",
+    };
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("shows Clerk identity when auth.me is still empty", async () => {
+    meMock.mockResolvedValue({
+      role: "User",
+      selected_mode: "companion",
+    });
+    const { container } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/davins56@hotmail\.com/);
+    expect(container.textContent).toMatch(/Dàvīn Smith/);
+    expect(container.textContent).not.toMatch(/Email—|Email —/);
+  });
+
+  it("keeps Clerk identity when auth.me resolves after a blank first paint", async () => {
+    let resolveMe;
+    meMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveMe = resolve;
+        }),
+    );
+    const { container } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/davins56@hotmail\.com/);
+    expect(container.textContent).toMatch(/Dàvīn Smith/);
+
+    await act(async () => {
+      resolveMe({ role: "User", selected_mode: "companion" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/davins56@hotmail\.com/);
+    expect(container.textContent).toMatch(/Dàvīn Smith/);
+  });
+
+  it("still shows an explicit Instant Sandbox guest identity", async () => {
+    authState.user = {
+      id: "user_seeker",
+      email: "seeker@anima-protocol.com",
+      full_name: "Seeker",
+      role: "User",
+      is_guest: true,
+    };
+    meMock.mockResolvedValue({
+      id: "user_seeker",
+      email: "seeker@anima-protocol.com",
+      full_name: "Seeker",
+      role: "User",
+    });
+    const { container } = renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(/seeker@anima-protocol\.com/);
+    expect(container.textContent).toMatch(/Seeker/);
   });
 });
