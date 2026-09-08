@@ -238,3 +238,37 @@ export function clerkJsScriptProbeUrl(clerkPubKey) {
   if (!base) return '';
   return `${base}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`;
 }
+
+/**
+ * Expire Domain=apex `__client_uat*` copies.
+ *
+ * Those cookies are not HttpOnly, so GitHub's hop to
+ * clerk.anima-protocol.com/v1/oauth_callback sends them and Clerk returns
+ * authorization_invalid. Host-only copies (no Domain) stay on the app origin.
+ */
+export function expireBrowserApexClerkClientUatCookies({
+  cookie = typeof document !== 'undefined' ? document.cookie : '',
+  hostname = typeof window !== 'undefined' ? window.location.hostname : '',
+  writeCookie,
+} = {}) {
+  if (!isAnimaProductionHost(hostname)) return [];
+  const names = new Set(['__client_uat']);
+  for (const part of String(cookie || '').split(';')) {
+    const name = part.trim().split('=')[0] || '';
+    if (name === '__client_uat' || name.startsWith('__client_uat_')) {
+      names.add(name);
+    }
+  }
+  const writer =
+    writeCookie ||
+    ((value) => {
+      if (typeof document !== 'undefined') document.cookie = value;
+    });
+  const written = [];
+  for (const name of names) {
+    const expiry = `${name}=; Path=/; Domain=${ANIMA_APEX_HOST}; Max-Age=0; Secure; SameSite=Lax`;
+    writer(expiry);
+    written.push(expiry);
+  }
+  return written;
+}

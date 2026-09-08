@@ -14,6 +14,10 @@ import {
   resolveClerkUpstreamUrl,
   rewriteClerkProxyLocation,
   rewriteClerkProxySetCookie,
+  shouldAuthorizeClerkUpstream,
+  isClerkOAuthCallbackPath,
+  apexClerkAuthCookieExpiries,
+  collectClerkAuthCookieNames,
   stripClerkAuthCookies,
   usesOfficialClerkProxyProtocol,
 } from "../src/middlewares/clerkProxyFetch";
@@ -269,9 +273,13 @@ describe("clerkProxyFetch", () => {
         "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
         "anima-protocol.com",
       ),
-    ).toBe(
-      "__client_uat=1; Path=/; Domain=anima-protocol.com; Secure; SameSite=Lax",
-    );
+    ).toBe("__client_uat=1; Path=/; Secure; SameSite=Lax");
+    expect(
+      rewriteClerkProxySetCookie(
+        "__client_uat_23i07izR=0; Path=/; Domain=.anima-protocol.com; Secure; SameSite=Lax",
+        "anima-protocol.com",
+      ),
+    ).toBe("__client_uat_23i07izR=0; Path=/; Secure; SameSite=Lax");
     expect(
       rewriteClerkProxySetCookie(
         "__cf_bm=x; Path=/; Domain=.clerkprod-cloudflare.net; HttpOnly; Secure; SameSite=None",
@@ -387,6 +395,51 @@ describe("clerkProxyFetch", () => {
       },
     );
     expect(headers.get("cookie")).toBe("theme=dark");
+  });
+
+  it("strips Clerk cookies and omits Secret-Key on oauth_callback", () => {
+    expect(isClerkOAuthCallbackPath("/v1/oauth_callback?code=x&state=y")).toBe(
+      true,
+    );
+    expect(shouldAuthorizeClerkUpstream("/v1/oauth_callback?code=x")).toBe(
+      false,
+    );
+    expect(shouldAuthorizeClerkUpstream("/v1/client")).toBe(true);
+    expect(shouldAuthorizeClerkUpstream("/npm/@clerk/clerk-js@6/dist/x.js")).toBe(
+      false,
+    );
+    expect(
+      shouldStripClerkAuthCookies("/v1/oauth_callback?code=x&state=y"),
+    ).toBe(true);
+    expect(collectClerkAuthCookieNames("__client_uat=0; theme=dark; __session=x")).toEqual(
+      ["__client_uat", "__session"],
+    );
+    expect(
+      apexClerkAuthCookieExpiries(["__client_uat", "theme"], "www.anima-protocol.com"),
+    ).toEqual([
+      "__client_uat=; Path=/; Domain=anima-protocol.com; Max-Age=0; Secure; SameSite=Lax",
+    ]);
+
+    const headers = buildClerkUpstreamHeaders(
+      {
+        method: "GET",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          cookie: "__client_uat=0; __client=tok; theme=dark",
+          accept: "text/html",
+        },
+      },
+      "sk_live_test",
+      {
+        officialProxy: false,
+        authorizeUpstream: shouldAuthorizeClerkUpstream("/v1/oauth_callback"),
+        requestUrl: "/v1/oauth_callback?code=fake&state=abc",
+      },
+    );
+    expect(headers.get("cookie")).toBe("theme=dark");
+    expect(headers.get("Clerk-Secret-Key")).toBeNull();
+    expect(headers.get("Clerk-Proxy-Url")).toBeNull();
   });
 
   it("rewrites FAPI Location headers onto the same-origin proxy path", () => {
@@ -521,8 +574,19 @@ describe("clerkProxyFetch", () => {
       true,
     );
     expect(
-      cookies.some((c) =>
-        c.includes("__client_uat=1") && c.includes("Domain=anima-protocol.com"),
+      cookies.some(
+        (c) =>
+          c.startsWith("__client_uat=1") &&
+          !/Domain=/i.test(c) &&
+          !/Max-Age=0/i.test(c),
+      ),
+    ).toBe(true);
+    expect(
+      cookies.some(
+        (c) =>
+          c.startsWith("__client_uat=") &&
+          c.includes("Domain=anima-protocol.com") &&
+          c.includes("Max-Age=0"),
       ),
     ).toBe(true);
   });
@@ -581,6 +645,70 @@ describe("clerkProxyFetch", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(res.statusCode).toBe(200);
     expect(body?.toString()).toBe("/* clerk-js */");
+  });
+
+  it("proxies oauth_callback without Secret-Key or Clerk cookies", async () => {
+    process.env.CLERK_PUBLISHABLE_KEY = CUSTOM_DOMAIN_KEY;
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe(
+        "https://clerk.anima-protocol.com/v1/oauth_callback?code=fake&state=abc",
+      );
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Clerk-Secret-Key")).toBeNull();
+      expect(headers.get("Clerk-Proxy-Url")).toBeNull();
+      expect(headers.get("cookie")).toBe("theme=dark");
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: "https://anima-protocol.com/sign-in/sso-callback?__clerk_status=failed",
+        },
+      });
+    });
+    const headers: Record<string, string> = {};
+    const cookies: string[] = [];
+    const res = {
+      statusCode: 0,
+      headersSent: false,
+      setHeader(name: string, value: string) {
+        headers[name.toLowerCase()] = value;
+      },
+      appendHeader(name: string, value: string) {
+        if (name.toLowerCase() === "set-cookie") cookies.push(value);
+      },
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    };
+    await proxyClerkWithFetch(
+      {
+        method: "GET",
+        url: "/v1/oauth_callback?code=fake&state=abc",
+        originalUrl: "/api/__clerk/v1/oauth_callback?code=fake&state=abc",
+        headers: {
+          host: "anima-protocol.com",
+          origin: "https://anima-protocol.com",
+          cookie: "__client_uat=0; __client=tok; theme=dark",
+          "x-forwarded-proto": "https",
+        },
+      } as import("http").IncomingMessage,
+      res as unknown as import("http").ServerResponse,
+      "sk_live_test",
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(303);
+    expect(headers.location).toBe(
+      "https://anima-protocol.com/sign-in/sso-callback?__clerk_status=failed",
+    );
+    expect(
+      cookies.some(
+        (c) =>
+          c.startsWith("__client_uat=") &&
+          c.includes("Domain=anima-protocol.com") &&
+          c.includes("Max-Age=0"),
+      ),
+    ).toBe(true);
   });
 
   it("does not follow OAuth Location off Clerk FAPI", async () => {
