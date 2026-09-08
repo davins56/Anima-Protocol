@@ -124,4 +124,11 @@ describe("EmailCodeSignIn GitHub hang", () => {
     });
     expect(screen.getByRole("button", { name: /Continue with GitHub/i })).toBeTruthy();
   });
+
+  it("sends an already-signed-in Clerk session to chat, not the title screen", () => {
+    clerkMocks.isSignedIn = true;
+    clerkMocks.isSignedInUser = true;
+    renderSignIn();
+    expect(clerkMocks.navigate).toHaveBeenCalledWith("/chat", { replace: true });
+  });
 });

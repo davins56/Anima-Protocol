@@ -14,16 +14,35 @@
  * @param {object | null | undefined} clerkUser
  * @returns {string}
  */
+function emailFromEntry(entry) {
+  if (typeof entry === "string" && entry.trim()) return entry.trim();
+  const address = entry?.emailAddress || entry?.email;
+  return typeof address === "string" && address.trim() ? address.trim() : "";
+}
+
+function emailAddressList(clerkUser) {
+  const listed = clerkUser.emailAddresses;
+  if (Array.isArray(listed)) return listed;
+  if (Array.isArray(listed?.data)) return listed.data;
+  return [];
+}
+
 export function clerkEmailFromUser(clerkUser) {
   if (!clerkUser || typeof clerkUser !== "object") return "";
-  const primary = clerkUser.primaryEmailAddress?.emailAddress;
-  if (typeof primary === "string" && primary.trim()) return primary.trim();
-  const listed = clerkUser.emailAddresses;
-  if (Array.isArray(listed)) {
-    for (const entry of listed) {
-      const address = entry?.emailAddress;
-      if (typeof address === "string" && address.trim()) return address.trim();
-    }
+  const direct = emailFromEntry(clerkUser.email);
+  if (direct) return direct;
+  const primary = emailFromEntry(clerkUser.primaryEmailAddress);
+  if (primary) return primary;
+  for (const entry of emailAddressList(clerkUser)) {
+    const address = emailFromEntry(entry);
+    if (address) return address;
+  }
+  const externals = Array.isArray(clerkUser.externalAccounts)
+    ? clerkUser.externalAccounts
+    : [];
+  for (const account of externals) {
+    const address = emailFromEntry(account);
+    if (address) return address;
   }
   return "";
 }
@@ -78,6 +97,23 @@ export function clerkIdentityFromUser(clerkUser) {
       username: acc.username,
     })),
   };
+}
+
+/**
+ * Effect dependency for Clerk hydration. iPad Safari often delivers `id`
+ * first and email/name a tick later — AuthContext must re-sync then.
+ *
+ * @param {object | null | undefined} clerkUser
+ * @returns {string}
+ */
+export function clerkIdentityHydrationKey(clerkUser) {
+  if (!clerkUser?.id) return "";
+  return [
+    clerkUser.id,
+    clerkEmailFromUser(clerkUser),
+    clerkDisplayNameFromUser(clerkUser),
+    typeof clerkUser.username === "string" ? clerkUser.username : "",
+  ].join("|");
 }
 
 /**

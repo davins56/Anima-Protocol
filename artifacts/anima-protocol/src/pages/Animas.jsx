@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { base44, waitForStoreAuth } from "@/api/base44Client";
 import { ArrowLeft } from "lucide-react";
 import { Plus, X, Edit2, Trash2, Upload, Sparkles, Loader, Volume2, Palette, MessageSquare, Crown, Check, Clock, Swords } from "lucide-react";
 import VoicePicker from "@/components/voice/VoicePicker";
@@ -16,6 +16,13 @@ import {
   companionCreateErrorMessage,
   createCompanionRecord,
 } from "@/lib/createCompanion";
+import {
+  companionStoreEntity,
+  listPersonalAnimas,
+  updateCompanionRecord,
+} from "@/lib/listPersonalAnimas";
+import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
+import { useAuth } from "@/lib/AuthContext";
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
@@ -80,6 +87,7 @@ const defaultForm = {
 
 export default function Animas() {
   const navigate = useNavigate();
+  const { isAuthenticated, isLoadingAuth, user } = useAuth();
   const [animas, setAnimas] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingAnima, setEditingAnima] = useState(null);
@@ -94,17 +102,23 @@ export default function Animas() {
   const [generatingField, setGeneratingField] = useState(null);
 
   useEffect(() => {
+    if (isLoadingAuth) return;
     loadAnimas();
-  }, []);
+  }, [isAuthenticated, isLoadingAuth, user?.id]);
 
   const loadAnimas = async () => {
-    const [data, meData] = await Promise.all([
-      base44.entities.Anima.list("-created_date", 100),
-      base44.auth.me().catch(() => null),
-    ]);
-    setAnimas(data);
-    setMe(meData);
-    setLoading(false);
+    setLoading(true);
+    try {
+      await waitForStoreAuth(STORE_AUTH_WAIT_MS).catch(() => {});
+      const [data, meData] = await Promise.all([
+        listPersonalAnimas(500),
+        base44.auth.me().catch(() => null),
+      ]);
+      setAnimas(data || []);
+      setMe(meData);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEdit = (anima) => {
@@ -130,7 +144,9 @@ export default function Animas() {
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.Anima.delete(id);
+    const row = animas.find((a) => a.id === id);
+    const entity = companionStoreEntity(row);
+    await base44.entities[entity].delete(id);
     await loadAnimas();
   };
 
@@ -142,9 +158,9 @@ export default function Animas() {
       (a) => a.assigned_user === me.email && a.id !== anima.id
     );
     await Promise.all(
-      others.map((a) => base44.entities.Anima.update(a.id, { assigned_user: null }))
+      others.map((a) => updateCompanionRecord(a, { assigned_user: null }))
     );
-    await base44.entities.Anima.update(anima.id, { assigned_user: me.email });
+    await updateCompanionRecord(anima, { assigned_user: me.email });
     await loadAnimas();
     setActivatingId(null);
   };
@@ -269,7 +285,7 @@ Return JSON with a single "${field}" string field.`,
     setSaving(true);
     try {
       if (editingAnima) {
-        await base44.entities.Anima.update(editingAnima.id, form);
+        await updateCompanionRecord(editingAnima, form);
       } else {
         await createCompanionRecord("Anima", form);
       }
