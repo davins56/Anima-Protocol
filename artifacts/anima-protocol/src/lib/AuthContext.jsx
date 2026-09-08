@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from 'react';
 import { useUser, useClerk, useAuth as useClerkAuth } from '@clerk/react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   base44,
   setAuthTokenGetter,
@@ -26,12 +26,18 @@ import {
 import { bootstrapUserData, whenBootstrapReady } from '@/lib/syncBootstrap';
 import { createCompanionRecord } from '@/lib/createCompanion';
 import {
+  clearClerkAuthReturn,
   clearGuestPersistence,
   persistExplicitGuest,
+  readClerkAuthReturn,
   readExplicitGuestChosen,
   readPersistedGuest,
   resolveAuthBoot,
 } from '@/lib/authBootPolicy';
+import {
+  hasClerkHandshakeQuery,
+  hasPendingClerkHandshake,
+} from '@/lib/clerkOAuthPaths';
 import {
   disableProactivePush,
   getProactiveMessagePreferences,
@@ -48,6 +54,7 @@ export const AuthProvider = ({ children }) => {
   const { signOut } = useClerk();
   const { getToken } = useClerkAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [user, setUser] = useState(null);
   const [authError, setAuthError] = useState(null);
@@ -168,18 +175,27 @@ export const AuthProvider = ({ children }) => {
   }, [isLoaded, isSignedIn, user?.id]);
 
   // After Clerk reports its session, drop leftover guest storage if a real
-  // account is present. Restore guest only when this tab explicitly chose it.
+  // account is present. Restore guest only when this tab explicitly chose it
+  // and we are not finishing GitHub/email sign-in.
   useEffect(() => {
     if (!isLoaded) return;
+    const pendingHandshake = hasPendingClerkHandshake({
+      search: location.search,
+      pathname: location.pathname,
+      hash: location.hash,
+    });
     const boot = resolveAuthBoot({
       clerkLoaded: true,
       clerkSignedIn: !!isSignedIn,
       clerkUser: clerkUser ? { id: clerkUser.id } : null,
       persistedGuest: readPersistedGuest(),
       explicitGuestChosen: readExplicitGuestChosen(),
+      pendingClerkHandshake: pendingHandshake,
+      clerkAuthReturn: readClerkAuthReturn(),
     });
     if (boot.mode === 'signed-in') {
       clearGuestPersistence();
+      clearClerkAuthReturn();
       setLocalUser(null);
       return;
     }
@@ -188,7 +204,7 @@ export const AuthProvider = ({ children }) => {
       return;
     }
     setLocalUser(null);
-  }, [isLoaded, isSignedIn, clerkUser?.id]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, location.pathname, location.search, location.hash]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -259,21 +275,35 @@ export const AuthProvider = ({ children }) => {
       // Explicit Instant Sandbox — keep the guest identity. Do not clear
       // the token getter; the other effect owns local_* for guests.
     } else {
-      clearAuthTokenGetter();
-      base44.auth.clearSession();
-      setUser(null);
+      const pendingHandshake = hasPendingClerkHandshake({
+        search: location.search,
+        pathname: location.pathname,
+        hash: location.hash,
+      });
+      // Handshake / just-returned Clerk auth may still mint the session.
+      // Clearing here is the "Home as guest / signed-out" race.
+      if (!pendingHandshake && !readClerkAuthReturn()) {
+        clearAuthTokenGetter();
+        base44.auth.clearSession();
+        setUser(null);
+      }
     }
 
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, clerkUser?.id, localUser]);
+  }, [isLoaded, isSignedIn, clerkUser?.id, localUser, location.pathname, location.search, location.hash]);
 
   const isSignedInUser = !!isSignedIn && !!clerkUser;
   const isGuest = !!localUser && !isSignedInUser;
   const isAuthenticated = isSignedInUser || isGuest;
-  // Always wait for Clerk. Leftover guest localStorage must not skip login.
-  const isLoadingAuth = !isLoaded;
+  const pendingHandshakeQuery = hasClerkHandshakeQuery({
+    search: location.search,
+    hash: location.hash,
+  });
+  // Always wait for Clerk. Leftover guest must not skip login. Hold Home
+  // while handshake query is still in the URL (GitHub / email return).
+  const isLoadingAuth = !isLoaded || (!isSignedInUser && pendingHandshakeQuery);
   const [authStalled, setAuthStalled] = useState(false);
 
   useEffect(() => {

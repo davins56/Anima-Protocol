@@ -227,6 +227,40 @@ describe("clerkProxyFetch", () => {
     ).toBe(
       "https://anima-protocol.com/api/__clerk/npm/@clerk/clerk-js@6.31.0/dist/clerk.browser.js",
     );
+    expect(
+      rewriteClerkProxyLocation(
+        "https://clerk.anima-protocol.com/v1/client/handshake?__clerk_api_version=2025-11-10",
+        {
+          fapiHost: "clerk.anima-protocol.com",
+          appOrigin: "https://anima-protocol.com",
+        },
+      ),
+    ).toBe(
+      "https://anima-protocol.com/api/__clerk/v1/client/handshake?__clerk_api_version=2025-11-10",
+    );
+  });
+
+  it("sends OAuth handshake document redirects to the SPA, not /api/__clerk", () => {
+    expect(
+      rewriteClerkProxyLocation(
+        "https://clerk.anima-protocol.com/?__clerk_handshake=abc",
+        {
+          fapiHost: "clerk.anima-protocol.com",
+          appOrigin: "https://anima-protocol.com",
+        },
+      ),
+    ).toBe("https://anima-protocol.com/?__clerk_handshake=abc");
+    expect(
+      rewriteClerkProxyLocation(
+        "https://clerk.anima-protocol.com/sign-in/sso-callback?__clerk_status=complete",
+        {
+          fapiHost: "clerk.anima-protocol.com",
+          appOrigin: "https://anima-protocol.com",
+        },
+      ),
+    ).toBe(
+      "https://anima-protocol.com/sign-in/sso-callback?__clerk_status=complete",
+    );
   });
 
   it("proxies custom-domain FAPI through the app origin with first-party cookies", async () => {

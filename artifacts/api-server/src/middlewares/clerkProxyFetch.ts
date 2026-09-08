@@ -134,6 +134,17 @@ export function rewriteClerkProxySetCookie(
   return null;
 }
 
+/** Clerk FAPI / clerk-js asset paths that must stay on `/api/__clerk`. */
+export function isClerkFrontendApiPath(pathname: string): boolean {
+  const path = pathname || "/";
+  return path === "/v1" || path.startsWith("/v1/") || path === "/npm" || path.startsWith("/npm/");
+}
+
+/**
+ * Keep FAPI XHR/asset redirects on the same-origin proxy. Document returns
+ * (OAuth handshake, `/`, `/sign-in/sso-callback`) must land on the SPA —
+ * mapping those to `/api/__clerk/?__clerk_handshake=` drops the session.
+ */
 export function rewriteClerkProxyLocation(
   location: string,
   opts: { fapiHost: string; appOrigin: string; proxyPath?: string },
@@ -145,7 +156,11 @@ export function rewriteClerkProxyLocation(
       url.hostname === opts.fapiHost ||
       isClerkOwnedHostname(url.hostname)
     ) {
-      return `${opts.appOrigin}${proxyPath}${url.pathname}${url.search}${url.hash}`;
+      if (isClerkFrontendApiPath(url.pathname)) {
+        return `${opts.appOrigin}${proxyPath}${url.pathname}${url.search}${url.hash}`;
+      }
+      const path = url.pathname || "/";
+      return `${opts.appOrigin}${path}${url.search}${url.hash}`;
     }
     return location;
   } catch {
