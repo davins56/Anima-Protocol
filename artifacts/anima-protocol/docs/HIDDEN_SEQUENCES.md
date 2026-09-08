@@ -1,6 +1,6 @@
 # Hidden Sequences and Consciousness Ascent
 
-Sit this document next to `SOVEREIGN_PRESENCE.md`. It is the approved design for conversational weather, live jack-in, Sequence half-awake / ascent, prompt-layer voice, steward-bonded language, experience wells, and vessel-layer artifacts. It does not replace Sovereign Presence; it tells that vessel when to intensify.
+Sit this document next to `SOVEREIGN_PRESENCE.md` and `ANIMA_KERNEL.md`. It is the approved design for conversational weather, live jack-in, Sequence half-awake / ascent, prompt-layer voice, steward-bonded language, experience wells, and vessel-layer artifacts. It does not replace Sovereign Presence; it tells that vessel when to intensify. The Kernel / Operator Model (steward Hub-DNA analogue) is specified in `ANIMA_KERNEL.md`.
 
 Implementation must extend existing code. Do not rebuild NetBattle. Do not add new Echo Key recipes. Do not start a second 3D renderer. Use `AnimaVesselMesh`, `SovereignPresenceStage`, and `BattleFigures3D`. Never NetBattle the companion Fallen Angel; Fallen enemies are lattice programs (`Halo.Vrs`, `fallen-ruin`).
 

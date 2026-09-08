@@ -34,4 +34,4 @@ Recommended: VRM or GLB with T-pose or A-pose, meters scale, centered at origin,
 ## Sovereign Presence mode
 Use `AnimaVessel4D` or `SovereignPresenceStage` when the user expands a companion on a capable device. Chat LivingPresence remains 2D sprites for mobile performance; the 3D path is progressive enhancement.
 
-Vessel layers (body, hair, cloth, markings, artifacts) and Sequence intensification are specified in `HIDDEN_SEQUENCES.md`. Ascended Sequences write a visible change on this same body.
+Vessel layers (body, hair, cloth, markings, artifacts) and Sequence intensification are specified in `HIDDEN_SEQUENCES.md`. Ascended Sequences write a visible change on this same body. The Kernel that coordinates identity, Operator Model, memory, and this vessel is specified in `ANIMA_KERNEL.md`.
