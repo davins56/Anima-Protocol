@@ -16,6 +16,7 @@ import {
   rewriteClerkProxySetCookie,
   shouldAuthorizeClerkUpstream,
   isClerkOAuthCallbackPath,
+  isClerkSignInsPath,
   clerkOAuthCallbackShouldBypassUpstream,
   clerkOAuthCallbackShouldHideUpstreamBody,
   clerkOAuthCallbackSignInRedirect,
@@ -510,6 +511,14 @@ describe("clerkProxyFetch", () => {
     );
   });
 
+  it("detects FAPI sign_ins so GitHub state can be stashed", () => {
+    expect(isClerkSignInsPath("/v1/client/sign_ins")).toBe(true);
+    expect(
+      isClerkSignInsPath("/v1/client/sign_ins?__clerk_api_version=2025-11-10"),
+    ).toBe(true);
+    expect(isClerkSignInsPath("/v1/client")).toBe(false);
+  });
+
   it("sends oauth_callback err_code Locations to /sign-in, not /api/__clerk", () => {
     expect(clerkOAuthCallbackShouldBypassUpstream("/v1/oauth_callback")).toBe(
       true,
@@ -813,6 +822,9 @@ describe("clerkProxyFetch", () => {
       expect(headers.get("Clerk-Secret-Key")).toBeNull();
       expect(headers.get("Clerk-Proxy-Url")).toBeNull();
       expect(headers.get("cookie")).toBe("__client=tok; theme=dark");
+      expect((init as { cf?: { resolveOverride?: string } })?.cf?.resolveOverride).toBe(
+        "worker.clerkprod-cloudflare.net",
+      );
       return new Response(null, {
         status: 303,
         headers: {

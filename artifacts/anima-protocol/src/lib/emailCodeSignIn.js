@@ -364,6 +364,18 @@ export function githubOAuthNeedsIdentifierMessage(status) {
  */
 export function clerkOAuthProviderRedirectUrl(signIn) {
   if (!signIn || typeof signIn !== "object") return null;
+  if (signIn.response && signIn.response !== signIn) {
+    const nested = clerkOAuthProviderRedirectUrl(signIn.response);
+    if (nested) return nested;
+  }
+  if (signIn.resource && signIn.resource !== signIn) {
+    const nested = clerkOAuthProviderRedirectUrl(signIn.resource);
+    if (nested) return nested;
+  }
+  if (signIn.client?.signIn && signIn.client.signIn !== signIn) {
+    const nested = clerkOAuthProviderRedirectUrl(signIn.client.signIn);
+    if (nested) return nested;
+  }
   const verification =
     signIn.firstFactorVerification ||
     signIn.first_factor_verification ||
@@ -399,6 +411,62 @@ export function clerkOAuthProviderRedirectUrl(signIn) {
 
 export function assignBrowserLocation(href, assign = defaultAssignLocation) {
   if (typeof assign === "function") assign(href);
+}
+
+/**
+ * clerk-js `sso()` skips `_create` when `signIn.id` exists without an OAuth
+ * URL. That leftover is the iPad `needs_identifier` / no-navigation path.
+ * Force a fresh `oauth_github` create (or first-party FAPI POST) instead.
+ */
+export function signInNeedsForcedOAuthCreate(signIn) {
+  if (!signIn || typeof signIn !== "object") return false;
+  if (!signIn.id) return false;
+  return !clerkOAuthProviderRedirectUrl(signIn);
+}
+
+/**
+ * First-party POST `/api/__clerk/v1/client/sign_ins` always mints a new
+ * SignIn (does not reuse leftover `id`). Live 200 includes the GitHub
+ * authorize URL. Used when Future getters hide `firstFactorVerification`.
+ *
+ * @param {{ origin: string, redirectCallbackUrl: string, redirectUrl: string, fetchImpl?: typeof fetch }} options
+ */
+export async function createGitHubOAuthViaFapi({
+  origin,
+  redirectCallbackUrl,
+  redirectUrl,
+  fetchImpl,
+} = {}) {
+  const base = String(origin || "").replace(/\/$/, "");
+  const implicitFetch =
+    !fetchImpl &&
+    typeof fetch === "function" &&
+    /^https:\/\/(www\.)?anima-protocol\.com$/i.test(base);
+  const fetchFn = fetchImpl || (implicitFetch ? fetch : null);
+  if (!fetchFn || !base || !redirectCallbackUrl) return null;
+  const completePath = redirectUrl === "/" || !redirectUrl ? "/" : redirectUrl;
+  try {
+    const response = await fetchFn(
+      `${base}/api/__clerk/v1/client/sign_ins?__clerk_api_version=2025-11-10`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          strategy: "oauth_github",
+          redirect_url: `${base}${redirectCallbackUrl}`,
+          action_complete_redirect_url: `${base}${completePath}`,
+        }),
+      },
+    );
+    if (!response?.ok) return null;
+    const json = await response.json();
+    return clerkOAuthProviderRedirectUrl(json);
+  } catch {
+    return null;
+  }
 }
 
 function defaultAssignLocation(href) {
@@ -537,7 +605,7 @@ export function watchPageNavigation(target = typeof window !== "undefined" ? win
  * @param {{ sso?: Function, authenticateWithRedirect?: Function, status?: string | null } | null | undefined} signIn
  * @param {string} basePath
  * @param {{ authenticateWithRedirect?: Function, client?: { signIn?: { authenticateWithRedirect?: Function } } } | null | undefined} [clerk]
- * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean, expireApexUat?: () => void, assignLocation?: (href: string) => void, origin?: string }} [options]
+ * @param {{ timeoutMs?: number, navigationGraceMs?: number, didNavigate?: () => boolean, expireApexUat?: () => void, assignLocation?: (href: string) => void, origin?: string, fetchImpl?: typeof fetch }} [options]
  */
 export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = {}) {
   const expireApexUat =
@@ -557,7 +625,8 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = 
 
   const navigateToProviderIfNeeded = async () => {
     if (watcher.didNavigate()) return true;
-    let href = clerkOAuthProviderRedirectUrl(signIn);
+    let href =
+      clerkOAuthProviderRedirectUrl(signIn) || clerkOAuthProviderRedirectUrl(clerk);
     if (!href && typeof signIn?.create === "function") {
       const completePath = paths.redirectUrl === "/" ? "/" : paths.redirectUrl;
       await signIn.create({
@@ -565,7 +634,16 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = 
         redirectUrl: `${origin.replace(/\/$/, "")}${paths.redirectCallbackUrl}`,
         actionCompleteRedirectUrl: `${origin.replace(/\/$/, "")}${completePath}`,
       });
-      href = clerkOAuthProviderRedirectUrl(signIn);
+      href =
+        clerkOAuthProviderRedirectUrl(signIn) || clerkOAuthProviderRedirectUrl(clerk);
+    }
+    if (!href) {
+      href = await createGitHubOAuthViaFapi({
+        origin,
+        redirectCallbackUrl: paths.redirectCallbackUrl,
+        redirectUrl: paths.redirectUrl,
+        fetchImpl: options.fetchImpl,
+      });
     }
     if (!href) return false;
     assignBrowserLocation(href, assignLocation ?? defaultAssignLocation);
@@ -598,6 +676,19 @@ export async function startGitHubOAuthSignIn(signIn, basePath, clerk, options = 
   };
 
   try {
+    if (signInNeedsForcedOAuthCreate(signIn)) {
+      const assigned = await navigateToProviderIfNeeded();
+      if (assigned) {
+        return {
+          method: "oauth_github.create",
+          ...paths,
+          ok: true,
+          navigated: true,
+          shouldFinalize: false,
+        };
+      }
+    }
+
     if (signIn && typeof signIn.sso === "function") {
       const { error } = await withTimeout(
         signIn.sso({

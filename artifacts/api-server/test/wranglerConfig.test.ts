@@ -212,7 +212,12 @@ describe("Cloudflare wrangler config", () => {
   });
 
   it("does not assume a wrangler www route until the zone rule keeps ${1}", () => {
-    expect(config.routes ?? []).toEqual([]);
+    const routes = (config.routes ?? []) as Array<Record<string, string>>;
+    expect(routes.map((row) => row.pattern)).toEqual([
+      "clerk.anima-protocol.com/*",
+    ]);
+    expect(routes[0]?.zone_name).toBe("anima-protocol.com");
+    expect(JSON.stringify(routes)).not.toMatch(/www\.anima-protocol\.com/);
     const wrangler = readFileSync(
       path.join(repoRoot, "wrangler.jsonc"),
       "utf8",
@@ -220,6 +225,9 @@ describe("Cloudflare wrangler config", () => {
     expect(wrangler).toMatch(/scripts\/cloudflare\/www-redirect\.md/);
     expect(wrangler).toMatch(/Redirect www to root/);
     expect(wrangler).toMatch(/Do not add www\.anima-protocol\.com routes/);
+    expect(wrangler).toMatch(/clerkCnameGateway/);
+    expect(workerSource).toContain("handleClerkCnameGateway");
+    expect(workerSource).toContain("isClerkCnameRequestHost");
     const notes = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/www-redirect.md"),
       "utf8",
