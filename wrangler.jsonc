@@ -39,12 +39,24 @@
     // default is max-age=0 without it.
     "run_worker_first": ["/api", "/api/*", "/assets", "/assets/*"]
   },
+  // GitHub's top-level hop lands on clerk.anima-protocol.com (Clerk CNAME).
+  // Safari ITP CNAME-cloaking hides Domain=apex `__client` there, so the
+  // browser renders Clerk's 403 authorization_invalid JSON. Bind that host
+  // to THIS Worker (same eTLD+1, no third-party CNAME) and gateway to Clerk
+  // via cf.resolveOverride — see artifacts/api-server/src/lib/clerkCnameGateway.ts.
+  // Do NOT orange-cloud the existing Clerk CNAME (Error 1014 Cross-User Banned).
   // Do not add www.anima-protocol.com routes here. Zone Redirect Rule
   // "Redirect www to root" 301s www → https://anima-protocol.com/ (no ${1})
   // before any Worker. www is not a custom domain on this Worker;
   // *.anima-protocol.com/* goes to anima-protocol-worker. See
   // scripts/cloudflare/www-redirect.md — fix the zone rule, do not assume
-  // a wrangler route exists until that replacement keeps ${1}.
+  // a wrangler www route exists until that replacement keeps ${1}.
+  "routes": [
+    {
+      "pattern": "clerk.anima-protocol.com/*",
+      "zone_name": "anima-protocol.com"
+    }
+  ],
   "vars": {
     "NODE_ENV": "production",
     // Never invent localhost on this isolate (belt-and-suspenders with

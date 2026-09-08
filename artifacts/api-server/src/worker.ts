@@ -8,6 +8,7 @@ import {
   applyCloudflareRequestEnv,
   bindImportableEnv,
 } from "./lib/cloudflareEnv";
+import { handleClerkCnameGateway, isClerkCnameRequestHost } from "./lib/clerkCnameGateway";
 import { fetchAssetsRejectingSpaHtml } from "./lib/spaAssetFallback";
 import {
   fetchApiThroughExpress,
@@ -38,6 +39,13 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
+
+    // GitHub's document callback is clerk.{apex}. That hostname is a
+    // CNAME to Clerk (Safari ITP cloaking). Terminate it here so we can
+    // inject Domain=apex `__client` and never render 403 JSON.
+    if (isClerkCnameRequestHost(url.hostname)) {
+      return handleClerkCnameGateway(request);
+    }
 
     const wwwRedirect = apexRedirectForWww(request);
     if (wwwRedirect) return wwwRedirect;

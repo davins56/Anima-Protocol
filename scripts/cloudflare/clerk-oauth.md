@@ -78,24 +78,44 @@ Worker-originated FAPI (`/v1/*` after clerk-js loads) must still send
 the spoofable leftmost XFF hop). Do **not** attach the secret to
 `/npm/*` hops — those 307 to jsDelivr.
 
-`authorization_invalid` after **GitHub OAuth** has two CNAME causes,
-confirmed live (trace shape matches
+`authorization_invalid` after **GitHub OAuth** is Clerk's CNAME
+**document** (address bar `clerk.anima-protocol.com`), not proxied
+`/api/__clerk` (#417 already 303s those to `/sign-in?clerk_error=`).
+Confirmed live (trace shape matches
 `{"errors":[{"code":"authorization_invalid",…}],"clerk_trace_id":…}`
 after `301 Location: /v1/oauth_callback?err_code=authorization_invalid#`
-→ `403` JSON):
+→ `403` JSON). #419 (`f413aee`) gets iPad past `needs_identifier` so
+GitHub actually leaves; the next hop is this CNAME JSON.
 
-1. **Missing `__client` (clean attempt).** GitHub callbacks to
-   `https://clerk.anima-protocol.com/v1/oauth_callback` (CNAME, not this
-   Worker). Clerk authenticates that document with the `__client` cookie.
-   A host-only `__client` on `anima-protocol.com` is not sent. Live:
+Causes, confirmed live:
+
+1. **Safari ITP CNAME-cloaking (iPad, even after Website Data wipe).**
+   DNS is `clerk.anima-protocol.com CNAME frontend-api.clerk.services`
+   (visible to the resolver; grey-cloud). ITP hides first-party
+   Domain=apex `__client` from that cloaked host. #416 Domain=apex is
+   necessary on Chrome and still not sent on iPad Safari. Do **not**
+   orange-cloud the Clerk CNAME (Cloudflare Error 1014 Cross-User
+   Banned). This Worker binds `clerk.anima-protocol.com/*` and gateways
+   to Clerk with `cf.resolveOverride=worker.clerkprod-cloudflare.net`
+   so Safari sees same-eTLD+1 A records, not a third-party CNAME.
+   Failed CNAME hops also plant `__client_uat=0; Domain=apex`; the
+   gateway drops those Set-Cookies.
+2. **Missing `__client` (clean attempt on browsers without ITP cloaking).**
+   Clerk authenticates the document with the `__client` cookie. A
+   host-only `__client` on `anima-protocol.com` is not sent. Live:
    real `__client` + `state` + `code` (no UAT) → `303`
    `/sign-in/sso-callback`. Same request without `__client` → 301/403
    `authorization_invalid`. The Worker therefore Set-Cookies `__client`
-   with `Domain=anima-protocol.com`.
-2. **Leftover Domain=apex `__client_uat` (retry).** The CNAME plants
+   with `Domain=anima-protocol.com` and, on `POST /v1/client/sign_ins`,
+   stashes `state → __client` so the gateway can inject the token if
+   Safari still omits the cookie.
+3. **Leftover Domain=apex `__client_uat` (retry).** The CNAME plants
    `__client_uat=0; Domain=anima-protocol.com`. Live: valid `__client` +
    leftover UAT → 301/403 `authorization_invalid`. #415 preclears UAT
-   on `/sign-in` before `signIn.sso()`.
+   on `/sign-in` before GitHub. #419 leftover `signIn.id` without an
+   OAuth URL skips clerk-js `_create` — the SPA now force-creates /
+   first-party POSTs `oauth_github` so `state` matches the browser
+   `__client` instead of assigning a stale authorize URL.
 
 After a successful callback the SPA lands on
 `/sign-in/sso-callback?__clerk_handshake=…` and clerk-js calls
@@ -127,13 +147,17 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
   the script tag.
 - `/api/__clerk/v1/*` 3xx with `Location` (GitHub authorize URL, handshake)
   must be forwarded, not rewritten as JSON.
-- `clerk.anima-protocol.com` stays on Clerk DNS. Do not point that hostname
-  at Worker `anima-protocol`.
+- `clerk.anima-protocol.com` is bound to Worker `anima-protocol` as a
+  **gateway** (`wrangler.jsonc` routes). Do not orange-cloud the raw
+  Clerk CNAME (1014). Upstream is Clerk via `cf.resolveOverride`.
+  GitHub's Authorization callback URL stays
+  `https://clerk.anima-protocol.com/v1/oauth_callback`.
 - `__client` must be `Domain=anima-protocol.com` so GitHub's document
-  callback on `clerk.anima-protocol.com/v1/oauth_callback` receives it.
-  Host-only `__client` is the clean-attempt CNAME miss. That Set-Cookie is
-  still **first-party**: the Worker writes it on
-  `anima-protocol.com/api/__clerk` (Safari ITP).
+  callback on `clerk.anima-protocol.com/v1/oauth_callback` receives it
+  after the gateway cutover (same eTLD+1, no ITP CNAME cloak). Host-only
+  `__client` is the clean-attempt CNAME miss. That Set-Cookie is still
+  **first-party**: the Worker writes it on
+  `anima-protocol.com/api/__clerk`.
 - The user-visible JSON
   `{ code: "authorization_invalid", clerk_trace_id }` is also returned by
   **proxied** `GET /api/__clerk/v1/oauth_callback?err_code=authorization_invalid`
@@ -200,10 +224,13 @@ old host-only `__client` is invisible to the CNAME.
 3. Continue with GitHub. The page must **leave for GitHub** (not stay
    on `/sign-in` with `needs_identifier` / “did not redirect”). Then
    GitHub → `clerk.anima-protocol.com/v1/oauth_callback` →
-   `/sign-in/sso-callback` → **signed-in Home**. A red
-   `needs_identifier` banner means clerk-js `sso()` did not navigate;
-   this app assigns the GitHub authorize URL itself. `/sign-in?clerk_error=`
-   still means the CNAME hop failed — wipe both hosts and retry.
+   `/sign-in/sso-callback` → **signed-in Home**. The address bar must
+   **not** stay on `clerk.anima-protocol.com` showing
+   `authorization_invalid` JSON — that document is now 303'd to
+   `/sign-in?clerk_error=`. A red `needs_identifier` banner (without
+   “must allowlist”) means the SPA still could not assign a GitHub
+   URL; tap Continue with GitHub again. `/sign-in?clerk_error=` means
+   the gateway hid a failed Clerk hop — wipe both hosts and retry.
    Do **not** change the GitHub OAuth App callback — live FAPI still
    issues `redirect_uri=https://clerk.anima-protocol.com/v1/oauth_callback`.
 4. Sign out, `/sign-in`, GitHub retry (no wipe required if step 3

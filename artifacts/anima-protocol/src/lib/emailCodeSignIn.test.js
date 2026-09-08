@@ -3,6 +3,7 @@ import {
   asSearchText,
   clerkErrorMessage,
   clerkOAuthProviderRedirectUrl,
+  createGitHubOAuthViaFapi,
   CLERK_GITHUB_OAUTH_CALLBACK_URL,
   GITHUB_OAUTH_NAVIGATION_GRACE_MS,
   GITHUB_OAUTH_SSO_TIMEOUT_MS,
@@ -20,6 +21,7 @@ import {
   previewSignInHint,
   PRODUCTION_SIGN_IN_URL,
   recoverExistingClerkSession,
+  signInNeedsForcedOAuthCreate,
   startGitHubOAuthSignIn,
 } from "./emailCodeSignIn";
 import {
@@ -531,6 +533,93 @@ describe("startGitHubOAuthSignIn", () => {
     expect(result.shouldFinalize).toBe(false);
   });
 
+  it("skips leftover sso() and assigns a fresh GitHub URL from create", async () => {
+    const assignLocation = vi.fn();
+    const github =
+      "https://github.com/login/oauth/authorize?client_id=Ov23liAm73tVoGvOqrt2&state=fresh";
+    const sso = vi.fn(async () => ({ error: null }));
+    const signIn = {
+      id: "sia_leftover",
+      status: "needs_identifier",
+      sso,
+      create: async function create() {
+        this.firstFactorVerification = {
+          status: "unverified",
+          external_verification_redirect_url: github,
+        };
+        return { error: null };
+      },
+    };
+    expect(signInNeedsForcedOAuthCreate(signIn)).toBe(true);
+    const result = await startGitHubOAuthSignIn(signIn, "", null, {
+      didNavigate: () => false,
+      assignLocation,
+      origin: "https://anima-protocol.com",
+      fetchImpl: async () => {
+        throw new Error("FAPI should not run when create already has a URL");
+      },
+    });
+    expect(sso).not.toHaveBeenCalled();
+    expect(assignLocation).toHaveBeenCalledWith(github);
+    expect(result.method).toBe("oauth_github.create");
+    expect(result.navigated).toBe(true);
+  });
+
+  it("assigns a GitHub URL from first-party FAPI when Future getters hide it", async () => {
+    const assignLocation = vi.fn();
+    const github =
+      "https://github.com/login/oauth/authorize?client_id=Ov23liAm73tVoGvOqrt2&state=fapi";
+    const result = await startGitHubOAuthSignIn(
+      {
+        id: "sia_opaque",
+        status: "needs_identifier",
+        sso: async () => ({ error: null }),
+        create: async () => ({ error: null }),
+      },
+      "",
+      null,
+      {
+        didNavigate: () => false,
+        assignLocation,
+        origin: "https://anima-protocol.com",
+        fetchImpl: async () => ({
+          ok: true,
+          json: async () => ({
+            response: {
+              first_factor_verification: {
+                external_verification_redirect_url: github,
+              },
+            },
+          }),
+        }),
+      },
+    );
+    expect(assignLocation).toHaveBeenCalledWith(github);
+    expect(result.navigated).toBe(true);
+  });
+
+  it("reads a GitHub URL from a FAPI sign_ins envelope", () => {
+    expect(
+      clerkOAuthProviderRedirectUrl({
+        response: {
+          first_factor_verification: {
+            external_verification_redirect_url:
+              "https://github.com/login/oauth/authorize?client_id=x",
+          },
+        },
+      }),
+    ).toBe("https://github.com/login/oauth/authorize?client_id=x");
+  });
+
+  it("never uses the old did-not-finish + allowlist copy for needs_identifier", () => {
+    const result = interpretGitHubSsoResult({ status: "needs_identifier" });
+    expect(result.error?.message).toBe(
+      githubOAuthNeedsIdentifierMessage("needs_identifier"),
+    );
+    expect(result.error?.message).not.toMatch(/did not finish \(/);
+    expect(result.error?.message).not.toMatch(/must allowlist/);
+  });
+
   it("creates a GitHub sign-in when sso skipped _create on an existing id", async () => {
     const assignLocation = vi.fn();
     const github =
@@ -554,6 +643,34 @@ describe("startGitHubOAuthSignIn", () => {
     });
     expect(assignLocation).toHaveBeenCalledWith(github);
     expect(result.navigated).toBe(true);
+  });
+
+  it("posts oauth_github to the first-party Clerk proxy", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        response: {
+          first_factor_verification: {
+            external_verification_redirect_url:
+              "https://github.com/login/oauth/authorize?client_id=x&state=1",
+          },
+        },
+      }),
+    }));
+    const href = await createGitHubOAuthViaFapi({
+      origin: "https://anima-protocol.com",
+      redirectCallbackUrl: "/sign-in/sso-callback",
+      redirectUrl: "/",
+      fetchImpl,
+    });
+    expect(href).toContain("github.com/login/oauth/authorize");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://anima-protocol.com/api/__clerk/v1/client/sign_ins?__clerk_api_version=2025-11-10",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
   });
 
   it("rejects non-GitHub provider URLs", () => {
