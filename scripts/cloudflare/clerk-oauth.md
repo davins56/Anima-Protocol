@@ -65,18 +65,22 @@ Same instance as the live `pk_live_` / `sk_live_` pair.
 | | `https://www.anima-protocol.com/sign-in/sso-callback` |
 | | `https://www.anima-protocol.com/sign-up/sso-callback` |
 
-Leave **Proxy URL** empty in the dashboard when using the custom FAPI
-domain. The Worker still proxies browser traffic through
-`/api/__clerk/`. This instance is **CNAME-only**:
-`frontend-api.clerk.dev` returns `host_invalid` even with a live secret
-and `Clerk-Proxy-Url`. Sending official path-proxy headers
-(`Clerk-Proxy-Url`, `X-Forwarded-Host`) to `clerk.anima-protocol.com`
-makes `GET /v1/client` return `host_invalid`.
+After deploy, Clerk Dashboard → Domains → **Set proxy** to
+`https://anima-protocol.com/api/__clerk` (trailing slash OK). The Worker
+forwards `/api/__clerk/v1/proxy-health` to
+`https://frontend-api.clerk.dev/v1/proxy-health` with `Clerk-Proxy-Url`,
+`Clerk-Secret-Key`, and `X-Forwarded-For`. Verify should pass. Cloudflare
+**Bot Fight Mode** may still block Clerk's checker (ops, not code).
+Sending official path-proxy headers (`Clerk-Proxy-Url`,
+`X-Forwarded-Host`) to an unrewritten `clerk.anima-protocol.com` hop
+makes `GET /v1/client` return `host_invalid` — those headers go only to
+`frontend-api.clerk.dev`.
 
 Worker-originated FAPI (`/v1/*` after clerk-js loads) must still send
 `Clerk-Secret-Key` and `X-Forwarded-For` (from `CF-Connecting-IP`, not
-the spoofable leftmost XFF hop). Do **not** attach the secret to
-`/npm/*` hops — those 307 to jsDelivr.
+the spoofable leftmost XFF hop; fallback `127.0.0.1` if the IP header
+is missing). Do **not** attach the secret to `/npm/*` hops — those 307
+to jsDelivr.
 
 `authorization_invalid` after **GitHub OAuth** is Clerk's CNAME
 **document** (address bar `clerk.anima-protocol.com`), not proxied

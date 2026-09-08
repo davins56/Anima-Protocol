@@ -107,6 +107,24 @@ export function usesOfficialClerkProxyProtocol(frontendApiBase: string): boolean
   return clerkFrontendApiHostFromBase(frontendApiBase) === "frontend-api.clerk.dev";
 }
 
+/**
+ * Official path-proxy headers after the Worker rewrite.
+ *
+ * Publishable keys often encode `clerk.anima-protocol.com`, so
+ * `usesOfficialClerkProxyProtocol(frontendApiBase)` is false. After
+ * `clerkCnameUpstreamUrl` the hop is `frontend-api.clerk.dev` and
+ * Dashboard `/v1/proxy-health` requires Clerk-Proxy-Url + Secret + XFF.
+ * Never enable for `/npm/*` or a still-unrewritten `clerk.*` hop.
+ */
+export function shouldUseOfficialClerkProxyHeaders(
+  upstreamPath: string,
+  upstreamHostname: string,
+): boolean {
+  return (
+    !isClerkNpmAssetPath(upstreamPath) && isClerkOwnedFapiHost(upstreamHostname)
+  );
+}
+
 export function resolveClerkUpstreamUrl(
   requestUrl: string | undefined,
   frontendApiBase: string = CLERK_FAPI,
@@ -542,6 +560,33 @@ export function clientIpFromHeaders(headers: IncomingHttpHeaders): string {
   );
 }
 
+/** Last-resort XFF so Dashboard proxy-health is never missing the required header. */
+export const CLERK_PROXY_XFF_FALLBACK = "127.0.0.1";
+
+export function socketRemoteAddress(
+  socket: { remoteAddress?: string } | undefined,
+): string {
+  const raw = socket?.remoteAddress?.trim() || "";
+  if (!raw) return "";
+  return raw.replace(/^::ffff:/i, "");
+}
+
+/**
+ * Always a non-empty X-Forwarded-For. Clerk's `/v1/proxy-health` OpenAPI
+ * marks the header required; omitting it fails Dashboard verify with
+ * InvalidProxyConfiguration even when Proxy-Url and Secret-Key are set.
+ */
+export function clerkForwardedFor(req: {
+  headers: IncomingHttpHeaders;
+  socket?: { remoteAddress?: string };
+}): string {
+  return (
+    clientIpFromHeaders(req.headers) ||
+    socketRemoteAddress(req.socket) ||
+    CLERK_PROXY_XFF_FALLBACK
+  );
+}
+
 export type ClerkUpstreamHeaderOptions = {
   /**
    * Official path-proxy protocol (frontend-api.clerk.dev + dashboard Proxy URL).
@@ -561,7 +606,11 @@ export type ClerkUpstreamHeaderOptions = {
 };
 
 export function buildClerkUpstreamHeaders(
-  req: { headers: IncomingHttpHeaders; method?: string },
+  req: {
+    headers: IncomingHttpHeaders;
+    method?: string;
+    socket?: { remoteAddress?: string };
+  },
   secretKey: string,
   options: ClerkUpstreamHeaderOptions = {},
 ): Headers {
@@ -599,10 +648,7 @@ export function buildClerkUpstreamHeaders(
     headers.set("Origin", origin);
   }
 
-  const clientIp = clientIpFromHeaders(req.headers);
-  if (clientIp) {
-    headers.set("X-Forwarded-For", clientIp);
-  }
+  headers.set("X-Forwarded-For", clerkForwardedFor(req));
 
   const refererHeader = req.headers.referer;
   const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
@@ -739,10 +785,10 @@ export async function proxyClerkWithFetch(
   let upstreamUrl = clerkCnameUpstreamUrl(
     resolveClerkUpstreamUrl(upstreamPath, frontendApiBase),
   );
-  const officialProxy =
-    !isClerkNpmAssetPath(upstreamPath) &&
-    (usesOfficialClerkProxyProtocol(frontendApiBase) ||
-      isClerkOwnedFapiHost(upstreamUrl.hostname));
+  const officialProxy = shouldUseOfficialClerkProxyHeaders(
+    upstreamPath,
+    upstreamUrl.hostname,
+  );
   const authorizeUpstream =
     shouldAuthorizeClerkUpstream(upstreamPath) ||
     (officialProxy &&
