@@ -10,6 +10,14 @@ import {
   isClerkOwnedHostname,
   isLocalDevHost,
 } from "./clerkProxyHosts";
+import { withClerkCnameResolveOverride } from "../lib/clerkFrontendFetch";
+import {
+  extractClientTokenFromCookieHeader,
+  extractClientTokenFromSetCookies,
+  extractGitHubAuthorizeUrlFromSignInPayload,
+  extractGitHubOAuthState,
+  rememberGitHubOAuthClientState,
+} from "../lib/clerkOAuthStateStore";
 
 const CLERK_FAPI = "https://frontend-api.clerk.dev";
 /** Public production host — www 301s here. Dashboard proxy/CNAME must match apex. */
@@ -761,13 +769,16 @@ export async function proxyClerkWithFetch(
     }
   }
 
-  let upstream = await fetchImpl(upstreamUrl, {
-    method,
-    headers,
-    body: payloadBody,
-    redirect: "manual",
-    signal: upstreamAbortSignal(),
-  });
+  let upstream = await fetchImpl(
+    upstreamUrl,
+    withClerkCnameResolveOverride({
+      method,
+      headers,
+      body: payloadBody,
+      redirect: "manual",
+      signal: upstreamAbortSignal(),
+    }),
+  );
 
   // Clerk serves `/npm/@clerk/clerk-js@6/...` as 307 → `@6.31.0`. Script tags
   // (and our connectivity probe) need 200 JS, not a Location hop.
@@ -819,7 +830,49 @@ export async function proxyClerkWithFetch(
   });
 
   const payload = Buffer.from(await upstream.arrayBuffer());
+  await stashGitHubOAuthClientFromSignIns(
+    upstreamPath,
+    payload,
+    headers.get("cookie") ||
+      (Array.isArray(req.headers.cookie) ? req.headers.cookie[0] : req.headers.cookie),
+    collectSetCookies(upstream),
+  );
   res.end(payload);
+}
+
+export function isClerkSignInsPath(requestUrl: string | undefined): boolean {
+  if (!requestUrl) return false;
+  try {
+    const path =
+      new URL(requestUrl, "https://anima-protocol.com").pathname.split("?")[0] ||
+      "/";
+    return path === "/v1/client/sign_ins" || path.startsWith("/v1/client/sign_ins/");
+  } catch {
+    return /\/v1\/client\/sign_ins(?:\/|\?|#|$)/.test(requestUrl);
+  }
+}
+
+async function stashGitHubOAuthClientFromSignIns(
+  requestUrl: string | undefined,
+  payload: Buffer,
+  requestCookie: string | undefined,
+  setCookies: string[],
+): Promise<void> {
+  if (!isClerkSignInsPath(requestUrl)) return;
+  try {
+    const json: unknown = JSON.parse(payload.toString("utf8"));
+    const authorize = extractGitHubAuthorizeUrlFromSignInPayload(json);
+    const state = extractGitHubOAuthState(authorize);
+    const token =
+      extractClientTokenFromSetCookies(setCookies) ||
+      extractClientTokenFromCookieHeader(requestCookie);
+    if (state && token) {
+      await rememberGitHubOAuthClientState(state, token);
+    }
+  } catch {
+    // Non-JSON or Cache API unavailable — GitHub can still succeed when
+    // Safari sends Domain=apex `__client` after the CNAME gateway cutover.
+  }
 }
 
 export async function handleClerkProxyRequest(
