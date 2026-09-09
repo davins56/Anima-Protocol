@@ -306,6 +306,9 @@ import {
   getProviderChain,
   usesFreeTierOpenBudget,
   isAnimaCustomMode,
+  isWorkersAiHoppableError,
+  isWorkersAiNeuronQuotaError,
+  shouldTryNextProvider,
   isProviderAuthError,
   isProviderConnectionError,
   isProviderQuotaError,
@@ -387,6 +390,40 @@ describe("isProviderConnectionError", () => {
     expect(() => isProviderConnectionError({ code: -111, type: {}, message: { errno: -111 } })).not.toThrow();
     expect(isProviderConnectionError({ code: -111, type: {} })).toBe(false);
     expect(isProviderConnectionError({ code: "ECONNREFUSED", type: 1 })).toBe(true);
+  });
+});
+
+describe("shouldTryNextProvider Workers AI 4006", () => {
+  const neuronQuota = {
+    code: 4006,
+    message: "You have used up your daily free allocation of 10,000 neurons",
+  };
+
+  it("detects 4006 / neuron quota / daily free allocation", () => {
+    expect(isWorkersAiNeuronQuotaError(neuronQuota)).toBe(true);
+    expect(
+      isWorkersAiNeuronQuotaError(
+        new Error("DeepSeek on Workers AI failed: 4006 daily free allocation exhausted"),
+      ),
+    ).toBe(true);
+    expect(
+      isWorkersAiNeuronQuotaError({
+        success: false,
+        errors: [{ code: 4006, message: "Workers AI neurons exhausted" }],
+      }),
+    ).toBe(true);
+    expect(isWorkersAiNeuronQuotaError({ message: "3006 inference failed" })).toBe(false);
+  });
+
+  it("hops from Workers AI to OpenRouter on 4006 when a next provider exists", () => {
+    expect(isWorkersAiHoppableError(neuronQuota)).toBe(true);
+    expect(shouldTryNextProvider("workersai", neuronQuota, true)).toBe(true);
+    expect(shouldTryNextProvider("workersai", neuronQuota, false)).toBe(false);
+  });
+
+  it("does not let local auth/quota errors hop even when fallback is configured", () => {
+    expect(shouldTryNextProvider("local", { status: 401, message: "401" }, true)).toBe(false);
+    expect(shouldTryNextProvider("local", { status: 429, message: "quota" }, true)).toBe(false);
   });
 });
 
@@ -832,6 +869,7 @@ describe("getProviderChain", () => {
     delete process.env.ANIMA_MINIMAX_API_KEY;
     delete process.env.DEEPSHI_API_KEY;
     delete process.env.ANIMA_DEEPSHI_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
   });
 
   it("uses the custom LLM alone when both local and OpenRouter are configured", () => {
@@ -841,7 +879,7 @@ describe("getProviderChain", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
     expect(preferCustomLlmOnly()).toBe(true);
     expect(getProviderChain()).toEqual(["local"]);
-    expect(allowOpenRouterFallback()).toBe(false);
+    expect(allowOpenRouterFallback()).toBe(true);
   });
 
   it("keeps local-only when ANIMA_LLM_PROVIDER is unset (durable default)", () => {
@@ -875,7 +913,7 @@ describe("getProviderChain", () => {
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     process.env.ANIMA_OPENROUTER_FREE = "true";
     expect(getProviderChain()).toEqual([]);
-    expect(allowOpenRouterFallback()).toBe(false);
+    expect(allowOpenRouterFallback()).toBe(true);
   });
 
   it("fails closed when ANIMA_LLM_PROVIDER pins MiniMax or Deepshi and local is missing", () => {
@@ -920,6 +958,48 @@ describe("getProviderChain", () => {
     process.env.MINIMAX_API_KEY = "minimax-test";
     expect(getProviderChain()).toEqual([]);
   });
+
+  it("appends OpenRouter after Workers AI when ANIMA_OPENROUTER_FALLBACK is truthy", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    setAiBinding({
+      run: async () => ({ response: "ok" }),
+    });
+    expect(allowOpenRouterFallback()).toBe(true);
+    expect(getProviderChain()).toEqual(["workersai", "openrouter"]);
+    expect(getProviderChain()[0]).toBe("workersai");
+  });
+
+  it("accepts 1|true|yes for ANIMA_OPENROUTER_FALLBACK and ignores other values", () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    setAiBinding({
+      run: async () => ({ response: "ok" }),
+    });
+    for (const value of ["1", "true", "yes", "TRUE", "Yes"]) {
+      process.env.ANIMA_OPENROUTER_FALLBACK = value;
+      expect(allowOpenRouterFallback()).toBe(true);
+      expect(getProviderChain()).toEqual(["workersai", "openrouter"]);
+    }
+    for (const value of ["false", "0", "no", "off", ""]) {
+      process.env.ANIMA_OPENROUTER_FALLBACK = value;
+      expect(allowOpenRouterFallback()).toBe(false);
+      expect(getProviderChain()).toEqual(["workersai"]);
+    }
+  });
+
+  it("does not append OpenRouter after Workers AI when the key is missing", () => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    setAiBinding({
+      run: async () => ({ response: "ok" }),
+    });
+    expect(allowOpenRouterFallback()).toBe(true);
+    expect(getProviderChain()).toEqual(["workersai"]);
+  });
 });
 
 describe("resolveLocalModel", () => {
@@ -947,6 +1027,7 @@ describe("getLlmRoutingStatus", () => {
     resetAiBindingForTests();
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
     resetOpenRouterCreditFallbackForTests();
   });
 
@@ -1039,6 +1120,7 @@ describe("getLlmRoutingStatus", () => {
       quotaHint:
         "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover",
     });
+    expect(status.openRouterFallback).toBe(false);
     expect(status.note).toMatch(/Workers AI/i);
     expect(status.note).toMatch(/deepseek-gateway/i);
     expect(status.note).toMatch(/does not use Fly\.io Ollama/i);
@@ -1050,6 +1132,31 @@ describe("getLlmRoutingStatus", () => {
     expect(status.customOnly).toBe(true);
     expect(status.openRouterFallback).toBe(false);
   });
+
+  it("reports openRouterFallback and keeps Workers AI preferred when fallback is on", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    setAiBinding({
+      run: async () => ({ response: "ok" }),
+    });
+    const status = getLlmRoutingStatus();
+    expect(status.status).toBe("ok");
+    expect(status.preferred).toBe("workersai");
+    expect(status.brand).toBe("workersai");
+    expect(status.customOnly).toBe(true);
+    expect(status.openRouterFallback).toBe(true);
+    expect(status.chain).toEqual(["workersai", "openrouter"]);
+    expect(status.openrouter.isFreeTier).toBe(true);
+    expect(status.workersai.quotaCode).toBe(4006);
+    expect(status.workersai.quotaHint).toMatch(/Workers AI daily free quota exhausted/);
+    expect(status.note).toMatch(/Workers AI/i);
+    expect(status.note).toMatch(/Preferred provider stays workersai/i);
+    expect(status.note).toMatch(/temporary fallback after Workers AI/i);
+    expect(status.note).toMatch(/4006/i);
+    expect(status.note).toMatch(/minimax\/minimax-m2\.7:free/i);
+  });
 });
 
 describe("createChatStreamWithFailover", () => {
@@ -1060,6 +1167,7 @@ describe("createChatStreamWithFailover", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
     createMock.mockReset();
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
@@ -1463,6 +1571,60 @@ describe("createChatStreamWithFailover", () => {
     );
     expect(createMock).not.toHaveBeenCalled();
   });
+
+  it("hops to free-tier OpenRouter when Workers AI returns neuron quota 4006", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    setAiBinding({
+      run: async () => {
+        throw Object.assign(
+          new Error("4006: You have used up your daily free allocation of 10,000 neurons"),
+          { code: 4006 },
+        );
+      },
+    });
+    createMock.mockResolvedValueOnce(fakeStream("openrouter-free"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("openrouter");
+    expect(result.brand).toBe("openrouter");
+    expect(result.failedOver).toBe(true);
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hops to OpenRouter when Workers AI returns a 4006 error object at stream open", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    setAiBinding({
+      run: async () => ({
+        success: false,
+        errors: [
+          {
+            code: 4006,
+            message: "You have used up your daily free allocation of 10,000 neurons",
+          },
+        ],
+      }),
+    });
+    createMock.mockResolvedValueOnce(fakeStream("openrouter-object"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("openrouter");
+    expect(result.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("createChatCompletionWithFailover", () => {
@@ -1473,6 +1635,7 @@ describe("createChatCompletionWithFailover", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
     createMock.mockReset();
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
@@ -1533,6 +1696,35 @@ describe("createChatCompletionWithFailover", () => {
     expect(createMock).not.toHaveBeenCalled();
     expect(run).toHaveBeenCalledTimes(1);
   });
+
+  it("completes via OpenRouter after Workers AI neuron quota 4006", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    setAiBinding({
+      run: async () => ({
+        success: false,
+        errors: [
+          {
+            code: 4006,
+            message: "You have used up your daily free allocation of 10,000 neurons",
+          },
+        ],
+      }),
+    });
+    createMock.mockResolvedValueOnce(fakeCompletion("openrouter reply"));
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.content).toBe("openrouter reply");
+    expect(result.provider).toBe("openrouter");
+    expect(result.failedOver).toBe(true);
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("probeLlmProviders", () => {
@@ -1542,6 +1734,7 @@ describe("probeLlmProviders", () => {
     process.env = { ...SAVED };
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_FALLBACK;
     createMock.mockReset();
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();

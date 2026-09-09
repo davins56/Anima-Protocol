@@ -159,6 +159,8 @@ describe("Cloudflare wrangler config", () => {
     expect(source).toMatch(/MINIMAX_API_KEY stays a classic Worker secret/);
     expect(source).toMatch(/"ANIMA_LLM_PROVIDER": "custom"/);
     expect(source).not.toMatch(/"ANIMA_LLM_PROVIDER": "minimax"/);
+    expect(source).toMatch(/"ANIMA_OPENROUTER_FALLBACK": "true"/);
+    expect(source).toMatch(/Temporary until Workers Paid \/ quota recovers/);
   });
 
   it("does not reuse a vars name as a Secrets Store binding", () => {
@@ -181,6 +183,7 @@ describe("Cloudflare wrangler config", () => {
     expect(vars.ANIMA_OLLAMA_MODEL_STANDARD).toBe("anima-chat");
     expect(vars.ANIMA_LLM_PROVIDER).toBe("custom");
     expect(vars.ANIMA_OPENROUTER_FREE).toBe("true");
+    expect(vars.ANIMA_OPENROUTER_FALLBACK).toBe("true");
     // Public tunnel URL stays out of committed vars. Bind it only via
     // Secrets Store (see wrangler.jsonc runbook).
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_BASE_URL");
@@ -192,6 +195,7 @@ describe("Cloudflare wrangler config", () => {
         "ANIMA_LLM_PROVIDER",
         "ANIMA_LOCAL_LLM_BACKEND",
         "ANIMA_OLLAMA_MODEL_STANDARD",
+        "ANIMA_OPENROUTER_FALLBACK",
         "ANIMA_OPENROUTER_FREE",
         "ANIMA_RUNTIME",
         "NODE_ENV",
