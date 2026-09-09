@@ -31,6 +31,18 @@ describe("Cloudflare Worker module init", () => {
     }
   });
 
+  it("wires runWithDbRequestScope from @workspace/db on every request", () => {
+    const appSource = readFileSync(
+      path.join(repoRoot, "artifacts/api-server/src/app.ts"),
+      "utf8",
+    );
+    expect(appSource).toMatch(
+      /import\s*\{[^}]*runWithDbRequestScope[^}]*\}\s*from\s*["']@workspace\/db["']/,
+    );
+    expect(appSource).toMatch(/runWithDbRequestScope\(\(\)\s*=>\s*next\(\)\)/);
+    expect(appSource).not.toMatch(/const runWithDbRequestScope = \(next/);
+  });
+
   it("imports the Express app without DATABASE_URL or CLERK_SECRET_KEY", async () => {
     delete process.env.DATABASE_URL;
     delete process.env.CLERK_SECRET_KEY;
