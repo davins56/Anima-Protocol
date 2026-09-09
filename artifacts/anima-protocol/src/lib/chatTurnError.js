@@ -10,6 +10,8 @@ const SESSION_MISSING_RE = /session not found/i;
 const WORKERS_AI_RE = /workers ai|deepseek/i;
 const WORKERS_AI_4006_RE =
   /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
+const STORE_UNREACHABLE_RE =
+  /companion store is unreachable|server sent an unexpected response/i;
 
 const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
@@ -58,6 +60,10 @@ export function chatTurnErrorMessage(err) {
   }
   if (WORKERS_AI_RE.test(raw)) {
     return raw;
+  }
+  // HTML/non-JSON store bodies during send must not mask the chat failure.
+  if (err?.transport === true || STORE_UNREACHABLE_RE.test(raw)) {
+    return "The companion could not reply. Please try again.";
   }
   // Generic 400 / backend request failures must show friendly user copy.
   if (GENERIC_HTTP_400_RE.test(raw)) {
