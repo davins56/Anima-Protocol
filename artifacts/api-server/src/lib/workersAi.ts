@@ -124,23 +124,35 @@ export function formatWorkersAiError(err: unknown): string {
   return `DeepSeek on Workers AI failed: ${detail}`;
 }
 
+function withWorkersAiErrorCode(code: unknown, message: string): string {
+  if (code == null || code === "") return message;
+  const codeText = String(code).trim();
+  if (!codeText) return message;
+  return message.includes(codeText) ? message : `${codeText}: ${message}`;
+}
+
 export function workersAiErrorMessage(response: unknown): string | null {
   if (!response || typeof response !== "object") return null;
   const rec = response as Record<string, unknown>;
   if (rec.success === false && Array.isArray(rec.errors) && rec.errors[0]) {
     const first = rec.errors[0] as Record<string, unknown>;
     const message = String(first.message || first.detail || "").trim();
-    return message || "Workers AI request failed";
+    return withWorkersAiErrorCode(first.code, message || "Workers AI request failed");
   }
   if (rec.error != null) {
     if (typeof rec.error === "string" && rec.error.trim()) return rec.error.trim();
     if (typeof rec.error === "object") {
       const err = rec.error as Record<string, unknown>;
       const message = String(err.message || err.detail || "").trim();
-      return message || "Workers AI request failed";
+      return withWorkersAiErrorCode(err.code, message || "Workers AI request failed");
     }
   }
   return null;
+}
+
+/** Alias kept for failover hop tests — same detector as isWorkersAiFreeQuotaError. */
+export function isWorkersAiNeuronQuotaError(err: unknown): boolean {
+  return isWorkersAiFreeQuotaError(err);
 }
 
 function throwIfWorkersAiError(response: unknown): void {
@@ -452,9 +464,21 @@ export async function streamWorkersAi(opts: {
       WORKERS_AI_CHAT_MODEL,
       runOptions(opts, true),
     );
+    // Fail at stream-open so llmFailover can hop (e.g. 4006 neuron quota)
+    // instead of returning a "successful" stream that throws on first read.
+    if (isWorkersAiFreeQuotaError(response)) {
+      throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
+    }
+    const errorMessage = workersAiErrorMessage(response);
+    if (errorMessage) {
+      throw new WorkersAiRequestError(formatWorkersAiError(errorMessage));
+    }
     return withEmptyStreamFallback(iterateWorkersAiStream(response), opts);
   } catch (err) {
     if (err instanceof WorkersAiRequestError) throw err;
+    if (isWorkersAiFreeQuotaError(err)) {
+      throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
+    }
     const text = await completeWorkersAi(opts).catch(() => "");
     if (text.trim()) return iterateWorkersAiStream({ response: text });
     throw new WorkersAiRequestError(formatWorkersAiError(err));

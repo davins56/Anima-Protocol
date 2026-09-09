@@ -1,8 +1,9 @@
 // Chat completion: Cloudflare Workers AI (DeepSeek via AI Gateway) when the
 // Worker AI binding is present; otherwise the self-hosted Anima LLM
-// (vLLM / Ollama / llama.cpp, OpenAI-compatible). MiniMax, Deepshi,
-// OpenRouter, Claude, and OpenAI are never used for chat — there is no
-// cloud failover to those providers, and Fly.io Ollama is not required.
+// (vLLM / Ollama / llama.cpp, OpenAI-compatible). MiniMax / Deepshi stay
+// out of the chat chain. OpenRouter may follow Workers AI only when
+// ANIMA_OPENROUTER_FALLBACK is explicitly truthy (temporary hop for
+// Workers AI 4006 / neuron quota). Fly.io Ollama is not required.
 //
 // Local endpoint: ANIMA_LOCAL_LLM_BASE_URL (or VLLM_BASE_URL / OLLAMA_BASE_URL).
 // Image generate/edit may still use Gemini / OpenAI on separate routes.
@@ -59,6 +60,7 @@ import {
   formatWorkersAiError,
   hasWorkersAiBinding,
   isWorkersAiFreeQuotaError,
+  isWorkersAiNeuronQuotaError,
   streamWorkersAi,
   WORKERS_AI_CHAT_MODEL,
   WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
@@ -67,6 +69,8 @@ import {
   WORKERS_AI_GATEWAY_ID,
   WorkersAiRequestError,
 } from "./workersAi";
+
+export { isWorkersAiNeuronQuotaError } from "./workersAi";
 
 const CLOUD_FLAGSHIP_SETUP_HINT =
   "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. " +
@@ -153,9 +157,10 @@ export interface LlmRoutingStatus {
    */
   customOnly: boolean;
   /**
-   * True when OpenRouter may run after the custom LLM (explicit
-   * ANIMA_OPENROUTER_FALLBACK=true). Default is false so a configured custom
-   * LLM is never skipped for OpenRouter quota.
+   * True when ANIMA_OPENROUTER_FALLBACK is 1|true|yes. Production may then
+   * append OpenRouter after Workers AI (DeepSeek stays preferred). Local-only
+   * chains stay local — this flag does not reopen MiniMax/Deepshi or skip
+   * a configured custom LLM.
    */
   openRouterFallback: boolean;
   note: string;
@@ -259,10 +264,12 @@ export function preferDeepshiOnly(): boolean {
 }
 
 /**
- * Cloud chat hops are removed. ANIMA_OPENROUTER_FALLBACK cannot reopen them.
+ * Temporary OpenRouter hop after Workers AI when ANIMA_OPENROUTER_FALLBACK
+ * is 1|true|yes. Does not reopen MiniMax/Deepshi or skip a local-only chain.
  */
 export function allowOpenRouterFallback(): boolean {
-  return false;
+  const raw = (process.env.ANIMA_OPENROUTER_FALLBACK || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
 }
 
 /** True when the first usable chat provider is the self-hosted Anima LLM. */
@@ -364,13 +371,21 @@ function localUsable(): boolean {
 
 /**
  * Ordered chat providers. Production Worker chat is Workers AI (DeepSeek
- * via `deepseek-gateway`) whenever `env.AI` is bound. Local Ollama/vLLM is
- * only used when that binding is missing (Node/dev). MiniMax / Deepshi /
- * OpenRouter never fill the gap, even when keys or ANIMA_LLM_PROVIDER=
- * minimax|deepshi are set. Do not set up Fly.io Ollama for production chat.
+ * via `deepseek-gateway`) whenever `env.AI` is bound. When
+ * ANIMA_OPENROUTER_FALLBACK is truthy and an OpenRouter key is present,
+ * OpenRouter is appended after Workers AI so hoppable DeepSeek failures
+ * (especially error 4006 / neuron quota) can fail over. Local Ollama/vLLM
+ * is only used when that binding is missing (Node/dev). MiniMax / Deepshi
+ * never fill the gap. Do not set up Fly.io Ollama for production chat.
  */
 export function getProviderChain(): LlmProviderId[] {
-  if (hasWorkersAiBinding()) return ["workersai"];
+  if (hasWorkersAiBinding()) {
+    const chain: LlmProviderId[] = ["workersai"];
+    if (allowOpenRouterFallback() && hasOpenRouterKey()) {
+      chain.push("openrouter");
+    }
+    return chain;
+  }
   if (localUsable()) return ["local"];
   return [];
 }
@@ -380,18 +395,24 @@ export function getProviderChain(): LlmProviderId[] {
  * from that host must surface. Silently skipping them burns OpenRouter quota
  * and looks like the custom LLM was never tried.
  *
+ * Workers AI → OpenRouter on hoppable DeepSeek failures, especially error
+ * 4006 / daily free neuron allocation. Local stays connection-only.
+ *
  * OpenRouter → MiniMax on hoppable provider blips (400/429/5xx) and on
  * OpenRouter ZDR / data-policy / guardrail exclusion (those bind only the
  * OpenRouter account; MiniMax Global is not affected). Daily/minute free
  * caps still stop the chain — another provider cannot raise that quota.
  */
-function shouldTryNextProvider(
+export function shouldTryNextProvider(
   provider: LlmProviderId,
   err: unknown,
   hasNext: boolean,
 ): boolean {
   if (!hasNext) return false;
   if (provider === "local" && !isProviderConnectionError(err)) return false;
+  if (provider === "workersai") {
+    return isWorkersAiHoppableError(err);
+  }
   if (provider === "openrouter") {
     if (isOpenRouterZdrOrDataPolicyError(err)) return true;
     if (isOpenRouterAccountPolicyError(err)) return false;
@@ -399,6 +420,17 @@ function shouldTryNextProvider(
     return shouldTryNextOpenRouterFreeModel(err, model);
   }
   return true;
+}
+
+/** Workers AI failures that may hop to OpenRouter when it is next in chain. */
+export function isWorkersAiHoppableError(err: unknown): boolean {
+  if (isWorkersAiFreeQuotaError(err) || isWorkersAiNeuronQuotaError(err)) return true;
+  if (isProviderConnectionError(err)) return true;
+  if (isProviderQuotaError(err)) return true;
+  if (isOpenRouterTransientGatewayError(err)) return true;
+  // Other inference/gateway failures (3006, overloaded, empty reply) are
+  // hoppable while ANIMA_OPENROUTER_FALLBACK is the temporary escape.
+  return Boolean(err);
 }
 
 function brandFor(provider: LlmProviderId): LlmBrand {
@@ -1171,6 +1203,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
           `Self-hosted URL at host=${localSummary.host ?? "?"} is bound but unused while the Workers AI binding is present.`,
         );
       }
+      if (openRouterFallback && !chain.includes("openrouter")) {
+        noteParts.push(
+          "ANIMA_OPENROUTER_FALLBACK is on but OPENROUTER_API_KEY is missing — cannot hop after Workers AI.",
+        );
+      }
     }
     if (chain.includes("local")) {
       noteParts.push(
@@ -1212,11 +1249,13 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     }
     if (chain.includes("openrouter")) {
       const openRouterRole =
-        chain[0] === "local"
-          ? " (fallback after local connection failure)."
-          : chain[0] === "minimax"
-            ? " (fallback after MiniMax)."
-            : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset or unusable).";
+        chain[0] === "workersai"
+          ? " (temporary fallback after Workers AI / DeepSeek, including neuron quota 4006)."
+          : chain[0] === "local"
+            ? " (fallback after local connection failure)."
+            : chain[0] === "minimax"
+              ? " (fallback after MiniMax)."
+              : " (primary — custom LLM not configured: ANIMA_LOCAL_LLM_BASE_URL is unset or unusable).";
       noteParts.push(
         `OpenRouter ${isFreeTier ? "free-tier" : "uncensored"} model=${openRouterModel.model}` +
           openRouterRole +
@@ -1813,6 +1852,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
 
   let lastErr: unknown;
   let triedLocal = false;
+  let triedWorkersAi = false;
   let triedOpenRouter = false;
   let localConnectionFailed = false;
   let openRouterZdrBlocked = false;
@@ -1820,6 +1860,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
   for (const provider of chain) {
     try {
       if (provider === "workersai") {
+        triedWorkersAi = true;
         const stream = await streamWorkersAi({
           messages: req.messages,
           maxTokens: req.maxTokens,
@@ -1871,7 +1912,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
 
       if (provider === "openrouter") {
         triedOpenRouter = true;
-        return await runOpenRouterStream(req, triedLocal);
+        return await runOpenRouterStream(req, triedLocal || triedWorkersAi);
       }
 
       throw new Error(`Unsupported chat provider: ${provider}`);
@@ -1921,6 +1962,7 @@ export async function createChatCompletionWithFailover(
 
   let lastErr: unknown;
   let triedLocal = false;
+  let triedWorkersAi = false;
   let triedOpenRouter = false;
   let localConnectionFailed = false;
   let openRouterZdrBlocked = false;
@@ -1928,6 +1970,7 @@ export async function createChatCompletionWithFailover(
   for (const provider of chain) {
     try {
       if (provider === "workersai") {
+        triedWorkersAi = true;
         const content = await completeWorkersAi({
           messages: req.messages,
           maxTokens: req.maxTokens,
@@ -1984,7 +2027,7 @@ export async function createChatCompletionWithFailover(
 
       if (provider === "openrouter") {
         triedOpenRouter = true;
-        return await runOpenRouterCompletion(req, triedLocal);
+        return await runOpenRouterCompletion(req, triedLocal || triedWorkersAi);
       }
 
       throw new Error(`Unsupported chat provider: ${provider}`);
