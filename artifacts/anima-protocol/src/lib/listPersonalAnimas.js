@@ -1,5 +1,6 @@
-import { base44, waitForStoreAuth } from "@/api/base44Client";
-import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
+import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
+
+export { awaitCompanionStoreAuth };
 import {
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
@@ -100,21 +101,6 @@ async function listByNameSearch(entity, name, limit) {
   return base44.entities[entity]
     .list("-created_date", limit, { search: { name } })
     .catch(() => []);
-}
-
-/**
- * Wait for a Clerk store token before companion lists.
- *
- * Shared root for Customise Anima and chat roster: queryEntity returns []
- * when getToken() is still minting. loadRosterCharacters / Init also call
- * this before Character.list so a late Clerk mint is not an empty account.
- */
-export async function awaitCompanionStoreAuth() {
-  try {
-    return await waitForStoreAuth(STORE_AUTH_WAIT_MS);
-  } catch {
-    return null;
-  }
 }
 
 /**

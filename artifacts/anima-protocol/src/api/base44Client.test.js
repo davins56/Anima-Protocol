@@ -7,6 +7,7 @@ import {
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
   STORE_LIST_RETRY_LIMIT,
+  STORE_LIST_TIMEOUT_MS,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from "./base44Client";
 import {
@@ -305,6 +306,97 @@ describe("ChatSession store wrapper", () => {
     expect(timeoutSpy).toHaveBeenNthCalledWith(1, STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(timeoutSpy).toHaveBeenNthCalledWith(2, STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(signals[0]).not.toBe(signals[1]);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("does not arm the ChatSession create abort until Clerk mint finishes", async () => {
+    clearStoreCache();
+    let token = null;
+    setAuthTokenGetter(() => token);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    let fetchStarted = false;
+    global.fetch = vi.fn(async () => {
+      fetchStarted = true;
+      return Response.json({ id: "sess-1", title: "T'Challa" }, { status: 201 });
+    });
+
+    const pending = base44.entities.ChatSession.create({ title: "T'Challa" });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(timeoutSpy).not.toHaveBeenCalled();
+    expect(fetchStarted).toBe(false);
+
+    token = "live-jwt";
+    const session = await pending;
+    expect(session.id).toBe("sess-1");
+    expect(fetchStarted).toBe(true);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_SESSION_CREATE_TIMEOUT_MS);
+  });
+
+  it("refreshes auth outside the create abort window on 401 then uses a fresh budget", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    const signals = [];
+    let sessionPosts = 0;
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        signals.push(options.signal);
+        if (sessionPosts === 1) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+          });
+        }
+        return Response.json({ id: "sess-auth", title: "Recovered" }, { status: 201 });
+      }
+      return Response.json({});
+    });
+
+    const session = await base44.entities.ChatSession.create({ title: "Recovered" });
+    expect(session.id).toBe("sess-auth");
+    expect(sessionPosts).toBe(2);
+    expect(timeoutSpy).toHaveBeenCalledTimes(2);
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(1, STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(2, STORE_SESSION_CREATE_TIMEOUT_MS);
+  });
+});
+
+describe("Character roster list budget", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+    clearStoreCache();
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("uses the roster list budget, not the 8s write cap", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "char-1", name: "Korra" }]),
+    );
+
+    const rows = await base44.entities.Character.list("-created_date", 10, {
+      _bootstrapInternal: true,
+    });
+    expect(rows).toEqual([{ id: "char-1", name: "Korra" }]);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
   });
 });

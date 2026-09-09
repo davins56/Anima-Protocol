@@ -106,6 +106,74 @@ export function isStoreReadUnavailable(err) {
  * Writes that should get one extra attempt: client abort/timeout, 503 reset,
  * and transient Hyperdrive connection errors. Auth failures must not retry.
  */
+/**
+ * Client abort / storeFetch timeout. Distinct from a Hyperdrive/Postgres
+ * `reason: "timeout"` which is a database verdict (isStoreDatabaseError).
+ */
+export function isStoreTimeoutError(err) {
+  if (!err || typeof err !== "object") return false;
+  if (normalise(err.code) === "timeout") return true;
+  if (err.name === "TimeoutError" || err.name === "AbortError") return true;
+  // upsertCharacters used to wrap storeFetch timeouts as a plain Error and
+  // drop `code`, so Init showed DEFAULT_STORE_TIMEOUT_MESSAGE verbatim.
+  return /took too long to respond/i.test(String(err.message || ""));
+}
+
+export function isBrowserOffline() {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+/**
+ * True network-down, not a store timeout whose copy says "check your connection".
+ */
+export function isStoreOfflineError(err) {
+  if (isBrowserOffline()) return true;
+  if (!err || typeof err !== "object") return false;
+  if (normalise(err.code) === "offline" || normalise(err.code) === "network") {
+    return true;
+  }
+  return /network request failed|failed to fetch|net::err_/i.test(
+    String(err.message || ""),
+  );
+}
+
+/**
+ * Why the Character Library fell back to bundled starters.
+ * Timeout + network up must not be labeled OFFLINE.
+ */
+export function classifyRosterFallback(err) {
+  if (isStoreOfflineError(err) || isBrowserOffline()) return "offline";
+  if (isStoreTimeoutError(err)) return "timeout";
+  if (isStoreDatabaseError(err)) return "database";
+  if (err) return "unavailable";
+  return null;
+}
+
+export function rosterFallbackLabel(count, kind) {
+  const n = Number.isFinite(count) ? count : 0;
+  if (kind === "timeout") return `${n} bundled starters (sync delayed)`;
+  if (kind === "offline") return `${n} bundled starters (offline)`;
+  if (kind === "database" || kind === "unavailable") {
+    return `${n} bundled starters (unavailable)`;
+  }
+  return `${n} bundled starters`;
+}
+
+export function rosterFallbackMessage(err, kind, bundledCount) {
+  const message = err?.message || "Could not load account characters.";
+  const n = Number.isFinite(bundledCount) ? bundledCount : 0;
+  if (kind === "timeout") {
+    return `${message} Showing starter characters (${n}) — the store is still reachable; retry sync. This is not offline.`;
+  }
+  if (kind === "offline") {
+    return `${message} Showing bundled starters (${n}) — you appear to be offline.`;
+  }
+  if (kind === "database") {
+    return `${message} Showing starter characters (${n}) — not saved to your account until the database is reachable.`;
+  }
+  return `${message} Showing starter characters (${n}) — not saved to your account until the store can be reached again.`;
+}
+
 export function isRetryableStoreWriteError(err) {
   if (!err || typeof err !== "object") return false;
   const status = Number(err.status);

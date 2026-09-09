@@ -20,6 +20,7 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/api/base44Client", () => ({
+  awaitCompanionStoreAuth: vi.fn().mockResolvedValue("tok"),
   base44: {
     entities: {
       ChatSession: {

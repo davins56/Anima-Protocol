@@ -79,6 +79,12 @@ describe("authBridge getToken", () => {
     expect(getter).toHaveBeenCalledWith({ skipCache: true });
   });
 
+  it("waitForStoreAuth fails immediately when no getter is registered", async () => {
+    await expect(waitForStoreAuth(8000)).rejects.toThrow(
+      "Store auth token not available",
+    );
+  });
+
   it("waitForStoreAuth throws when getToken never settles", async () => {
     setAuthTokenGetter(() => new Promise(() => {}));
     await expect(waitForStoreAuth(80)).rejects.toThrow(
@@ -118,5 +124,22 @@ describe("authBridge getToken", () => {
   it("authHeaders omits Authorization when signed out", async () => {
     const headers = await authHeaders({}, { timeoutMs: 20 });
     expect(headers.Authorization).toBeUndefined();
+  });
+
+  it("authHeaders waitForAuth:false does not wait for a late Clerk mint", async () => {
+    setAuthTokenGetter(() => null);
+    const headers = await authHeaders({}, { waitForAuth: false, timeoutMs: 200 });
+    expect(headers.Authorization).toBeUndefined();
+  });
+
+  it("authHeaders uses an explicit token without calling the getter", async () => {
+    const getter = vi.fn(async () => "should-not-run");
+    setAuthTokenGetter(getter);
+    const headers = await authHeaders(
+      {},
+      { waitForAuth: false, token: "prefetched-jwt" },
+    );
+    expect(headers.Authorization).toBe("Bearer prefetched-jwt");
+    expect(getter).not.toHaveBeenCalled();
   });
 });

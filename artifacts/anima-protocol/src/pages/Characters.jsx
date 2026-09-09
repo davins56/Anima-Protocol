@@ -28,7 +28,11 @@ import {
   companionCreateErrorMessage,
   createCompanionRecord,
 } from "@/lib/createCompanion";
-import { isStoreDatabaseError } from "@/lib/storeErrorSignals";
+import {
+  classifyRosterFallback,
+  rosterFallbackLabel,
+  rosterFallbackMessage,
+} from "@/lib/storeErrorSignals";
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -88,6 +92,7 @@ export default function Characters() {
   // When the account store (Postgres) is unreachable, show the bundled starter
   // roster from src/lib/seedCharacters.js so the library is still browsable.
   const [usingBundledSeed, setUsingBundledSeed] = useState(false);
+  const [fallbackKind, setFallbackKind] = useState(null);
 
   const existingCharacterIds = useMemo(
     () => new Set(characters.map((c) => c.id)),
@@ -97,6 +102,7 @@ export default function Characters() {
   const loadCharacters = async ({ retrySeed = false } = {}) => {
     setLoadError(null);
     setUsingBundledSeed(false);
+    setFallbackKind(null);
     setLoading(true);
     if (retrySeed) setSeeding(true);
     try {
@@ -116,15 +122,15 @@ export default function Characters() {
         }
         return next;
       });
-      setUsingBundledSeed(!!roster.usingBundledSeed && !next.some((c) => !c._bundled));
+      const bundledOnly = !!roster.usingBundledSeed && !next.some((c) => !c._bundled);
+      setUsingBundledSeed(bundledOnly);
+      const kind = bundledOnly
+        ? roster.fallbackKind || classifyRosterFallback(roster.error)
+        : null;
+      setFallbackKind(kind);
       if (roster.usingBundledSeed || roster.error) {
-        const err = roster.error;
-        const message = err?.message || "Could not load account characters.";
-        const recovery = err && isStoreDatabaseError(err)
-          ? "not saved to your account until the database is reachable"
-          : "not saved to your account until the store can be reached again";
         setLoadError(
-          `${message}. Showing starter characters — ${recovery}.`,
+          rosterFallbackMessage(roster.error, kind, next.length),
         );
       }
     } catch (err) {
@@ -354,7 +360,7 @@ export default function Characters() {
                 {loading || seeding
                   ? "syncing roster..."
                   : usingBundledSeed
-                    ? `${characters.length} bundled starters (offline)`
+                    ? rosterFallbackLabel(characters.length, fallbackKind)
                     : `${characters.length} entities indexed`}
               </p>
             </div>
@@ -450,7 +456,7 @@ export default function Characters() {
               <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="font-mono text-destructive/90 text-xs tracking-wider leading-relaxed max-w-2xl">
                   {loadError ||
-                    "Account database unreachable. Showing bundled starters from src/lib/seedCharacters.js — edits will not save until the store is back."}
+                    rosterFallbackMessage(null, fallbackKind, characters.length)}
                 </p>
                 <button
                   type="button"

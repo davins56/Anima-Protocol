@@ -171,7 +171,7 @@ describe("listPersonalAnimas", () => {
 
   it("waits for a store token before Anima.list so an empty token is not an empty roster", async () => {
     let listed = false;
-    mocks.waitForStoreAuth.mockImplementation(async () => {
+    awaitCompanionStoreAuth.mockImplementation(async () => {
       expect(listed).toBe(false);
       return "token";
     });
@@ -181,14 +181,12 @@ describe("listPersonalAnimas", () => {
     });
 
     const rows = await listPersonalAnimas(100);
-    expect(mocks.waitForStoreAuth).toHaveBeenCalled();
+    expect(awaitCompanionStoreAuth).toHaveBeenCalled();
     expect(rows.map((row) => row.name)).toEqual(["Serenity"]);
   });
 
   it("still lists companions when the Clerk token wait times out", async () => {
-    mocks.waitForStoreAuth.mockRejectedValue(
-      new Error("Store auth token not available"),
-    );
+    awaitCompanionStoreAuth.mockResolvedValue(null);
     mocks.listAnima.mockResolvedValue([
       { id: "anima-1", name: "Serenity" },
     ]);
@@ -226,7 +224,7 @@ describe("listPersonalAnimas", () => {
     });
 
     const rows = await listPersonalAnimas(100);
-    expect(mocks.waitForStoreAuth).toHaveBeenCalled();
+    expect(awaitCompanionStoreAuth).toHaveBeenCalled();
     expect(rows.map((row) => row.name)).toEqual(
       expect.arrayContaining(["Serenity", "Aelynd"]),
     );

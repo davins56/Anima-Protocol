@@ -10,6 +10,11 @@
  * NewSessionModal, beginBundledStarterUpsert, createTherapyTopic, and
  * createCompanionRecord). Bundled starter upsert is fail-open so it cannot
  * spend this create budget before the insert.
+ *
+ * Character / Anima list is the other exception: the first authenticated GET
+ * can run ensureSchemaOnce() under the fetch budget. Do not raise
+ * STORE_FETCH_TIMEOUT_MS — use STORE_LIST_TIMEOUT_MS. Auth wait must finish
+ * before either budget starts (storeFetch waits, then arms a fresh abort).
  */
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;
@@ -24,6 +29,12 @@ export const STORE_TOKEN_TIMEOUT_MS = 4000;
 export const STORE_LIST_RETRY_LIMIT = 1;
 /** Targeted wall-clock budget for POST /api/store/ChatSession (Init / create). */
 export const STORE_SESSION_CREATE_TIMEOUT_MS = 20000;
+/**
+ * Targeted GET budget for Character / Anima list after auth wait. Same 20s
+ * ceiling as companion create so a healthy Hyperdrive list can finish schema
+ * warmup without a false bundled-offline fallback.
+ */
+export const STORE_LIST_TIMEOUT_MS = STORE_SESSION_CREATE_TIMEOUT_MS;
 /** Extra create attempts after the first abort/timeout (Init only). */
 export const STORE_SESSION_CREATE_RETRY_LIMIT = 1;
 /** Same 20s budget for POST /api/store/TherapyTopic — do not raise the global 8s cap. */
