@@ -66,6 +66,9 @@ export async function getToken(options = {}) {
 }
 
 export async function waitForStoreAuth(timeoutMs = STORE_AUTH_WAIT_MS) {
+  if (!hasAuthTokenGetter()) {
+    throw new Error("Store auth token not available");
+  }
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const remaining = deadline - Date.now();
